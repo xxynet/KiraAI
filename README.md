@@ -1,6 +1,6 @@
 # ✨ KiraAI
 
-KiraAI, a modular, multi-platform AI virtual being that connects Large Language Models (LLMs), Text-to-Speech (TTS), and various chat adapters (QQ, Telegram, Bilibili) with a clean configuration-driven architecture.
+KiraAI, a modular, multi-platform AI virtual being that connects Large Language Models (LLMs), Text-to-Speech (TTS), and various chat adapters (QQ, Telegram) with a clean configuration-driven architecture.
 
 ## 🚀 Features
 - Multi-adapter messaging: QQ, Telegram, Bilibili
@@ -46,10 +46,13 @@ pip install -r requirements.txt
 
 ## ⚙️ Configuration
 Key configuration files in `config/`:
-- `bot.ini`: core bot settings and runtime toggles
-- `models.ini`: model names, parameters, and defaults
 - `providers.ini`: LLM/TTS provider credentials and endpoints
+- `models.ini`: model names, parameters, and defaults
 - `adapters.ini`: enable/disable platform adapters and their tokens
+
+Modify the following if you want to get more custom experience:
+
+- `bot.ini`: core bot settings and runtime toggles
 - `sticker.json`: sticker mapping used by adapters
 - `tools/*.ini`: per-tool configs like `tavily.ini`, `ntfy.ini`, `bili.ini`
 
