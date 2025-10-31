@@ -1,0 +1,7 @@
+bilibili_api_python==17.3.0
+colorlog==6.9.0
+ncatbot==3.8.10.post3
+openai==2.6.1
+pywebview==6.1
+Requests==2.32.5
+tavily_python==0.7.10
