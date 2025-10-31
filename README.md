@@ -5,7 +5,8 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 ## 🚀 Features
 - Multi-adapter messaging: QQ, Telegram
 - Customizable LLM providers and models
-- Configurable TTS (SiliconFlow) with reference audio support
+- Multi-messages at a time
+- Function calling
 - Persistent memory
 - Centralized logging and prompt management
 
@@ -17,6 +18,19 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 - `config/`: INI/JSON configs for adapters, models, providers, stickers
 - `data/`: runtime data
 - `scripts/`: convenience launchers
+
+## 📷 ScreenShots
+![alt text](screenshots/image01.jpg)
+
+![alt text](screenshots/image02.png)
+
+![alt text](screenshots/image03.png)
+
+![alt text](screenshots/image04.png)
+
+![alt text](screenshots/image05.png)
+
+![alt text](screenshots/image06.png)
 
 ## 📦 Requirements
 - Python 3.10+
