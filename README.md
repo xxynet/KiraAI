@@ -3,7 +3,7 @@
 KiraAI, a modular, multi-platform AI virtual being that connects Large Language Models (LLMs), Text-to-Speech (TTS), and various chat adapters (QQ, Telegram) with a clean configuration-driven architecture.
 
 ## 🚀 Features
-- Multi-adapter messaging: QQ, Telegram, Bilibili
+- Multi-adapter messaging: QQ, Telegram
 - Customizable LLM providers and models
 - Configurable TTS (SiliconFlow) with reference audio support
 - Persistent memory
@@ -11,7 +11,7 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 
 ## 🧩 Architecture
 - `core/`: orchestration for config, LLMs, prompts, memory, logging
-- `adapters/`: platform bridges (qq, telegram, bilibili)
+- `adapters/`: platform bridges (qq, telegram)
 - `utils/`: utils for adapters and messages
 - `prompts/`: system/persona/tool/format prompt templates
 - `config/`: INI/JSON configs for adapters, models, providers, stickers
