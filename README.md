@@ -1,11 +1,12 @@
 # ✨ KiraAI
 
-KiraAI, a modular, multi-platform AI virtual being that connects Large Language Models (LLMs), Text-to-Speech (TTS), and various chat adapters (QQ, Telegram) with a clean configuration-driven architecture.
+KiraAI, a modular, multi-platform AI virtual being that connects Large Language Models (LLMs), and various chat platforms (QQ, Telegram) with a virtual being centered architecture.
 
 ## 🚀 Features
-- Multi-adapter messaging: QQ, Telegram
+- Multi-adapter messaging: QQ, Telegram...
 - Customizable LLM providers and models
 - Multi-messages at a time
+- Virtual being centered design
 - Function calling
 - Persistent memory
 - Centralized logging and prompt management
