@@ -1,6 +1,10 @@
 # ✨ KiraAI
 
+<div align="center">
+
 [English](../README.md) | 简体中文
+
+</div>
 
 KiraAI 是一个模块化、跨平台的 AI 数字生命项目，以数字生命为中心，连接大语言模型（LLM）与多种聊天平台（QQ、Telegram 等）。
 
