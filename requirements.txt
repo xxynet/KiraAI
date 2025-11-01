@@ -1,6 +1,7 @@
 bilibili_api_python==17.3.0
 colorlog==6.9.0
 ncatbot==3.8.10.post3
+python-telegram-bot==21.3
 openai==2.6.1
 pywebview==6.1
 Requests==2.32.5
