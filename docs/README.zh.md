@@ -74,9 +74,9 @@ pip install -r requirements.txt
 `config/` 目录中的关键配置：
 - `providers.ini`：LLM/TTS 提供商的凭证与端点
 - `models.ini`：模型名称、参数与默认值
-- `adapters.ini`：启用/禁用平台适配器及其 Token
+- `adapters.ini`：启用/禁用平台适配器
 
-本项目使用 [napcat](https://napneko.github.io/) 与QQ客户端交互，如果需要部署到QQ请先配置 napcat
+前往 [adapter settings](docs/adapters.md) 获取详细的消息平台配置说明
 
 如需更个性化体验，可调整：
 

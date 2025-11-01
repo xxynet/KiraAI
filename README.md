@@ -76,7 +76,7 @@ Key configuration files in `config/`:
 - `models.ini`: model names, parameters, and defaults
 - `adapters.ini`: enable/disable platform adapters and their tokens
 
-We use [napcat](https://napneko.github.io/) to communicate with QQ client, configure napcat first if you want to deploy on QQ
+Check [adapter settings](docs/adapters.md) for detailed documentation of messaging platforms
 
 Modify the following if you want to get more custom experience:
 
