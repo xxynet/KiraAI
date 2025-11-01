@@ -1,6 +1,8 @@
+<div align="center">
+
 # ✨ KiraAI
 
-<div align="center">
+Light up the digital soul
 
 English | [简体中文](docs/README.zh.md)
 
@@ -81,6 +83,8 @@ Modify the following if you want to get more custom experience:
 - `bot.ini`: core bot settings and runtime toggles
 - `sticker.json`: sticker mapping used by adapters
 - `tools/*.ini`: per-tool configs like `tavily.ini`, `ntfy.ini`, `bili.ini`
+
+Also, modify `/prompts/persona.txt` to make your unique virtual being!
 
 ## ▶️ Run
 You can start KiraAI via:

@@ -1,6 +1,8 @@
+<div align="center">
+
 # ✨ KiraAI
 
-<div align="center">
+点亮数字生命灵魂
 
 [English](../README.md) | 简体中文
 
@@ -81,6 +83,8 @@ pip install -r requirements.txt
 - `bot.ini`：核心 Bot 设置与运行时开关
 - `sticker.json`：适配器使用的贴纸映射
 - `tools/*.ini`：工具级配置，例如 `tavily.ini`、`ntfy.ini`、`bili.ini`
+
+另外, 修改 `/prompts/persona.txt` 来创建你的数字生命人格
 
 ## ▶️ 运行
 可通过以下方式启动 KiraAI：
