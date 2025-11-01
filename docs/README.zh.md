@@ -55,7 +55,7 @@ KiraAI 是一个模块化、跨平台的 AI 数字生命项目，以数字生命
 4. 在 `config/` 目录下准备配置文件。
 
 示例（cmd）：
-```powershell
+```shell
 python -m venv .venv
 .\.venv\Scripts\activate.bat
 pip install -r requirements.txt
@@ -84,7 +84,7 @@ pip install -r requirements.txt
 
 ## ▶️ 运行
 可通过以下方式启动 KiraAI：
-- PowerShell：`python launch.py`
+- CMD/PowerShell：`python launch.py`
 - Windows 批处理：`scripts\run.bat`
 - Linux 脚本：`scripts/run.sh`（先赋予可执行权限）
 

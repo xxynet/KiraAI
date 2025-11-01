@@ -84,7 +84,7 @@ Modify the following if you want to get more custom experience:
 
 ## ▶️ Run
 You can start KiraAI via:
-- PowerShell: `python launch.py`
+- CMD/PowerShell: `python launch.py`
 - Batch script: `scripts\run.bat`
 - Linux script: `scripts/run.sh` (make executable first)
 
