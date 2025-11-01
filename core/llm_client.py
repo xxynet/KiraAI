@@ -34,6 +34,7 @@ UTIL_API_KEY = global_config["providers"].get(UTIL_PROVIDER).get("api_key")
 DEFAULT_UTIL_MODEL = global_config["models"].get("util_model").get("model")
 
 DEFAULT_TTI = global_config["models"].get("tti").get("model")
+TTI_API_KEY = global_config["models"].get("tti").get("api_key")
 
 
 def timer(func):
@@ -257,7 +258,7 @@ class LLMClient:
             "guidance_scale": 7.5
         }
         headers = {
-            "Authorization": f"Bearer {MAIN_API_KEY}",
+            "Authorization": f"Bearer {TTI_API_KEY}",
             "Content-Type": "application/json"
         }
 
