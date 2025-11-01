@@ -51,10 +51,10 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 3. Install dependencies: `pip install -r requirements.txt`.
 4. Prepare configuration files under `config/`
 
-Example (PowerShell):
-```powershell
+Example (cmd):
+```shell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\.venv\Scripts\activate.bat
 pip install -r requirements.txt
 ```
 

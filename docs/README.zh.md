@@ -51,10 +51,10 @@ KiraAI 是一个模块化、跨平台的 AI 数字生命项目，以数字生命
 3. 安装依赖：`pip install -r requirements.txt`。
 4. 在 `config/` 目录下准备配置文件。
 
-示例（PowerShell）：
+示例（cmd）：
 ```powershell
 python -m venv .venv
- .\.venv\Scripts\Activate.ps1
+.\.venv\Scripts\activate.bat
 pip install -r requirements.txt
 ```
 
