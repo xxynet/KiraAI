@@ -39,6 +39,9 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 
 ![alt text](screenshots/image06.png)
 
+> [!IMPORTANT]
+> This project is in active development, and **breaking changes** may occur.
+
 ## 📦 Requirements
 - Python 3.10+
 - Windows, macOS, or Linux
@@ -70,6 +73,8 @@ Key configuration files in `config/`:
 - `providers.ini`: LLM/TTS provider credentials and endpoints
 - `models.ini`: model names, parameters, and defaults
 - `adapters.ini`: enable/disable platform adapters and their tokens
+
+We use [napcat](https://napneko.github.io/) to communicate with QQ client, configure napcat first if you want to deploy on QQ
 
 Modify the following if you want to get more custom experience:
 

@@ -39,6 +39,9 @@ KiraAI 是一个模块化、跨平台的 AI 数字生命项目，以数字生命
 
 ![alt text](../screenshots/image06.png)
 
+> [!IMPORTANT]
+> 本项目在活跃开发期间，可能会有 **破坏性更新**
+
 ## 📦 环境要求
 - Python 3.10+
 - Windows、macOS 或 Linux
@@ -70,6 +73,8 @@ pip install -r requirements.txt
 - `providers.ini`：LLM/TTS 提供商的凭证与端点
 - `models.ini`：模型名称、参数与默认值
 - `adapters.ini`：启用/禁用平台适配器及其 Token
+
+本项目使用 [napcat](https://napneko.github.io/) 与QQ客户端交互，如果需要部署到QQ请先配置 napcat
 
 如需更个性化体验，可调整：
 
