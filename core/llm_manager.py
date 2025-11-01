@@ -127,8 +127,8 @@ def memory_remove(index: int):
 
 
 llm_api.register_tool(
-    name="memory_add",
-    description="添加一条记忆",
+    name="memory_remove",
+    description="删除一条记忆",
     parameters={
         "type": "object",
         "properties": {
@@ -136,7 +136,7 @@ llm_api.register_tool(
         },
         "required": ["index"]
     },
-    func=memory_add
+    func=memory_remove
 )
 
 # ====== bili tools ======
