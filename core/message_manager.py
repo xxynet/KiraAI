@@ -16,6 +16,7 @@ from utils.message_utils import BotPrivateMessage, BotGroupMessage, MessageSendi
 logger = get_logger("message_processor", "cyan")
 
 config_max_message_interval = int(global_config["bot_config"].get("bot").get("max_message_interval"))
+config_max_buffer_messages = int(global_config["bot_config"].get("bot").get("max_buffer_messages"))
 
 
 class MessageProcessor:
@@ -23,11 +24,13 @@ class MessageProcessor:
     
     def __init__(self,
                  max_message_interval: int = config_max_message_interval,
+                 max_buffer_messages: int = config_max_buffer_messages,
                  max_concurrent_messages: int = 3,
                  adapters: Dict[str, Any] = None):
         self.adapters = adapters or {}
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
         self.max_message_interval = max_message_interval
+        self.max_buffer_messages = max_buffer_messages
         
         # init managers
         self.memory_manager = MemoryManager()
@@ -103,7 +106,8 @@ class MessageProcessor:
             self.message_buffer[dict_key].append(msg)
             msg_amount = len(self.message_buffer[dict_key])
 
-        await asyncio.sleep(self.max_message_interval)
+        if msg_amount < self.max_buffer_messages:
+            await asyncio.sleep(self.max_message_interval)
 
         if len(self.message_buffer[dict_key]) == msg_amount:
             # print("no new message coming, processing")
@@ -188,7 +192,9 @@ class MessageProcessor:
                 self.message_buffer[dict_key] = []
             self.message_buffer[dict_key].append(msg)
             msg_amount = len(self.message_buffer[dict_key])
-        await asyncio.sleep(self.max_message_interval)
+
+        if msg_amount < self.max_buffer_messages:
+            await asyncio.sleep(self.max_message_interval)
         if len(self.message_buffer[dict_key]) == msg_amount:
             # print("no new message coming, processing")
             async with buffer_lock:
