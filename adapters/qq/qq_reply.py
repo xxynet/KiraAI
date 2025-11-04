@@ -278,7 +278,7 @@ class QQAdapter(IMAdapter):
                                                     "message_id", str(msg["self_id"]), message_list, int(time.time()))
                     self.publish(message_obj)
 
-        elif msg["notice_type"] == "group_ban" and msg["self_id"] == msg["user_id"]:
+        elif msg.get("notice_type") == "group_ban" and msg.get("self_id") == msg.get("user_id"):
             ban_duration = msg["duration"]
             ban_operator_id = msg["operator_id"]
             ban_group_id = msg["group_id"]
@@ -328,7 +328,7 @@ class QQAdapter(IMAdapter):
             # print(ban_duration)
             # print(ban_operator_id)
             # print(ban_group_id)
-        elif msg["notice_type"] == "group_increase":
+        elif msg.get("notice_type") == "group_increase":
             # and msg["sub_type"] == "approve"
             if "group_id" in msg:
                 notice_str = f"[System 用户{msg.get('user_id')}加入了群聊]"
@@ -368,6 +368,8 @@ class QQAdapter(IMAdapter):
                     if reply_msg_info.get("data", {}).get("user_id") == msg.self_id:  # int int
                         should_respond = True
                         break
+
+            # should_respond = True
 
             if should_respond:
                 # 仅进行 Adapter 层职责：打包消息并发布到事件总线，等待主循环回复
