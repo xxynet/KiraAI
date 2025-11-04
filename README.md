@@ -111,7 +111,6 @@ KiraAI/
   data/               # Memory store and assets (stickers)
   prompts/            # Prompt templates
   scripts/            # Launch scripts
-  src/tools/          # Tool manager and search utilities
   utils/              # Adapter/message utilities
   launch.py           # Main launcher
 ```

@@ -111,7 +111,6 @@ KiraAI/
   data/               # 记忆存储与素材（贴纸）
   prompts/            # 提示词模板
   scripts/            # 启动脚本
-  src/tools/          # 工具管理与检索
   utils/              # 适配器/消息工具
   launch.py           # 主启动入口
 ```
