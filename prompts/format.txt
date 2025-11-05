@@ -23,26 +23,26 @@
 注意：你需要根据对话内容上下文合理决定发送消息的条数
 发送单条消息示例：
 
-用户：在吗
+用户：some text...
 回复：
 <msg>
-    <text>在呀~</text>
+    <text>response text...</text>
 </msg>
 
 发送多条消息示例：
 
-用户：在吗
+用户：some text...
 回复：
 <msg>
-    <text>在呀~</text>
+    <text>response text 1...</text>
 </msg>
 <msg>
-    <text>想和我聊天吗？</text>
+    <text>response text 2...</text>
 </msg>
 
 发送表情示例：
 <msg>
-    <text>在呀~</text>
+    <text>some text...</text>
     <emoji>21</emoji>
 </msg>
 
