@@ -11,6 +11,7 @@ from core.config_loader import global_config
 from core.tts.siliconflow.sftts import generate_speech, speech_to_text
 from core.memory_manager import MemoryManager
 from core.prompt_manager import PromptManager
+from core.services.runtime import get_adapter_by_name
 from utils.message_utils import BotPrivateMessage, BotGroupMessage, MessageSending, MessageType
 
 logger = get_logger("message_processor", "cyan")
@@ -25,9 +26,7 @@ class MessageProcessor:
     def __init__(self,
                  max_message_interval: int = config_max_message_interval,
                  max_buffer_messages: int = config_max_buffer_messages,
-                 max_concurrent_messages: int = 3,
-                 adapters: Dict[str, Any] = None):
-        self.adapters = adapters or {}
+                 max_concurrent_messages: int = 3):
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
         self.max_message_interval = max_message_interval
         self.max_buffer_messages = max_buffer_messages
@@ -41,11 +40,6 @@ class MessageProcessor:
         self.buffer_locks: dict[str, asyncio.Lock] = {}
         
         logger.info("MessageProcessor initialized")
-    
-    def set_adapters(self, adapters: Dict[str, Any]):
-        """set adapter dict"""
-        self.adapters = adapters
-        logger.info(f"Adapters set: {list(adapters.keys())}")
 
     async def message_format_to_text(self, message_list: list[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
@@ -143,7 +137,7 @@ class MessageProcessor:
         core_memory = self.memory_manager.get_core_memory()
 
         # emoji_dict
-        emoji_dict = self.adapters[msg.adapter_name].emoji_dict
+        emoji_dict = get_adapter_by_name(msg.adapter_name).emoji_dict
         # print("===表情信息===")
         # print(emoji_dict)
 
@@ -163,7 +157,9 @@ class MessageProcessor:
         # logger.info(f"LLM响应: {response}")
         
         # 发送响应消息
-        message_ids = await self._send_response_messages(msg, response)
+        # message_ids = await self._send_response_messages(msg, response)
+
+        message_ids = await self.send_xml_messages(f"{msg.adapter_name}:dm:{msg.user_id}", response)
         
         # 添加消息ID到响应中
         response_with_ids = self._add_message_ids(response, message_ids)
@@ -231,7 +227,7 @@ class MessageProcessor:
         core_memory = self.memory_manager.get_core_memory()
 
         # emoji_dict
-        emoji_dict = self.adapters[msg.adapter_name].emoji_dict
+        emoji_dict = get_adapter_by_name(msg.adapter_name).emoji_dict
         # print("===表情信息===")
         # print(emoji_dict)
 
@@ -255,7 +251,9 @@ class MessageProcessor:
         # logger.info(f"LLM响应: {response}")
         
         # 发送响应消息
-        message_ids = await self._send_response_messages(msg, response)
+        # message_ids = await self._send_response_messages(msg, response)
+
+        message_ids = await self.send_xml_messages(f"{msg.adapter_name}:gm:{msg.group_id}", response)
         
         # 添加消息ID到响应中
         response_with_ids = self._add_message_ids(response, message_ids)
@@ -281,9 +279,9 @@ class MessageProcessor:
             
             # 根据消息类型选择发送方法
             if isinstance(msg, BotPrivateMessage):
-                message_id = await self.adapters[msg.adapter_name].send_direct_message(msg.user_id, message_obj)
+                message_id = await get_adapter_by_name(msg.adapter_name).send_direct_message(msg.user_id, message_obj)
             elif isinstance(msg, BotGroupMessage):
-                message_id = await self.adapters[msg.adapter_name].send_group_message(msg.group_id, message_obj)
+                message_id = await get_adapter_by_name(msg.adapter_name).send_group_message(msg.group_id, message_obj)
             else:
                 message_id = None
             
@@ -294,6 +292,41 @@ class MessageProcessor:
             # 添加随机延迟避免频率限制
             await asyncio.sleep(random.uniform(0.8, 1.5))
         
+        return message_ids
+
+    async def send_xml_messages(self, target: str, xml: str) -> List[str]:
+        """
+        send message via session id & xml data
+        :param target: adapter_name:session_type:session_id
+        :param xml: xml string
+        :return: message id(s)
+        """
+        message_ids = []
+        resp_list = self._parse_and_generate_messages(xml)
+
+        parts = target.split(":")
+        if len(parts) != 3:
+            raise ValueError("target 必须是 <adapter>:<dm|gm>:<id> 格式")
+        adapter_name, chat_type, pid = parts[0], parts[1], parts[2]
+
+        for message_list in resp_list:
+            message_obj = MessageSending(message_list)
+
+            # 根据消息类型选择发送方法
+            if chat_type == "dm":
+                message_id = await get_adapter_by_name(adapter_name).send_direct_message(pid, message_obj)
+            elif chat_type == "gm":
+                message_id = await get_adapter_by_name(adapter_name).send_group_message(pid, message_obj)
+            else:
+                message_id = None
+
+            if not message_id:
+                message_id = ''
+            message_ids.append(message_id)
+
+            # 添加随机延迟避免频率限制
+            await asyncio.sleep(random.uniform(0.8, 1.5))
+
         return message_ids
 
     @staticmethod
@@ -369,3 +402,7 @@ class MessageProcessor:
         except Exception as e:
             logger.error(f"Error adding message IDs: {str(e)}")
             return xml_data
+
+
+# global message processor
+message_processor = MessageProcessor()

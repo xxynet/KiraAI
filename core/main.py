@@ -6,7 +6,7 @@ from core.config_loader import global_config
 from adapters.qq.qq_reply import QQAdapter
 from adapters.telegram.tg import TelegramAdapter
 from utils.message_utils import BotPrivateMessage, BotGroupMessage
-from core.message_manager import MessageProcessor
+# from core.message_manager import MessageProcessor
 
 
 logger = get_logger("main", "blue")
@@ -32,8 +32,13 @@ async def main():
         adapters[ada_name] = ada_mapping[ada_platform](ada_config, loop, event_bus)
 
     # ====== init message processor ======
-    message_processor = MessageProcessor()
-    message_processor.set_adapters(adapters)
+    # message_processor = MessageProcessor()
+    from core.message_manager import message_processor
+
+    # expose adapters and loop globally for runtime usage everywhere
+    from core.services.runtime import set_adapters as rt_set_adapters, set_loop as rt_set_loop
+    rt_set_adapters(adapters)
+    rt_set_loop(loop)
 
     # ====== load all adapters ======
     for adapter in adapters:
@@ -49,5 +54,3 @@ async def main():
     while True:
         msg: Union[BotPrivateMessage, BotGroupMessage] = await event_bus.get()
         asyncio.create_task(message_processor.handle_message(msg))
-
-
