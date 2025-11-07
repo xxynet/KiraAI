@@ -30,7 +30,6 @@ class StickerManager:
             sticker_dict = json.loads(sticker_json)
 
             self.sticker_index = int(next(reversed(sticker_dict)))
-            print(self.sticker_index)
 
             self.sticker_paths = [sticker_dict[sticker_id].get("path") for sticker_id in sticker_dict]
 
@@ -67,7 +66,7 @@ class StickerManager:
                 logger.info("All stickers are already registered")
 
             # TODO customize interval in config file
-            await asyncio.sleep(10 * 60)
+            await asyncio.sleep(120 * 60)
 
     @staticmethod
     def get_sticker_description(sticker_file):
