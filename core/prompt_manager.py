@@ -4,6 +4,7 @@ from typing import Dict, Any, Union, Type, Optional
 
 from core.config_loader import global_config
 from core.logging_manager import get_logger
+from core.sticker_manager import sticker_manager
 from utils.message_utils import BotPrivateMessage, BotGroupMessage
 from utils.message_utils import MessageType
 
@@ -16,13 +17,11 @@ class PromptManager:
     def __init__(self, 
                  persona_path: str = "prompts/persona.txt",
                  emoji_path: str = "adapters/qq/emoji.json",
-                 sticker_path: str = "config/sticker.json",
                  format_path: str = "prompts/format.txt",
                  tool_path: str = "prompts/tool.txt",
                  system_path: str = "prompts/system.txt"):
         self.persona_path = persona_path
         self.emoji_path = emoji_path
-        self.sticker_path = sticker_path
         self.format_path = format_path
         self.tool_path = tool_path
         self.system_path = system_path
@@ -30,7 +29,7 @@ class PromptManager:
         # 加载基础提示词
         self.persona_prompt = self._load_file(persona_path)
         self.emoji_dict = self._load_dict(emoji_path)
-        self.sticker_dict = self._load_dict(sticker_path)
+        self.sticker_dict = sticker_manager.sticker_dict
         self.sticker_prompt = self._load_sticker_prompt(self.sticker_dict)
         self.ada_config_prompt = self.load_ada_config_prompt()
         
@@ -97,8 +96,12 @@ class PromptManager:
         if not message_types:
             message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]
         message_type_prompt = self._load_supported_format_prompt(message_types)
-        # 格式化表情包JSON
+        # 格式化小表情JSON
         emoji_json = json.dumps(emoji_dict, ensure_ascii=False)
+
+        self.sticker_dict = sticker_manager.sticker_dict
+        self.sticker_prompt = self._load_sticker_prompt(self.sticker_dict)
+
         message_type_prompt = message_type_prompt.format(emoji_json=emoji_json, sticker_prompt=self.sticker_prompt)
         try:
             with open(self.format_path, 'r', encoding="utf-8") as f:

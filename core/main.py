@@ -3,16 +3,27 @@ from typing import Any, Dict, Union
 
 from core.logging_manager import get_logger
 from core.config_loader import global_config
+
 from adapters.qq.qq_reply import QQAdapter
 from adapters.telegram.tg import TelegramAdapter
+
 from utils.message_utils import BotPrivateMessage, BotGroupMessage
+from core.sticker_manager import sticker_manager
 # from core.message_manager import MessageProcessor
 
 
 logger = get_logger("main", "blue")
 
 
-async def main():
+async def schedule_tasks():
+    while True:
+        tasks = [
+            sticker_manager.scan_and_register_sticker()
+        ]
+        await asyncio.gather(*tasks)
+
+
+async def init_and_run_system():
     """主函数：负责启动和初始化各个模块"""
     logger.info("Starting bot...")
 
@@ -54,3 +65,10 @@ async def main():
     while True:
         msg: Union[BotPrivateMessage, BotGroupMessage] = await event_bus.get()
         asyncio.create_task(message_processor.handle_message(msg))
+
+
+async def main():
+    await asyncio.gather(
+        init_and_run_system(),
+        schedule_tasks(),
+    )

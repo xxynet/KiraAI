@@ -211,9 +211,20 @@ class LLMClient:
                 llm_logger.error(f"error while generating response when tools are not called: {str(e)}")
                 return "", None
 
-    def desc_img(self, url, model=DEFAULT_VLM):
+    def desc_img(self, image, model=DEFAULT_VLM, prompt="描述这张图片的内容，如果有文字请将其输出", is_base64=False):
+        """
+        describe an image
+        :param image: url or base64
+        :param model: defaults to DEFAULT_VLM
+        :param prompt: prompt of VLM
+        :param is_base64: defaults to False
+        :return: image description
+        """
         try:
-            b64_data = self.image_to_base64(url)
+            if is_base64:
+                b64_data = image
+            else:
+                b64_data = self.image_to_base64(image)
 
             messages = [{
                 "role": "user",
@@ -227,7 +238,7 @@ class LLMClient:
                     },
                     {
                         "type": "text",
-                        "text": "描述这张图片的内容，如果有文字请将其输出"
+                        "text": prompt
                     }
                 ]
             }]
