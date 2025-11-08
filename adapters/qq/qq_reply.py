@@ -20,7 +20,7 @@ import threading
 import logging
 from datetime import datetime
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, Union, List
 
 from core.llm_manager import llm_api
 from utils.adapter_utils import IMAdapter
@@ -176,22 +176,10 @@ class QQAdapter(IMAdapter):
     def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue):
         super().__init__(config, loop, event_bus)
         self.name: str = "QQ"
-        self.group_list: list = []
-        self.user_list: list = []
         self.emoji_dict = self._load_dict("adapters/qq/emoji.json")
         self.message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Poke, MessageType.Notice]
-        self._init_config()
         self.bot: BotClient = BotClient()
         # self._log = get_log()  # 已禁用适配器日志
-
-    def _init_config(self):
-        group_list_str = self.config["group_list"]
-        user_list_str = self.config["user_list"]
-        try:
-            self.group_list = [int(item.strip()) for item in group_list_str.split(",")]
-            self.user_list = [int(item.strip()) for item in user_list_str.split(",")]
-        except Exception as e:
-            print(f"error occurred while loading allow list config: {str(e)}")
 
     @staticmethod
     def _load_dict(path: str) -> Dict[str, Any]:

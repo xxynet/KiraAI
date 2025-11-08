@@ -44,20 +44,12 @@ class TelegramAdapter(IMAdapter):
 
         # 配置
         self.bot_token: str = self.config.get("bot_token", "")
-        self.group_list: List[int] = self._parse_id_list(self.config.get("group_list", ""))
-        self.user_list: List[int] = self._parse_id_list(self.config.get("user_list", ""))
+        # group_list 和 user_list 已在 base class 中初始化
         self.message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Sticker, MessageType.Record, MessageType.Notice]
 
         # 运行时
         self.app = None
         self.message_sender = MessageSender()
-
-    @staticmethod
-    def _parse_id_list(csv: str) -> List[int]:
-        try:
-            return [int(x.strip()) for x in csv.split(",") if x.strip()]
-        except Exception:
-            return []
 
     def _start_blocking(self):
         # 在线程中手动创建并设置事件循环，避免 get_event_loop 报错
