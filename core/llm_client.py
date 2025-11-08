@@ -134,7 +134,7 @@ class LLMClient:
         raw_msg = copy.deepcopy(user_message)
         raw_msg[0] = {"role": "system", "content": tool_system_prompt}
 
-        llm_logger.info(f"checking whether to call tools using {DEFAULT_TOOL_LLM}")
+        llm_logger.info(f"checking whether to call tools using {DEFAULT_TOOL_LLM} from {TOOL_PROVIDER}")
         resp1 = self.tool_client.chat.completions.create(
             model=DEFAULT_TOOL_LLM,
             messages=raw_msg,
@@ -185,7 +185,7 @@ class LLMClient:
             user_message.extend(tool_messages)
 
             try:
-                llm_logger.info(f"generating response using {DEFAULT_LLM}")
+                llm_logger.info(f"generating response using {DEFAULT_LLM} from {MAIN_PROVIDER}")
                 resp2 = self.client.chat.completions.create(
                     model=DEFAULT_LLM,
                     messages=user_message
@@ -200,7 +200,7 @@ class LLMClient:
         else:
             # model did not use tools
             try:
-                llm_logger.info(f"generating response using {DEFAULT_LLM}")
+                llm_logger.info(f"generating response using {DEFAULT_LLM} from {MAIN_PROVIDER}")
                 resp2 = self.client.chat.completions.create(
                     model=DEFAULT_LLM,
                     messages=user_message
