@@ -5,25 +5,25 @@ from pathlib import Path
 
 
 class ConfigError(Exception):
-    """配置加载错误"""
+    """Configuration load error"""
     pass
 
 
 def get_config(config_path: str) -> Dict[str, Dict[str, Any]]:
     """
-    读取配置文件中的所有配置
+    Read all configurations from the configuration file
 
     Args:
-        config_path: 配置文件路径
+        config_path: path to config file
 
     Returns:
-        包含所有配置，键为配置名称，值为配置字典
+        Dict[str, Dict[str, Any]]
         
     Raises:
-        ConfigError: 配置文件不存在或读取失败
+        ConfigError: Configuration file does not exist or read failure
     """
     if not os.path.exists(config_path):
-        raise ConfigError(f"配置文件不存在: {config_path}")
+        raise ConfigError(f"Config file does not exist: {config_path}")
     
     config = configparser.ConfigParser()
     config.read(config_path, encoding='utf-8')
@@ -40,23 +40,23 @@ def get_config(config_path: str) -> Dict[str, Dict[str, Any]]:
         config_dict[section] = config_section
 
     if not config_dict:
-        raise ConfigError(f"配置文件为空或格式错误: {config_path}")
+        raise ConfigError(f"Configuration file is empty or formatted incorrectly in: {config_path}")
     
     return config_dict
 
 
 def get_ada_config(config_path: str = "config/adapters.ini") -> Dict[str, Dict[str, Any]]:
     """
-    读取配置文件中的所有adapter配置
+    Load all adapters from config
 
     Args:
-        config_path: 配置文件路径
+        config_path: path to adapter config
 
     Returns:
-        包含所有adapter配置的字典，键为adapter名称，值为配置字典
+        A dictionary containing all adapter configurations, with keys as adapter names and values as configuration dictionaries
         
     Raises:
-        ConfigError: 配置文件不存在或读取失败
+        ConfigError: Configuration file does not exist or read failed
     """
     if not os.path.exists(config_path):
         raise ConfigError(f"配置文件不存在: {config_path}")
@@ -74,10 +74,11 @@ def get_ada_config(config_path: str = "config/adapters.ini") -> Dict[str, Dict[s
         for key, value in config.items(section):
             adapter_config[key] = value
         adapter_config["adapter_name"] = section
-        adapters_dict[section] = adapter_config
+        if adapter_config.get("enabled").lower() == "true":
+            adapters_dict[section] = adapter_config
 
     if not adapters_dict:
-        raise ConfigError(f"未找到任何适配器配置: {config_path}")
+        raise ConfigError(f"No adapter found in: {config_path}")
     
     return adapters_dict
 
