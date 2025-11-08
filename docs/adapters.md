@@ -19,6 +19,8 @@ Be sure to comment out the adapter settings you are not going to use
 ```ini
 # 适配器标识符，可以自定义
 [qq]
+# 是否启用，改为false将不会加载适配器
+enabled = true
 # 平台标识字段，不要修改
 platform = QQ
 # 对该账号的描述
@@ -49,6 +51,8 @@ Modify telegram adapter settings in `config/adapters.in`
 ```ini
 # adapter uuid
 [tg]
+# Whether to enable, set to false to prevent loading the adapter
+enabled = true
 # platform uuid, DO NOT MODIFY
 platform = Telegram
 # description of this account
