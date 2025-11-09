@@ -115,12 +115,7 @@ class PromptManager:
     def get_current_time_str() -> str:
         """获取当前时间字符串"""
         now = datetime.now()
-        return now.strftime("%Y-%m-%d %H:%M:%S")
-
-    @staticmethod
-    def get_weekday_num() -> str:
-        """获取星期几的数字表示（1-7）"""
-        return str(datetime.now().weekday() + 1)
+        return now.strftime("%b %d %Y %H:%M %a")
 
     @staticmethod
     def load_ada_config_prompt():
@@ -136,9 +131,7 @@ class PromptManager:
 
     def get_system_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list, emoji_dict: Optional[dict] = None) -> str:
         """生成系统提示词"""
-        current_time = datetime.now()
-        weekday_num = str(current_time.weekday() + 1)
-        formatted_time = current_time.strftime("%Y-%m-%d %H:%M:%S")
+        formatted_time = self.get_current_time_str()
         
         try:
             with open(self.system_path, 'r', encoding="utf-8") as f:
@@ -146,8 +139,7 @@ class PromptManager:
             return system_prompt.format(
                 persona=self.persona_prompt, 
                 format=self._load_format_prompt(message_types, emoji_dict),
-                time_str=formatted_time, 
-                day_of_week=weekday_num, 
+                time_str=formatted_time,
                 chat_env=chat_env,
                 core_memory=core_memory,
                 accounts=self.ada_config_prompt
@@ -158,10 +150,8 @@ class PromptManager:
     
     def get_tool_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list, emoji_dict: Optional[dict] = None) -> str:
         """生成工具提示词"""
-        current_time = datetime.now()
-        weekday_num = str(current_time.weekday() + 1)
-        formatted_time = current_time.strftime("%Y-%m-%d %H:%M:%S")
-        
+        formatted_time = self.get_current_time_str()
+
         try:
             with open(self.tool_path, 'r', encoding="utf-8") as f:
                 tool_prompt = f.read()
@@ -169,7 +159,6 @@ class PromptManager:
                 persona=self.persona_prompt,
                 format=self._load_format_prompt(message_types, emoji_dict),
                 time_str=formatted_time,
-                day_of_week=weekday_num,
                 chat_env=chat_env,
                 core_memory=core_memory,
                 accounts=self.ada_config_prompt
@@ -178,11 +167,9 @@ class PromptManager:
             logger.error(f"Error generating tool prompt: {e}")
             return ""
 
-    @staticmethod
-    def format_user_message(msg: Union[BotPrivateMessage, BotGroupMessage]) -> str:
+    def format_user_message(self, msg: Union[BotPrivateMessage, BotGroupMessage]) -> str:
         """格式化用户消息"""
-        dt_object = datetime.fromtimestamp(msg.timestamp)
-        date_str = dt_object.strftime("%Y-%m-%d %H:%M:%S")
+        date_str = self.get_current_time_str()
         
         if isinstance(msg, BotGroupMessage):
             # 群聊消息格式
