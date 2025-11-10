@@ -69,8 +69,11 @@ class BiliVideoInfoTool(BaseTool):
     }
 
     def execute(self, original_url: str) -> str:
-        info_str, _, _ = _video_handle(original_url)
-        return info_str
+        try:
+            info_str, _, _ = _video_handle(original_url)
+            return info_str
+        except Exception as bili_info_e:
+            return str(bili_info_e)
 
 
 class BiliLikeTool(BaseTool):
@@ -85,8 +88,8 @@ class BiliLikeTool(BaseTool):
     }
 
     def execute(self, original_url: str) -> str:
-        info_str, v, _ = _video_handle(original_url)
         try:
+            info_str, v, _ = _video_handle(original_url)
             sync(v.like())
         except bili_e.ResponseCodeException as e:
             return f"点赞失败！{str(e)}"
@@ -109,7 +112,10 @@ class BiliCommentTool(BaseTool):
         self._llm = LLMClient()
 
     def execute(self, original_url: str) -> str:
-        info_str, _, aid = _video_handle(original_url)
+        try:
+            info_str, _, aid = _video_handle(original_url)
+        except Exception as bili_info_e:
+            return str(bili_info_e)
 
         with open("prompts/persona.txt", "r", encoding="utf-8") as f:
             persona_prompt = f.read()
@@ -129,5 +135,3 @@ class BiliCommentTool(BaseTool):
         reply_status = result.get("success_toast")
         reply_content = result.get("reply").get("content").get("message")
         return f"status: {reply_status}, reply_content: {reply_content}"
-
-

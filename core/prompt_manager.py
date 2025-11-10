@@ -123,9 +123,10 @@ class PromptManager:
         ada_config = global_config["ada_config"]
         for ada in ada_config:
             ada_platform = ada_config[ada].get("platform")
+            ada_name = ada_config[ada].get("adapter_name")
             ada_desc = ada_config[ada].get("desc")
             bot_pid = ada_config[ada].get("bot_pid")
-            ada_config_prompt += f"Platform: {ada_platform}, account_desc: {ada_desc}, account_id: {bot_pid}\n"
+            ada_config_prompt += f"Platform: {ada_platform}, adapter_name: {ada_name}, account_desc: {ada_desc}, account_id: {bot_pid}\n"
 
         return ada_config_prompt
 

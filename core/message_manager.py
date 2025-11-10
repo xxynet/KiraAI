@@ -41,6 +41,16 @@ class MessageProcessor:
         
         logger.info("MessageProcessor initialized")
 
+    def get_session_list_prompt(self) -> str:
+        session_list_prompt = ""
+        _group_chat_memory = self.memory_manager.group_chat_memory
+        _private_chat_memory = self.memory_manager.private_chat_memory
+        for session_id in _group_chat_memory:
+            session_list_prompt += f"{session_id}\n"
+        for session_id in _private_chat_memory:
+            session_list_prompt += f"{session_id}\n"
+        return session_list_prompt
+
     async def message_format_to_text(self, message_list: list[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
@@ -122,12 +132,16 @@ class MessageProcessor:
             formatted_message = self.prompt_manager.format_user_message(message)
             formatted_messages_str += f"{formatted_message}\n"
         logger.info(f"processing message(s) from {msg.adapter_name}:\n{formatted_messages_str}")
-        
+
+        # 获取存在的会话
+        session_list = self.get_session_list_prompt()
+
         # 构建聊天环境信息
         chat_env = {
             "platform": msg.platform,
             "chat_type": 'DirectMessage',
-            "self_id": msg.self_id
+            "self_id": msg.self_id,
+            "session_list": session_list
         }
         
         # 获取历史记忆
@@ -138,8 +152,6 @@ class MessageProcessor:
 
         # emoji_dict
         emoji_dict = get_adapter_by_name(msg.adapter_name).emoji_dict
-        # print("===表情信息===")
-        # print(emoji_dict)
 
         # 生成系统提示词
         system_prompt = self.prompt_manager.get_system_prompt(chat_env, core_memory, msg.message_types, emoji_dict)
@@ -209,12 +221,16 @@ class MessageProcessor:
             formatted_message = self.prompt_manager.format_user_message(message)
             formatted_messages_str += f"{formatted_message}\n"
         logger.info(f"processing message(s) from {msg.adapter_name}:\n{formatted_messages_str}")
-        
+
+        # 获取存在的会话
+        session_list = self.get_session_list_prompt()
+
         # 构建聊天环境信息
         chat_env = {
             "platform": msg.platform,
             "chat_type": 'GroupMessage',
-            "self_id": msg.self_id
+            "self_id": msg.self_id,
+            "session_list": session_list
         }
         
         # 获取群组ID
@@ -228,8 +244,6 @@ class MessageProcessor:
 
         # emoji_dict
         emoji_dict = get_adapter_by_name(msg.adapter_name).emoji_dict
-        # print("===表情信息===")
-        # print(emoji_dict)
 
         # 生成系统提示词
         system_prompt = self.prompt_manager.get_system_prompt(chat_env, core_memory, msg.message_types, emoji_dict)
