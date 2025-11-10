@@ -11,6 +11,7 @@ from ncatbot.core import (
     Face,          # QQ表情
     Image,         # 图片
     Record,        # 语音
+    Json,          # JSON
 )
 from ncatbot.utils import get_log  # 已禁用适配器日志
 
@@ -247,23 +248,23 @@ class QQAdapter(IMAdapter):
                     group_info = self.bot.api.get_group_info_sync(msg.get("group_id"))
                     group_name = group_info.get("data").get("group_name")
                     message_obj = BotGroupMessage(
-                        self.name,
-                        self.config['adapter_name'],
-                        self.message_types,
-                        str(msg.get("group_id")),
-                        group_name,
-                        str(msg.get("user_id")),
-                        "user_name 未获取",
-                        "message_id",
-                        str(msg.get("self_id")),
-                        message_list,
-                        int(msg.get("time"))
+                        platform=self.name,
+                        adapter_name=self.config['adapter_name'],
+                        message_types=self.message_types,
+                        group_id=str(msg.get("group_id")),
+                        group_name=group_name,
+                        user_id=str(msg.get("user_id")),
+                        user_nickname="None",
+                        message_id="None",
+                        self_id=str(msg.get("self_id")),
+                        content=message_list,
+                        timestamp=int(msg.get("time"))
                     )
                     self.publish(message_obj)
             else:
                 if msg["user_id"] in self.user_list:
                     message_obj = BotPrivateMessage(self.name, self.config['adapter_name'], self.message_types, str(msg['user_id']), "user_name 未获取",
-                                                    "message_id", str(msg["self_id"]), message_list, int(time.time()))
+                                                    "None", str(msg["self_id"]), message_list, int(time.time()))
                     self.publish(message_obj)
 
         elif msg.get("notice_type") == "group_ban" and msg.get("self_id") == msg.get("user_id"):
@@ -277,17 +278,17 @@ class QQAdapter(IMAdapter):
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = BotGroupMessage(
-                        self.name,
-                        self.config['adapter_name'],
-                        self.message_types,
-                        str(msg["group_id"]),
-                        group_name,
-                        str(msg['user_id']),
-                        "user_name 未获取",
-                        "message_id",
-                        str(msg["self_id"]),
-                        message_list,
-                        int(msg["time"])
+                        platform=self.name,
+                        adapter_name=self.config['adapter_name'],
+                        message_types=self.message_types,
+                        group_id=str(msg.get("group_id")),
+                        group_name=group_name,
+                        user_id=str(msg.get("user_id")),
+                        user_nickname="None",
+                        message_id="None",
+                        self_id=str(msg.get("self_id")),
+                        content=message_list,
+                        timestamp=int(msg.get("time"))
                     )
                     self.publish(message_obj)
             elif msg["sub_type"] == "lift_ban":  # 人为解除禁言
@@ -298,17 +299,17 @@ class QQAdapter(IMAdapter):
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = BotGroupMessage(
-                        self.name,
-                        self.config['adapter_name'],
-                        self.message_types,
-                        str(msg["group_id"]),
-                        group_name,
-                        str(msg['user_id']),
-                        "user_name 未获取",
-                        "message_id",
-                        str(msg["self_id"]),
-                        message_list,
-                        int(msg["time"])
+                        platform=self.name,
+                        adapter_name=self.config['adapter_name'],
+                        message_types=self.message_types,
+                        group_id=str(msg.get("group_id")),
+                        group_name=group_name,
+                        user_id=str(msg.get("user_id")),
+                        user_nickname="None",
+                        message_id="None",
+                        self_id=str(msg.get("self_id")),
+                        content=message_list,
+                        timestamp=int(msg.get("time"))
                     )
                     self.publish(message_obj)
             else:
@@ -325,17 +326,17 @@ class QQAdapter(IMAdapter):
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = BotGroupMessage(
-                        self.name,
-                        self.config['adapter_name'],
-                        self.message_types,
-                        str(msg.get("group_id")),
-                        group_name,
-                        str(msg.get("user_id")),
-                        "user_name 未获取",
-                        "message_id",
-                        str(msg.get("self_id")),
-                        message_list,
-                        int(msg.get("time"))
+                        platform=self.name,
+                        adapter_name=self.config['adapter_name'],
+                        message_types=self.message_types,
+                        group_id=str(msg.get("group_id")),
+                        group_name=group_name,
+                        user_id=str(msg.get("user_id")),
+                        user_nickname="None",
+                        message_id="None",
+                        self_id=str(msg.get("self_id")),
+                        content=message_list,
+                        timestamp=int(msg.get("time"))
                     )
                     self.publish(message_obj)
 
@@ -365,17 +366,17 @@ class QQAdapter(IMAdapter):
                 group_info = self.bot.api.get_group_info_sync(msg.group_id)
                 group_name = group_info.get("data").get("group_name")
                 message_obj = BotGroupMessage(
-                    self.name,
-                    self.config['adapter_name'],
-                    self.message_types,
-                    str(msg.group_id),
-                    group_name,
-                    str(msg.user_id),
-                    msg.sender.nickname,
-                    str(msg.message_id),
-                    str(msg.self_id),
-                    message_list,
-                    int(msg.time)
+                    platform=self.name,
+                    adapter_name=self.config['adapter_name'],
+                    message_types=self.message_types,
+                    group_id=str(msg.group_id),
+                    group_name=group_name,
+                    user_id=str(msg.user_id),
+                    user_nickname=msg.sender.nickname,
+                    message_id=str(msg.message_id),
+                    self_id=str(msg.self_id),
+                    content=message_list,
+                    timestamp=int(msg.time)
                 )
                 self.publish(message_obj)
 
@@ -386,7 +387,16 @@ class QQAdapter(IMAdapter):
 
             message_list = process_incoming_message(self.bot, msg)
 
-            message_obj = BotPrivateMessage(self.name, self.config['adapter_name'], self.message_types, str(msg.user_id), msg.sender.nickname, str(msg.message_id), str(msg.self_id), message_list, int(msg.time))
+            message_obj = BotPrivateMessage(
+                platform=self.name,
+                adapter_name=self.config['adapter_name'],
+                message_types=self.message_types,
+                user_id=str(msg.user_id),
+                user_nickname=msg.sender.nickname,
+                message_id=str(msg.message_id),
+                self_id=str(msg.self_id),
+                content=message_list,
+                timestamp=int(msg.time))
             self.publish(message_obj)
 
 
