@@ -32,6 +32,24 @@ logging.getLogger("adapter.nc.launcher").setLevel(logging.CRITICAL)
 logging.getLogger("AccessController").setLevel(logging.CRITICAL)
 
 
+def extract_card_info(card_json: str) -> str:
+    card_json = json.loads(card_json)
+    detail = card_json.get("meta", {}).get("detail_1", {})
+    card_json_dic = {
+        "title": detail.get("title", ""),
+        "desc": detail.get("desc", ""),
+        # "icon": detail.get("icon", ""),
+        # "preview": detail.get("preview", ""),
+        # "url": detail.get("url", ""),
+        # "qqdocurl": detail.get("qqdocurl", ""),
+        "appid": detail.get("appid", ""),
+        "nick": detail.get("host", {}).get("nick", ""),
+        "prompt": card_json.get("prompt", ""),
+        "app": card_json.get("app", "")
+    }
+    return json.dumps(card_json_dic, ensure_ascii=False)
+
+
 def process_incoming_message(bot, msg):
     """把QQ平台消息转换为项目通用消息格式"""
     message_content = []
@@ -56,6 +74,10 @@ def process_incoming_message(bot, msg):
             message_content.append(MessageType.Image(img_url))
         elif ele.get("type") == "video":
             message_content.append(MessageType.Text("[Video]"))
+        elif ele.get("type") == "json":
+            json_card_info = ele.get("data", "").get("data", "")
+            cleaned_card_info = extract_card_info(json_card_info)
+            message_content.append(MessageType.Text(cleaned_card_info))
         elif ele.get("type") == "file":
             message_content.append(MessageType.Text("[File]"))
         elif ele.get("type") == "forward":
@@ -92,6 +114,10 @@ def process_reply_message(message_data):
             parts.append(f"[Image {img_desc}]")
         elif t == "face":
             parts.append(f"[Emoji {d.get('id')}]")
+        elif t == "json":
+            json_card_info = d.get("data", "")
+            cleaned_card_info = extract_card_info(json_card_info)
+            parts.append(f"[Json {cleaned_card_info}]")
         elif t == "reply":
             parts.append(f"[Reply {d.get('id')}]")
         else:
