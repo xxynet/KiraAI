@@ -1,6 +1,5 @@
 from pathlib import Path
 from core.llm_client import LLMClient
-# from core.tools.registry import register_all_tools
 from core.tool_manager import register_all_tools
 
 

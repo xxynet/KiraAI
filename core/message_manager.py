@@ -167,9 +167,6 @@ class MessageProcessor:
         # 获取工具提示词并调用LLM
         response, tool_messages = llm_api.chat_with_tools(messages, tool_prompt)
         # logger.info(f"LLM响应: {response}")
-        
-        # 发送响应消息
-        # message_ids = await self._send_response_messages(msg, response)
 
         message_ids = await self.send_xml_messages(f"{msg.adapter_name}:dm:{msg.user_id}", response)
         
@@ -263,9 +260,6 @@ class MessageProcessor:
         with group_lock:
             response, tool_messages = llm_api.chat_with_tools(messages, tool_prompt)
         # logger.info(f"LLM响应: {response}")
-        
-        # 发送响应消息
-        # message_ids = await self._send_response_messages(msg, response)
 
         message_ids = await self.send_xml_messages(f"{msg.adapter_name}:gm:{msg.group_id}", response)
         

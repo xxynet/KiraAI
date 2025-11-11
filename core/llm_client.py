@@ -145,19 +145,6 @@ class LLMClient:
 
         # 如果模型调用了工具
         if message.tool_calls:
-            # tool_messages = [{
-            #     "role": "assistant",
-            #     "tool_calls": [
-            #         {
-            #             "id": tc.id,
-            #             "type": tc.type,
-            #             "function": {
-            #                 "name": tc.function.name,
-            #                 "arguments": tc.function.arguments
-            #             }
-            #         } for tc in message.tool_calls
-            #     ]
-            # }]
 
             # tool_messages = [json.loads(message.model_dump_json())]
             tool_messages = []
@@ -279,6 +266,3 @@ class LLMClient:
 
 if __name__ == "__main__":
     llm = LLMClient()
-
-    res = llm.generate_img("a cozy bedroom window view, rainy afternoon, water droplets on window glass, blurred cityscape, warm indoor lighting, soft focus, anime style")
-    print(res)

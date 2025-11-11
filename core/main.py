@@ -9,7 +9,6 @@ from adapters.telegram.tg import TelegramAdapter
 
 from utils.message_utils import BotPrivateMessage, BotGroupMessage
 from core.sticker_manager import sticker_manager
-# from core.message_manager import MessageProcessor
 
 
 logger = get_logger("main", "blue")
