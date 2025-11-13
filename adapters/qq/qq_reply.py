@@ -50,7 +50,7 @@ def extract_card_info(card_json: str) -> str:
     return json.dumps(card_json_dic, ensure_ascii=False)
 
 
-def process_incoming_message(bot, msg):
+async def process_incoming_message(bot, msg):
     """把QQ平台消息转换为项目通用消息格式"""
     message_content = []
     for ele in msg.message:
@@ -65,7 +65,7 @@ def process_incoming_message(bot, msg):
             message_content.append(at_obj)
         elif ele.get("type") == "reply":
             reply_content = bot.api.get_msg_sync(ele.get("data").get("id"))
-            processed_reply = process_reply_message(reply_content)
+            processed_reply = await process_reply_message(reply_content)
             message_content.append(MessageType.Reply(ele.get("data").get("id"), processed_reply))
         elif ele.get("type") == "face":
             message_content.append(MessageType.Emoji(str(ele.get("data").get("id"))))
@@ -82,7 +82,7 @@ def process_incoming_message(bot, msg):
             message_content.append(MessageType.Text("[File]"))
         elif ele.get("type") == "forward":
             forward_message = bot.api.get_forward_msg_sync(msg.message_id)
-            processed_forward = process_forward_message(forward_message)
+            processed_forward = await process_forward_message(forward_message)
             message_content.append(MessageType.Text(processed_forward))
         elif ele.get("type") == "record":
             file_id = ele.get("data").get("file")
@@ -93,7 +93,7 @@ def process_incoming_message(bot, msg):
     return message_content
 
 
-def process_reply_message(message_data):
+async def process_reply_message(message_data):
     msg = message_data.get("data", {})
     sender = msg.get("sender", {}).get("nickname", str(msg.get("user_id")))
     ts = msg.get("time", 0)
@@ -110,7 +110,7 @@ def process_reply_message(message_data):
         elif t == "at":
             parts.append(f"[At {d.get('qq')}]")
         elif t == "image":
-            img_desc = llm_api.desc_img(d.get('url', ''))
+            img_desc = await llm_api.desc_img(d.get('url', ''))
             parts.append(f"[Image {img_desc}]")
         elif t == "face":
             parts.append(f"[Emoji {d.get('id')}]")
@@ -127,7 +127,7 @@ def process_reply_message(message_data):
     return f"{sender}  [{time_str}]\n{content}"
 
 
-def process_forward_message(message_data):
+async def process_forward_message(message_data):
     result = []
     messages = message_data.get("data", {}).get("messages", [])
 
@@ -147,7 +147,7 @@ def process_forward_message(message_data):
             elif t == "at":
                 parts.append(f"[At {d.get('qq')}]")
             elif t == "image":
-                img_desc = llm_api.desc_img(d.get('url', ''))
+                img_desc = await llm_api.desc_img(d.get('url', ''))
                 parts.append(f"[Image {img_desc}]")
             elif t == "face":
                 parts.append(f"[Emoji {d.get('id')}]")
@@ -388,7 +388,7 @@ class QQAdapter(IMAdapter):
 
             if should_respond:
                 # 仅进行 Adapter 层职责：打包消息并发布到事件总线，等待主循环回复
-                message_list = process_incoming_message(self.bot, msg)
+                message_list = await process_incoming_message(self.bot, msg)
                 group_info = self.bot.api.get_group_info_sync(msg.group_id)
                 group_name = group_info.get("data").get("group_name")
                 message_obj = BotGroupMessage(
@@ -411,7 +411,7 @@ class QQAdapter(IMAdapter):
 
             # self._log.info(msg)
 
-            message_list = process_incoming_message(self.bot, msg)
+            message_list = await process_incoming_message(self.bot, msg)
 
             message_obj = BotPrivateMessage(
                 platform=self.name,

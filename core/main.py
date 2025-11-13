@@ -14,6 +14,13 @@ from core.sticker_manager import sticker_manager
 logger = get_logger("main", "blue")
 
 
+class BotLifecycle:
+    """life cycle of KiraAI, managing all tasks and modules"""
+
+    def __init__(self):
+        pass
+
+
 async def schedule_tasks():
     while True:
         tasks = [

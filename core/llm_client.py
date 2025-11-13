@@ -1,4 +1,5 @@
 from openai import OpenAI, AsyncOpenAI
+from asyncio import Semaphore
 import requests
 import functools
 import copy
@@ -41,9 +42,9 @@ def timer(func):
     """计算函数执行时间的装饰器"""
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    async def wrapper(*args, **kwargs):
         start_time = time.perf_counter()  # 开始时间
-        result = func(*args, **kwargs)  # 执行函数
+        result = await func(*args, **kwargs)  # 执行函数
         end_time = time.perf_counter()  # 结束时间
 
         # 计算并打印执行时间
@@ -58,20 +59,22 @@ def timer(func):
 class LLMClient:
     def __init__(self):
         """初始化LLM客户端"""
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=MAIN_API_KEY,
             base_url=MAIN_API_BASE_URL
         )
-        self.tool_client = OpenAI(
+        self.tool_client = AsyncOpenAI(
             api_key=TOOL_API_KEY,
             base_url=TOOL_API_BASE_URL
         )
-        self.vlm_client = OpenAI(
+        self.vlm_client = AsyncOpenAI(
             api_key=VLM_API_KEY,
             base_url=VLM_API_BASE_URL
         )
         self.tools_definitions = []
         self.tools_functions = {}
+
+        self.llm_semaphore = Semaphore(2)
 
     def register_tool(self, name, description, parameters, func):
         """Register a tool"""
@@ -97,7 +100,7 @@ class LLMClient:
         base64_data = base64.b64encode(image_data)
         return base64_data.decode('utf-8')
 
-    def chat(self, messages, model=DEFAULT_LLM):
+    async def chat(self, messages, model=DEFAULT_LLM):
         """与LLM交互
 
         Args:
@@ -107,98 +110,99 @@ class LLMClient:
         Returns:
             tuple: (content, reasoning_content)
         """
-        try:
-            # print(f"LLM请求: {messages}")
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-            )
-            if response.choices:
-                message = response.choices[0].message
-                content = message.content if message.content else ""
-                reasoning_content = getattr(message, "reasoning_content", "")
-                # print(f"LLM推理内容: {content}")
-                # return content, reasoning_content
-                return content, None
+        async with self.llm_semaphore:
+            try:
+                # print(f"LLM请求: {messages}")
+                response = await self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                )
+                if response.choices:
+                    message = response.choices[0].message
+                    content = message.content if message.content else ""
+                    reasoning_content = getattr(message, "reasoning_content", "")
+                    # print(f"LLM推理内容: {content}")
+                    return content, reasoning_content
 
-            return "", ""
+                return "", ""
 
-        except Exception as e:
-            print(f"LLM调用出错: {str(e)}")
-            return "", ""
+            except Exception as e:
+                print(f"LLM调用出错: {str(e)}")
+                return "", ""
 
     @timer
-    def chat_with_tools(self, user_message, tool_system_prompt):
+    async def chat_with_tools(self, user_message, tool_system_prompt):
         # 第一次调用，让模型决定是否调用工具
 
-        raw_msg = copy.deepcopy(user_message)
-        raw_msg[0] = {"role": "system", "content": tool_system_prompt}
+        async with self.llm_semaphore:
+            raw_msg = copy.deepcopy(user_message)
+            raw_msg[0] = {"role": "system", "content": tool_system_prompt}
 
-        llm_logger.info(f"checking whether to call tools using {DEFAULT_TOOL_LLM} from {TOOL_PROVIDER}")
-        resp1 = self.tool_client.chat.completions.create(
-            model=DEFAULT_TOOL_LLM,
-            messages=raw_msg,
-            tools=self.tools_definitions
-        )
+            llm_logger.info(f"checking whether to call tools using {DEFAULT_TOOL_LLM} from {TOOL_PROVIDER}")
+            resp1 = await self.tool_client.chat.completions.create(
+                model=DEFAULT_TOOL_LLM,
+                messages=raw_msg,
+                tools=self.tools_definitions
+            )
 
-        message = resp1.choices[0].message
+            message = resp1.choices[0].message
 
-        # 如果模型调用了工具
-        if message.tool_calls:
+            # 如果模型调用了工具
+            if message.tool_calls:
 
-            # tool_messages = [json.loads(message.model_dump_json())]
-            tool_messages = []
+                # tool_messages = [json.loads(message.model_dump_json())]
+                tool_messages = []
 
-            for tool_call in message.tool_calls:
-                name = tool_call.function.name
-                args = json.loads(tool_call.function.arguments)
-                tool_logger.info(f"{name} args: {args}")
+                for tool_call in message.tool_calls:
+                    name = tool_call.function.name
+                    args = json.loads(tool_call.function.arguments)
+                    tool_logger.info(f"{name} args: {args}")
 
-                # 调用对应的 Python 函数
-                if name in self.tools_functions:
-                    result = self.tools_functions[name](**args)
-                    tool_logger.info(f"tool_result: {result}")
-                else:
-                    result = {"error": f"工具 {name} 未实现"}
-                    tool_logger.error(f"工具 {name} 未实现")
+                    # 调用对应的 Python 函数
+                    if name in self.tools_functions:
+                        result = self.tools_functions[name](**args)
+                        tool_logger.info(f"tool_result: {result}")
+                    else:
+                        result = {"error": f"工具 {name} 未实现"}
+                        tool_logger.error(f"工具 {name} 未实现")
 
-                # 保存工具执行结果
-                tool_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": str(result)
-                })
+                    # 保存工具执行结果
+                    tool_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": str(result)
+                    })
 
-            user_message.extend(tool_messages)
+                user_message.extend(tool_messages)
 
-            try:
-                llm_logger.info(f"generating response using {DEFAULT_LLM} from {MAIN_PROVIDER}")
-                resp2 = self.client.chat.completions.create(
-                    model=DEFAULT_LLM,
-                    messages=user_message
-                )
+                try:
+                    llm_logger.info(f"generating response using {DEFAULT_LLM} from {MAIN_PROVIDER}")
+                    resp2 = await self.client.chat.completions.create(
+                        model=DEFAULT_LLM,
+                        messages=user_message
+                    )
 
-                return resp2.choices[0].message.content, tool_messages
-            except Exception as e:
-                print("messages:")
-                print(json.dumps(user_message, ensure_ascii=False, indent=2))
-                print(e)
-                return None, None
-        else:
-            # model did not use tools
-            try:
-                llm_logger.info(f"generating response using {DEFAULT_LLM} from {MAIN_PROVIDER}")
-                resp2 = self.client.chat.completions.create(
-                    model=DEFAULT_LLM,
-                    messages=user_message
-                )
-                message2 = resp2.choices[0].message
-                return message2.content, None
-            except Exception as e:
-                llm_logger.error(f"error while generating response when tools are not called: {str(e)}")
-                return "", None
+                    return resp2.choices[0].message.content, tool_messages
+                except Exception as e:
+                    print("messages:")
+                    print(json.dumps(user_message, ensure_ascii=False, indent=2))
+                    print(e)
+                    return None, None
+            else:
+                # model did not use tools
+                try:
+                    llm_logger.info(f"generating response using {DEFAULT_LLM} from {MAIN_PROVIDER}")
+                    resp2 = await self.client.chat.completions.create(
+                        model=DEFAULT_LLM,
+                        messages=user_message
+                    )
+                    message2 = resp2.choices[0].message
+                    return message2.content, None
+                except Exception as e:
+                    llm_logger.error(f"error while generating response when tools are not called: {str(e)}")
+                    return "", None
 
-    def desc_img(self, image, model=DEFAULT_VLM, prompt="描述这张图片的内容，如果有文字请将其输出", is_base64=False):
+    async def desc_img(self, image, model=DEFAULT_VLM, prompt="描述这张图片的内容，如果有文字请将其输出", is_base64=False):
         """
         describe an image
         :param image: url or base64
@@ -230,7 +234,7 @@ class LLMClient:
                 ]
             }]
 
-            response = self.vlm_client.chat.completions.create(
+            response = await self.vlm_client.chat.completions.create(
                 model=model,
                 messages=messages,
             )

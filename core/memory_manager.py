@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from typing import Dict, List
@@ -24,7 +25,7 @@ class MemoryManager:
         self.core_memory_path = core_memory_path
         
         # 为每个群组创建单独的锁
-        self.group_locks: Dict[str, Lock] = {}
+        self.group_locks: Dict[str, asyncio,Lock] = {}
         self.memory_lock = Lock()
         
         # 初始化记忆数据
@@ -116,7 +117,7 @@ class MemoryManager:
     def get_group_lock(self, group_id: str) -> Lock:
         """获取群组锁"""
         if group_id not in self.group_locks:
-            self.group_locks[group_id] = Lock()
+            self.group_locks[group_id] = asyncio.Lock()
         return self.group_locks[group_id]
 
     def get_core_memory(self):

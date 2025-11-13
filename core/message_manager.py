@@ -65,7 +65,7 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, MessageType.Image):
-                img_desc = llm_api.desc_img(ele.url)
+                img_desc = await llm_api.desc_img(ele.url)
                 message_str += f"[Image {img_desc}]"
             elif isinstance(ele, MessageType.Reply):
                 if ele.message_content:
@@ -165,7 +165,7 @@ class MessageProcessor:
         messages.extend(private_memory)
         
         # 获取工具提示词并调用LLM
-        response, tool_messages = llm_api.chat_with_tools(messages, tool_prompt)
+        response, tool_messages = await llm_api.chat_with_tools(messages, tool_prompt)
         # logger.info(f"LLM响应: {response}")
 
         message_ids = await self.send_xml_messages(f"{msg.adapter_name}:dm:{msg.user_id}", response)
@@ -257,8 +257,8 @@ class MessageProcessor:
         group_lock = self.memory_manager.get_group_lock(group_id_str)
         
         # 获取工具提示词并调用LLM
-        with group_lock:
-            response, tool_messages = llm_api.chat_with_tools(messages, tool_prompt)
+        async with group_lock:
+            response, tool_messages = await llm_api.chat_with_tools(messages, tool_prompt)
         # logger.info(f"LLM响应: {response}")
 
         message_ids = await self.send_xml_messages(f"{msg.adapter_name}:gm:{msg.group_id}", response)
@@ -274,7 +274,7 @@ class MessageProcessor:
                 new_memory_chunk.append(tool_message)
         
         new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
-        with group_lock:
+        async with group_lock:
             self.memory_manager.update_group_memory(msg.adapter_name, group_id_str, new_memory_chunk)
     
     async def _send_response_messages(self, msg: Union[BotPrivateMessage, BotGroupMessage], response: str) -> List[str]:
