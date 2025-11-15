@@ -3,6 +3,7 @@ from typing import Any, Dict, Union, List
 import threading
 import base64
 import requests
+import json
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
@@ -44,12 +45,23 @@ class TelegramAdapter(IMAdapter):
 
         # 配置
         self.bot_token: str = self.config.get("bot_token", "")
-        # group_list 和 user_list 已在 base class 中初始化
-        self.message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Sticker, MessageType.Record, MessageType.Notice]
+        self.message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Sticker, MessageType.Record, MessageType.Notice, MessageType.Emoji]
+
+        self.emoji_dict = self._load_dict("adapters/telegram/emoji.json")
 
         # 运行时
         self.app = None
         self.message_sender = MessageSender()
+
+    @staticmethod
+    def _load_dict(path: str) -> Dict[str, Any]:
+        """加载字典"""
+        try:
+            with open(path, 'r', encoding="utf-8") as f:
+                emoji_json = f.read()
+            return json.loads(emoji_json)
+        except Exception as e:
+            return {}
 
     def _start_blocking(self):
         # 在线程中手动创建并设置事件循环，避免 get_event_loop 报错
@@ -260,6 +272,10 @@ class TelegramAdapter(IMAdapter):
                 elif isinstance(ele, MessageType.Image):
                     sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=ele.url)
                     message_id = str(sent.message_id)
+                elif isinstance(ele, MessageType.Emoji):
+                    emoji_content = self.emoji_dict.get(ele.emoji_id)
+                    sent = await self.app.bot.send_message(chat_id=int(group_id), text=emoji_content)
+                    message_id = str(sent.message_id)
                 elif isinstance(ele, MessageType.Record):
                     sent = await self.app.bot.send_voice(chat_id=int(group_id), voice=base64.b64decode(ele.bs64))
                     message_id = str(sent.message_id)
@@ -314,6 +330,10 @@ class TelegramAdapter(IMAdapter):
                     continue
                 elif isinstance(ele, MessageType.Image):
                     sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=ele.url)
+                    message_id = str(sent.message_id)
+                elif isinstance(ele, MessageType.Emoji):
+                    emoji_content = self.emoji_dict.get(ele.emoji_id)
+                    sent = await self.app.bot.send_message(chat_id=int(user_id), text=emoji_content)
                     message_id = str(sent.message_id)
                 elif isinstance(ele, MessageType.Record):
                     sent = await self.app.bot.send_voice(chat_id=int(user_id), voice=base64.b64decode(ele.bs64))
