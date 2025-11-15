@@ -8,7 +8,7 @@ from utils.common_utils import image_to_base64
 
 logger = get_logger("sticker", "orange")
 
-_sticker_path: str = "config/sticker.json"
+_sticker_path: str = "data/config/sticker.json"
 _sticker_folder: str = "data/sticker"
 
 

@@ -220,10 +220,10 @@ def get_ada_config(config_path: str = "config/adapters.ini") -> Dict[str, Dict[s
 
 
 try:
-    _global_config_ada = get_ada_config("config/adapters.ini")
-    _global_config_providers = get_config("config/providers.ini")
-    _global_config_models = get_config("config/models.ini")
-    _global_config_bot = get_config("config/bot.ini")
+    _global_config_ada = get_ada_config("data/config/adapters.ini")
+    _global_config_providers = get_config("data/config/providers.ini")
+    _global_config_models = get_config("data/config/models.ini")
+    _global_config_bot = get_config("data/config/bot.ini")
     
     global_config = {
         "ada_config": _global_config_ada,
