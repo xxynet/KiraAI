@@ -25,7 +25,7 @@ class MemoryManager:
         self.core_memory_path = core_memory_path
         
         # 为每个群组创建单独的锁
-        self.group_locks: Dict[str, asyncio,Lock] = {}
+        self.group_locks: Dict[str, asyncio.Lock] = {}
         self.memory_lock = Lock()
         
         # 初始化记忆数据
