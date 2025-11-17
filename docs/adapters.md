@@ -10,7 +10,7 @@ Be sure to comment out the adapter settings you are not going to use
 
 ### QQ
 
-本项目使用 [napcat](https://napneko.github.io/) 与QQ客户端交互，如果需要部署到QQ请先配置 napcat
+本项目使用 [napcat](https://napneko.github.io/) 与QQ客户端交互，如果需要部署到QQ请先配置 napcat（Shell）
 
 并且在`网络配置`中添加 Websocket 服务器，填写一个 token 并且点击启用
 
