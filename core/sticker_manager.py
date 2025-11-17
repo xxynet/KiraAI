@@ -38,7 +38,10 @@ class StickerManager:
 
             sticker_dict = json.loads(sticker_json)
 
-            self.sticker_index = int(next(reversed(sticker_dict)))
+            if sticker_dict:
+                self.sticker_index = int(next(reversed(sticker_dict)))
+            else:
+                self.sticker_index = 0
 
             self.sticker_paths = [sticker_dict[sticker_id].get("path") for sticker_id in sticker_dict]
 
