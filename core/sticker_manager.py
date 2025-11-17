@@ -24,6 +24,15 @@ class StickerManager:
 
     def init_sticker_dict(self):
         try:
+            if not os.path.exists(self.sticker_folder):
+                os.makedirs(self.sticker_folder)
+
+            if not os.path.exists(self.sticker_path):
+                logger.info(f"{self.sticker_path} not found. Creating an empty sticker.json")
+                os.makedirs(os.path.dirname(self.sticker_path), exist_ok=True)
+                with open(self.sticker_path, "w", encoding="utf-8") as f:
+                    f.write("{}")
+
             with open(self.sticker_path, 'r', encoding="utf-8") as f:
                 sticker_json = f.read()
 
