@@ -24,7 +24,7 @@ class NtfyTool(BaseTool):
         cfg.read(cfg_path, encoding="utf-8")
         self._url = cfg.get("ntfy", "url")
 
-    def execute(self, msg: str, title: str = None) -> str:
+    async def execute(self, msg: str, title: str = None) -> str:
         resp = requests.post(
             self._url,
             data=msg.encode(encoding="utf-8"),
@@ -33,5 +33,3 @@ class NtfyTool(BaseTool):
             }
         )
         return resp.text
-
-

@@ -160,7 +160,7 @@ class LLMClient:
 
                     # 调用对应的 Python 函数
                     if name in self.tools_functions:
-                        result = self.tools_functions[name](**args)
+                        result = await self.tools_functions[name](**args)
                         tool_logger.info(f"tool_result: {result}")
                     else:
                         result = {"error": f"工具 {name} 未实现"}

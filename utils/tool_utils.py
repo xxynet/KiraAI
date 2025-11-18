@@ -11,7 +11,7 @@ class BaseTool(ABC):
     parameters = None
 
     @abstractmethod
-    def execute(self, **kwargs) -> str:
+    async def execute(self, **kwargs) -> str:
         """工具的具体执行逻辑，子类必须实现"""
         pass
 

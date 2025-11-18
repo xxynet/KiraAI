@@ -16,9 +16,9 @@ class SendMessageTool(BaseTool):
         "required": ["target", "xml"]
     }
 
-    def execute(self, target: str, xml: str) -> str:
+    async def execute(self, target: str, xml: str) -> str:
         try:
-            result = asyncio.create_task(message_processor.send_xml_messages(target, xml))
-            return str(result)
+            result = await message_processor.send_xml_messages(target, xml)
+            return f"success, message_id(s): {str(result)}"
         except Exception as e:
             return f"发送失败：{e}"

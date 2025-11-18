@@ -24,11 +24,9 @@ class TavilySearchTool(BaseTool):
         cfg.read(cfg_path, encoding="utf-8")
         self._key = cfg.get("tavily", "key")
 
-    def execute(self, keyword: str) -> str:
+    async def execute(self, keyword: str) -> str:
         client = TavilyClient(self._key)
         res = client.search(query=keyword)
         results = res.get("results") or []
         results = results[:2] if len(results) > 2 else results
         return "".join(json.dumps(ele, ensure_ascii=False) for ele in results)
-
-

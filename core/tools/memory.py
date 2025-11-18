@@ -23,7 +23,7 @@ class MemoryAddTool(BaseTool):
         "required": ["text"]
     }
 
-    def execute(self, text: str) -> str:
+    async def execute(self, text: str) -> str:
         _ensure_memory_file()
         with open(CORE_MEMORY_PATH, "r", encoding="utf-8") as mem:
             mem_str = mem.read()
@@ -46,7 +46,7 @@ class MemoryUpdateTool(BaseTool):
         "required": ["index", "text"]
     }
 
-    def execute(self, index: int, text: str) -> str:
+    async def execute(self, index: int, text: str) -> str:
         _ensure_memory_file()
         with open(CORE_MEMORY_PATH, "r", encoding="utf-8") as mem:
             lines = mem.readlines()
@@ -69,7 +69,7 @@ class MemoryRemoveTool(BaseTool):
         "required": ["index"]
     }
 
-    def execute(self, index: int) -> str:
+    async def execute(self, index: int) -> str:
         _ensure_memory_file()
         with open(CORE_MEMORY_PATH, "r", encoding="utf-8") as mem:
             lines = mem.readlines()
@@ -79,5 +79,3 @@ class MemoryRemoveTool(BaseTool):
         with open(CORE_MEMORY_PATH, "w", encoding="utf-8") as mem:
             mem.writelines(lines)
         return f"Core memory removed: {removed.strip()}"
-
-

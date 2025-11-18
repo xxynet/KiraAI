@@ -8,7 +8,7 @@ from bilibili_api import video, Credential, sync, comment, exceptions as bili_e
 from bilibili_api.comment import CommentResourceType
 
 from utils.tool_utils import BaseTool
-from core.llm_client import LLMClient  # Only to use same chat interface for generating replies
+from core.llm_manager import llm_api
 
 
 _cfg = configparser.RawConfigParser()
@@ -34,11 +34,11 @@ def _resolve_b23(url: str) -> str:
     return _follow(url) if url.startswith("https://b23.tv/") else url
 
 
-def _video_handle(original_url: str):
+async def _video_handle(original_url: str):
     link = _resolve_b23(original_url)
     bvid = re.findall(r"BV[a-zA-Z0-9]{10}", link)[0]
     v = video.Video(bvid=bvid, credential=_credential)
-    info = sync(v.get_info())
+    info = await v.get_info()
 
     video_bvid = info["bvid"]
     title = info["title"]
@@ -68,9 +68,9 @@ class BiliVideoInfoTool(BaseTool):
         "required": ["original_url"]
     }
 
-    def execute(self, original_url: str) -> str:
+    async def execute(self, original_url: str) -> str:
         try:
-            info_str, _, _ = _video_handle(original_url)
+            info_str, _, _ = await _video_handle(original_url)
             return info_str
         except Exception as bili_info_e:
             return str(bili_info_e)
@@ -87,10 +87,10 @@ class BiliLikeTool(BaseTool):
         "required": ["original_url"]
     }
 
-    def execute(self, original_url: str) -> str:
+    async def execute(self, original_url: str) -> str:
         try:
-            info_str, v, _ = _video_handle(original_url)
-            sync(v.like())
+            info_str, v, _ = await _video_handle(original_url)
+            await v.like()
         except bili_e.ResponseCodeException as e:
             return f"点赞失败！{str(e)}"
         return f"点赞成功！{info_str}"
@@ -107,13 +107,9 @@ class BiliCommentTool(BaseTool):
         "required": ["original_url"]
     }
 
-    def __init__(self):
-        super().__init__()
-        self._llm = LLMClient()
-
-    def execute(self, original_url: str) -> str:
+    async def execute(self, original_url: str) -> str:
         try:
-            info_str, _, aid = _video_handle(original_url)
+            info_str, _, aid = await _video_handle(original_url)
         except Exception as bili_info_e:
             return str(bili_info_e)
 
@@ -124,14 +120,14 @@ class BiliCommentTool(BaseTool):
         prompt = reply_template.format(persona=persona_prompt, bili_video_info=info_str)
 
         messages = [{"role": "user", "content": prompt}]
-        resp, _ = self._llm.chat(messages)
+        resp, _ = await llm_api.chat(messages)
 
-        result = sync(comment.send_comment(
+        result = await comment.send_comment(
             text=resp,
             oid=aid,
             type_=CommentResourceType.VIDEO,
             credential=_credential
-        ))
+        )
         reply_status = result.get("success_toast")
         reply_content = result.get("reply").get("content").get("message")
         return f"status: {reply_status}, reply_content: {reply_content}"
