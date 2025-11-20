@@ -25,7 +25,7 @@ def get_config(config_path: str) -> Dict[str, Dict[str, Any]]:
     if not os.path.exists(config_path):
         raise ConfigError(f"Config file does not exist: {config_path}")
     
-    config = configparser.ConfigParser()
+    config = configparser.RawConfigParser()
     config.read(config_path, encoding='utf-8')
 
     config_dict = {}
@@ -61,7 +61,7 @@ def get_ada_config(config_path: str = "config/adapters.ini") -> Dict[str, Dict[s
     if not os.path.exists(config_path):
         raise ConfigError(f"配置文件不存在: {config_path}")
     
-    config = configparser.ConfigParser()
+    config = configparser.RawConfigParser()
     config.read(config_path, encoding='utf-8')
 
     adapters_dict = {}
