@@ -26,8 +26,8 @@ KiraAI 是一个模块化、跨平台的 AI 数字生命项目，以数字生命
 - `adapters/`：平台适配层（qq、telegram）
 - `utils/`：适配器与消息相关工具
 - `prompts/`：系统/人设/工具/格式等提示词模板
-- `config/`：适配器、模型、提供商、贴纸等 INI/JSON 配置
 - `data/`：运行期数据
+    - `config/`：适配器、模型、提供商、贴纸等 INI/JSON 配置
 - `scripts/`：便捷启动脚本
 
 ## 📷 截图
@@ -56,7 +56,7 @@ KiraAI 是一个模块化、跨平台的 AI 数字生命项目，以数字生命
 1. 克隆本仓库。
 2. 创建并激活虚拟环境（venv）。
 3. 安装依赖：`pip install -r requirements.txt`。
-4. 在 `config/` 目录下准备配置文件。
+4. 在 `data/config/` 目录下准备配置文件。
 
 示例（cmd）：
 ```shell
@@ -73,7 +73,7 @@ pip install -r requirements.txt
 ```
 
 ## ⚙️ 配置项
-`config/` 目录中的关键配置：
+`data/config/` 目录中的关键配置：
 - `providers.ini`：LLM/TTS 提供商的凭证与端点
 - `models.ini`：模型名称、参数与默认值
 - `adapters.ini`：启用/禁用平台适配器
@@ -108,9 +108,8 @@ scripts/run.sh
 ```
 KiraAI/
   adapters/           # 平台适配层（qq、telegram）
-  config/             # 适配器/模型/提供商/工具的 INI/JSON 配置
   core/               # 配置/LLM/日志/记忆/提示词 管理器
-  data/               # 记忆存储与素材（贴纸）
+  data/               # 记忆，表情包，配置文件
   prompts/            # 提示词模板
   scripts/            # 启动脚本
   utils/              # 适配器/消息工具
@@ -118,9 +117,9 @@ KiraAI/
 ```
 
 ## 🐞 故障排查
-- 查看各适配器的日志目录（例如 `adapters/qq/logs/`）。
-- 校验 INI 路径与节名是否与启用的适配器、模型一致。
-- 检查平台 Token 是否有效且未被限流。
+- 查看`log.log`中的日志。
+- 校验 INI 路径与配置项是否与启用的适配器、模型一致。
+- 检查平台 Token 是否有效。
 
 ## ✨ Star History
 [![Star History Chart](https://api.star-history.com/svg?repos=xxynet/KiraAI&type=date&legend=top-left)](https://www.star-history.com/#xxynet/KiraAI&type=date&legend=top-left)

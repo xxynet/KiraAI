@@ -26,8 +26,8 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 - `adapters/`: platform bridges (qq, telegram)
 - `utils/`: utils for adapters and messages
 - `prompts/`: system/persona/tool/format prompt templates
-- `config/`: INI/JSON configs for adapters, models, providers, stickers
 - `data/`: runtime data
+    - `config/`: INI/JSON configs for adapters, models, providers, stickers
 - `scripts/`: convenience launchers
 
 ## 📷 ScreenShots
@@ -56,7 +56,7 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 1. Clone this repository.
 2. Create and activate a venv(virtual environment).
 3. Install dependencies: `pip install -r requirements.txt`.
-4. Prepare configuration files under `config/`
+4. Prepare configuration files under `data/config/`
 
 Example (cmd):
 ```shell
@@ -73,7 +73,7 @@ pip install -r requirements.txt
 ```
 
 ## ⚙️ Configuration
-Key configuration files in `config/`:
+Key configuration files in `data/config/`:
 - `providers.ini`: LLM/TTS provider credentials and endpoints
 - `models.ini`: model names, parameters, and defaults
 - `adapters.ini`: enable/disable platform adapters and their tokens
@@ -108,9 +108,8 @@ Platform-specific entry points:
 ```
 KiraAI/
   adapters/           # Platform bridges (qq, telegram)
-  config/             # INI/JSON configs for adapters/models/providers/tools
   core/               # Config/LLM/logging/memory/prompt managers
-  data/               # Memory store and assets (stickers)
+  data/               # Memory store, stickers and configuration
   prompts/            # Prompt templates
   scripts/            # Launch scripts
   utils/              # Adapter/message utilities
@@ -118,9 +117,9 @@ KiraAI/
 ```
 
 ## 🐞 Troubleshooting
-- Check logs under adapter-specific `logs/` directories (e.g., `adapters/qq/logs/`).
+- Check logs in `log.log`
 - Verify INI paths and sections match the enabled adapters and models.
-- Ensure platform tokens are valid and not rate-limited.
+- Ensure platform tokens are valid.
 
 ## ✨ Star History
 [![Star History Chart](https://api.star-history.com/svg?repos=xxynet/KiraAI&type=date&legend=top-left)](https://www.star-history.com/#xxynet/KiraAI&type=date&legend=top-left)
