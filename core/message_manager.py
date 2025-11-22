@@ -346,7 +346,7 @@ class MessageProcessor:
                     tag = child.tag
                     value = child.text.strip() if child.text else ""
                     
-                    # 直接生成MessageType对象
+                    # build MessageType object
                     if tag == "text":
                         message_elements.append(MessageType.Text(value))
                     elif tag == "emoji":
@@ -358,7 +358,7 @@ class MessageProcessor:
                             sticker_bs64 = image_to_base64(f"data/sticker/{sticker_path}")
                             message_elements.append(MessageType.Sticker(sticker_id, sticker_bs64))
                         except Exception as e:
-                            logger.warning(f"error while parsing sticker: {str(e)}")
+                            logger.error(f"error while parsing sticker: {str(e)}")
                     elif tag == "at":
                         message_elements.append(MessageType.At(value))
                     elif tag == "img":
@@ -367,8 +367,12 @@ class MessageProcessor:
                     elif tag == "reply":
                         message_elements.append(MessageType.Reply(value))
                     elif tag == "record":
-                        record_bs64 = generate_speech(value)
-                        message_elements.append(MessageType.Record(record_bs64))
+                        try:
+                            record_bs64 = generate_speech(value)
+                            message_elements.append(MessageType.Record(record_bs64))
+                        except Exception as e:
+                            logger.error(f"an error occurred while generating voice message: {e}")
+                            message_elements.append(MessageType.Text(f"<record>{value}</record>"))
                     elif tag == "poke":
                         message_elements.append(MessageType.Poke(value))
                 
