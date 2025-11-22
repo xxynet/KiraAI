@@ -383,6 +383,13 @@ class QQAdapter(IMAdapter):
                     if reply_msg_info.get("data", {}).get("user_id") == msg.self_id:  # int int
                         should_respond = True
                         break
+                elif m.get("type") == "text":
+                    message_text = m.get("data").get("text")
+                    if self.config.get("waking_keywords", ""):
+                        waking_keywords = [kw.strip() for kw in self.config.get("waking_keywords", "").split(",")]
+                        if any(kw in message_text for kw in waking_keywords):
+                            should_respond = True
+                            break
 
             # should_respond = True
 

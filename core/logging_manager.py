@@ -1,9 +1,12 @@
 import logging
 import colorlog
+import sys
 from colorlog.escape_codes import escape_codes
 from logging.handlers import RotatingFileHandler
 
 logging.getLogger("httpx").setLevel(logging.CRITICAL)
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 escape_codes['orange'] = '\033[38;5;208m'  # 208 是接近橙色的 ANSI 256 色编号
 
@@ -40,7 +43,7 @@ def get_logger(name: str, color: str):
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(console_formatter)
 
-    fh = RotatingFileHandler(filename="log.log", maxBytes=10*1024*1024, backupCount=1)
+    fh = RotatingFileHandler(filename="log.log", maxBytes=10*1024*1024, backupCount=1, encoding='utf-8')
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(file_formatter)
 
