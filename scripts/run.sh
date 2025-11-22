@@ -39,9 +39,9 @@ echo "=============================="
 echo " Launching application..."
 echo "=============================="
 
-if [ -f launch.py ]; then
-  exec python launch.py
+if [ -f main.py ]; then
+  exec python main.py
 else
-  echo "Error: launch.py not found."
+  echo "Error: main.py not found."
   exit 1
 fi

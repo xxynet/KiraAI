@@ -90,7 +90,7 @@ Also, modify `/prompts/persona.txt` to make your unique virtual being!
 
 ## ▶️ Run
 You can start KiraAI via:
-- CMD/PowerShell: `python launch.py`
+- CMD/PowerShell: `python main.py`
 - Batch script: `scripts\run.bat`
 - Linux script: `scripts/run.sh` (make executable first)
 

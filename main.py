@@ -25,9 +25,11 @@ if __name__ == "__main__":
 
     logger.info(f"Set working dir: {script_dir}")
 
-    from core.main import main as core_main
+    from core.launcher import KiraLauncher
+
+    launcher = KiraLauncher()
 
     try:
-        asyncio.run(core_main())
+        asyncio.run(launcher.start())
     except KeyboardInterrupt:
         logger.info("Exiting...")

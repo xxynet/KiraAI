@@ -32,4 +32,4 @@ echo ==============================
 echo  Launching application...
 echo ==============================
 
-python launch.py
+python main.py

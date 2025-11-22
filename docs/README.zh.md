@@ -90,7 +90,7 @@ pip install -r requirements.txt
 
 ## ▶️ 运行
 可通过以下方式启动 KiraAI：
-- CMD/PowerShell：`python launch.py`
+- CMD/PowerShell：`python main.py`
 - Windows 批处理：`scripts\run.bat`
 - Linux 脚本：`scripts/run.sh`（先赋予可执行权限）
 

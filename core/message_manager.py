@@ -179,7 +179,6 @@ class MessageProcessor:
         
         new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
         self.memory_manager.update_private_memory(msg.adapter_name, msg.user_id, new_memory_chunk)
-        logger.info("私聊记忆已更新")
     
     async def _handle_group_message(self, msg: BotGroupMessage):
         """process group message"""
