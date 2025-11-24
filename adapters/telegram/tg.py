@@ -10,7 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 
 from core.logging_manager import get_logger
 from utils.adapter_utils import IMAdapter
-from utils.message_utils import BotPrivateMessage, BotGroupMessage, MessageSending, MessageType
+from utils.message_utils import BotDirectMessage, BotGroupMessage, MessageSending, MessageType
 
 
 logger = get_logger("tg_adapter", "green")
@@ -155,7 +155,7 @@ class TelegramAdapter(IMAdapter):
             if self.user_list and user.id not in self.user_list:
                 return
             message_list = await self._process_incoming_message(msg)
-            message_obj = BotPrivateMessage(
+            message_obj = BotDirectMessage(
                 self.name,
                 self.config.get('adapter_name', 'tg'),
                 self.message_types,

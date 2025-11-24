@@ -25,7 +25,7 @@ from typing import Any, Dict, Union, List
 
 from core.llm_manager import llm_api
 from utils.adapter_utils import IMAdapter
-from utils.message_utils import BotPrivateMessage, BotGroupMessage, MessageSending, MessageType
+from utils.message_utils import BotDirectMessage, BotGroupMessage, MessageSending, MessageType
 
 logging.getLogger("PluginLoader").setLevel(logging.CRITICAL)
 logging.getLogger("adapter.nc.launcher").setLevel(logging.CRITICAL)
@@ -289,7 +289,7 @@ class QQAdapter(IMAdapter):
                     self.publish(message_obj)
             else:
                 if msg["user_id"] in self.user_list:
-                    message_obj = BotPrivateMessage(self.name, self.config['adapter_name'], self.message_types, str(msg['user_id']), "user_name 未获取",
+                    message_obj = BotDirectMessage(self.name, self.config['adapter_name'], self.message_types, str(msg['user_id']), "user_name 未获取",
                                                     "None", str(msg["self_id"]), message_list, int(time.time()))
                     self.publish(message_obj)
 
@@ -420,7 +420,7 @@ class QQAdapter(IMAdapter):
 
             message_list = await process_incoming_message(self.bot, msg)
 
-            message_obj = BotPrivateMessage(
+            message_obj = BotDirectMessage(
                 platform=self.name,
                 adapter_name=self.config['adapter_name'],
                 message_types=self.message_types,
