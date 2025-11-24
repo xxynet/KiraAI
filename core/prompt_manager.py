@@ -5,7 +5,7 @@ from typing import Dict, Any, Union, Type, Optional
 from core.config_loader import global_config
 from core.logging_manager import get_logger
 from core.sticker_manager import sticker_manager
-from utils.message_utils import BotPrivateMessage, BotGroupMessage
+from utils.message_utils import BotDirectMessage, BotGroupMessage
 from utils.message_utils import MessageType
 
 logger = get_logger("prompt_manager", "yellow")
@@ -168,13 +168,13 @@ class PromptManager:
             logger.error(f"Error generating tool prompt: {e}")
             return ""
 
-    def format_user_message(self, msg: Union[BotPrivateMessage, BotGroupMessage]) -> str:
+    def format_user_message(self, msg: Union[BotDirectMessage, BotGroupMessage]) -> str:
         """格式化用户消息"""
         date_str = self.get_current_time_str()
         
         if isinstance(msg, BotGroupMessage):
             # 群聊消息格式
             return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [group_name: {msg.group_name} group_id: {msg.group_id} user_nickname: {msg.user_nickname}, user_id: {msg.user_id}] | {msg.message_str}"
-        elif isinstance(msg, BotPrivateMessage):
+        elif isinstance(msg, BotDirectMessage):
             # 私聊消息格式
             return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [user_nickname: {msg.user_nickname}, user_id: {msg.user_id}] | {msg.message_str}"

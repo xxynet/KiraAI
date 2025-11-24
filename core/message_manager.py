@@ -12,7 +12,7 @@ from core.memory_manager import MemoryManager
 from core.prompt_manager import PromptManager
 from core.services.runtime import get_adapter_by_name
 from utils.common_utils import image_to_base64
-from utils.message_utils import BotPrivateMessage, BotGroupMessage, MessageSending, MessageType
+from utils.message_utils import BotDirectMessage, BotGroupMessage, MessageSending, MessageType
 
 logger = get_logger("message_processor", "cyan")
 
@@ -82,17 +82,17 @@ class MessageProcessor:
                 pass
         return message_str
     
-    async def handle_message(self, msg: Union[BotPrivateMessage, BotGroupMessage]):
+    async def handle_message(self, msg: Union[BotDirectMessage, BotGroupMessage]):
         """处理消息，带并发控制"""
         async with self.message_processing_semaphore:
-            if isinstance(msg, BotPrivateMessage):
+            if isinstance(msg, BotDirectMessage):
                 await self._handle_direct_message(msg)
             elif isinstance(msg, BotGroupMessage):
                 await self._handle_group_message(msg)
             else:
                 logger.warning(f"Unknown message type: {type(msg)}")
     
-    async def _handle_direct_message(self, msg: BotPrivateMessage):
+    async def _handle_direct_message(self, msg: BotDirectMessage):
         """process direct message"""
         logger.info(f"收到来自{msg.adapter_name}的私聊消息")
 
@@ -113,7 +113,7 @@ class MessageProcessor:
         if len(self.message_buffer[dict_key]) == msg_amount:
             # print("no new message coming, processing")
             async with buffer_lock:
-                message_processing: list[BotPrivateMessage] = self.message_buffer[dict_key][:msg_amount]
+                message_processing: list[BotDirectMessage] = self.message_buffer[dict_key][:msg_amount]
                 self.message_buffer[dict_key] = self.message_buffer[dict_key][msg_amount:]
             logger.info(f"deleted {msg_amount} message(s) from buffer")
         else:
@@ -273,7 +273,7 @@ class MessageProcessor:
         async with group_lock:
             self.memory_manager.update_group_memory(msg.adapter_name, group_id_str, new_memory_chunk)
     
-    async def _send_response_messages(self, msg: Union[BotPrivateMessage, BotGroupMessage], response: str) -> List[str]:
+    async def _send_response_messages(self, msg: Union[BotDirectMessage, BotGroupMessage], response: str) -> List[str]:
         """send response message"""
         message_ids = []
         resp_list = self._parse_and_generate_messages(response)
@@ -282,7 +282,7 @@ class MessageProcessor:
             message_obj = MessageSending(message_list)
             
             # 根据消息类型选择发送方法
-            if isinstance(msg, BotPrivateMessage):
+            if isinstance(msg, BotDirectMessage):
                 message_id = await get_adapter_by_name(msg.adapter_name).send_direct_message(msg.user_id, message_obj)
             elif isinstance(msg, BotGroupMessage):
                 message_id = await get_adapter_by_name(msg.adapter_name).send_group_message(msg.group_id, message_obj)

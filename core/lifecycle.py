@@ -7,7 +7,7 @@ from core.config_loader import global_config
 from adapters.qq.qq_reply import QQAdapter
 from adapters.telegram.tg import TelegramAdapter
 
-from utils.message_utils import BotPrivateMessage, BotGroupMessage
+from utils.message_utils import BotDirectMessage, BotGroupMessage
 from core.sticker_manager import sticker_manager
 
 
@@ -67,5 +67,5 @@ class KiraLifecycle:
 
         # ====== message handling loop ======
         while True:
-            msg: Union[BotPrivateMessage, BotGroupMessage] = await event_bus.get()
+            msg: Union[BotDirectMessage, BotGroupMessage] = await event_bus.get()
             asyncio.create_task(message_processor.handle_message(msg))

@@ -1,25 +1,10 @@
 from typing import Union, Optional
 
 
-class BotPrivateMessage:
-    def __init__(self, platform: str, adapter_name: str, message_types: list, user_id: str, user_nickname: str, message_id: str, self_id: str, content: list, timestamp: int):
-        self.platform = platform
-        self.adapter_name = adapter_name
-        self.message_types = message_types
-        self.user_id = user_id
-        self.user_nickname = user_nickname
-        self.message_id = message_id
-        self.self_id = self_id
-        self.content = content
-        self.message_str = None
-        self.timestamp = timestamp
-
-    def __repr__(self):
-        return f"<Message from={self.platform} user={self.user_id} content={self.content}>"
-
-
-class BotGroupMessage:
-    def __init__(self, platform: str, adapter_name: str, message_types: list, group_id: str, group_name: str, user_id: str, user_nickname: str, message_id: str, self_id: str, content: list, timestamp: int):
+class KiraMessageEvent:
+    def __init__(self, platform: str, adapter_name: str, message_types: list,
+                 user_id: str, user_nickname: str, message_id: str, self_id: str,
+                 content: list, timestamp: int, group_id: Optional[str] = None, group_name: Optional[str] = None):
         self.platform = platform
         self.adapter_name = adapter_name
         self.message_types = message_types
@@ -33,8 +18,25 @@ class BotGroupMessage:
         self.message_str = None
         self.timestamp = timestamp
 
+
+class BotDirectMessage(KiraMessageEvent):
+    def __init__(self, platform: str, adapter_name: str, message_types: list, user_id: str, user_nickname: str, message_id: str, self_id: str, content: list, timestamp: int):
+        super().__init__(
+            platform, adapter_name, message_types, user_id, user_nickname, message_id, self_id, content, timestamp
+        )
+
     def __repr__(self):
-        return f"<GroupMessage from={self.platform} group={self.group_id} user={self.user_id} content={self.content}>"
+        return f"<Message from={self.adapter_name} user={self.user_id} content={self.content}>"
+
+
+class BotGroupMessage(KiraMessageEvent):
+    def __init__(self, platform: str, adapter_name: str, message_types: list, group_id: str, group_name: str, user_id: str, user_nickname: str, message_id: str, self_id: str, content: list, timestamp: int):
+        super().__init__(
+            platform, adapter_name, message_types, user_id, user_nickname, message_id, self_id, content, timestamp, group_id, group_name
+        )
+
+    def __repr__(self):
+        return f"<GroupMessage from={self.adapter_name} group={self.group_id} user={self.user_id} content={self.content}>"
 
 
 class MessageType:
@@ -82,3 +84,40 @@ class MessageType:
 class MessageSending:
     def __init__(self, message_list: list[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]):
         self.message_list: list = message_list
+
+    def text(self, text: str):
+        self.message_list.append(MessageType.Text(text))
+        return self
+
+    def image(self, url: str):
+        self.message_list.append(MessageType.Image(url))
+        return self
+
+    def at(self, pid: Union[int, str], nickname: Optional[str]):
+        self.message_list.append(MessageType.At(pid, nickname))
+        return self
+
+    def reply(self, message_id):
+        if not self.message_list:
+            self.message_list.append(MessageType.Reply(message_id))
+        return self
+
+    def emoji(self, emoji_id):
+        self.message_list.append(MessageType.Emoji(emoji_id))
+        return self
+
+    def sticker(self, sticker_id):
+        self.message_list.append(MessageType.Sticker(sticker_id))
+        return self
+
+    def record(self, bs64):
+        self.message_list.append(MessageType.Record(bs64))
+        return self
+
+    def notice(self, notice):
+        self.message_list.append(MessageType.Notice(notice))
+        return self
+
+    def poke(self, pid):
+        self.message_list.append(MessageType.Poke(pid))
+        return self
