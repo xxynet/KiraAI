@@ -10,7 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 
 from core.logging_manager import get_logger
 from utils.adapter_utils import IMAdapter
-from utils.message_utils import BotDirectMessage, BotGroupMessage, MessageSending, MessageType
+from utils.message_utils import KiraMessageEvent, MessageSending, MessageType
 
 
 logger = get_logger("tg_adapter", "green")
@@ -135,7 +135,7 @@ class TelegramAdapter(IMAdapter):
                 return
 
             message_list = await self._process_incoming_message(msg)
-            message_obj = BotGroupMessage(
+            message_obj = KiraMessageEvent(
                 platform=self.name,
                 adapter_name=self.config.get('adapter_name', 'tg'),
                 message_types=self.message_types,
@@ -155,7 +155,7 @@ class TelegramAdapter(IMAdapter):
             if self.user_list and user.id not in self.user_list:
                 return
             message_list = await self._process_incoming_message(msg)
-            message_obj = BotDirectMessage(
+            message_obj = KiraMessageEvent(
                 platform=self.name,
                 adapter_name=self.config.get('adapter_name', 'tg'),
                 message_types=self.message_types,

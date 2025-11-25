@@ -25,7 +25,7 @@ from typing import Any, Dict, Union, List
 
 from core.llm_manager import llm_api
 from utils.adapter_utils import IMAdapter
-from utils.message_utils import BotDirectMessage, BotGroupMessage, MessageSending, MessageType
+from utils.message_utils import KiraMessageEvent, BotDirectMessage, BotGroupMessage, MessageSending, MessageType
 
 logging.getLogger("PluginLoader").setLevel(logging.CRITICAL)
 logging.getLogger("adapter.nc.launcher").setLevel(logging.CRITICAL)
@@ -273,7 +273,7 @@ class QQAdapter(IMAdapter):
                 if msg["group_id"] in self.group_list:
                     group_info = self.bot.api.get_group_info_sync(msg.get("group_id"))
                     group_name = group_info.get("data").get("group_name")
-                    message_obj = BotGroupMessage(
+                    message_obj = KiraMessageEvent(
                         platform=self.name,
                         adapter_name=self.config['adapter_name'],
                         message_types=self.message_types,
@@ -303,7 +303,7 @@ class QQAdapter(IMAdapter):
                 group_info = self.bot.api.get_group_info_sync(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
-                    message_obj = BotGroupMessage(
+                    message_obj = KiraMessageEvent(
                         platform=self.name,
                         adapter_name=self.config['adapter_name'],
                         message_types=self.message_types,
@@ -324,7 +324,7 @@ class QQAdapter(IMAdapter):
                 group_info = self.bot.api.get_group_info_sync(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
-                    message_obj = BotGroupMessage(
+                    message_obj = KiraMessageEvent(
                         platform=self.name,
                         adapter_name=self.config['adapter_name'],
                         message_types=self.message_types,
@@ -351,7 +351,7 @@ class QQAdapter(IMAdapter):
                 group_info = self.bot.api.get_group_info_sync(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
-                    message_obj = BotGroupMessage(
+                    message_obj = KiraMessageEvent(
                         platform=self.name,
                         adapter_name=self.config['adapter_name'],
                         message_types=self.message_types,
@@ -398,7 +398,7 @@ class QQAdapter(IMAdapter):
                 message_list = await process_incoming_message(self.bot, msg)
                 group_info = self.bot.api.get_group_info_sync(msg.group_id)
                 group_name = group_info.get("data").get("group_name")
-                message_obj = BotGroupMessage(
+                message_obj = KiraMessageEvent(
                     platform=self.name,
                     adapter_name=self.config['adapter_name'],
                     message_types=self.message_types,
@@ -420,7 +420,7 @@ class QQAdapter(IMAdapter):
 
             message_list = await process_incoming_message(self.bot, msg)
 
-            message_obj = BotDirectMessage(
+            message_obj = KiraMessageEvent(
                 platform=self.name,
                 adapter_name=self.config['adapter_name'],
                 message_types=self.message_types,

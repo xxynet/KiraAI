@@ -12,7 +12,7 @@ from core.memory_manager import MemoryManager
 from core.prompt_manager import PromptManager
 from core.services.runtime import get_adapter_by_name
 from utils.common_utils import image_to_base64
-from utils.message_utils import BotDirectMessage, BotGroupMessage, MessageSending, MessageType
+from utils.message_utils import KiraMessageEvent, MessageSending, MessageType
 
 logger = get_logger("message_processor", "cyan")
 
@@ -43,11 +43,8 @@ class MessageProcessor:
 
     def get_session_list_prompt(self) -> str:
         session_list_prompt = ""
-        _group_chat_memory = self.memory_manager.group_chat_memory
-        _private_chat_memory = self.memory_manager.private_chat_memory
-        for session_id in _group_chat_memory:
-            session_list_prompt += f"{session_id}\n"
-        for session_id in _private_chat_memory:
+        _chat_memory = self.memory_manager.chat_memory
+        for session_id in _chat_memory:
             session_list_prompt += f"{session_id}\n"
         return session_list_prompt
 
@@ -82,21 +79,19 @@ class MessageProcessor:
                 pass
         return message_str
     
-    async def handle_message(self, msg: Union[BotDirectMessage, BotGroupMessage]):
+    async def handle_message(self, msg: Union[KiraMessageEvent]):
         """处理消息，带并发控制"""
         async with self.message_processing_semaphore:
-            if isinstance(msg, BotDirectMessage):
-                await self._handle_direct_message(msg)
-            elif isinstance(msg, BotGroupMessage):
-                await self._handle_group_message(msg)
+            if isinstance(msg, KiraMessageEvent):
+                await self._handle_im_message(msg)
             else:
                 logger.warning(f"Unknown message type: {type(msg)}")
-    
-    async def _handle_direct_message(self, msg: BotDirectMessage):
-        """process direct message"""
-        logger.info(f"收到来自{msg.adapter_name}的私聊消息")
 
-        dict_key = f"{msg.adapter_name}:dm:{msg.user_id}"
+    async def _handle_im_message(self, msg: KiraMessageEvent):
+        """process im message"""
+        logger.info(f"Received message from {msg.adapter_name}")
+        session_id_str = msg.group_id if msg.is_group_message() else msg.user_id
+        dict_key = f"{msg.adapter_name}:{'gm' if msg.is_group_message() else 'dm'}:{session_id_str}"
         if dict_key not in self.buffer_locks:
             self.buffer_locks[dict_key] = asyncio.Lock()
         buffer_lock = self.buffer_locks[dict_key]
@@ -109,41 +104,38 @@ class MessageProcessor:
 
         if msg_amount < self.max_buffer_messages:
             await asyncio.sleep(self.max_message_interval)
-
         if len(self.message_buffer[dict_key]) == msg_amount:
             # print("no new message coming, processing")
             async with buffer_lock:
-                message_processing: list[BotDirectMessage] = self.message_buffer[dict_key][:msg_amount]
+                message_processing: list[KiraMessageEvent] = self.message_buffer[dict_key][:msg_amount]
                 self.message_buffer[dict_key] = self.message_buffer[dict_key][msg_amount:]
             logger.info(f"deleted {msg_amount} message(s) from buffer")
         else:
             # print("new message coming")
             return None
 
-        # 开始处理消息
+        # start processing
         formatted_messages_str = ""
         for message in message_processing:
             message_list = message.content
             message.message_str = await self.message_format_to_text(message_list)
-
             formatted_message = self.prompt_manager.format_user_message(message)
             formatted_messages_str += f"{formatted_message}\n"
         logger.info(f"processing message(s) from {msg.adapter_name}:\n{formatted_messages_str}")
 
-        # 获取存在的会话
+        # get existing session
         session_list = self.get_session_list_prompt()
 
-        # 构建聊天环境信息
+        # build chat environment
         chat_env = {
             "platform": msg.platform,
-            "chat_type": 'DirectMessage',
+            "chat_type": 'GroupMessage' if msg.is_group_message() else 'DirectMessage',
             "self_id": msg.self_id,
             "session_list": session_list
         }
-        
-        # 获取历史记忆
-        private_memory = self.memory_manager.fetch_private_memory(msg.adapter_name, msg.user_id)
 
+        # 获取历史记忆
+        session_memory = self.memory_manager.fetch_memory(dict_key)
         # 获取核心记忆
         core_memory = self.memory_manager.get_core_memory()
 
@@ -156,147 +148,32 @@ class MessageProcessor:
 
         # 生成工具提示词
         tool_prompt = self.prompt_manager.get_tool_prompt(chat_env, core_memory, msg.message_types, emoji_dict)
-        
-        private_memory.append({"role": "user", "content": formatted_messages_str})
+
+        session_memory.append({"role": "user", "content": formatted_messages_str})
         new_memory_chunk = [{"role": "user", "content": formatted_messages_str}]
-        messages.extend(private_memory)
-        
-        # 获取工具提示词并调用LLM
+        messages.extend(session_memory)
+
+        # 按会话加锁，防止同会话并发
+        session_lock = self.memory_manager.get_session_lock(session_id_str)
+
         response, tool_messages = await llm_api.chat_with_tools(messages, tool_prompt)
         # logger.info(f"LLM响应: {response}")
 
-        message_ids = await self.send_xml_messages(f"{msg.adapter_name}:dm:{msg.user_id}", response)
-        
-        # 添加消息ID到响应中
-        response_with_ids = self._add_message_ids(response, message_ids)
-        # print(response_with_ids)
-        logger.info(f"LLM: {response_with_ids}")
-        
-        # 更新记忆
-        if tool_messages:
-            for tool_message in tool_messages:
-                new_memory_chunk.append(tool_message)
-        
-        new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
-        self.memory_manager.update_private_memory(msg.adapter_name, msg.user_id, new_memory_chunk)
-    
-    async def _handle_group_message(self, msg: BotGroupMessage):
-        """process group message"""
-        logger.info(f"收到来自{msg.adapter_name}的群聊消息")
-        dict_key = f"{msg.adapter_name}:gm:{msg.group_id}"
-        if dict_key not in self.buffer_locks:
-            self.buffer_locks[dict_key] = asyncio.Lock()
-        buffer_lock = self.buffer_locks[dict_key]
+        async with session_lock:
+            message_ids = await self.send_xml_messages(dict_key, response)
 
-        async with buffer_lock:
-            if dict_key not in self.message_buffer:
-                self.message_buffer[dict_key] = []
-            self.message_buffer[dict_key].append(msg)
-            msg_amount = len(self.message_buffer[dict_key])
+            # 添加消息ID到响应中
+            response_with_ids = self._add_message_ids(response, message_ids)
+            # print(response_with_ids)
+            logger.info(f"LLM: {response_with_ids}")
 
-        if msg_amount < self.max_buffer_messages:
-            await asyncio.sleep(self.max_message_interval)
-        if len(self.message_buffer[dict_key]) == msg_amount:
-            # print("no new message coming, processing")
-            async with buffer_lock:
-                message_processing: list[BotGroupMessage] = self.message_buffer[dict_key][:msg_amount]
-                self.message_buffer[dict_key] = self.message_buffer[dict_key][msg_amount:]
-            logger.info(f"deleted {msg_amount} message(s) from buffer")
-        else:
-            # print("new message coming")
-            return None
+            # 更新记忆
+            if tool_messages:
+                for tool_message in tool_messages:
+                    new_memory_chunk.append(tool_message)
 
-        # 开始处理消息
-        formatted_messages_str = ""
-        for message in message_processing:
-            message_list = message.content
-            message.message_str = await self.message_format_to_text(message_list)
-            formatted_message = self.prompt_manager.format_user_message(message)
-            formatted_messages_str += f"{formatted_message}\n"
-        logger.info(f"processing message(s) from {msg.adapter_name}:\n{formatted_messages_str}")
-
-        # 获取存在的会话
-        session_list = self.get_session_list_prompt()
-
-        # 构建聊天环境信息
-        chat_env = {
-            "platform": msg.platform,
-            "chat_type": 'GroupMessage',
-            "self_id": msg.self_id,
-            "session_list": session_list
-        }
-        
-        # 获取群组ID
-        group_id_str = getattr(msg, "group_id", None)
-        
-        # 获取历史记忆
-        group_memory = self.memory_manager.fetch_group_memory(msg.adapter_name, group_id_str)
-
-        # 获取核心记忆
-        core_memory = self.memory_manager.get_core_memory()
-
-        # emoji_dict
-        emoji_dict = get_adapter_by_name(msg.adapter_name).emoji_dict
-
-        # 生成系统提示词
-        system_prompt = self.prompt_manager.get_system_prompt(chat_env, core_memory, msg.message_types, emoji_dict)
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # 生成工具提示词
-        tool_prompt = self.prompt_manager.get_tool_prompt(chat_env, core_memory, msg.message_types, emoji_dict)
-        
-        group_memory.append({"role": "user", "content": formatted_messages_str})
-        new_memory_chunk = [{"role": "user", "content": formatted_messages_str}]
-        messages.extend(group_memory)
-        
-        # 按群加锁，防止同群并发
-        group_lock = self.memory_manager.get_group_lock(group_id_str)
-        
-        # 获取工具提示词并调用LLM
-        async with group_lock:
-            response, tool_messages = await llm_api.chat_with_tools(messages, tool_prompt)
-        # logger.info(f"LLM响应: {response}")
-
-        message_ids = await self.send_xml_messages(f"{msg.adapter_name}:gm:{msg.group_id}", response)
-        
-        # 添加消息ID到响应中
-        response_with_ids = self._add_message_ids(response, message_ids)
-        # print(response_with_ids)
-        logger.info(f"LLM: {response_with_ids}")
-        
-        # 更新记忆
-        if tool_messages:
-            for tool_message in tool_messages:
-                new_memory_chunk.append(tool_message)
-        
-        new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
-        async with group_lock:
-            self.memory_manager.update_group_memory(msg.adapter_name, group_id_str, new_memory_chunk)
-    
-    async def _send_response_messages(self, msg: Union[BotDirectMessage, BotGroupMessage], response: str) -> List[str]:
-        """send response message"""
-        message_ids = []
-        resp_list = self._parse_and_generate_messages(response)
-        
-        for message_list in resp_list:
-            message_obj = MessageSending(message_list)
-            
-            # 根据消息类型选择发送方法
-            if isinstance(msg, BotDirectMessage):
-                message_id = await get_adapter_by_name(msg.adapter_name).send_direct_message(msg.user_id, message_obj)
-            elif isinstance(msg, BotGroupMessage):
-                message_id = await get_adapter_by_name(msg.adapter_name).send_group_message(msg.group_id, message_obj)
-            else:
-                message_id = None
-            
-            if not message_id:
-                message_id = ''
-            message_ids.append(message_id)
-            
-            # 添加随机延迟避免频率限制
-            await asyncio.sleep(random.uniform(0.8, 1.5))
-        
-        return message_ids
+            new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
+            self.memory_manager.update_memory(dict_key, new_memory_chunk)
 
     async def send_xml_messages(self, target: str, xml: str) -> List[str]:
         """

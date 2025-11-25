@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Union, Type, Optional, List, Dict, Any
 
 from utils.message_utils import MessageType
-from utils.message_utils import BotDirectMessage, BotGroupMessage, MessageSending
+from utils.message_utils import KiraMessageEvent, MessageSending
 
 
 class IMAdapter(ABC):
@@ -43,7 +43,7 @@ class IMAdapter(ABC):
         """启动适配器，子类必须实现此方法"""
         pass
 
-    def publish(self, message: Union[BotDirectMessage, BotGroupMessage]):
+    def publish(self, message: Union[KiraMessageEvent]):
         """把消息放到事件总线"""
         asyncio.run_coroutine_threadsafe(self.event_bus.put(message), self.loop)
 

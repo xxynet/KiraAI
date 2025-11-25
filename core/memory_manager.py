@@ -14,14 +14,12 @@ config_max_memory_length = int(global_config["bot_config"].get("bot").get("max_m
 class MemoryManager:
     """管理聊天记忆的读写操作"""
     
-    def __init__(self, 
+    def __init__(self,
                  max_memory_length: int = config_max_memory_length,
-                 group_chat_memory_path: str = "data/memory/group_chat_memory.json",
-                 private_chat_memory_path: str = "data/memory/chat_memory.json",
+                 chat_memory_path: str = "data/memory/chat_memory.json",
                  core_memory_path: str = "data/memory/core.txt"):
         self.max_memory_length = max_memory_length
-        self.group_chat_memory_path = group_chat_memory_path
-        self.private_chat_memory_path = private_chat_memory_path
+        self.chat_memory_path = chat_memory_path
         self.core_memory_path = core_memory_path
         
         # 为每个群组创建单独的锁
@@ -29,8 +27,7 @@ class MemoryManager:
         self.memory_lock = Lock()
         
         # 初始化记忆数据
-        self.group_chat_memory = self._load_memory(self.group_chat_memory_path)
-        self.private_chat_memory = self._load_memory(self.private_chat_memory_path)
+        self.chat_memory = self._load_memory(self.chat_memory_path)
         
         logger.info("MemoryManager initialized")
 
@@ -64,58 +61,28 @@ class MemoryManager:
                     f.write(json.dumps(memory, indent=4, ensure_ascii=False))
         except Exception as e:
             logger.error(f"Error saving memory to {path}: {e}")
-    
-    def fetch_group_memory(self, adapter_name: str, group_id: str) -> List[Dict[str, str]]:
-        """获取群聊记忆"""
-        memory_dict_key = f"{adapter_name}:gm:{group_id}"
-        if memory_dict_key not in self.group_chat_memory:
-            self.group_chat_memory[memory_dict_key] = []
+
+    def fetch_memory(self, session: str):
+        if session not in self.chat_memory:
+            self.chat_memory[session] = []
             return []
         else:
-            mem_list = self.group_chat_memory[memory_dict_key]
+            mem_list = self.chat_memory[session]
             messages = []
             for chunk in mem_list:
                 for message in chunk:
                     messages.append(message)
             return messages
-    
-    def update_group_memory(self, adapter_name: str, group_id: str, new_chunk: List[Dict[str, str]]):
-        """更新群聊记忆"""
-        memory_dict_key = f"{adapter_name}:gm:{group_id}"
 
-        self.group_chat_memory[memory_dict_key].append(new_chunk)
-        if len(self.group_chat_memory[memory_dict_key]) > self.max_memory_length:
-            self.group_chat_memory[memory_dict_key] = self.group_chat_memory[memory_dict_key][1:]
-        self._save_memory(self.group_chat_memory, self.group_chat_memory_path)
-        logger.info(f"Group memory updated for {memory_dict_key}")
+    def update_memory(self, session: str, new_chunk):
+        self.chat_memory[session].append(new_chunk)
+        if len(self.chat_memory[session]) > self.max_memory_length:
+            self.chat_memory[session] = self.chat_memory[session][1:]
+        self._save_memory(self.chat_memory, self.chat_memory_path)
+        logger.info(f"Memory updated for {session}")
     
-    def fetch_private_memory(self, adapter_name: str, user_id: str) -> List[Dict[str, str]]:
-        """获取私聊记忆"""
-        memory_dict_key = f"{adapter_name}:dm:{user_id}"
-
-        if memory_dict_key not in self.private_chat_memory:
-            self.private_chat_memory[memory_dict_key] = []
-            return []
-        else:
-            mem_list = self.private_chat_memory[memory_dict_key]
-            messages = []
-            for chunk in mem_list:
-                for message in chunk:
-                    messages.append(message)
-            return messages
-    
-    def update_private_memory(self, adapter_name: str, user_id: str, new_chunk: List[Dict[str, str]]):
-        """更新私聊记忆"""
-        memory_dict_key = f"{adapter_name}:dm:{user_id}"
-
-        self.private_chat_memory[memory_dict_key].append(new_chunk)
-        if len(self.private_chat_memory[memory_dict_key]) > self.max_memory_length:
-            self.private_chat_memory[memory_dict_key] = self.private_chat_memory[memory_dict_key][1:]
-        self._save_memory(self.private_chat_memory, self.private_chat_memory_path)
-        logger.info(f"Private memory updated for {memory_dict_key}")
-    
-    def get_group_lock(self, group_id: str) -> Lock:
-        """获取群组锁"""
+    def get_session_lock(self, group_id: str) -> Lock:
+        """get session lock to avoid sending message simultaneously"""
         if group_id not in self.group_locks:
             self.group_locks[group_id] = asyncio.Lock()
         return self.group_locks[group_id]
