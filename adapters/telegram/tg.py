@@ -136,18 +136,18 @@ class TelegramAdapter(IMAdapter):
 
             message_list = await self._process_incoming_message(msg)
             message_obj = BotGroupMessage(
-                self.name,
-                self.config.get('adapter_name', 'tg'),
-                self.message_types,
-                str(chat.id),
-                chat.title or str(chat.id),
-                str(user.id),
-                user.full_name or str(user.id),
-                str(msg.id),
+                platform=self.name,
+                adapter_name=self.config.get('adapter_name', 'tg'),
+                message_types=self.message_types,
+                group_id=str(chat.id),
+                group_name=chat.title or str(chat.id),
+                user_id=str(user.id),
+                user_nickname=user.full_name or str(user.id),
+                message_id=str(msg.id),
                 # str(context.bot.id)
-                self.config["bot_pid"],
-                message_list,
-                int(msg.date.timestamp())
+                self_id=self.config["bot_pid"],
+                content=message_list,
+                timestamp=int(msg.date.timestamp())
             )
             self.publish(message_obj)
         else:
@@ -156,16 +156,16 @@ class TelegramAdapter(IMAdapter):
                 return
             message_list = await self._process_incoming_message(msg)
             message_obj = BotDirectMessage(
-                self.name,
-                self.config.get('adapter_name', 'tg'),
-                self.message_types,
-                str(user.id),
-                user.full_name or str(user.id),
-                str(msg.id),
+                platform=self.name,
+                adapter_name=self.config.get('adapter_name', 'tg'),
+                message_types=self.message_types,
+                user_id=str(user.id),
+                user_nickname=user.full_name or str(user.id),
+                message_id=str(msg.id),
                 # str(context.bot.id)
-                self.config["bot_pid"],
-                message_list,
-                int(msg.date.timestamp())
+                self_id=self.config["bot_pid"],
+                content=message_list,
+                timestamp=int(msg.date.timestamp())
             )
             self.publish(message_obj)
 

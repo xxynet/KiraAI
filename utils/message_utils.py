@@ -1,42 +1,46 @@
-from typing import Union, Optional
+from dataclasses import dataclass, field
+from typing import Union, Optional, List
 
 
+@dataclass
 class KiraMessageEvent:
-    def __init__(self, platform: str, adapter_name: str, message_types: list,
-                 user_id: str, user_nickname: str, message_id: str, self_id: str,
-                 content: list, timestamp: int, group_id: Optional[str] = None, group_name: Optional[str] = None):
-        self.platform = platform
-        self.adapter_name = adapter_name
-        self.message_types = message_types
-        self.group_id = group_id
-        self.group_name = group_name
-        self.user_id = user_id
-        self.user_nickname = user_nickname
-        self.message_id = message_id
-        self.self_id = self_id
-        self.content = content
-        self.message_str = None
-        self.timestamp = timestamp
+    platform: str
+    adapter_name: str
+    message_types: List[str]
+    user_id: str
+    user_nickname: str
+    message_id: str
+    self_id: str
+    content: List
+    timestamp: int
+    group_id: Optional[str] = None
+    group_name: Optional[str] = None
+    message_str: Optional[str] = field(default=None, init=False)
+
+    def __post_init__(self):
+        pass
+
+    def is_group_message(self) -> bool:
+        """judge whether it's a group message"""
+        return self.group_id is not None
 
 
+@dataclass
 class BotDirectMessage(KiraMessageEvent):
-    def __init__(self, platform: str, adapter_name: str, message_types: list, user_id: str, user_nickname: str, message_id: str, self_id: str, content: list, timestamp: int):
-        super().__init__(
-            platform, adapter_name, message_types, user_id, user_nickname, message_id, self_id, content, timestamp
-        )
+    """私聊消息"""
 
-    def __repr__(self):
-        return f"<Message from={self.adapter_name} user={self.user_id} content={self.content}>"
+    def __post_init__(self):
+        self.group_id = None
+        self.group_name = None
+        super().__post_init__()
 
 
+@dataclass
 class BotGroupMessage(KiraMessageEvent):
-    def __init__(self, platform: str, adapter_name: str, message_types: list, group_id: str, group_name: str, user_id: str, user_nickname: str, message_id: str, self_id: str, content: list, timestamp: int):
-        super().__init__(
-            platform, adapter_name, message_types, user_id, user_nickname, message_id, self_id, content, timestamp, group_id, group_name
-        )
+    """群组消息"""
 
-    def __repr__(self):
-        return f"<GroupMessage from={self.adapter_name} group={self.group_id} user={self.user_id} content={self.content}>"
+    def __post_init__(self):
+        super().__post_init__()
 
 
 class MessageType:
