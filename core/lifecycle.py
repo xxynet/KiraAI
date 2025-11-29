@@ -51,9 +51,10 @@ class KiraLifecycle:
         from core.message_manager import message_processor
 
         # expose adapters and loop globally for runtime usage everywhere
-        from core.services.runtime import set_adapters as rt_set_adapters, set_loop as rt_set_loop
-        rt_set_adapters(adapters)
-        rt_set_loop(loop)
+        from core.services.runtime import set_adapters, set_loop, set_event_bus
+        set_adapters(adapters)
+        set_loop(loop)
+        set_event_bus(event_bus)
 
         # ====== load all adapters ======
         for adapter in adapters:
