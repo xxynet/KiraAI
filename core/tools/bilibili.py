@@ -4,7 +4,7 @@ import configparser
 from pathlib import Path
 from datetime import datetime
 
-from bilibili_api import video, Credential, sync, comment, exceptions as bili_e
+from bilibili_api import video,search, Credential, comment, exceptions as bili_e
 from bilibili_api.comment import CommentResourceType
 
 from utils.tool_utils import BaseTool
@@ -131,3 +131,47 @@ class BiliCommentTool(BaseTool):
         reply_status = result.get("success_toast")
         reply_content = result.get("reply").get("content").get("message")
         return f"status: {reply_status}, reply_content: {reply_content}"
+
+
+class BiliSearchTool(BaseTool):
+    name = "bilibili_search"
+    description = "通过关键词搜索B站视频"
+    parameters = {
+        "type": "object",
+        "properties": {
+            "keyword": {"type": "string", "description": "搜索关键词"}
+        },
+        "required": ["keyword"]
+    }
+
+    async def _search_videos_with_count(self, keyword, count):
+        result = await search.search_by_type(
+            keyword=keyword,
+            search_type=search.SearchObjectType.VIDEO,  # 指定搜索视频类型
+            page_size=count  # 指定返回几个视频
+        )
+        result = result["result"]
+
+        videos = []
+        for item in result:
+            videos.append({
+                "bvid": item.get("bvid"),
+                "title": re.sub(r'<.*?>', '', item.get("title") or ''),
+                "author": item.get("author"),
+                "description": item.get("description"),
+                "views": item.get("play"),
+                "likes": item.get("like"),
+                "duration": item.get("duration"),
+                "pubdate": datetime.fromtimestamp(item.get("pubdate", 0)).strftime("%Y-%m-%d %H:%M:%S"),
+                # "cover_url": "https:" + item.get("pic") if item.get("pic") else None,
+                "tags": item.get("tag"),
+                "url": f"https://www.bilibili.com/video/{item.get('bvid')}",
+            })
+        return str(videos)
+
+    async def execute(self, keyword: str) -> str:
+        try:
+            res = await self._search_videos_with_count(keyword, 5)
+            return res
+        except Exception as bili_search_e:
+            return str(bili_search_e)
