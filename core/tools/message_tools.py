@@ -31,13 +31,13 @@ class SendMessageTool(BaseTool):
                 user_nickname="system",
                 message_id="system_message",
                 self_id=ada.config.get("self_id"),
-                content=[MessageType.Notice(f"从会话{target}触发了跨会话消息：{description}")],
+                content=[MessageType.Notice(f"触发了跨会话发往{target}的消息：{description}")],
                 timestamp=int(time.time()),
                 group_id=target.split(":")[2] if target.split(":")[1] == "gm" else None,
                 group_name="unknown"
             )
             event_bus = get_event_bus()
             await event_bus.put(message_obj)
-            return f"message sent"
+            return f"message sent: {description}"
         except Exception as e:
             return f"failed to send:：{e}"
