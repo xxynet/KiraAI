@@ -1,4 +1,5 @@
 import asyncio
+from asyncio import Lock
 import xml.etree.ElementTree as ET
 from typing import Union, Dict, Any, List
 from asyncio import Semaphore
@@ -38,8 +39,15 @@ class MessageProcessor:
         # message buffer
         self.message_buffer: dict[str, Any] = {}
         self.buffer_locks: dict[str, asyncio.Lock] = {}
+        self.group_locks: Dict[str, asyncio.Lock] = {}
         
         logger.info("MessageProcessor initialized")
+
+    def get_session_lock(self, group_id: str) -> Lock:
+        """get session lock to avoid sending message simultaneously"""
+        if group_id not in self.group_locks:
+            self.group_locks[group_id] = asyncio.Lock()
+        return self.group_locks[group_id]
 
     def get_session_list_prompt(self) -> str:
         session_list_prompt = ""
@@ -157,7 +165,7 @@ class MessageProcessor:
         messages.extend(session_memory)
 
         # 按会话加锁，防止同会话并发
-        session_lock = self.memory_manager.get_session_lock(session_id_str)
+        session_lock = self.get_session_lock(session_id_str)
 
         response, tool_messages = await llm_api.chat_with_tools(messages, tool_prompt)
         # logger.info(f"LLM响应: {response}")

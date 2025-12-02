@@ -21,9 +21,7 @@ class MemoryManager:
         self.max_memory_length = max_memory_length
         self.chat_memory_path = chat_memory_path
         self.core_memory_path = core_memory_path
-        
-        # 为每个群组创建单独的锁
-        self.group_locks: Dict[str, asyncio.Lock] = {}
+
         self.memory_lock = Lock()
         
         # 初始化记忆数据
@@ -80,12 +78,6 @@ class MemoryManager:
             self.chat_memory[session] = self.chat_memory[session][1:]
         self._save_memory(self.chat_memory, self.chat_memory_path)
         logger.info(f"Memory updated for {session}")
-    
-    def get_session_lock(self, group_id: str) -> Lock:
-        """get session lock to avoid sending message simultaneously"""
-        if group_id not in self.group_locks:
-            self.group_locks[group_id] = asyncio.Lock()
-        return self.group_locks[group_id]
 
     def get_core_memory(self):
         os.makedirs(os.path.dirname(self.core_memory_path), exist_ok=True)
