@@ -267,6 +267,9 @@ class MessageProcessor:
             logger.error(f"Error parsing message: {str(e)}")
             # 返回包含文本消息的列表
             logger.info(f"previously wrong format: {xml_data}")
+
+            # init fixed_xml
+            fixed_xml = xml_data
             try:
                 fixed_xml, _ = await llm_api.chat([{"role": "system", "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。直接输出修改后的内容，不要输出任何多余内容"}, {"role": "user", "content": xml_data}])
                 logger.info(f"fixed xml data: {fixed_xml}")
@@ -275,7 +278,7 @@ class MessageProcessor:
                 return message_list
             except Exception as e:
                 logger.error(f"error after trying to fix xml error: {e}")
-                return [[MessageType.Text(xml_data)]]
+                return [[MessageType.Text(fixed_xml)]]
 
     @staticmethod
     def _add_message_ids(xml_data: str, message_ids: List[str]) -> str:

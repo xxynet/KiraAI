@@ -14,7 +14,7 @@ class SendMessageTool(BaseTool):
         "type": "object",
         "properties": {
             "target": {"type": "string", "description": "会话标识，如 qq:dm:123456"},
-            "description": {"type": "string", "description": "对当前会话的总结以及为什么需要发送跨会话消息"}
+            "description": {"type": "string", "description": "对当前会话发生了什么的总结以及为什么需要发送跨会话消息，发送的消息大致方向"}
         },
         "required": ["target", "description"]
     }
@@ -31,7 +31,7 @@ class SendMessageTool(BaseTool):
                 user_nickname="system",
                 message_id="system_message",
                 self_id=ada.config.get("self_id"),
-                content=[MessageType.Notice(f"触发了跨会话发往{target}的消息：{description}")],
+                content=[MessageType.Notice(f"其他会话触发了跨会话发往当前会话（{target}）的消息，请根据以下描述输出向用户发送的消息：{description}")],
                 timestamp=int(time.time()),
                 group_id=target.split(":")[2] if target.split(":")[1] == "gm" else None,
                 group_name="unknown"
