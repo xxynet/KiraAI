@@ -26,6 +26,22 @@ class KiraMessageEvent:
 
 
 @dataclass
+class KiraCommentEvent:
+    platform: str
+    adapter_name: str
+    commenter_id: str
+    commenter_nickname: str
+    comment_id: str
+    self_id: str
+    content: list
+    timestamp: int
+    message_str: Optional[str] = field(default=None, init=False)
+
+    def __post_init__(self):
+        pass
+
+
+@dataclass
 class BotDirectMessage(KiraMessageEvent):
     """私聊消息"""
 
@@ -48,9 +64,17 @@ class MessageType:
         def __init__(self, text: str):
             self.text: str = text
 
+        @property
+        def repr(self):
+            return self.text
+
     class Image:
         def __init__(self, url: str):
             self.url: str = url
+
+        @property
+        def repr(self):
+            return "[Image]"
 
     class At:
         def __init__(self, pid: Union[int, str], nickname: Optional[str] = None):
@@ -58,31 +82,62 @@ class MessageType:
             self.pid: str = str(pid)
             self.nickname: str = nickname
 
+        @property
+        def repr(self):
+            if self.nickname:
+                return f"[At {self.nickname}({self.pid})]"
+            else:
+                return f"[At {self.pid}]"
+
     class Reply:
         def __init__(self, message_id: Union[int, str], message_content: Optional[str] = None):
             self.message_id: str = str(message_id)
             self.message_content: str = message_content
 
+        @property
+        def repr(self):
+            return f"[Reply {self.message_id}]"
+
     class Emoji:
         def __init__(self, emoji_id: Union[int, str]):
             self.emoji_id: str = str(emoji_id)
+
+        @property
+        def repr(self):
+            return f"[Emoji {self.emoji_id}]"
 
     class Sticker:
         def __init__(self, sticker_id: Union[int, str], sticker_bs64: str):
             self.sticker_id: str = str(sticker_id)
             self.sticker_bs64: str = sticker_bs64
 
+        @property
+        def repr(self):
+            return f"[Sticker {self.sticker_id}]"
+
     class Record:
         def __init__(self, bs64: str):
             self.bs64: str = bs64
+
+        @property
+        def repr(self):
+            return f"[Record]"
 
     class Notice:
         def __init__(self, text: str):
             self.text = text
 
+        @property
+        def repr(self):
+            return f"[Notice]"
+
     class Poke:
         def __init__(self, pid: Union[int, str]):
             self.pid = str(pid)
+
+        @property
+        def repr(self):
+            return f"[Poke]"
 
 
 class MessageSending:
