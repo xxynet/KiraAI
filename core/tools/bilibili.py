@@ -4,7 +4,7 @@ import configparser
 from pathlib import Path
 from datetime import datetime
 
-from bilibili_api import video,search, Credential, comment, exceptions as bili_e
+from bilibili_api import video, search, homepage, Credential, comment, exceptions as bili_e
 from bilibili_api.comment import CommentResourceType
 
 from utils.tool_utils import BaseTool
@@ -22,6 +22,10 @@ _credential = Credential(
     dedeuserid=_cfg.get("bili", "dedeuserid"),
     ac_time_value=_cfg.get("bili", "ac_time_value"),
 )
+
+
+def format_time(ts):
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _resolve_b23(url: str) -> str:
@@ -175,3 +179,63 @@ class BiliSearchTool(BaseTool):
             return res
         except Exception as bili_search_e:
             return str(bili_search_e)
+
+
+class BiliFeedTool(BaseTool):
+    name = "bilibili_feed"
+    description = "获取B站首页视频"
+    parameters = {
+        "type": "object",
+        "properties": {
+
+        },
+        "required": []
+    }
+
+    @staticmethod
+    def clean_feed_items(feed_json, vid_count):
+        items = feed_json.get("item", [])
+        results = []
+
+        count = 0
+
+        for v in items:
+            results.append({
+                "id": v.get("id"),
+                "bvid": v.get("bvid"),
+                "title": v.get("title"),
+                # "cover": v.get("pic"),
+                # "url": v.get("uri"),
+                "duration": v.get("duration"),
+                "pubdate": format_time(v.get("pubdate", 0)),
+                "uploader": {
+                    "uid": v.get("owner", {}).get("mid"),
+                    "name": v.get("owner", {}).get("name"),
+                    # "face": v.get("owner", {}).get("face"),
+                },
+                "stat": {
+                    "view": v.get("stat", {}).get("view"),
+                    "like": v.get("stat", {}).get("like"),
+                    "danmaku": v.get("stat", {}).get("danmaku"),
+                },
+                "recommend_reason": v.get("rcmd_reason", {}).get("content") or "",
+            })
+
+            count += 1
+            if count == vid_count:
+                break
+
+        return results
+
+    async def get_personalized_feed(self, count: int = 5):
+        # 使用登录凭据获取个性化推荐
+        result = await homepage.get_videos(credential=_credential)
+        cleaned_feed = self.clean_feed_items(result, count)
+        return cleaned_feed
+
+    async def execute(self) -> str:
+        try:
+            feed = await self.get_personalized_feed(count=5)
+            return str(feed)
+        except Exception as bili_feed_e:
+            return str(bili_feed_e)
