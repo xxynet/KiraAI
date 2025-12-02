@@ -16,9 +16,10 @@ class KiraMessageEvent:
     group_id: Optional[str] = None
     group_name: Optional[str] = None
     message_str: Optional[str] = field(default=None, init=False)
+    message_repr: Optional[str] = field(default=None, init=False)
 
     def __post_init__(self):
-        pass
+        self.message_repr = " ".join(ele.repr for ele in self.content)
 
     def is_group_message(self) -> bool:
         """judge whether it's a group message"""

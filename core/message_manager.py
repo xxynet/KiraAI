@@ -89,7 +89,10 @@ class MessageProcessor:
 
     async def _handle_im_message(self, msg: KiraMessageEvent):
         """process im message"""
-        logger.info(f"Received message from {msg.adapter_name}")
+        if msg.is_group_message():
+            logger.info(f"[{msg.adapter_name} | {msg.message_id}] [{msg.group_name} | {msg.user_nickname}]: {msg.message_repr}")
+        else:
+            logger.info(f"[{msg.adapter_name} | {msg.message_id}] [{msg.user_nickname}]: {msg.message_repr}")
         session_id_str = msg.group_id if msg.is_group_message() else msg.user_id
         dict_key = f"{msg.adapter_name}:{'gm' if msg.is_group_message() else 'dm'}:{session_id_str}"
         if dict_key not in self.buffer_locks:
@@ -268,6 +271,7 @@ class MessageProcessor:
                 fixed_xml, _ = await llm_api.chat([{"role": "system", "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。直接输出修改后的内容，不要输出任何多余内容"}, {"role": "user", "content": xml_data}])
                 logger.info(f"fixed xml data: {fixed_xml}")
                 message_list = self._parse_xml_msg(xml_data)
+
                 return message_list
             except Exception as e:
                 logger.error(f"error after trying to fix xml error: {e}")

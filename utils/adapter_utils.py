@@ -73,7 +73,26 @@ class IMAdapter(ABC):
 
 
 class SocialMediaAdapter(ABC):
-    pass
+    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue):
+        self.name: Optional[str] = None
+        self.config = config
+        self.emoji_dict: Optional[dict] = None
+        self.loop = loop
+        self.event_bus = event_bus
+
+    @abstractmethod
+    async def start(self):
+        pass
+
+    async def get_feed(self, count: int):
+        pass
+
+    async def search(self, keyword: str, count: int):
+        pass
+
+    @abstractmethod
+    async def send_comment(self, root: Union[int, str], sub: Union[int, str] = None):
+        pass
 
 
 class LiveStreamAdapter(ABC):
