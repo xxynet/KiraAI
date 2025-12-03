@@ -4,7 +4,6 @@ import time
 from core.services.runtime import get_event_bus, get_adapter_by_name
 from utils.message_utils import KiraMessageEvent, MessageType
 from utils.tool_utils import BaseTool
-from core.message_manager import message_processor
 
 
 class SendMessageTool(BaseTool):
@@ -23,6 +22,17 @@ class SendMessageTool(BaseTool):
         try:
             ada = get_adapter_by_name(target.split(":")[0])
 
+            cross_session_prompt = f"""你接收到来自其他会话转发到本会话的跨会话消息。
+
+下面是跨会话消息的内容说明：
+{description}
+
+请你根据描述，直接生成要发送给最终用户的自然语言消息。
+⚠注意：
+1. 你当前已经在目标会话中，不需要再次调用跨会话工具。
+2. 不要再次尝试发送跨会话消息。
+3. 只需要输出最终要发给用户的xml格式消息"""
+
             message_obj = KiraMessageEvent(
                 platform=ada.name,
                 adapter_name=target.split(":")[0],
@@ -31,7 +41,7 @@ class SendMessageTool(BaseTool):
                 user_nickname="system",
                 message_id="system_message",
                 self_id=ada.config.get("self_id"),
-                content=[MessageType.Notice(f"其他会话触发了跨会话发往当前会话（{target}）的消息，请根据以下描述输出向用户发送的消息：{description}")],
+                content=[MessageType.Notice(cross_session_prompt)],
                 timestamp=int(time.time()),
                 group_id=target.split(":")[2] if target.split(":")[1] == "gm" else None,
                 group_name="unknown"
