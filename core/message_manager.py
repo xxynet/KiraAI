@@ -283,8 +283,6 @@ class MessageProcessor:
                 logger.info(f"fixed xml data: {fixed_xml}")
                 message_list = self._parse_xml_msg(xml_data)
 
-                message_list.insert(0, [MessageType.At("3429924750"), MessageType.Text("there was a problem with my AI and the system auto corrected it")])
-
                 return message_list
             except Exception as e:
                 logger.error(f"error after trying to fix xml error: {e}")
