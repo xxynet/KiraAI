@@ -22,8 +22,8 @@ bot_config = global_config["bot_config"].get("bot")
 config_max_message_interval = int(bot_config.get("max_message_interval"))
 config_max_buffer_messages = int(bot_config.get("max_buffer_messages"))
 
-config_min_message_delay = int(bot_config.get("min_message_delay", "0.8"))
-config_max_message_delay = int(bot_config.get("max_message_delay", "1.5"))
+config_min_message_delay = float(bot_config.get("min_message_delay", "0.8"))
+config_max_message_delay = float(bot_config.get("max_message_delay", "1.5"))
 
 
 class MessageProcessor:
