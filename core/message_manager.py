@@ -17,8 +17,13 @@ from utils.message_utils import KiraMessageEvent, MessageSending, MessageType
 
 logger = get_logger("message_processor", "cyan")
 
-config_max_message_interval = int(global_config["bot_config"].get("bot").get("max_message_interval"))
-config_max_buffer_messages = int(global_config["bot_config"].get("bot").get("max_buffer_messages"))
+bot_config = global_config["bot_config"].get("bot")
+
+config_max_message_interval = int(bot_config.get("max_message_interval"))
+config_max_buffer_messages = int(bot_config.get("max_buffer_messages"))
+
+config_min_message_delay = int(bot_config.get("min_message_delay", "0.8"))
+config_max_message_delay = int(bot_config.get("max_message_delay", "1.5"))
 
 
 class MessageProcessor:
@@ -217,7 +222,7 @@ class MessageProcessor:
             message_ids.append(message_id)
 
             # 添加随机延迟避免频率限制
-            await asyncio.sleep(random.uniform(0.8, 1.5))
+            await asyncio.sleep(random.uniform(config_min_message_delay, config_max_message_delay))
 
         return message_ids
 
@@ -282,6 +287,8 @@ class MessageProcessor:
                 fixed_xml, _ = await llm_api.chat([{"role": "system", "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。直接输出修改后的内容，不要输出任何多余内容"}, {"role": "user", "content": xml_data}])
                 logger.info(f"fixed xml data: {fixed_xml}")
                 message_list = self._parse_xml_msg(xml_data)
+
+                message_list.insert(0, [MessageType.At("3429924750"), MessageType.Text("there was a problem with my AI and the system auto corrected it")])
 
                 return message_list
             except Exception as e:
