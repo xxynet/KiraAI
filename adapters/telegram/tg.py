@@ -96,7 +96,15 @@ class TelegramAdapter(IMAdapter):
         user = msg.from_user
 
         if chat.type in ("group", "supergroup"):
-            if self.group_list and chat.id not in self.group_list:
+
+            should_process = False
+
+            if self.permission_mode == "allow_list" and chat.id in self.group_list:
+                should_process = True
+            elif self.permission_mode == "deny_list" and chat.id not in self.group_list:
+                should_process = True
+
+            if not should_process:
                 return
             # Only react when replied to bot or explicitly mentioned
             try:
@@ -152,7 +160,15 @@ class TelegramAdapter(IMAdapter):
             self.publish(message_obj)
         else:
             # direct message
-            if self.user_list and user.id not in self.user_list:
+
+            should_process = False
+
+            if self.permission_mode == "allow_list" and user.id in self.user_list:
+                should_process = True
+            elif self.permission_mode == "deny_list" and user.id not in self.user_list:
+                should_process = True
+
+            if not should_process:
                 return
             message_list = await self._process_incoming_message(msg)
             message_obj = KiraMessageEvent(

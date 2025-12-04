@@ -14,21 +14,39 @@ class IMAdapter(ABC):
         self.message_types: list[Type[Union[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]]] = []
         self.loop = loop
         self.event_bus = event_bus
-        
-        # 白名单配置 - 子类可以覆盖 _parse_id_list 或 _init_config 来自定义解析逻辑
+
+        self.permission_mode = None
+
         self.group_list: List[Union[int, str]] = []
         self.user_list: List[Union[int, str]] = []
-        self._init_whitelists()
 
-    def _init_whitelists(self):
-        """初始化白名单列表，从配置中解析 group_list 和 user_list"""
-        group_list_str = self.config.get("group_list", "")
-        user_list_str = self.config.get("user_list", "")
-        
-        if group_list_str:
-            self.group_list = self._parse_id_list(group_list_str)
-        if user_list_str:
-            self.user_list = self._parse_id_list(user_list_str)
+        self._init_permission_lists()
+
+    def _init_permission_lists(self):
+        """init permission lists"""
+
+        _permission_mode = self.config.get("permission_mode", "allow_list")
+
+        self.permission_mode = _permission_mode
+
+        if _permission_mode == "allow_list":
+            group_allow_list_str = self.config.get("group_allow_list", "")
+            user_allow_list_str = self.config.get("user_allow_list", "")
+
+            if group_allow_list_str:
+                self.group_list = self._parse_id_list(group_allow_list_str)
+            if user_allow_list_str:
+                self.user_list = self._parse_id_list(user_allow_list_str)
+        elif _permission_mode == "deny_list":
+            group_deny_list_str = self.config.get("group_deny_list", "")
+            user_deny_list_str = self.config.get("user_deny_list", "")
+
+            if group_deny_list_str:
+                self.group_list = self._parse_id_list(group_deny_list_str)
+            if user_deny_list_str:
+                self.user_list = self._parse_id_list(user_deny_list_str)
+        else:
+            self.permission_mode = "allow_list"
 
     @staticmethod
     def _parse_id_list(csv: str) -> List[Union[int, str]]:

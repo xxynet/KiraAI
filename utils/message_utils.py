@@ -15,6 +15,7 @@ class KiraMessageEvent:
     timestamp: int
     group_id: Optional[str] = None
     group_name: Optional[str] = None
+    is_mentioned: Optional[bool] = None
     message_str: Optional[str] = field(default=None, init=False)
     message_repr: Optional[str] = field(default=None, init=False)
 

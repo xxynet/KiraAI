@@ -367,7 +367,14 @@ class QQAdapter(IMAdapter):
                     self.publish(message_obj)
 
     async def _on_group_message(self, msg: GroupMessage):
-        if msg.group_id in self.group_list:
+        should_process = False
+
+        if self.permission_mode == "allow_list" and msg.group_id in self.group_list:
+            should_process = True
+        elif self.permission_mode == "deny_list" and msg.group_id not in self.group_list:
+            should_process = True
+
+        if should_process:
             # self._log.info(msg)
 
             should_respond = False
@@ -414,7 +421,14 @@ class QQAdapter(IMAdapter):
                 self.publish(message_obj)
 
     async def _on_private_message(self, msg: PrivateMessage):
-        if msg.user_id in self.user_list:
+        should_process = False
+
+        if self.permission_mode == "allow_list" and msg.user_id in self.user_list:
+            should_process = True
+        elif self.permission_mode == "deny_list" and msg.user_id not in self.user_list:
+            should_process = True
+
+        if should_process:
 
             # self._log.info(msg)
 
