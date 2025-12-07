@@ -6,8 +6,9 @@ from core.config_loader import global_config
 
 from adapters.qq.qq_reply import QQAdapter
 from adapters.telegram.tg import TelegramAdapter
+from adapters.bilibili.bilibili import BiliBiliAdapter
 
-from utils.message_utils import BotDirectMessage, BotGroupMessage
+from utils.message_utils import KiraMessageEvent
 from core.sticker_manager import sticker_manager
 
 
@@ -36,7 +37,9 @@ class KiraLifecycle:
         loop = asyncio.get_running_loop()
 
         # ====== init adapter mapping ======
-        ada_mapping = {'QQ': QQAdapter, 'Telegram': TelegramAdapter}
+        ada_mapping = {'QQ': QQAdapter,
+                       'Telegram': TelegramAdapter,
+                       'BiliBili': BiliBiliAdapter}
         adapters: Dict[str, Any] = {}
 
         # ====== load adapter config ======
@@ -68,5 +71,5 @@ class KiraLifecycle:
 
         # ====== message handling loop ======
         while True:
-            msg: Union[BotDirectMessage, BotGroupMessage] = await event_bus.get()
+            msg: Union[KiraMessageEvent] = await event_bus.get()
             asyncio.create_task(message_processor.handle_message(msg))

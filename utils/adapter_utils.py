@@ -58,8 +58,12 @@ class IMAdapter(ABC):
 
     @abstractmethod
     async def start(self):
-        """启动适配器，子类必须实现此方法"""
+        """Start adapter, sub classes must implement this method"""
         pass
+
+    # @abstractmethod
+    # async def stop(self):
+    #     """Stop adapter, sub classes must implement this method"""
 
     def publish(self, message: Union[KiraMessageEvent]):
         """把消息放到事件总线"""
@@ -109,7 +113,7 @@ class SocialMediaAdapter(ABC):
         pass
 
     @abstractmethod
-    async def send_comment(self, root: Union[int, str], sub: Union[int, str] = None):
+    async def send_comment(self, text: str, root: Union[int, str], sub: Union[int, str] = None):
         pass
 
 

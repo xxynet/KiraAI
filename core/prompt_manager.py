@@ -130,6 +130,14 @@ class PromptManager:
 
         return ada_config_prompt
 
+    def get_comment_prompt(self, comment_content):
+        _prompt = f"""以下是你的角色信息
+{self.persona_prompt}
+你正在浏览社交媒体，以下是你看到的评论：
+{comment_content}
+你需要回复评论，直接输出评论内容，不要有任何多余信息"""
+        return _prompt
+
     def get_system_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list, emoji_dict: Optional[dict] = None) -> str:
         """生成系统提示词"""
         formatted_time = self.get_current_time_str()

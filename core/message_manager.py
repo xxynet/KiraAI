@@ -13,7 +13,7 @@ from core.memory_manager import MemoryManager
 from core.prompt_manager import PromptManager
 from core.services.runtime import get_adapter_by_name
 from utils.common_utils import image_to_base64
-from utils.message_utils import KiraMessageEvent, MessageSending, MessageType
+from utils.message_utils import KiraMessageEvent, KiraCommentEvent, MessageSending, MessageType
 
 logger = get_logger("message_processor", "cyan")
 
@@ -97,6 +97,8 @@ class MessageProcessor:
         async with self.message_processing_semaphore:
             if isinstance(msg, KiraMessageEvent):
                 await self._handle_im_message(msg)
+            elif isinstance(msg, KiraCommentEvent):
+                await self._handle_cmt_message(msg)
             else:
                 logger.warning(f"Unknown message type: {type(msg)}")
 
@@ -190,6 +192,35 @@ class MessageProcessor:
 
             new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
             self.memory_manager.update_memory(dict_key, new_memory_chunk)
+
+    async def _handle_cmt_message(self, msg: KiraCommentEvent):
+        """process comment message"""
+
+        print(msg)
+
+        if msg.sub_cmt_id:
+            logger.info(f"[{msg.adapter_name} | {msg.sub_cmt_id}] [{msg.commenter_nickname}]: {msg.sub_cmt_content[0].text}")
+            cmt_content = f"""You: {msg.cmt_content[0].text}
+            {msg.commenter_nickname}: {msg.sub_cmt_content[0].text}
+            """
+        else:
+            logger.info(f"[{msg.adapter_name} | {msg.cmt_id}] [{msg.commenter_nickname}]: {msg.cmt_content[0].text}")
+            cmt_content = f"""{msg.commenter_nickname}: {msg.cmt_content[0].text}"""
+
+        cmt_prompt = self.prompt_manager.get_comment_prompt(cmt_content)
+
+        response, _ = await llm_api.chat([{"role": "user", "content": cmt_prompt}])
+
+        logger.info(f"LLM: {response}")
+
+        if response:
+            await get_adapter_by_name(msg.adapter_name).send_comment(
+                text=response,
+                root=msg.cmt_id,
+                sub=msg.sub_cmt_id
+            )
+        else:
+            logger.warning("Blank LLM response")
 
     async def send_xml_messages(self, target: str, xml: str) -> List[str]:
         """

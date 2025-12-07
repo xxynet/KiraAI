@@ -33,10 +33,12 @@ class KiraCommentEvent:
     adapter_name: str
     commenter_id: str
     commenter_nickname: str
-    comment_id: str
     self_id: str
-    content: list
     timestamp: int
+    cmt_id: Union[int, str]
+    cmt_content: list
+    sub_cmt_id: Union[int, str] = None
+    sub_cmt_content: Optional[list] = None
     message_str: Optional[str] = field(default=None, init=False)
 
     def __post_init__(self):
