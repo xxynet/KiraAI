@@ -34,10 +34,18 @@ ws_uri = ws://localhost:3001
 ws_listen_ip = 0.0.0.0
 # Websocket服务器token
 ws_token = 
+# allow_list or deny_list，根据permission_mode选择设置下面的allow_list或deny_list
+permission_mode = allow_list
 # bot接收消息的群聊
-group_list = 1234567890, 9876543210
+group_allow_list = 1234567890, 9876543210
 # bot接收私聊消息的用户
-user_list = 1234567890, 9876543210
+user_allow_list = 1234567890, 9876543210
+# bot不接收消息的群聊
+group_deny_list = 1234567890, 9876543210
+# bot不接收私聊消息的用户
+user_deny_list = 1234567890, 9876543210
+# 唤醒关键词，消息中出现时会触发回复
+waking_keywords = 
 ```
 
 ### Telegram
@@ -61,8 +69,14 @@ desc = telegram account
 bot_pid = user_name
 # bot token
 bot_token = your_bot_token
+# allow_list or deny_list
+permission_mode = allow_list
 # from which group(s) bot receives messages
-group_list = xxx, xxx
+group_allow_list = xxx, xxx
 # from which user(s) bot receives messages
-user_list = xxx, xxx
+user_allow_list = xxx, xxx
+# from which group(s) bot doesn't receive messages
+group_deny_list = xxx, xxx
+# from which user(s) bot doesn't receive messages
+user_deny_list = xxx, xxx
 ```
