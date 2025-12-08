@@ -9,6 +9,7 @@ import base64
 
 from core.logging_manager import get_logger
 from core.config_loader import global_config
+from .provider import LLMResponse
 
 tool_logger = get_logger("tool_use", "orange")
 llm_logger = get_logger("llm", "purple")
@@ -100,7 +101,7 @@ class LLMClient:
         base64_data = base64.b64encode(image_data)
         return base64_data.decode('utf-8')
 
-    async def chat(self, messages, model=DEFAULT_LLM):
+    async def chat(self, messages, model=DEFAULT_LLM) -> LLMResponse:
         """与LLM交互
 
         Args:
@@ -111,6 +112,7 @@ class LLMClient:
             tuple: (content, reasoning_content)
         """
         async with self.llm_semaphore:
+            llm_resp = LLMResponse("", "")
             try:
                 # print(f"LLM请求: {messages}")
                 response = await self.client.chat.completions.create(
@@ -121,20 +123,22 @@ class LLMClient:
                     message = response.choices[0].message
                     content = message.content if message.content else ""
                     reasoning_content = getattr(message, "reasoning_content", "")
-                    # print(f"LLM推理内容: {content}")
-                    return content, reasoning_content
+                    llm_resp.text_response = content
+                    llm_resp.reasoning_content = reasoning_content
+                    return llm_resp
 
-                return "", ""
+                return llm_resp
 
             except Exception as e:
                 print(f"LLM调用出错: {str(e)}")
-                return "", ""
+                return llm_resp
 
     @timer
-    async def chat_with_tools(self, user_message, tool_system_prompt):
+    async def chat_with_tools(self, user_message, tool_system_prompt) -> LLMResponse:
         # 第一次调用，让模型决定是否调用工具
 
         async with self.llm_semaphore:
+            llm_resp = LLMResponse("", "")
             raw_msg = copy.deepcopy(user_message)
             raw_msg[0] = {"role": "system", "content": tool_system_prompt}
 
@@ -182,12 +186,15 @@ class LLMClient:
                         messages=user_message
                     )
 
-                    return resp2.choices[0].message.content, tool_messages
+                    llm_resp.text_response = resp2.choices[0].message.content
+                    llm_resp.tool_results = tool_messages
+
+                    return llm_resp
                 except Exception as e:
                     print("messages:")
                     print(json.dumps(user_message, ensure_ascii=False, indent=2))
                     print(e)
-                    return None, None
+                    return llm_resp
             else:
                 # model did not use tools
                 try:
@@ -197,10 +204,11 @@ class LLMClient:
                         messages=user_message
                     )
                     message2 = resp2.choices[0].message
-                    return message2.content, None
+                    llm_resp.text_response = message2.content
+                    return llm_resp
                 except Exception as e:
                     llm_logger.error(f"error while generating response when tools are not called: {str(e)}")
-                    return "", None
+                    return llm_resp
 
     async def desc_img(self, image, model=DEFAULT_VLM, prompt="描述这张图片的内容，如果有文字请将其输出", is_base64=False):
         """

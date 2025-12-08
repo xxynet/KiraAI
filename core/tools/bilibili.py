@@ -124,7 +124,9 @@ class BiliCommentTool(BaseTool):
         prompt = reply_template.format(persona=persona_prompt, bili_video_info=info_str)
 
         messages = [{"role": "user", "content": prompt}]
-        resp, _ = await llm_api.chat(messages)
+        llm_resp = await llm_api.chat(messages)
+
+        resp = llm_resp.text_response
 
         result = await comment.send_comment(
             text=resp,

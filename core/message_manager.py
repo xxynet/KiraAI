@@ -14,6 +14,7 @@ from core.prompt_manager import PromptManager
 from core.services.runtime import get_adapter_by_name
 from utils.common_utils import image_to_base64
 from utils.message_utils import KiraMessageEvent, KiraCommentEvent, MessageSending, MessageType
+from .provider import LLMResponse
 
 logger = get_logger("message_processor", "cyan")
 
@@ -174,7 +175,9 @@ class MessageProcessor:
         # 按会话加锁，防止同会话并发
         session_lock = self.get_session_lock(session_id_str)
 
-        response, tool_messages = await llm_api.chat_with_tools(messages, tool_prompt)
+        llm_resp = await llm_api.chat_with_tools(messages, tool_prompt)
+        response = llm_resp.text_response
+        tool_messages = llm_resp.tool_results
         # logger.info(f"LLM响应: {response}")
 
         async with session_lock:
@@ -206,7 +209,9 @@ class MessageProcessor:
 
         cmt_prompt = self.prompt_manager.get_comment_prompt(cmt_content)
 
-        response, _ = await llm_api.chat([{"role": "user", "content": cmt_prompt}])
+        llm_resp = await llm_api.chat([{"role": "user", "content": cmt_prompt}])
+
+        response = llm_resp.text_response
 
         logger.info(f"LLM: {response}")
 
@@ -314,7 +319,8 @@ class MessageProcessor:
             # init fixed_xml
             fixed_xml = xml_data
             try:
-                fixed_xml, _ = await llm_api.chat([{"role": "system", "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。直接输出修改后的内容，不要输出任何多余内容"}, {"role": "user", "content": xml_data}])
+                llm_resp = await llm_api.chat([{"role": "system", "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。直接输出修改后的内容，不要输出任何多余内容"}, {"role": "user", "content": xml_data}])
+                fixed_xml = llm_resp.text_response
                 logger.info(f"fixed xml data: {fixed_xml}")
                 message_list = self._parse_xml_msg(fixed_xml)
 
