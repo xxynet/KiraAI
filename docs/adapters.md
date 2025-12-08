@@ -5,6 +5,8 @@
 
 [Telegram](#telegram)
 
+[BiliBili](#bilibili)
+
 
 Be sure to comment out the adapter settings you are not going to use
 
@@ -79,4 +81,25 @@ user_allow_list = xxx, xxx
 group_deny_list = xxx, xxx
 # from which user(s) bot doesn't receive messages
 user_deny_list = xxx, xxx
+```
+
+### BiliBili
+
+You need to [get credential information](https://nemo2011.github.io/bilibili-api/#/get-credential)
+
+```ini
+[b2]
+enabled = false
+platform = BiliBili
+desc = BiliBili (an Youtube-like video sharing platform) account
+bot_uid = 
+# one bvid only
+listening_bvid = 
+listening_interval = 20
+message_process_interval = 5
+sessdata = 
+bili_jct = 
+buvid3 = 
+dedeuserid = 
+ac_time_value = 
 ```
