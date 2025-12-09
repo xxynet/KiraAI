@@ -125,6 +125,8 @@ class LLMClient:
                     reasoning_content = getattr(message, "reasoning_content", "")
                     llm_resp.text_response = content
                     llm_resp.reasoning_content = reasoning_content
+                    llm_resp.input_tokens = response.usage.prompt_tokens
+                    llm_resp.output_tokens = response.usage.completion_tokens
                     return llm_resp
 
                 return llm_resp
@@ -186,8 +188,11 @@ class LLMClient:
                         messages=user_message
                     )
 
+                    # NOTE: this token usage only includes the 2nd llm call of it
                     llm_resp.text_response = resp2.choices[0].message.content
                     llm_resp.tool_results = tool_messages
+                    llm_resp.input_tokens = resp2.usage.prompt_tokens
+                    llm_resp.output_tokens = resp2.usage.completion_tokens
 
                     return llm_resp
                 except Exception as e:
@@ -204,7 +209,10 @@ class LLMClient:
                         messages=user_message
                     )
                     message2 = resp2.choices[0].message
+                    # NOTE: this token usage only includes the 2nd llm call of it
                     llm_resp.text_response = message2.content
+                    llm_resp.input_tokens = resp2.usage.prompt_tokens
+                    llm_resp.output_tokens = resp2.usage.completion_tokens
                     return llm_resp
                 except Exception as e:
                     llm_logger.error(f"error while generating response when tools are not called: {str(e)}")

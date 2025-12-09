@@ -33,3 +33,7 @@ class LLMResponse:
     reasoning_content: Optional[str]
 
     tool_results: list = field(default_factory=list)
+
+    input_tokens: Optional[int] = field(default_factory=None)
+
+    output_tokens: Optional[int] = field(default_factory=None)
