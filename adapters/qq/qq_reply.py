@@ -50,49 +50,6 @@ def extract_card_info(card_json: str) -> str:
     return json.dumps(card_json_dic, ensure_ascii=False)
 
 
-async def process_incoming_message(bot, msg):
-    """把QQ平台消息转换为项目通用消息格式"""
-    message_content = []
-    for ele in msg.message:
-        if ele.get("type") == "text":
-            message_content.append(MessageType.Text(ele.get("data").get("text")))
-        elif ele.get("type") == "at":
-            at_obj = MessageType.At(str(ele.get("data").get("qq")))
-            if str(ele.get("data").get("qq")) != "all":
-                at_user_info = bot.api.get_stranger_info_sync(user_id=str(ele.get("data").get("qq")))
-                at_nickname = at_user_info["data"]["nickname"]
-                at_obj.nickname = at_nickname
-            message_content.append(at_obj)
-        elif ele.get("type") == "reply":
-            reply_content = bot.api.get_msg_sync(ele.get("data").get("id"))
-            processed_reply = await process_reply_message(reply_content)
-            message_content.append(MessageType.Reply(ele.get("data").get("id"), processed_reply))
-        elif ele.get("type") == "face":
-            message_content.append(MessageType.Emoji(str(ele.get("data").get("id"))))
-        elif ele.get("type") == "image":
-            img_url = ele.get("data", "").get("url", "")
-            message_content.append(MessageType.Image(img_url))
-        elif ele.get("type") == "video":
-            message_content.append(MessageType.Text("[Video]"))
-        elif ele.get("type") == "json":
-            json_card_info = ele.get("data", "").get("data", "")
-            cleaned_card_info = extract_card_info(json_card_info)
-            message_content.append(MessageType.Text(cleaned_card_info))
-        elif ele.get("type") == "file":
-            message_content.append(MessageType.Text("[File]"))
-        elif ele.get("type") == "forward":
-            forward_message = bot.api.get_forward_msg_sync(msg.message_id)
-            processed_forward = await process_forward_message(forward_message)
-            message_content.append(MessageType.Text(processed_forward))
-        elif ele.get("type") == "record":
-            file_id = ele.get("data").get("file")
-
-            record_info = bot.api.get_record_sync(file_id, output_type="mp3")
-            audio_base64 = record_info.get("data").get("base64")
-            message_content.append(MessageType.Record(audio_base64))
-    return message_content
-
-
 async def process_reply_message(message_data):
     msg = message_data.get("data", {})
     sender = msg.get("sender", {}).get("nickname", str(msg.get("user_id")))
@@ -234,7 +191,11 @@ class QQAdapter(IMAdapter):
         self.bot.run(bt_uin=self.config["bot_pid"], root=self.config["owner_pid"], ws_uri=self.config["ws_uri"], ws_listen_ip=self.config["ws_listen_ip"], ws_token=self.config["ws_token"], enable_webui_interaction=False)
 
     async def start(self):
-        threading.Thread(target=self.start_blocking, daemon=True).start()
+        t = threading.Thread(target=self.start_blocking, daemon=True)
+        t.start()
+
+    async def stop(self):
+        pass
 
     async def send_group_message(self, group_id, send_message_obj):
         try:
@@ -263,6 +224,48 @@ class QQAdapter(IMAdapter):
         except:
             message_id = None
         return message_id
+
+    async def process_incoming_message(self, msg):
+        """把QQ平台消息转换为项目通用消息格式"""
+        message_content = []
+        for ele in msg.message:
+            if ele.get("type") == "text":
+                message_content.append(MessageType.Text(ele.get("data").get("text")))
+            elif ele.get("type") == "at":
+                at_obj = MessageType.At(str(ele.get("data").get("qq")))
+                if str(ele.get("data").get("qq")) != "all":
+                    at_user_info = self.bot.api.get_stranger_info_sync(user_id=str(ele.get("data").get("qq")))
+                    at_nickname = at_user_info["data"]["nickname"]
+                    at_obj.nickname = at_nickname
+                message_content.append(at_obj)
+            elif ele.get("type") == "reply":
+                reply_content = self.bot.api.get_msg_sync(ele.get("data").get("id"))
+                processed_reply = await process_reply_message(reply_content)
+                message_content.append(MessageType.Reply(ele.get("data").get("id"), processed_reply))
+            elif ele.get("type") == "face":
+                message_content.append(MessageType.Emoji(str(ele.get("data").get("id"))))
+            elif ele.get("type") == "image":
+                img_url = ele.get("data", "").get("url", "")
+                message_content.append(MessageType.Image(img_url))
+            elif ele.get("type") == "video":
+                message_content.append(MessageType.Text("[Video]"))
+            elif ele.get("type") == "json":
+                json_card_info = ele.get("data", "").get("data", "")
+                cleaned_card_info = extract_card_info(json_card_info)
+                message_content.append(MessageType.Text(f"[Json {cleaned_card_info}]"))
+            elif ele.get("type") == "file":
+                message_content.append(MessageType.Text("[File]"))
+            elif ele.get("type") == "forward":
+                forward_message = self.bot.api.get_forward_msg_sync(msg.message_id)
+                processed_forward = await process_forward_message(forward_message)
+                message_content.append(MessageType.Text(f"[Forward {processed_forward}]"))
+            elif ele.get("type") == "record":
+                file_id = ele.get("data").get("file")
+
+                record_info = self.bot.api.get_record_sync(file_id, output_type="mp3")
+                audio_base64 = record_info.get("data").get("base64")
+                message_content.append(MessageType.Record(audio_base64))
+        return message_content
 
     async def _on_notice_message(self, msg: Dict):
         # print(msg)
@@ -402,7 +405,7 @@ class QQAdapter(IMAdapter):
 
             if should_respond:
                 # 仅进行 Adapter 层职责：打包消息并发布到事件总线，等待主循环回复
-                message_list = await process_incoming_message(self.bot, msg)
+                message_list = await self.process_incoming_message(msg)
                 group_info = self.bot.api.get_group_info_sync(msg.group_id)
                 group_name = group_info.get("data").get("group_name")
                 message_obj = KiraMessageEvent(
@@ -432,7 +435,7 @@ class QQAdapter(IMAdapter):
 
             # self._log.info(msg)
 
-            message_list = await process_incoming_message(self.bot, msg)
+            message_list = await self.process_incoming_message(msg)
 
             message_obj = KiraMessageEvent(
                 platform=self.name,
