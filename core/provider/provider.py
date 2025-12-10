@@ -53,3 +53,8 @@ class RerankProvider(BaseProvider):
 class ImageProvider(BaseProvider):
     def __init__(self, provider_id, provider_name, provider_config):
         super().__init__(provider_id, provider_name, provider_config)
+
+
+class VideoProvider(BaseProvider):
+    def __init__(self, provider_id, provider_name, provider_config):
+        super().__init__(provider_id, provider_name, provider_config)
