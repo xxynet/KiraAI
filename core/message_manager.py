@@ -17,6 +17,7 @@ from core.services.runtime import get_adapter_by_name
 from utils.common_utils import image_to_base64
 from utils.message_utils import KiraMessageEvent, KiraCommentEvent, MessageSending, MessageType
 from .provider import LLMResponse
+from .chat import Session
 
 logger = get_logger("message_processor", "cyan")
 
@@ -47,15 +48,21 @@ class MessageProcessor:
         # message buffer
         self.message_buffer: dict[str, Any] = {}
         self.buffer_locks: dict[str, asyncio.Lock] = {}
-        self.group_locks: Dict[str, asyncio.Lock] = {}
+        self.session_locks: dict[str, asyncio.Lock] = {}
         
         logger.info("MessageProcessor initialized")
 
-    def get_session_lock(self, group_id: str) -> Lock:
+    def get_buffer_lock(self, session_identifier: str) -> Lock:
+        """get buffer lock"""
+        if session_identifier not in self.buffer_locks:
+            self.buffer_locks[session_identifier] = asyncio.Lock()
+        return self.buffer_locks[session_identifier]
+
+    def get_session_lock(self, session_identifier: str) -> Lock:
         """get session lock to avoid sending message simultaneously"""
-        if group_id not in self.group_locks:
-            self.group_locks[group_id] = asyncio.Lock()
-        return self.group_locks[group_id]
+        if session_identifier not in self.session_locks:
+            self.session_locks[session_identifier] = asyncio.Lock()
+        return self.session_locks[session_identifier]
 
     def get_session_list_prompt(self) -> str:
         session_list_prompt = ""
@@ -111,25 +118,31 @@ class MessageProcessor:
             logger.info(f"[{msg.adapter_name} | {msg.message_id}] [{msg.group_name} | {msg.user_nickname}]: {msg.message_repr}")
         else:
             logger.info(f"[{msg.adapter_name} | {msg.message_id}] [{msg.user_nickname}]: {msg.message_repr}")
-        session_id_str = msg.group_id if msg.is_group_message() else msg.user_id
-        dict_key = f"{msg.adapter_name}:{'gm' if msg.is_group_message() else 'dm'}:{session_id_str}"
-        if dict_key not in self.buffer_locks:
-            self.buffer_locks[dict_key] = asyncio.Lock()
-        buffer_lock = self.buffer_locks[dict_key]
+
+        session = Session(
+            adapter_name=msg.adapter_name,
+            session_type="gm" if msg.is_group_message() else "dm",
+            session_id=msg.group_id if msg.is_group_message() else msg.user_id,
+        )
+
+        session_identifier = session.session_identifier
+
+        # get buffer lock
+        buffer_lock = self.get_buffer_lock(session_identifier)
 
         async with buffer_lock:
-            if dict_key not in self.message_buffer:
-                self.message_buffer[dict_key] = []
-            self.message_buffer[dict_key].append(msg)
-            msg_amount = len(self.message_buffer[dict_key])
+            if session_identifier not in self.message_buffer:
+                self.message_buffer[session_identifier] = []
+            self.message_buffer[session_identifier].append(msg)
+            msg_amount = len(self.message_buffer[session_identifier])
 
         if msg_amount < self.max_buffer_messages:
             await asyncio.sleep(self.max_message_interval)
-        if len(self.message_buffer[dict_key]) == msg_amount:
+        if len(self.message_buffer[session_identifier]) == msg_amount:
             # print("no new message coming, processing")
             async with buffer_lock:
-                message_processing: list[KiraMessageEvent] = self.message_buffer[dict_key][:msg_amount]
-                self.message_buffer[dict_key] = self.message_buffer[dict_key][msg_amount:]
+                message_processing: list[KiraMessageEvent] = self.message_buffer[session_identifier][:msg_amount]
+                self.message_buffer[session_identifier] = self.message_buffer[session_identifier][msg_amount:]
             logger.info(f"deleted {msg_amount} message(s) from buffer")
         else:
             # print("new message coming")
@@ -156,7 +169,7 @@ class MessageProcessor:
         }
 
         # 获取历史记忆
-        session_memory = self.memory_manager.fetch_memory(dict_key)
+        session_memory = self.memory_manager.fetch_memory(session_identifier)
         # 获取核心记忆
         core_memory = self.memory_manager.get_core_memory()
 
@@ -175,7 +188,7 @@ class MessageProcessor:
         messages.extend(session_memory)
 
         # 按会话加锁，防止同会话并发
-        session_lock = self.get_session_lock(session_id_str)
+        session_lock = self.get_session_lock(session_identifier)
 
         llm_resp = await llm_api.chat_with_tools(messages, tool_prompt)
         response = llm_resp.text_response
@@ -183,7 +196,7 @@ class MessageProcessor:
         # logger.info(f"LLM响应: {response}")
 
         async with session_lock:
-            message_ids, actual_xml = await self.send_xml_messages(dict_key, response)
+            message_ids, actual_xml = await self.send_xml_messages(session_identifier, response)
             response_with_ids = self._add_message_ids(actual_xml, message_ids)
             logger.info(f"LLM: {response_with_ids}")
 
@@ -193,7 +206,7 @@ class MessageProcessor:
                     new_memory_chunk.append(tool_message)
 
             new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
-            self.memory_manager.update_memory(dict_key, new_memory_chunk)
+            self.memory_manager.update_memory(session_identifier, new_memory_chunk)
 
     async def _handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
