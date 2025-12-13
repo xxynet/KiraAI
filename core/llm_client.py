@@ -176,6 +176,7 @@ class LLMClient:
                     tool_messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
+                        "name": name,
                         "content": str(result)
                     })
 
