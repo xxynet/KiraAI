@@ -44,8 +44,11 @@ class ProviderManager:
 
         if provider_format == "openai":
             if provider_type == "llm":
-                from .src.openai_llm import OpenAIProvider
+                from .src.openai_provider import OpenAIProvider
                 provider_inst = OpenAIProvider(provider_name, provider_name, provider)
+            elif provider_type == "image":
+                from .src.openai_provider import OpenAIImageProvider
+                provider_inst = OpenAIImageProvider(provider_name, provider_name, provider)
         elif provider_format == "siliconflow":
             if provider_type == "image":
                 from .src.siliconflow import SiliconflowImageProvider

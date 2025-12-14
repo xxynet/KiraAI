@@ -1,9 +1,10 @@
 from openai import AsyncOpenAI
+import asyncio
 import json
 
 from core.logging_manager import get_logger
-from ..provider import LLMProvider
-from ..llm_model import LLMModel, LLMRequest, LLMResponse, LLMClientType
+from core.provider.provider import LLMProvider, ImageProvider
+from core.provider.llm_model import LLMModel, LLMRequest, LLMResponse, LLMClientType
 
 
 tool_logger = get_logger("tool_use", "orange")
@@ -68,3 +69,26 @@ class OpenAIProvider(LLMProvider):
             llm_resp.input_tokens = response.usage.prompt_tokens
             llm_resp.output_tokens = response.usage.completion_tokens
         return llm_resp
+
+
+class OpenAIImageProvider(ImageProvider):
+    def __init__(self, provider_id, provider_name, provider_config):
+        super().__init__(provider_id, provider_name, provider_config)
+
+    async def generate_image(self, prompt):
+        client = AsyncOpenAI(
+            base_url=self.provider_config.get("base_url", ""),
+            api_key=self.provider_config.get("api_key", ""),
+        )
+
+        images_response = await client.images.generate(
+            model=self.provider_config.get("model", ""),
+            prompt=prompt,
+            size=self.provider_config.get("size", None),
+            response_format="url",
+            extra_body={
+                "watermark": False,
+            },
+        )
+
+        return images_response.data[0].url
