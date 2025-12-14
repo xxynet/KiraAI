@@ -10,13 +10,11 @@ import xml.sax.saxutils
 from core.llm_manager import llm_api
 from core.logging_manager import get_logger
 from core.config_loader import global_config
-from core.tts.siliconflow.sftts import generate_speech, speech_to_text
 from core.memory_manager import MemoryManager
 from core.prompt_manager import PromptManager
 from core.services.runtime import get_adapter_by_name
 from utils.common_utils import image_to_base64
 from utils.message_utils import KiraMessageEvent, KiraCommentEvent, MessageSending, MessageType
-from .provider import LLMResponse
 from .chat import Session
 
 logger = get_logger("message_processor", "cyan")
@@ -94,7 +92,7 @@ class MessageProcessor:
                 else:
                     message_str += f"[Reply {ele.message_id}]"
             elif isinstance(ele, MessageType.Record):
-                record_text = speech_to_text(ele.bs64)
+                record_text = await llm_api.speech_to_text(ele.bs64)
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, MessageType.Notice):
                 message_str += f"{ele.text}"
@@ -274,7 +272,7 @@ class MessageProcessor:
 
         return message_ids, actual_xml
 
-    def _parse_xml_msg(self, xml_data):
+    async def _parse_xml_msg(self, xml_data):
         root = ET.fromstring(f"<root>{xml_data}</root>")
         message_list = []
 
@@ -300,13 +298,13 @@ class MessageProcessor:
                 elif tag == "at":
                     message_elements.append(MessageType.At(value))
                 elif tag == "img":
-                    img_url = llm_api.generate_img(value)
+                    img_url = await llm_api.generate_img(value)
                     message_elements.append(MessageType.Image(img_url))
                 elif tag == "reply":
                     message_elements.append(MessageType.Reply(value))
                 elif tag == "record":
                     try:
-                        record_bs64 = generate_speech(value)
+                        record_bs64 = await llm_api.text_to_speech(value)
                         message_elements.append(MessageType.Record(record_bs64))
                     except Exception as e:
                         logger.error(f"an error occurred while generating voice message: {e}")
@@ -325,7 +323,7 @@ class MessageProcessor:
         :return: (message_list, actual_xml) - actual_xml 是实际使用的XML（可能是修复后的）
         """
         try:
-            message_list = self._parse_xml_msg(xml_data)
+            message_list = await self._parse_xml_msg(xml_data)
             return message_list, xml_data
         except Exception as e:
             logger.error(f"Error parsing message: {str(e)}")
@@ -337,7 +335,7 @@ class MessageProcessor:
                 llm_resp = await llm_api.chat([{"role": "system", "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。直接输出修改后的内容，不要输出任何多余内容"}, {"role": "user", "content": xml_data}])
                 fixed_xml = llm_resp.text_response
                 logger.info(f"fixed xml data: {fixed_xml}")
-                message_list = self._parse_xml_msg(fixed_xml)
+                message_list = await self._parse_xml_msg(fixed_xml)
 
                 return message_list, fixed_xml
             except Exception as e:

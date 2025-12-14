@@ -9,34 +9,23 @@ import base64
 
 from core.logging_manager import get_logger
 from core.config_loader import global_config
-from .provider import LLMResponse
+from .provider import LLMRequest, LLMResponse
+from .provider import ProviderManager
 
 tool_logger = get_logger("tool_use", "orange")
 llm_logger = get_logger("llm", "purple")
 
-# === model config ===
-MAIN_PROVIDER = global_config["models"].get("main_llm").get("provider")
-MAIN_API_BASE_URL = global_config["providers"].get(MAIN_PROVIDER).get("base_url")
-MAIN_API_KEY = global_config["providers"].get(MAIN_PROVIDER).get("api_key")
-DEFAULT_LLM = global_config["models"].get("main_llm").get("model")
+models_config = global_config.get("models", {})
+main_llm = models_config.get("main_llm", {}).get("provider", "")
+tool_llm = models_config.get("tool_llm", {}).get("provider", "")
+vlm = models_config.get("vlm", {}).get("provider", "")
+util_model = models_config.get("util_model", {}).get("provider", "")
+image_provider = models_config.get("image", {}).get("provider", "")
+tts_provider = models_config.get("tts", {}).get("provider", "")
+stt_provider = models_config.get("stt", {}).get("provider", "")
 
-TOOL_PROVIDER = global_config["models"].get("tool_llm").get("provider")
-TOOL_API_BASE_URL = global_config["providers"].get(TOOL_PROVIDER).get("base_url")
-TOOL_API_KEY = global_config["providers"].get(TOOL_PROVIDER).get("api_key")
-DEFAULT_TOOL_LLM = global_config["models"].get("tool_llm").get("model")
 
-VLM_PROVIDER = global_config["models"].get("vlm").get("provider")
-VLM_API_BASE_URL = global_config["providers"].get(VLM_PROVIDER).get("base_url")
-VLM_API_KEY = global_config["providers"].get(VLM_PROVIDER).get("api_key")
-DEFAULT_VLM = global_config["models"].get("vlm").get("model")
-
-UTIL_PROVIDER = global_config["models"].get("util_model").get("provider")
-UTIL_API_BASE_URL = global_config["providers"].get(UTIL_PROVIDER).get("base_url")
-UTIL_API_KEY = global_config["providers"].get(UTIL_PROVIDER).get("api_key")
-DEFAULT_UTIL_MODEL = global_config["models"].get("util_model").get("model")
-
-DEFAULT_TTI = global_config["models"].get("tti").get("model")
-TTI_API_KEY = global_config["models"].get("tti").get("api_key")
+provider_manager = ProviderManager(global_config.get("providers"))
 
 
 def timer(func):
@@ -59,19 +48,7 @@ def timer(func):
 
 class LLMClient:
     def __init__(self):
-        """初始化LLM客户端"""
-        self.client = AsyncOpenAI(
-            api_key=MAIN_API_KEY,
-            base_url=MAIN_API_BASE_URL
-        )
-        self.tool_client = AsyncOpenAI(
-            api_key=TOOL_API_KEY,
-            base_url=TOOL_API_BASE_URL
-        )
-        self.vlm_client = AsyncOpenAI(
-            api_key=VLM_API_KEY,
-            base_url=VLM_API_BASE_URL
-        )
+
         self.tools_definitions = []
         self.tools_functions = {}
 
@@ -101,125 +78,54 @@ class LLMClient:
         base64_data = base64.b64encode(image_data)
         return base64_data.decode('utf-8')
 
-    async def chat(self, messages, model=DEFAULT_LLM) -> LLMResponse:
+    async def chat(self, messages, provider=main_llm) -> LLMResponse:
         """与LLM交互
 
         Args:
             messages: 消息列表
-            model: 使用的LLM模型
+            provider: 使用的LLM provider
 
         Returns:
-            tuple: (content, reasoning_content)
+            LLMResponse
         """
         async with self.llm_semaphore:
-            llm_resp = LLMResponse("", "")
-            try:
-                # print(f"LLM请求: {messages}")
-                response = await self.client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                )
-                if response.choices:
-                    message = response.choices[0].message
-                    content = message.content if message.content else ""
-                    reasoning_content = getattr(message, "reasoning_content", "")
-                    llm_resp.text_response = content
-                    llm_resp.reasoning_content = reasoning_content
-                    llm_resp.input_tokens = response.usage.prompt_tokens
-                    llm_resp.output_tokens = response.usage.completion_tokens
-                    return llm_resp
-
-                return llm_resp
-
-            except Exception as e:
-                print(f"LLM调用出错: {str(e)}")
-                return llm_resp
+            request = LLMRequest(messages)
+            llm_provider = provider_manager.get_llm_provider(provider)
+            response = await llm_provider.chat(request)
+            return response
 
     @timer
     async def chat_with_tools(self, user_message, tool_system_prompt) -> LLMResponse:
-        # 第一次调用，让模型决定是否调用工具
 
         async with self.llm_semaphore:
-            llm_resp = LLMResponse("", "")
             raw_msg = copy.deepcopy(user_message)
             raw_msg[0] = {"role": "system", "content": tool_system_prompt}
+            # 第一次调用，让模型决定是否调用工具
+            request = LLMRequest(raw_msg, tools=self.tools_definitions, tool_funcs=self.tools_functions)
+            tool_provider = provider_manager.get_llm_provider(tool_llm)
+            llm_logger.info(f"checking whether to call tools using {tool_llm}")
+            resp1 = await tool_provider.chat(request)
 
-            llm_logger.info(f"checking whether to call tools using {DEFAULT_TOOL_LLM} from {TOOL_PROVIDER}")
-            resp1 = await self.tool_client.chat.completions.create(
-                model=DEFAULT_TOOL_LLM,
-                messages=raw_msg,
-                tools=self.tools_definitions
-            )
+            if resp1.tool_results:
+                user_message.extend(resp1.tool_results)
 
-            message = resp1.choices[0].message
+            request2 = LLMRequest(user_message)
+            llm_provider = provider_manager.get_llm_provider(main_llm)
+            llm_logger.info(f"generating response using {main_llm}")
+            resp2 = await llm_provider.chat(request2)
+            return resp2
 
-            # 如果模型调用了工具
-            if message.tool_calls:
+    async def text_to_speech(self, text: str):
+        tts = provider_manager.get_tts_provider(tts_provider)
+        bs64 = await tts.text_to_speech(text)
+        return bs64
 
-                # tool_messages = [json.loads(message.model_dump_json())]
-                tool_messages = []
+    async def speech_to_text(self, bs64):
+        stt = provider_manager.get_stt_provider(stt_provider)
+        text = await stt.speech_to_text(bs64)
+        return text
 
-                for tool_call in message.tool_calls:
-                    name = tool_call.function.name
-                    args = json.loads(tool_call.function.arguments)
-                    tool_logger.info(f"{name} args: {args}")
-
-                    # 调用对应的 Python 函数
-                    if name in self.tools_functions:
-                        result = await self.tools_functions[name](**args)
-                        tool_logger.info(f"tool_result: {result}")
-                    else:
-                        result = {"error": f"工具 {name} 未实现"}
-                        tool_logger.error(f"工具 {name} 未实现")
-
-                    # 保存工具执行结果
-                    tool_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": name,
-                        "content": str(result)
-                    })
-
-                user_message.extend(tool_messages)
-
-                try:
-                    llm_logger.info(f"generating response using {DEFAULT_LLM} from {MAIN_PROVIDER}")
-                    resp2 = await self.client.chat.completions.create(
-                        model=DEFAULT_LLM,
-                        messages=user_message
-                    )
-
-                    # NOTE: this token usage only includes the 2nd llm call of it
-                    llm_resp.text_response = resp2.choices[0].message.content
-                    llm_resp.tool_results = tool_messages
-                    llm_resp.input_tokens = resp2.usage.prompt_tokens
-                    llm_resp.output_tokens = resp2.usage.completion_tokens
-
-                    return llm_resp
-                except Exception as e:
-                    print("messages:")
-                    print(json.dumps(user_message, ensure_ascii=False, indent=2))
-                    print(e)
-                    return llm_resp
-            else:
-                # model did not use tools
-                try:
-                    llm_logger.info(f"generating response using {DEFAULT_LLM} from {MAIN_PROVIDER}")
-                    resp2 = await self.client.chat.completions.create(
-                        model=DEFAULT_LLM,
-                        messages=user_message
-                    )
-                    message2 = resp2.choices[0].message
-                    # NOTE: this token usage only includes the 2nd llm call of it
-                    llm_resp.text_response = message2.content
-                    llm_resp.input_tokens = resp2.usage.prompt_tokens
-                    llm_resp.output_tokens = resp2.usage.completion_tokens
-                    return llm_resp
-                except Exception as e:
-                    llm_logger.error(f"error while generating response when tools are not called: {str(e)}")
-                    return llm_resp
-
-    async def desc_img(self, image, model=DEFAULT_VLM, prompt="描述这张图片的内容，如果有文字请将其输出", is_base64=False):
+    async def desc_img(self, image, model=vlm, prompt="描述这张图片的内容，如果有文字请将其输出", is_base64=False):
         """
         describe an image
         :param image: url or base64
@@ -251,38 +157,19 @@ class LLMClient:
                 ]
             }]
 
-            response = await self.vlm_client.chat.completions.create(
-                model=model,
-                messages=messages,
-            )
-            if response.choices:
-                message = response.choices[0].message
-                content = message.content if message.content else ""
-                return content
-
-            return ""
+            request = LLMRequest(messages)
+            vlm_provider = provider_manager.get_llm_provider(model)
+            resp = await vlm_provider.chat(request)
+            return resp.text_response
 
         except Exception as e:
             llm_logger.error(f"error occurred when describing image: {str(e)}")
             return ""
 
-    def generate_img(self, prompt):
-        url = "https://api.siliconflow.cn/v1/images/generations"
-        payload = {
-            "model": DEFAULT_TTI,
-            "prompt": prompt,
-            "image_size": "1024x1024",
-            "batch_size": 1,
-            "num_inference_steps": 20,
-            "guidance_scale": 7.5
-        }
-        headers = {
-            "Authorization": f"Bearer {TTI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
-        response = requests.post(url, json=payload, headers=headers)
-        return response.json().get("images")[0].get("url")
+    async def generate_img(self, prompt):
+        img_provider = provider_manager.get_image_provider(image_provider)
+        url = await img_provider.generate_image(prompt)
+        return url
 
 
 if __name__ == "__main__":
