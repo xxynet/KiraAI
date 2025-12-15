@@ -13,6 +13,7 @@ from utils.message_utils import KiraMessageEvent
 from core.sticker_manager import sticker_manager
 from core.message_manager import MessageProcessor
 
+from .adapter import AdapterManager
 from .statistics import Statistics
 
 
@@ -26,14 +27,15 @@ class KiraLifecycle:
         self.stats = stats
         stats.set_stats("started_ts", int(time.time()))
 
+        self.adapter_manager: Optional[AdapterManager] = None
+
         self.message_processor: Optional[MessageProcessor] = None
 
     async def schedule_tasks(self):
-        while True:
-            tasks = [
-                sticker_manager.scan_and_register_sticker()
-            ]
-            await asyncio.gather(*tasks)
+        tasks = [
+            sticker_manager.scan_and_register_sticker()
+        ]
+        await asyncio.gather(*tasks)
 
     async def init_and_run_system(self):
         """主函数：负责启动和初始化各个模块"""
@@ -43,35 +45,23 @@ class KiraLifecycle:
         event_queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
-        # ====== init adapter mapping ======
-        ada_mapping = {'QQ': QQAdapter,
-                       'Telegram': TelegramAdapter,
-                       'BiliBili': BiliBiliAdapter}
-        adapters: Dict[str, Any] = {}
+        # init adapter manager
+        self.adapter_manager = AdapterManager(loop, event_queue)
 
-        # ====== load adapter config ======
+        # ====== load adapters ======
         adas_config = global_config["ada_config"]
         for ada_name in adas_config:
             ada_config = adas_config[ada_name]
             ada_platform = ada_config["platform"]
-            adapters[ada_name] = ada_mapping[ada_platform](ada_config, loop, event_queue)
+            await self.adapter_manager.register_adapter(ada_platform, ada_name, ada_config)
 
         # ====== init message processor ======
         self.message_processor = MessageProcessor()
 
         # expose adapters and loop globally for runtime usage everywhere
-        from core.services.runtime import set_adapters, set_loop, set_event_bus
-        set_adapters(adapters)
-        set_loop(loop)
+        from core.services.runtime import set_adapters, set_event_bus
+        set_adapters(self.adapter_manager.get_adapters())
         set_event_bus(event_queue)
-
-        # ====== load all adapters ======
-        for adapter in adapters:
-            try:
-                task = asyncio.create_task(adapters[adapter].start())
-                task.add_done_callback(lambda t, name=adapters[adapter].name: logger.info(f"Started adapter {name}"))
-            except Exception as e:
-                logger.error(f"Failed to start adapter {adapters[adapter].name}: {e}")
 
         logger.info("All modules initialized, starting message processing loop...")
 
