@@ -359,4 +359,4 @@ class MessageProcessor:
 
 
 # global message processor
-message_processor = MessageProcessor()
+# message_processor = MessageProcessor()

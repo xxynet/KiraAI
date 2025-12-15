@@ -1,14 +1,14 @@
 import asyncio
 from asyncio import Queue
 from typing import Dict, Any, Optional, Union
-from utils.adapter_utils import IMAdapter
+from utils.adapter_utils import IMAdapter, SocialMediaAdapter
 from core.logging_manager import get_logger
 
 
 logger = get_logger("runtime", "blue")
 
 
-_adapters: Dict[str, Union[IMAdapter]] = {}
+_adapters: Dict[str, Union[IMAdapter, SocialMediaAdapter]] = {}
 _loop: Optional[asyncio.AbstractEventLoop] = None
 _event_bus: Optional[Queue] = None
 
