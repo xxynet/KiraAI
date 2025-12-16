@@ -15,13 +15,17 @@ ada_mapping = {'QQ': QQAdapter,
 
 
 class AdapterManager:
-    def __init__(self, loop: asyncio.AbstractEventLoop, event_queue: asyncio.Queue):
+    def __init__(self, loop: asyncio.AbstractEventLoop, event_queue: asyncio.Queue, adas_config: dict):
         self._adapters: dict[str, Any] = {}
         self.loop = loop
         self.event_queue = event_queue
+        self.adas_config = adas_config
 
-    def initialize(self):
-        pass
+    async def initialize(self):
+        for ada_name in self.adas_config:
+            ada_config = self.adas_config[ada_name]
+            ada_platform = ada_config["platform"]
+            await self.register_adapter(ada_platform, ada_name, ada_config)
 
     async def register_adapter(self, platform, name, config: dict):
         self._adapters[name] = ada_mapping[platform](config, self.loop, self.event_queue)

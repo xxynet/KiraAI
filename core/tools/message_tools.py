@@ -50,4 +50,4 @@ class SendMessageTool(BaseTool):
             await event_bus.put(message_obj)
             return f"message sent: {description}"
         except Exception as e:
-            return f"failed to send:：{e}"
+            return f"failed to send: {e}"

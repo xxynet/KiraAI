@@ -31,29 +31,30 @@ class KiraLifecycle:
 
         self.message_processor: Optional[MessageProcessor] = None
 
+        self.tasks: list[asyncio.Task] = []
+
     async def schedule_tasks(self):
-        tasks = [
+        self.tasks = [
             sticker_manager.scan_and_register_sticker()
         ]
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*self.tasks)
 
     async def init_and_run_system(self):
         """主函数：负责启动和初始化各个模块"""
-        logger.info("Starting bot...")
+        logger.info("✨ Starting KiraAI...")
 
         # ====== event bus ======
         event_queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
-        # init adapter manager
-        self.adapter_manager = AdapterManager(loop, event_queue)
-
         # ====== load adapters ======
         adas_config = global_config["ada_config"]
-        for ada_name in adas_config:
-            ada_config = adas_config[ada_name]
-            ada_platform = ada_config["platform"]
-            await self.adapter_manager.register_adapter(ada_platform, ada_name, ada_config)
+
+        # init adapter manager
+        self.adapter_manager = AdapterManager(loop, event_queue, adas_config)
+
+        # init adapter manager & start adapter instances
+        await self.adapter_manager.initialize()
 
         # ====== init message processor ======
         self.message_processor = MessageProcessor()
@@ -69,3 +70,7 @@ class KiraLifecycle:
         while True:
             msg: Union[KiraMessageEvent] = await event_queue.get()
             asyncio.create_task(self.message_processor.handle_message(msg))
+
+    async def stop(self):
+        for task in self.tasks:
+            task.cancel()
