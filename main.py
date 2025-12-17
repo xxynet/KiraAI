@@ -32,4 +32,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(launcher.start())
     except KeyboardInterrupt:
-        logger.info("Exiting...")
+        pass

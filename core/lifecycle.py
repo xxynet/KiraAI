@@ -35,7 +35,7 @@ class KiraLifecycle:
 
     async def schedule_tasks(self):
         self.tasks = [
-            sticker_manager.scan_and_register_sticker()
+            asyncio.create_task(sticker_manager.scan_and_register_sticker())
         ]
         await asyncio.gather(*self.tasks)
 
