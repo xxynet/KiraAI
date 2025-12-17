@@ -15,6 +15,8 @@ from core.prompt_manager import PromptManager
 from core.services.runtime import get_adapter_by_name
 from utils.common_utils import image_to_base64
 from utils.message_utils import KiraMessageEvent, KiraCommentEvent, MessageSending, MessageType
+from .memory_manager import MemoryManager
+from .prompt_manager import PromptManager
 from .chat import Session
 
 logger = get_logger("message_processor", "cyan")
@@ -32,6 +34,8 @@ class MessageProcessor:
     """Core message processor, responsible for handling all message sending and receiving logic"""
     
     def __init__(self,
+                 memory_manager: MemoryManager,
+                 prompt_manager: PromptManager,
                  max_message_interval: int = config_max_message_interval,
                  max_buffer_messages: int = config_max_buffer_messages,
                  max_concurrent_messages: int = 3):
@@ -40,8 +44,8 @@ class MessageProcessor:
         self.max_buffer_messages = max_buffer_messages
         
         # init managers
-        self.memory_manager = MemoryManager()
-        self.prompt_manager = PromptManager()
+        self.memory_manager = memory_manager
+        self.prompt_manager = prompt_manager
 
         # message buffer
         self.message_buffer: dict[str, Any] = {}

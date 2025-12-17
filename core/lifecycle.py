@@ -5,14 +5,12 @@ from typing import Any, Dict, Union, Optional
 from core.logging_manager import get_logger
 from core.config_loader import global_config
 
-from adapters.qq.qq_reply import QQAdapter
-from adapters.telegram.tg import TelegramAdapter
-from adapters.bilibili.bilibili import BiliBiliAdapter
-
 from utils.message_utils import KiraMessageEvent
 from core.sticker_manager import sticker_manager
 from core.message_manager import MessageProcessor
 
+from .prompt_manager import PromptManager
+from .memory_manager import MemoryManager
 from .adapter import AdapterManager
 from .statistics import Statistics
 
@@ -28,6 +26,10 @@ class KiraLifecycle:
         stats.set_stats("started_ts", int(time.time()))
 
         self.adapter_manager: Optional[AdapterManager] = None
+
+        self.memory_manager: Optional[MemoryManager] = None
+
+        self.prompt_manager: Optional[PromptManager] = None
 
         self.message_processor: Optional[MessageProcessor] = None
 
@@ -56,8 +58,14 @@ class KiraLifecycle:
         # init adapter manager & start adapter instances
         await self.adapter_manager.initialize()
 
+        # ====== init memory manager ======
+        self.memory_manager = MemoryManager()
+
+        # ====== init prompt manager ======
+        self.prompt_manager = PromptManager()
+
         # ====== init message processor ======
-        self.message_processor = MessageProcessor()
+        self.message_processor = MessageProcessor(self.memory_manager, self.prompt_manager)
 
         # expose adapters and loop globally for runtime usage everywhere
         from core.services.runtime import set_adapters, set_event_bus
