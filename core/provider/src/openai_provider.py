@@ -1,4 +1,4 @@
-from openai import AsyncOpenAI, APIStatusError
+from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import asyncio
 import json
 
@@ -25,50 +25,60 @@ class OpenAIProvider(LLMProvider):
             api_key=self.get_keys(),
             base_url=self.provider_config.get("base_url", "")
         )
-        response = await client.chat.completions.create(
-            model=self.get_models(),
-            messages=request.messages,
-            tools=request.tools
-        )
-        llm_resp = LLMResponse("")
-        if response.choices:
-            message = response.choices[0].message
+        try:
+            response = await client.chat.completions.create(
+                model=self.get_models(),
+                messages=request.messages,
+                tools=request.tools
+            )
+            llm_resp = LLMResponse("")
+            if response.choices:
+                message = response.choices[0].message
 
-            if message.tool_calls:
+                if message.tool_calls:
 
-                # tool_messages = [json.loads(message.model_dump_json())]
-                tool_messages = []
+                    # tool_messages = [json.loads(message.model_dump_json())]
+                    tool_messages = []
 
-                for tool_call in message.tool_calls:
-                    name = tool_call.function.name
-                    args = json.loads(tool_call.function.arguments)
-                    tool_logger.info(f"{name} args: {args}")
+                    for tool_call in message.tool_calls:
+                        name = tool_call.function.name
+                        args = json.loads(tool_call.function.arguments)
+                        tool_logger.info(f"{name} args: {args}")
 
-                    # 调用对应的 Python 函数
-                    if name in request.tool_funcs:
-                        result = await request.tool_funcs[name](**args)
-                        tool_logger.info(f"tool_result: {result}")
-                    else:
-                        result = {"error": f"工具 {name} 未实现"}
-                        tool_logger.error(f"工具 {name} 未实现")
+                        # 调用对应的 Python 函数
+                        if name in request.tool_funcs:
+                            result = await request.tool_funcs[name](**args)
+                            tool_logger.info(f"tool_result: {result}")
+                        else:
+                            result = {"error": f"工具 {name} 未实现"}
+                            tool_logger.error(f"工具 {name} 未实现")
 
-                    # 保存工具执行结果
-                    tool_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": name,
-                        "content": str(result)
-                    })
+                        # 保存工具执行结果
+                        tool_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": name,
+                            "content": str(result)
+                        })
 
-                llm_resp.tool_results = tool_messages
+                    llm_resp.tool_results = tool_messages
 
-            content = message.content if message.content else ""
-            reasoning_content = getattr(message, "reasoning_content", "")
-            llm_resp.text_response = content
-            llm_resp.reasoning_content = reasoning_content
-            llm_resp.input_tokens = response.usage.prompt_tokens
-            llm_resp.output_tokens = response.usage.completion_tokens
-        return llm_resp
+                content = message.content if message.content else ""
+                reasoning_content = getattr(message, "reasoning_content", "")
+                llm_resp.text_response = content
+                llm_resp.reasoning_content = reasoning_content
+                llm_resp.input_tokens = response.usage.prompt_tokens
+                llm_resp.output_tokens = response.usage.completion_tokens
+            return llm_resp
+        except APIStatusError:
+            # print("APIStatusError")
+            pass
+        except APITimeoutError:
+            # print("APITimeoutError")
+            pass
+        except APIConnectionError:
+            # print("APIConnectionError")
+            pass
 
 
 class OpenAIImageProvider(ImageProvider):

@@ -1,4 +1,5 @@
 from typing import Any, Union
+from copy import deepcopy
 
 
 class Statistics:
@@ -21,7 +22,10 @@ class Statistics:
             pass
 
     def get_stats(self, key: str):
-        return self._statistics[key]
+        value = self._statistics.get(key)
+        if isinstance(value, (list, dict, set)):
+            return deepcopy(value)
+        return value
 
     def set_stats(self, key: str, content: Any):
         self._statistics[key] = content

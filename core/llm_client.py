@@ -106,7 +106,7 @@ class LLMClient:
             llm_logger.info(f"checking whether to call tools using {tool_llm}")
             resp1 = await tool_provider.chat(request)
 
-            if resp1.tool_results:
+            if resp1 and resp1.tool_results:
                 user_message.extend(resp1.tool_results)
 
             request2 = LLMRequest(user_message)

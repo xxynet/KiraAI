@@ -193,22 +193,23 @@ class MessageProcessor:
         session_lock = self.get_session_lock(session_identifier)
 
         llm_resp = await llm_api.chat_with_tools(messages, tool_prompt)
-        response = llm_resp.text_response
-        tool_messages = llm_resp.tool_results
-        # logger.info(f"LLM响应: {response}")
+        if llm_resp:
+            response = llm_resp.text_response
+            tool_messages = llm_resp.tool_results
+            # logger.info(f"LLM响应: {response}")
 
-        async with session_lock:
-            message_ids, actual_xml = await self.send_xml_messages(session_identifier, response)
-            response_with_ids = self._add_message_ids(actual_xml, message_ids)
-            logger.info(f"LLM: {response_with_ids}")
+            async with session_lock:
+                message_ids, actual_xml = await self.send_xml_messages(session_identifier, response)
+                response_with_ids = self._add_message_ids(actual_xml, message_ids)
+                logger.info(f"LLM: {response_with_ids}")
 
-            # 更新记忆
-            if tool_messages:
-                for tool_message in tool_messages:
-                    new_memory_chunk.append(tool_message)
+                # 更新记忆
+                if tool_messages:
+                    for tool_message in tool_messages:
+                        new_memory_chunk.append(tool_message)
 
-            new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
-            self.memory_manager.update_memory(session_identifier, new_memory_chunk)
+                new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
+                self.memory_manager.update_memory(session_identifier, new_memory_chunk)
 
     async def _handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
