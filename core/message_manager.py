@@ -303,8 +303,13 @@ class MessageProcessor:
                 elif tag == "at":
                     message_elements.append(MessageType.At(value))
                 elif tag == "img":
-                    img_url = await llm_api.generate_img(value)
-                    message_elements.append(MessageType.Image(img_url))
+                    img_res = await llm_api.generate_img(value)
+                    if img_res.url:
+                        message_elements.append(MessageType.Image(url=img_res.url))
+                    elif img_res.base64:
+                        message_elements.append(MessageType.Image(base64=img_res.base64))
+                    else:
+                        pass
                 elif tag == "reply":
                     message_elements.append(MessageType.Reply(value))
                 elif tag == "record":

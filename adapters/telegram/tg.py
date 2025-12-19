@@ -286,8 +286,12 @@ class TelegramAdapter(IMAdapter):
                     message_id = str(sent.message_id)
                     continue
                 elif isinstance(ele, MessageType.Image):
-                    sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=ele.url)
-                    message_id = str(sent.message_id)
+                    if ele.url:
+                        sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=ele.url)
+                        message_id = str(sent.message_id)
+                    elif ele.base64:
+                        sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=base64.b64decode(ele.base64))
+                        message_id = str(sent.message_id)
                 elif isinstance(ele, MessageType.Emoji):
                     emoji_content = self.emoji_dict.get(ele.emoji_id)
                     sent = await self.app.bot.send_message(chat_id=int(group_id), text=emoji_content)
@@ -345,8 +349,12 @@ class TelegramAdapter(IMAdapter):
                     message_id = str(sent.message_id)
                     continue
                 elif isinstance(ele, MessageType.Image):
-                    sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=ele.url)
-                    message_id = str(sent.message_id)
+                    if ele.url:
+                        sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=ele.url)
+                        message_id = str(sent.message_id)
+                    elif ele.base64:
+                        sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=base64.b64decode(ele.base64))
+                        message_id = str(sent.message_id)
                 elif isinstance(ele, MessageType.Emoji):
                     emoji_content = self.emoji_dict.get(ele.emoji_id)
                     sent = await self.app.bot.send_message(chat_id=int(user_id), text=emoji_content)

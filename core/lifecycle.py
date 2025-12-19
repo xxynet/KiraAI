@@ -49,11 +49,8 @@ class KiraLifecycle:
         event_queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
-        # ====== load adapters ======
-        adas_config = global_config["ada_config"]
-
         # init adapter manager
-        self.adapter_manager = AdapterManager(loop, event_queue, adas_config)
+        self.adapter_manager = AdapterManager(loop, event_queue, global_config["ada_config"])
 
         # init adapter manager & start adapter instances
         await self.adapter_manager.initialize()

@@ -3,8 +3,9 @@ import asyncio
 import json
 
 from core.logging_manager import get_logger
-from core.provider.provider import LLMProvider, ImageProvider
-from core.provider.llm_model import LLMModel, LLMRequest, LLMResponse, LLMClientType
+from ..provider import LLMProvider, ImageProvider
+from ..llm_model import LLMModel, LLMRequest, LLMResponse, LLMClientType
+from ..image_result import ImageResult
 
 
 tool_logger = get_logger("tool_use", "orange")
@@ -85,7 +86,7 @@ class OpenAIImageProvider(ImageProvider):
     def __init__(self, provider_id, provider_name, provider_config):
         super().__init__(provider_id, provider_name, provider_config)
 
-    async def generate_image(self, prompt):
+    async def generate_image(self, prompt) -> ImageResult:
         client = AsyncOpenAI(
             base_url=self.provider_config.get("base_url", ""),
             api_key=self.provider_config.get("api_key", ""),
@@ -101,4 +102,4 @@ class OpenAIImageProvider(ImageProvider):
             },
         )
 
-        return images_response.data[0].url
+        return ImageResult(images_response.data[0].url)

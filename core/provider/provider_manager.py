@@ -59,6 +59,10 @@ class ProviderManager:
             elif provider_type == "stt":
                 from .src.siliconflow import SiliconflowSTTProvider
                 provider_inst = SiliconflowSTTProvider(provider_name, provider_name, provider)
+        elif provider_format == "modelscope":
+            if provider_type == "image":
+                from .src.modelscope import ModelScopeImageProvider
+                provider_inst = ModelScopeImageProvider(provider_name, provider_name, provider)
 
         if provider_inst:
             self._providers[provider_name] = provider_inst

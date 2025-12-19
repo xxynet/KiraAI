@@ -141,7 +141,10 @@ def process_outgoing_message(message: MessageSending):
                     pass
             message_chain_elements.append(Text(" "))
         elif isinstance(ele, MessageType.Image):
-            message_chain_elements.append(Image(ele.url))
+            if ele.url:
+                message_chain_elements.append(Image(ele.url))
+            elif ele.base64:
+                message_chain_elements.append(Image(f"base64://{ele.base64}"))
         elif isinstance(ele, MessageType.Reply):
             message_chain_elements.append(Reply(ele.message_id))
         elif isinstance(ele, MessageType.Record):

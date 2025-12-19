@@ -10,7 +10,7 @@ import base64
 from core.logging_manager import get_logger
 from core.config_loader import global_config
 from .provider import LLMRequest, LLMResponse
-from .provider import ProviderManager
+from .provider import ProviderManager, ImageResult
 
 tool_logger = get_logger("tool_use", "orange")
 llm_logger = get_logger("llm", "purple")
@@ -166,10 +166,12 @@ class LLMClient:
             llm_logger.error(f"error occurred when describing image: {str(e)}")
             return ""
 
-    async def generate_img(self, prompt):
+    async def generate_img(self, prompt) -> ImageResult:
         img_provider = provider_manager.get_image_provider(image_provider)
-        url = await img_provider.generate_image(prompt)
-        return url
+        img_res = await img_provider.generate_image(prompt)
+        if not img_res:
+            llm_logger.error(f"error occurred when generating image")
+        return img_res
 
 
 if __name__ == "__main__":

@@ -4,17 +4,18 @@ import requests
 import base64
 
 from ..provider import ImageProvider, TTSProvider, STTProvider
+from ..image_result import ImageResult
 
 
 class SiliconflowImageProvider(ImageProvider):
     def __init__(self, provider_id, provider_name, provider_config):
         super().__init__(provider_id, provider_name, provider_config)
 
-    async def generate_image(self, prompt) -> str:
+    async def generate_image(self, prompt) -> ImageResult:
         """
         generate image via siliconflow
         :param prompt: prompt of image generation
-        :return: url of the image
+        :return: ImageResult with image url
         """
         url = "https://api.siliconflow.cn/v1/images/generations"
         payload = {
@@ -31,7 +32,8 @@ class SiliconflowImageProvider(ImageProvider):
         }
 
         response = requests.post(url, json=payload, headers=headers)
-        return response.json().get("images")[0].get("url")
+        image_url = response.json().get("images")[0].get("url")
+        return ImageResult(image_url)
 
 
 class SiliconflowTTSProvider(TTSProvider):
