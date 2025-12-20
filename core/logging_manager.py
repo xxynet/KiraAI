@@ -40,7 +40,7 @@ def get_logger(name: str, color: str):
     )
 
     ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
+    ch.setLevel(logging.INFO)
     ch.setFormatter(console_formatter)
 
     fh = RotatingFileHandler(filename="log.log", maxBytes=10*1024*1024, backupCount=1, encoding='utf-8')
