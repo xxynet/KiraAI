@@ -109,10 +109,13 @@ class LLMClient:
             if resp1 and resp1.tool_results:
                 user_message.extend(resp1.tool_results)
 
-            request2 = LLMRequest(user_message)
+            request2 = LLMRequest(user_message, tools=self.tools_definitions)
             llm_provider = provider_manager.get_llm_provider(main_llm)
             llm_logger.info(f"generating response using {main_llm}")
             resp2 = await llm_provider.chat(request2)
+
+            # make sure to let message processor to get the tool_results
+            resp2.tool_results = resp1.tool_results
             return resp2
 
     async def text_to_speech(self, text: str):

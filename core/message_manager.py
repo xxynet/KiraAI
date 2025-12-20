@@ -205,8 +205,7 @@ class MessageProcessor:
 
                 # 更新记忆
                 if tool_messages:
-                    for tool_message in tool_messages:
-                        new_memory_chunk.append(tool_message)
+                    new_memory_chunk.extend(tool_messages)
 
                 new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
                 self.memory_manager.update_memory(session_identifier, new_memory_chunk)

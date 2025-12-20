@@ -41,10 +41,27 @@ class OpenAIProvider(LLMProvider):
                     # tool_messages = [json.loads(message.model_dump_json())]
                     tool_messages = []
 
+                    # 先添加 assistant 调用 tool 的消息
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": message.content if message.content else None,
+                        "tool_calls": []
+                    }
+                    
                     for tool_call in message.tool_calls:
                         name = tool_call.function.name
                         args = json.loads(tool_call.function.arguments)
                         tool_logger.info(f"{name} args: {args}")
+
+                        # 保存 tool_call 信息到 assistant 消息中
+                        assistant_msg["tool_calls"].append({
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": tool_call.function.arguments
+                            }
+                        })
 
                         # 调用对应的 Python 函数
                         if name in request.tool_funcs:
@@ -62,7 +79,8 @@ class OpenAIProvider(LLMProvider):
                             "content": str(result)
                         })
 
-                    llm_resp.tool_results = tool_messages
+                    # tool_results 列表：先 assistant，后 tool
+                    llm_resp.tool_results = [assistant_msg] + tool_messages
 
                 content = message.content if message.content else ""
                 reasoning_content = getattr(message, "reasoning_content", "")

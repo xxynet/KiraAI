@@ -73,8 +73,9 @@ class MessageType:
             return self.text
 
     class Image:
-        def __init__(self, url: str):
-            self.url: str = url
+        def __init__(self, url=None, base64=None):
+            self.url: Optional[str] = url
+            self.base64: Optional[str] = base64
 
         @property
         def repr(self):

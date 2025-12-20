@@ -33,6 +33,9 @@
 ## 核心记忆（Core Memory）
 {core_memory}
 
+## 工具说明（Tool Description）
+tool-call 模型已经完成了工具调用，请不要调用工具。工具列表仅作为参考帮助你理解上下文。
+
 ## 输出要求（Output）
 根据以下格式输出：
 {format}

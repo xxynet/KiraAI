@@ -8,7 +8,7 @@ from utils.tool_utils import BaseTool
 
 class SendMessageTool(BaseTool):
     name = "send_message"
-    description = "向指定会话发送消息（私聊消息和群聊消息）。target 形如 qq:dm:123456 或 qq:gm:123456"
+    description = "向指定会话发送消息（私聊消息和群聊消息）。 target 形如 qq:dm:123456 或 qq:gm:123456"
     parameters = {
         "type": "object",
         "properties": {
@@ -48,6 +48,6 @@ class SendMessageTool(BaseTool):
             )
             event_bus = get_event_bus()
             await event_bus.put(message_obj)
-            return f"message sent: {description}"
+            return f"message sent"
         except Exception as e:
             return f"failed to send: {e}"
