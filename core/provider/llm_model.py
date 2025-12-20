@@ -29,13 +29,13 @@ class LLMModel:
 @dataclass
 class LLMRequest:
     """message list provided to llm provider"""
-    messages: list
+    messages: list = field(default_factory=list)
 
     """optional: tool definitions for llm to call"""
-    tools: Optional[list[dict]] = None
+    tools: Optional[list[dict]] = field(default_factory=list)
 
     """optional: tool functions"""
-    tool_funcs: Optional[dict[str, Callable]] = None
+    tool_funcs: Optional[dict[str, Callable]] = field(default_factory=list)
 
 
 @dataclass
