@@ -1,6 +1,6 @@
 from abc import abstractmethod, ABC
 from enum import Enum, auto
-from typing import Optional, Callable
+from typing import Optional, Callable, Awaitable
 import asyncio
 from dataclasses import dataclass, field
 
@@ -32,10 +32,10 @@ class LLMRequest:
     messages: list = field(default_factory=list)
 
     """optional: tool definitions for llm to call"""
-    tools: Optional[list[dict]] = field(default_factory=list)
+    tools: Optional[list[dict]] = None
 
     """optional: tool functions"""
-    tool_funcs: Optional[dict[str, Callable]] = field(default_factory=list)
+    tool_funcs: Optional[dict[str, Callable]] = None
 
 
 @dataclass

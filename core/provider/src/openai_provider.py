@@ -8,6 +8,7 @@ from ..llm_model import LLMModel, LLMRequest, LLMResponse, LLMClientType
 from ..image_result import ImageResult
 
 
+logger = get_logger("provider", "purple")
 tool_logger = get_logger("tool_use", "orange")
 
 
@@ -30,7 +31,7 @@ class OpenAIProvider(LLMProvider):
             response = await client.chat.completions.create(
                 model=self.get_models(),
                 messages=request.messages,
-                tools=request.tools
+                tools=request.tools if request.tools else None
             )
             llm_resp = LLMResponse("")
             if response.choices:
@@ -64,7 +65,7 @@ class OpenAIProvider(LLMProvider):
                         })
 
                         # 调用对应的 Python 函数
-                        if name in request.tool_funcs:
+                        if request.tool_funcs and name in request.tool_funcs:
                             result = await request.tool_funcs[name](**args)
                             tool_logger.info(f"tool_result: {result}")
                         else:
@@ -89,15 +90,15 @@ class OpenAIProvider(LLMProvider):
                 llm_resp.input_tokens = response.usage.prompt_tokens
                 llm_resp.output_tokens = response.usage.completion_tokens
             return llm_resp
-        except APIStatusError:
-            # print("APIStatusError")
-            pass
-        except APITimeoutError:
-            # print("APITimeoutError")
-            pass
-        except APIConnectionError:
-            # print("APIConnectionError")
-            pass
+        except APIStatusError as e:
+            logger.error(f"APIStatusError: {e}")
+            # pass
+        except APITimeoutError as e:
+            logger.error(f"APITimeoutError: {e}")
+            # pass
+        except APIConnectionError as e:
+            logger.error(f"APIConnectionError: {e}")
+            # pass
 
 
 class OpenAIImageProvider(ImageProvider):

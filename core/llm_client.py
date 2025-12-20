@@ -1,4 +1,3 @@
-from openai import OpenAI, AsyncOpenAI
 from asyncio import Semaphore
 import requests
 import functools
