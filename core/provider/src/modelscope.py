@@ -12,7 +12,7 @@ class ModelScopeImageProvider(ImageProvider):
         super().__init__(provider_id, provider_name, provider_config)
         self.timeout = int(self.provider_config.get("timeout", "10"))
 
-    async def generate_image(self, prompt) -> ImageResult:
+    async def text_to_image(self, prompt) -> ImageResult:
         """
         generate image via modelscope
         :param prompt: prompt of image generation

@@ -59,6 +59,13 @@ class ProviderManager:
             elif provider_type == "stt":
                 from .src.siliconflow import SiliconflowSTTProvider
                 provider_inst = SiliconflowSTTProvider(provider_name, provider_name, provider)
+        elif provider_format == "volcengine":
+            if provider_type == "llm":
+                from .src.volcengine import VolcLLMProvider
+                provider_inst = VolcLLMProvider(provider_name, provider_name, provider)
+            elif provider_type == "image":
+                from .src.volcengine import VolcImageProvider
+                provider_inst = VolcImageProvider(provider_name, provider_name, provider)
         elif provider_format == "modelscope":
             if provider_type == "image":
                 from .src.modelscope import ModelScopeImageProvider

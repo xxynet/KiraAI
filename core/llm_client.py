@@ -170,7 +170,7 @@ class LLMClient:
 
     async def generate_img(self, prompt) -> ImageResult:
         img_provider = provider_manager.get_image_provider(image_provider)
-        img_res = await img_provider.generate_image(prompt)
+        img_res = await img_provider.text_to_image(prompt)
         if not img_res:
             llm_logger.error(f"error occurred when generating image")
         return img_res

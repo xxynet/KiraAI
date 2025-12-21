@@ -1,5 +1,5 @@
 from abc import abstractmethod, ABC
-from typing import List
+from typing import List, Optional
 import asyncio
 
 from .llm_model import LLMModel, LLMRequest, LLMResponse
@@ -78,7 +78,10 @@ class ImageProvider(BaseProvider):
         super().__init__(provider_id, provider_name, provider_config)
 
     @abstractmethod
-    async def generate_image(self, prompt) -> ImageResult:
+    async def text_to_image(self, prompt) -> ImageResult:
+        pass
+
+    async def image_to_image(self, prompt: str, url: Optional[str] = None, base64: Optional[str] = None) -> ImageResult:
         pass
 
 

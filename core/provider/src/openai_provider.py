@@ -1,6 +1,7 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import asyncio
 import json
+from typing import Optional
 
 from core.logging_manager import get_logger
 from ..provider import LLMProvider, ImageProvider
@@ -91,21 +92,21 @@ class OpenAIProvider(LLMProvider):
                 llm_resp.output_tokens = response.usage.completion_tokens
             return llm_resp
         except APIStatusError as e:
+            # the model does not support function calling etc.
+            # 403 Authorization failed (api key error)
             logger.error(f"APIStatusError: {e}")
-            # pass
         except APITimeoutError as e:
             logger.error(f"APITimeoutError: {e}")
-            # pass
         except APIConnectionError as e:
+            # APIConnectionError: Connection error.(base_url error)
             logger.error(f"APIConnectionError: {e}")
-            # pass
 
 
 class OpenAIImageProvider(ImageProvider):
     def __init__(self, provider_id, provider_name, provider_config):
         super().__init__(provider_id, provider_name, provider_config)
 
-    async def generate_image(self, prompt) -> ImageResult:
+    async def text_to_image(self, prompt) -> ImageResult:
         client = AsyncOpenAI(
             base_url=self.provider_config.get("base_url", ""),
             api_key=self.provider_config.get("api_key", ""),
@@ -122,3 +123,6 @@ class OpenAIImageProvider(ImageProvider):
         )
 
         return ImageResult(images_response.data[0].url)
+
+    async def image_to_image(self, prompt: str, url: Optional[str] = None, base64: Optional[str] = None) -> ImageResult:
+        pass

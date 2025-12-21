@@ -11,7 +11,7 @@ class SiliconflowImageProvider(ImageProvider):
     def __init__(self, provider_id, provider_name, provider_config):
         super().__init__(provider_id, provider_name, provider_config)
 
-    async def generate_image(self, prompt) -> ImageResult:
+    async def text_to_image(self, prompt) -> ImageResult:
         """
         generate image via siliconflow
         :param prompt: prompt of image generation
