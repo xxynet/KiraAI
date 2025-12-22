@@ -11,7 +11,7 @@ class IMAdapter(ABC):
         self.name: Optional[str] = None
         self.config = config
         self.emoji_dict: Optional[dict] = None
-        self.message_types: list[Type[Union[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]]] = []
+        self.message_types: list = []
         self.loop = loop
         self.event_bus = event_bus
 

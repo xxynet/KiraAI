@@ -5,6 +5,7 @@ from typing import Union, Dict, Any, List
 from asyncio import Semaphore
 import random
 import re
+import os
 import xml.sax.saxutils
 
 from core.llm_manager import llm_api
@@ -320,6 +321,19 @@ class MessageProcessor:
                         message_elements.append(MessageType.Text(f"<record>{value}</record>"))
                 elif tag == "poke":
                     message_elements.append(MessageType.Poke(value))
+                elif tag == "selfie":
+                    ref_img_path = global_config.get('bot_config', {}).get('selfie', {}).get('path', '')
+                    if os.path.exists(f"data/{ref_img_path}"):
+                        img_extension = ref_img_path.split(".")[1]
+                        bs64 = image_to_base64(f"data/{ref_img_path}")
+                        img_res = await llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
+                        if img_res:
+                            if img_res.url:
+                                message_elements.append(MessageType.Image(url=img_res.url))
+                            elif img_res.base64:
+                                message_elements.append(MessageType.Image(base64=img_res.base64))
+                            else:
+                                pass
 
             if message_elements:
                 message_list.append(message_elements)

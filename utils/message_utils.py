@@ -6,7 +6,7 @@ from typing import Union, Optional, List, Type
 class KiraMessageEvent:
     platform: str
     adapter_name: str
-    message_types: List[Type]
+    message_types: list
     user_id: str
     user_nickname: str
     message_id: str

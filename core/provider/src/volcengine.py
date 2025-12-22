@@ -26,7 +26,7 @@ class VolcImageProvider(OpenAIImageProvider):
         if url:
             ref_img = url
         elif base64:
-            ref_img = f"data:image/type;base64,{base64}"
+            ref_img = base64
         else:
             ref_img = None
 
