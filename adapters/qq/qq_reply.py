@@ -164,7 +164,8 @@ class QQAdapter(IMAdapter):
         super().__init__(config, loop, event_bus)
         self.name: str = "QQ"
         self.emoji_dict = self._load_dict("adapters/qq/emoji.json")
-        self.message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Poke, MessageType.Notice]
+        # self.message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Poke, MessageType.Notice]
+        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie"]
         self.bot: BotClient = BotClient()
         # self._log = get_log()  # 已禁用适配器日志
 
