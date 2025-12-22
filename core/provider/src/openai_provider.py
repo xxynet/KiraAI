@@ -32,7 +32,8 @@ class OpenAIProvider(LLMProvider):
             response = await client.chat.completions.create(
                 model=self.get_models(),
                 messages=request.messages,
-                tools=request.tools if request.tools else None
+                tools=request.tools if request.tools else None,
+                tool_choice=request.tool_choice
             )
             llm_resp = LLMResponse("")
             if response.choices:

@@ -1,6 +1,6 @@
 from abc import abstractmethod, ABC
 from enum import Enum, auto
-from typing import Optional, Callable, Awaitable
+from typing import Optional, Callable, Literal
 import asyncio
 from dataclasses import dataclass, field
 
@@ -36,6 +36,16 @@ class LLMRequest:
 
     """optional: tool functions"""
     tool_funcs: Optional[dict[str, Callable]] = None
+
+    """controls llm behavior of tool calling"""
+    tool_choice: Optional[Literal["auto", "none", "required"]] = None
+
+    def __post_init__(self):
+        if not self.tool_choice:
+            if self.tools:
+                self.tool_choice = "auto"
+            else:
+                self.tool_choice = "none"
 
 
 @dataclass
