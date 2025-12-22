@@ -1,6 +1,6 @@
 <div align="center">
 
-![alt text](screenshots/KiraAI-banner.png)
+# ✨ KiraAI
 
 Light up the digital soul
 
