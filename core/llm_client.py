@@ -1,4 +1,5 @@
 from asyncio import Semaphore
+from typing import Optional
 import requests
 import functools
 import copy
@@ -168,9 +169,18 @@ class LLMClient:
             llm_logger.error(f"error occurred when describing image: {str(e)}")
             return ""
 
-    async def generate_img(self, prompt) -> ImageResult:
+    @staticmethod
+    async def generate_img(prompt) -> ImageResult:
         img_provider = provider_manager.get_image_provider(image_provider)
         img_res = await img_provider.text_to_image(prompt)
+        if not img_res:
+            llm_logger.error(f"error occurred when generating image")
+        return img_res
+
+    @staticmethod
+    async def image_to_image(prompt, url: Optional[str] = None, bs64: Optional[str] = None):
+        img_provider = provider_manager.get_image_provider(image_provider)
+        img_res = await img_provider.image_to_image(prompt, url=url, base64=bs64)
         if not img_res:
             llm_logger.error(f"error occurred when generating image")
         return img_res
