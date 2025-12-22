@@ -237,12 +237,12 @@ class QQAdapter(IMAdapter):
             elif ele.get("type") == "at":
                 at_obj = MessageType.At(str(ele.get("data").get("qq")))
                 if str(ele.get("data").get("qq")) != "all":
-                    at_user_info = self.bot.api.get_stranger_info_sync(user_id=str(ele.get("data").get("qq")))
+                    at_user_info = await self.bot.api.get_stranger_info(user_id=str(ele.get("data").get("qq")))
                     at_nickname = at_user_info["data"]["nickname"]
                     at_obj.nickname = at_nickname
                 message_content.append(at_obj)
             elif ele.get("type") == "reply":
-                reply_content = self.bot.api.get_msg_sync(ele.get("data").get("id"))
+                reply_content = await self.bot.api.get_msg(ele.get("data").get("id"))
                 processed_reply = await process_reply_message(reply_content)
                 message_content.append(MessageType.Reply(ele.get("data").get("id"), processed_reply))
             elif ele.get("type") == "face":
@@ -259,13 +259,13 @@ class QQAdapter(IMAdapter):
             elif ele.get("type") == "file":
                 message_content.append(MessageType.Text("[File]"))
             elif ele.get("type") == "forward":
-                forward_message = self.bot.api.get_forward_msg_sync(msg.message_id)
+                forward_message = await self.bot.api.get_forward_msg(msg.message_id)
                 processed_forward = await process_forward_message(forward_message)
                 message_content.append(MessageType.Text(f"[Forward {processed_forward}]"))
             elif ele.get("type") == "record":
                 file_id = ele.get("data").get("file")
 
-                record_info = self.bot.api.get_record_sync(file_id, output_type="mp3")
+                record_info = await self.bot.api.get_record(file_id, output_type="mp3")
                 audio_base64 = record_info.get("data").get("base64")
                 message_content.append(MessageType.Record(audio_base64))
         return message_content
@@ -277,7 +277,7 @@ class QQAdapter(IMAdapter):
             message_list = [MessageType.Notice(notice_str)]
             if "group_id" in msg:
                 if msg["group_id"] in self.group_list:
-                    group_info = self.bot.api.get_group_info_sync(msg.get("group_id"))
+                    group_info = await self.bot.api.get_group_info(msg.get("group_id"))
                     group_name = group_info.get("data").get("group_name")
                     message_obj = KiraMessageEvent(
                         platform=self.name,
@@ -306,7 +306,7 @@ class QQAdapter(IMAdapter):
             if msg["sub_type"] == "ban":
                 notice_str = f"[System 用户{ban_operator_id}禁言了你{ban_duration}秒]"
                 message_list = [MessageType.Notice(notice_str)]
-                group_info = self.bot.api.get_group_info_sync(msg.get("group_id"))
+                group_info = await self.bot.api.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = KiraMessageEvent(
@@ -327,7 +327,7 @@ class QQAdapter(IMAdapter):
                 # ban_duration 永远是0，invalid
                 notice_str = f"[System 你之前被禁言了，用户{ban_operator_id}解除了你的禁言]"
                 message_list = [MessageType.Notice(notice_str)]
-                group_info = self.bot.api.get_group_info_sync(msg.get("group_id"))
+                group_info = await self.bot.api.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = KiraMessageEvent(
@@ -354,7 +354,7 @@ class QQAdapter(IMAdapter):
             if "group_id" in msg:
                 notice_str = f"[System 用户{msg.get('user_id')}加入了群聊]"
                 message_list = [MessageType.Notice(notice_str)]
-                group_info = self.bot.api.get_group_info_sync(msg.get("group_id"))
+                group_info = await self.bot.api.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = KiraMessageEvent(
@@ -409,7 +409,7 @@ class QQAdapter(IMAdapter):
             if should_respond:
                 # 仅进行 Adapter 层职责：打包消息并发布到事件总线，等待主循环回复
                 message_list = await self.process_incoming_message(msg)
-                group_info = self.bot.api.get_group_info_sync(msg.group_id)
+                group_info = await self.bot.api.get_group_info(msg.group_id)
                 group_name = group_info.get("data").get("group_name")
                 message_obj = KiraMessageEvent(
                     platform=self.name,
