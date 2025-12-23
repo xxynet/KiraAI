@@ -42,7 +42,7 @@ class PromptManager:
             "emoji": "<emoji>emoji_id</emoji> # 发送一个emoji（中文一般叫做表情）消息，通常和文字在同一个msg标签中，可以使用的emoji如下：{emoji_json}",
             "sticker": "<sticker>sticker_id</sticker> # 发送一个sticker（中文一般叫做表情包）消息，通常单独在一条消息里，你需要在聊天中主动自然使用这些sticker，可以使用的sticker id和描述如下：{sticker_prompt}",
             "poke": "<poke>user_id</poke> # 发送戳一戳消息（一个社交平台的小功能用于引起用户注意），只能单独一条消息，不能和其他元素出现在一条消息中。可以在别人对你戳一戳（捏一捏）时使用，也可以在日常交流中自然使用",
-            "selfie": "<selfie>prompt for image generator, use 'the character' to refer to the character in the reference image</selfie> # send an specific image, could be a selfie or any image with the character in it."
+            "selfie": "<selfie>prompt for image generator, use 'the character' to refer to the character in the reference image</selfie> # send an specific image, could be a selfie or any image with the character in it. DO NOT describe the appearance of the character, the reference image already has it."
         }
 
         logger.info("PromptManager initialized")

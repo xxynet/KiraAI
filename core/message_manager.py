@@ -195,7 +195,7 @@ class MessageProcessor:
 
         llm_resp = await llm_api.chat_with_tools(messages, tool_prompt)
         if llm_resp:
-            response = llm_resp.text_response
+            response = llm_resp.text_response.strip()
             tool_messages = llm_resp.tool_results
             # logger.info(f"LLM响应: {response}")
 
@@ -204,7 +204,7 @@ class MessageProcessor:
                 response_with_ids = self._add_message_ids(actual_xml, message_ids)
                 logger.info(f"LLM: {response_with_ids}")
 
-                # 更新记忆
+                # update memory
                 if tool_messages:
                     new_memory_chunk.extend(tool_messages)
 
@@ -213,8 +213,6 @@ class MessageProcessor:
 
     async def _handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
-
-        print(msg)
 
         if msg.sub_cmt_id:
             logger.info(f"[{msg.adapter_name} | {msg.sub_cmt_id}] [{msg.commenter_nickname}]: {msg.sub_cmt_content[0].text}")
@@ -229,7 +227,7 @@ class MessageProcessor:
 
         llm_resp = await llm_api.chat([{"role": "user", "content": cmt_prompt}])
 
-        response = llm_resp.text_response
+        response = llm_resp.text_response.strip()
 
         logger.info(f"LLM: {response}")
 
@@ -260,7 +258,6 @@ class MessageProcessor:
         for message_list in resp_list:
             message_obj = MessageSending(message_list)
 
-            # 根据消息类型选择发送方法
             if chat_type == "dm":
                 message_id = await get_adapter_by_name(adapter_name).send_direct_message(pid, message_obj)
             elif chat_type == "gm":
@@ -272,7 +269,7 @@ class MessageProcessor:
                 message_id = ''
             message_ids.append(message_id)
 
-            # 添加随机延迟避免频率限制
+            # add random message delay
             await asyncio.sleep(random.uniform(config_min_message_delay, config_max_message_delay))
 
         return message_ids, actual_xml
@@ -355,7 +352,7 @@ class MessageProcessor:
             # init fixed_xml
             fixed_xml = xml_data
             try:
-                llm_resp = await llm_api.chat([{"role": "system", "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。直接输出修改后的内容，不要输出任何多余内容"}, {"role": "user", "content": xml_data}])
+                llm_resp = await llm_api.chat([{"role": "system", "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。过滤掉形如`<｜tool▁calls▁begin｜>`的工具调用格式。直接输出修改后的内容，不要输出任何多余内容"}, {"role": "user", "content": xml_data}])
                 fixed_xml = llm_resp.text_response
                 logger.debug(f"fixed xml data: {fixed_xml}")
                 message_list = await self._parse_xml_msg(fixed_xml)
