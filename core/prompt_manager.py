@@ -4,9 +4,8 @@ from typing import Dict, Any, Union, Type, Optional, Literal
 
 from core.config_loader import global_config
 from core.logging_manager import get_logger
-from core.sticker_manager import sticker_manager
+from core.sticker_manager import StickerManager
 from utils.message_utils import KiraMessageEvent
-from utils.message_utils import MessageType
 
 logger = get_logger("prompt_manager", "yellow")
 
@@ -14,7 +13,8 @@ logger = get_logger("prompt_manager", "yellow")
 class PromptManager:
     """管理系统提示词和工具提示词的生成"""
     
-    def __init__(self, 
+    def __init__(self,
+                 sticker_manager: StickerManager,
                  persona_path: str = "prompts/persona.txt",
                  emoji_path: str = "adapters/qq/emoji.json",
                  format_path: str = "prompts/format.txt",
@@ -29,6 +29,7 @@ class PromptManager:
         # 加载基础提示词
         self.persona_prompt = self._load_file(persona_path)
         self.emoji_dict = self._load_dict(emoji_path)
+        self.sticker_manager = sticker_manager
         self.sticker_dict = sticker_manager.sticker_dict
         self.sticker_prompt = self._load_sticker_prompt(self.sticker_dict)
         self.ada_config_prompt = self.load_ada_config_prompt()
@@ -85,36 +86,17 @@ class PromptManager:
         for msg_type in message_types:
             if msg_type in self.builtin_msg_types_mapping:
                 supported_format_prompt += f"{self.builtin_msg_types_mapping[msg_type]}\n"
-        # if MessageType.Text in message_types:
-        #     supported_format_prompt += "<text>some text</text> # 纯文本消息\n"
-        # if MessageType.Image in message_types:
-        #     supported_format_prompt += "<img>prompt for image generator</img> # 请勿滥用，仅在用户请求看照片时使用，需要详细的绘画提示词。\n"
-        # if MessageType.At in message_types:
-        #     supported_format_prompt += "<at>user_id</at> # 通过用户id使用@功能，通常出现在消息的开头，有时也会在消息中间（如果聊天中需要提及其他人），特殊的，传入字符串all代表@全体成员。at功能仅在群聊中使用\n"
-        # if MessageType.Reply in message_types:
-        #     supported_format_prompt += "<reply>message_id</reply> # 回复一条消息，如果使用这个标签，需要为一条消息的第一个元素，且不能单独出现\n"
-        # if MessageType.Record in message_types:
-        #     supported_format_prompt += "<record>record_text</record> # 要发送的语音文本，不能和其他msg内标签混用，用户给你发语音或者用户要求你发语音时使用（收到语音消息类似这样：[Record voice_message]）\n"
-        # if MessageType.Emoji in message_types:
-        #     # 需要传入 emoji_json 参数
-        #     supported_format_prompt += "<emoji>emoji_id</emoji> # 发送一个emoji（中文一般叫做表情）消息，通常和文字在同一个msg标签中，可以使用的emoji如下：{emoji_json}\n"
-        # if MessageType.Sticker in message_types:
-        #     # 需要传入 sticker_prompt 参数
-        #     supported_format_prompt += "<sticker>sticker_id</sticker> # 发送一个sticker（中文一般叫做表情包）消息，通常单独在一条消息里，你需要在聊天中主动自然使用这些sticker，可以使用的sticker id和描述如下：{sticker_prompt}\n"
-        # if MessageType.Poke in message_types:
-        #     supported_format_prompt += "<poke>user_id</poke> # 发送戳一戳消息（一个社交平台的小功能用于引起用户注意），只能单独一条消息，不能和其他元素出现在一条消息中。可以在别人对你戳一戳（捏一捏）时使用，也可以在日常交流中自然使用\n"
         return supported_format_prompt
     
     def _load_format_prompt(self, message_types: list[str], emoji_dict: Optional[dict] = None) -> str:
         """加载格式提示词"""
         if not message_types:
             message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie"]
-            # message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]
         message_type_prompt = self._load_supported_format_prompt(message_types)
         # 格式化小表情JSON
         emoji_json = json.dumps(emoji_dict, ensure_ascii=False)
 
-        self.sticker_dict = sticker_manager.sticker_dict
+        self.sticker_dict = self.sticker_manager.sticker_dict
         self.sticker_prompt = self._load_sticker_prompt(self.sticker_dict)
 
         message_type_prompt = message_type_prompt.format(emoji_json=emoji_json, sticker_prompt=self.sticker_prompt)

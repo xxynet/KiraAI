@@ -91,16 +91,13 @@ class StickerManager:
         return sticker_desc
 
 
-sticker_manager = StickerManager()
-
-
 if __name__ == '__main__':
     from pathlib import Path
     # set script dir as working dir
     working_dir = Path(__file__).parent.parent
     os.chdir(working_dir)
 
-    # to test, comment out the following line & comment the same statement above
+    # to tests, comment out the following line & comment the same statement above
     # from core.llm_manager import llm_api
 
     test_mgr = StickerManager()

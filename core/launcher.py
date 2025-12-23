@@ -19,10 +19,8 @@ class KiraLauncher:
 
         self.lifecycle = KiraLifecycle(stats=self.stats)
         try:
-            await asyncio.gather(
-                self.lifecycle.init_and_run_system(),
-                self.lifecycle.schedule_tasks(),
-            )
+            task = asyncio.create_task(self.lifecycle.init_and_run_system())
+            await task
         except asyncio.CancelledError:
             self.logger.info("✨ Exiting KiraAI...")
             await self.lifecycle.stop()

@@ -6,7 +6,7 @@ from core.logging_manager import get_logger
 from core.config_loader import global_config
 
 from utils.message_utils import KiraMessageEvent
-from core.sticker_manager import sticker_manager
+from core.sticker_manager import StickerManager
 from core.message_manager import MessageProcessor
 
 from .prompt_manager import PromptManager
@@ -33,11 +33,13 @@ class KiraLifecycle:
 
         self.message_processor: Optional[MessageProcessor] = None
 
+        self.sticker_manager: Optional[StickerManager] = None
+
         self.tasks: list[asyncio.Task] = []
 
     async def schedule_tasks(self):
         self.tasks = [
-            asyncio.create_task(sticker_manager.scan_and_register_sticker())
+            asyncio.create_task(self.sticker_manager.scan_and_register_sticker())
         ]
         await asyncio.gather(*self.tasks)
 
@@ -49,20 +51,24 @@ class KiraLifecycle:
         event_queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
-        # init adapter manager
+        # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(loop, event_queue, global_config["ada_config"])
-
-        # init adapter manager & start adapter instances
         await self.adapter_manager.initialize()
+
+        # ====== init sticker manager ======
+        self.sticker_manager = StickerManager()
 
         # ====== init memory manager ======
         self.memory_manager = MemoryManager()
 
         # ====== init prompt manager ======
-        self.prompt_manager = PromptManager()
+        self.prompt_manager = PromptManager(self.sticker_manager)
 
         # ====== init message processor ======
         self.message_processor = MessageProcessor(self.memory_manager, self.prompt_manager)
+
+        # ====== schedule tasks ======
+        asyncio.create_task(self.schedule_tasks())
 
         # expose adapters and loop globally for runtime usage everywhere
         from core.services.runtime import set_adapters, set_event_bus
