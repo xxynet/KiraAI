@@ -352,7 +352,11 @@ class MessageProcessor:
             # init fixed_xml
             fixed_xml = xml_data
             try:
-                llm_resp = await llm_api.chat([{"role": "system", "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。过滤掉形如`<｜tool▁calls▁begin｜>`的工具调用格式。直接输出修改后的内容，不要输出任何多余内容"}, {"role": "user", "content": xml_data}])
+                llm_resp = await llm_api.chat([
+                    {"role": "system",
+                     "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。若出现形如`<｜tool▁calls▁begin｜>`的工具调用格式，请**务必**删除。直接输出修改后的内容，不要输出任何多余内容"},
+                    {"role": "user", "content": xml_data}
+                ])
                 fixed_xml = llm_resp.text_response
                 logger.debug(f"fixed xml data: {fixed_xml}")
                 message_list = await self._parse_xml_msg(fixed_xml)
