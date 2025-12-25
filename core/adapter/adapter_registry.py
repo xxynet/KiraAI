@@ -27,6 +27,7 @@ class AdapterManager:
             ada_config = self.adas_config[ada_name]
             ada_platform = ada_config["platform"]
             await self.register_adapter(ada_platform, ada_name, ada_config)
+        logger.info(f"Adapters set: {list(self._adapters.keys())}")
 
     async def register_adapter(self, platform, name, config: dict):
         if config.get("enabled", "false").lower() == "true":

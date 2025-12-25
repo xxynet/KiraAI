@@ -1,4 +1,3 @@
-import asyncio
 from asyncio import Queue
 from typing import Dict, Any, Optional, Union
 from utils.adapter_utils import IMAdapter, SocialMediaAdapter
@@ -15,11 +14,6 @@ _event_queue: Optional[Queue] = None
 def set_adapters(adapters: Dict[str, Union[IMAdapter]]):
     global _adapters
     _adapters = adapters or {}
-    logger.info(f"Adapters set: {list(adapters.keys())}")
-
-
-def get_adapters() -> Dict[str, Any]:
-    return _adapters
 
 
 def get_adapter_by_name(adapter_name: str):
