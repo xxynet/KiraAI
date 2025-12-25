@@ -2,7 +2,6 @@ import asyncio
 import json
 import os
 
-from core.llm_manager import llm_api
 from core.logging_manager import get_logger
 from utils.common_utils import image_to_base64
 
@@ -13,7 +12,8 @@ _sticker_folder: str = "data/sticker"
 
 
 class StickerManager:
-    def __init__(self):
+    def __init__(self, llm_api):
+        self.llm_api = llm_api
         self.sticker_path = _sticker_path
         self.sticker_folder = _sticker_folder
         self.sticker_dict = {}
@@ -80,13 +80,12 @@ class StickerManager:
             # TODO customize interval in config file
             await asyncio.sleep(120 * 60)
 
-    @staticmethod
-    async def get_sticker_description(sticker_file):
+    async def get_sticker_description(self, sticker_file):
         sticker_path = os.path.join(_sticker_folder, sticker_file)
 
         img_b64 = image_to_base64(sticker_path)
 
-        sticker_desc = await llm_api.desc_img(image=img_b64, prompt="这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出", is_base64=True)
+        sticker_desc = await self.llm_api.desc_img(image=img_b64, prompt="这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出", is_base64=True)
 
         return sticker_desc
 
@@ -100,6 +99,6 @@ if __name__ == '__main__':
     # to tests, comment out the following line & comment the same statement above
     # from core.llm_manager import llm_api
 
-    test_mgr = StickerManager()
+    # test_mgr = StickerManager()
 
-    asyncio.run(test_mgr.scan_and_register_sticker())
+    # asyncio.run(test_mgr.scan_and_register_sticker())

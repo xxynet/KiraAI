@@ -5,15 +5,18 @@ from typing import Union, Type, Optional, List, Dict, Any
 from utils.message_utils import MessageType
 from utils.message_utils import KiraMessageEvent, MessageSending
 
+from core.llm_client import LLMClient
+
 
 class IMAdapter(ABC):
-    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue):
+    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api: LLMClient):
         self.name: Optional[str] = None
         self.config = config
         self.emoji_dict: Optional[dict] = None
         self.message_types: list = []
         self.loop = loop
         self.event_bus = event_bus
+        self.llm_api = llm_api
 
         self.permission_mode = None
 

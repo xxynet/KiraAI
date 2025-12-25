@@ -23,7 +23,6 @@ from datetime import datetime
 import asyncio
 from typing import Any, Dict, Union, List
 
-from core.llm_manager import llm_api
 from utils.adapter_utils import IMAdapter
 from utils.message_utils import KiraMessageEvent, MessageSending, MessageType
 
@@ -50,118 +49,9 @@ def extract_card_info(card_json: str) -> str:
     return json.dumps(card_json_dic, ensure_ascii=False)
 
 
-async def process_reply_message(message_data):
-    msg = message_data.get("data", {})
-    sender = msg.get("sender", {}).get("nickname", str(msg.get("user_id")))
-    ts = msg.get("time", 0)
-    dt = datetime.fromtimestamp(ts)
-    time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-
-    # 组合消息内容
-    parts = []
-    for seg in msg.get("message", []):
-        t = seg.get("type")
-        d = seg.get("data", {})
-        if t == "text":
-            parts.append(d.get("text", ""))
-        elif t == "at":
-            parts.append(f"[At {d.get('qq')}]")
-        elif t == "image":
-            img_desc = await llm_api.desc_img(d.get('url', ''))
-            parts.append(f"[Image {img_desc}]")
-        elif t == "face":
-            parts.append(f"[Emoji {d.get('id')}]")
-        elif t == "json":
-            json_card_info = d.get("data", "")
-            cleaned_card_info = extract_card_info(json_card_info)
-            parts.append(f"[Json {cleaned_card_info}]")
-        elif t == "reply":
-            parts.append(f"[Reply {d.get('id')}]")
-        else:
-            parts.append(f"[{t}]")
-
-    content = " ".join(parts).strip()
-    return f"{sender}  [{time_str}]\n{content}"
-
-
-async def process_forward_message(message_data):
-    result = []
-    messages = message_data.get("data", {}).get("messages", [])
-
-    for msg in messages:
-        sender = msg.get("sender", {}).get("nickname", str(msg.get("user_id")))
-        ts = msg.get("time", 0)
-        dt = datetime.fromtimestamp(ts)  # 转换成可读时间
-        time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-
-        # 组合消息内容
-        parts = []
-        for seg in msg.get("message", []):
-            t = seg.get("type")
-            d = seg.get("data", {})
-            if t == "text":
-                parts.append(d.get("text", ""))
-            elif t == "at":
-                parts.append(f"[At {d.get('qq')}]")
-            elif t == "image":
-                img_desc = await llm_api.desc_img(d.get('url', ''))
-                parts.append(f"[Image {img_desc}]")
-            elif t == "face":
-                parts.append(f"[Emoji {d.get('id')}]")
-            elif t == "reply":
-                parts.append(f"[Reply {d.get('id')}]")
-            else:
-                parts.append(f"[{t}]")
-
-        content = " ".join(parts).strip()
-        result.append(f"{sender}  [{time_str}]\n{content}\n")
-
-    return "\n".join(result)
-
-
-def process_outgoing_message(message: MessageSending):
-    """将通用消息格式转换为QQ消息格式"""
-    message_chain_elements = []
-    for ele in message.message_list:
-        if isinstance(ele, MessageType.Text):
-            message_chain_elements.append(Text(ele.text))
-        elif isinstance(ele, MessageType.Emoji):
-            message_chain_elements.append(Face(int(ele.emoji_id)))
-        elif isinstance(ele, MessageType.Sticker):
-            message_chain_elements.append(Image(f"base64://{ele.sticker_bs64}"))
-        elif isinstance(ele, MessageType.At):
-            val = ele.pid
-            if val == "all":
-                message_chain_elements.append(AtAll())
-            else:
-                try:
-                    val_num = int(val)
-                    message_chain_elements.append(At(val_num))
-                except Exception as e:
-                    pass
-            message_chain_elements.append(Text(" "))
-        elif isinstance(ele, MessageType.Image):
-            if ele.url:
-                message_chain_elements.append(Image(ele.url))
-            elif ele.base64:
-                message_chain_elements.append(Image(f"base64://{ele.base64}"))
-        elif isinstance(ele, MessageType.Reply):
-            message_chain_elements.append(Reply(ele.message_id))
-        elif isinstance(ele, MessageType.Record):
-            message_chain_elements.append(Record(f"base64://{ele.bs64}"))
-        elif isinstance(ele, MessageType.Notice):
-            # 可以实现定时主动消息等
-            pass
-        elif isinstance(ele, MessageType.Poke):
-            message_chain_elements.append(ele)
-        else:
-            pass
-    return message_chain_elements
-
-
 class QQAdapter(IMAdapter):
-    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue):
-        super().__init__(config, loop, event_bus)
+    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
+        super().__init__(config, loop, event_bus, llm_api)
         self.name: str = "QQ"
         self.emoji_dict = self._load_dict("adapters/qq/emoji.json")
         # self.message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Poke, MessageType.Notice]
@@ -203,7 +93,7 @@ class QQAdapter(IMAdapter):
 
     async def send_group_message(self, group_id, send_message_obj):
         try:
-            message_chain = process_outgoing_message(send_message_obj)
+            message_chain = self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
             if isinstance(ele, MessageType.Poke):
                 await self.bot.api.send_poke(user_id=ele.pid, group_id=group_id)
@@ -217,7 +107,7 @@ class QQAdapter(IMAdapter):
 
     async def send_direct_message(self, user_id, send_message_obj):
         try:
-            message_chain = process_outgoing_message(send_message_obj)
+            message_chain = self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
             if isinstance(ele, MessageType.Poke):
                 await self.bot.api.send_poke(user_id=ele.pid)
@@ -244,7 +134,7 @@ class QQAdapter(IMAdapter):
                 message_content.append(at_obj)
             elif ele.get("type") == "reply":
                 reply_content = await self.bot.api.get_msg(ele.get("data").get("id"))
-                processed_reply = await process_reply_message(reply_content)
+                processed_reply = await self._process_reply_message(reply_content)
                 message_content.append(MessageType.Reply(ele.get("data").get("id"), processed_reply))
             elif ele.get("type") == "face":
                 message_content.append(MessageType.Emoji(str(ele.get("data").get("id"))))
@@ -261,7 +151,7 @@ class QQAdapter(IMAdapter):
                 message_content.append(MessageType.Text("[File]"))
             elif ele.get("type") == "forward":
                 forward_message = await self.bot.api.get_forward_msg(msg.message_id)
-                processed_forward = await process_forward_message(forward_message)
+                processed_forward = await self._process_forward_message(forward_message)
                 message_content.append(MessageType.Text(f"[Forward {processed_forward}]"))
             elif ele.get("type") == "record":
                 file_id = ele.get("data").get("file")
@@ -452,6 +342,113 @@ class QQAdapter(IMAdapter):
                 content=message_list,
                 timestamp=int(msg.time))
             self.publish(message_obj)
+
+    async def _process_reply_message(self, message_data):
+        msg = message_data.get("data", {})
+        sender = msg.get("sender", {}).get("nickname", str(msg.get("user_id")))
+        ts = msg.get("time", 0)
+        dt = datetime.fromtimestamp(ts)
+        time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        # 组合消息内容
+        parts = []
+        for seg in msg.get("message", []):
+            t = seg.get("type")
+            d = seg.get("data", {})
+            if t == "text":
+                parts.append(d.get("text", ""))
+            elif t == "at":
+                parts.append(f"[At {d.get('qq')}]")
+            elif t == "image":
+                img_desc = await self.llm_api.desc_img(d.get('url', ''))
+                parts.append(f"[Image {img_desc}]")
+            elif t == "face":
+                parts.append(f"[Emoji {d.get('id')}]")
+            elif t == "json":
+                json_card_info = d.get("data", "")
+                cleaned_card_info = extract_card_info(json_card_info)
+                parts.append(f"[Json {cleaned_card_info}]")
+            elif t == "reply":
+                parts.append(f"[Reply {d.get('id')}]")
+            else:
+                parts.append(f"[{t}]")
+
+        content = " ".join(parts).strip()
+        return f"{sender}  [{time_str}]\n{content}"
+
+    async def _process_forward_message(self, message_data):
+        result = []
+        messages = message_data.get("data", {}).get("messages", [])
+
+        for msg in messages:
+            sender = msg.get("sender", {}).get("nickname", str(msg.get("user_id")))
+            ts = msg.get("time", 0)
+            dt = datetime.fromtimestamp(ts)  # 转换成可读时间
+            time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            # 组合消息内容
+            parts = []
+            for seg in msg.get("message", []):
+                t = seg.get("type")
+                d = seg.get("data", {})
+                if t == "text":
+                    parts.append(d.get("text", ""))
+                elif t == "at":
+                    parts.append(f"[At {d.get('qq')}]")
+                elif t == "image":
+                    img_desc = await self.llm_api.desc_img(d.get('url', ''))
+                    parts.append(f"[Image {img_desc}]")
+                elif t == "face":
+                    parts.append(f"[Emoji {d.get('id')}]")
+                elif t == "reply":
+                    parts.append(f"[Reply {d.get('id')}]")
+                else:
+                    parts.append(f"[{t}]")
+
+            content = " ".join(parts).strip()
+            result.append(f"{sender}  [{time_str}]\n{content}\n")
+
+        return "\n".join(result)
+
+    @staticmethod
+    def _process_outgoing_message(message: MessageSending):
+        """将通用消息格式转换为QQ消息格式"""
+        message_chain_elements = []
+        for ele in message.message_list:
+            if isinstance(ele, MessageType.Text):
+                message_chain_elements.append(Text(ele.text))
+            elif isinstance(ele, MessageType.Emoji):
+                message_chain_elements.append(Face(int(ele.emoji_id)))
+            elif isinstance(ele, MessageType.Sticker):
+                message_chain_elements.append(Image(f"base64://{ele.sticker_bs64}"))
+            elif isinstance(ele, MessageType.At):
+                val = ele.pid
+                if val == "all":
+                    message_chain_elements.append(AtAll())
+                else:
+                    try:
+                        val_num = int(val)
+                        message_chain_elements.append(At(val_num))
+                    except Exception as e:
+                        pass
+                message_chain_elements.append(Text(" "))
+            elif isinstance(ele, MessageType.Image):
+                if ele.url:
+                    message_chain_elements.append(Image(ele.url))
+                elif ele.base64:
+                    message_chain_elements.append(Image(f"base64://{ele.base64}"))
+            elif isinstance(ele, MessageType.Reply):
+                message_chain_elements.append(Reply(ele.message_id))
+            elif isinstance(ele, MessageType.Record):
+                message_chain_elements.append(Record(f"base64://{ele.bs64}"))
+            elif isinstance(ele, MessageType.Notice):
+                # 可以实现定时主动消息等
+                pass
+            elif isinstance(ele, MessageType.Poke):
+                message_chain_elements.append(ele)
+            else:
+                pass
+        return message_chain_elements
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ class OpenAIProvider(LLMProvider):
                 model=self.get_models(),
                 messages=request.messages,
                 tools=request.tools if request.tools else None,
-                tool_choice=request.tool_choice
+                tool_choice=request.tool_choice if request.tool_choice != "none" else None
             )
             llm_resp = LLMResponse("")
             if response.choices:

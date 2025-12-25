@@ -4,15 +4,9 @@ import xml.etree.ElementTree as ET
 from typing import Union, Dict, Any, List
 from asyncio import Semaphore
 import random
-import re
 import os
-import xml.sax.saxutils
 
-from core.llm_manager import llm_api
 from core.logging_manager import get_logger
-from core.config_loader import global_config
-from core.memory_manager import MemoryManager
-from core.prompt_manager import PromptManager
 from core.services.runtime import get_adapter_by_name
 from utils.common_utils import image_to_base64
 from utils.message_utils import KiraMessageEvent, KiraCommentEvent, MessageSending, MessageType
@@ -22,29 +16,28 @@ from .chat import Session
 
 logger = get_logger("message_processor", "cyan")
 
-bot_config = global_config["bot_config"].get("bot")
-
-config_max_message_interval = float(bot_config.get("max_message_interval"))
-config_max_buffer_messages = int(bot_config.get("max_buffer_messages"))
-
-config_min_message_delay = float(bot_config.get("min_message_delay", "0.8"))
-config_max_message_delay = float(bot_config.get("max_message_delay", "1.5"))
-
 
 class MessageProcessor:
     """Core message processor, responsible for handling all message sending and receiving logic"""
     
     def __init__(self,
+                 kira_config,
+                 llm_api,
                  memory_manager: MemoryManager,
                  prompt_manager: PromptManager,
-                 max_message_interval: int = config_max_message_interval,
-                 max_buffer_messages: int = config_max_buffer_messages,
                  max_concurrent_messages: int = 3):
+        self.kira_config = kira_config
+        self.bot_config = kira_config["bot_config"].get("bot")
+        self.max_message_interval = float(self.bot_config.get("max_message_interval"))
+        self.max_buffer_messages = int(self.bot_config.get("max_buffer_messages"))
+        self.min_message_delay = float(self.bot_config.get("min_message_delay", "0.8"))
+        self.max_message_delay = float(self.bot_config.get("max_message_delay", "1.5"))
+
+        self.llm_api = llm_api
+
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
-        self.max_message_interval = max_message_interval
-        self.max_buffer_messages = max_buffer_messages
         
-        # init managers
+        # managers
         self.memory_manager = memory_manager
         self.prompt_manager = prompt_manager
 
@@ -74,8 +67,7 @@ class MessageProcessor:
             session_list_prompt += f"{session_id}\n"
         return session_list_prompt
 
-    @staticmethod
-    async def message_format_to_text(message_list: list[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]):
+    async def message_format_to_text(self, message_list: list[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
         for ele in message_list:
@@ -89,7 +81,7 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, MessageType.Image):
-                img_desc = await llm_api.desc_img(ele.url)
+                img_desc = await self.llm_api.desc_img(ele.url)
                 message_str += f"[Image {img_desc}]"
             elif isinstance(ele, MessageType.Reply):
                 if ele.message_content:
@@ -97,7 +89,7 @@ class MessageProcessor:
                 else:
                     message_str += f"[Reply {ele.message_id}]"
             elif isinstance(ele, MessageType.Record):
-                record_text = await llm_api.speech_to_text(ele.bs64)
+                record_text = await self.llm_api.speech_to_text(ele.bs64)
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, MessageType.Notice):
                 message_str += f"{ele.text}"
@@ -193,7 +185,7 @@ class MessageProcessor:
         # 按会话加锁，防止同会话并发
         session_lock = self.get_session_lock(session_identifier)
 
-        llm_resp = await llm_api.chat_with_tools(messages, tool_prompt)
+        llm_resp = await self.llm_api.chat_with_tools(messages, tool_prompt)
         if llm_resp:
             response = llm_resp.text_response.strip()
             tool_messages = llm_resp.tool_results
@@ -225,7 +217,7 @@ class MessageProcessor:
 
         cmt_prompt = self.prompt_manager.get_comment_prompt(cmt_content)
 
-        llm_resp = await llm_api.chat([{"role": "user", "content": cmt_prompt}])
+        llm_resp = await self.llm_api.chat([{"role": "user", "content": cmt_prompt}])
 
         response = llm_resp.text_response.strip()
 
@@ -270,7 +262,7 @@ class MessageProcessor:
             message_ids.append(message_id)
 
             # add random message delay
-            await asyncio.sleep(random.uniform(config_min_message_delay, config_max_message_delay))
+            await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
 
         return message_ids, actual_xml
 
@@ -300,7 +292,7 @@ class MessageProcessor:
                 elif tag == "at":
                     message_elements.append(MessageType.At(value))
                 elif tag == "img":
-                    img_res = await llm_api.generate_img(value)
+                    img_res = await self.llm_api.generate_img(value)
                     if img_res.url:
                         message_elements.append(MessageType.Image(url=img_res.url))
                     elif img_res.base64:
@@ -311,7 +303,7 @@ class MessageProcessor:
                     message_elements.append(MessageType.Reply(value))
                 elif tag == "record":
                     try:
-                        record_bs64 = await llm_api.text_to_speech(value)
+                        record_bs64 = await self.llm_api.text_to_speech(value)
                         message_elements.append(MessageType.Record(record_bs64))
                     except Exception as e:
                         logger.error(f"an error occurred while generating voice message: {e}")
@@ -319,11 +311,11 @@ class MessageProcessor:
                 elif tag == "poke":
                     message_elements.append(MessageType.Poke(value))
                 elif tag == "selfie":
-                    ref_img_path = global_config.get('bot_config', {}).get('selfie', {}).get('path', '')
+                    ref_img_path = self.kira_config.get('bot_config', {}).get('selfie', {}).get('path', '')
                     if os.path.exists(f"data/{ref_img_path}"):
                         img_extension = ref_img_path.split(".")[1]
                         bs64 = image_to_base64(f"data/{ref_img_path}")
-                        img_res = await llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
+                        img_res = await self.llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
                         if img_res:
                             if img_res.url:
                                 message_elements.append(MessageType.Image(url=img_res.url))
@@ -352,9 +344,9 @@ class MessageProcessor:
             # init fixed_xml
             fixed_xml = xml_data
             try:
-                llm_resp = await llm_api.chat([
+                llm_resp = await self.llm_api.chat([
                     {"role": "system",
-                     "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。若出现形如`<｜tool▁calls▁begin｜>`的工具调用格式，请**务必**删除。直接输出修改后的内容，不要输出任何多余内容"},
+                     "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。若出现形如`<｜tool▁calls▁begin｜>`的工具调用格式，请**务必**删除工具调用标记和其中的所有内容。直接输出修改后的内容，不要输出任何多余内容"},
                     {"role": "user", "content": xml_data}
                 ])
                 fixed_xml = llm_resp.text_response

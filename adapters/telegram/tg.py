@@ -39,8 +39,8 @@ class MessageSender:
 class TelegramAdapter(IMAdapter):
     """Telegram 平台适配器，接入主事件总线"""
 
-    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue):
-        super().__init__(config, loop, event_bus)
+    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
+        super().__init__(config, loop, event_bus, llm_api)
         self.name: str = "Telegram"
 
         # 配置

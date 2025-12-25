@@ -5,234 +5,76 @@ from pathlib import Path
 
 
 class ConfigError(Exception):
-    """Configuration load error"""
-    pass
+    def __init__(self, message: str = "failed to load KiraAI config"):
+        super().__init__(f"ConfigError: {message}")
 
 
-def get_config(config_path: str) -> Dict[str, Dict[str, Any]]:
-    """
-    Read all configurations from the configuration file
+class KiraConfig(dict):
+    def __init__(self, default_config: Optional[dict] = None):
+        super().__init__()
+        object.__setattr__(self, "default_config", default_config)
 
-    Args:
-        config_path: path to config file
+        self["bot_config"] = self.load_from_ini("data/config/bot.ini")
+        self["providers"] = self.load_from_ini("data/config/providers.ini")
+        self["models"] = self.load_from_ini("data/config/models.ini")
+        self["ada_config"] = self.load_from_ini("data/config/adapters.ini", "adapter_name")
 
-    Returns:
-        Dict[str, Dict[str, Any]]
-        
-    Raises:
-        ConfigError: Configuration file does not exist or read failure
-    """
-    if not os.path.exists(config_path):
-        raise ConfigError(f"Config file does not exist: {config_path}")
-    
-    config = configparser.RawConfigParser()
-    config.read(config_path, encoding='utf-8')
+    @staticmethod
+    def _load_from_ini(config_path: str, section_name: Optional[str] = None):
+        """
 
-    config_dict = {}
+        :param config_path: ini file path
+        :param section_name: if set, the section name will be included in the dict under the key 'section_name'
+        :return: config dict
+        """
+        if not os.path.exists(config_path):
+            raise ConfigError(f"Config file does not exist: {config_path}")
 
-    # 获取所有的section（每个section代表一个adapter）
-    for section in config.sections():
-        config_section = {}
+        config = configparser.RawConfigParser()
+        try:
+            config.read(config_path, encoding='utf-8')
+        except configparser.ParsingError as e:
+            raise ConfigError(str(e))
 
-        # 获取该section下的所有配置项
-        for key, value in config.items(section):
-            config_section[key] = value
-        config_dict[section] = config_section
+        _config_dict = {}
 
-    if not config_dict:
-        raise ConfigError(f"Configuration file is empty or formatted incorrectly in: {config_path}")
-    
-    return config_dict
+        # get all sections
+        for section in config.sections():
+            config_section = {}
 
+            # get configuration beneath the section
+            for key, value in config.items(section):
+                config_section[key] = value
+            if section_name:
+                config_section[section_name] = section
+            _config_dict[section] = config_section
 
-def get_ada_config(config_path: str = "config/adapters.ini") -> Dict[str, Dict[str, Any]]:
-    """
-    Load all adapters from config
+        if not _config_dict:
+            raise ConfigError(f"Configuration file is empty in: {config_path}")
 
-    Args:
-        config_path: path to adapter config
+        return _config_dict
 
-    Returns:
-        A dictionary containing all adapter configurations, with keys as adapter names and values as configuration dictionaries
-        
-    Raises:
-        ConfigError: Configuration file does not exist or read failed
-    """
-    if not os.path.exists(config_path):
-        raise ConfigError(f"配置文件不存在: {config_path}")
-    
-    config = configparser.RawConfigParser()
-    config.read(config_path, encoding='utf-8')
+    def load_from_ini(self, config_path: str, section_name: Optional[str] = None):
+        try:
+            return self._load_from_ini(config_path, section_name)
+        except ConfigError as e:
+            print(str(e))
+            return {}
 
-    adapters_dict = {}
+    def __setattr__(self, key: str, value: Any) -> None:
+        """set an attribute"""
+        self[key] = value
 
-    # 获取所有的section（每个section代表一个adapter）
-    for section in config.sections():
-        adapter_config = {}
+    def __getattr__(self, key: str) -> Any:
+        """get an attribute，raise AttributeError if not exists"""
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
 
-        # 获取该section下的所有配置项
-        for key, value in config.items(section):
-            adapter_config[key] = value
-        adapter_config["adapter_name"] = section
-        if adapter_config.get("enabled").lower() == "true":
-            adapters_dict[section] = adapter_config
-
-    if not adapters_dict:
-        raise ConfigError(f"No adapter found in: {config_path}")
-    
-    return adapters_dict
-
-
-# class Config:
-#     """配置管理器，统一加载和管理所有配置"""
-#
-#     def __init__(self, config_dir: str = "config"):
-#         """
-#         初始化配置管理器
-#
-#         Args:
-#             config_dir: 配置文件目录
-#
-#         Raises:
-#             ConfigError: 配置加载失败
-#         """
-#         self.config_dir = Path(config_dir)
-#
-#         # 加载各项配置
-#         try:
-#             self._load_configs()
-#             self._validate_configs()
-#         except Exception as e:
-#             raise ConfigError(f"配置加载失败: {e}") from e
-#
-#     def _load_configs(self):
-#         """加载所有配置文件"""
-#         # Adapter配置
-#         ada_config_path = self.config_dir / "adapters.ini"
-#         self.adapter_config = self._AdapterConfig(get_ada_config(str(ada_config_path)))
-#
-#         # Bot配置
-#         bot_config_path = self.config_dir / "bot.ini"
-#         bot_raw_config = get_config(str(bot_config_path))
-#         self.bot_config = self._BotConfig(bot_raw_config)
-#
-#         # Provider配置
-#         provider_config_path = self.config_dir / "providers.ini"
-#         self.provider_config_raw = get_config(str(provider_config_path))
-#
-#         # Model配置
-#         model_config_path = self.config_dir / "models.ini"
-#         model_raw_config = get_config(str(model_config_path))
-#         self.model_config = self._ModelConfig(model_raw_config)
-#
-#         # 为模型设置provider信息
-#         self._set_model_provider_info()
-#
-#     def _set_model_provider_info(self):
-#         """为所有模型设置provider信息"""
-#         model_types = ['main_llm', 'tool_llm', 'vlm', 'util_model', 'embedding', 're_rank']
-#
-#         for model_type in model_types:
-#             model = getattr(self.model_config, model_type)
-#             if model and model.provider:
-#                 provider_config = self.provider_config_raw.get(model.provider)
-#                 if provider_config:
-#                     model.api_key = provider_config.get("api_key")
-#                     model.base_url = provider_config.get("base_url")
-#                 else:
-#                     raise ConfigError(f"Provider '{model.provider}' 未找到配置")
-#
-#     def _validate_configs(self):
-#         """验证配置完整性"""
-#         # 验证bot配置
-#         if not self.bot_config:
-#             raise ConfigError("Bot配置缺失")
-#
-#         # 验证必要模型
-#         if not hasattr(self.model_config, 'main_llm') or not self.model_config.main_llm:
-#             raise ConfigError("主模型配置缺失")
-#
-#         # 验证adapter配置
-#         if not hasattr(self.adapter_config, 'ada_dict') or not self.adapter_config.ada_dict:
-#             raise ConfigError("适配器配置缺失")
-#
-#     class _AdapterConfig:
-#         """适配器配置"""
-#         def __init__(self, ada_dict: dict):
-#             self.ada_dict = ada_dict
-#
-#     class _BotConfig:
-#         """Bot配置"""
-#         def __init__(self, bot_config: dict):
-#             bot_section = bot_config.get("bot")
-#             if not bot_section:
-#                 raise ConfigError("Bot配置section缺失")
-#
-#             # 类型转换和默认值
-#             self.max_memory_length = int(bot_section.get("max_memory_length", 5))
-#             self.max_message_interval = int(bot_section.get("max_message_interval", 2))
-#
-#     class _ProviderConfig:
-#         """Provider配置"""
-#         def __init__(self):
-#             pass
-#
-#     class _ModelConfig:
-#         """模型配置"""
-#         def __init__(self, model_config: dict):
-#             # 创建模型实例
-#             self.main_llm = self._create_model(model_config, "main_llm")
-#             self.tool_llm = self._create_model(model_config, "tool_llm")
-#             self.vlm = self._create_model(model_config, "vlm")
-#             self.util_model = self._create_model(model_config, "util_model")
-#             self.embedding = self._create_model(model_config, "embedding")
-#             self.re_rank = self._create_model(model_config, "re_rank")
-#
-#             # 其他特殊模型（只有model，没有provider）
-#             tti_info = model_config.get("tti", {})
-#             self.tti = self._Model(model=tti_info.get("model") if tti_info else None)
-#
-#             tts_info = model_config.get("tts", {})
-#             self.tts = self._Model(model=tts_info.get("model") if tts_info else None)
-#             self.tts_voice_name = tts_info.get("voice_name") if tts_info else None
-#
-#             stt_info = model_config.get("stt", {})
-#             self.stt = self._Model(model=stt_info.get("model") if stt_info else None)
-#
-#         def _create_model(self, model_config: dict, model_type: str) -> Optional['_Model']:
-#             """创建模型实例，如果配置不存在返回None"""
-#             model_info = model_config.get(model_type)
-#             if not model_info:
-#                 return None
-#             return self._Model(model_info.get("provider"), model_info.get("model"))
-#
-#         class _Model:
-#             """单个模型配置"""
-#             def __init__(self, provider: Optional[str] = None, model: Optional[str] = None):
-#                 self.provider = provider
-#                 self.model = model
-#                 self.api_key = None
-#                 self.base_url = None
-#
-#             def __bool__(self):
-#                 """检查模型是否配置完整"""
-#                 return bool(self.provider and self.model)
-
-
-try:
-    _global_config_ada = get_ada_config("data/config/adapters.ini")
-    _global_config_providers = get_config("data/config/providers.ini")
-    _global_config_models = get_config("data/config/models.ini")
-    _global_config_bot = get_config("data/config/bot.ini")
-    
-    global_config = {
-        "ada_config": _global_config_ada,
-        "providers": _global_config_providers,
-        "models": _global_config_models,
-        "bot_config": _global_config_bot
-    }
-except Exception as e:
-    print(f"error: loading global config: {e}")
-    global_config = {}
-
-# global_config_new = Config()
+    def __delattr__(self, key: str) -> None:
+        """delete an attribute"""
+        try:
+            del self[key]
+        except KeyError:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")

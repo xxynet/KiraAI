@@ -3,7 +3,7 @@ import time
 from typing import Any, Dict, Union, Optional
 
 from core.logging_manager import get_logger
-from core.config_loader import global_config
+from core.config_loader import KiraConfig
 
 from utils.message_utils import KiraMessageEvent
 from core.sticker_manager import StickerManager
@@ -13,6 +13,8 @@ from .prompt_manager import PromptManager
 from .memory_manager import MemoryManager
 from .adapter import AdapterManager
 from .statistics import Statistics
+from .llm_client import LLMClient
+from .tool_manager import register_all_tools
 
 
 logger = get_logger("lifecycle", "blue")
@@ -24,6 +26,10 @@ class KiraLifecycle:
     def __init__(self, stats: Statistics):
         self.stats = stats
         stats.set_stats("started_ts", int(time.time()))
+
+        self.kira_config: Optional[KiraConfig] = None
+
+        self.llm_api: Optional[LLMClient] = None
 
         self.adapter_manager: Optional[AdapterManager] = None
 
@@ -51,21 +57,32 @@ class KiraLifecycle:
         event_queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
+        # ====== init KiraAI config ======
+        self.kira_config = KiraConfig()
+
+        # ====== init LLMClient ======
+        self.llm_api = LLMClient(self.kira_config)
+        register_all_tools(self.llm_api)
+
         # ====== init adapter manager ======
-        self.adapter_manager = AdapterManager(loop, event_queue, global_config["ada_config"])
+        self.adapter_manager = AdapterManager(self.kira_config["ada_config"],
+                                              loop, event_queue, self.llm_api)
         await self.adapter_manager.initialize()
 
         # ====== init sticker manager ======
-        self.sticker_manager = StickerManager()
+        self.sticker_manager = StickerManager(self.llm_api)
 
         # ====== init memory manager ======
-        self.memory_manager = MemoryManager()
+        self.memory_manager = MemoryManager(self.kira_config)
 
         # ====== init prompt manager ======
-        self.prompt_manager = PromptManager(self.sticker_manager)
+        self.prompt_manager = PromptManager(self.kira_config, self.sticker_manager)
 
         # ====== init message processor ======
-        self.message_processor = MessageProcessor(self.memory_manager, self.prompt_manager)
+        self.message_processor = MessageProcessor(self.kira_config,
+                                                  self.llm_api,
+                                                  self.memory_manager,
+                                                  self.prompt_manager)
 
         # ====== schedule tasks ======
         asyncio.create_task(self.schedule_tasks())

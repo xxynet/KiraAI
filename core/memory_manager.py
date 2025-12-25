@@ -4,21 +4,19 @@ import os
 from typing import Dict, List
 from threading import Lock
 from core.logging_manager import get_logger
-from core.config_loader import global_config
 
 logger = get_logger("memory_manager", "green")
-
-config_max_memory_length = int(global_config["bot_config"].get("bot").get("max_memory_length"))
 
 
 class MemoryManager:
     """管理聊天记忆的读写操作"""
     
     def __init__(self,
-                 max_memory_length: int = config_max_memory_length,
+                 kira_config,
                  chat_memory_path: str = "data/memory/chat_memory.json",
                  core_memory_path: str = "data/memory/core.txt"):
-        self.max_memory_length = max_memory_length
+        self.kira_config = kira_config
+        self.max_memory_length = int(kira_config["bot_config"].get("bot").get("max_memory_length"))
         self.chat_memory_path = chat_memory_path
         self.core_memory_path = core_memory_path
 

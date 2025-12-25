@@ -2,7 +2,6 @@ import json
 from datetime import datetime
 from typing import Dict, Any, Union, Type, Optional, Literal
 
-from core.config_loader import global_config
 from core.logging_manager import get_logger
 from core.sticker_manager import StickerManager
 from utils.message_utils import KiraMessageEvent
@@ -14,12 +13,14 @@ class PromptManager:
     """管理系统提示词和工具提示词的生成"""
     
     def __init__(self,
+                 kira_config,
                  sticker_manager: StickerManager,
                  persona_path: str = "prompts/persona.txt",
                  emoji_path: str = "adapters/qq/emoji.json",
                  format_path: str = "prompts/format.txt",
                  tool_path: str = "prompts/tool.txt",
                  system_path: str = "prompts/system.txt"):
+        self.kira_config = kira_config
         self.persona_path = persona_path
         self.emoji_path = emoji_path
         self.format_path = format_path
@@ -114,10 +115,9 @@ class PromptManager:
         now = datetime.now()
         return now.strftime("%b %d %Y %H:%M %a")
 
-    @staticmethod
-    def load_ada_config_prompt():
+    def load_ada_config_prompt(self):
         ada_config_prompt = ""
-        ada_config = global_config["ada_config"]
+        ada_config = self.kira_config["ada_config"]
         for ada in ada_config:
             ada_platform = ada_config[ada].get("platform")
             ada_name = ada_config[ada].get("adapter_name")
