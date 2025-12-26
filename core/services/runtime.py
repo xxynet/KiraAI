@@ -1,6 +1,6 @@
 from asyncio import Queue
-from typing import Dict, Any, Optional, Union
-from utils.adapter_utils import IMAdapter, SocialMediaAdapter
+from typing import Dict, Optional, Union
+from core.adapter.adapter_utils import IMAdapter, SocialMediaAdapter
 from core.logging_manager import get_logger
 
 

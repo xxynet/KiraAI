@@ -3,7 +3,7 @@ import json
 import os
 
 from core.logging_manager import get_logger
-from utils.common_utils import image_to_base64
+from core.utils.common_utils import image_to_base64
 
 logger = get_logger("sticker", "orange")
 

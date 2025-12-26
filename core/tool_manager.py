@@ -3,7 +3,7 @@ import inspect
 import os
 from typing import Type, List
 
-from utils.tool_utils import BaseTool
+from core.utils.tool_utils import BaseTool
 from core.logging_manager import get_logger
 
 tool_logger = get_logger("tool_manager", "orange")

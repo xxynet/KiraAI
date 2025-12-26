@@ -2,7 +2,9 @@ import asyncio
 from typing import Any
 
 from core.logging_manager import get_logger
-from .src import QQAdapter, TelegramAdapter, BiliBiliAdapter
+from .src.qq import QQAdapter
+from .src.telegram import TelegramAdapter
+from .src.bilibili import BiliBiliAdapter
 
 
 logger = get_logger("adapter", "blue")

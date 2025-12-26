@@ -1,14 +1,12 @@
 import asyncio
 import time
-from typing import Any, Dict, Union, Optional
+from typing import Union, Optional
 
-from core.logging_manager import get_logger
-from core.config_loader import KiraConfig
-
-from utils.message_utils import KiraMessageEvent
-from core.sticker_manager import StickerManager
-from core.message_manager import MessageProcessor
-
+from .logging_manager import get_logger
+from .config_loader import KiraConfig
+from .chat import KiraMessageEvent, KiraCommentEvent
+from .sticker_manager import StickerManager
+from .message_manager import MessageProcessor
 from .prompt_manager import PromptManager
 from .memory_manager import MemoryManager
 from .adapter import AdapterManager
@@ -96,7 +94,7 @@ class KiraLifecycle:
 
         # ====== message handling loop ======
         while True:
-            msg: Union[KiraMessageEvent] = await event_queue.get()
+            msg: Union[KiraMessageEvent, KiraCommentEvent] = await event_queue.get()
             asyncio.create_task(self.message_processor.handle_message(msg))
 
     async def stop(self):

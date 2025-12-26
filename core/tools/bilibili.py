@@ -4,15 +4,13 @@ import configparser
 from pathlib import Path
 from datetime import datetime
 
-from bilibili_api import video, search, homepage, Credential, comment, exceptions as bili_e
-from bilibili_api.comment import CommentResourceType
+from bilibili_api import video, search, homepage, Credential, exceptions as bili_e
 
-from utils.tool_utils import BaseTool
-from core.llm_manager import llm_api
+from core.utils.tool_utils import BaseTool
 
 
 _cfg = configparser.RawConfigParser()
-_cfg_path = Path("core/tools/bili.ini")
+_cfg_path = Path(__file__).parent / "bili.ini"
 _cfg.read(_cfg_path, encoding="utf-8")
 
 _credential = Credential(
@@ -100,43 +98,43 @@ class BiliLikeTool(BaseTool):
         return f"点赞成功！{info_str}"
 
 
-class BiliCommentTool(BaseTool):
-    name = "comment_bilibili_video"
-    description = "生成评论内容并在B站视频下发表评论"
-    parameters = {
-        "type": "object",
-        "properties": {
-            "original_url": {"type": "string", "description": "B站视频url"}
-        },
-        "required": ["original_url"]
-    }
-
-    async def execute(self, original_url: str) -> str:
-        try:
-            info_str, _, aid = await _video_handle(original_url)
-        except Exception as bili_info_e:
-            return str(bili_info_e)
-
-        with open("prompts/persona.txt", "r", encoding="utf-8") as f:
-            persona_prompt = f.read()
-        with open("prompts/reply_bilibili.txt", "r", encoding="utf-8") as f:
-            reply_template = f.read()
-        prompt = reply_template.format(persona=persona_prompt, bili_video_info=info_str)
-
-        messages = [{"role": "user", "content": prompt}]
-        llm_resp = await llm_api.chat(messages)
-
-        resp = llm_resp.text_response
-
-        result = await comment.send_comment(
-            text=resp,
-            oid=aid,
-            type_=CommentResourceType.VIDEO,
-            credential=_credential
-        )
-        reply_status = result.get("success_toast")
-        reply_content = result.get("reply").get("content").get("message")
-        return f"status: {reply_status}, reply_content: {reply_content}"
+# class BiliCommentTool(BaseTool):
+#     name = "comment_bilibili_video"
+#     description = "生成评论内容并在B站视频下发表评论"
+#     parameters = {
+#         "type": "object",
+#         "properties": {
+#             "original_url": {"type": "string", "description": "B站视频url"}
+#         },
+#         "required": ["original_url"]
+#     }
+#
+#     async def execute(self, original_url: str) -> str:
+#         try:
+#             info_str, _, aid = await _video_handle(original_url)
+#         except Exception as bili_info_e:
+#             return str(bili_info_e)
+#
+#         with open("prompts/persona.txt", "r", encoding="utf-8") as f:
+#             persona_prompt = f.read()
+#         with open("prompts/reply_bilibili.txt", "r", encoding="utf-8") as f:
+#             reply_template = f.read()
+#         prompt = reply_template.format(persona=persona_prompt, bili_video_info=info_str)
+#
+#         messages = [{"role": "user", "content": prompt}]
+#         llm_resp = await llm_api.chat(messages)
+#
+#         resp = llm_resp.text_response
+#
+#         result = await comment.send_comment(
+#             text=resp,
+#             oid=aid,
+#             type_=CommentResourceType.VIDEO,
+#             credential=_credential
+#         )
+#         reply_status = result.get("success_toast")
+#         reply_content = result.get("reply").get("content").get("message")
+#         return f"status: {reply_status}, reply_content: {reply_content}"
 
 
 class BiliSearchTool(BaseTool):

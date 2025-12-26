@@ -1,10 +1,10 @@
 import json
 from datetime import datetime
-from typing import Dict, Any, Union, Type, Optional, Literal
+from typing import Dict, Any, Union, Optional
 
 from core.logging_manager import get_logger
 from core.sticker_manager import StickerManager
-from utils.message_utils import KiraMessageEvent
+from core.chat.message_utils import KiraMessageEvent
 
 logger = get_logger("prompt_manager", "yellow")
 

@@ -10,8 +10,8 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 from core.logging_manager import get_logger
-from utils.adapter_utils import IMAdapter
-from utils.message_utils import KiraMessageEvent, MessageSending, MessageType
+from core.adapter.adapter_utils import IMAdapter
+from core.chat import KiraMessageEvent, MessageSending, MessageType
 
 
 logger = get_logger("tg_adapter", "green")

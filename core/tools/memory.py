@@ -1,5 +1,5 @@
 import os
-from utils.tool_utils import BaseTool
+from core.utils.tool_utils import BaseTool
 
 
 CORE_MEMORY_PATH = "data/memory/core.txt"

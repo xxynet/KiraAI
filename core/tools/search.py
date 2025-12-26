@@ -3,7 +3,7 @@ import configparser
 from pathlib import Path
 from tavily import TavilyClient
 
-from utils.tool_utils import BaseTool
+from core.utils.tool_utils import BaseTool
 
 
 class TavilySearchTool(BaseTool):
@@ -20,7 +20,7 @@ class TavilySearchTool(BaseTool):
     def __init__(self):
         super().__init__()
         cfg = configparser.RawConfigParser()
-        cfg_path = Path("core/tools/tavily.ini")
+        cfg_path = Path(__file__).parent / "tavily.ini"
         cfg.read(cfg_path, encoding="utf-8")
         self._key = cfg.get("tavily", "key")
 

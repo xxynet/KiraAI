@@ -2,7 +2,7 @@ import requests
 import configparser
 from pathlib import Path
 
-from utils.tool_utils import BaseTool
+from core.utils.tool_utils import BaseTool
 
 
 class NtfyTool(BaseTool):
@@ -20,7 +20,7 @@ class NtfyTool(BaseTool):
     def __init__(self):
         super().__init__()
         cfg = configparser.RawConfigParser()
-        cfg_path = Path("core/tools/ntfy.ini")
+        cfg_path = Path(__file__).parent / "ntfy.ini"
         cfg.read(cfg_path, encoding="utf-8")
         self._url = cfg.get("ntfy", "url")
 

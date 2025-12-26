@@ -13,9 +13,8 @@ from ncatbot.core import (
     Face,          # QQ表情
     Image,         # 图片
     Record,        # 语音
-    Json,          # JSON
+    # JSON
 )
-from ncatbot.utils import get_log  # 已禁用适配器日志
 
 import json
 import time
@@ -23,10 +22,10 @@ import threading
 import logging
 from datetime import datetime
 import asyncio
-from typing import Any, Dict, Union, List
+from typing import Any, Dict
 
-from utils.adapter_utils import IMAdapter
-from utils.message_utils import KiraMessageEvent, MessageSending, MessageType
+from core.adapter.adapter_utils import IMAdapter
+from core.chat import KiraMessageEvent, MessageSending, MessageType
 
 logging.getLogger("PluginLoader").setLevel(logging.CRITICAL)
 logging.getLogger("adapter.nc.launcher").setLevel(logging.CRITICAL)
