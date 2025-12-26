@@ -16,20 +16,17 @@ class PromptManager:
                  kira_config,
                  sticker_manager: StickerManager,
                  persona_path: str = "prompts/persona.txt",
-                 emoji_path: str = "adapters/qq/emoji.json",
                  format_path: str = "prompts/format.txt",
                  tool_path: str = "prompts/tool.txt",
                  system_path: str = "prompts/system.txt"):
         self.kira_config = kira_config
         self.persona_path = persona_path
-        self.emoji_path = emoji_path
         self.format_path = format_path
         self.tool_path = tool_path
         self.system_path = system_path
         
         # 加载基础提示词
         self.persona_prompt = self._load_file(persona_path)
-        self.emoji_dict = self._load_dict(emoji_path)
         self.sticker_manager = sticker_manager
         self.sticker_dict = sticker_manager.sticker_dict
         self.sticker_prompt = self._load_sticker_prompt(self.sticker_dict)

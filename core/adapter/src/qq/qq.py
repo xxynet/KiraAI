@@ -1,5 +1,7 @@
 import os
-os.environ["LOG_FILE_PATH"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+
+# os.environ["LOG_FILE_PATH"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qq_logs")
+os.environ["LOG_FILE_PATH"] = "qq_logs"
 
 from ncatbot.core import BotClient, GroupMessage, PrivateMessage
 from ncatbot.core import (
@@ -53,8 +55,7 @@ class QQAdapter(IMAdapter):
     def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
         super().__init__(config, loop, event_bus, llm_api)
         self.name: str = "QQ"
-        self.emoji_dict = self._load_dict("adapters/qq/emoji.json")
-        # self.message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Poke, MessageType.Notice]
+        self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
         self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie"]
         self.bot: BotClient = BotClient()
         # self._log = get_log()  # 已禁用适配器日志

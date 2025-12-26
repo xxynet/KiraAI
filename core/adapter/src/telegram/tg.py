@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Any, Dict, Union, List
 import threading
 import base64
@@ -17,7 +18,7 @@ logger = get_logger("tg_adapter", "green")
 
 
 class MessageSender:
-    """简单的并发控制与重试封装"""
+    """concurrency control & retry config"""
 
     def __init__(self, max_concurrent: int = 3, max_retries: int = 3, retry_delay: float = 1.0):
         self.semaphore = asyncio.Semaphore(max_concurrent)
@@ -37,18 +38,17 @@ class MessageSender:
 
 
 class TelegramAdapter(IMAdapter):
-    """Telegram 平台适配器，接入主事件总线"""
+    """Telegram adapter"""
 
     def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
         super().__init__(config, loop, event_bus, llm_api)
         self.name: str = "Telegram"
 
-        # 配置
+        # config
         self.bot_token: str = self.config.get("bot_token", "")
-        # self.message_types = [MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Sticker, MessageType.Record, MessageType.Notice, MessageType.Emoji]
         self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "selfie"]
 
-        self.emoji_dict = self._load_dict("adapters/telegram/emoji.json")
+        self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
 
         # 运行时
         self.app = None
@@ -79,11 +79,11 @@ class TelegramAdapter(IMAdapter):
 
     async def start(self):
         if not self.bot_token:
-            logger.error("Telegram bot_token 未配置，跳过启动")
+            logger.error("Telegram bot_token is not set")
             return
         threading.Thread(target=self._start_blocking, daemon=True).start()
 
-    # ===== 命令处理 =====
+    # ===== cmd processing =====
     async def _cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("Hi, I'm online.")
 
@@ -111,9 +111,10 @@ class TelegramAdapter(IMAdapter):
             try:
                 bot_id = getattr(self.app.bot, "id", None)
                 bot_username = getattr(self.app.bot, "username", None)
-            except Exception:
+            except Exception as e:
                 bot_id = None
                 bot_username = None
+                logger.error(e)
 
             triggered = False
             # 1) reply to bot
@@ -121,8 +122,8 @@ class TelegramAdapter(IMAdapter):
                 if msg.reply_to_message and getattr(msg.reply_to_message, "from_user", None):
                     if bot_id is not None and msg.reply_to_message.from_user.id == bot_id:
                         triggered = True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(e)
             # 2) @mention bot by username or text_mention
             if not triggered:
                 try:
@@ -137,8 +138,8 @@ class TelegramAdapter(IMAdapter):
                                 if ent.user.id == bot_id:
                                     triggered = True
                                     break
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(e)
 
             if not triggered:
                 return
