@@ -1,20 +1,20 @@
 import os
 
-# os.environ["LOG_FILE_PATH"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qq_logs")
-os.environ["LOG_FILE_PATH"] = "qq_logs"
-
-from ncatbot.core import BotClient, GroupMessage, PrivateMessage
-from ncatbot.core import (
-    MessageChain,  # 消息链，用于组合多个消息元素
-    Text,          # 文本消息
-    Reply,         # 回复消息
-    At,            # @某人
-    AtAll,         # @全体成员
-    Face,          # QQ表情
-    Image,         # 图片
-    Record,        # 语音
-    # JSON
-)
+# # os.environ["LOG_FILE_PATH"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qq_logs")
+# os.environ["LOG_FILE_PATH"] = "qq_logs"
+#
+# from ncatbot.core import BotClient, GroupMessage, PrivateMessage
+# from ncatbot.core import (
+#     MessageChain,  # 消息链，用于组合多个消息元素
+#     Text,          # 文本消息
+#     Reply,         # 回复消息
+#     At,            # @某人
+#     AtAll,         # @全体成员
+#     Face,          # QQ表情
+#     Image,         # 图片
+#     Record,        # 语音
+#     # JSON
+# )
 
 import json
 import time
@@ -25,11 +25,14 @@ import asyncio
 from typing import Any, Dict
 
 from core.adapter.adapter_utils import IMAdapter
+from core.logging_manager import get_logger
 from core.chat import KiraMessageEvent, MessageSending, MessageType
 
-logging.getLogger("PluginLoader").setLevel(logging.CRITICAL)
-logging.getLogger("adapter.nc.launcher").setLevel(logging.CRITICAL)
-logging.getLogger("AccessController").setLevel(logging.CRITICAL)
+from .napcat_client import NapCatWebSocketClient, QQMessageChain, QQMessageType
+
+# logging.getLogger("PluginLoader").setLevel(logging.CRITICAL)
+# logging.getLogger("adapter.nc.launcher").setLevel(logging.CRITICAL)
+# logging.getLogger("AccessController").setLevel(logging.CRITICAL)
 
 
 def extract_card_info(card_json: str) -> str:
@@ -56,8 +59,8 @@ class QQAdapter(IMAdapter):
         self.name: str = "QQ"
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
         self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie"]
-        self.bot: BotClient = BotClient()
-        # self._log = get_log()  # 已禁用适配器日志
+        self.bot: NapCatWebSocketClient = NapCatWebSocketClient()
+        self.logger = get_logger(self.config.get("adapter_name", "QQ"), "blue")
 
     @staticmethod
     def _load_dict(path: str) -> Dict[str, Any]:
@@ -69,37 +72,49 @@ class QQAdapter(IMAdapter):
         except Exception as e:
             return {}
 
-    def start_blocking(self):
+    async def start_blocking(self):
         @self.bot.group_event()
-        async def on_group_message(msg: GroupMessage):
+        async def on_group_message(msg: Dict):
             await self._on_group_message(msg)
 
         @self.bot.private_event()
-        async def on_private_message(msg: PrivateMessage):
+        async def on_private_message(msg: Dict):
             await self._on_private_message(msg)
 
         @self.bot.notice_event()
         async def on_notice_message(msg: Dict):
             await self._on_notice_message(msg)
 
-        self.bot.run(bt_uin=self.config["bot_pid"], root=self.config["owner_pid"], ws_uri=self.config["ws_uri"], ws_listen_ip=self.config["ws_listen_ip"], ws_token=self.config["ws_token"], enable_webui_interaction=False)
+        @self.bot.meta_event()
+        async def on_meta_message(msg: Dict):
+            if msg.get("meta_event_type") == "lifecycle":
+                self.bot.login_success = True
+
+        @self.bot.napcat_event()
+        async def on_napcat_message(msg: Dict):
+            # self.logger.info(f"napcat event: {msg}")
+            if msg.get("status", "") == "failed":
+                if msg.get("retcode") == 1403:
+                    self.logger.error("invalid token")
+                    await self.bot.close()
+
+        await self.bot.run(bt_uin=self.config["bot_pid"], root=self.config["owner_pid"], ws_uri=self.config["ws_uri"], ws_listen_ip=self.config["ws_listen_ip"], ws_token=self.config["ws_token"])
 
     async def start(self):
-        t = threading.Thread(target=self.start_blocking, daemon=True)
-        t.start()
+        task = asyncio.create_task(self.start_blocking())
 
     async def stop(self):
-        pass
+        await self.bot.close()
 
     async def send_group_message(self, group_id, send_message_obj):
         try:
             message_chain = self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
             if isinstance(ele, MessageType.Poke):
-                await self.bot.api.send_poke(user_id=ele.pid, group_id=group_id)
+                await self.bot.send_poke(user_id=ele.pid, group_id=group_id)
                 return None
-            message_chain = MessageChain(message_chain)
-            result = await self.bot.api.post_group_msg(group_id=group_id, rtf=message_chain)
+            message_chain = QQMessageChain(message_chain)
+            result = await self.bot.send_group_message(group_id=group_id, msg=message_chain)
             message_id = str(result.get("data", {}).get("message_id"))
         except:
             message_id = None
@@ -110,10 +125,10 @@ class QQAdapter(IMAdapter):
             message_chain = self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
             if isinstance(ele, MessageType.Poke):
-                await self.bot.api.send_poke(user_id=ele.pid)
+                await self.bot.send_poke(user_id=ele.pid)
                 return None
-            message_chain = MessageChain(message_chain)
-            result = await self.bot.api.post_private_msg(user_id=user_id, rtf=message_chain)
+            message_chain = QQMessageChain(message_chain)
+            result = await self.bot.send_direct_message(user_id=user_id, msg=message_chain)
             message_id = str(result.get("data", {}).get("message_id"))
         except:
             message_id = None
@@ -122,18 +137,18 @@ class QQAdapter(IMAdapter):
     async def process_incoming_message(self, msg):
         """把QQ平台消息转换为项目通用消息格式"""
         message_content = []
-        for ele in msg.message:
+        for ele in msg.get("message"):
             if ele.get("type") == "text":
                 message_content.append(MessageType.Text(ele.get("data").get("text")))
             elif ele.get("type") == "at":
                 at_obj = MessageType.At(str(ele.get("data").get("qq")))
                 if str(ele.get("data").get("qq")) != "all":
-                    at_user_info = await self.bot.api.get_stranger_info(user_id=str(ele.get("data").get("qq")))
+                    at_user_info = await self.bot.get_user_info(user_id=str(ele.get("data").get("qq")))
                     at_nickname = at_user_info["data"]["nickname"]
                     at_obj.nickname = at_nickname
                 message_content.append(at_obj)
             elif ele.get("type") == "reply":
-                reply_content = await self.bot.api.get_msg(ele.get("data").get("id"))
+                reply_content = await self.bot.get_msg(ele.get("data").get("id"))
                 processed_reply = await self._process_reply_message(reply_content)
                 message_content.append(MessageType.Reply(ele.get("data").get("id"), processed_reply))
             elif ele.get("type") == "face":
@@ -150,13 +165,13 @@ class QQAdapter(IMAdapter):
             elif ele.get("type") == "file":
                 message_content.append(MessageType.Text("[File]"))
             elif ele.get("type") == "forward":
-                forward_message = await self.bot.api.get_forward_msg(msg.message_id)
+                forward_message = await self.bot.get_forward_msg(msg.get("message_id"))
                 processed_forward = await self._process_forward_message(forward_message)
                 message_content.append(MessageType.Text(f"[Forward {processed_forward}]"))
             elif ele.get("type") == "record":
                 file_id = ele.get("data").get("file")
 
-                record_info = await self.bot.api.get_record(file_id, output_type="mp3")
+                record_info = await self.bot.get_record(file_id, output_format="mp3")
                 audio_base64 = record_info.get("data").get("base64")
                 message_content.append(MessageType.Record(audio_base64))
         return message_content
@@ -168,7 +183,7 @@ class QQAdapter(IMAdapter):
             message_list = [MessageType.Notice(notice_str)]
             if "group_id" in msg:
                 if msg["group_id"] in self.group_list:
-                    group_info = await self.bot.api.get_group_info(msg.get("group_id"))
+                    group_info = await self.bot.get_group_info(msg.get("group_id"))
                     group_name = group_info.get("data").get("group_name")
                     message_obj = KiraMessageEvent(
                         platform=self.name,
@@ -197,7 +212,7 @@ class QQAdapter(IMAdapter):
             if msg["sub_type"] == "ban":
                 notice_str = f"[System 用户{ban_operator_id}禁言了你{ban_duration}秒]"
                 message_list = [MessageType.Notice(notice_str)]
-                group_info = await self.bot.api.get_group_info(msg.get("group_id"))
+                group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = KiraMessageEvent(
@@ -218,7 +233,7 @@ class QQAdapter(IMAdapter):
                 # ban_duration 永远是0，invalid
                 notice_str = f"[System 你之前被禁言了，用户{ban_operator_id}解除了你的禁言]"
                 message_list = [MessageType.Notice(notice_str)]
-                group_info = await self.bot.api.get_group_info(msg.get("group_id"))
+                group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = KiraMessageEvent(
@@ -245,7 +260,7 @@ class QQAdapter(IMAdapter):
             if "group_id" in msg:
                 notice_str = f"[System 用户{msg.get('user_id')}加入了群聊]"
                 message_list = [MessageType.Notice(notice_str)]
-                group_info = await self.bot.api.get_group_info(msg.get("group_id"))
+                group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = KiraMessageEvent(
@@ -263,12 +278,12 @@ class QQAdapter(IMAdapter):
                     )
                     self.publish(message_obj)
 
-    async def _on_group_message(self, msg: GroupMessage):
+    async def _on_group_message(self, msg):
         should_process = False
 
-        if self.permission_mode == "allow_list" and msg.group_id in self.group_list:
+        if self.permission_mode == "allow_list" and msg.get("group_id") in self.group_list:
             should_process = True
-        elif self.permission_mode == "deny_list" and msg.group_id not in self.group_list:
+        elif self.permission_mode == "deny_list" and msg.get("group_id") not in self.group_list:
             should_process = True
 
         if should_process:
@@ -276,15 +291,14 @@ class QQAdapter(IMAdapter):
 
             should_respond = False
 
-            for m in msg.message:
+            for m in msg.get("message", {}):
                 if m.get("type") == "at" and (
-                        m.get("data", {}).get("qq", "") == str(msg.self_id) or m.get("data", {}).get("qq",
-                                                                                                     "") == "all"):
+                        m.get("data", {}).get("qq", "") == str(msg.get("self_id")) or m.get("data", {}).get("qq", "") == "all"):
                     should_respond = True
                     break
                 elif m.get("type") == "reply":
-                    reply_msg_info = await self.bot.api.get_msg(m.get("data", {}).get("id", ""))
-                    if reply_msg_info.get("data", {}).get("user_id") == msg.self_id:  # int int
+                    reply_msg_info = await self.bot.get_msg(m.get("data", {}).get("id", ""))
+                    if reply_msg_info.get("data", {}).get("user_id") == msg.get("self_id"):  # int int
                         should_respond = True
                         break
                 elif m.get("type") == "text":
@@ -298,31 +312,31 @@ class QQAdapter(IMAdapter):
             # should_respond = True
 
             if should_respond:
-                # 仅进行 Adapter 层职责：打包消息并发布到事件总线，等待主循环回复
                 message_list = await self.process_incoming_message(msg)
-                group_info = await self.bot.api.get_group_info(msg.group_id)
+
+                group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 message_obj = KiraMessageEvent(
                     platform=self.name,
                     adapter_name=self.config['adapter_name'],
                     message_types=self.message_types,
-                    group_id=str(msg.group_id),
+                    group_id=str(msg.get("group_id")),
                     group_name=group_name,
-                    user_id=str(msg.user_id),
-                    user_nickname=msg.sender.nickname,
-                    message_id=str(msg.message_id),
-                    self_id=str(msg.self_id),
+                    user_id=str(msg.get("user_id")),
+                    user_nickname=msg.get("sender").get("nickname"),
+                    message_id=str(msg.get("message_id")),
+                    self_id=str(msg.get("self_id")),
                     content=message_list,
-                    timestamp=int(msg.time)
+                    timestamp=int(msg.get("time"))
                 )
                 self.publish(message_obj)
 
-    async def _on_private_message(self, msg: PrivateMessage):
+    async def _on_private_message(self, msg: dict):
         should_process = False
 
-        if self.permission_mode == "allow_list" and msg.user_id in self.user_list:
+        if self.permission_mode == "allow_list" and msg.get("user_id") in self.user_list:
             should_process = True
-        elif self.permission_mode == "deny_list" and msg.user_id not in self.user_list:
+        elif self.permission_mode == "deny_list" and msg.get("user_id") not in self.user_list:
             should_process = True
 
         if should_process:
@@ -335,12 +349,12 @@ class QQAdapter(IMAdapter):
                 platform=self.name,
                 adapter_name=self.config['adapter_name'],
                 message_types=self.message_types,
-                user_id=str(msg.user_id),
-                user_nickname=msg.sender.nickname,
-                message_id=str(msg.message_id),
-                self_id=str(msg.self_id),
+                user_id=str(msg.get("user_id")),
+                user_nickname=msg.get("sender").get("nickname"),
+                message_id=str(msg.get("message_id")),
+                self_id=str(msg.get("self_id")),
                 content=message_list,
-                timestamp=int(msg.time))
+                timestamp=int(msg.get("time")))
             self.publish(message_obj)
 
     async def _process_reply_message(self, message_data):
@@ -416,31 +430,24 @@ class QQAdapter(IMAdapter):
         message_chain_elements = []
         for ele in message.message_list:
             if isinstance(ele, MessageType.Text):
-                message_chain_elements.append(Text(ele.text))
+                message_chain_elements.append(QQMessageType.Text(ele.text))
             elif isinstance(ele, MessageType.Emoji):
-                message_chain_elements.append(Face(int(ele.emoji_id)))
+                message_chain_elements.append(QQMessageType.Emoji(int(ele.emoji_id)))
             elif isinstance(ele, MessageType.Sticker):
-                message_chain_elements.append(Image(f"base64://{ele.sticker_bs64}"))
+                message_chain_elements.append(QQMessageType.Image(f"base64://{ele.sticker_bs64}"))
             elif isinstance(ele, MessageType.At):
                 val = ele.pid
-                if val == "all":
-                    message_chain_elements.append(AtAll())
-                else:
-                    try:
-                        val_num = int(val)
-                        message_chain_elements.append(At(val_num))
-                    except Exception as e:
-                        pass
-                message_chain_elements.append(Text(" "))
+                message_chain_elements.append(QQMessageType.At(val))
+                message_chain_elements.append(QQMessageType.Text(" "))
             elif isinstance(ele, MessageType.Image):
                 if ele.url:
-                    message_chain_elements.append(Image(ele.url))
+                    message_chain_elements.append(QQMessageType.Image(ele.url))
                 elif ele.base64:
-                    message_chain_elements.append(Image(f"base64://{ele.base64}"))
+                    message_chain_elements.append(QQMessageType.Image(f"base64://{ele.base64}"))
             elif isinstance(ele, MessageType.Reply):
-                message_chain_elements.append(Reply(ele.message_id))
+                message_chain_elements.append(QQMessageType.Reply(ele.message_id))
             elif isinstance(ele, MessageType.Record):
-                message_chain_elements.append(Record(f"base64://{ele.bs64}"))
+                message_chain_elements.append(QQMessageType.Record(f"base64://{ele.bs64}"))
             elif isinstance(ele, MessageType.Notice):
                 # 可以实现定时主动消息等
                 pass
