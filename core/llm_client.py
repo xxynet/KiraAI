@@ -108,8 +108,7 @@ class LLMClient:
             if resp1 and resp1.tool_results:
                 user_message.extend(resp1.tool_results)
 
-            request2 = LLMRequest(user_message)
-            # request2 = LLMRequest(user_message, tools_test=self.tools_definitions, tool_choice="none")
+            request2 = LLMRequest(user_message, tools=self.tools_definitions)
             llm_provider = self.provider_manager.get_llm_provider(self.main_llm)
             llm_logger.info(f"generating response using {self.main_llm}")
             resp2 = await llm_provider.chat(request2)
