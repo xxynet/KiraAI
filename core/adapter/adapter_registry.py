@@ -36,6 +36,7 @@ class AdapterManager:
             await self.start_adapter(name)
 
     async def start_adapter(self, name):
+        """start an adapter by specified adapter name"""
         try:
             task = asyncio.create_task(self._adapters[name].start())
             task.add_done_callback(lambda t: logger.info(f"Started adapter {name}"))
@@ -43,15 +44,19 @@ class AdapterManager:
             logger.error(f"Failed to start adapter {name}: {e}")
 
     async def stop_adapter(self, name):
+        """stop an adapter by specified adapter name"""
         if self._adapters.get(name):
             await self._adapters.get(name).stop()
 
     async def stop_adapters(self):
+        """stop all running adapters"""
         for ada in self._adapters:
             await self._adapters[ada].stop()
 
     def get_adapters(self) -> dict[str, Union[IMAdapter, SocialMediaAdapter]]:
+        """return the entire dict where adapters are registered"""
         return self._adapters
 
-    def get_adapter_by_name(self, name: str) -> Union[IMAdapter, SocialMediaAdapter]:
+    def get_adapter(self, name: str) -> Union[IMAdapter, SocialMediaAdapter]:
+        """get an adapter instance by specified adapter name"""
         return self._adapters.get(name)
