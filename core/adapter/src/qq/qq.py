@@ -1,25 +1,6 @@
 import os
-
-# # os.environ["LOG_FILE_PATH"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qq_logs")
-# os.environ["LOG_FILE_PATH"] = "qq_logs"
-#
-# from ncatbot.core import BotClient, GroupMessage, PrivateMessage
-# from ncatbot.core import (
-#     MessageChain,  # 消息链，用于组合多个消息元素
-#     Text,          # 文本消息
-#     Reply,         # 回复消息
-#     At,            # @某人
-#     AtAll,         # @全体成员
-#     Face,          # QQ表情
-#     Image,         # 图片
-#     Record,        # 语音
-#     # JSON
-# )
-
 import json
 import time
-import threading
-import logging
 from datetime import datetime
 import asyncio
 from typing import Any, Dict
@@ -29,10 +10,6 @@ from core.logging_manager import get_logger
 from core.chat import KiraMessageEvent, MessageSending, MessageType
 
 from .napcat_client import NapCatWebSocketClient, QQMessageChain, QQMessageType
-
-# logging.getLogger("PluginLoader").setLevel(logging.CRITICAL)
-# logging.getLogger("adapter.nc.launcher").setLevel(logging.CRITICAL)
-# logging.getLogger("AccessController").setLevel(logging.CRITICAL)
 
 
 def extract_card_info(card_json: str) -> str:
@@ -105,6 +82,9 @@ class QQAdapter(IMAdapter):
 
     async def stop(self):
         await self.bot.close()
+
+    def get_client(self) -> NapCatWebSocketClient:
+        return self.bot
 
     async def send_group_message(self, group_id, send_message_obj):
         try:

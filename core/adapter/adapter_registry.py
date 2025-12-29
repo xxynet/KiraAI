@@ -1,7 +1,8 @@
 import asyncio
-from typing import Any
+from typing import Union, Optional
 
 from core.logging_manager import get_logger
+from .adapter_utils import IMAdapter, SocialMediaAdapter
 from .src.qq import QQAdapter
 from .src.telegram import TelegramAdapter
 from .src.bilibili import BiliBiliAdapter
@@ -16,7 +17,7 @@ ada_mapping = {'QQ': QQAdapter,
 
 class AdapterManager:
     def __init__(self, adas_config: dict, loop: asyncio.AbstractEventLoop, event_queue: asyncio.Queue, llm_api):
-        self._adapters: dict[str, Any] = {}
+        self._adapters: dict[str, Union[IMAdapter, SocialMediaAdapter]] = {}
         self.adas_config = adas_config
         self.loop = loop
         self.event_queue = event_queue
@@ -42,10 +43,15 @@ class AdapterManager:
             logger.error(f"Failed to start adapter {name}: {e}")
 
     async def stop_adapter(self, name):
-        pass
+        if self._adapters.get(name):
+            await self._adapters.get(name).stop()
 
-    def get_adapters(self):
+    async def stop_adapters(self):
+        for ada in self._adapters:
+            await self._adapters[ada].stop()
+
+    def get_adapters(self) -> dict[str, Union[IMAdapter, SocialMediaAdapter]]:
         return self._adapters
 
-    def get_adapter_by_name(self, name: str):
+    def get_adapter_by_name(self, name: str) -> Union[IMAdapter, SocialMediaAdapter]:
         return self._adapters.get(name)

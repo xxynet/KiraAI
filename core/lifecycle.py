@@ -98,5 +98,9 @@ class KiraLifecycle:
             asyncio.create_task(self.message_processor.handle_message(msg))
 
     async def stop(self):
+        # terminate all running adapters
+        await self.adapter_manager.stop_adapters()
+
+        # cancel all tasks
         for task in self.tasks:
             task.cancel()

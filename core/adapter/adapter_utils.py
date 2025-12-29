@@ -63,9 +63,14 @@ class IMAdapter(ABC):
         """Start adapter, sub classes must implement this method"""
         pass
 
-    # @abstractmethod
-    # async def stop(self):
-    #     """Stop adapter, sub classes must implement this method"""
+    @abstractmethod
+    async def stop(self):
+        """Stop adapter, sub classes must implement this method"""
+
+    @abstractmethod
+    def get_client(self):
+        """return a client instance"""
+        pass
 
     def publish(self, message: Union[KiraMessageEvent]):
         """把消息放到事件总线"""
