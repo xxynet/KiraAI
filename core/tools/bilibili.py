@@ -115,7 +115,7 @@ class BiliLikeTool(BaseTool):
 #         except Exception as bili_info_e:
 #             return str(bili_info_e)
 #
-#         with open("prompts/persona.txt", "r", encoding="utf-8") as f:
+#         with open("data/persona.txt", "r", encoding="utf-8") as f:
 #             persona_prompt = f.read()
 #         with open("prompts/reply_bilibili.txt", "r", encoding="utf-8") as f:
 #             reply_template = f.read()

@@ -23,9 +23,6 @@ KiraAI 是一个模块化、跨平台的 AI 数字生命项目，以数字生命
 
 ## 🧩 架构说明
 - `core/`：配置、LLM、提示词、记忆、日志的编排中心
-- `adapters/`：平台适配层（qq、telegram）
-- `utils/`：适配器与消息相关工具
-- `prompts/`：系统/人设/工具/格式等提示词模板
 - `data/`：运行期数据
     - `config/`：适配器、模型、提供商、贴纸等 INI/JSON 配置
 - `scripts/`：便捷启动脚本
@@ -86,7 +83,7 @@ pip install -r requirements.txt
 - `sticker.json`：适配器使用的贴纸映射
 - `tools/*.ini`：工具级配置，例如 `tavily.ini`、`ntfy.ini`、`bili.ini`
 
-另外, 修改 `/prompts/persona.txt` 来创建你的数字生命人格
+另外, 修改 `/data/persona.txt` 来创建你的数字生命人格
 
 ## ▶️ 运行
 可通过以下方式启动 KiraAI：
@@ -107,13 +104,10 @@ scripts/run.sh
 ## 🗂️ 项目结构
 ```
 KiraAI/
-  adapters/           # 平台适配层（qq、telegram）
   core/               # 配置/LLM/日志/记忆/提示词 管理器
   data/               # 记忆，表情包，配置文件
-  prompts/            # 提示词模板
   scripts/            # 启动脚本
-  utils/              # 适配器/消息工具
-  launch.py           # 主启动入口
+  main.py           # 主启动入口
 ```
 
 ## 🐞 故障排查

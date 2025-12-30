@@ -23,9 +23,6 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 
 ## 🧩 Architecture
 - `core/`: orchestration for config, LLMs, prompts, memory, logging
-- `adapters/`: platform bridges (qq, telegram)
-- `utils/`: utils for adapters and messages
-- `prompts/`: system/persona/tool/format prompt templates
 - `data/`: runtime data
     - `config/`: INI/JSON configs for adapters, models, providers, stickers
 - `scripts/`: convenience launchers
@@ -86,7 +83,7 @@ Modify the following if you want to get more custom experience:
 - `sticker.json`: sticker mapping used by adapters
 - `tools/*.ini`: per-tool configs like `tavily.ini`, `ntfy.ini`, `bili.ini`
 
-Also, modify `/prompts/persona.txt` to make your unique virtual being!
+Also, modify `/data/persona.txt` to make your unique virtual being!
 
 ## ▶️ Run
 You can start KiraAI via:
@@ -107,13 +104,10 @@ Platform-specific entry points:
 ## 🗂️ Project Structure
 ```
 KiraAI/
-  adapters/           # Platform bridges (qq, telegram)
   core/               # Config/LLM/logging/memory/prompt managers
   data/               # Memory store, stickers and configuration
-  prompts/            # Prompt templates
   scripts/            # Launch scripts
-  utils/              # Adapter/message utilities
-  launch.py           # Main launcher
+  main.py           # Main launcher
 ```
 
 ## 🐞 Troubleshooting

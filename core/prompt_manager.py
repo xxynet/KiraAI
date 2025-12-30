@@ -15,10 +15,10 @@ class PromptManager:
     def __init__(self,
                  kira_config,
                  sticker_manager: StickerManager,
-                 persona_path: str = "prompts/persona.txt",
-                 format_path: str = "prompts/format.txt",
-                 tool_path: str = "prompts/tool.txt",
-                 system_path: str = "prompts/system.txt"):
+                 persona_path: str = "data/persona.txt",
+                 format_path: str = "core/prompts/format.txt",
+                 tool_path: str = "core/prompts/tool.txt",
+                 system_path: str = "core/prompts/system.txt"):
         self.kira_config = kira_config
         self.persona_path = persona_path
         self.format_path = format_path
