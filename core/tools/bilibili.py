@@ -117,7 +117,7 @@ class BiliLikeTool(BaseTool):
 #
 #         with open("data/persona.txt", "r", encoding="utf-8") as f:
 #             persona_prompt = f.read()
-#         with open("prompts/reply_bilibili.txt", "r", encoding="utf-8") as f:
+#         with open(Path(__file__).parent / "reply_bilibili.txt", "r", encoding="utf-8") as f:
 #             reply_template = f.read()
 #         prompt = reply_template.format(persona=persona_prompt, bili_video_info=info_str)
 #
