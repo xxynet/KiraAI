@@ -10,7 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 
 from core.logging_manager import get_logger
 from core.adapter.adapter_utils import IMAdapter
-from core.chat import KiraMessageEvent, MessageSending, MessageType
+from core.chat import KiraMessageEvent, MessageChain, MessageType
 
 
 logger = get_logger("tg_adapter", "green")
@@ -278,7 +278,7 @@ class TelegramAdapter(IMAdapter):
         return elements or [MessageType.Text("[Unsupported message]")]
 
     # ===== Send messages (called by core) =====
-    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageSending):
+    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain):
         async def _send():
             message_id = None
             if len(send_message_obj.message_list) >= 2:
@@ -343,7 +343,7 @@ class TelegramAdapter(IMAdapter):
             logger.error(f"Failed to send group message: {e}")
             return None
 
-    async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageSending):
+    async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageChain):
         async def _send():
             message_id = None
             if len(send_message_obj.message_list) >= 2:

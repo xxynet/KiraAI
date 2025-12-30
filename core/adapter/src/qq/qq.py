@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from core.adapter.adapter_utils import IMAdapter
 from core.logging_manager import get_logger
-from core.chat import KiraMessageEvent, MessageSending, MessageType
+from core.chat import KiraMessageEvent, MessageChain, MessageType
 
 from .napcat_client import NapCatWebSocketClient, QQMessageChain, QQMessageType
 
@@ -404,15 +404,17 @@ class QQAdapter(IMAdapter):
 
         return "\n".join(result)
 
-    @staticmethod
-    def _process_outgoing_message(message: MessageSending):
+    def _process_outgoing_message(self, message: MessageChain):
         """将通用消息格式转换为QQ消息格式"""
         message_chain_elements = []
         for ele in message.message_list:
             if isinstance(ele, MessageType.Text):
                 message_chain_elements.append(QQMessageType.Text(ele.text))
             elif isinstance(ele, MessageType.Emoji):
-                message_chain_elements.append(QQMessageType.Emoji(int(ele.emoji_id)))
+                if ele.emoji_id in self.emoji_dict:
+                    message_chain_elements.append(QQMessageType.Emoji(int(ele.emoji_id)))
+                else:
+                    self.logger.warning(f"未定义的 Emoji ID: {ele.emoji_id}")
             elif isinstance(ele, MessageType.Sticker):
                 message_chain_elements.append(QQMessageType.Image(f"base64://{ele.sticker_bs64}"))
             elif isinstance(ele, MessageType.At):

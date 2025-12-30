@@ -145,7 +145,7 @@ class MessageType:
             return f"[Poke]"
 
 
-class MessageSending:
+class MessageChain:
     def __init__(self, message_list: list[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]):
         self.message_list: list = message_list
 

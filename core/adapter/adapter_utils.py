@@ -2,7 +2,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Union, Optional, List, Dict, Any
 
-from core.chat.message_utils import KiraMessageEvent, MessageSending
+from core.chat.message_utils import KiraMessageEvent, MessageChain
 
 from core.llm_client import LLMClient
 
@@ -77,7 +77,7 @@ class IMAdapter(ABC):
         asyncio.run_coroutine_threadsafe(self.event_bus.put(message), self.loop)
 
     @abstractmethod
-    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageSending) -> Optional[str]:
+    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain) -> Optional[str]:
         """
         发送群消息
         参数:
@@ -89,7 +89,7 @@ class IMAdapter(ABC):
         pass
 
     @abstractmethod
-    async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageSending) -> Optional[str]:
+    async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageChain) -> Optional[str]:
         """
         发送私聊消息
         参数:

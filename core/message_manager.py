@@ -9,7 +9,7 @@ import os
 from core.logging_manager import get_logger
 from core.services.runtime import get_adapter_by_name
 from core.utils.common_utils import image_to_base64
-from core.chat.message_utils import KiraMessageEvent, KiraCommentEvent, MessageSending, MessageType
+from core.chat.message_utils import KiraMessageEvent, KiraCommentEvent, MessageChain, MessageType
 from .memory_manager import MemoryManager
 from .prompt_manager import PromptManager
 from .chat import Session
@@ -248,7 +248,7 @@ class MessageProcessor:
         adapter_name, chat_type, pid = parts[0], parts[1], parts[2]
 
         for message_list in resp_list:
-            message_obj = MessageSending(message_list)
+            message_obj = MessageChain(message_list)
 
             if chat_type == "dm":
                 message_id = await get_adapter_by_name(adapter_name).send_direct_message(pid, message_obj)
@@ -293,12 +293,13 @@ class MessageProcessor:
                     message_elements.append(MessageType.At(value))
                 elif tag == "img":
                     img_res = await self.llm_api.generate_img(value)
-                    if img_res.url:
-                        message_elements.append(MessageType.Image(url=img_res.url))
-                    elif img_res.base64:
-                        message_elements.append(MessageType.Image(base64=img_res.base64))
-                    else:
-                        pass
+                    if img_res:
+                        if img_res.url:
+                            message_elements.append(MessageType.Image(url=img_res.url))
+                        elif img_res.base64:
+                            message_elements.append(MessageType.Image(base64=img_res.base64))
+                        else:
+                            pass
                 elif tag == "reply":
                     message_elements.append(MessageType.Reply(value))
                 elif tag == "record":
@@ -313,7 +314,7 @@ class MessageProcessor:
                 elif tag == "selfie":
                     ref_img_path = self.kira_config.get('bot_config', {}).get('selfie', {}).get('path', '')
                     if os.path.exists(f"data/{ref_img_path}"):
-                        img_extension = ref_img_path.split(".")[1]
+                        img_extension = ref_img_path.split(".")[-1]
                         bs64 = image_to_base64(f"data/{ref_img_path}")
                         img_res = await self.llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
                         if img_res:
@@ -346,7 +347,7 @@ class MessageProcessor:
             try:
                 llm_resp = await self.llm_api.chat([
                     {"role": "system",
-                     "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。若出现形如`<｜tool▁calls▁begin｜>`的工具调用格式，请**务必**删除工具调用标记和其中的所有内容。直接输出修改后的内容，不要输出任何多余内容"},
+                     "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。直接输出修改后的内容，不要解释，不要输出任何多余内容"},
                     {"role": "user", "content": xml_data}
                 ])
                 fixed_xml = llm_resp.text_response
@@ -372,7 +373,3 @@ class MessageProcessor:
         except Exception as e:
             logger.error(f"Error adding message IDs: {str(e)}")
             return xml_data
-
-
-# global message processor
-# message_processor = MessageProcessor()
