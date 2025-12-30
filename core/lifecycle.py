@@ -3,7 +3,7 @@ import time
 from typing import Union, Optional
 
 from .logging_manager import get_logger
-from .config_loader import KiraConfig
+from .config.config_loader import KiraConfig
 from .chat import KiraMessageEvent, KiraCommentEvent
 from .sticker_manager import StickerManager
 from .message_manager import MessageProcessor

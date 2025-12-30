@@ -1,7 +1,6 @@
 from typing import Dict, Any, Optional
 import configparser
 import os
-from pathlib import Path
 
 
 class ConfigError(Exception):
