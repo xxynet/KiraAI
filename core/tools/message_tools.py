@@ -7,7 +7,7 @@ from core.utils.tool_utils import BaseTool
 
 class SendMessageTool(BaseTool):
     name = "send_message"
-    description = "向指定会话发送消息（私聊消息和群聊消息）。 target 形如 qq:dm:123456 或 qq:gm:123456"
+    description = "向指定会话发送跨会话消息（私聊消息和群聊消息），仅当目标会话和当前会话不同时使用。 target 形如 qq:dm:123456 或 qq:gm:123456"
     parameters = {
         "type": "object",
         "properties": {
