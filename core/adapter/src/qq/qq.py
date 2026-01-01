@@ -95,6 +95,13 @@ class QQAdapter(IMAdapter):
                 return None
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_group_message(group_id=group_id, msg=message_chain)
+            status = result.get("status")
+            retcode = result.get("retcode")
+            if status == "failed":
+                if retcode == 1200:
+                    self.logger.error("禁言中，消息发送失败")
+                else:
+                    self.logger.error(f"未知错误，消息发送失败，错误码：{retcode}")
             message_id = str(result.get("data", {}).get("message_id"))
         except:
             message_id = None
@@ -109,6 +116,11 @@ class QQAdapter(IMAdapter):
                 return None
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_direct_message(user_id=user_id, msg=message_chain)
+            status = result.get("status")
+            retcode = result.get("retcode")
+            if status == "failed":
+                self.logger.error(f"未知错误，消息发送失败，错误码：{retcode}")
+
             message_id = str(result.get("data", {}).get("message_id"))
         except:
             message_id = None
