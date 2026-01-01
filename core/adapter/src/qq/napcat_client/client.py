@@ -22,6 +22,7 @@ class NapCatWebSocketClient:
         self.shutdown_event = asyncio.Event()
         self.last_heartbeat: Optional[int] = None
         self.login_success_event: asyncio.Event = asyncio.Event()
+        self._listening_task: Optional[asyncio.Task] = None
         self.event_callbacks: dict[str, list[Callable]] = {
             "group": [],
             "private": [],
@@ -40,23 +41,22 @@ class NapCatWebSocketClient:
             if msg.get("meta_event_type") == "lifecycle":
                 self.login_success_event.set()
 
+        @self.napcat_event()
+        async def on_napcat_message(msg: dict):
+            if msg.get("status", "") == "failed":
+                if msg.get("retcode") == 1403:
+                    logger.error("invalid token")
+                    await self.close()
+
         con_resp = await self.connect()
         if con_resp.get("status") == "ok":
-            task = asyncio.create_task(self.listen_messages())
+            self._listening_task = asyncio.create_task(self.listen_messages())
 
             login_info = await self.get_login_info()
             login_id = login_info.get("data", {}).get("user_id")
             if str(login_id) != str(bt_uin):
                 logger.error("配置的账号与 NapCat 登录账号不一致")
                 await self.close()
-                if task and not task.done():
-                    task.cancel()
-                    try:
-                        await task  # 等待任务被取消
-                    except asyncio.CancelledError:
-                        logger.info("监听消息任务已取消")
-                    except Exception as e:
-                        logger.error(f"取消任务时发生错误: {e}")
                 return
 
             logger.info(f"等待账号 {bt_uin} 的登录成功事件")
@@ -65,17 +65,17 @@ class NapCatWebSocketClient:
                 logger.info(f"账号 {bt_uin} 登录成功")
             except asyncio.TimeoutError:
                 logger.error(f"账号 {bt_uin} 登录超时")
-                if task and not task.done():
-                    task.cancel()
+                if self._listening_task and not self._listening_task.done():
+                    self._listening_task.cancel()
                     try:
-                        await task  # 等待任务被取消
+                        await self._listening_task  # 等待任务被取消
                     except asyncio.CancelledError:
                         logger.info("监听消息任务已取消")
                     except Exception as e:
                         logger.error(f"取消任务时发生错误: {e}")
                 return
 
-            await task
+            await self._listening_task
         elif con_resp.get("status") == "failed":
             logger.error(f"连接失败：{con_resp.get('message')}")
             return
@@ -305,4 +305,14 @@ class NapCatWebSocketClient:
         self.login_success_event.clear()
         if self.websocket:
             await self.websocket.close()
+        if self._listening_task and not self._listening_task.done():
+            self._listening_task.cancel()
+            try:
+                await self._listening_task  # 等待任务被取消
+            except asyncio.CancelledError:
+                logger.info(f"已停止监听账号 {self.self_id} 的消息")
+                return
+            except Exception as e:
+                logger.error(f"取消监听消息任务时发生错误: {e}")
+                return
         logger.info(f"已停止监听账号 {self.self_id} 的消息")

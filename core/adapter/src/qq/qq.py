@@ -70,10 +70,7 @@ class QQAdapter(IMAdapter):
         @self.bot.napcat_event()
         async def on_napcat_message(msg: Dict):
             # self.logger.info(f"napcat event: {msg}")
-            if msg.get("status", "") == "failed":
-                if msg.get("retcode") == 1403:
-                    self.logger.error("invalid token")
-                    await self.bot.close()
+            pass
 
         await self.bot.run(bt_uin=self.config["bot_pid"], ws_uri=self.config["ws_uri"], ws_token=self.config["ws_token"])
 
