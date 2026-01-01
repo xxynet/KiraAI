@@ -64,8 +64,8 @@ class QQAdapter(IMAdapter):
 
         @self.bot.meta_event()
         async def on_meta_message(msg: Dict):
-            if msg.get("meta_event_type") == "lifecycle":
-                self.bot.login_success = True
+            # print(msg)
+            pass
 
         @self.bot.napcat_event()
         async def on_napcat_message(msg: Dict):
@@ -75,7 +75,7 @@ class QQAdapter(IMAdapter):
                     self.logger.error("invalid token")
                     await self.bot.close()
 
-        await self.bot.run(bt_uin=self.config["bot_pid"], root=self.config["owner_pid"], ws_uri=self.config["ws_uri"], ws_listen_ip=self.config["ws_listen_ip"], ws_token=self.config["ws_token"])
+        await self.bot.run(bt_uin=self.config["bot_pid"], ws_uri=self.config["ws_uri"], ws_token=self.config["ws_token"])
 
     async def start(self):
         task = asyncio.create_task(self.start_blocking())

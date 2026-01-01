@@ -1,13 +1,12 @@
 import asyncio
 import json
 import uuid
-import re
 import traceback
 import websockets
 from datetime import datetime
 from core.logging_manager import get_logger
-from typing import Union, Optional, Type, Literal, Callable
-from .napcat_client_utils import QQMessageChain
+from typing import Union, Optional, Literal, Callable
+from .utils import QQMessageChain
 
 
 logger = get_logger("napcat", "blue")
@@ -22,19 +21,25 @@ class NapCatWebSocketClient:
         self.response_futures: dict[str, asyncio.Future] = {}
         self.shutdown_event = asyncio.Event()
         self.last_heartbeat: Optional[int] = None
-        self.login_success: bool = False
-        self.event_callbacks: dict[str, Optional[Callable]] = {
-            "group": None,
-            "private": None,
-            "notice": None,
-            "napcat": None,
-            "meta": None
+        self.login_success_event: asyncio.Event = asyncio.Event()
+        self.event_callbacks: dict[str, list[Callable]] = {
+            "group": [],
+            "private": [],
+            "notice": [],
+            "napcat": [],
+            "meta": []
         }
 
-    async def run(self, bt_uin: str, root: str, ws_uri: str, ws_listen_ip: str = "0.0.0.0", ws_token: Optional[str] = None):
+    async def run(self, bt_uin: str, ws_uri: str, ws_token: Optional[str] = None, ws_listen_ip: str = "0.0.0.0"):
         self.self_id = bt_uin
         self.ws_url = ws_uri
         self.access_token = ws_token
+
+        @self.meta_event()
+        async def on_meta_message(msg: dict):
+            if msg.get("meta_event_type") == "lifecycle":
+                self.login_success_event.set()
+
         con_resp = await self.connect()
         if con_resp.get("status") == "ok":
             task = asyncio.create_task(self.listen_messages())
@@ -44,14 +49,32 @@ class NapCatWebSocketClient:
             if str(login_id) != str(bt_uin):
                 logger.error("配置的账号与 NapCat 登录账号不一致")
                 await self.close()
-
-            for _ in range(10):
-                if self.login_success:
-                    break
-                await asyncio.sleep(0.1)
-            else:
-                # failed to login
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task  # 等待任务被取消
+                    except asyncio.CancelledError:
+                        logger.info("监听消息任务已取消")
+                    except Exception as e:
+                        logger.error(f"取消任务时发生错误: {e}")
                 return
+
+            logger.info(f"等待账号 {bt_uin} 的登录成功事件")
+            try:
+                await asyncio.wait_for(self.login_success_event.wait(), timeout=5)
+                logger.info(f"账号 {bt_uin} 登录成功")
+            except asyncio.TimeoutError:
+                logger.error(f"账号 {bt_uin} 登录超时")
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task  # 等待任务被取消
+                    except asyncio.CancelledError:
+                        logger.info("监听消息任务已取消")
+                    except Exception as e:
+                        logger.error(f"取消任务时发生错误: {e}")
+                return
+
             await task
         elif con_resp.get("status") == "failed":
             logger.error(f"连接失败：{con_resp.get('message')}")
@@ -71,31 +94,31 @@ class NapCatWebSocketClient:
 
     def group_event(self):
         def wrapper(func):
-            self.event_callbacks["group"] = func
+            self.event_callbacks["group"].append(func)
             return func
         return wrapper
 
     def private_event(self):
         def wrapper(func):
-            self.event_callbacks["private"] = func
+            self.event_callbacks["private"].append(func)
             return func
         return wrapper
 
     def notice_event(self):
         def wrapper(func):
-            self.event_callbacks["notice"] = func
+            self.event_callbacks["notice"].append(func)
             return func
         return wrapper
 
     def napcat_event(self):
         def wrapper(func):
-            self.event_callbacks["napcat"] = func
+            self.event_callbacks["napcat"].append(func)
             return func
         return wrapper
 
     def meta_event(self):
         def wrapper(func):
-            self.event_callbacks["meta"] = func
+            self.event_callbacks["meta"].append(func)
             return func
         return wrapper
 
@@ -137,16 +160,20 @@ class NapCatWebSocketClient:
                     if self.event_callbacks["group"]:
                         # Create task to run event callback non-blockingly
                         # This ensures listen_messages can continue receiving messages
-                        asyncio.create_task(self.event_callbacks["group"](data))
+                        for func in self.event_callbacks["group"]:
+                            asyncio.create_task(func(data))
                 elif message_type == "private":
                     if self.event_callbacks["private"]:
-                        asyncio.create_task(self.event_callbacks["private"](data))
+                        for func in self.event_callbacks["private"]:
+                            asyncio.create_task(func(data))
             elif post_type == "notice":
                 if self.event_callbacks["notice"]:
-                    asyncio.create_task(self.event_callbacks["notice"](data))
+                    for func in self.event_callbacks["notice"]:
+                        asyncio.create_task(func(data))
             elif post_type == "meta_event":
                 if self.event_callbacks["meta"]:
-                    asyncio.create_task(self.event_callbacks["meta"](data))
+                    for func in self.event_callbacks["meta"]:
+                        asyncio.create_task(func(data))
                 # if data.get("meta_event_type") == "heartbeat":
                 #     if not self.last_heartbeat:
                 #         self.last_heartbeat = data.get('time')
@@ -170,7 +197,8 @@ class NapCatWebSocketClient:
         # print(f"   {json.dumps(data, ensure_ascii=False, indent=2)}")
 
         if self.event_callbacks["napcat"]:
-            asyncio.create_task(self.event_callbacks["napcat"](data))
+            for func in self.event_callbacks["napcat"]:
+                asyncio.create_task(func(data))
 
     async def send_group_message(self, group_id: str, msg: QQMessageChain):
         message_dict = {
@@ -274,6 +302,7 @@ class NapCatWebSocketClient:
 
     async def close(self):
         self.shutdown_event.set()
+        self.login_success_event.clear()
         if self.websocket:
             await self.websocket.close()
         logger.info(f"已停止监听账号 {self.self_id} 的消息")
