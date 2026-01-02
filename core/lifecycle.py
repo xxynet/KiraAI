@@ -13,6 +13,7 @@ from .adapter import AdapterManager
 from .statistics import Statistics
 from .llm_client import LLMClient
 from .tool_manager import register_all_tools
+from .event_bus import EventBus
 
 
 logger = get_logger("lifecycle", "blue")
@@ -38,6 +39,8 @@ class KiraLifecycle:
         self.message_processor: Optional[MessageProcessor] = None
 
         self.sticker_manager: Optional[StickerManager] = None
+
+        self.event_bus: Optional[EventBus] = None
 
         self.tasks: list[asyncio.Task] = []
 
@@ -92,14 +95,19 @@ class KiraLifecycle:
 
         logger.info("All modules initialized, starting message processing loop...")
 
+        self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
+
+        await self.event_bus.dispatch()
+
         # ====== message handling loop ======
-        while True:
-            msg: Union[KiraMessageEvent, KiraCommentEvent] = await event_queue.get()
-            asyncio.create_task(self.message_processor.handle_message(msg))
+        # while True:
+        #     msg: Union[KiraMessageEvent, KiraCommentEvent] = await event_queue.get()
+        #     asyncio.create_task(self.message_processor.handle_message(msg))
 
     async def stop(self):
         # terminate all running adapters
         await self.adapter_manager.stop_adapters()
+        await self.event_bus.stop()
 
         # cancel all tasks
         for task in self.tasks:

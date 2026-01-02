@@ -98,17 +98,17 @@ class MessageProcessor:
                 pass
         return message_str
     
-    async def handle_message(self, msg: Union[KiraMessageEvent]):
+    async def handle_message(self, msg: Union[KiraMessageEvent, KiraCommentEvent]):
         """处理消息，带并发控制"""
         async with self.message_processing_semaphore:
             if isinstance(msg, KiraMessageEvent):
-                await self._handle_im_message(msg)
+                await self.handle_im_message(msg)
             elif isinstance(msg, KiraCommentEvent):
-                await self._handle_cmt_message(msg)
+                await self.handle_cmt_message(msg)
             else:
                 logger.warning(f"Unknown message type: {type(msg)}")
 
-    async def _handle_im_message(self, msg: KiraMessageEvent):
+    async def handle_im_message(self, msg: KiraMessageEvent):
         """process im message"""
         if msg.is_group_message():
             logger.info(f"[{msg.adapter_name} | {msg.message_id}] [{msg.group_name} | {msg.user_nickname}]: {msg.message_repr}")
@@ -204,7 +204,7 @@ class MessageProcessor:
                 new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
                 self.memory_manager.update_memory(session_identifier, new_memory_chunk)
 
-    async def _handle_cmt_message(self, msg: KiraCommentEvent):
+    async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
 
         if msg.sub_cmt_id:

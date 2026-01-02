@@ -33,9 +33,9 @@
 ## 核心记忆（Core Memory）
 {core_memory}
 
-## 工具说明（Tool Description）
-tool-call 模型已经完成了工具调用，**严禁**调用工具。工具列表仅作为参考帮助你理解上下文。
-
 ## 输出要求（Output）
+
+tool-call 模型已经完成了工具调用，你**严禁**调用工具。
+
 根据以下格式输出：
 {format}
