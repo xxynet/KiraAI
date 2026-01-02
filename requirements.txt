@@ -1,8 +1,8 @@
-bilibili_api_python==17.4.0
-colorlog==6.9.0
-python-telegram-bot==21.3
-openai~=1.106.1
+bilibili_api_python>=17.4.0
+colorlog>=6.9.0
+python-telegram-bot~=21.3
+openai>=1.106.1
 Requests~=2.32.4
-tavily_python==0.7.10
+tavily_python~=0.7.10
 uuid~=1.30
-websockets~=15.0.1
+websockets>=10.0

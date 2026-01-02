@@ -12,6 +12,36 @@ from .utils import QQMessageChain
 logger = get_logger("napcat", "blue")
 
 
+def ws_compatible_connect(uri, *, extra_headers, **kwargs):
+    """
+    使用自定义的 connect 函数来同时兼容新版和旧版 websockets
+
+    默认使用旧版参数名 ``extra_headers``
+    """
+    return websockets.connect(
+        uri,
+        extra_headers=extra_headers,
+        **kwargs
+    )
+
+
+try:
+    import websockets.asyncio.client
+
+    if websockets.connect == websockets.asyncio.client.connect:
+        def ws_compatible_connect(uri, *, extra_headers, **kwargs):
+            """
+            如果 ``websockets.connect`` 对应新版 ``asyncio`` 实现，需要把参数名 ``extra_headers`` 改为 ``additional_headers``
+            """
+            return websockets.connect(
+                uri,
+                additional_headers=extra_headers,
+                **kwargs
+            )
+except ImportError:
+    pass
+
+
 class NapCatWebSocketClient:
     def __init__(self, ws_url: str = "ws://localhost:3001", access_token: Optional[str] = None):
         self.ws_url = ws_url
@@ -87,7 +117,7 @@ class NapCatWebSocketClient:
 
         logger.info(f"连接到 {self.ws_url}")
         try:
-            self.websocket = await websockets.connect(self.ws_url, additional_headers=headers, max_size=2**24, open_timeout=5.0, ping_timeout=10.0)
+            self.websocket = await ws_compatible_connect(self.ws_url, extra_headers=headers, max_size=2**24, open_timeout=5.0, ping_timeout=10.0)
             return {"status": "ok"}
         except Exception as e:
             return {"status": "failed", "message": str(e)}
