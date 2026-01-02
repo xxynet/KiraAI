@@ -3,8 +3,7 @@ import time
 from typing import Union, Optional
 
 from .logging_manager import get_logger
-from .config.config_loader import KiraConfig
-from .chat import KiraMessageEvent, KiraCommentEvent
+from .config import KiraConfig
 from .sticker_manager import StickerManager
 from .message_manager import MessageProcessor
 from .prompt_manager import PromptManager
@@ -98,11 +97,6 @@ class KiraLifecycle:
         self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
 
         await self.event_bus.dispatch()
-
-        # ====== message handling loop ======
-        # while True:
-        #     msg: Union[KiraMessageEvent, KiraCommentEvent] = await event_queue.get()
-        #     asyncio.create_task(self.message_processor.handle_message(msg))
 
     async def stop(self):
         # terminate all running adapters
