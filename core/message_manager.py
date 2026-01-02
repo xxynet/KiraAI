@@ -245,25 +245,28 @@ class MessageProcessor:
 
         parts = target.split(":")
         if len(parts) != 3:
-            raise ValueError("target 必须是 <adapter>:<dm|gm>:<id> 格式")
+            raise ValueError("invalid target, must follow the form of <adapter>:<dm|gm>:<id>")
         adapter_name, chat_type, pid = parts[0], parts[1], parts[2]
 
         for message_list in resp_list:
-            message_obj = MessageChain(message_list)
+            if message_list:
+                message_obj = MessageChain(message_list)
 
-            if chat_type == "dm":
-                message_id = await get_adapter_by_name(adapter_name).send_direct_message(pid, message_obj)
-            elif chat_type == "gm":
-                message_id = await get_adapter_by_name(adapter_name).send_group_message(pid, message_obj)
+                if chat_type == "dm":
+                    message_id = await get_adapter_by_name(adapter_name).send_direct_message(pid, message_obj)
+                elif chat_type == "gm":
+                    message_id = await get_adapter_by_name(adapter_name).send_group_message(pid, message_obj)
+                else:
+                    message_id = None
+
+                if not message_id:
+                    message_id = ''
+                message_ids.append(message_id)
+
+                # add random message delay
+                await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
             else:
-                message_id = None
-
-            if not message_id:
-                message_id = ''
-            message_ids.append(message_id)
-
-            # add random message delay
-            await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
+                message_ids.append('')
 
         return message_ids, actual_xml
 
