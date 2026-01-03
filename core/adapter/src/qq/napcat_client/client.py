@@ -257,7 +257,6 @@ class NapCatWebSocketClient:
                 "user_id": user_id
             }
         resp = await self.send_action("send_poke", message_dict)
-        print(resp)
         return resp
 
     async def get_record(self, file_id, output_format: Literal['mp3', 'amr', 'wma', 'm4a', 'spx', 'ogg', 'wav', 'flac'] = "mp3"):
