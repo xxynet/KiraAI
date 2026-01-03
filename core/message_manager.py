@@ -282,7 +282,8 @@ class MessageProcessor:
 
                 # build MessageType object
                 if tag == "text":
-                    message_elements.append(MessageType.Text(value))
+                    if value:
+                        message_elements.append(MessageType.Text(value))
                 elif tag == "emoji":
                     message_elements.append(MessageType.Emoji(value))
                 elif tag == "sticker":
