@@ -35,7 +35,7 @@ class PromptManager:
         self.builtin_msg_types_mapping = {
             "text": "<text>some text</text> # 纯文本消息",
             "img": "<img>prompt for image generator</img> # 请勿滥用，仅在用户请求看照片时使用，需要详细的绘画提示词。",
-            "at": "<at>user_id</at> # 通过用户id使用@功能，通常出现在消息的开头，有时也会在消息中间（如果聊天中需要提及其他人），特殊的，传入字符串all代表@全体成员。at功能仅在群聊中使用",
+            "at": "<at>user_id</at> # 通过用户id使用@功能，通常出现在消息的开头，有时也会在消息中间（如果聊天中需要提及其他人），特殊的，传入字符串all代表@全体成员。at功能仅在群聊中使用，系统会将at消息解析为‘@用户昵称’显示",
             "reply": "<reply>message_id</reply> # 回复一条消息，如果使用这个标签，需要为一条消息的第一个元素，且不能单独出现",
             "record": "<record>record_text</record> # 要发送的语音文本，不能和其他msg内标签混用，用户给你发语音或者用户要求你发语音时使用（收到语音消息类似这样：[Record voice_message]）",
             "emoji": "<emoji>emoji_id</emoji> # 发送一个emoji（中文一般叫做表情）消息，通常和文字在同一个msg标签中，可以使用的emoji如下：{emoji_json}",
