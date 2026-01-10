@@ -96,7 +96,7 @@ class QQAdapter(IMAdapter):
             retcode = result.get("retcode")
             if status == "failed":
                 if retcode == 1200:
-                    self.logger.error("禁言中，消息发送失败")
+                    self.logger.error("禁言中或达到发言频率限制，消息发送失败")
                 else:
                     self.logger.error(f"未知错误，消息发送失败，错误码：{retcode}")
             message_id = str(result.get("data", {}).get("message_id"))
