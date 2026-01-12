@@ -146,13 +146,19 @@ class QQAdapter(IMAdapter):
                 img_url = ele.get("data", "").get("url", "")
                 message_content.append(MessageType.Image(img_url))
             elif ele.get("type") == "video":
+                video_file_name = ele.get("data", {}).get("file", "")  # e.g. xxx.mp4
+                video_file_url = ele.get("data", {}).get("url", "")
+                video_file_size = ele.get("data", {}).get("file_size", "")  # Bytes, str
                 message_content.append(MessageType.Text("[Video]"))
             elif ele.get("type") == "json":
                 json_card_info = ele.get("data", "").get("data", "")
                 cleaned_card_info = extract_card_info(json_card_info)
                 message_content.append(MessageType.Text(f"[Json {cleaned_card_info}]"))
             elif ele.get("type") == "file":
-                message_content.append(MessageType.Text("[File]"))
+                file_name = ele.get("data").get("file")
+                file_id = ele.get("data").get("file_id")
+                file_size = ele.get("data").get("file_size")  # Bytes, str
+                message_content.append(MessageType.Text(f"[File {file_name}]"))
             elif ele.get("type") == "forward":
                 forward_message = await self.bot.get_forward_msg(msg.get("message_id"))
                 processed_forward = await self._process_forward_message(forward_message)
