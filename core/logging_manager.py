@@ -4,7 +4,7 @@ import sys
 from colorlog.escape_codes import escape_codes
 from logging.handlers import RotatingFileHandler
 
-logging.getLogger("httpx").setLevel(logging.CRITICAL)
+from core.utils.path_utils import get_data_path
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -43,7 +43,7 @@ def get_logger(name: str, color: str):
     ch.setLevel(logging.INFO)
     ch.setFormatter(console_formatter)
 
-    fh = RotatingFileHandler(filename="log.log", maxBytes=10*1024*1024, backupCount=1, encoding='utf-8')
+    fh = RotatingFileHandler(filename=f"{get_data_path()}/log.log", maxBytes=10*1024*1024, backupCount=1, encoding='utf-8')
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(file_formatter)
 

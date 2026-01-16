@@ -13,7 +13,8 @@ class Session:
     session_id: str
 
     @property
-    def session_identifier(self):
+    def sid(self):
+        """unique session identifier"""
         return f"{self.adapter_name}:{self.session_type}:{self.session_id}"
 
     def __str__(self):

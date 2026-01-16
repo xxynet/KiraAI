@@ -25,6 +25,13 @@ if __name__ == "__main__":
 
     logger.info(f"Set working dir: {script_dir}")
 
+    from core.utils.path_utils import get_data_path
+
+    sub_data_folders = ["config", "memory", "plugins", "files", "sticker"]
+    for folder in sub_data_folders:
+        os.makedirs(get_data_path() / folder, exist_ok=True)
+    logger.info("Ensured data sub folders")
+
     from core.launcher import KiraLauncher
 
     launcher = KiraLauncher()
