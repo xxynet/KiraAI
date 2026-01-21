@@ -13,6 +13,7 @@ from .statistics import Statistics
 from .llm_client import LLMClient
 from .tool_manager import register_all_tools
 from .event_bus import EventBus
+from .persona import PersonaManager
 
 
 logger = get_logger("lifecycle", "blue")
@@ -23,7 +24,6 @@ class KiraLifecycle:
 
     def __init__(self, stats: Statistics):
         self.stats = stats
-        stats.set_stats("started_ts", int(time.time()))
 
         self.kira_config: Optional[KiraConfig] = None
 
@@ -32,6 +32,8 @@ class KiraLifecycle:
         self.adapter_manager: Optional[AdapterManager] = None
 
         self.memory_manager: Optional[MemoryManager] = None
+
+        self.persona_manager: Optional[PersonaManager] = None
 
         self.prompt_manager: Optional[PromptManager] = None
 
@@ -75,8 +77,13 @@ class KiraLifecycle:
         # ====== init memory manager ======
         self.memory_manager = MemoryManager(self.kira_config)
 
+        # ====== init persona manager ======
+        self.persona_manager = PersonaManager()
+
         # ====== init prompt manager ======
-        self.prompt_manager = PromptManager(self.kira_config, self.sticker_manager)
+        self.prompt_manager = PromptManager(self.kira_config,
+                                            self.sticker_manager,
+                                            self.persona_manager)
 
         # ====== init message processor ======
         self.message_processor = MessageProcessor(self.kira_config,
@@ -91,6 +98,8 @@ class KiraLifecycle:
         from core.services.runtime import set_adapters, set_event_bus
         set_adapters(self.adapter_manager.get_adapters())
         set_event_bus(event_queue)
+
+        self.stats.set_stats("started_ts", int(time.time()))
 
         logger.info("All modules initialized, starting message processing loop...")
 
