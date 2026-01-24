@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KiraAI - Login</title>
+
+    <!-- Apply theme immediately to prevent flash -->
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            if (savedTheme === 'dark') {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+
+    <!-- TailwindCSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Configure Tailwind CSS for dark mode support
+        tailwind.config = {
+            darkMode: 'class'
+        }
+    </script>
+
+    <!-- Custom styles -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="bg-transparent min-h-screen flex items-center justify-center">
+    <!-- Page Background with Gradient and Light Spots -->
+    <div class="page-background">
+        <!-- Static light spots - ACG style -->
+        <div class="light-spot light-spot-1"></div>
+        <div class="light-spot light-spot-2"></div>
+        <div class="light-spot light-spot-3"></div>
+    </div>
+
+    <!-- Theme Toggle Button -->
+    <button id="theme-toggle" class="fixed top-4 right-4 z-50 p-2 rounded-lg bg-white/70 backdrop-blur-md border border-white/30 shadow-lg hover:bg-white/90 transition-all duration-200 dark:bg-gray-800/70 dark:border-gray-700/30 dark:hover:bg-gray-800/90">
+        <svg id="sun-icon" class="w-6 h-6 text-yellow-500 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+        </svg>
+        <svg id="moon-icon" class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+        </svg>
+    </button>
+    
+    <!-- Login Container -->
+    <div class="relative z-10 w-full max-w-md px-6">
+        <!-- Login Card with Glassmorphism -->
+        <div class="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 p-8 dark:bg-gray-800/70 dark:border-gray-700/30">
+            <!-- Logo and Title -->
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4 shadow-lg">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                </div>
+                <h1 class="text-3xl font-bold text-gray-900 mb-2 dark:text-white">KiraAI</h1>
+                <p class="text-gray-600 dark:text-gray-400">Admin Panel Login</p>
+            </div>
+            
+            <!-- Login Form -->
+            <form id="login-form" class="space-y-6">
+                <!-- Access Token Input -->
+                <div>
+                    <label for="access-token" class="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+                        Access Token
+                    </label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                            </svg>
+                        </div>
+                        <input
+                            type="password"
+                            id="access-token"
+                            name="access-token"
+                            required
+                            class="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/50 backdrop-blur-sm transition-all duration-200 dark:border-gray-600 dark:bg-gray-700/50 dark:text-white dark:placeholder-gray-400 dark:focus:ring-blue-400"
+                            placeholder="Enter your access token"
+                            autocomplete="off"
+                        >
+                    </div>
+                    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Get your token in data/webui.json
+                    </p>
+                </div>
+                
+                <!-- Login Button -->
+                <button
+                    type="submit"
+                    id="login-button"
+                    class="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563eb] transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-500"
+                >
+                    <span id="login-button-text">Login</span>
+                    <svg id="login-spinner" class="hidden animate-spin ml-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </button>
+            </form>
+            
+            <!-- Error Message -->
+            <div id="error-message" class="hidden mt-4 p-4 bg-red-50 border border-red-200 rounded-xl dark:bg-red-900/20 dark:border-red-800/30">
+                <div class="flex items-center">
+                    <svg class="w-5 h-5 text-red-600 mr-2 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span id="error-text" class="text-sm text-red-700 dark:text-red-300"></span>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="mt-8 text-center">
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    KiraAI WebUI Preview
+                </p>
+            </div>
+        </div>
+        
+        <!-- Additional Info -->
+        <div class="mt-6 text-center">
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+
+            </p>
+        </div>
+    </div>
+
+    <!-- Light Spots Styles -->
+    <style>
+        .light-spot {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.6;
+            animation: float 8s ease-in-out infinite;
+        }
+
+        .light-spot-1 {
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, transparent 70%);
+            top: 10%;
+            left: 10%;
+            animation-delay: 0s;
+        }
+
+        .light-spot-2 {
+            width: 250px;
+            height: 250px;
+            background: radial-gradient(circle, rgba(147, 197, 253, 0.4) 0%, transparent 70%);
+            top: 60%;
+            right: 15%;
+            animation-delay: 2s;
+        }
+
+        .light-spot-3 {
+            width: 200px;
+            height: 200px;
+            background: radial-gradient(circle, rgba(167, 139, 250, 0.4) 0%, transparent 70%);
+            bottom: 15%;
+            left: 25%;
+            animation-delay: 4s;
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0) scale(1);
+            }
+            50% {
+                transform: translateY(-20px) scale(1.05);
+            }
+        }
+
+        /* Dark mode light spots */
+        .dark .light-spot {
+            opacity: 0.3;
+        }
+
+        .dark .light-spot-1 {
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, transparent 70%);
+        }
+
+        .dark .light-spot-2 {
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.3) 0%, transparent 70%);
+        }
+
+        .dark .light-spot-3 {
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, transparent 70%);
+        }
+    </style>
+    
+    <!-- Login Script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginForm = document.getElementById('login-form');
+            const accessTokenInput = document.getElementById('access-token');
+            const loginButton = document.getElementById('login-button');
+            const loginButtonText = document.getElementById('login-button-text');
+            const loginSpinner = document.getElementById('login-spinner');
+            const errorMessage = document.getElementById('error-message');
+            const errorText = document.getElementById('error-text');
+            const themeToggle = document.getElementById('theme-toggle');
+            const sunIcon = document.getElementById('sun-icon');
+            const moonIcon = document.getElementById('moon-icon');
+
+            // Theme toggle functionality
+            function toggleTheme() {
+                const html = document.documentElement;
+                const isDark = html.classList.toggle('dark');
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                updateThemeIcons(isDark);
+            }
+
+            function updateThemeIcons(isDark) {
+                if (isDark) {
+                    sunIcon.classList.remove('hidden');
+                    moonIcon.classList.add('hidden');
+                } else {
+                    sunIcon.classList.add('hidden');
+                    moonIcon.classList.remove('hidden');
+                }
+            }
+
+            // Initialize theme icons
+            const currentTheme = localStorage.getItem('theme') || 'light';
+            updateThemeIcons(currentTheme === 'dark');
+
+            // Theme toggle button click handler
+            themeToggle.addEventListener('click', toggleTheme);
+
+            // Check if already logged in
+            const existingToken = localStorage.getItem('jwt_token');
+            if (existingToken) {
+                // Verify token by making a test request
+                fetch('/api/health', {
+                    headers: {
+                        'Authorization': `Bearer ${existingToken}`
+                    }
+                }).then(response => {
+                    if (response.ok) {
+                        window.location.href = '/';
+                    } else {
+                        localStorage.removeItem('jwt_token');
+                    }
+                }).catch(() => {
+                    localStorage.removeItem('jwt_token');
+                });
+            }
+
+            // Handle form submission
+            loginForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                // Get access token
+                const accessToken = accessTokenInput.value.trim();
+
+                if (!accessToken) {
+                    showError('Please enter your access token');
+                    return;
+                }
+
+                // Show loading state
+                setLoading(true);
+                hideError();
+
+                try {
+                    // Login API call
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ access_token: accessToken })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.detail || 'Login failed');
+                    }
+
+                    // Store JWT token in localStorage
+                    localStorage.setItem('jwt_token', data.access_token);
+
+                    // Redirect to main page
+                    window.location.href = '/';
+
+                } catch (error) {
+                    console.error('Login error:', error);
+                    showError(error.message || 'Login failed. Please check your access token and try again.');
+                } finally {
+                    setLoading(false);
+                }
+            });
+
+            // Show error message
+            function showError(message) {
+                errorText.textContent = message;
+                errorMessage.classList.remove('hidden');
+            }
+
+            // Hide error message
+            function hideError() {
+                errorMessage.classList.add('hidden');
+            }
+
+            // Set loading state
+            function setLoading(isLoading) {
+                if (isLoading) {
+                    loginButton.disabled = true;
+                    loginButtonText.textContent = 'Logging in...';
+                    loginSpinner.classList.remove('hidden');
+                } else {
+                    loginButton.disabled = false;
+                    loginButtonText.textContent = 'Login';
+                    loginSpinner.classList.add('hidden');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

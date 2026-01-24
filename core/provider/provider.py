@@ -1,9 +1,36 @@
 from abc import abstractmethod, ABC
+from enum import Enum, auto
 from typing import List, Optional
 import asyncio
 
 from .llm_model import LLMModel, LLMRequest, LLMResponse
 from .image_result import ImageResult
+
+
+class ModelType(Enum):
+    LLM: auto()
+    TTS: auto()
+    STT: auto()
+    EMBEDDING: auto()
+    RERANK: auto()
+    IMAGE: auto()
+    VIDEO: auto()
+
+
+class NewBaseProvider(ABC):
+    def __init__(self, provider_id, provider_name, provider_config):
+        self.provider_id: str = provider_id
+        self.provider_name: str = provider_name
+        self.provider_config: dict = provider_config
+
+    def get_keys(self) -> List[str]:
+        return self.provider_config.get("keys", [])
+
+    def get_models(self) -> List[LLMModel]:
+        pass
+
+    async def chat(self, request: LLMRequest) -> LLMResponse:
+        pass
 
 
 class BaseProvider(ABC):

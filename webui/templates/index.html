@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KiraAI Admin Panel</title>
+
+    <!-- Apply theme immediately to prevent flash -->
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            if (savedTheme === 'dark') {
+                document.documentElement.classList.add('dark');
+            }
+
+            // Check for JWT token
+            const jwtToken = localStorage.getItem('jwt_token');
+            if (!jwtToken) {
+                window.location.href = '/login';
+            }
+        })();
+    </script>
+
+    <!-- TailwindCSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Configure Tailwind CSS for dark mode support
+        tailwind.config = {
+            darkMode: 'class'
+        }
+    </script>
+    
+    <!-- i18next -->
+    <script src="https://cdn.jsdelivr.net/npm/i18next@23.7.6/dist/umd/i18next.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/i18next-browser-languagedetector@7.2.0/dist/umd/i18nextBrowserLanguageDetector.min.js"></script>
+    
+    <!-- EventSource Polyfill for custom headers support -->
+    <script src="https://cdn.jsdelivr.net/npm/event-source-polyfill@1.0.31/src/eventsource.min.js"></script>
+    
+    <!-- Monaco Editor (VS Code) -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+    
+    <!-- Custom styles -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    
+    <!-- Custom Select Component -->
+    <script src="/static/js/custom-select.js"></script>
+</head>
+<body class="bg-transparent">
+    <!-- Page Background -->
+    <div class="page-background"></div>
+    
+    <div id="app" class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-64 sidebar-gradient text-gray-800 flex flex-col">
+            <!-- Logo -->
+            <div class="p-6 border-b border-blue-200/30">
+                <h1 class="text-2xl font-bold text-gray-800" data-i18n="app.title">KiraAI</h1>
+                <p class="text-sm text-gray-600 mt-1" data-i18n="app.subtitle">Admin Panel</p>
+            </div>
+            
+            <!-- Navigation -->
+            <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+                <a href="#" 
+                   data-page="overview" 
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors active">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                        </svg>
+                        <span data-i18n="nav.overview">Overview</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+                
+                <a href="#" 
+                   data-page="provider" 
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                        </svg>
+                        <span data-i18n="nav.provider">Provider</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+                
+                <a href="#" 
+                   data-page="adapter" 
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                        <span data-i18n="nav.adapter">Adapter</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+                
+                <a href="#" 
+                   data-page="persona" 
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                        <span data-i18n="nav.persona">Persona</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+
+                <a href="#"
+                   data-page="plugin"
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"></path>
+                        </svg>
+                        <span data-i18n="nav.plugin">Plugin</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+
+                <a href="#"
+                   data-page="sticker"
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span data-i18n="nav.sticker">Sticker</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+
+                <a href="#"
+                   data-page="configuration"
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        <span data-i18n="nav.configuration">Configuration</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+                
+                <a href="#" 
+                   data-page="sessions" 
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                        </svg>
+                        <span data-i18n="nav.sessions">Sessions</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+                
+                <a href="#" 
+                   data-page="logs" 
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        <span data-i18n="nav.logs">System Logs</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+                
+                <a href="#" 
+                   data-page="settings" 
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+                        </svg>
+                        <span data-i18n="nav.settings">Settings</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+            </nav>
+            
+            <!-- Language Selector -->
+            <div class="p-4 border-t border-blue-200/30">
+                <select id="language-selector" data-custom-select data-placeholder="Select Language">
+                    <option value="en">English</option>
+                    <option value="zh">中文</option>
+                </select>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto">
+            <!-- Header -->
+            <header class="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+                <h2 id="page-title" class="text-2xl font-semibold text-gray-800" data-i18n="pages.overview.title">Overview</h2>
+            </header>
+            
+            <!-- Page Content -->
+            <div class="p-6">
+                <!-- Overview Page -->
+                <div id="page-overview" class="page-content">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                        <div class="bg-white rounded-lg shadow p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm text-gray-600" data-i18n="overview.runtime_duration">Runtime Duration</p>
+                                    <p class="text-2xl font-bold text-gray-900 mt-2" id="stat-runtime-duration">--</p>
+                                </div>
+                                <div class="bg-blue-100 rounded-full p-3">
+                                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white rounded-lg shadow p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm text-gray-600" data-i18n="overview.total_messages">Total Messages</p>
+                                    <p class="text-2xl font-bold text-gray-900 mt-2" id="stat-total-messages">0</p>
+                                </div>
+                                <div class="bg-green-100 rounded-full p-3">
+                                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white rounded-lg shadow p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm text-gray-600" data-i18n="overview.adapter_count">Adapter Count</p>
+                                    <p class="text-2xl font-bold text-gray-900 mt-2" id="stat-adapter-count">0</p>
+                                </div>
+                                <div class="bg-purple-100 rounded-full p-3">
+                                    <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white rounded-lg shadow p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm text-gray-600" data-i18n="overview.memory_usage">Memory Usage</p>
+                                    <p class="text-2xl font-bold text-gray-900 mt-2" id="stat-memory-usage">--</p>
+                                </div>
+                                <div class="bg-yellow-100 rounded-full p-3">
+                                    <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4" data-i18n="overview.system_status">System Status</h3>
+                        <div class="flex items-center">
+                            <span id="system-status-indicator" class="w-3 h-3 rounded-full bg-gray-400 mr-2"></span>
+                            <span id="system-status-text" class="text-gray-700" data-i18n="overview.status_unknown">Unknown</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Provider Page -->
+                <div id="page-provider" class="page-content hidden">
+                    <div class="flex gap-6 min-h-[calc(100vh-8rem)]">
+                        <!-- Left side: Provider List -->
+                        <div class="w-1/3 bg-white rounded-lg shadow p-6 flex flex-col">
+                            <div class="flex justify-between items-center mb-6 flex-shrink-0">
+                                <h3 class="text-lg font-semibold text-gray-800" data-i18n="provider.title">LLM Providers</h3>
+                                <button onclick="openProviderModal()" class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                    </svg>
+                                    <span class="ml-1" data-i18n="provider.add_short">New</span>
+                                </button>
+                            </div>
+                            <div id="provider-list" class="space-y-2 overflow-y-auto flex-1">
+                                <div class="flex justify-center items-center py-12">
+                                    <div class="text-center">
+                                        <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                                        </svg>
+                                        <p class="text-gray-500 text-sm" data-i18n="provider.no_providers">No providers configured</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right side: Provider Configuration -->
+                        <div class="w-2/3 bg-white rounded-lg shadow p-6 flex flex-col">
+                            <div id="provider-config" class="flex flex-col flex-1">
+                                <div class="flex justify-center items-center flex-1">
+                                    <div class="text-center">
+                                        <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                                        </svg>
+                                        <p class="text-gray-500" data-i18n="provider.select_provider">Select a provider to configure</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Adapter Page -->
+                <div id="page-adapter" class="page-content hidden">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold text-gray-800" data-i18n="adapter.title">Adapters</h3>
+                        <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="adapter.add">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            <span data-i18n="adapter.add">Add Adapter</span>
+                        </button>
+                    </div>
+                    <div id="adapter-list" class="space-y-4">
+                        <div class="flex justify-center items-center py-12">
+                            <div class="text-center">
+                                <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                <p class="text-gray-500" data-i18n="adapter.no_adapters">No adapters configured</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Persona Page -->
+                <div id="page-persona" class="page-content hidden">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold text-gray-800" data-i18n="persona.title">Personas</h3>
+                        <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="persona.add">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            <span data-i18n="persona.add">Add Persona</span>
+                        </button>
+                    </div>
+                    <div id="persona-list" class="space-y-4">
+                        <div class="flex justify-center items-center py-12">
+                            <div class="text-center">
+                                <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                </svg>
+                                <p class="text-gray-500" data-i18n="persona.no_personas">No personas configured</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Plugin Page -->
+                <div id="page-plugin" class="page-content hidden">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold text-gray-800" data-i18n="plugin.title">Plugins</h3>
+                        <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            <span data-i18n="plugin.add">Add Plugin</span>
+                        </button>
+                    </div>
+                    <div id="plugin-list" class="space-y-4">
+                        <div class="flex justify-center items-center py-12">
+                            <div class="text-center">
+                                <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"></path>
+                                </svg>
+                                <p class="text-gray-500" data-i18n="plugin.no_plugins">No plugins configured</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sticker Page -->
+                <div id="page-sticker" class="page-content hidden">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold text-gray-800" data-i18n="sticker.title">Stickers</h3>
+                        <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="sticker.add">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            <span data-i18n="sticker.add">Add Sticker</span>
+                        </button>
+                    </div>
+                    <div id="sticker-list" class="space-y-4">
+                        <div class="flex justify-center items-center py-12">
+                            <div class="text-center">
+                                <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <p class="text-gray-500" data-i18n="sticker.no_stickers">No stickers configured</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Configuration Page -->
+                <div id="page-configuration" class="page-content hidden">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-lg font-semibold text-gray-800" data-i18n="configuration.title">Configuration</h3>
+                            <div class="flex space-x-2">
+                                <button class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center" data-i18n="configuration.new_file">
+                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                    </svg>
+                                    <span data-i18n="configuration.new_file">New File</span>
+                                </button>
+                                <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="configuration.save">
+                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    <span data-i18n="configuration.save">Save</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- File and Format Selection -->
+                        <div class="flex flex-col sm:flex-row gap-4 mb-6">
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="configuration.file_select">Select File</label>
+                                <div class="flex">
+                                    <select id="file-selector" data-custom-select data-placeholder="Select a file...">
+                                        <option value="" data-i18n="configuration.select_file">Select a file...</option>
+                                        <option value="config.ini" data-format="ini">config.ini</option>
+                                        <option value="settings.json" data-format="json">settings.json</option>
+                                        <option value="README.md" data-format="md">README.md</option>
+                                        <option value="app.xml" data-format="xml">app.xml</option>
+                                    </select>
+                                    <button id="refresh-files" class="ml-2 px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors" style="margin-top: 0;">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="w-full sm:w-48">
+                                <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="configuration.format_select">File Format</label>
+                                <select id="format-selector" data-custom-select data-placeholder="Select Format">
+                                    <option value="ini" data-i18n="configuration.format_ini">INI</option>
+                                    <option value="json" data-i18n="configuration.format_json">JSON</option>
+                                    <option value="md" data-i18n="configuration.format_md">Markdown</option>
+                                    <option value="xml" data-i18n="configuration.format_xml">XML</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Editor Container -->
+                        <div class="border border-gray-300 rounded-lg overflow-hidden">
+                            <div class="bg-gray-50 px-4 py-2 border-b border-gray-300 flex items-center justify-between">
+                                <span id="editor-status" class="text-sm text-gray-600" data-i18n="configuration.editor_ready">Editor ready</span>
+                                <div class="flex items-center space-x-2">
+                                    <button id="editor-copy" class="p-1 text-gray-600 hover:text-gray-800 transition-colors" title="Copy">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </button>
+                                    <button id="editor-download" class="p-1 text-gray-600 hover:text-gray-800 transition-colors" title="Download">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="monaco-editor-container" class="h-96"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sessions Page -->
+                <div id="page-sessions" class="page-content hidden">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-lg font-semibold text-gray-800" data-i18n="sessions.title">Session Management</h3>
+                            <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="sessions.new">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                </svg>
+                                <span data-i18n="sessions.new">New Session</span>
+                            </button>
+                        </div>
+                        <div id="session-list" class="space-y-4">
+                            <div class="flex justify-center items-center py-12">
+                                <div class="text-center">
+                                    <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                                    </svg>
+                                    <p class="text-gray-500" data-i18n="sessions.no_sessions">No active sessions</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- System Logs Page -->
+                <div id="page-logs" class="page-content hidden">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-lg font-semibold text-gray-800" data-i18n="logs.title">System Logs</h3>
+                            <div class="flex space-x-2">
+                                <button class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center" data-i18n="logs.clear">
+                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                    </svg>
+                                    <span data-i18n="logs.clear">Clear Logs</span>
+                                </button>
+                                <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="logs.refresh">
+                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                    <span data-i18n="logs.refresh">Refresh</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-4 flex space-x-4">
+                            <select id="log-level-selector" data-custom-select data-placeholder="Select Level">
+                                <option value="all" data-i18n="logs.level_all">All Levels</option>
+                                <option value="debug" data-i18n="logs.level_debug">Debug</option>
+                                <option value="info" data-i18n="logs.level_info">Info</option>
+                                <option value="warning" data-i18n="logs.level_warning">Warning</option>
+                                <option value="error" data-i18n="logs.level_error">Error</option>
+                            </select>
+                            <input type="text" class="flex-1 border border-gray-300 rounded-lg px-3 py-2" placeholder="Search logs..." data-i18n-placeholder="logs.search_placeholder">
+                        </div>
+                        <div id="log-container" class="bg-gray-50 rounded-lg p-4 h-96 overflow-y-auto font-mono text-base">
+                            <div class="flex justify-center items-center h-full">
+                                <p class="text-gray-500" data-i18n="logs.no_logs">No logs available</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Settings Page -->
+                <div id="page-settings" class="page-content hidden">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-6" data-i18n="settings.title">System Settings</h3>
+                        <div class="space-y-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.language">Language</label>
+                                <select id="settings-language" data-custom-select data-placeholder="Select Language">
+                                    <option value="en">English</option>
+                                    <option value="zh">中文</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.theme">Theme</label>
+                                <select id="settings-theme" data-custom-select data-placeholder="Select Theme">
+                                    <option value="light" data-i18n="settings.theme_light">Light</option>
+                                    <option value="dark" data-i18n="settings.theme_dark">Dark</option>
+                                </select>
+                            </div>
+                            <div class="flex justify-end">
+                                <button id="save-settings" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors" data-i18n="settings.save">Save Settings</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Provider Modal -->
+    <div id="provider-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-800" data-i18n="provider.modal_title">Add Provider</h3>
+                <button onclick="closeProviderModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="px-6 py-4">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="provider.modal_name_label">Provider Name</label>
+                    <input type="text" id="provider-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter provider name...">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="provider.modal_type_label">Provider Type</label>
+                    <select id="provider-type" data-custom-select data-placeholder="Select provider type...">
+                        <option value="">Select provider type...</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="siliconflow">SiliconFlow</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="cohere">Cohere</option>
+                        <option value="huggingface">HuggingFace</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                <button onclick="closeProviderModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors" data-i18n="provider.modal_cancel">Cancel</button>
+                <button onclick="saveProvider()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors" data-i18n="provider.modal_save">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Persona Modal -->
+    <div id="persona-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 flex flex-col" style="max-height: 90vh;">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-800" data-i18n="persona.modal_title">Add Persona</h3>
+                <button onclick="closePersonaModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="px-6 py-4 flex-1 overflow-y-auto">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="persona.modal_name_label">Persona Name</label>
+                    <input type="text" id="persona-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter persona name...">
+                </div>
+                <div class="mb-4 flex flex-col" style="flex: 1; min-height: 0;">
+                    <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="persona.modal_content_label">Persona Content</label>
+                    <div class="flex gap-4 mb-2 flex-shrink-0">
+                        <select id="persona-format" data-custom-select data-placeholder="Select Format">
+                            <option value="text" data-i18n="persona.format_text">Plain Text</option>
+                            <option value="yaml" data-i18n="persona.format_yaml">YAML</option>
+                            <option value="markdown" data-i18n="persona.format_markdown">Markdown</option>
+                            <option value="xml" data-i18n="persona.format_xml">XML</option>
+                        </select>
+                    </div>
+                    <div id="persona-editor-container" class="border border-gray-300 rounded-lg overflow-hidden" style="flex: 1; min-height: 300px;"></div>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                <button onclick="closePersonaModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors" data-i18n="persona.modal_cancel">Cancel</button>
+                <button onclick="savePersona()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors" data-i18n="persona.modal_save">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Session Edit Modal -->
+    <div id="session-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 flex flex-col" style="max-height: 95vh;">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex-1 min-w-0">
+                    <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100" data-i18n="sessions.modal_title">Edit Session</h3>
+                    <p id="session-modal-subtitle" class="text-sm text-gray-500 dark:text-gray-400 truncate mt-1"></p>
+                </div>
+                <button onclick="closeSessionModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-4">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="px-6 py-4 flex-1 overflow-hidden flex flex-col">
+                <div class="mb-4 flex gap-4 flex-shrink-0">
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.adapter_name">Adapter Name</label>
+                        <input type="text" id="session-adapter-name" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100" readonly>
+                    </div>
+                    <div class="w-40">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.session_type">Session Type</label>
+                        <input type="text" id="session-type" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100" readonly>
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.session_id">Session ID</label>
+                        <input type="text" id="session-id" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100" readonly>
+                    </div>
+                </div>
+                <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex-shrink-0" data-i18n="sessions.session_data">Session Messages</label>
+                    <div id="session-editor-container" class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden flex-1 min-h-0" style="flex: 1; min-height: 300px;"></div>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <div class="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+                    <span id="session-message-count" data-i18n="sessions.message_count">Messages: 0</span>
+                </div>
+                <div class="flex space-x-3">
+                    <button onclick="closeSessionModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-i18n="sessions.modal_cancel">Cancel</button>
+                    <button onclick="saveSession()" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" data-i18n="sessions.modal_save">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="px-6 py-4">
+                <div class="flex items-center mb-4">
+                    <div class="bg-red-100 dark:bg-red-900/30 rounded-full p-3 mr-4">
+                        <svg class="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100" data-i18n="sessions.delete_confirm_title">Confirm Delete</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1" data-i18n="sessions.delete_confirm_message">Are you sure you want to delete this session? This action cannot be undone.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+                <button onclick="closeDeleteModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-i18n="sessions.modal_cancel">Cancel</button>
+                <button onclick="executeDeleteSession()" class="px-4 py-2 bg-red-600 dark:bg-red-700 text-white rounded-lg hover:bg-red-700 dark:hover:bg-red-600 transition-colors" data-i18n="sessions.delete">Delete</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="/static/js/i18n.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
+

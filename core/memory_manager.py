@@ -22,7 +22,7 @@ class MemoryManager:
 
         self.memory_lock = Lock()
         
-        # 初始化记忆数据
+        # init memory data
         self.chat_memory = self._load_memory(self.chat_memory_path)
         
         logger.info("MemoryManager initialized")
@@ -45,16 +45,15 @@ class MemoryManager:
                 logger.error(err)
                 return {}
         else:
-            # 确保目录存在
+            # make sure the directory exists
             os.makedirs(os.path.dirname(path), exist_ok=True)
             return {}
     
     def _save_memory(self, memory: Dict[str, List], path: str):
         """保存记忆到文件"""
         try:
-            with self.memory_lock:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(json.dumps(memory, indent=4, ensure_ascii=False))
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(memory, indent=4, ensure_ascii=False))
         except Exception as e:
             logger.error(f"Error saving memory to {path}: {e}")
 
@@ -70,12 +69,32 @@ class MemoryManager:
                     messages.append(message)
             return messages
 
+    def read_memory(self, session: str):
+        if session not in self.chat_memory:
+            self.chat_memory[session] = []
+            return []
+        else:
+            return self.chat_memory[session]
+
+    def write_memory(self, session: str, memory: list[list[dict]]):
+        with self.memory_lock:
+            self.chat_memory[session] = memory
+            self._save_memory(self.chat_memory, self.chat_memory_path)
+        logger.info(f"Memory written for {session}")
+
     def update_memory(self, session: str, new_chunk):
-        self.chat_memory[session].append(new_chunk)
-        if len(self.chat_memory[session]) > self.max_memory_length:
-            self.chat_memory[session] = self.chat_memory[session][1:]
-        self._save_memory(self.chat_memory, self.chat_memory_path)
+        with self.memory_lock:
+            self.chat_memory[session].append(new_chunk)
+            if len(self.chat_memory[session]) > self.max_memory_length:
+                self.chat_memory[session] = self.chat_memory[session][1:]
+            self._save_memory(self.chat_memory, self.chat_memory_path)
         logger.info(f"Memory updated for {session}")
+
+    def delete_session(self, session: str):
+        with self.memory_lock:
+            self.chat_memory.pop(session)
+            self._save_memory(self.chat_memory, self.chat_memory_path)
+        logger.info(f"Memory deleted for {session}")
 
     def get_core_memory(self):
         os.makedirs(os.path.dirname(self.core_memory_path), exist_ok=True)

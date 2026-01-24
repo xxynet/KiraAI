@@ -30,7 +30,6 @@ if __name__ == "__main__":
     sub_data_folders = ["config", "memory", "plugins", "files", "sticker"]
     for folder in sub_data_folders:
         os.makedirs(get_data_path() / folder, exist_ok=True)
-    logger.info("Ensured data sub folders")
 
     from core.launcher import KiraLauncher
 
