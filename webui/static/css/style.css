@@ -173,12 +173,44 @@ button {
     transition: all 0.2s ease-in-out;
 }
 
-button:hover {
-    transform: translateY(-1px);
+/* Global Input/Select/Textarea Styles */
+/* input:not([type="checkbox"]):not([type="radio"]), */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"],
+input[type="search"],
+select,
+textarea {
+    transition: all 0.2s ease-in-out;
 }
 
-button:active {
-    transform: translateY(0);
+input:not([type="checkbox"]):not([type="radio"]):hover,
+input[type="text"]:hover,
+input[type="password"]:hover,
+select:hover,
+textarea:hover {
+    border-color: #3b82f6 !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+input[type="text"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+/* Ensure focus styles persist on hover */
+input:not([type="checkbox"]):not([type="radio"]):focus:hover,
+input[type="text"]:focus:hover,
+input[type="password"]:focus:hover,
+select:focus:hover,
+textarea:focus:hover {
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
 }
 
 /* Table row hover effects */
@@ -231,32 +263,7 @@ tbody tr:hover {
     transition: all 0.2s ease-in-out;
 }
 
-/* Form input focus styles */
-input:focus,
-select:focus,
-textarea:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
-    border-color: rgb(59, 130, 246);
-}
 
-/* Provider config input focus styles */
-#provider-config input:focus,
-#provider-config select:focus,
-#provider-config textarea:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
-    border-color: rgb(59, 130, 246);
-}
-
-/* Provider modal input focus styles */
-#provider-modal input:focus,
-#provider-modal select:focus,
-#provider-modal textarea:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
-    border-color: rgb(59, 130, 246);
-}
 
 /* Toggle checkbox styles */
 .toggle-checkbox {
@@ -484,6 +491,8 @@ input, select, textarea {
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.3);
 }
+
+
 
 .dark input, .dark select, .dark textarea {
     background-color: rgba(31, 41, 55, 0.7) !important;
@@ -785,8 +794,8 @@ input, select, textarea {
     min-height: 400px;
 }
 
-#page-provider .flex.w-1\\/3,
-#page-provider .flex.w-2\\/3 {
+#page-provider .flex.w-1\/3,
+#page-provider .flex.w-2\/3 {
     min-height: 0;
 }
 
@@ -924,13 +933,19 @@ input, select, textarea {
 
 .custom-select-trigger:hover {
     background-color: rgba(255, 255, 255, 0.85);
-    border-color: rgba(59, 130, 246, 0.5);
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+    border-color: #3b82f6;
 }
 
 .custom-select-trigger.active {
     border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+/* Ensure focus/active shadow persists on hover */
+.custom-select-trigger.active:hover,
+.custom-select-trigger:focus:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
 }
 
 .custom-select-trigger.has-value {
@@ -1037,8 +1052,7 @@ input, select, textarea {
 
 .dark .custom-select-trigger:hover {
     background-color: rgba(31, 41, 55, 0.85);
-    border-color: rgba(59, 130, 246, 0.5);
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+    border-color: #3b82f6;
 }
 
 .dark .custom-select-trigger.has-value {
@@ -1089,8 +1103,8 @@ input, select, textarea {
 /* Focus styles for accessibility */
 .custom-select-trigger:focus {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
     border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
 }
 
 /* Animation for dropdown appearance */
@@ -1130,7 +1144,7 @@ input, select, textarea {
 
 .custom-select-search input:focus {
     border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
 }
 
 .custom-select-search input::placeholder {
@@ -1150,6 +1164,7 @@ input, select, textarea {
 
 .dark .custom-select-search input:focus {
     border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
 }
 
 .dark .custom-select-search input::placeholder {
