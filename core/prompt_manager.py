@@ -6,6 +6,7 @@ from core.logging_manager import get_logger
 from core.sticker_manager import StickerManager
 from core.persona import PersonaManager
 from core.chat.message_utils import KiraMessageEvent
+from core.config import KiraConfig
 
 logger = get_logger("prompt_manager", "yellow")
 
@@ -14,22 +15,30 @@ class PromptManager:
     """Prompt manager, managing all system prompts"""
     
     def __init__(self,
-                 kira_config,
+                 kira_config: KiraConfig,
                  sticker_manager: StickerManager,
                  persona_manager: PersonaManager,
                  format_path: str = "core/prompts/format.txt",
                  tool_path: str = "core/prompts/tool.txt",
-                 system_path: str = "core/prompts/system.txt"):
+                 system_path: str = "core/prompts/system.txt",
+                 agent_path: str = "core/prompts/agent.txt"):
         self.kira_config = kira_config
         self.format_path = format_path
         self.tool_path = tool_path
         self.system_path = system_path
+        self.agent_path = agent_path
 
         self.sticker_manager = sticker_manager
         self.persona_manager = persona_manager
         self.sticker_dict = sticker_manager.sticker_dict
         self.sticker_prompt = self._load_sticker_prompt(self.sticker_dict)
         self.ada_config_prompt = self.load_ada_config_prompt()
+
+        self.prompt_template_mapping = {
+            "system": system_path,
+            "tool": tool_path,
+            "agent": agent_path
+        }
 
         self.builtin_msg_types_mapping = {
             "text": "<text>some text</text> # 纯文本消息",
@@ -44,6 +53,21 @@ class PromptManager:
         }
 
         logger.info("PromptManager initialized")
+
+    def get_prompt(self, template_name: str, **kwargs) -> str:
+        context = {
+            **kwargs
+        }
+
+        try:
+            path = self.prompt_template_mapping.get(template_name)
+            with open(path, 'r', encoding="utf-8") as f:
+                template_str = f.read()
+
+            return template_str.format(**context)
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            return ""
 
     @staticmethod
     def _load_sticker_prompt(sticker_dict: dict) -> str:
@@ -132,6 +156,27 @@ class PromptManager:
                 chat_env=chat_env,
                 core_memory=core_memory,
                 accounts=self.ada_config_prompt
+            )
+        except Exception as e:
+            logger.error(f"Error generating system prompt: {e}")
+            return ""
+
+    def get_agent_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list,
+                         emoji_dict: Optional[dict] = None) -> str:
+        """生成 Agent 提示词"""
+        formatted_time = self.get_current_time_str()
+
+        try:
+            with open(self.agent_path, 'r', encoding="utf-8") as f:
+                agent_prompt = f.read()
+            return agent_prompt.format(
+                persona=self.persona_manager.get_persona(),
+                format=self._load_format_prompt(message_types, emoji_dict),
+                time_str=formatted_time,
+                chat_env=chat_env,
+                core_memory=core_memory,
+                accounts=self.ada_config_prompt,
+                max_tool_loop=self.kira_config.get_config("bot_config.agent.max_tool_loop")
             )
         except Exception as e:
             logger.error(f"Error generating system prompt: {e}")

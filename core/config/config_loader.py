@@ -18,6 +18,16 @@ class KiraConfig(dict):
         self["models"] = self.load_from_ini("data/config/models.ini")
         self["ada_config"] = self.load_from_ini("data/config/adapters.ini", "adapter_name")
 
+    def get_config(self, key: str):
+        keys = key.split(".")
+        v = self
+        for k in keys:
+            if isinstance(v, dict) and k in v:
+                v = v[k]
+            else:
+                return None
+        return v
+
     @staticmethod
     def _load_from_ini(config_path: str, section_name: Optional[str] = None):
         """

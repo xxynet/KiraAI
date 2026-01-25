@@ -93,6 +93,16 @@ class LLMClient:
             response = await llm_provider.chat(request)
             return response
 
+    async def agent_run(self, user_message) -> LLMResponse:
+
+        async with self.llm_semaphore:
+            request = LLMRequest(user_message, tools=self.tools_definitions, tool_funcs=self.tools_functions)
+            llm_provider = self.provider_manager.get_llm_provider(self.main_llm)
+            llm_logger.info(f"Running agent using {self.main_llm}")
+            resp = await llm_provider.chat(request)
+            llm_logger.debug(resp)
+            return resp
+
     @timer
     async def chat_with_tools(self, user_message, tool_system_prompt) -> LLMResponse:
 

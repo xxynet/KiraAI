@@ -11,6 +11,7 @@ from core.services.runtime import get_adapter_by_name
 from core.utils.common_utils import image_to_base64
 from core.utils.path_utils import get_data_path
 from core.chat.message_utils import KiraMessageEvent, KiraCommentEvent, MessageChain, MessageType
+from core.llm_client import LLMClient
 from .memory_manager import MemoryManager
 from .prompt_manager import PromptManager
 from .chat import Session
@@ -23,7 +24,7 @@ class MessageProcessor:
     
     def __init__(self,
                  kira_config,
-                 llm_api,
+                 llm_api: LLMClient,
                  memory_manager: MemoryManager,
                  prompt_manager: PromptManager,
                  max_concurrent_messages: int = 3):
@@ -123,7 +124,7 @@ class MessageProcessor:
 
         sid = session.sid
 
-        # get buffer lock
+        # acquire buffer lock
         buffer_lock = self.get_buffer_lock(sid)
 
         async with buffer_lock:
@@ -144,7 +145,7 @@ class MessageProcessor:
             # print("new message coming")
             return None
 
-        # start processing
+        # Start processing
         formatted_messages_str = ""
         for message in message_processing:
             message_list = message.content
@@ -153,10 +154,10 @@ class MessageProcessor:
             formatted_messages_str += f"{formatted_message}\n"
         logger.info(f"processing message(s) from {msg.adapter_name}:\n{formatted_messages_str}")
 
-        # get existing session
+        # Get existing session
         session_list = self.get_session_list_prompt()
 
-        # build chat environment
+        # Build chat environment
         chat_env = {
             "platform": msg.platform,
             "chat_type": 'GroupMessage' if msg.is_group_message() else 'DirectMessage',
@@ -164,45 +165,59 @@ class MessageProcessor:
             "session_list": session_list
         }
 
-        # 获取历史记忆
+        # Get chat history memory
         session_memory = self.memory_manager.fetch_memory(sid)
-        # 获取核心记忆
+        # Get core memory
         core_memory = self.memory_manager.get_core_memory()
 
-        # emoji_dict
-        emoji_dict = get_adapter_by_name(msg.adapter_name).emoji_dict
+        # Get emoji_dict
+        emoji_dict = getattr(get_adapter_by_name(msg.adapter_name), "emoji_dict", {})
 
-        # 生成系统提示词
-        system_prompt = self.prompt_manager.get_system_prompt(chat_env, core_memory, msg.message_types, emoji_dict)
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # 生成工具提示词
-        tool_prompt = self.prompt_manager.get_tool_prompt(chat_env, core_memory, msg.message_types, emoji_dict)
+        # Generate agent prompt
+        agent_prompt = self.prompt_manager.get_agent_prompt(chat_env, core_memory, msg.message_types, emoji_dict)
+        messages = [{"role": "system", "content": agent_prompt}]
 
         session_memory.append({"role": "user", "content": formatted_messages_str})
         new_memory_chunk = [{"role": "user", "content": formatted_messages_str}]
         messages.extend(session_memory)
 
+        tool_messages = []
+        llm_text = ""
+
+        # Get max tool loop config, defaults to 2 if not a valid integer
+        max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
+        try:
+            max_tool_loop = int(max_tool_loop)
+        except ValueError:
+            max_tool_loop = 2
+
+        for _ in range(max_tool_loop+1):
+            llm_resp = await self.llm_api.agent_run(messages)
+            if llm_resp:
+                if not llm_resp.tool_results:
+                    llm_text = llm_resp.text_response.strip()
+                    break
+                else:
+                    if llm_resp.text_response:
+                        # Implement sending messages and add to new chunk
+                        pass
+                    tool_messages.extend(llm_resp.tool_results)
+                    messages.extend(llm_resp.tool_results)
+
         # 按会话加锁，防止同会话并发
         session_lock = self.get_session_lock(sid)
 
-        llm_resp = await self.llm_api.chat_with_tools(messages, tool_prompt)
-        if llm_resp:
-            response = llm_resp.text_response.strip()
-            tool_messages = llm_resp.tool_results
-            # logger.info(f"LLM响应: {response}")
+        async with session_lock:
+            message_ids, actual_xml = await self.send_xml_messages(sid, llm_text)
+            response_with_ids = self._add_message_ids(actual_xml, message_ids)
+            logger.info(f"LLM: {response_with_ids}")
 
-            async with session_lock:
-                message_ids, actual_xml = await self.send_xml_messages(sid, response)
-                response_with_ids = self._add_message_ids(actual_xml, message_ids)
-                logger.info(f"LLM: {response_with_ids}")
+            # Update memory
+            if tool_messages:
+                new_memory_chunk.extend(tool_messages)
 
-                # update memory
-                if tool_messages:
-                    new_memory_chunk.extend(tool_messages)
-
-                new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
-                self.memory_manager.update_memory(sid, new_memory_chunk)
+            new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
+            self.memory_manager.update_memory(sid, new_memory_chunk)
 
     async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
