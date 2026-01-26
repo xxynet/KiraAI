@@ -39,7 +39,7 @@ class KiraLauncher:
                                webui_config["port"])
             )
             await tasks
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, KeyboardInterrupt):
             self.logger.info("✨ Exiting KiraAI...")
             await self.lifecycle.stop()
             self.logger.info("✔ Exited KiraAI")
