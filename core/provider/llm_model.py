@@ -50,12 +50,18 @@ class LLMRequest:
 
 @dataclass
 class LLMResponse:
+    """Content field in chat completion response"""
     text_response: str
 
+    """reasoning content for reasoning models"""
     reasoning_content: Optional[str] = None
 
+    """Tool results list in OpenAI format, including role assistant & tool"""
     tool_results: list = field(default_factory=list)
 
     input_tokens: Optional[int] = None
 
     output_tokens: Optional[int] = None
+
+    """Units: seconds"""
+    time_consumed: Optional[float] = None

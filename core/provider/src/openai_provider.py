@@ -1,6 +1,7 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import asyncio
 import json
+import time
 from typing import Optional
 
 from core.logging_manager import get_logger
@@ -29,13 +30,16 @@ class OpenAIProvider(LLMProvider):
             base_url=self.provider_config.get("base_url", "")
         )
         try:
+            start_time = time.perf_counter()
             response = await client.chat.completions.create(
                 model=self.get_models(),
                 messages=request.messages,
                 tools=request.tools if request.tools else None,
                 tool_choice=request.tool_choice if request.tool_choice != "none" else None
             )
+            end_time = time.perf_counter()
             llm_resp = LLMResponse("")
+            llm_resp.time_consumed = round(end_time - start_time, 2)
             if response.choices:
                 message = response.choices[0].message
 

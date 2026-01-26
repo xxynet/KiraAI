@@ -1,7 +1,6 @@
 from asyncio import Semaphore
 from typing import Optional
 import requests
-import functools
 import copy
 import json
 import time
@@ -13,24 +12,6 @@ from .provider import ProviderManager, ImageResult
 
 tool_logger = get_logger("tool_use", "orange")
 llm_logger = get_logger("llm", "purple")
-
-
-def timer(func):
-    """计算函数执行时间的装饰器"""
-
-    @functools.wraps(func)
-    async def wrapper(*args, **kwargs):
-        start_time = time.perf_counter()  # 开始时间
-        result = await func(*args, **kwargs)  # 执行函数
-        end_time = time.perf_counter()  # 结束时间
-
-        # 计算并打印执行时间
-        execution_time = end_time - start_time
-        print(f"函数 {func.__name__} 执行耗时: {execution_time:.4f} 秒")
-
-        return result
-
-    return wrapper
 
 
 class LLMClient:
@@ -101,9 +82,10 @@ class LLMClient:
             llm_logger.info(f"Running agent using {self.main_llm}")
             resp = await llm_provider.chat(request)
             llm_logger.debug(resp)
+            if resp:
+                llm_logger.info(f"Time consumed: {resp.time_consumed}s, Input tokens: {resp.input_tokens}, output tokens: {resp.output_tokens}")
             return resp
 
-    @timer
     async def chat_with_tools(self, user_message, tool_system_prompt) -> LLMResponse:
 
         async with self.llm_semaphore:
