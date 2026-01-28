@@ -1,6 +1,16 @@
 from typing import Dict, Any, Optional
 import configparser
+import json
 import os
+
+from core.utils.path_utils import get_config_path
+from core.logging_manager import get_logger
+
+from .default import DEFAULT_CONFIG
+
+logger = get_logger("config", "green")
+
+CONFIG_PATH = get_config_path() / "system_config.json"
 
 
 class ConfigError(Exception):
@@ -11,21 +21,85 @@ class ConfigError(Exception):
 class KiraConfig(dict):
     def __init__(self, default_config: Optional[dict] = None):
         super().__init__()
-        object.__setattr__(self, "default_config", default_config)
+        object.__setattr__(self, "default_config", default_config or DEFAULT_CONFIG)
 
-        self["bot_config"] = self.load_from_ini("data/config/bot.ini")
-        self["providers"] = self.load_from_ini("data/config/providers.ini")
-        self["models"] = self.load_from_ini("data/config/models.ini")
-        self["ada_config"] = self.load_from_ini("data/config/adapters.ini", "adapter_name")
+        self._load_config()
 
-    def get_config(self, key: str):
+    def _load_config(self):
+        """Load config from JSON or migrate from INI"""
+        if os.path.exists(CONFIG_PATH):
+            self.load_from_json()
+        elif self._check_ini_files_exist():
+            self.migrate_from_ini()
+        else:
+            self.load_defaults()
+
+    @staticmethod
+    def _check_ini_files_exist() -> bool:
+        return any(os.path.exists(os.path.join("data", "config", f)) 
+                   for f in ["bot.ini", "adapters.ini"])
+
+    def migrate_from_ini(self):
+        """Migrate existing INI files to JSON"""
+        logger.info("Migrating configuration from INI to JSON...")
+        
+        # Load from INI files
+        bot_config = self.load_from_ini("data/config/bot.ini")
+        ada_config = self.load_from_ini("data/config/adapters.ini", "adapter_name")
+        
+        # Construct full config structure
+        full_config = self.default_config
+        full_config["bot_config"] = bot_config
+        full_config["adapters"] = ada_config
+        
+        # Save to JSON
+        self.save_to_json(full_config)
+
+        self.update(full_config)
+
+        # Alias for backward compatibility
+        self["ada_config"] = self.get("adapters")
+
+    def load_defaults(self):
+        """Load default configuration"""
+        full_config = self.default_config
+        self.save_to_json(full_config)
+        self.update(full_config)
+        self["ada_config"] = self.get("adapters")
+
+    def load_from_json(self):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.update(data)
+            self["ada_config"] = self.get("adapters")
+        except Exception as e:
+            logger.error(f"Error loading JSON config: {e}")
+
+    def save_config(self):
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        try:
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                f.write(json.dumps(self, indent=4, ensure_ascii=False))
+        except Exception as e:
+            logger.error(f"Failed to save config to JSON: {e}")
+
+    def save_to_json(self, data: dict):
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        try:
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data, indent=4, ensure_ascii=False))
+        except Exception as e:
+            logger.error(f"Failed to save config to JSON: {e}")
+
+    def get_config(self, key: str, default: Optional = None):
         keys = key.split(".")
         v = self
         for k in keys:
             if isinstance(v, dict) and k in v:
                 v = v[k]
             else:
-                return None
+                return default
         return v
 
     @staticmethod
@@ -67,7 +141,7 @@ class KiraConfig(dict):
         try:
             return self._load_from_ini(config_path, section_name)
         except ConfigError as e:
-            print(str(e))
+            logger.error(f"Failed to load from ini: {e}")
             return {}
 
     def __setattr__(self, key: str, value: Any) -> None:

@@ -1,0 +1,29 @@
+{
+  "provider_config": {
+    "base_url": {
+      "type": "string",
+      "default": "https://api.openai.com/v1",
+      "hint": "Base URL, compatible to OpenAI format platform"
+    },
+    "api_key": {
+      "type": "sensitive",
+      "default": null,
+      "hint": "Your API Key from your provider"
+    }
+  },
+  "model_config": {
+    "llm": {
+    "timeout": {
+      "type": "integer",
+      "default": 120,
+      "hint": "Timeout seconds"
+    },
+    "temperature": {
+      "type": "float",
+      "default": null,
+      "hint": "Model temperature"
+    }
+  },
+  "image": {}
+  }
+}

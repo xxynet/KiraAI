@@ -7,28 +7,21 @@ import time
 import base64
 
 from core.logging_manager import get_logger
+from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse
 from .provider import ProviderManager, ImageResult
 
-tool_logger = get_logger("tool_use", "orange")
-llm_logger = get_logger("llm", "purple")
+logger = get_logger("llm", "purple")
 
 
 class LLMClient:
-    def __init__(self, kira_config):
+    def __init__(self, kira_config: KiraConfig, provider_mgr: ProviderManager):
         self.kira_config = kira_config
 
-        models_config = self.kira_config.get("models", {})
+        # TODO remove it and get model when needed
+        self.fast_llm_model = provider_mgr.get_default_model("default_fast_llm")
 
-        self.main_llm = models_config.get("main_llm", {}).get("provider", "")
-        self.tool_llm = models_config.get("tool_llm", {}).get("provider", "")
-        self.vlm = models_config.get("vlm", {}).get("provider", "")
-        self.util_model = models_config.get("util_model", {}).get("provider", "")
-        self.image_provider = models_config.get("image", {}).get("provider", "")
-        self.tts_provider = models_config.get("tts", {}).get("provider", "")
-        self.stt_provider = models_config.get("stt", {}).get("provider", "")
-
-        self.provider_manager = ProviderManager(self.kira_config.get("providers"))
+        self.provider_mgr = provider_mgr
 
         self.tools_definitions = []
         self.tools_functions = {}
@@ -70,53 +63,42 @@ class LLMClient:
         """
         async with self.llm_semaphore:
             request = LLMRequest(messages)
-            llm_provider = self.provider_manager.get_llm_provider(self.main_llm)
-            response = await llm_provider.chat(request)
+            llm_model = self.provider_mgr.get_default_model("default_llm")
+            llm_provider = self.provider_mgr.get_provider(llm_model.provider_id)
+            response = await llm_provider.chat(llm_model, request)
             return response
 
     async def agent_run(self, user_message) -> LLMResponse:
 
         async with self.llm_semaphore:
             request = LLMRequest(user_message, tools=self.tools_definitions, tool_funcs=self.tools_functions)
-            llm_provider = self.provider_manager.get_llm_provider(self.main_llm)
-            llm_logger.info(f"Running agent using {self.main_llm}")
-            resp = await llm_provider.chat(request)
-            llm_logger.debug(resp)
+            llm_model = self.provider_mgr.get_default_model("default_llm")
+            llm_provider = self.provider_mgr.get_provider(llm_model.provider_id)
+            provider_name = self.kira_config.get_config(f"providers.{llm_model.provider_id}.name")
+            logger.info(f"Running agent using {llm_model.model_id} ({provider_name})")
+            resp = await llm_provider.chat(llm_model, request)
+            logger.debug(resp)
             if resp:
-                llm_logger.info(f"Time consumed: {resp.time_consumed}s, Input tokens: {resp.input_tokens}, output tokens: {resp.output_tokens}")
+                logger.info(f"Time consumed: {resp.time_consumed}s, Input tokens: {resp.input_tokens}, output tokens: {resp.output_tokens}")
             return resp
 
-    async def chat_with_tools(self, user_message, tool_system_prompt) -> LLMResponse:
-
-        async with self.llm_semaphore:
-            raw_msg = copy.deepcopy(user_message)
-            raw_msg[0] = {"role": "system", "content": tool_system_prompt}
-            # 第一次调用，让模型决定是否调用工具
-            request = LLMRequest(raw_msg, tools=self.tools_definitions, tool_funcs=self.tools_functions)
-            tool_provider = self.provider_manager.get_llm_provider(self.tool_llm)
-            llm_logger.info(f"checking whether to call tools using {self.tool_llm}")
-            resp1 = await tool_provider.chat(request)
-
-            if resp1 and resp1.tool_results:
-                user_message.extend(resp1.tool_results)
-
-            request2 = LLMRequest(user_message, tools=self.tools_definitions)
-            llm_provider = self.provider_manager.get_llm_provider(self.main_llm)
-            llm_logger.info(f"generating response using {self.main_llm}")
-            resp2 = await llm_provider.chat(request2)
-
-            # make sure to let message processor to get the tool_results
-            resp2.tool_results = resp1.tool_results
-            return resp2
-
     async def text_to_speech(self, text: str):
-        tts = self.provider_manager.get_tts_provider(self.tts_provider)
-        bs64 = await tts.text_to_speech(text)
+        tts_model = self.provider_mgr.get_default_model("default_tts")
+        tts = self.provider_mgr.get_provider(tts_model.provider_id)
+        provider_name = tts_model.provider_name
+        logger.info(f"Generating speech using {tts_model.model_id} ({provider_name})")
+        bs64 = await tts.text_to_speech(tts_model, text)
+        if bs64:
+            logger.info(f"Generated speech from text {text}")
         return bs64
 
     async def speech_to_text(self, bs64):
-        stt = self.provider_manager.get_stt_provider(self.stt_provider)
-        text = await stt.speech_to_text(bs64)
+        stt_model = self.provider_mgr.get_default_model("default_stt")
+        stt = self.provider_mgr.get_provider(stt_model.provider_id)
+        provider_name = stt_model.provider_name
+        logger.info(f"Recognizing text using {stt_model.model_id} ({provider_name})")
+        text = await stt.speech_to_text(stt_model, bs64)
+        logger.info(f"Recognized text: {text}")
         return text
 
     async def desc_img(self, image, prompt="描述这张图片的内容，如果有文字请将其输出", is_base64=False):
@@ -151,24 +133,32 @@ class LLMClient:
             }]
 
             request = LLMRequest(messages)
-            vlm_provider = self.provider_manager.get_llm_provider(self.vlm)
-            resp = await vlm_provider.chat(request)
+            vlm_model = self.provider_mgr.get_default_model("default_vlm")
+            vlm_provider = self.provider_mgr.get_provider(vlm_model.provider_id)
+            provider_name = vlm_model.provider_name
+            logger.info(f"Describing image using {vlm_model.model_id} ({provider_name})")
+            resp = await vlm_provider.chat(vlm_model, request)
             return resp.text_response
-
         except Exception as e:
-            llm_logger.error(f"error occurred when describing image: {str(e)}")
+            logger.error(f"error occurred when describing image: {str(e)}")
             return ""
 
     async def generate_img(self, prompt) -> ImageResult:
-        img_provider = self.provider_manager.get_image_provider(self.image_provider)
-        img_res = await img_provider.text_to_image(prompt)
+        image_model = self.provider_mgr.get_default_model("default_image")
+        img_provider = self.provider_mgr.get_provider(image_model.provider_id)
+        provider_name = image_model.provider_name
+        logger.info(f"Generating image using {image_model.model_id} ({provider_name})")
+        img_res = await img_provider.text_to_image(image_model, prompt)
         if not img_res:
-            llm_logger.error(f"error occurred when generating image")
+            logger.error(f"error occurred when generating image")
         return img_res
 
     async def image_to_image(self, prompt, url: Optional[str] = None, bs64: Optional[str] = None):
-        img_provider = self.provider_manager.get_image_provider(self.image_provider)
-        img_res = await img_provider.image_to_image(prompt, url=url, base64=bs64)
+        image_model = self.provider_mgr.get_default_model("default_image")
+        img_provider = self.provider_mgr.get_provider(image_model.provider_id)
+        provider_name = image_model.provider_name
+        logger.info(f"Generating image using {image_model.model_id} ({provider_name}) with a reference image")
+        img_res = await img_provider.image_to_image(image_model, prompt, url=url, base64=bs64)
         if not img_res:
-            llm_logger.error(f"error occurred when generating image")
+            logger.error(f"error occurred when generating image")
         return img_res

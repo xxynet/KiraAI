@@ -1,0 +1,43 @@
+{
+  "provider_config": {
+    "api_key": {
+      "type": "sensitive",
+      "default": null,
+      "hint": "硅基流动API KEY，在 https://cloud.siliconflow.cn/me/account/ak 获取"
+    }
+  },
+  "model_config": {
+    "llm": {
+    "timeout": {
+      "type": "integer",
+      "default": 120,
+      "hint": "超时秒数"
+    },
+    "temperature": {
+      "type": "float",
+      "default": null,
+      "hint": "模型温度"
+    }
+  },
+  "image": {
+    "image_size": {
+      "type": "string",
+      "default": "1024x1024",
+      "hint": "图片尺寸"
+    },
+    "num_inference_steps": {
+      "type": "integer",
+      "default": 20,
+      "hint": "推理步数"
+    }
+  },
+    "tts": {
+      "voice_name": {
+        "type": "string",
+        "default": "speech:xxxx:xxxx:xxxxxx",
+        "hint": "声音名称，可以在 https://docs.siliconflow.cn/cn/api-reference/audio/upload-voice 上传参考音频获取声音名称"
+      }
+    },
+    "stt": {}
+  }
+}

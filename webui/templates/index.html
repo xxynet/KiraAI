@@ -406,73 +406,168 @@
                 
                 <!-- Configuration Page -->
                 <div id="page-configuration" class="page-content hidden">
-                    <div class="bg-white rounded-lg shadow p-6">
+                    <div class="bg-white dark:bg-gray-900 rounded-lg shadow p-6">
                         <div class="flex justify-between items-center mb-6">
-                            <h3 class="text-lg font-semibold text-gray-800" data-i18n="configuration.title">Configuration</h3>
-                            <div class="flex space-x-2">
-                                <button class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center" data-i18n="configuration.new_file">
-                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                                    </svg>
-                                    <span data-i18n="configuration.new_file">New File</span>
-                                </button>
-                                <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="configuration.save">
-                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                    </svg>
-                                    <span data-i18n="configuration.save">Save</span>
-                                </button>
-                            </div>
+                            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100" data-i18n="configuration.title">Configuration</h3>
+                            <button id="configuration-save-button" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                <span data-i18n="configuration.save">Save</span>
+                            </button>
                         </div>
-                        
-                        <!-- File and Format Selection -->
-                        <div class="flex flex-col sm:flex-row gap-4 mb-6">
-                            <div class="flex-1">
-                                <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="configuration.file_select">Select File</label>
-                                <div class="flex">
-                                    <select id="file-selector" data-custom-select data-placeholder="Select a file...">
-                                        <option value="" data-i18n="configuration.select_file">Select a file...</option>
-                                        <option value="config.ini" data-format="ini">config.ini</option>
-                                        <option value="settings.json" data-format="json">settings.json</option>
-                                        <option value="README.md" data-format="md">README.md</option>
-                                        <option value="app.xml" data-format="xml">app.xml</option>
-                                    </select>
-                                    <button id="refresh-files" class="ml-2 px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors" style="margin-top: 0;">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                        </svg>
-                                    </button>
+                        <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
+                            <nav class="flex space-x-8">
+                                <button id="config-tab-message" data-tab="message" class="px-1 py-4 border-b-2 border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 text-sm font-medium focus:outline-none" data-i18n="configuration.tab_message">Message</button>
+                                <button id="config-tab-model" data-tab="model" class="px-1 py-4 border-b-2 border-transparent text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 focus:outline-none" data-i18n="configuration.tab_model">Model</button>
+                            </nav>
+                        </div>
+                        <div id="configuration-content-message">
+                            <div class="space-y-6">
+                                <div>
+                                    <h4 class="text-md font-semibold text-gray-800 dark:text-gray-100 mb-4" data-i18n="configuration.message.bot_section">Bot Settings</h4>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="msg-max-memory-length" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="configuration.message.max_memory_length">Max Memory Length</label>
+                                            <input id="msg-max-memory-length" type="number" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                        <div>
+                                            <label for="msg-max-message-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="configuration.message.max_message_interval">Max Message Interval</label>
+                                            <input id="msg-max-message-interval" type="number" step="0.1" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                        <div>
+                                            <label for="msg-max-buffer-messages" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="configuration.message.max_buffer_messages">Max Buffer Messages</label>
+                                            <input id="msg-max-buffer-messages" type="number" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                        <div>
+                                            <label for="msg-min-message-delay" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="configuration.message.min_message_delay">Min Message Delay</label>
+                                            <input id="msg-min-message-delay" type="number" step="0.1" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                        <div>
+                                            <label for="msg-max-message-delay" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="configuration.message.max_message_delay">Max Message Delay</label>
+                                            <input id="msg-max-message-delay" type="number" step="0.1" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 class="text-md font-semibold text-gray-800 dark:text-gray-100 mb-4" data-i18n="configuration.message.agent_section">Agent Settings</h4>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="msg-agent-max-tool-loop" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="configuration.message.max_tool_loop">Max Tool Loop</label>
+                                            <input id="msg-agent-max-tool-loop" type="number" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 class="text-md font-semibold text-gray-800 dark:text-gray-100 mb-4" data-i18n="configuration.message.selfie_section">Selfie</h4>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="msg-selfie-path" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="configuration.message.selfie_path">Selfie Path</label>
+                                            <input id="msg-selfie-path" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="w-full sm:w-48">
-                                <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="configuration.format_select">File Format</label>
-                                <select id="format-selector" data-custom-select data-placeholder="Select Format">
-                                    <option value="ini" data-i18n="configuration.format_ini">INI</option>
-                                    <option value="json" data-i18n="configuration.format_json">JSON</option>
-                                    <option value="md" data-i18n="configuration.format_md">Markdown</option>
-                                    <option value="xml" data-i18n="configuration.format_xml">XML</option>
-                                </select>
-                            </div>
                         </div>
-                        
-                        <!-- Editor Container -->
-                        <div class="border border-gray-300 rounded-lg overflow-hidden">
-                            <div class="bg-gray-50 px-4 py-2 border-b border-gray-300 flex items-center justify-between">
-                                <span id="editor-status" class="text-sm text-gray-600" data-i18n="configuration.editor_ready">Editor ready</span>
-                                <div class="flex items-center space-x-2">
-                                    <button id="editor-copy" class="p-1 text-gray-600 hover:text-gray-800 transition-colors" title="Copy">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                                        </svg>
-                                    </button>
-                                    <button id="editor-download" class="p-1 text-gray-600 hover:text-gray-800 transition-colors" title="Download">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                        </svg>
-                                    </button>
+                        <div id="configuration-content-model" class="hidden">
+                            <div class="space-y-4">
+                                <div>
+                                    <h4 class="text-md font-semibold text-gray-800 dark:text-gray-100 mb-4" data-i18n="configuration.model.section_title">Default Models</h4>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4" data-i18n="configuration.model.section_desc">Select provider and model for each default type.</p>
+                                </div>
+                                <div class="space-y-4">
+                                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-800 dark:text-gray-100" data-i18n="configuration.model.default_llm">Default LLM</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400" data-i18n="configuration.model.default_llm_desc">Main chat model.</div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
+                                            <select id="config-model-default-llm-provider" class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                            <select id="config-model-default-llm-model" class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-800 dark:text-gray-100" data-i18n="configuration.model.default_fast_llm">Default Fast LLM</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400" data-i18n="configuration.model.default_fast_llm_desc">Fast reply model.</div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
+                                            <select id="config-model-default-fast-llm-provider" class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                            <select id="config-model-default-fast-llm-model" class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-800 dark:text-gray-100" data-i18n="configuration.model.default_vlm">Default VLM</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400" data-i18n="configuration.model.default_vlm_desc">Vision-language model.</div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
+                                            <select id="config-model-default-vlm-provider" class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                            <select id="config-model-default-vlm-model" class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-800 dark:text-gray-100" data-i18n="configuration.model.default_tts">Default TTS</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400" data-i18n="configuration.model.default_tts_desc">Text to speech.</div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
+                                            <select id="config-model-default-tts-provider" class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                            <select id="config-model-default-tts-model" class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-800 dark:text-gray-100" data-i18n="configuration.model.default_stt">Default STT</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400" data-i18n="configuration.model.default_stt_desc">Speech to text.</div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
+                                            <select id="config-model-default-stt-provider" class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                            <select id="config-model-default-stt-model" class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-800 dark:text-gray-100" data-i18n="configuration.model.default_image">Default Image</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400" data-i18n="configuration.model.default_image_desc">Image generation.</div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
+                                            <select id="config-model-default-image-provider" class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                            <select id="config-model-default-image-model" class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-800 dark:text-gray-100" data-i18n="configuration.model.default_embedding">Default Embedding</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400" data-i18n="configuration.model.default_embedding_desc">Embedding model.</div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
+                                            <select id="config-model-default-embedding-provider" class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                            <select id="config-model-default-embedding-model" class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-800 dark:text-gray-100" data-i18n="configuration.model.default_rerank">Default Rerank</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400" data-i18n="configuration.model.default_rerank_desc">Rerank model.</div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
+                                            <select id="config-model-default-rerank-provider" class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                            <select id="config-model-default-rerank-model" class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-800 dark:text-gray-100" data-i18n="configuration.model.default_video">Default Video</div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400" data-i18n="configuration.model.default_video_desc">Video generation.</div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
+                                            <select id="config-model-default-video-provider" class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                            <select id="config-model-default-video-model" class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div id="monaco-editor-container" class="h-96"></div>
                         </div>
                     </div>
                 </div>
@@ -589,13 +684,10 @@
                     <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="provider.modal_type_label">Provider Type</label>
                     <select id="provider-type" data-custom-select data-placeholder="Select provider type...">
                         <option value="">Select provider type...</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="siliconflow">SiliconFlow</option>
-                        <option value="anthropic">Anthropic</option>
-                        <option value="cohere">Cohere</option>
-                        <option value="huggingface">HuggingFace</option>
-                        <option value="custom">Custom</option>
                     </select>
+                </div>
+                <div id="provider-config-container" class="space-y-4">
+                    <!-- Dynamic config fields will be injected here -->
                 </div>
             </div>
             <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
@@ -637,6 +729,34 @@
             <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
                 <button onclick="closePersonaModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors" data-i18n="persona.modal_cancel">Cancel</button>
                 <button onclick="savePersona()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors" data-i18n="persona.modal_save">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Model Modal -->
+    <div id="model-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100" data-i18n="model.modal_title">Add Model</h3>
+                <button onclick="closeModelModal()" class="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="px-6 py-4">
+                <div class="mb-2">
+                    <p id="model-modal-group" class="text-sm text-gray-500 dark:text-gray-400"></p>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="model.modal_id_label">Model ID</label>
+                    <input type="text" id="model-id" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none" placeholder="Enter model ID..." data-i18n-placeholder="model.modal_id_placeholder">
+                </div>
+                <div id="model-config-container" class="space-y-4"></div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+                <button onclick="closeModelModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-i18n="model.modal_cancel">Cancel</button>
+                <button onclick="saveModel()" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" data-i18n="model.modal_save">Save</button>
             </div>
         </div>
     </div>
@@ -715,4 +835,3 @@
     <script src="/static/js/app.js"></script>
 </body>
 </html>
-

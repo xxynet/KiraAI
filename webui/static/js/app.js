@@ -9,17 +9,23 @@ const AppState = {
     refreshInterval: null,
     selectedProviderId: null,
     sseEventSource: null,
+    configTab: 'message',
+    configurationTabsInitialized: false,
     data: {
         overview: null,
         providers: [],
         adapters: [],
         personas: [],
         settings: {},
+        providerModels: {},
+        configuration: null,
+        configProviders: [],
+        configProviderModels: {},
         logConfig: {
-            maxQueueSize: 100  // Default value, will be fetched from backend
+            maxQueueSize: 100
         },
         logFilter: {
-            level: 'all'  // Current log level filter: 'all', 'info', 'warning', 'error'
+            level: 'all'
         }
     },
     editor: {
@@ -265,7 +271,7 @@ async function loadProviderData() {
     try {
         const response = await apiCall('/api/providers');
         const data = await response.json();
-        AppState.data.providers = data.providers || [];
+        AppState.data.providers = Array.isArray(data) ? data : (data.providers || []);
         
         renderProviderList();
     } catch (error) {
@@ -330,7 +336,7 @@ async function loadAdapterData() {
     try {
         const response = await apiCall('/api/adapters');
         const data = await response.json();
-        AppState.data.adapters = data.adapters || [];
+        AppState.data.adapters = Array.isArray(data) ? data : (data.adapters || []);
         
         renderAdapterList();
     } catch (error) {
@@ -518,58 +524,19 @@ function renderPersonaList() {
  */
 async function loadConfigurationData() {
     try {
-        // Initialize editor if not already done
-        if (!AppState.editor.instance) {
-            // Wait a bit for Monaco to load
-            setTimeout(() => {
-                if (typeof monaco !== 'undefined') {
-                    createEditor();
-                    setupEditorEventListeners();
-                }
-            }, 100);
-        } else {
-            // Update editor theme if needed
-            const isDark = document.documentElement.classList.contains('dark');
-            const currentTheme = AppState.editor.instance.getOptions().get(monaco.editor.EditorOption.theme);
-            if ((isDark && currentTheme !== 'vs-dark') || (!isDark && currentTheme !== 'vs')) {
-                AppState.editor.instance.updateOptions({
-                    theme: isDark ? 'vs-dark' : 'vs'
-                });
-            }
-        }
-        
-        // Update file selector
-        updateFileSelector();
-        
-        // Load first file if none selected
-        if (!AppState.editor.currentFile && Object.keys(AppState.editor.files).length > 0) {
-            const firstFile = Object.keys(AppState.editor.files)[0];
-            loadFile(firstFile);
-        }
-        
-        // Original configuration loading (kept for compatibility)
+        setupConfigurationTabs();
         const response = await apiCall('/api/configuration');
         const data = await response.json();
-        AppState.data.configuration = data.configuration || {};
-        
-        // Populate configuration form if it exists
-        const apiEndpoint = document.querySelector('input[placeholder="http://localhost:8000/api"]');
-        const apiKey = document.querySelector('input[type="password"]');
-        const autoRefresh = document.querySelector('.toggle-checkbox');
-        const debugMode = document.querySelectorAll('.toggle-checkbox')[1];
-        
-        if (apiEndpoint && data.configuration.api_endpoint) {
-            apiEndpoint.value = data.configuration.api_endpoint;
-        }
-        if (apiKey && data.configuration.api_key) {
-            apiKey.value = data.configuration.api_key;
-        }
-        if (autoRefresh && data.configuration.auto_refresh !== undefined) {
-            autoRefresh.checked = data.configuration.auto_refresh;
-        }
-        if (debugMode && data.configuration.debug_mode !== undefined) {
-            debugMode.checked = data.configuration.debug_mode;
-        }
+        const configuration = data.configuration || {};
+        const botConfig = configuration.bot_config || {};
+        const modelsConfig = configuration.models || {};
+        const providers = data.providers || [];
+        const providerModels = data.provider_models || {};
+        AppState.data.configuration = configuration;
+        AppState.data.configProviders = providers;
+        AppState.data.configProviderModels = providerModels;
+        populateMessageConfiguration(botConfig);
+        populateModelConfiguration(modelsConfig, providers, providerModels);
     } catch (error) {
         console.error('Error loading configuration data:', error);
     }
@@ -1109,21 +1076,18 @@ function setupEventListeners() {
     // Initialize log level selector
     initLogLevelSelector();
     
-    // Configuration save button
     document.addEventListener('click', (e) => {
         const target = e.target.closest('button');
         if (!target) return;
-        
-        const buttonText = target.textContent || '';
-        
-        // Check for configuration save button
-        if (buttonText.includes('Save Configuration') || buttonText.includes('保存配置') || buttonText.includes('Save') || buttonText.includes('保存')) {
+        if (target.id === 'configuration-save-button') {
             const configurationPage = document.getElementById('page-configuration');
             if (configurationPage && configurationPage.contains(target) && !configurationPage.classList.contains('hidden')) {
                 e.preventDefault();
                 saveConfiguration();
+                return;
             }
         }
+        const buttonText = target.textContent || '';
         
         // Check for session new button
         if (buttonText.includes('New Session') || buttonText.includes('新建会话')) {
@@ -1131,13 +1095,11 @@ function setupEventListeners() {
             showNotification('New session functionality coming soon', 'info');
         }
         
-        // Check for logs clear button
         if (buttonText.includes('Clear Logs') || buttonText.includes('清除日志')) {
             e.preventDefault();
             clearLogs();
         }
         
-        // Check for logs refresh button
         if (buttonText.includes('Refresh') || buttonText.includes('刷新')) {
             const logsPage = document.getElementById('page-logs');
             if (logsPage && !logsPage.classList.contains('hidden')) {
@@ -1320,6 +1282,267 @@ function showNotification(message, type = 'info') {
 }
 
 /**
+ * Open provider modal
+ */
+async function openProviderModal() {
+    const modal = document.getElementById('provider-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        
+        // Clear form fields
+        document.getElementById('provider-name').value = '';
+        const typeSelect = document.getElementById('provider-type');
+        
+        // Clear config container
+        const configContainer = document.getElementById('provider-config-container');
+        if (configContainer) {
+            configContainer.innerHTML = '';
+        }
+        
+        if (typeSelect) {
+            // Fetch provider types
+            try {
+                const response = await apiCall('/api/provider-types');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch types: ${response.status}`);
+                }
+                const types = await response.json();
+                
+                if (!Array.isArray(types)) {
+                    console.error('Provider types response is not an array:', types);
+                    throw new Error('Invalid response format');
+                }
+                
+                // Re-fetch element to handle potential race conditions
+                const currentTypeSelect = document.getElementById('provider-type');
+                if (!currentTypeSelect) return;
+
+                // Populate select
+                currentTypeSelect.innerHTML = '<option value="">Select provider type...</option>';
+                types.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    currentTypeSelect.appendChild(option);
+                });
+                
+                // Refresh CustomSelect if present
+                const customSelectWrapper = document.querySelector('.custom-select[data-custom-select="provider-type"]');
+                if (customSelectWrapper) {
+                    customSelectWrapper.remove();
+                    // Re-initialize CustomSelect for this element
+                    if (typeof CustomSelect !== 'undefined') {
+                        new CustomSelect(currentTypeSelect, {
+                             placeholder: 'Select provider type...'
+                        });
+                    }
+                }
+
+                // Use onchange property to avoid stacking listeners without replacing element
+                currentTypeSelect.onchange = async (e) => {
+                    const selectedType = e.target.value;
+                    const configContainer = document.getElementById('provider-config-container');
+                    if (configContainer) configContainer.innerHTML = '';
+
+                    if (selectedType) {
+                        await loadProviderSchema(selectedType);
+                    }
+                };
+                
+            } catch (error) {
+                console.error('Error fetching provider types:', error);
+                showNotification(`Failed to load provider types: ${error.message}`, 'error');
+            }
+        }
+    }
+}
+
+/**
+ * Close provider modal
+ */
+function closeProviderModal() {
+    const modal = document.getElementById('provider-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    AppState.selectedProviderId = null;
+}
+
+/**
+ * Fetch provider schema
+ * @param {string} providerType - Type of the provider
+ * @returns {Promise<object>} Schema object
+ */
+async function fetchProviderSchema(providerType) {
+    try {
+        const response = await apiCall(`/api/providers/schema/${providerType}`);
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching provider schema:', error);
+        showNotification('Failed to load provider schema', 'error');
+        return null;
+    }
+}
+
+/**
+ * Load provider schema and render to default container
+ */
+async function loadProviderSchema(providerType) {
+    const schema = await fetchProviderSchema(providerType);
+    if (schema) {
+        renderProviderConfigFields(schema, 'provider-config-container');
+    }
+}
+
+/**
+ * Render provider config fields based on schema
+ * @param {object} schema - The schema definition
+ * @param {HTMLElement|string} containerOrId - Container element or ID
+ * @param {object} currentValues - Current configuration values (optional)
+ */
+function renderProviderConfigFields(schema, containerOrId = 'provider-config-container', currentValues = {}) {
+    const container = typeof containerOrId === 'string' ? document.getElementById(containerOrId) : containerOrId;
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    // Create fields for each schema item
+    Object.entries(schema).forEach(([key, fieldDef]) => {
+        const fieldWrapper = document.createElement('div');
+        fieldWrapper.className = 'mb-4';
+        
+        const label = document.createElement('label');
+        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2';
+        label.textContent = key;
+        
+        let input;
+        
+        if (fieldDef.type === 'sensitive') {
+            input = document.createElement('input');
+            input.type = 'password';
+            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        } else if (fieldDef.type === 'integer' || fieldDef.type === 'float') {
+            input = document.createElement('input');
+            input.type = 'number';
+            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+            if (fieldDef.type === 'float') {
+                input.step = 'any';
+            } else {
+                input.step = '1';
+            }
+        } else {
+            // Default to text for string and others
+            input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        }
+        
+        // Set common attributes
+        input.id = `config-${key}`;
+        input.setAttribute('data-config-key', key);
+        input.setAttribute('data-config-type', fieldDef.type);
+        
+        // Determine value: currentValues > default > ''
+        let value = currentValues[key];
+        if (value === undefined || value === null) {
+            value = fieldDef.default;
+        }
+        
+        if (value !== undefined && value !== null) {
+            input.value = value;
+        }
+        
+        if (fieldDef.hint) {
+            input.placeholder = fieldDef.hint;
+            input.title = fieldDef.hint;
+        }
+        
+        fieldWrapper.appendChild(label);
+        fieldWrapper.appendChild(input);
+        
+        // Add hint text if available
+        if (fieldDef.hint) {
+            const hint = document.createElement('p');
+            hint.className = 'text-xs text-gray-500 mt-1';
+            hint.textContent = fieldDef.hint;
+            fieldWrapper.appendChild(hint);
+        }
+        
+        container.appendChild(fieldWrapper);
+    });
+}
+
+/**
+ * Save provider
+ */
+async function saveProvider() {
+    const name = document.getElementById('provider-name').value.trim();
+    const typeSelect = document.getElementById('provider-type');
+    const type = typeSelect ? typeSelect.value : '';
+    
+    if (!name) {
+        showNotification('Please enter provider name', 'error');
+        return;
+    }
+    
+    if (!type) {
+        showNotification('Please select provider type', 'error');
+        return;
+    }
+    
+    // Collect dynamic config
+    const config = {};
+    const configContainer = document.getElementById('provider-config-container');
+    if (configContainer) {
+        const inputs = configContainer.querySelectorAll('input[data-config-key]');
+        inputs.forEach(input => {
+            const key = input.getAttribute('data-config-key');
+            const fieldType = input.getAttribute('data-config-type');
+            
+            if (key) {
+                let value = input.value;
+                if (fieldType === 'integer') {
+                    value = value === '' ? null : parseInt(value, 10);
+                } else if (fieldType === 'float') {
+                    value = value === '' ? null : parseFloat(value);
+                }
+                config[key] = value;
+            }
+        });
+    }
+    
+    try {
+        const response = await apiCall('/api/providers', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: name,
+                type: type,
+                config: config
+            })
+        });
+        
+        if (response.ok) {
+            // Reload provider list
+            await loadProviderData();
+            
+            // Close modal
+            closeProviderModal();
+            
+            // Show success notification
+            showNotification('Provider added successfully', 'success');
+        } else {
+            const errorData = await response.json();
+            showNotification(errorData.detail || 'Failed to add provider', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving provider:', error);
+        showNotification('Error saving provider', 'error');
+    }
+}
+
+/**
  * Placeholder functions for edit/delete actions
  */
 function editProvider(id) {
@@ -1328,31 +1551,31 @@ function editProvider(id) {
 
 function deleteProvider(id) {
     if (confirm('Are you sure you want to delete this provider?')) {
-        AppState.data.providers = AppState.data.providers.filter(p => p.id !== id);
-        
-        // Reset selected provider if it was deleted
-        if (AppState.selectedProviderId === id) {
-            AppState.selectedProviderId = null;
-            const configContainer = document.getElementById('provider-config');
-            if (configContainer) {
-                configContainer.innerHTML = `
-                    <div class="flex justify-center items-center h-full">
-                        <div class="text-center">
-                            <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-                            </svg>
-                            <p class="text-gray-500" data-i18n="provider.select_provider">Select a provider to configure</p>
-                        </div>
-                    </div>
-                `;
-                if (window.i18n) {
-                    updateTranslations();
+        apiCall(`/api/providers/${id}`, { method: 'DELETE' })
+            .then(() => {
+                showNotification('Provider deleted successfully', 'success');
+                loadProviderData();
+                if (AppState.selectedProviderId === id) {
+                    AppState.selectedProviderId = null;
+                    const configContainer = document.getElementById('provider-config');
+                    if (configContainer) {
+                        configContainer.innerHTML = `
+                            <div class="flex justify-center items-center h-full">
+                                <div class="text-center">
+                                    <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                                    </svg>
+                                    <p class="text-gray-500" data-i18n="provider.select_provider">Select a provider to configure</p>
+                                </div>
+                            </div>
+                        `;
+                    }
                 }
-            }
-        }
-        
-        renderProviderList();
-        showNotification('Provider deleted successfully', 'success');
+            })
+            .catch(error => {
+                console.error('Error deleting provider:', error);
+                showNotification('Failed to delete provider', 'error');
+            });
     }
 }
 
@@ -1709,30 +1932,6 @@ function setupEditorEventListeners() {
         });
     }
     
-    // Save button
-    document.addEventListener('click', (e) => {
-        const target = e.target.closest('button');
-        if (!target) return;
-        
-        const buttonText = target.textContent || '';
-        
-        if (buttonText.includes('Save') || buttonText.includes('保存')) {
-            const configurationPage = document.getElementById('page-configuration');
-            if (configurationPage && configurationPage.contains(target) && !configurationPage.classList.contains('hidden')) {
-                e.preventDefault();
-                saveCurrentFile();
-            }
-        }
-        
-        if (buttonText.includes('New File') || buttonText.includes('新建文件')) {
-            const configurationPage = document.getElementById('page-configuration');
-            if (configurationPage && configurationPage.contains(target) && !configurationPage.classList.contains('hidden')) {
-                e.preventDefault();
-                createNewFile();
-            }
-        }
-    });
-    
     // Copy button
     const copyButton = document.getElementById('editor-copy');
     if (copyButton) {
@@ -1912,30 +2111,289 @@ function updateEditorStatus(hasChanges = false) {
     statusElement.textContent = statusText;
 }
 
+function setupConfigurationTabs() {
+    if (AppState.configurationTabsInitialized) {
+        return;
+    }
+    const tabMessage = document.getElementById('config-tab-message');
+    const tabModel = document.getElementById('config-tab-model');
+    const contentMessage = document.getElementById('configuration-content-message');
+    const contentModel = document.getElementById('configuration-content-model');
+    if (!tabMessage || !tabModel || !contentMessage || !contentModel) {
+        return;
+    }
+    const activateTab = (tab) => {
+        AppState.configTab = tab;
+        const isMessage = tab === 'message';
+        contentMessage.classList.toggle('hidden', !isMessage);
+        contentModel.classList.toggle('hidden', isMessage);
+        if (isMessage) {
+            tabMessage.classList.add('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabMessage.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+            tabModel.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabModel.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        } else {
+            tabModel.classList.add('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabModel.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+            tabMessage.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabMessage.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        }
+    };
+    tabMessage.addEventListener('click', (e) => {
+        e.preventDefault();
+        activateTab('message');
+    });
+    tabModel.addEventListener('click', (e) => {
+        e.preventDefault();
+        activateTab('model');
+    });
+    activateTab(AppState.configTab || 'message');
+    AppState.configurationTabsInitialized = true;
+}
+
+function getInputValue(id) {
+    const el = document.getElementById(id);
+    if (!el) {
+        return '';
+    }
+    return String(el.value || '').trim();
+}
+
+function populateMessageConfiguration(botConfig) {
+    const bot = botConfig.bot || {};
+    const agent = botConfig.agent || {};
+    const selfie = botConfig.selfie || {};
+    const setValue = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.value = value != null ? value : '';
+        }
+    };
+    setValue('msg-max-memory-length', bot.max_memory_length);
+    setValue('msg-max-message-interval', bot.max_message_interval);
+    setValue('msg-max-buffer-messages', bot.max_buffer_messages);
+    setValue('msg-min-message-delay', bot.min_message_delay);
+    setValue('msg-max-message-delay', bot.max_message_delay);
+    setValue('msg-agent-max-tool-loop', agent.max_tool_loop);
+    setValue('msg-selfie-path', selfie.path);
+}
+
+function parseModelReference(ref) {
+    if (typeof ref !== 'string' || !ref) {
+        return { providerId: '', modelId: '' };
+    }
+    const parts = ref.split(':');
+    if (parts.length === 1) {
+        return { providerId: parts[0], modelId: '' };
+    }
+    return { providerId: parts[0], modelId: parts.slice(1).join(':') };
+}
+
+function populateModelConfiguration(modelsConfig, providers, providerModels) {
+    const modelTypes = [
+        {
+            key: 'default_llm',
+            providerSelectId: 'config-model-default-llm-provider',
+            modelSelectId: 'config-model-default-llm-model',
+            typeKey: 'llm'
+        },
+        {
+            key: 'default_vlm',
+            providerSelectId: 'config-model-default-vlm-provider',
+            modelSelectId: 'config-model-default-vlm-model',
+            typeKey: 'llm'
+        },
+        {
+            key: 'default_fast_llm',
+            providerSelectId: 'config-model-default-fast-llm-provider',
+            modelSelectId: 'config-model-default-fast-llm-model',
+            typeKey: 'llm'
+        },
+        {
+            key: 'default_tts',
+            providerSelectId: 'config-model-default-tts-provider',
+            modelSelectId: 'config-model-default-tts-model',
+            typeKey: 'tts'
+        },
+        {
+            key: 'default_stt',
+            providerSelectId: 'config-model-default-stt-provider',
+            modelSelectId: 'config-model-default-stt-model',
+            typeKey: 'stt'
+        },
+        {
+            key: 'default_image',
+            providerSelectId: 'config-model-default-image-provider',
+            modelSelectId: 'config-model-default-image-model',
+            typeKey: 'image'
+        },
+        {
+            key: 'default_embedding',
+            providerSelectId: 'config-model-default-embedding-provider',
+            modelSelectId: 'config-model-default-embedding-model',
+            typeKey: 'embedding'
+        },
+        {
+            key: 'default_rerank',
+            providerSelectId: 'config-model-default-rerank-provider',
+            modelSelectId: 'config-model-default-rerank-model',
+            typeKey: 'rerank'
+        },
+        {
+            key: 'default_video',
+            providerSelectId: 'config-model-default-video-provider',
+            modelSelectId: 'config-model-default-video-model',
+            typeKey: 'video'
+        }
+    ];
+    const fillProviderOptions = (select, selectedProviderId) => {
+        if (!select) {
+            return;
+        }
+        select.innerHTML = '';
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '';
+        select.appendChild(emptyOption);
+        providers.forEach((p) => {
+            const option = document.createElement('option');
+            option.value = p.id;
+            option.textContent = p.name || p.id;
+            if (p.id === selectedProviderId) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+    };
+    const fillModelOptions = (select, providerId, typeKey, selectedModelId) => {
+        if (!select) {
+            return;
+        }
+        select.innerHTML = '';
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '';
+        select.appendChild(emptyOption);
+        if (!providerId) {
+            return;
+        }
+        const providerConfig = providerModels[providerId] || {};
+        const typeConfig = providerConfig[typeKey] || {};
+        Object.keys(typeConfig).forEach((modelId) => {
+            const option = document.createElement('option');
+            option.value = modelId;
+            option.textContent = modelId;
+            if (modelId === selectedModelId) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+    };
+    modelTypes.forEach((entry) => {
+        const value = modelsConfig[entry.key];
+        const parsed = parseModelReference(value);
+        const providerSelect = document.getElementById(entry.providerSelectId);
+        const modelSelect = document.getElementById(entry.modelSelectId);
+        fillProviderOptions(providerSelect, parsed.providerId);
+        fillModelOptions(modelSelect, parsed.providerId, entry.typeKey, parsed.modelId);
+        if (providerSelect && modelSelect) {
+            providerSelect.onchange = () => {
+                const providerId = providerSelect.value || '';
+                fillModelOptions(modelSelect, providerId, entry.typeKey, '');
+            };
+        }
+    });
+}
+
+function buildModelsConfiguration() {
+    const modelTypes = [
+        {
+            key: 'default_llm',
+            providerSelectId: 'config-model-default-llm-provider',
+            modelSelectId: 'config-model-default-llm-model'
+        },
+        {
+            key: 'default_vlm',
+            providerSelectId: 'config-model-default-vlm-provider',
+            modelSelectId: 'config-model-default-vlm-model'
+        },
+        {
+            key: 'default_fast_llm',
+            providerSelectId: 'config-model-default-fast-llm-provider',
+            modelSelectId: 'config-model-default-fast-llm-model'
+        },
+        {
+            key: 'default_tts',
+            providerSelectId: 'config-model-default-tts-provider',
+            modelSelectId: 'config-model-default-tts-model'
+        },
+        {
+            key: 'default_stt',
+            providerSelectId: 'config-model-default-stt-provider',
+            modelSelectId: 'config-model-default-stt-model'
+        },
+        {
+            key: 'default_image',
+            providerSelectId: 'config-model-default-image-provider',
+            modelSelectId: 'config-model-default-image-model'
+        },
+        {
+            key: 'default_embedding',
+            providerSelectId: 'config-model-default-embedding-provider',
+            modelSelectId: 'config-model-default-embedding-model'
+        },
+        {
+            key: 'default_rerank',
+            providerSelectId: 'config-model-default-rerank-provider',
+            modelSelectId: 'config-model-default-rerank-model'
+        },
+        {
+            key: 'default_video',
+            providerSelectId: 'config-model-default-video-provider',
+            modelSelectId: 'config-model-default-video-model'
+        }
+    ];
+    const models = {};
+    modelTypes.forEach((entry) => {
+        const providerSelect = document.getElementById(entry.providerSelectId);
+        const modelSelect = document.getElementById(entry.modelSelectId);
+        const providerId = providerSelect ? providerSelect.value : '';
+        const modelId = modelSelect ? modelSelect.value : '';
+        if (providerId && modelId) {
+            models[entry.key] = providerId + ':' + modelId;
+        } else {
+            models[entry.key] = null;
+        }
+    });
+    return models;
+}
+
 /**
  * Configuration save function
  */
 async function saveConfiguration() {
     try {
-        // For the new editor interface, save the current file
-        if (AppState.currentPage === 'configuration' && AppState.editor.instance) {
-            saveCurrentFile();
-            return;
-        }
-        
-        // Original configuration save logic (kept for compatibility)
-        const apiEndpoint = document.querySelector('input[placeholder="http://localhost:8000/api"]')?.value;
-        const apiKey = document.querySelector('input[type="password"]')?.value;
-        const autoRefresh = document.querySelector('.toggle-checkbox')?.checked;
-        const debugMode = document.querySelectorAll('.toggle-checkbox')[1]?.checked;
-        
+        const botConfig = {
+            bot: {
+                max_memory_length: getInputValue('msg-max-memory-length'),
+                max_message_interval: getInputValue('msg-max-message-interval'),
+                max_buffer_messages: getInputValue('msg-max-buffer-messages'),
+                min_message_delay: getInputValue('msg-min-message-delay'),
+                max_message_delay: getInputValue('msg-max-message-delay')
+            },
+            agent: {
+                max_tool_loop: getInputValue('msg-agent-max-tool-loop')
+            },
+            selfie: {
+                path: getInputValue('msg-selfie-path')
+            }
+        };
+        const models = buildModelsConfiguration();
         const response = await apiCall('/api/configuration', {
             method: 'POST',
             body: JSON.stringify({
-                api_endpoint: apiEndpoint,
-                api_key: apiKey,
-                auto_refresh: autoRefresh,
-                debug_mode: debugMode
+                bot_config: botConfig,
+                models: models
             })
         });
         
@@ -1989,18 +2447,116 @@ window.AppState = AppState;
 window.switchPage = switchPage;
 window.loadPageData = loadPageData;
 
+// Remove duplicate openProviderModal if present at the end of file
+// The valid one is around line 1325
+
+
 /**
- * Open provider modal
+ * Fetch provider schema
+ * @param {string} providerType - The provider type
+ * @returns {Promise<object>} The schema object
  */
-function openProviderModal() {
-    const modal = document.getElementById('provider-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        // Clear form fields
-        document.getElementById('provider-name').value = '';
-        document.getElementById('provider-type').value = '';
+async function fetchProviderSchema(providerType) {
+    try {
+        const response = await apiCall(`/api/providers/schema/${providerType}`);
+        if (!response.ok) throw new Error('Failed to load schema');
+        return await response.json();
+    } catch (error) {
+        console.error('Error loading schema:', error);
+        return null;
     }
+}
+
+/**
+ * Load provider schema and render config fields (for Modal)
+ * @param {string} providerType - The provider type
+ */
+async function loadProviderSchema(providerType) {
+    const configContainer = document.getElementById('provider-config-container');
+    if (!configContainer) return;
+    
+    configContainer.innerHTML = '<div class="text-center text-gray-500 py-4">Loading schema...</div>';
+    
+    const schema = await fetchProviderSchema(providerType);
+    if (schema) {
+        renderProviderConfigFields(schema, configContainer);
+    } else {
+        configContainer.innerHTML = '<div class="text-red-500 py-2">Error loading configuration schema</div>';
+    }
+}
+
+/**
+ * Render provider configuration fields based on schema
+ * @param {object} schema - The provider schema
+ * @param {HTMLElement} container - The container element
+ * @param {object} [currentConfig] - Current configuration values (optional)
+ */
+function renderProviderConfigFields(schema, container, currentConfig = {}) {
+    container.innerHTML = '';
+    
+    if (!schema || Object.keys(schema).length === 0) {
+        container.innerHTML = '<div class="text-gray-500 py-2">No configuration required</div>';
+        return;
+    }
+    
+    // Sort keys or iterate
+    const providerConfigSchema = schema.provider_config || schema; // Handle if schema is nested or flat
+
+    Object.entries(providerConfigSchema).forEach(([key, field]) => {
+        // Skip internal keys if any
+        if (key.startsWith('_')) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-4';
+        
+        const label = document.createElement('label');
+        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
+        label.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        wrapper.appendChild(label);
+        
+        let input;
+        const fieldType = field.type || 'string';
+        const currentValue = currentConfig[key] !== undefined ? currentConfig[key] : field.default;
+        
+        if (fieldType === 'sensitive') {
+            input = document.createElement('input');
+            input.type = 'password';
+        } else if (fieldType === 'integer') {
+            input = document.createElement('input');
+            input.type = 'number';
+            input.step = '1';
+        } else if (fieldType === 'float') {
+            input = document.createElement('input');
+            input.type = 'number';
+            input.step = 'any';
+        } else {
+            input = document.createElement('input');
+            input.type = 'text';
+        }
+        
+        input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        input.setAttribute('data-config-key', key);
+        input.setAttribute('data-config-type', fieldType);
+        
+        if (currentValue !== undefined && currentValue !== null) {
+            input.value = currentValue;
+        }
+        
+        if (field.hint) {
+            input.placeholder = field.hint;
+        }
+        
+        wrapper.appendChild(input);
+        
+        if (field.hint) {
+            const hint = document.createElement('p');
+            hint.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1';
+            hint.textContent = field.hint;
+            wrapper.appendChild(hint);
+        }
+        
+        container.appendChild(wrapper);
+    });
 }
 
 /**
@@ -2017,7 +2573,7 @@ function closeProviderModal() {
 /**
  * Save provider
  */
-function saveProvider() {
+async function saveProvider() {
     const name = document.getElementById('provider-name').value.trim();
     const type = document.getElementById('provider-type').value;
     
@@ -2031,25 +2587,54 @@ function saveProvider() {
         return;
     }
     
-    // Create new provider object
-    const newProvider = {
-        id: Date.now().toString(),
-        name: name,
-        type: type,
-        status: 'inactive'
-    };
+    // Collect dynamic config
+    const config = {};
+    const configContainer = document.getElementById('provider-config-container');
+    if (configContainer) {
+        const inputs = configContainer.querySelectorAll('input[data-config-key]');
+        inputs.forEach(input => {
+            const key = input.getAttribute('data-config-key');
+            const fieldType = input.getAttribute('data-config-type');
+            
+            if (key) {
+                let value = input.value;
+                if (fieldType === 'integer') {
+                    value = value === '' ? null : parseInt(value, 10);
+                } else if (fieldType === 'float') {
+                    value = value === '' ? null : parseFloat(value);
+                }
+                config[key] = value;
+            }
+        });
+    }
     
-    // Add to provider list
-    AppState.data.providers.push(newProvider);
-    
-    // Re-render provider list
-    renderProviderList();
-    
-    // Close modal
-    closeProviderModal();
-    
-    // Show success notification
-    showNotification('Provider added successfully', 'success');
+    try {
+        const response = await apiCall('/api/providers', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: name,
+                type: type,
+                config: config
+            })
+        });
+        
+        if (response.ok) {
+            // Reload provider list
+            await loadProviderData();
+            
+            // Close modal
+            closeProviderModal();
+            
+            // Show success notification
+            showNotification('Provider added successfully', 'success');
+        } else {
+            const errorData = await response.json();
+            showNotification(errorData.detail || 'Failed to add provider', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving provider:', error);
+        showNotification('Error saving provider', 'error');
+    }
 }
 
 // Export modal functions
@@ -2078,7 +2663,7 @@ function selectProvider(providerId) {
  * Display provider configuration in the right panel
  * @param {object} provider - Provider object to display
  */
-function displayProviderConfig(provider) {
+async function displayProviderConfig(provider) {
     const configContainer = document.getElementById('provider-config');
     if (!configContainer) return;
     
@@ -2092,16 +2677,14 @@ function displayProviderConfig(provider) {
                 <p class="text-sm text-gray-500 mt-1">${escapeHtml(provider.type)}</p>
             </div>
             
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="provider.config_api_key">API Key</label>
-                    <input type="password" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter API key...">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="provider.config_base_url">Base URL</label>
-                    <input type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://api.example.com" value="${escapeHtml(provider.type === 'openai' ? 'https://api.openai.com/v1' : '')}">
-                </div>
+            <div id="provider-details-config" class="space-y-4">
+                <div class="text-center text-gray-500 py-4">Loading configuration...</div>
+            </div>
+            
+            <div class="flex justify-end space-x-3 pt-2">
+                 <button onclick="saveProviderConfig('${provider.id}')" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    Save Configuration
+                </button>
             </div>
             
             <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
@@ -2132,21 +2715,210 @@ function displayProviderConfig(provider) {
             
             <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                 <button onclick="deleteProvider('${provider.id}')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors" data-i18n="provider.delete">
-                    Delete
+                    Delete Provider
                 </button>
             </div>
         </div>
     `;
     
+    // Fetch schema and render config fields
+    const detailsContainer = document.getElementById('provider-details-config');
+    if (detailsContainer) {
+        const schema = await fetchProviderSchema(provider.type);
+        if (schema) {
+            detailsContainer.innerHTML = '';
+            
+            const nameWrapper = document.createElement('div');
+            nameWrapper.className = 'mb-4';
+            
+            const nameLabel = document.createElement('label');
+            nameLabel.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2';
+            nameLabel.textContent = 'Name';
+            
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.id = 'provider-name-input';
+            nameInput.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+            nameInput.value = provider.name || '';
+            
+            nameWrapper.appendChild(nameLabel);
+            nameWrapper.appendChild(nameInput);
+            detailsContainer.appendChild(nameWrapper);
+            
+            const configFieldsContainer = document.createElement('div');
+            detailsContainer.appendChild(configFieldsContainer);
+            
+            renderProviderConfigFields(schema, configFieldsContainer, provider.config);
+            await loadProviderModels(provider.id);
+        } else {
+            detailsContainer.innerHTML = '<div class="text-red-500 py-2">Error loading configuration schema</div>';
+        }
+    }
+
     if (window.i18n) {
         updateTranslations();
     }
 }
 
 /**
- * Toggle model group collapse/expand
- * @param {string} groupName - Name of the model group
+ * Save provider configuration from details panel
+ * @param {string} providerId
  */
+async function saveProviderConfig(providerId) {
+    const detailsContainer = document.getElementById('provider-details-config');
+    if (!detailsContainer) return;
+
+    // Get current provider details to preserve name and type
+    const provider = AppState.data.providers.find(p => p.id === providerId);
+    if (!provider) {
+        showNotification('Provider not found', 'error');
+        return;
+    }
+
+    const config = {};
+    const inputs = detailsContainer.querySelectorAll('input[data-config-key]');
+    inputs.forEach(input => {
+        const key = input.getAttribute('data-config-key');
+        const fieldType = input.getAttribute('data-config-type');
+        
+        if (key) {
+            let value = input.value;
+            if (fieldType === 'integer') {
+                value = value === '' ? null : parseInt(value, 10);
+            } else if (fieldType === 'float') {
+                value = value === '' ? null : parseFloat(value);
+            }
+            config[key] = value;
+        }
+    });
+
+    let name = provider.name;
+    const nameInput = detailsContainer.querySelector('#provider-name-input');
+    if (nameInput) {
+        name = nameInput.value.trim() || provider.name;
+    }
+
+    try {
+        const response = await apiCall(`/api/providers/${providerId}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                name: name,
+                type: provider.type,
+                config: config
+            })
+        });
+        
+        if (response.ok) {
+            showNotification('Configuration saved successfully', 'success');
+            await loadProviderData(); // Reload data
+        } else {
+            const errorData = await response.json();
+            showNotification(errorData.detail || 'Failed to save configuration', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving config:', error);
+        showNotification('Error saving configuration', 'error');
+    }
+}
+
+window.saveProviderConfig = saveProviderConfig;
+
+
+async function loadProviderModels(providerId) {
+    try {
+        const response = await apiCall(`/api/providers/${providerId}/models`);
+        if (!response.ok) {
+            return;
+        }
+        const modelConfig = await response.json();
+        AppState.data.providerModels = AppState.data.providerModels || {};
+        AppState.data.providerModels[providerId] = modelConfig;
+        renderModelGroupModels(modelConfig);
+    } catch (error) {
+        console.error('Error loading provider models:', error);
+    }
+}
+
+function renderModelGroupModels(modelConfig) {
+    modelConfig = modelConfig || {};
+    const groups = {
+        LLM: 'llm',
+        TTS: 'tts',
+        STT: 'stt',
+        Image: 'image',
+        Video: 'video',
+        Embedding: 'embedding',
+        Rerank: 'rerank'
+    };
+    Object.entries(groups).forEach(([groupName, type]) => {
+        const container = document.getElementById(`model-group-content-${groupName}`);
+        if (!container) {
+            return;
+        }
+        container.innerHTML = '';
+        const typeConfig = modelConfig[type] || {};
+        const modelIds = Object.keys(typeConfig);
+        if (modelIds.length === 0) {
+            container.innerHTML = `
+                <div class="text-sm text-gray-500 dark:text-gray-400 text-center py-4" data-i18n="provider.no_models">No models configured</div>
+            `;
+            return;
+        }
+        const wrapper = document.createElement('div');
+        wrapper.className = 'space-y-2';
+        modelIds.forEach(modelId => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between py-1 border-b border-gray-100 dark:border-gray-800 last:border-b-0';
+
+            const left = document.createElement('div');
+            left.className = 'flex-1 text-sm text-gray-800 dark:text-gray-100';
+            left.textContent = modelId;
+
+            const actions = document.createElement('div');
+            actions.className = 'flex items-center space-x-2';
+
+            const settingsButton = document.createElement('button');
+            settingsButton.className = 'p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors';
+            settingsButton.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>';
+            settingsButton.onclick = async () => {
+                const providerId = AppState.selectedProviderId;
+                if (!providerId) return;
+                const provider = AppState.data.providers.find(p => p.id === providerId);
+                if (!provider) return;
+                try {
+                    const resp = await apiCall(`/api/providers/${providerId}/models`);
+                    if (!resp.ok) return;
+                    const allModels = await resp.json();
+                    const typeModels = allModels[type] || {};
+                    const existingConfig = typeModels[modelId] || {};
+                    openModelModal(providerId, type, groupName, modelId, existingConfig);
+                } catch (e) {
+                    console.error('Error loading model config for edit:', e);
+                }
+            };
+
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors';
+            deleteButton.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
+            deleteButton.onclick = () => {
+                const providerId = AppState.selectedProviderId;
+                if (!providerId) return;
+                deleteModel(providerId, type, modelId);
+            };
+
+            actions.appendChild(settingsButton);
+            actions.appendChild(deleteButton);
+
+            row.appendChild(left);
+            row.appendChild(actions);
+
+            wrapper.appendChild(row);
+        });
+        container.appendChild(wrapper);
+    });
+}
+
+
 function toggleModelGroup(groupName) {
     const content = document.getElementById(`model-group-content-${groupName}`);
     const icon = document.getElementById(`model-group-icon-${groupName}`);
@@ -2157,44 +2929,205 @@ function toggleModelGroup(groupName) {
     }
 }
 
-/**
- * Add a model to a group
- * @param {string} groupName - Name of the model group
- */
-function addModel(groupName) {
-    const content = document.getElementById(`model-group-content-${groupName}`);
-    if (!content) return;
+const modelModalState = {
+    providerId: null,
+    modelType: null,
+    mode: 'create',
+    modelId: null
+};
 
-    // Remove "No models configured" message if present
-    const noModelsMsg = content.querySelector('[data-i18n="provider.no_models"]');
-    if (noModelsMsg) {
-        noModelsMsg.remove();
+async function openModelModal(providerId, modelType, groupLabel, modelId = null, existingConfig = null) {
+    modelModalState.providerId = providerId;
+    modelModalState.modelType = modelType;
+    modelModalState.mode = modelId ? 'edit' : 'create';
+    modelModalState.modelId = modelId;
+    const modal = document.getElementById('model-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    const modelIdInput = document.getElementById('model-id');
+    if (modelIdInput) {
+        if (modelId) {
+            modelIdInput.value = modelId;
+            modelIdInput.disabled = true;
+        } else {
+            modelIdInput.value = '';
+            modelIdInput.disabled = false;
+        }
     }
-
-    // Add new model input
-    const modelId = `model-${groupName}-${Date.now()}`;
-    const modelHtml = `
-        <div id="${modelId}" class="flex items-center space-x-2 mb-2">
-            <input type="text" class="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="${i18n.t('provider.enter_model_name', { defaultValue: 'Enter model name...' })}">
-            <button onclick="removeModel('${modelId}')" class="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors" title="${i18n.t('provider.remove_model')}">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
-            </button>
-        </div>
-    `;
-
-    content.insertAdjacentHTML('beforeend', modelHtml);
+    const groupElement = document.getElementById('model-modal-group');
+    if (groupElement) {
+        groupElement.textContent = groupLabel || '';
+    }
+    const configContainer = document.getElementById('model-config-container');
+    if (configContainer) {
+        configContainer.innerHTML = '';
+    }
+    const provider = AppState.data.providers.find(p => p.id === providerId);
+    if (!provider) {
+        showNotification(getTranslation('model.provider_not_found', 'Provider not found'), 'error');
+        return;
+    }
+    try {
+        const schema = await fetchProviderSchema(provider.type);
+        if (!schema) return;
+        const modelConfigSchema = (schema.model_config || {})[modelType] || {};
+        let initialConfig = {};
+        if (existingConfig) {
+            initialConfig = existingConfig;
+        }
+        renderProviderConfigFields(modelConfigSchema, configContainer, initialConfig);
+    } catch (error) {
+        console.error('Error loading model schema:', error);
+        showNotification(getTranslation('model.schema_load_failed', 'Failed to load model config schema'), 'error');
+    }
 }
 
-/**
- * Remove a model from a group
- * @param {string} modelId - ID of the model element to remove
- */
-function removeModel(modelId) {
-    const modelElement = document.getElementById(modelId);
-    if (modelElement) {
-        modelElement.remove();
+function closeModelModal() {
+    const modal = document.getElementById('model-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    modelModalState.providerId = null;
+    modelModalState.modelType = null;
+    modelModalState.mode = 'create';
+    modelModalState.modelId = null;
+}
+
+async function saveModel() {
+    const providerId = modelModalState.providerId;
+    const modelType = modelModalState.modelType;
+    const mode = modelModalState.mode || 'create';
+    if (!providerId || !modelType) {
+        showNotification(getTranslation('model.no_provider_selected', 'No provider selected'), 'error');
+        return;
+    }
+    const modelIdInput = document.getElementById('model-id');
+    if (!modelIdInput) return;
+    let modelId = modelModalState.modelId;
+    if (mode === 'create') {
+        modelId = modelIdInput.value.trim();
+        if (!modelId) {
+            showNotification(getTranslation('model.id_required', 'Model ID is required'), 'error');
+            return;
+        }
+    }
+    const configContainer = document.getElementById('model-config-container');
+    const config = {};
+    if (configContainer) {
+        const inputs = configContainer.querySelectorAll('input[data-config-key]');
+        inputs.forEach(input => {
+            const key = input.getAttribute('data-config-key');
+            const fieldType = input.getAttribute('data-config-type');
+            if (!key) {
+                return;
+            }
+            let value = input.value;
+            if (fieldType === 'integer') {
+                value = value === '' ? null : parseInt(value, 10);
+            } else if (fieldType === 'float') {
+                value = value === '' ? null : parseFloat(value);
+            }
+            config[key] = value;
+        });
+    }
+    try {
+        let response;
+        if (mode === 'edit') {
+            response = await apiCall(`/api/providers/${providerId}/models/${modelType}/${encodeURIComponent(modelId)}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    config: config
+                })
+            });
+        } else {
+            response = await apiCall(`/api/providers/${providerId}/models`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    model_type: modelType,
+                    model_id: modelId,
+                    config: config
+                })
+            });
+        }
+        if (response.ok) {
+            const successKey = mode === 'edit' ? 'model.update_success' : 'model.add_success';
+            const successFallback = mode === 'edit' ? 'Model updated successfully' : 'Model added successfully';
+            showNotification(getTranslation(successKey, successFallback), 'success');
+            closeModelModal();
+            AppState.data.providerModels = AppState.data.providerModels || {};
+            const modelConfig = AppState.data.providerModels[providerId] || {};
+            if (!modelConfig[modelType]) {
+                modelConfig[modelType] = {};
+            }
+            modelConfig[modelType][modelId] = config;
+            AppState.data.providerModels[providerId] = modelConfig;
+            renderModelGroupModels(modelConfig);
+        } else {
+            const errorData = await response.json().catch(() => ({}));
+            const message = errorData.detail || getTranslation('model.add_failed', 'Failed to add model');
+            showNotification(message, 'error');
+        }
+    } catch (error) {
+        console.error('Error adding model:', error);
+        showNotification(getTranslation('model.add_error', 'Error adding model'), 'error');
+    }
+}
+
+function addModel(groupName) {
+    const providerId = AppState.selectedProviderId;
+    if (!providerId) {
+        showNotification(getTranslation('model.select_provider_first', 'Please select a provider first'), 'error');
+        return;
+    }
+    const modelType = groupName.toLowerCase();
+    openModelModal(providerId, modelType, groupName);
+}
+
+async function reloadProvider(providerId) {
+    try {
+        const response = await apiCall(`/api/providers/${providerId}`);
+        if (!response.ok) {
+            return;
+        }
+        const provider = await response.json();
+        const index = AppState.data.providers.findIndex(p => p.id === providerId);
+        if (index !== -1) {
+            AppState.data.providers[index] = provider;
+        } else {
+            AppState.data.providers.push(provider);
+        }
+        renderProviderList();
+        AppState.selectedProviderId = providerId;
+        displayProviderConfig(provider);
+    } catch (error) {
+        console.error('Error reloading provider:', error);
+    }
+}
+
+async function deleteModel(providerId, modelType, modelId) {
+    try {
+        const response = await apiCall(`/api/providers/${providerId}/models/${modelType}/${encodeURIComponent(modelId)}`, {
+            method: 'DELETE'
+        });
+        if (response.ok) {
+            showNotification(getTranslation('model.delete_success', 'Model deleted successfully'), 'success');
+            AppState.data.providerModels = AppState.data.providerModels || {};
+            const modelConfig = AppState.data.providerModels[providerId] || {};
+            const typeConfig = modelConfig[modelType] || {};
+            delete typeConfig[modelId];
+            modelConfig[modelType] = typeConfig;
+            AppState.data.providerModels[providerId] = modelConfig;
+            renderModelGroupModels(modelConfig);
+        } else {
+            const errorData = await response.json().catch(() => ({}));
+            const message = errorData.detail || getTranslation('model.delete_failed', 'Failed to delete model');
+            showNotification(message, 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting model:', error);
+        showNotification(getTranslation('model.delete_error', 'Error deleting model'), 'error');
     }
 }
 
@@ -2212,12 +3145,14 @@ function toggleProviderStatus(providerId) {
     }
 }
 
-// Export provider functions
 window.selectProvider = selectProvider;
 window.toggleProviderStatus = toggleProviderStatus;
 window.toggleModelGroup = toggleModelGroup;
 window.addModel = addModel;
-window.removeModel = removeModel;
+window.deleteModel = deleteModel;
+window.openModelModal = openModelModal;
+window.closeModelModal = closeModelModal;
+window.saveModel = saveModel;
 
 /**
  * Open persona modal
@@ -2418,4 +3353,3 @@ async function savePersona() {
 window.openPersonaModal = openPersonaModal;
 window.closePersonaModal = closePersonaModal;
 window.savePersona = savePersona;
-

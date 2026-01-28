@@ -1,0 +1,30 @@
+{
+  "provider_config": {
+    "api_key": {
+      "type": "sensitive",
+      "default": null,
+      "hint": "Your ModelScope API Key"
+    }
+  },
+  "model_config": {
+    "llm": {
+    "timeout": {
+      "type": "integer",
+      "default": 120,
+      "hint": "Timeout seconds"
+    },
+    "temperature": {
+      "type": "float",
+      "default": null,
+      "hint": "Model temperature"
+    }
+  },
+  "image": {
+    "timeout": {
+      "type": "integer",
+      "default": 10,
+      "hint": "生图超时时间"
+    }
+  }
+  }
+}

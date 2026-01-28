@@ -59,6 +59,17 @@ class ProviderBase(BaseModel):
 
 class ProviderResponse(ProviderBase):
     id: str
+    model_config_data: Dict = Field(default_factory=dict, alias="model_config")
+
+
+class ModelCreateRequest(BaseModel):
+    model_type: str
+    model_id: str
+    config: Dict = Field(default_factory=dict)
+
+
+class ModelUpdateRequest(BaseModel):
+    config: Dict = Field(default_factory=dict)
 
 
 class AdapterBase(BaseModel):
@@ -344,7 +355,61 @@ class KiraWebUI:
         )
         async def list_providers():
             """List all providers"""
-            return list(self._providers.values())
+            if not self.lifecycle or not self.lifecycle.provider_manager:
+                return list(self._providers.values())
+
+            providers = []
+            configured_providers = self.lifecycle.kira_config.get("providers", {})
+            active_providers = self.lifecycle.provider_manager._providers
+
+            for provider_id in configured_providers.keys():
+                provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
+                if not provider_info:
+                    continue
+                is_active = provider_id in active_providers
+                config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
+                providers.append(ProviderResponse(
+                    id=provider_info.provider_id,
+                    name=provider_info.provider_name,
+                    type=provider_info.provider_type,
+                    status="active" if is_active else "inactive",
+                    config=provider_info.provider_config,
+                    model_config_data=config.get("model_config", {})
+                ))
+
+            return providers
+
+        @self.app.get(
+            "/api/provider-types",
+            response_model=List[str],
+            tags=["providers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def get_provider_types():
+            """Get scanned provider types from lifecycle's provider manager"""
+            try:
+                if not self.lifecycle or not self.lifecycle.provider_manager:
+                    logger.warning("Provider manager not available for get_provider_types")
+                    return []
+                return self.lifecycle.provider_manager.get_provider_types()
+            except Exception as e:
+                logger.error(f"Error getting provider types: {e}")
+                return []
+
+        @self.app.get(
+            "/api/providers/schema/{provider_type}",
+            tags=["providers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def get_provider_schema(provider_type: str):
+            """Get schema for a specific provider type"""
+            if not self.lifecycle or not self.lifecycle.provider_manager:
+                raise HTTPException(status_code=404, detail="Provider manager not available")
+            
+            schema = self.lifecycle.provider_manager.get_schema(provider_type)
+            if not schema:
+                raise HTTPException(status_code=404, detail=f"Schema not found for provider type: {provider_type}")
+            return schema
 
         @self.app.post(
             "/api/providers",
@@ -355,10 +420,59 @@ class KiraWebUI:
         )
         async def create_provider(payload: ProviderBase):
             """Create a provider"""
+            if not self.lifecycle or not self.lifecycle.provider_manager:
+                # Fallback to in-memory for testing/standalone
+                provider_id = _generate_id()
+                provider_data = payload.model_dump()
+                provider_data["id"] = provider_id
+                provider_data["model_config_data"] = {}
+                provider = ProviderResponse(**provider_data)
+                self._providers[provider_id] = provider
+                return provider
+
             provider_id = _generate_id()
-            provider = ProviderResponse(id=provider_id, **payload.model_dump())
-            self._providers[provider_id] = provider
-            return provider
+            provider_type = payload.type
+            
+            # Use generate_provider_config to create basic config structure from schema
+            try:
+                # We need to manually inject the user-provided config into the generated one
+                # First generate default config
+                generated_config = self.lifecycle.provider_manager.generate_provider_config(provider_type, provider_id)
+                
+                if not generated_config:
+                     raise HTTPException(status_code=400, detail=f"Failed to generate config for type {provider_type}")
+
+                # Update with payload config
+                # The payload.config contains values from the form
+                # generated_config structure: {"format": type, "provider_config": {...}, "model_config": {...}}
+                
+                # Merge payload config into generated provider_config
+                if payload.config:
+                    generated_config["provider_config"].update(payload.config)
+                
+                if payload.name:
+                    generated_config["name"] = payload.name
+                
+                # Save via kira_config (generate_provider_config already saved it, but we updated it)
+                self.lifecycle.kira_config["providers"][provider_id] = generated_config
+                self.lifecycle.kira_config.save_config()
+                
+                # Instantiate and register in provider manager
+                config_for_instantiation = generated_config.copy()
+                self.lifecycle.provider_manager.set_provider(provider_id, config_for_instantiation)
+                
+                return ProviderResponse(
+                    id=provider_id,
+                    name=payload.name or provider_id,
+                    type=provider_type,
+                    status="active",
+                    config=generated_config["provider_config"],
+                    model_config_data=generated_config.get("model_config", {})
+                )
+                
+            except Exception as e:
+                logger.error(f"Error creating provider: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.get(
             "/api/providers/{provider_id}",
@@ -368,6 +482,21 @@ class KiraWebUI:
         )
         async def get_provider(provider_id: str):
             """Get a provider by id"""
+            if self.lifecycle and self.lifecycle.provider_manager:
+                provider_inst = self.lifecycle.provider_manager.get_provider(provider_id)
+                provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
+                if not provider_info:
+                    raise HTTPException(status_code=404, detail="Provider not found")
+                config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
+                return ProviderResponse(
+                    id=provider_info.provider_id,
+                    name=provider_info.provider_name,
+                    type=provider_info.provider_type,
+                    status="active" if provider_inst else "inactive",
+                    config=provider_info.provider_config,
+                    model_config_data=config.get("model_config", {})
+                )
+
             provider = self._providers.get(provider_id)
             if not provider:
                 raise HTTPException(status_code=404, detail="Provider not found")
@@ -381,12 +510,111 @@ class KiraWebUI:
         )
         async def update_provider(provider_id: str, payload: ProviderBase):
             """Update a provider"""
+            if self.lifecycle and self.lifecycle.provider_manager:
+                config = self.lifecycle.kira_config.get("providers", {}).get(provider_id)
+                if not config:
+                    raise HTTPException(status_code=404, detail="Provider not found")
+                
+                if payload.config:
+                    config["provider_config"].update(payload.config)
+                
+                if payload.name:
+                    config["name"] = payload.name
+                
+                # Save
+                self.lifecycle.kira_config["providers"][provider_id] = config
+                self.lifecycle.kira_config.save_config()
+                
+                # Re-instantiate
+                config_for_instantiation = config.copy()
+                self.lifecycle.provider_manager.set_provider(provider_id, config_for_instantiation)
+                
+                return ProviderResponse(
+                    id=provider_id,
+                    name=config.get("name", provider_id),
+                    type=config.get("format", "unknown"),
+                    status="active",
+                    config=config["provider_config"],
+                    model_config_data=config.get("model_config", {})
+                )
+
             provider = self._providers.get(provider_id)
             if not provider:
                 raise HTTPException(status_code=404, detail="Provider not found")
             updated = provider.model_copy(update=payload.model_dump())
             self._providers[provider_id] = updated
             return updated
+
+        @self.app.post(
+            "/api/providers/{provider_id}/models",
+            tags=["providers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def add_model(provider_id: str, payload: ModelCreateRequest):
+            if not self.lifecycle or not self.lifecycle.provider_manager:
+                raise HTTPException(status_code=500, detail="Provider manager not available")
+
+            model_type = payload.model_type
+            model_id = payload.model_id
+            if not model_type or not model_id:
+                raise HTTPException(status_code=400, detail="model_type and model_id are required")
+
+            success = self.lifecycle.provider_manager.register_model(
+                provider_id=provider_id,
+                model_type=model_type,
+                model_id=model_id,
+                config=payload.config or {}
+            )
+            if not success:
+                raise HTTPException(status_code=400, detail="Failed to register model")
+
+            return {"success": True}
+
+        @self.app.get(
+            "/api/providers/{provider_id}/models",
+            tags=["providers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def get_models(provider_id: str):
+            if not self.lifecycle or not self.lifecycle.provider_manager:
+                raise HTTPException(status_code=500, detail="Provider manager not available")
+            models = self.lifecycle.provider_manager.get_models(provider_id)
+            return models
+
+        @self.app.put(
+            "/api/providers/{provider_id}/models/{model_type}/{model_id:path}",
+            tags=["providers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def update_model(provider_id: str, model_type: str, model_id: str, payload: ModelUpdateRequest):
+            if not self.lifecycle or not self.lifecycle.provider_manager:
+                raise HTTPException(status_code=500, detail="Provider manager not available")
+            success = self.lifecycle.provider_manager.update_model(
+                provider_id=provider_id,
+                model_type=model_type,
+                model_id=model_id,
+                config=payload.config or {}
+            )
+            if not success:
+                raise HTTPException(status_code=404, detail="Model not found")
+            return {"success": True}
+
+        @self.app.delete(
+            "/api/providers/{provider_id}/models/{model_type}/{model_id:path}",
+            tags=["providers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def delete_model(provider_id: str, model_type: str, model_id: str):
+            if not self.lifecycle or not self.lifecycle.provider_manager:
+                raise HTTPException(status_code=500, detail="Provider manager not available")
+            success = self.lifecycle.provider_manager.delete_model(
+                provider_id=provider_id,
+                model_type=model_type,
+                model_id=model_id
+            )
+            if not success:
+                raise HTTPException(status_code=404, detail="Model not found")
+            return {"success": True}
 
         @self.app.delete(
             "/api/providers/{provider_id}",
@@ -396,6 +624,23 @@ class KiraWebUI:
         )
         async def delete_provider(provider_id: str):
             """Delete a provider"""
+            if self.lifecycle and self.lifecycle.provider_manager:
+                found = False
+                # Remove from active providers
+                if provider_id in self.lifecycle.provider_manager._providers:
+                    del self.lifecycle.provider_manager._providers[provider_id]
+                    found = True
+                
+                # Remove from config
+                if provider_id in self.lifecycle.kira_config.get("providers", {}):
+                    del self.lifecycle.kira_config["providers"][provider_id]
+                    self.lifecycle.kira_config.save_config()
+                    found = True
+                
+                if not found:
+                    raise HTTPException(status_code=404, detail="Provider not found")
+                return None
+
             if provider_id not in self._providers:
                 raise HTTPException(status_code=404, detail="Provider not found")
             self._providers.pop(provider_id, None)
@@ -579,6 +824,72 @@ class KiraWebUI:
                 **payload.model_dump(), updated_by="admin"
             )
             return self._settings
+
+        @self.app.get(
+            "/api/configuration",
+            tags=["configuration"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def get_configuration():
+            if not self.lifecycle or not getattr(self.lifecycle, "kira_config", None):
+                raise HTTPException(status_code=500, detail="Configuration not available")
+            config = self.lifecycle.kira_config
+            bot_config = config.get("bot_config", {})
+            models = config.get("models", {})
+            providers_config = config.get("providers", {}) or {}
+            providers = []
+            provider_models: Dict[str, Dict] = {}
+            for provider_id, provider_cfg in providers_config.items():
+                provider_name = provider_cfg.get("name") or provider_cfg.get("provider_config", {}).get("name") or provider_id
+                providers.append({"id": provider_id, "name": provider_name})
+                model_config: Dict = {}
+                if self.lifecycle and self.lifecycle.provider_manager:
+                    try:
+                        models_from_manager = self.lifecycle.provider_manager.get_models(provider_id)
+                        if models_from_manager:
+                            model_config = models_from_manager
+                    except Exception as e:
+                        logger.error(f"Error getting models for provider {provider_id}: {e}")
+                if not model_config:
+                    model_config = provider_cfg.get("model_config", {}) or {}
+                provider_models[provider_id] = model_config
+            return {
+                "configuration": {
+                    "bot_config": bot_config,
+                    "models": models,
+                },
+                "providers": providers,
+                "provider_models": provider_models,
+            }
+
+        @self.app.post(
+            "/api/configuration",
+            tags=["configuration"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def update_configuration(payload: Dict):
+            if not self.lifecycle or not getattr(self.lifecycle, "kira_config", None):
+                raise HTTPException(status_code=500, detail="Configuration not available")
+            config = self.lifecycle.kira_config
+            bot_config = payload.get("bot_config")
+            models = payload.get("models")
+            updated = False
+            if isinstance(bot_config, dict):
+                config["bot_config"] = bot_config
+                updated = True
+            if isinstance(models, dict):
+                config["models"] = models
+                updated = True
+            if updated:
+                config.save_config()
+                logger.info(f"Configuration saved")
+            return {
+                "status": "ok",
+                "configuration": {
+                    "bot_config": config.get("bot_config", {}),
+                    "models": config.get("models", {}),
+                },
+            }
 
         # Session Management Endpoints
         @self.app.get(

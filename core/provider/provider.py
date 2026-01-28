@@ -1,5 +1,6 @@
 from abc import abstractmethod, ABC
 from enum import Enum, auto
+from dataclasses import dataclass, field
 from typing import List, Optional
 import asyncio
 
@@ -17,19 +18,71 @@ class ModelType(Enum):
     VIDEO: auto()
 
 
+@dataclass
+class ProviderInfo:
+    """Dataclass describing info of a provider"""
+
+    """Provider instance name"""
+    provider_name: str
+
+    """Unique provider ID"""
+    provider_id: str
+
+    """Provider type, e.g. OpenAI"""
+    provider_type: str
+
+    """Provider instance config"""
+    provider_config: dict
+
+
+@dataclass
+class ModelInfo:
+    """Dataclass describing info of a model"""
+
+    """Model type, e.g. llm, tts, image"""
+    model_type: str
+
+    """Model ID defined by your provider, e.g. gpt-3.5-turbo"""
+    model_id: str
+
+    """Provider instance ID"""
+    provider_id: str
+
+    """Provider name defined by user"""
+    provider_name: str
+
+    """Provider config"""
+    provider_config: dict = field(default_factory=dict)
+
+    """Model instance config"""
+    model_config: dict = field(default_factory=dict)
+
+
 class NewBaseProvider(ABC):
     def __init__(self, provider_id, provider_name, provider_config):
         self.provider_id: str = provider_id
         self.provider_name: str = provider_name
         self.provider_config: dict = provider_config
 
-    def get_keys(self) -> List[str]:
-        return self.provider_config.get("keys", [])
+    async def chat(self, model: ModelInfo,  request: LLMRequest) -> LLMResponse:
+        """
 
-    def get_models(self) -> List[LLMModel]:
+        :param model: ModelInfo dataclass that describes full info of the model
+        :param request: LLMRequest instance
+        :return: LLMResponse instance
+        """
         pass
 
-    async def chat(self, request: LLMRequest) -> LLMResponse:
+    async def text_to_speech(self, model: ModelInfo, text: str) -> str:
+        pass
+
+    async def speech_to_text(self, model: ModelInfo, audio_base64: str) -> str:
+        pass
+
+    async def text_to_image(self, model: ModelInfo, prompt) -> ImageResult:
+        pass
+
+    async def image_to_image(self, model: ModelInfo, prompt: str, url: Optional[str] = None, base64: Optional[str] = None) -> ImageResult:
         pass
 
 

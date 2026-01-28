@@ -14,6 +14,7 @@ from .llm_client import LLMClient
 from .tool_manager import register_all_tools
 from .event_bus import EventBus
 from .persona import PersonaManager
+from .provider import ProviderManager
 
 
 logger = get_logger("lifecycle", "blue")
@@ -26,6 +27,8 @@ class KiraLifecycle:
         self.stats = stats
 
         self.kira_config: Optional[KiraConfig] = None
+
+        self.provider_manager: Optional[ProviderManager] = None
 
         self.llm_api: Optional[LLMClient] = None
 
@@ -62,8 +65,11 @@ class KiraLifecycle:
         # ====== init KiraAI config ======
         self.kira_config = KiraConfig()
 
+        # ====== init ProviderManager config ======
+        self.provider_manager = ProviderManager(self.kira_config)
+
         # ====== init LLMClient ======
-        self.llm_api = LLMClient(self.kira_config)
+        self.llm_api = LLMClient(self.kira_config, self.provider_manager)
         register_all_tools(self.llm_api)
 
         # ====== init adapter manager ======

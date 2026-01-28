@@ -1,0 +1,35 @@
+{
+  "provider_config": {
+    "base_url": {
+      "type": "string",
+      "default": "https://ark.cn-beijing.volces.com/api/v3",
+      "hint": "火山平台 base url，可根据需要更换"
+    },
+    "api_key": {
+      "type": "sensitive",
+      "default": null,
+      "hint": "火山平台 API KEY，可进入 https://console.volcengine.com/ark/ 获取"
+    }
+  },
+  "model_config": {
+    "llm": {
+    "timeout": {
+      "type": "integer",
+      "default": 120,
+      "hint": "Timeout seconds"
+    },
+    "temperature": {
+      "type": "float",
+      "default": null,
+      "hint": "Model temperature"
+    }
+  },
+  "image": {
+    "size": {
+      "type": "string",
+      "default": null,
+      "hint": "图片尺寸"
+    }
+  }
+  }
+}
