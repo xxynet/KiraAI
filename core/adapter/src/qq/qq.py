@@ -31,13 +31,12 @@ def extract_card_info(card_json: str) -> str:
 
 
 class QQAdapter(IMAdapter):
-    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
-        super().__init__(config, loop, event_bus, llm_api)
-        self.name: str = "QQ"
+    def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
+        super().__init__(info, loop, event_bus, llm_api)
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
         self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie"]
         self.bot: NapCatWebSocketClient = NapCatWebSocketClient()
-        self.logger = get_logger(self.config.get("adapter_name", "QQ"), "blue")
+        self.logger = get_logger(info.name, "blue")
 
     @staticmethod
     def _load_dict(path: str) -> Dict[str, Any]:
@@ -181,8 +180,8 @@ class QQAdapter(IMAdapter):
                     group_info = await self.bot.get_group_info(msg.get("group_id"))
                     group_name = group_info.get("data").get("group_name")
                     message_obj = KiraMessageEvent(
-                        platform=self.name,
-                        adapter_name=self.config['adapter_name'],
+                        platform=self.info.platform,
+                        adapter_name=self.info.name,
                         message_types=self.message_types,
                         group_id=str(msg.get("group_id")),
                         group_name=group_name,
@@ -196,7 +195,7 @@ class QQAdapter(IMAdapter):
                     self.publish(message_obj)
             else:
                 if msg["user_id"] in self.user_list:
-                    message_obj = KiraMessageEvent(self.name, self.config['adapter_name'], self.message_types, str(msg['user_id']), "user_name 未获取",
+                    message_obj = KiraMessageEvent(self.info.platform, self.info.name, self.message_types, str(msg['user_id']), "user_name 未获取",
                                                     "None", str(msg["self_id"]), message_list, int(time.time()))
                     self.publish(message_obj)
 
@@ -211,8 +210,8 @@ class QQAdapter(IMAdapter):
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = KiraMessageEvent(
-                        platform=self.name,
-                        adapter_name=self.config['adapter_name'],
+                        platform=self.info.platform,
+                        adapter_name=self.info.name,
                         message_types=self.message_types,
                         group_id=str(msg.get("group_id")),
                         group_name=group_name,
@@ -232,8 +231,8 @@ class QQAdapter(IMAdapter):
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = KiraMessageEvent(
-                        platform=self.name,
-                        adapter_name=self.config['adapter_name'],
+                        platform=self.info.platform,
+                        adapter_name=self.info.name,
                         message_types=self.message_types,
                         group_id=str(msg.get("group_id")),
                         group_name=group_name,
@@ -259,8 +258,8 @@ class QQAdapter(IMAdapter):
                 group_name = group_info.get("data").get("group_name")
                 if msg["group_id"] in self.group_list:
                     message_obj = KiraMessageEvent(
-                        platform=self.name,
-                        adapter_name=self.config['adapter_name'],
+                        platform=self.info.platform,
+                        adapter_name=self.info.name,
                         message_types=self.message_types,
                         group_id=str(msg.get("group_id")),
                         group_name=group_name,
@@ -276,9 +275,9 @@ class QQAdapter(IMAdapter):
     async def _on_group_message(self, msg):
         should_process = False
 
-        if self.permission_mode == "allow_list" and msg.get("group_id") in self.group_list:
+        if self.permission_mode == "allow_list" and str(msg.get("group_id")) in self.group_list:
             should_process = True
-        elif self.permission_mode == "deny_list" and msg.get("group_id") not in self.group_list:
+        elif self.permission_mode == "deny_list" and str(msg.get("group_id")) not in self.group_list:
             should_process = True
 
         if should_process:
@@ -298,8 +297,12 @@ class QQAdapter(IMAdapter):
                         break
                 elif m.get("type") == "text":
                     message_text = m.get("data").get("text")
-                    if self.config.get("waking_keywords", ""):
-                        waking_keywords = [kw.strip() for kw in self.config.get("waking_keywords", "").split(",")]
+                    waking_keywords_config = self.config.get("waking_keywords", [])
+                    if waking_keywords_config:
+                        if isinstance(waking_keywords_config, str):
+                            waking_keywords = [kw.strip() for kw in self.config.get("waking_keywords", "").split(",")]
+                        else:
+                            waking_keywords = waking_keywords_config
                         if any(kw in message_text for kw in waking_keywords):
                             should_respond = True
                             break
@@ -312,8 +315,8 @@ class QQAdapter(IMAdapter):
                 group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 message_obj = KiraMessageEvent(
-                    platform=self.name,
-                    adapter_name=self.config['adapter_name'],
+                    platform=self.info.platform,
+                    adapter_name=self.info.name,
                     message_types=self.message_types,
                     group_id=str(msg.get("group_id")),
                     group_name=group_name,
@@ -329,9 +332,9 @@ class QQAdapter(IMAdapter):
     async def _on_private_message(self, msg: dict):
         should_process = False
 
-        if self.permission_mode == "allow_list" and msg.get("user_id") in self.user_list:
+        if self.permission_mode == "allow_list" and str(msg.get("user_id")) in self.user_list:
             should_process = True
-        elif self.permission_mode == "deny_list" and msg.get("user_id") not in self.user_list:
+        elif self.permission_mode == "deny_list" and str(msg.get("user_id")) not in self.user_list:
             should_process = True
 
         if should_process:
@@ -341,8 +344,8 @@ class QQAdapter(IMAdapter):
             message_list = await self.process_incoming_message(msg)
 
             message_obj = KiraMessageEvent(
-                platform=self.name,
-                adapter_name=self.config['adapter_name'],
+                platform=self.info.platform,
+                adapter_name=self.info.name,
                 message_types=self.message_types,
                 user_id=str(msg.get("user_id")),
                 user_nickname=msg.get("sender").get("nickname"),

@@ -1,3 +1,3 @@
-from .tg import TelegramAdapter
+from .telegram import TelegramAdapter
 
 __all__ = ["TelegramAdapter"]

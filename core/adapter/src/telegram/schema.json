@@ -1,0 +1,45 @@
+{
+  "bot_pid": {
+    "name": "Bot Username",
+    "type": "string",
+    "default": "",
+    "hint": "Username (at name) of your bot"
+  },
+  "bot_token": {
+    "name": "Bot Token",
+    "type": "string",
+    "default": "",
+    "hint": "Your bot token generated from @BotFather"
+  },
+  "permission_mode": {
+    "name": "Permission Mode",
+    "type": "string",
+    "options": ["allow_list", "deny_list"],
+    "default": "allow_list",
+    "hint": "Allow list or deny list"
+  },
+  "group_allow_list": {
+    "name": "Group Allow List",
+    "type": "list",
+    "default": [],
+    "hint": "When permission mode is allow_list"
+  },
+  "user_allow_list": {
+    "name": "User Allow List",
+    "type": "list",
+    "default": [],
+    "hint": "When permission mode is allow_list"
+  },
+  "group_deny_list": {
+    "name": "Group Deny List",
+    "type": "list",
+    "default": [],
+    "hint": "When permission mode is deny_list"
+  },
+  "user_deny_list": {
+    "name": "User Deny List",
+    "type": "list",
+    "default": [],
+    "hint": "When permission mode is deny_list"
+  }
+}

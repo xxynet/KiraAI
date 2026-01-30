@@ -73,8 +73,7 @@ class KiraLifecycle:
         register_all_tools(self.llm_api)
 
         # ====== init adapter manager ======
-        self.adapter_manager = AdapterManager(self.kira_config["ada_config"],
-                                              loop, event_queue, self.llm_api)
+        self.adapter_manager = AdapterManager(self.kira_config, loop, event_queue, self.llm_api)
         await self.adapter_manager.initialize()
 
         # ====== init sticker manager ======

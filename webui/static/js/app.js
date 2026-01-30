@@ -368,43 +368,484 @@ function renderAdapterList() {
         return;
     }
     
-    const table = `
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="adapter.name">Name</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="adapter.platform">Platform</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="adapter.status">Status</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="adapter.actions">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    ${AppState.data.adapters.map(adapter => `
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${escapeHtml(adapter.name || 'N/A')}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(adapter.platform || 'N/A')}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                    adapter.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                                }">
-                                    ${escapeHtml(adapter.status || 'inactive')}
+    const cards = `
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            ${AppState.data.adapters.map(adapter => {
+                const id = adapter.id || '';
+                const name = escapeHtml(adapter.name || 'N/A');
+                const platform = escapeHtml(adapter.platform || 'N/A');
+                const isActive = adapter.status === 'active';
+                const statusLabel = isActive ? 'Active' : 'Inactive';
+                const statusColor = isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800';
+                const switchBg = isActive ? 'bg-green-500' : 'bg-gray-300';
+                const switchTranslate = isActive ? 'translate-x-5' : 'translate-x-0';
+                return `
+                    <div class="bg-white dark:bg-gray-900 rounded-lg shadow p-5 flex flex-col justify-between">
+                        <div class="flex items-start justify-between mb-4">
+                            <div>
+                                <div class="flex items-center">
+                                    <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100 mr-2">${name}</h4>
+                                    <span class="px-2 py-0.5 text-xs rounded-full ${statusColor}">
+                                        ${escapeHtml(adapter.status || statusLabel)}
+                                    </span>
+                                </div>
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                    ${platform}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                class="flex items-center focus:outline-none"
+                                onclick="toggleAdapterActive('${id}')"
+                            >
+                                <span class="mr-2 text-xs text-gray-500 dark:text-gray-400">
+                                    ${isActive ? 'On' : 'Off'}
                                 </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <button class="text-blue-600 hover:text-blue-900 mr-3" onclick="editAdapter('${adapter.id || ''}')">Edit</button>
-                                <button class="text-red-600 hover:text-red-900" onclick="deleteAdapter('${adapter.id || ''}')">Delete</button>
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+                                <span class="relative inline-flex items-center h-5 w-9 rounded-full ${switchBg} transition-colors">
+                                    <span class="inline-block h-4 w-4 bg-white rounded-full shadow transform ${switchTranslate} transition-transform"></span>
+                                </span>
+                            </button>
+                        </div>
+                        <div class="flex justify-end space-x-3 mt-4">
+                            <button
+                                class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                                onclick="editAdapter('${id}')"
+                            >
+                                Edit
+                            </button>
+                            <button
+                                class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30"
+                                onclick="deleteAdapter('${id}')"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
         </div>
     `;
     
-    container.innerHTML = table;
+    container.innerHTML = cards;
     if (window.i18n) {
         updateTranslations();
+    }
+}
+
+async function toggleAdapterActive(id) {
+    if (!id) {
+        return;
+    }
+
+    const adapter = AppState.data.adapters.find(a => a.id === id);
+    if (!adapter) {
+        return;
+    }
+
+    const newStatus = adapter.status === 'active' ? 'inactive' : 'active';
+
+    try {
+        const payload = {
+            name: adapter.name,
+            platform: adapter.platform,
+            status: newStatus,
+            config: adapter.config || {}
+        };
+        await apiCall(`/api/adapters/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+
+        adapter.status = newStatus;
+        renderAdapterList();
+        showNotification('Adapter status updated', 'success');
+    } catch (error) {
+        console.error('Error toggling adapter status:', error);
+        showNotification('Failed to update adapter status', 'error');
+    }
+}
+
+const AdapterModalState = {
+    mode: 'create',
+    adapterId: null
+};
+
+async function fetchAdapterSchema(platform) {
+    try {
+        const response = await apiCall(`/api/adapters/schema/${encodeURIComponent(platform)}`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch schema: ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching adapter schema:', error);
+        showNotification('Failed to load adapter schema', 'error');
+        return null;
+    }
+}
+
+async function loadAdapterSchema(platform, currentValues = {}) {
+    const schema = await fetchAdapterSchema(platform);
+    if (schema) {
+        renderAdapterConfigFields(schema, 'adapter-config-container', currentValues);
+    }
+}
+
+function renderAdapterConfigFields(schema, containerOrId = 'adapter-config-container', currentValues = {}) {
+    const container = typeof containerOrId === 'string' ? document.getElementById(containerOrId) : containerOrId;
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    Object.entries(schema).forEach(([key, fieldDef]) => {
+        const fieldWrapper = document.createElement('div');
+        fieldWrapper.className = 'mb-4';
+
+        const label = document.createElement('label');
+        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2';
+        label.textContent = fieldDef.name || key;
+
+        let input;
+        const hasOptions = Array.isArray(fieldDef.options) && fieldDef.options.length > 0;
+
+        if (hasOptions) {
+            const select = document.createElement('select');
+            select.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+            if (fieldDef.type === 'list') {
+                select.multiple = true;
+            }
+            const placeholderOption = document.createElement('option');
+            placeholderOption.value = '';
+            placeholderOption.textContent = '';
+            if (!select.multiple) {
+                select.appendChild(placeholderOption);
+            }
+            fieldDef.options.forEach(optionValue => {
+                const option = document.createElement('option');
+                option.value = optionValue;
+                option.textContent = optionValue;
+                select.appendChild(option);
+            });
+            input = select;
+        } else if (fieldDef.type === 'integer' || fieldDef.type === 'float') {
+            input = document.createElement('input');
+            input.type = 'number';
+            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+            if (fieldDef.type === 'float') {
+                input.step = 'any';
+            } else {
+                input.step = '1';
+            }
+        } else if (fieldDef.type === 'list') {
+            input = document.createElement('textarea');
+            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+            input.rows = 3;
+        } else {
+            input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        }
+
+        input.id = `adapter-config-${key}`;
+        input.setAttribute('data-config-key', key);
+        input.setAttribute('data-config-type', fieldDef.type || 'string');
+
+        let value = currentValues[key];
+        if (value === undefined || value === null) {
+            value = fieldDef.default;
+        }
+
+        if (value !== undefined && value !== null) {
+            if (input.tagName === 'SELECT') {
+                const selectElement = input;
+                if (selectElement.multiple && Array.isArray(value)) {
+                    Array.from(selectElement.options).forEach(option => {
+                        if (value.includes(option.value)) {
+                            option.selected = true;
+                        }
+                    });
+                } else {
+                    selectElement.value = String(value);
+                }
+            } else if (input.tagName === 'TEXTAREA' && fieldDef.type === 'list') {
+                if (Array.isArray(value)) {
+                    input.value = value.join('\n');
+                } else if (typeof value === 'string') {
+                    input.value = value;
+                }
+            } else {
+                input.value = value;
+            }
+        }
+
+        if (fieldDef.hint) {
+            input.placeholder = fieldDef.hint;
+            input.title = fieldDef.hint;
+        }
+
+        fieldWrapper.appendChild(label);
+        fieldWrapper.appendChild(input);
+
+        if (fieldDef.hint) {
+            const hint = document.createElement('p');
+            hint.className = 'text-xs text-gray-500 mt-1';
+            hint.textContent = fieldDef.hint;
+            fieldWrapper.appendChild(hint);
+        }
+
+        container.appendChild(fieldWrapper);
+    });
+}
+
+async function openAdapterModal(adapter) {
+    const modal = document.getElementById('adapter-modal');
+    if (!modal) return;
+
+    AdapterModalState.mode = adapter ? 'edit' : 'create';
+    AdapterModalState.adapterId = adapter ? adapter.id : null;
+
+    const title = modal.querySelector('[data-i18n="adapter.modal_title"]');
+    if (title) {
+        title.textContent = AdapterModalState.mode === 'edit' ? 'Edit Adapter' : 'Add Adapter';
+    }
+
+    const nameInput = document.getElementById('adapter-name');
+    const platformSelect = document.getElementById('adapter-platform');
+    const statusSelect = document.getElementById('adapter-status');
+    const configContainer = document.getElementById('adapter-config-container');
+    const statusLabel = document.getElementById('adapter-status-label');
+    const statusSwitch = document.getElementById('adapter-status-switch');
+
+    if (nameInput) {
+        nameInput.value = adapter ? (adapter.name || '') : '';
+    }
+    if (statusSelect) {
+        statusSelect.value = adapter && adapter.status === 'active' ? 'active' : 'inactive';
+    }
+    if (statusLabel && statusSwitch && statusSelect) {
+        const isActive = statusSelect.value === 'active';
+        statusLabel.textContent = isActive ? 'On' : 'Off';
+        statusSwitch.className = `relative inline-flex items-center h-5 w-9 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-300'} transition-colors`;
+        const knob = statusSwitch.querySelector('span');
+        if (knob) {
+            knob.className = `inline-block h-4 w-4 bg-white rounded-full shadow transform ${isActive ? 'translate-x-5' : 'translate-x-0'} transition-transform`;
+        }
+    }
+    if (configContainer) {
+        configContainer.innerHTML = '';
+    }
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    if (platformSelect) {
+        try {
+            const response = await apiCall('/api/adapter-platforms');
+            if (!response.ok) {
+                throw new Error(`Failed to fetch adapter platforms: ${response.status}`);
+            }
+            const platforms = await response.json();
+            if (!Array.isArray(platforms)) {
+                throw new Error('Invalid adapter platforms response format');
+            }
+
+            const currentPlatformSelect = document.getElementById('adapter-platform');
+            if (!currentPlatformSelect) return;
+
+            const placeholderText = window.i18n ? window.i18n.t('adapter.platform_placeholder') : 'Select adapter platform...';
+
+            currentPlatformSelect.innerHTML = '';
+            const placeholderOption = document.createElement('option');
+            placeholderOption.value = '';
+            placeholderOption.textContent = placeholderText;
+            currentPlatformSelect.appendChild(placeholderOption);
+
+            platforms.forEach(p => {
+                const option = document.createElement('option');
+                option.value = p;
+                option.textContent = p;
+                currentPlatformSelect.appendChild(option);
+            });
+
+            if (adapter && adapter.platform) {
+                currentPlatformSelect.value = adapter.platform;
+                currentPlatformSelect.disabled = true;
+            } else {
+                currentPlatformSelect.value = '';
+                currentPlatformSelect.disabled = false;
+            }
+
+            const customSelectWrapper = document.querySelector('.custom-select[data-custom-select="adapter-platform"]');
+            if (customSelectWrapper) {
+                customSelectWrapper.remove();
+            }
+            if (typeof CustomSelect !== 'undefined') {
+                new CustomSelect(currentPlatformSelect, {
+                    placeholder: placeholderText,
+                    disabled: currentPlatformSelect.disabled
+                });
+            }
+
+            if (adapter && adapter.platform) {
+                if (configContainer) {
+                    configContainer.innerHTML = '';
+                }
+                await loadAdapterSchema(adapter.platform, adapter.config || {});
+            } else {
+                currentPlatformSelect.onchange = async (e) => {
+                    const selectedPlatform = e.target.value;
+                    if (configContainer) {
+                        configContainer.innerHTML = '';
+                    }
+                    if (selectedPlatform) {
+                        await loadAdapterSchema(selectedPlatform, {});
+                    }
+                };
+            }
+        } catch (error) {
+            console.error('Error fetching adapter platforms:', error);
+            showNotification('Failed to load adapter platforms', 'error');
+        }
+    }
+}
+
+document.addEventListener('click', (e) => {
+    const toggle = e.target.closest('#adapter-status-toggle');
+    if (!toggle) return;
+    const statusSelect = document.getElementById('adapter-status');
+    const statusLabel = document.getElementById('adapter-status-label');
+    const statusSwitch = document.getElementById('adapter-status-switch');
+    if (!statusSelect || !statusLabel || !statusSwitch) return;
+    const isCurrentlyActive = statusSelect.value === 'active';
+    const newValue = isCurrentlyActive ? 'inactive' : 'active';
+    statusSelect.value = newValue;
+    const isActive = newValue === 'active';
+    statusLabel.textContent = isActive ? 'On' : 'Off';
+    statusSwitch.className = `relative inline-flex items-center h-5 w-9 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-300'} transition-colors`;
+    const knob = statusSwitch.querySelector('span');
+    if (knob) {
+        knob.className = `inline-block h-4 w-4 bg-white rounded-full shadow transform ${isActive ? 'translate-x-5' : 'translate-x-0'} transition-transform`;
+    }
+});
+
+function closeAdapterModal() {
+    const modal = document.getElementById('adapter-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    AdapterModalState.mode = 'create';
+    AdapterModalState.adapterId = null;
+    const configContainer = document.getElementById('adapter-config-container');
+    if (configContainer) {
+        configContainer.innerHTML = '';
+    }
+    const platformSelect = document.getElementById('adapter-platform');
+    if (platformSelect) {
+        platformSelect.disabled = false;
+    }
+}
+
+async function saveAdapter() {
+    const nameInput = document.getElementById('adapter-name');
+    const platformSelect = document.getElementById('adapter-platform');
+    const statusSelect = document.getElementById('adapter-status');
+
+    const name = nameInput ? nameInput.value.trim() : '';
+    const platform = platformSelect ? platformSelect.value.trim() : '';
+    const status = statusSelect ? statusSelect.value : 'inactive';
+
+    if (!name || !platform) {
+        showNotification('Name and platform are required', 'error');
+        return;
+    }
+
+    const statusLabel = document.getElementById('adapter-status-label');
+    const statusSwitch = document.getElementById('adapter-status-switch');
+    if (statusLabel && statusSwitch && statusSelect) {
+        const isActive = statusSelect.value === 'active';
+        statusLabel.textContent = isActive ? 'On' : 'Off';
+        statusSwitch.className = `relative inline-flex items-center h-5 w-9 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-300'} transition-colors`;
+        const knob = statusSwitch.querySelector('span');
+        if (knob) {
+            knob.className = `inline-block h-4 w-4 bg-white rounded-full shadow transform ${isActive ? 'translate-x-5' : 'translate-x-0'} transition-transform`;
+        }
+    }
+
+    const config = {};
+    const configContainer = document.getElementById('adapter-config-container');
+    if (configContainer) {
+        const inputs = configContainer.querySelectorAll('[data-config-key]');
+        inputs.forEach(input => {
+            const key = input.getAttribute('data-config-key');
+            const fieldType = input.getAttribute('data-config-type');
+            if (!key) return;
+
+            let value;
+            if (input.tagName === 'SELECT') {
+                const selectElement = input;
+                if (selectElement.multiple) {
+                    value = Array.from(selectElement.selectedOptions).map(o => o.value).filter(v => v !== '');
+                } else {
+                    value = selectElement.value;
+                }
+            } else if (input.tagName === 'TEXTAREA' && fieldType === 'list') {
+                const raw = input.value || '';
+                value = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+            } else {
+                value = input.value;
+            }
+
+            if (fieldType === 'integer') {
+                value = value === '' ? null : parseInt(value, 10);
+            } else if (fieldType === 'float') {
+                value = value === '' ? null : parseFloat(value);
+            } else if (fieldType === 'list') {
+                if (!Array.isArray(value)) {
+                    const raw = value || '';
+                    value = raw.split('\n').flatMap(s => s.split(',')).map(s => s.trim()).filter(s => s.length > 0);
+                }
+            }
+
+            config[key] = value;
+        });
+    }
+
+    const payload = {
+        name: name,
+        platform: platform,
+        status: status,
+        config: config
+    };
+
+    try {
+        if (AdapterModalState.mode === 'edit' && AdapterModalState.adapterId) {
+            const response = await apiCall(`/api/adapters/${encodeURIComponent(AdapterModalState.adapterId)}`, {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                showNotification(errorData.detail || 'Failed to update adapter', 'error');
+                return;
+            }
+        } else {
+            const response = await apiCall('/api/adapters', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                showNotification(errorData.detail || 'Failed to create adapter', 'error');
+                return;
+            }
+        }
+
+        await loadAdapterData();
+        closeAdapterModal();
+        showNotification('Adapter saved successfully', 'success');
+    } catch (error) {
+        console.error('Error saving adapter:', error);
+        showNotification('Failed to save adapter', 'error');
     }
 }
 
@@ -1129,7 +1570,7 @@ function setupEventListeners() {
                 openProviderModal();
             } else if (adapterPage && adapterPage.contains(target) && !adapterPage.classList.contains('hidden')) {
                 e.preventDefault();
-                showNotification(window.i18n ? window.i18n.t('adapter.add_coming_soon') : 'Add adapter functionality coming soon', 'info');
+                openAdapterModal();
             } else if (personaPage && personaPage.contains(target) && !personaPage.classList.contains('hidden')) {
                 e.preventDefault();
                 openPersonaModal();
@@ -1580,12 +2021,34 @@ function deleteProvider(id) {
 }
 
 function editAdapter(id) {
-    showNotification('Edit adapter functionality coming soon', 'info');
+    const adapter = AppState.data.adapters.find(a => a.id === id);
+    if (!adapter) {
+        showNotification('Adapter not found', 'error');
+        return;
+    }
+    openAdapterModal(adapter);
 }
 
-function deleteAdapter(id) {
-    if (confirm('Are you sure you want to delete this adapter?')) {
-        showNotification('Delete adapter functionality coming soon', 'info');
+async function deleteAdapter(id) {
+    if (!id) return;
+    if (!confirm('Are you sure you want to delete this adapter?')) {
+        return;
+    }
+    try {
+        const response = await apiCall(`/api/adapters/${encodeURIComponent(id)}`, {
+            method: 'DELETE'
+        });
+        if (response.status === 204 || response.status === 200) {
+            AppState.data.adapters = AppState.data.adapters.filter(a => a.id !== id);
+            renderAdapterList();
+            showNotification('Adapter deleted successfully', 'success');
+        } else {
+            const errorData = await response.json().catch(() => ({}));
+            showNotification(errorData.detail || 'Failed to delete adapter', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting adapter:', error);
+        showNotification('Failed to delete adapter', 'error');
     }
 }
 

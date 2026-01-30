@@ -1,0 +1,57 @@
+{
+  "bot_pid": {
+    "name": "Bot QQ",
+    "type": "string",
+    "default": "",
+    "hint": "AI的QQ号"
+  },
+  "ws_uri": {
+    "name": "WS Server URI",
+    "type": "string",
+    "default": "ws://localhost:3001",
+    "hint": "Wesocket server 的 URI"
+  },
+  "ws_token": {
+    "name": "WS Server Token",
+    "type": "string",
+    "default": "",
+    "hint": "Websocket server 的 token"
+  },
+  "permission_mode": {
+    "name": "Permission Mode",
+    "type": "string",
+    "options": ["allow_list", "deny_list"],
+    "default": "allow_list",
+    "hint": "白名单（allow）或黑名单（deny）模式"
+  },
+  "group_allow_list": {
+    "name": "群聊白名单",
+    "type": "list",
+    "default": [],
+    "hint": "群聊白名单，当 permission mode 为 allow list 时起作用"
+  },
+  "user_allow_list": {
+    "name": "私聊白名单",
+    "type": "list",
+    "default": [],
+    "hint": "私聊白名单，当 permission mode 为 deny list 时起作用"
+  },
+  "group_deny_list": {
+    "name": "群聊黑名单",
+    "type": "list",
+    "default": [],
+    "hint": "群聊黑名单，当 permission mode 为 deny list 时起作用"
+  },
+  "user_deny_list": {
+    "name": "私聊黑名单",
+    "type": "list",
+    "default": [],
+    "hint": "私聊黑名单，当 permission mode 为 deny list 时起作用"
+  },
+  "waking_keywords": {
+    "name": "唤醒关键词",
+    "type": "list",
+    "default": [],
+    "hint": "当接收到的消息包含设置的关键词时触发回复"
+  }
+}

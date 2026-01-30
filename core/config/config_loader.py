@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional
 import configparser
 import json
 import os
+import uuid
 
 from core.utils.path_utils import get_config_path
 from core.logging_manager import get_logger
@@ -56,23 +57,22 @@ class KiraConfig(dict):
         self.save_to_json(full_config)
 
         self.update(full_config)
-
-        # Alias for backward compatibility
-        self["ada_config"] = self.get("adapters")
+        
+        self._migrate_adapters_config()
 
     def load_defaults(self):
         """Load default configuration"""
         full_config = self.default_config
         self.save_to_json(full_config)
         self.update(full_config)
-        self["ada_config"] = self.get("adapters")
+        self._migrate_adapters_config()
 
     def load_from_json(self):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
             self.update(data)
-            self["ada_config"] = self.get("adapters")
+            self._migrate_adapters_config()
         except Exception as e:
             logger.error(f"Error loading JSON config: {e}")
 
@@ -101,6 +101,71 @@ class KiraConfig(dict):
             else:
                 return default
         return v
+
+    def _migrate_adapters_config(self):
+        adapters = self.get("adapters")
+        if not isinstance(adapters, dict):
+            self["adapters"] = {}
+            if "ada_config" in self:
+                del self["ada_config"]
+            return
+
+        new_adapters: dict = {}
+
+        sample_value = next(iter(adapters.values()), None)
+        if sample_value and "config" in sample_value:
+            for adapter_id, adapter_entry in adapters.items():
+                enabled = adapter_entry.get("enabled", False)
+                platform = adapter_entry.get("platform")
+                desc = adapter_entry.get("desc", "")
+                config = adapter_entry.get("config") or {}
+                name = adapter_entry.get("name") or config.get("adapter_name") or adapter_id
+                cleaned_config = dict(config)
+                cleaned_config.pop("adapter_name", None)
+
+                new_adapters[adapter_id] = {
+                    "enabled": bool(enabled),
+                    "name": name,
+                    "platform": platform,
+                    "desc": desc,
+                    "config": cleaned_config,
+                }
+        else:
+            for old_name, cfg in adapters.items():
+                adapter_id = uuid.uuid4().hex[:12]
+                enabled_raw = cfg.get("enabled")
+                enabled_flag = False
+                if isinstance(enabled_raw, bool):
+                    enabled_flag = enabled_raw
+                elif isinstance(enabled_raw, str):
+                    enabled_flag = enabled_raw.lower() == "true"
+
+                platform = cfg.get("platform")
+                desc = cfg.get("desc", "")
+                config_fields = dict(cfg)
+                for key in ["enabled", "platform", "desc"]:
+                    config_fields.pop(key, None)
+                name = config_fields.get("adapter_name") or old_name
+                config_fields.pop("adapter_name", None)
+
+                new_adapters[adapter_id] = {
+                    "enabled": enabled_flag,
+                    "name": name,
+                    "platform": platform,
+                    "desc": desc,
+                    "config": config_fields,
+                }
+
+            self["adapters"] = new_adapters
+            try:
+                self.save_config()
+            except Exception as e:
+                logger.error(f"Failed to save migrated adapter config: {e}")
+
+        self["adapters"] = new_adapters
+
+        if "ada_config" in self:
+            del self["ada_config"]
 
     @staticmethod
     def _load_from_ini(config_path: str, section_name: Optional[str] = None):

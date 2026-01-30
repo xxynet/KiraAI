@@ -100,7 +100,8 @@ const resources = {
                 name: "Name",
                 platform: "Platform",
                 status: "Status",
-                actions: "Actions"
+                actions: "Actions",
+                platform_placeholder: "Select adapter platform..."
             },
             persona: {
                 title: "Personas",
@@ -318,7 +319,8 @@ const resources = {
                 name: "名称",
                 platform: "平台",
                 status: "状态",
-                actions: "操作"
+                actions: "操作",
+                platform_placeholder: "选择适配器平台..."
             },
             persona: {
                 title: "人设",
@@ -488,4 +490,3 @@ window.i18n = {
     t: (key) => i18next.t(key),
     changeLanguage: (lng) => i18next.changeLanguage(lng).then(() => updateTranslations())
 };
-

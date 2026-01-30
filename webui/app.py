@@ -331,15 +331,57 @@ class KiraWebUI:
             except Exception as e:
                 logger.warning(f"Failed to get memory info: {e}")
             
-            return OverviewResponse(
-                total_adapters=len(self._adapters),
-                active_adapters=len(
+            total_adapters = 0
+            active_adapters = 0
+            if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
+                try:
+                    adapter_mgr = self.lifecycle.adapter_manager
+                    adapter_infos = adapter_mgr.get_adapter_infos()
+                    total_adapters = len(adapter_infos)
+                    running_adapters = set(adapter_mgr.get_adapters().keys())
+                    active_adapters = len(
+                        [
+                            info
+                            for info in adapter_infos
+                            if info.enabled and info.name in running_adapters
+                        ]
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to collect adapter stats for overview: {e}")
+                    total_adapters = len(self._adapters)
+                    active_adapters = len(
+                        [a for a in self._adapters.values() if a.status == "active"]
+                    )
+            else:
+                total_adapters = len(self._adapters)
+                active_adapters = len(
                     [a for a in self._adapters.values() if a.status == "active"]
-                ),
-                total_providers=len(self._providers),
-                active_providers=len(
-                    [p for p in self._providers.values() if p.status == "active"]
-                ),
+                )
+
+            total_providers = len(self._providers)
+            active_providers = len(
+                [p for p in self._providers.values() if p.status == "active"]
+            )
+
+            if self.lifecycle and getattr(self.lifecycle, "provider_manager", None):
+                try:
+                    providers_config = self.lifecycle.kira_config.get("providers", {}) or {}
+                    total_providers = len(providers_config)
+                    active_providers = len(
+                        [
+                            provider_id
+                            for provider_id in providers_config.keys()
+                            if provider_id in self.lifecycle.provider_manager._providers
+                        ]
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to collect provider stats for overview: {e}")
+
+            return OverviewResponse(
+                total_adapters=total_adapters,
+                active_adapters=active_adapters,
+                total_providers=total_providers,
+                active_providers=active_providers,
                 total_messages=0,
                 system_status="running" if self.lifecycle else "unknown",
                 runtime_duration=runtime_duration,
@@ -409,6 +451,37 @@ class KiraWebUI:
             schema = self.lifecycle.provider_manager.get_schema(provider_type)
             if not schema:
                 raise HTTPException(status_code=404, detail=f"Schema not found for provider type: {provider_type}")
+            return schema
+
+        @self.app.get(
+            "/api/adapter-platforms",
+            tags=["adapters"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def get_adapter_platforms():
+            """Get scanned adapter platforms from lifecycle's adapter manager"""
+            try:
+                if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
+                    logger.warning("Adapter manager not available for get_adapter_platforms")
+                    return []
+                return self.lifecycle.adapter_manager.get_adapter_types()
+            except Exception as e:
+                logger.error(f"Error getting adapter platforms: {e}")
+                return []
+
+        @self.app.get(
+            "/api/adapters/schema/{platform}",
+            tags=["adapters"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def get_adapter_schema(platform: str):
+            """Get schema for a specific adapter platform"""
+            if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
+                raise HTTPException(status_code=404, detail="Adapter manager not available")
+
+            schema = self.lifecycle.adapter_manager.get_schema(platform)
+            if not schema:
+                raise HTTPException(status_code=404, detail=f"Schema not found for adapter platform: {platform}")
             return schema
 
         @self.app.post(
@@ -654,6 +727,26 @@ class KiraWebUI:
         )
         async def list_adapters():
             """List adapters"""
+            if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
+                try:
+                    adapter_mgr = self.lifecycle.adapter_manager
+                    adapter_infos = adapter_mgr.get_adapter_infos()
+                    running_adapters = set(adapter_mgr.get_adapters().keys())
+                    adapters: List[AdapterResponse] = []
+                    for info in adapter_infos:
+                        status = "active" if info.enabled and info.name in running_adapters else "inactive"
+                        adapters.append(
+                            AdapterResponse(
+                                id=info.adapter_id,
+                                name=info.name,
+                                platform=info.platform,
+                                status=status,
+                                config=info.config,
+                            )
+                        )
+                    return adapters
+                except Exception as e:
+                    logger.error(f"Error listing adapters from lifecycle: {e}")
             return list(self._adapters.values())
 
         @self.app.post(
@@ -665,6 +758,35 @@ class KiraWebUI:
         )
         async def create_adapter(payload: AdapterBase):
             """Create adapter"""
+            if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
+                name = payload.name
+                platform = payload.platform
+                if not name or not platform:
+                    raise HTTPException(status_code=400, detail="name and platform are required")
+                try:
+                    adapter_mgr = self.lifecycle.adapter_manager
+                    info = await adapter_mgr.create_adapter(
+                        name=name,
+                        platform=platform,
+                        status=payload.status,
+                        config=payload.config or {},
+                    )
+                    if not info:
+                        raise HTTPException(status_code=500, detail="Failed to create adapter")
+                    running_adapters = set(adapter_mgr.get_adapters().keys())
+                    status_value = "active" if info.enabled and info.name in running_adapters else "inactive"
+                    return AdapterResponse(
+                        id=info.adapter_id,
+                        name=info.name,
+                        platform=info.platform,
+                        status=status_value,
+                        config=info.config,
+                    )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"Error creating adapter: {e}")
+                    raise HTTPException(status_code=500, detail=str(e))
             adapter_id = _generate_id()
             adapter = AdapterResponse(id=adapter_id, **payload.model_dump())
             self._adapters[adapter_id] = adapter
@@ -678,6 +800,25 @@ class KiraWebUI:
         )
         async def get_adapter(adapter_id: str):
             """Get adapter by id"""
+            if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None) and getattr(self.lifecycle, "kira_config", None):
+                try:
+                    adapter_mgr = self.lifecycle.adapter_manager
+                    info = adapter_mgr.get_adapter_info(adapter_id)
+                    if not info:
+                        raise HTTPException(status_code=404, detail="Adapter not found")
+                    running_adapters = set(adapter_mgr.get_adapters().keys())
+                    status = "active" if info.enabled and info.name in running_adapters else "inactive"
+                    return AdapterResponse(
+                        id=adapter_id,
+                        name=info.name,
+                        platform=info.platform,
+                        status=status,
+                        config=info.config,
+                    )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"Error getting adapter {adapter_id} from lifecycle: {e}")
             adapter = self._adapters.get(adapter_id)
             if not adapter:
                 raise HTTPException(status_code=404, detail="Adapter not found")
@@ -691,6 +832,32 @@ class KiraWebUI:
         )
         async def update_adapter(adapter_id: str, payload: AdapterBase):
             """Update adapter"""
+            if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
+                try:
+                    adapter_mgr = self.lifecycle.adapter_manager
+                    info = await adapter_mgr.update_adapter(
+                        adapter_id=adapter_id,
+                        name=payload.name,
+                        platform=payload.platform,
+                        status=payload.status,
+                        config=payload.config or {},
+                    )
+                    if not info:
+                        raise HTTPException(status_code=404, detail="Adapter not found")
+                    running_adapters = set(adapter_mgr.get_adapters().keys())
+                    status_value = "active" if info.enabled and info.name in running_adapters else "inactive"
+                    return AdapterResponse(
+                        id=info.adapter_id,
+                        name=info.name,
+                        platform=info.platform,
+                        status=status_value,
+                        config=info.config,
+                    )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"Error updating adapter {adapter_id}: {e}")
+                    raise HTTPException(status_code=500, detail=str(e))
             adapter = self._adapters.get(adapter_id)
             if not adapter:
                 raise HTTPException(status_code=404, detail="Adapter not found")
@@ -706,6 +873,16 @@ class KiraWebUI:
         )
         async def delete_adapter(adapter_id: str):
             """Delete adapter"""
+            if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
+                adapter_mgr = self.lifecycle.adapter_manager
+                try:
+                    deleted = await adapter_mgr.delete_adapter(adapter_id)
+                except Exception as e:
+                    logger.error(f"Error deleting adapter {adapter_id}: {e}")
+                    raise HTTPException(status_code=500, detail=str(e))
+                if not deleted:
+                    raise HTTPException(status_code=404, detail="Adapter not found")
+                return None
             if adapter_id not in self._adapters:
                 raise HTTPException(status_code=404, detail="Adapter not found")
             self._adapters.pop(adapter_id, None)

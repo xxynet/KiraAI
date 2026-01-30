@@ -1,0 +1,56 @@
+{
+  "bot_uid": {
+    "name": "Bot UID",
+    "type": "string",
+    "default": "",
+    "hint": "Bot的B站UID"
+  },
+  "listening_bvid": {
+    "name": "监听视频 BVID",
+    "type": "string",
+    "default": "",
+    "hint": "监听的B站视频BVID"
+  },
+  "listening_interval": {
+    "name": "轮询间隔",
+    "type": "float",
+    "default": 20.0,
+    "hint": "视频评论轮询间隔秒数"
+  },
+  "message_process_interval": {
+    "name": "消息处理间隔",
+    "type": "float",
+    "default": 5.0,
+    "hint": "消息处理间隔，防止操作过快"
+  },
+  "sesdata": {
+    "name": "sesdata",
+    "type": "string",
+    "default": [],
+    "hint": "sesdata（从Cookie获取）"
+  },
+  "bili_jct": {
+    "name": "bili_jct",
+    "type": "string",
+    "default": "",
+    "hint": "bili_jct（从Cookie获取）"
+  },
+  "buvid3": {
+    "name": "buvid3",
+    "type": "string",
+    "default": "",
+    "hint": "buvid3（从Cookie获取）"
+  },
+  "dedeuserid": {
+    "name": "dedeuserid",
+    "type": "string",
+    "default": "",
+    "hint": "dedeuserid（从Cookie获取）"
+  },
+  "ac_time_value": {
+    "name": "ac_time_value",
+    "type": "string",
+    "default": "",
+    "hint": "ac_time_value（从LocalStorage获取）"
+  }
+}

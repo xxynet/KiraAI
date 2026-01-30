@@ -6,11 +6,19 @@ from core.chat.message_utils import KiraMessageEvent, MessageChain
 
 from core.llm_client import LLMClient
 
+from core.adapter.adapter_info import AdapterInfo
+
 
 class IMAdapter(ABC):
-    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api: LLMClient):
-        self.name: Optional[str] = None
-        self.config = config
+    def __init__(
+        self,
+        info: AdapterInfo,
+        loop: asyncio.AbstractEventLoop,
+        event_bus: asyncio.Queue,
+        llm_api: LLMClient,
+    ):
+        self.info = info
+        self.config = info.config
         self.emoji_dict: Optional[dict] = None
         self.message_types: list = []
         self.loop = loop
@@ -36,24 +44,36 @@ class IMAdapter(ABC):
             user_allow_list_str = self.config.get("user_allow_list", "")
 
             if group_allow_list_str:
-                self.group_list = self._parse_id_list(group_allow_list_str)
+                if isinstance(group_allow_list_str, list):
+                    self.group_list = group_allow_list_str
+                else:
+                    self.group_list = self._parse_id_list(group_allow_list_str)
             if user_allow_list_str:
-                self.user_list = self._parse_id_list(user_allow_list_str)
+                if isinstance(user_allow_list_str, list):
+                    self.user_list = user_allow_list_str
+                else:
+                    self.user_list = self._parse_id_list(user_allow_list_str)
         elif _permission_mode == "deny_list":
             group_deny_list_str = self.config.get("group_deny_list", "")
             user_deny_list_str = self.config.get("user_deny_list", "")
 
             if group_deny_list_str:
-                self.group_list = self._parse_id_list(group_deny_list_str)
+                if isinstance(group_deny_list_str, list):
+                    self.group_list = group_deny_list_str
+                else:
+                    self.group_list = self._parse_id_list(group_deny_list_str)
             if user_deny_list_str:
-                self.user_list = self._parse_id_list(user_deny_list_str)
+                if isinstance(user_deny_list_str, list):
+                    self.user_list = user_deny_list_str
+                else:
+                    self.user_list = self._parse_id_list(user_deny_list_str)
         else:
             self.permission_mode = "allow_list"
 
     @staticmethod
     def _parse_id_list(csv: str) -> List[Union[int, str]]:
         try:
-            return [int(item.strip()) for item in csv.split(",") if item.strip()]
+            return [item.strip() for item in csv.split(",") if item.strip()]
         except Exception as e:
             print(f"error occurred while parsing id list: {str(e)}")
             return []
@@ -102,9 +122,14 @@ class IMAdapter(ABC):
 
 
 class SocialMediaAdapter(ABC):
-    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue):
-        self.name: Optional[str] = None
-        self.config = config
+    def __init__(
+        self,
+        info: AdapterInfo,
+        loop: asyncio.AbstractEventLoop,
+        event_bus: asyncio.Queue,
+    ):
+        self.info = info
+        self.config = info.config
         self.emoji_dict: Optional[dict] = None
         self.loop = loop
         self.event_bus = event_bus

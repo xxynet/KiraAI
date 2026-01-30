@@ -39,9 +39,8 @@ class MessageSender:
 class TelegramAdapter(IMAdapter):
     """Telegram adapter"""
 
-    def __init__(self, config: Dict[str, Any], loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
-        super().__init__(config, loop, event_bus, llm_api)
-        self.name: str = "Telegram"
+    def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
+        super().__init__(info, loop, event_bus, llm_api)
 
         # config
         self.bot_token: str = self.config.get("bot_token", "")
@@ -125,9 +124,9 @@ class TelegramAdapter(IMAdapter):
 
             should_process = False
 
-            if self.permission_mode == "allow_list" and chat.id in self.group_list:
+            if self.permission_mode == "allow_list" and str(chat.id) in self.group_list:
                 should_process = True
-            elif self.permission_mode == "deny_list" and chat.id not in self.group_list:
+            elif self.permission_mode == "deny_list" and str(chat.id) not in self.group_list:
                 should_process = True
 
             if not should_process:
@@ -171,8 +170,8 @@ class TelegramAdapter(IMAdapter):
 
             message_list = await self._process_incoming_message(msg)
             message_obj = KiraMessageEvent(
-                platform=self.name,
-                adapter_name=self.config.get('adapter_name', 'tg'),
+                platform=self.info.platform,
+                adapter_name=self.info.name,
                 message_types=self.message_types,
                 group_id=str(chat.id),
                 group_name=chat.title or str(chat.id),
@@ -190,17 +189,17 @@ class TelegramAdapter(IMAdapter):
 
             should_process = False
 
-            if self.permission_mode == "allow_list" and user.id in self.user_list:
+            if self.permission_mode == "allow_list" and str(user.id) in self.user_list:
                 should_process = True
-            elif self.permission_mode == "deny_list" and user.id not in self.user_list:
+            elif self.permission_mode == "deny_list" and str(user.id) not in self.user_list:
                 should_process = True
 
             if not should_process:
                 return
             message_list = await self._process_incoming_message(msg)
             message_obj = KiraMessageEvent(
-                platform=self.name,
-                adapter_name=self.config.get('adapter_name', 'tg'),
+                platform=self.info.platform,
+                adapter_name=self.info.name,
                 message_types=self.message_types,
                 user_id=str(user.id),
                 user_nickname=user.full_name or str(user.id),

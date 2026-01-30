@@ -116,12 +116,15 @@ class PromptManager:
 
     def load_ada_config_prompt(self):
         ada_config_prompt = ""
-        ada_config = self.kira_config["ada_config"]
-        for ada in ada_config:
-            ada_platform = ada_config[ada].get("platform")
-            ada_name = ada_config[ada].get("adapter_name")
-            ada_desc = ada_config[ada].get("desc")
-            bot_pid = ada_config[ada].get("bot_pid")
+        adapters_root = self.kira_config.get("adapters", {}) or {}
+        for adapter_id, adapter_entry in adapters_root.items():
+            if not isinstance(adapter_entry, dict):
+                continue
+            config = adapter_entry.get("config") or {}
+            ada_platform = adapter_entry.get("platform")
+            ada_name = adapter_entry.get("name") or adapter_id
+            ada_desc = adapter_entry.get("desc")
+            bot_pid = config.get("bot_pid")
             ada_config_prompt += f"Platform: {ada_platform}, adapter_name: {ada_name}, account_desc: {ada_desc}, account_id: {bot_pid}\n"
 
         return ada_config_prompt

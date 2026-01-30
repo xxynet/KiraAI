@@ -28,6 +28,8 @@ class CustomSelect {
         this.filteredOptions = [];
         this.searchTerm = '';
 
+        this.options.disabled = this.element.disabled || this.options.disabled;
+
         this.init();
     }
 
@@ -69,6 +71,7 @@ class CustomSelect {
         this.container = document.createElement('div');
         this.container.className = 'custom-select';
         this.container.setAttribute('data-custom-select', this.element.id);
+        this.container.style.position = 'relative';
 
         // Create trigger
         this.trigger = document.createElement('div');
@@ -111,6 +114,7 @@ class CustomSelect {
         this.optionsContainer.className = 'custom-select-options';
         this.optionsContainer.setAttribute('role', 'listbox');
         this.optionsContainer.style.maxHeight = `${this.options.maxHeight}px`;
+        this.optionsContainer.style.zIndex = '9999';
 
         // Create search input if searchable
         if (this.options.searchable) {
