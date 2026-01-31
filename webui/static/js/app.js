@@ -16,6 +16,7 @@ const AppState = {
         providers: [],
         adapters: [],
         personas: [],
+        stickers: [],
         settings: {},
         providerModels: {},
         configuration: null,
@@ -57,9 +58,12 @@ async function apiCall(url, options = {}) {
     }
 
     const headers = {
-        'Content-Type': 'application/json',
         ...options.headers
     };
+
+    if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
+    }
 
     headers['Authorization'] = `Bearer ${jwtToken}`;
 
@@ -98,6 +102,7 @@ function initializeApp() {
     setupEventListeners();
     startAutoRefresh();
     initializeMonacoEditor();
+    initializeDropzones();
 }
 
 /**
@@ -182,6 +187,9 @@ async function loadPageData(pageName) {
             case 'persona':
                 await loadPersonaData();
                 break;
+            case 'sticker':
+                await loadStickerData();
+                break;
             case 'configuration':
                 await loadConfigurationData();
                 break;
@@ -220,6 +228,7 @@ async function loadOverviewData() {
         // Update statistics cards
         updateElement('stat-total-adapters', data.total_adapters || 0);
         updateElement('stat-active-adapters', data.active_adapters || 0);
+        updateElement('stat-adapter-count', data.total_adapters || 0);
         updateElement('stat-total-providers', data.total_providers || 0);
         updateElement('stat-total-messages', data.total_messages || 0);
         
@@ -887,6 +896,272 @@ async function loadPersonaData() {
         }
     } catch (error) {
         console.error('Error loading persona data:', error);
+    }
+}
+
+async function loadStickerData() {
+    try {
+        const response = await apiCall('/api/stickers');
+        const data = await response.json();
+        AppState.data.stickers = Array.isArray(data) ? data : (data.stickers || []);
+        renderStickerList();
+    } catch (error) {
+        console.error('Error loading sticker data:', error);
+    }
+}
+
+function renderStickerList() {
+    const container = document.getElementById('sticker-list');
+    if (!container) return;
+
+    if (!AppState.data.stickers || AppState.data.stickers.length === 0) {
+        container.innerHTML = `
+            <div class="flex justify-center items-center py-12">
+                <div class="text-center">
+                    <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <p class="text-gray-500" data-i18n="sticker.no_stickers">No stickers configured</p>
+                </div>
+            </div>
+        `;
+        if (window.i18n) {
+            updateTranslations();
+        }
+        return;
+    }
+
+    const cards = AppState.data.stickers.map(sticker => {
+        const id = sticker.id || '';
+        const path = sticker.path || '';
+        const desc = sticker.desc || '';
+        const imgSrc = path ? `/sticker/${encodeURIComponent(path)}` : '';
+        const titleText = id ? `Sticker ${id}` : 'Sticker';
+        const altText = desc || titleText;
+        return `
+            <div class="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden flex flex-col">
+                <div class="relative bg-gray-100 dark:bg-gray-800 flex items-center justify-center pt-[100%]">
+                    ${imgSrc
+                        ? `<img src="${imgSrc}" alt="${escapeHtml(altText)}" class="absolute inset-0 w-full h-full object-contain">`
+                        : `<div class="text-gray-400 text-sm" data-i18n="sticker.no_stickers">No stickers configured</div>`}
+                </div>
+                <div class="p-4 flex-1 flex flex-col">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">#${escapeHtml(String(id))}</span>
+                    </div>
+                    <p class="text-sm text-gray-600 dark:text-gray-300 overflow-hidden text-ellipsis whitespace-nowrap" title="${escapeHtml(desc || '')}">${escapeHtml(desc || '')}</p>
+                    <div class="mt-3 flex items-center justify-end space-x-3">
+                        <button class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800" type="button" data-i18n="sticker.edit" onclick="openStickerModal('${escapeHtml(String(id))}')">
+                            Edit
+                        </button>
+                        <button class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30" type="button" data-i18n="sticker.delete" onclick="deleteSticker('${escapeHtml(String(id))}')">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            ${cards}
+        </div>
+    `;
+    if (window.i18n) {
+        updateTranslations();
+    }
+}
+
+async function openStickerModal(id) {
+    const modal = document.getElementById('sticker-modal');
+    if (!modal) return;
+
+    const idInput = document.getElementById('sticker-id');
+    const pathInput = document.getElementById('sticker-path');
+    const descInput = document.getElementById('sticker-desc');
+    const fileInput = document.getElementById('sticker-file');
+    const fileGroup = document.getElementById('sticker-file-group');
+    const titleEl = document.getElementById('sticker-modal-title');
+
+    if (!id) {
+        showNotification('Sticker ID is required', 'error');
+        return;
+    }
+
+    try {
+        const response = await apiCall(`/api/stickers/${encodeURIComponent(id)}`);
+        if (!response.ok) {
+            throw new Error(`Failed to load sticker: ${response.status}`);
+        }
+        const data = await response.json();
+
+        if (idInput) idInput.value = data.id || '';
+        if (pathInput) pathInput.value = data.path || '';
+        if (descInput) descInput.value = data.desc || '';
+        if (fileInput) fileInput.value = '';
+        if (fileGroup) {
+            fileGroup.style.display = 'none';
+        }
+        if (pathInput && pathInput.parentElement) {
+            pathInput.parentElement.style.display = '';
+        }
+        if (titleEl) {
+            titleEl.setAttribute('data-i18n', 'sticker.modal_title_edit');
+            if (window.i18n) {
+                titleEl.textContent = window.i18n.t('sticker.modal_title_edit');
+            }
+        }
+
+        modal.dataset.mode = 'edit';
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    } catch (error) {
+        console.error('Error loading sticker:', error);
+        showNotification('Failed to load sticker', 'error');
+    }
+}
+
+function closeStickerModal() {
+    const modal = document.getElementById('sticker-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    delete modal.dataset.mode;
+}
+
+function openAddStickerModal() {
+    const modal = document.getElementById('sticker-modal');
+    if (!modal) return;
+
+    const idInput = document.getElementById('sticker-id');
+    const pathInput = document.getElementById('sticker-path');
+    const descInput = document.getElementById('sticker-desc');
+    const fileInput = document.getElementById('sticker-file');
+    const fileGroup = document.getElementById('sticker-file-group');
+    const titleEl = document.getElementById('sticker-modal-title');
+
+    if (idInput) idInput.value = '';
+    if (pathInput) pathInput.value = '';
+    if (descInput) descInput.value = '';
+    if (fileInput) fileInput.value = '';
+    if (window.__stickerDropzoneInstance && typeof window.__stickerDropzoneInstance.reset === 'function') {
+        window.__stickerDropzoneInstance.reset();
+    }
+    if (fileGroup) {
+        fileGroup.style.display = '';
+    }
+    if (pathInput && pathInput.parentElement) {
+        pathInput.parentElement.style.display = 'none';
+    }
+    if (titleEl) {
+        titleEl.setAttribute('data-i18n', 'sticker.modal_title_add');
+        if (window.i18n) {
+            titleEl.textContent = window.i18n.t('sticker.modal_title_add');
+        }
+    }
+
+    modal.dataset.mode = 'add';
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+async function saveSticker() {
+    const modal = document.getElementById('sticker-modal');
+    const mode = modal && modal.dataset.mode ? modal.dataset.mode : 'edit';
+    const idInput = document.getElementById('sticker-id');
+    const pathInput = document.getElementById('sticker-path');
+    const descInput = document.getElementById('sticker-desc');
+    const fileInput = document.getElementById('sticker-file');
+
+    const id = idInput ? idInput.value.trim() : '';
+    const path = pathInput ? pathInput.value.trim() : '';
+    const desc = descInput ? descInput.value.trim() : '';
+
+    if (mode === 'edit' && !id) {
+        showNotification('Sticker ID is required', 'error');
+        return;
+    }
+
+    if (mode === 'add') {
+        if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+            showNotification('Sticker image is required', 'error');
+            return;
+        }
+        try {
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            if (id) {
+                formData.append('id', id);
+            }
+            if (desc) {
+                formData.append('description', desc);
+            }
+            const response = await apiCall('/api/stickers', {
+                method: 'POST',
+                body: formData,
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to save sticker: ${response.status}`);
+            }
+            showNotification('Sticker saved', 'success');
+            closeStickerModal();
+            await loadStickerData();
+        } catch (error) {
+            console.error('Error saving sticker:', error);
+            showNotification('Failed to save sticker', 'error');
+        }
+        return;
+    }
+
+    try {
+        const response = await apiCall(`/api/stickers/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ desc })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to save sticker: ${response.status}`);
+        }
+
+        showNotification('Sticker saved', 'success');
+        closeStickerModal();
+        await loadStickerData();
+    } catch (error) {
+        console.error('Error saving sticker:', error);
+        showNotification('Failed to save sticker', 'error');
+    }
+}
+
+async function deleteSticker(id) {
+    const sid = String(id || '').trim();
+    if (!sid) {
+        showNotification('Sticker ID is required', 'error');
+        return;
+    }
+    currentDeleteHandler = async () => {
+        try {
+            const response = await apiCall(`/api/stickers/${encodeURIComponent(sid)}?delete_file=true`, {
+                method: 'DELETE'
+            });
+            if (!response.ok && response.status !== 204) {
+                throw new Error(`Failed to delete sticker: ${response.status}`);
+            }
+            showNotification('Sticker deleted', 'success');
+            closeDeleteModal();
+            await loadStickerData();
+        } catch (error) {
+            console.error('Error deleting sticker:', error);
+            showNotification('Failed to delete sticker', 'error');
+        }
+    };
+    const modal = document.getElementById('delete-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
     }
 }
 
@@ -1579,6 +1854,15 @@ function setupEventListeners() {
     });
 }
 
+function initializeDropzones() {
+    const stickerDropContainer = document.getElementById('sticker-dropzone');
+    if (stickerDropContainer) {
+        window.__stickerDropzoneInstance = new ImageDropzone(stickerDropContainer, {
+            inputId: 'sticker-file'
+        });
+    }
+}
+
 /**
  * Save settings
  */
@@ -2031,24 +2315,29 @@ function editAdapter(id) {
 
 async function deleteAdapter(id) {
     if (!id) return;
-    if (!confirm('Are you sure you want to delete this adapter?')) {
-        return;
-    }
-    try {
-        const response = await apiCall(`/api/adapters/${encodeURIComponent(id)}`, {
-            method: 'DELETE'
-        });
-        if (response.status === 204 || response.status === 200) {
-            AppState.data.adapters = AppState.data.adapters.filter(a => a.id !== id);
-            renderAdapterList();
-            showNotification('Adapter deleted successfully', 'success');
-        } else {
-            const errorData = await response.json().catch(() => ({}));
-            showNotification(errorData.detail || 'Failed to delete adapter', 'error');
+    currentDeleteHandler = async () => {
+        try {
+            const response = await apiCall(`/api/adapters/${encodeURIComponent(id)}`, {
+                method: 'DELETE'
+            });
+            if (response.status === 204 || response.status === 200) {
+                AppState.data.adapters = AppState.data.adapters.filter(a => a.id !== id);
+                renderAdapterList();
+                showNotification('Adapter deleted successfully', 'success');
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                showNotification(errorData.detail || 'Failed to delete adapter', 'error');
+            }
+            closeDeleteModal();
+        } catch (error) {
+            console.error('Error deleting adapter:', error);
+            showNotification('Failed to delete adapter', 'error');
         }
-    } catch (error) {
-        console.error('Error deleting adapter:', error);
-        showNotification('Failed to delete adapter', 'error');
+    };
+    const modal = document.getElementById('delete-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
     }
 }
 
@@ -2073,6 +2362,8 @@ const sessionEditorState = {
     currentSessionId: null,
     sessionData: null
 };
+
+let currentDeleteHandler = null;
 
 /**
  * Edit session - opens modal with Monaco editor
@@ -2114,6 +2405,12 @@ async function editSession(encodedSessionId) {
         showNotification('Failed to load session data', 'error');
     }
 }
+
+window.openStickerModal = openStickerModal;
+window.closeStickerModal = closeStickerModal;
+window.saveSticker = saveSticker;
+window.openAddStickerModal = openAddStickerModal;
+window.deleteSticker = deleteSticker;
 
 /**
  * Initialize Monaco editor for session editing
@@ -2286,12 +2583,17 @@ function closeDeleteModal() {
     modal.classList.add('hidden');
     modal.classList.remove('flex');
     sessionEditorState.currentSessionId = null;
+    currentDeleteHandler = null;
 }
 
 /**
  * Execute delete session
  */
 async function executeDeleteSession() {
+    if (typeof currentDeleteHandler === 'function') {
+        await currentDeleteHandler();
+        return;
+    }
     if (!sessionEditorState.currentSessionId) {
         closeDeleteModal();
         return;

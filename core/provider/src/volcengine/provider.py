@@ -9,7 +9,6 @@ from core.logging_manager import get_logger
 from core.provider.llm_model import LLMModel, LLMRequest, LLMResponse, LLMClientType
 from core.provider.image_result import ImageResult
 
-
 logger = get_logger("provider", "purple")
 tool_logger = get_logger("tool_use", "orange")
 

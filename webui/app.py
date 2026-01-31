@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -104,6 +104,16 @@ class SettingsResponse(SettingsRequest):
 
 class TokenLoginRequest(BaseModel):
     access_token: str
+
+
+class StickerItem(BaseModel):
+    id: str
+    desc: str = ""
+    path: str
+
+
+class StickerUpdateRequest(BaseModel):
+    desc: str = ""
 
 
 def _generate_strong_password(length: int = 16) -> str:
@@ -207,6 +217,7 @@ class KiraWebUI:
         self.webui_dir = Path(__file__).parent
         self.static_dir = self.webui_dir / "static"
         self.templates_dir = self.webui_dir / "templates"
+        self.sticker_dir = get_data_path() / "sticker"
 
         # Setup CORS
         self.app.add_middleware(
@@ -221,6 +232,10 @@ class KiraWebUI:
         if self.static_dir.exists():
             self.app.mount(
                 "/static", StaticFiles(directory=str(self.static_dir)), name="static"
+            )
+        if self.sticker_dir.exists():
+            self.app.mount(
+                "/sticker", StaticFiles(directory=str(self.sticker_dir)), name="sticker"
             )
 
         # Register routes
@@ -377,12 +392,20 @@ class KiraWebUI:
                 except Exception as e:
                     logger.error(f"Failed to collect provider stats for overview: {e}")
 
+            total_messages = 0
+            if self.lifecycle and getattr(self.lifecycle, "stats", None):
+                try:
+                    message_stats = self.lifecycle.stats.get_stats("messages") or {}
+                    total_messages = int(message_stats.get("total_messages", 0) or 0)
+                except Exception as e:
+                    logger.error(f"Failed to collect message stats for overview: {e}")
+
             return OverviewResponse(
                 total_adapters=total_adapters,
                 active_adapters=active_adapters,
                 total_providers=total_providers,
                 active_providers=active_providers,
-                total_messages=0,
+                total_messages=total_messages,
                 system_status="running" if self.lifecycle else "unknown",
                 runtime_duration=runtime_duration,
                 memory_usage=memory_usage,
@@ -1067,6 +1090,276 @@ class KiraWebUI:
                     "models": config.get("models", {}),
                 },
             }
+
+        @self.app.get(
+            "/api/stickers",
+            response_model=List[StickerItem],
+            tags=["stickers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def list_stickers():
+            sticker_config_path = get_data_path() / "config" / "sticker.json"
+            if not sticker_config_path.exists():
+                return []
+            try:
+                with open(sticker_config_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                if not content.strip():
+                    return []
+                data = json.loads(content)
+            except Exception as e:
+                logger.error(f"Failed to load stickers from {sticker_config_path}: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to load stickers",
+                )
+            stickers: List[StickerItem] = []
+            if not isinstance(data, dict):
+                return stickers
+            sticker_folder = get_data_path() / "sticker"
+            for sticker_id, info in data.items():
+                if not isinstance(info, dict):
+                    continue
+                path = info.get("path")
+                desc = info.get("desc") or ""
+                if not path:
+                    continue
+                file_path = sticker_folder / path
+                if not file_path.exists():
+                    continue
+                stickers.append(
+                    StickerItem(
+                        id=str(sticker_id),
+                        desc=str(desc),
+                        path=str(path),
+                    )
+                )
+            return stickers
+
+        @self.app.post(
+            "/api/stickers",
+            response_model=StickerItem,
+            tags=["stickers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def add_sticker(
+            file: UploadFile = File(...),
+            id: Optional[str] = Form(None),
+            description: Optional[str] = Form(None),
+        ):
+            if not file or not file.filename:
+                raise HTTPException(status_code=400, detail="Sticker file is required")
+            try:
+                file_bytes = await file.read()
+            except Exception as e:
+                logger.error(f"Failed to read uploaded sticker file: {e}")
+                raise HTTPException(status_code=500, detail="Failed to read sticker file")
+            sticker_id = id.strip() if id else None
+            desc = description.strip() if description else None
+            if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
+                try:
+                    result = await self.lifecycle.sticker_manager.add_sticker(
+                        file_bytes=file_bytes,
+                        original_filename=file.filename,
+                        sticker_id=sticker_id,
+                        desc=desc,
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                except Exception as e:
+                    logger.error(f"Error adding sticker: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to add sticker")
+                return StickerItem(id=result["id"], desc=result["desc"], path=result["path"])
+            sticker_config_path = get_data_path() / "config" / "sticker.json"
+            try:
+                if sticker_config_path.exists():
+                    with open(sticker_config_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    data = json.loads(content) if content.strip() else {}
+                else:
+                    data = {}
+            except Exception as e:
+                logger.error(f"Failed to load stickers from {sticker_config_path}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to load stickers")
+            if not isinstance(data, dict):
+                data = {}
+            sid = None
+            if sticker_id:
+                if sticker_id in data:
+                    raise HTTPException(status_code=400, detail="Sticker id already exists")
+                sid = sticker_id
+            else:
+                numeric_ids = []
+                for key in data.keys():
+                    if isinstance(key, str) and key.isdigit():
+                        try:
+                            numeric_ids.append(int(key))
+                        except Exception:
+                            continue
+                next_id = max(numeric_ids) + 1 if numeric_ids else 1
+                sid = str(next_id)
+            sticker_folder = get_data_path() / "sticker"
+            try:
+                sticker_folder.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                logger.error(f"Failed to create sticker folder {sticker_folder}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to prepare sticker folder")
+            from pathlib import Path as _Path
+            base_name = _Path(file.filename).name
+            try:
+                ext = _Path(base_name).suffix
+            except Exception:
+                ext = ""
+            if not ext:
+                ext = ".png"
+                base_name = f"{base_name}{ext}"
+            filename = base_name
+            file_path = sticker_folder / filename
+            try:
+                with open(file_path, "wb") as f:
+                    f.write(file_bytes)
+            except Exception as e:
+                logger.error(f"Failed to save sticker file {file_path}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to save sticker file")
+            final_desc = desc or ""
+            data[sid] = {
+                "desc": final_desc,
+                "path": filename,
+            }
+            try:
+                sticker_config_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(sticker_config_path, "w", encoding="utf-8") as f:
+                    f.write(json.dumps(data, indent=4, ensure_ascii=False))
+            except Exception as e:
+                logger.error(f"Failed to save stickers to {sticker_config_path}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to save stickers")
+            return StickerItem(id=sid, desc=final_desc, path=filename)
+
+        @self.app.get(
+            "/api/stickers/{sticker_id}",
+            response_model=StickerItem,
+            tags=["stickers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def get_sticker(sticker_id: str):
+            sid = str(sticker_id)
+            data = None
+            sticker = None
+            path = ""
+            desc = ""
+            if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
+                sticker = self.lifecycle.sticker_manager.sticker_dict.get(sid)
+                if not isinstance(sticker, dict):
+                    raise HTTPException(status_code=404, detail="Sticker not found")
+                path = sticker.get("path") or ""
+                desc = sticker.get("desc") or ""
+            else:
+                sticker_config_path = get_data_path() / "config" / "sticker.json"
+                if not sticker_config_path.exists():
+                    raise HTTPException(status_code=404, detail="Sticker not found")
+                try:
+                    with open(sticker_config_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    data = json.loads(content) if content.strip() else {}
+                except Exception as e:
+                    logger.error(f"Failed to load stickers from {sticker_config_path}: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to load stickers")
+                sticker = data.get(sid)
+                if not isinstance(sticker, dict):
+                    raise HTTPException(status_code=404, detail="Sticker not found")
+                path = sticker.get("path") or ""
+                desc = sticker.get("desc") or ""
+            if not path:
+                raise HTTPException(status_code=404, detail="Sticker not found")
+            file_path = get_data_path() / "sticker" / path
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail="Sticker not found")
+            return StickerItem(id=sid, desc=str(desc), path=str(path))
+
+        @self.app.put(
+            "/api/stickers/{sticker_id}",
+            response_model=StickerItem,
+            tags=["stickers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def update_sticker(sticker_id: str, payload: StickerUpdateRequest):
+            desc = payload.desc or ""
+            if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
+                try:
+                    result = self.lifecycle.sticker_manager.update_sticker_desc(sticker_id, desc)
+                except KeyError:
+                    raise HTTPException(status_code=404, detail="Sticker not found")
+                except Exception as e:
+                    logger.error(f"Error updating sticker {sticker_id}: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to update sticker")
+                return StickerItem(id=result["id"], desc=result["desc"], path=result["path"])
+            sticker_config_path = get_data_path() / "config" / "sticker.json"
+            if not sticker_config_path.exists():
+                raise HTTPException(status_code=404, detail="Sticker not found")
+            try:
+                with open(sticker_config_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                data = json.loads(content) if content.strip() else {}
+            except Exception as e:
+                logger.error(f"Failed to load stickers from {sticker_config_path}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to load stickers")
+            sticker = data.get(str(sticker_id))
+            if not isinstance(sticker, dict):
+                raise HTTPException(status_code=404, detail="Sticker not found")
+            sticker["desc"] = desc
+            try:
+                with open(sticker_config_path, "w", encoding="utf-8") as f:
+                    f.write(json.dumps(data, indent=4, ensure_ascii=False))
+            except Exception as e:
+                logger.error(f"Failed to save stickers to {sticker_config_path}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to save stickers")
+            path = sticker.get("path") or ""
+            return StickerItem(id=str(sticker_id), desc=desc, path=path)
+
+        @self.app.delete(
+            "/api/stickers/{sticker_id}",
+            status_code=status.HTTP_204_NO_CONTENT,
+            tags=["stickers"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def delete_sticker(sticker_id: str, delete_file: bool = False):
+            if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
+                try:
+                    self.lifecycle.sticker_manager.delete_sticker(sticker_id, delete_file=delete_file)
+                except KeyError:
+                    raise HTTPException(status_code=404, detail="Sticker not found")
+                except Exception as e:
+                    logger.error(f"Error deleting sticker {sticker_id}: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to delete sticker")
+                return None
+            sticker_config_path = get_data_path() / "config" / "sticker.json"
+            if not sticker_config_path.exists():
+                raise HTTPException(status_code=404, detail="Sticker not found")
+            try:
+                with open(sticker_config_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                data = json.loads(content) if content.strip() else {}
+            except Exception as e:
+                logger.error(f"Failed to load stickers from {sticker_config_path}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to load stickers")
+            sticker = data.pop(str(sticker_id), None)
+            if not isinstance(sticker, dict):
+                raise HTTPException(status_code=404, detail="Sticker not found")
+            path = sticker.get("path")
+            if path:
+                file_path = get_data_path() / "sticker" / path
+                if delete_file and file_path.exists():
+                    try:
+                        file_path.unlink()
+                    except Exception as e:
+                        logger.error(f"Error deleting sticker file {file_path}: {e}")
+            try:
+                with open(sticker_config_path, "w", encoding="utf-8") as f:
+                    f.write(json.dumps(data, indent=4, ensure_ascii=False))
+            except Exception as e:
+                logger.error(f"Failed to save stickers to {sticker_config_path}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to save stickers")
+            return None
 
         # Session Management Endpoints
         @self.app.get(

@@ -385,7 +385,7 @@
                 <div id="page-sticker" class="page-content hidden">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-lg font-semibold text-gray-800" data-i18n="sticker.title">Stickers</h3>
-                        <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="sticker.add">
+                        <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="sticker.add" onclick="openAddStickerModal()">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                             </svg>
@@ -856,6 +856,43 @@
         </div>
     </div>
     
+    <!-- Sticker Edit Modal -->
+    <div id="sticker-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 id="sticker-modal-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100" data-i18n="sticker.modal_title_edit">Edit Sticker</h3>
+                <button onclick="closeStickerModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="px-6 py-4 space-y-4">
+                <div id="sticker-file-group">
+                    <label for="sticker-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Image</label>
+                    <input id="sticker-file" type="file" accept="image/*" class="hidden">
+                    <div id="sticker-dropzone"></div>
+                </div>
+                <div>
+                    <label for="sticker-id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ID</label>
+                    <input id="sticker-id" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                </div>
+                <div>
+                    <label for="sticker-path" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Path</label>
+                    <input id="sticker-path" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                </div>
+                <div>
+                    <label for="sticker-desc" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                    <textarea id="sticker-desc" rows="3" class="w-full border rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-none"></textarea>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+                <button onclick="closeStickerModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-i18n="sticker.modal_cancel">Cancel</button>
+                <button onclick="saveSticker()" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" data-i18n="sticker.modal_save">Save</button>
+            </div>
+        </div>
+    </div>
+    
     <!-- Delete Confirmation Modal -->
     <div id="delete-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
@@ -881,6 +918,7 @@
     
     <!-- Scripts -->
     <script src="/static/js/i18n.js"></script>
+    <script src="/static/js/image-dropzone.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

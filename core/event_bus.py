@@ -69,6 +69,11 @@ class EventBus:
 
         self.stats.set_stats("event_bus", self.event_bus_stats)
 
+        self.total_messages_stats = {
+            "total_messages": 0,
+        }
+        self.stats.set_stats("messages", self.total_messages_stats)
+
         self._running_event = asyncio.Event()
         # self._running_tasks: List[asyncio.Task] = []
 
@@ -128,6 +133,9 @@ class EventBus:
                     continue
 
                 if event:
+                    if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
+                        self.total_messages_stats["total_messages"] += 1
+                        self.stats.set_stats("messages", self.total_messages_stats)
                     await self._process_event(event)
                     self.event_bus_stats["processed"] += 1
                     self.stats.set_stats("event_bus", self.event_bus_stats)
@@ -155,6 +163,9 @@ class EventBus:
 
         while self._running_event.is_set():
             event: Union[KiraMessageEvent, KiraCommentEvent] = await self.event_queue.get()
+            if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
+                self.total_messages_stats["total_messages"] += 1
+                self.stats.set_stats("messages", self.total_messages_stats)
             asyncio.create_task(self._dispatch_event(event))
 
     async def stop(self):

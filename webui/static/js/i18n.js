@@ -50,7 +50,7 @@ const resources = {
                 }
             },
             overview: {
-                runtime_duration: "Runtime Duration",
+                runtime_duration: "Uptime",
                 total_messages: "Total Messages",
                 adapter_count: "Adapter Count",
                 memory_usage: "Memory Usage",
@@ -101,7 +101,13 @@ const resources = {
                 platform: "Platform",
                 status: "Status",
                 actions: "Actions",
-                platform_placeholder: "Select adapter platform..."
+                platform_placeholder: "Select adapter platform...",
+                modal_title: "Adapter",
+                modal_name_label: "Adapter Name",
+                modal_platform_label: "Platform",
+                modal_status_label: "Status",
+                modal_cancel: "Cancel",
+                modal_save: "Save"
             },
             persona: {
                 title: "Personas",
@@ -139,7 +145,13 @@ const resources = {
                 name: "Name",
                 category: "Category",
                 status: "Status",
-                actions: "Actions"
+                actions: "Actions",
+                edit: "Edit",
+                delete: "Delete",
+                modal_title_add: "Add Sticker",
+                modal_title_edit: "Edit Sticker",
+                modal_cancel: "Cancel",
+                modal_save: "Save"
             },
             configuration: {
                 title: "Configuration",
@@ -165,7 +177,43 @@ const resources = {
                 api_key: "API Key",
                 system_settings: "System Settings",
                 auto_refresh: "Auto Refresh",
-                debug_mode: "Debug Mode"
+                debug_mode: "Debug Mode",
+                tab_message: "Message",
+                tab_model: "Model",
+                message: {
+                    bot_section: "Bot Settings",
+                    max_memory_length: "Max Memory Length",
+                    max_message_interval: "Max Message Interval",
+                    max_buffer_messages: "Max Buffer Messages",
+                    min_message_delay: "Min Message Delay",
+                    max_message_delay: "Max Message Delay",
+                    agent_section: "Agent Settings",
+                    max_tool_loop: "Max Tool Loop",
+                    selfie_section: "Selfie",
+                    selfie_path: "Selfie Path"
+                },
+                model: {
+                    section_title: "Default Models",
+                    section_desc: "Select provider and model for each default type.",
+                    default_llm: "Default LLM",
+                    default_llm_desc: "Main chat model.",
+                    default_fast_llm: "Default Fast LLM",
+                    default_fast_llm_desc: "Fast reply model.",
+                    default_vlm: "Default VLM",
+                    default_vlm_desc: "Vision-language model.",
+                    default_tts: "Default TTS",
+                    default_tts_desc: "Text to speech.",
+                    default_stt: "Default STT",
+                    default_stt_desc: "Speech to text.",
+                    default_image: "Default Image",
+                    default_image_desc: "Image generation.",
+                    default_embedding: "Default Embedding",
+                    default_embedding_desc: "Embedding model.",
+                    default_rerank: "Default Rerank",
+                    default_rerank_desc: "Rerank model.",
+                    default_video: "Default Video",
+                    default_video_desc: "Video generation."
+                }
             },
             sessions: {
                 title: "Session Management",
@@ -215,6 +263,13 @@ const resources = {
                 theme_dark: "Dark",
                 save: "Save Settings",
                 saved: "Settings saved successfully"
+            },
+            dropzone: {
+                title: "Drag image here or click to select file",
+                subtitle: "Common image formats such as JPG and PNG are supported",
+                selected_prefix: "Selected file: ",
+                selected: "File selected",
+                selected_hint: "Click or drag to select another image"
             }
         }
     },
@@ -320,7 +375,13 @@ const resources = {
                 platform: "平台",
                 status: "状态",
                 actions: "操作",
-                platform_placeholder: "选择适配器平台..."
+                platform_placeholder: "选择适配器平台...",
+                modal_title: "适配器",
+                modal_name_label: "适配器名称",
+                modal_platform_label: "平台",
+                modal_status_label: "状态",
+                modal_cancel: "取消",
+                modal_save: "保存"
             },
             persona: {
                 title: "人设",
@@ -358,7 +419,13 @@ const resources = {
                 name: "名称",
                 category: "分类",
                 status: "状态",
-                actions: "操作"
+                actions: "操作",
+                edit: "编辑",
+                delete: "删除",
+                modal_title_add: "添加表情包",
+                modal_title_edit: "编辑表情包",
+                modal_cancel: "取消",
+                modal_save: "保存"
             },
             configuration: {
                 title: "配置项",
@@ -384,7 +451,43 @@ const resources = {
                 api_key: "API 密钥",
                 system_settings: "系统设置",
                 auto_refresh: "自动刷新",
-                debug_mode: "调试模式"
+                debug_mode: "调试模式",
+                tab_message: "消息",
+                tab_model: "模型",
+                message: {
+                    bot_section: "机器人设置",
+                    max_memory_length: "最大记忆长度",
+                    max_message_interval: "最大消息间隔",
+                    max_buffer_messages: "最大缓冲消息数",
+                    min_message_delay: "最小消息延迟",
+                    max_message_delay: "最大消息延迟",
+                    agent_section: "代理设置",
+                    max_tool_loop: "最大工具循环次数",
+                    selfie_section: "形象",
+                    selfie_path: "形象参考图路径"
+                },
+                model: {
+                    section_title: "默认模型",
+                    section_desc: "为每种默认类型选择提供商和模型。",
+                    default_llm: "默认大语言模型",
+                    default_llm_desc: "主要聊天模型。",
+                    default_fast_llm: "默认快速大语言模型",
+                    default_fast_llm_desc: "用于快速回复的模型。",
+                    default_vlm: "默认多模态模型",
+                    default_vlm_desc: "视觉语言模型。",
+                    default_tts: "默认语音合成",
+                    default_tts_desc: "文本转语音模型。",
+                    default_stt: "默认语音识别",
+                    default_stt_desc: "语音转文本模型。",
+                    default_image: "默认图片模型",
+                    default_image_desc: "图片生成模型。",
+                    default_embedding: "默认向量嵌入",
+                    default_embedding_desc: "向量嵌入模型。",
+                    default_rerank: "默认重排序模型",
+                    default_rerank_desc: "用于重排序的模型。",
+                    default_video: "默认视频模型",
+                    default_video_desc: "视频生成模型。"
+                }
             },
             sessions: {
                 title: "会话管理",
@@ -434,6 +537,13 @@ const resources = {
                 theme_dark: "深色",
                 save: "保存设置",
                 saved: "设置保存成功"
+            },
+            dropzone: {
+                title: "拖拽图片到此处，或点击选择文件",
+                subtitle: "支持常见图片格式，如 JPG、PNG",
+                selected_prefix: "已选择文件：",
+                selected: "已选择文件",
+                selected_hint: "点击或拖拽可重新选择图片"
             }
         }
     }

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import uuid
 
 from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
@@ -56,6 +57,91 @@ class StickerManager:
         self.sticker_dict[str(self.sticker_index)] = {
             "desc": desc,
             "path": filename
+        }
+        self.sticker_paths.append(filename)
+        self.save_sticker_dict()
+
+    def save_sticker_dict(self):
+        try:
+            os.makedirs(os.path.dirname(self.sticker_path), exist_ok=True)
+            with open(self.sticker_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(self.sticker_dict, indent=4, ensure_ascii=False))
+        except Exception as e:
+            logger.error(f"Error saving sticker dict to {self.sticker_path}: {e}")
+
+    def update_sticker_desc(self, sticker_id: str, desc: str):
+        sid = str(sticker_id)
+        sticker = self.sticker_dict.get(sid)
+        if not sticker:
+            raise KeyError(sid)
+        sticker["desc"] = desc
+        self.save_sticker_dict()
+        return {
+            "id": sid,
+            "desc": sticker.get("desc") or "",
+            "path": sticker.get("path") or "",
+        }
+
+    def delete_sticker(self, sticker_id: str, delete_file: bool = False):
+        sid = str(sticker_id)
+        sticker = self.sticker_dict.pop(sid, None)
+        if not sticker:
+            raise KeyError(sid)
+        path = sticker.get("path")
+        if path:
+            self.sticker_paths = [p for p in self.sticker_paths if p != path]
+            file_path = os.path.join(self.sticker_folder, path)
+            if delete_file and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    logger.error(f"Error deleting sticker file {file_path}: {e}")
+        self.save_sticker_dict()
+
+    async def add_sticker(self, file_bytes: bytes, original_filename: str, sticker_id: str | None = None, desc: str | None = None):
+        if not original_filename:
+            raise ValueError("File name is required")
+        base_name = os.path.basename(original_filename)
+        try:
+            _, ext = os.path.splitext(base_name)
+        except Exception:
+            ext = ""
+        if not ext:
+            ext = ".png"
+            base_name = base_name + ext
+        filename = base_name
+        os.makedirs(self.sticker_folder, exist_ok=True)
+        file_path = os.path.join(self.sticker_folder, filename)
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
+        final_desc = desc or ""
+        if not final_desc:
+            sticker_desc = await self.get_sticker_description(filename)
+            final_desc = sticker_desc or ""
+        if sticker_id and str(sticker_id).strip():
+            sid = str(sticker_id).strip()
+            if sid in self.sticker_dict:
+                raise ValueError(f"Sticker id {sid} already exists")
+            if sid.isdigit():
+                try:
+                    numeric_id = int(sid)
+                    if numeric_id > self.sticker_index:
+                        self.sticker_index = numeric_id
+                except Exception:
+                    pass
+        else:
+            self.sticker_index += 1
+            sid = str(self.sticker_index)
+        self.sticker_dict[sid] = {
+            "desc": final_desc,
+            "path": filename,
+        }
+        self.sticker_paths.append(filename)
+        self.save_sticker_dict()
+        return {
+            "id": sid,
+            "desc": final_desc,
+            "path": filename,
         }
 
     async def scan_and_register_sticker(self):
