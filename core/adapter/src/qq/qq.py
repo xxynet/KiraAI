@@ -171,12 +171,11 @@ class QQAdapter(IMAdapter):
         return message_content
 
     async def _on_notice_message(self, msg: Dict):
-        # print(msg)
         if msg.get("notice_type") == "notify" and msg.get("sub_type") == "poke" and msg.get("self_id") == msg.get("target_id"):
             notice_str = f"[Poke 用户{msg.get('user_id')}{msg['raw_info'][2]['txt']}你{msg['raw_info'][4]['txt']}]"
             message_list = [MessageType.Notice(notice_str)]
             if "group_id" in msg:
-                if msg["group_id"] in self.group_list:
+                if str(msg["group_id"]) in self.group_list:
                     group_info = await self.bot.get_group_info(msg.get("group_id"))
                     group_name = group_info.get("data").get("group_name")
                     message_obj = KiraMessageEvent(
@@ -194,7 +193,7 @@ class QQAdapter(IMAdapter):
                     )
                     self.publish(message_obj)
             else:
-                if msg["user_id"] in self.user_list:
+                if str(msg["user_id"]) in self.user_list:
                     message_obj = KiraMessageEvent(self.info.platform, self.info.name, self.message_types, str(msg['user_id']), "user_name 未获取",
                                                     "None", str(msg["self_id"]), message_list, int(time.time()))
                     self.publish(message_obj)
@@ -208,7 +207,7 @@ class QQAdapter(IMAdapter):
                 message_list = [MessageType.Notice(notice_str)]
                 group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
-                if msg["group_id"] in self.group_list:
+                if str(msg["group_id"]) in self.group_list:
                     message_obj = KiraMessageEvent(
                         platform=self.info.platform,
                         adapter_name=self.info.name,
@@ -229,7 +228,7 @@ class QQAdapter(IMAdapter):
                 message_list = [MessageType.Notice(notice_str)]
                 group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
-                if msg["group_id"] in self.group_list:
+                if str(msg["group_id"]) in self.group_list:
                     message_obj = KiraMessageEvent(
                         platform=self.info.platform,
                         adapter_name=self.info.name,
@@ -256,7 +255,7 @@ class QQAdapter(IMAdapter):
                 message_list = [MessageType.Notice(notice_str)]
                 group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
-                if msg["group_id"] in self.group_list:
+                if str(msg["group_id"]) in self.group_list:
                     message_obj = KiraMessageEvent(
                         platform=self.info.platform,
                         adapter_name=self.info.name,
