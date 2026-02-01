@@ -70,7 +70,7 @@ class KiraLifecycle:
 
         # ====== init LLMClient ======
         self.llm_api = LLMClient(self.kira_config, self.provider_manager)
-        register_all_tools(self.llm_api)
+        await register_all_tools(self.llm_api)
 
         # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(self.kira_config, loop, event_queue, self.llm_api)
