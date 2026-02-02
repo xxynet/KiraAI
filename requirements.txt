@@ -11,4 +11,4 @@ fastapi>=0.124.0
 uvicorn>=0.35.0
 pydantic>=2.11.7
 psutil>=5.9.0
-fastmcp==2.11.1
+fastmcp==2.14.4
