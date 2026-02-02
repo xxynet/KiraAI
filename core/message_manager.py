@@ -208,7 +208,7 @@ class MessageProcessor:
                         response_with_ids = self._add_message_ids(actual_xml, message_ids)
                         logger.info(f"LLM: {response_with_ids}")
                     append_msg({"role": "assistant",
-                                "content": response_with_ids if llm_resp.text_response else None})
+                                "content": response_with_ids if llm_resp.text_response else ""})
                     break
                 else:
                     if llm_resp.text_response:
@@ -224,7 +224,7 @@ class MessageProcessor:
                     extend_msg(llm_resp.tool_results)
             else:
                 append_msg({"role": "assistant",
-                            "content": None})
+                            "content": ""})
                 break
 
         self.memory_manager.update_memory(sid, new_memory_chunk)
