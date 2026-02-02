@@ -86,12 +86,15 @@ class TelegramAdapter(IMAdapter):
         self.app.add_handler(MessageHandler(filters.ALL, self._on_message))
 
         # Initialize and start the application asynchronously
-        await self.app.initialize()
-        await self.app.start()
-        # Start polling for updates asynchronously
-        await self.app.updater.start_polling()
+        try:
+            await self.app.initialize()
+            await self.app.start()
+            # Start polling for updates asynchronously
+            await self.app.updater.start_polling(error_callback=lambda e: logger.error(f"[{self.info.name}] Error occurred : {e}"))
 
-        logger.info(f"start listening incoming messages for {self.config.get('bot_pid', 'your bot account')}")
+            logger.info(f"start listening incoming messages for {self.config.get('bot_pid', 'your bot account')}")
+        except Exception as e:
+            logger.info(f"Failed to start listening for {self.config.get('bot_pid', 'your bot account')}: {e}")
 
     async def stop(self):
         """Stop the Telegram adapter asynchronously"""
