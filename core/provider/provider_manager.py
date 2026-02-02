@@ -64,7 +64,7 @@ class ProviderManager:
         default_model = self.kira_config.get_config(f"models.{model_key}")
         if default_model and ":" in default_model:
             model_provider = default_model.split(":")[0]
-            model_id = "".join(default_model.split(":")[1:])
+            model_id = ":".join(default_model.split(":")[1:])
 
             model_type_mapping = {
                 "default_llm": "llm",
