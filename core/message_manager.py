@@ -219,7 +219,7 @@ class MessageProcessor:
                             logger.info(f"LLM: {response_with_ids}")
                     await self.llm_api.execute_tool(llm_resp)
                     append_msg({"role": "assistant",
-                                "content": response_with_ids if llm_resp.text_response else None,
+                                "content": response_with_ids if llm_resp.text_response else "",
                                 "tool_calls": llm_resp.tool_calls})
                     extend_msg(llm_resp.tool_results)
             else:
