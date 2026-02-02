@@ -56,8 +56,11 @@ class LLMResponse:
     """reasoning content for reasoning models"""
     reasoning_content: Optional[str] = None
 
+    """Tool call requests in OpenAI format"""
+    tool_calls: list[dict] = field(default_factory=list)
+
     """Tool results list in OpenAI format, including role assistant & tool"""
-    tool_results: list = field(default_factory=list)
+    tool_results: list[dict] = field(default_factory=list)
 
     input_tokens: Optional[int] = None
 

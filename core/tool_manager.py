@@ -65,7 +65,10 @@ async def _register_mcp_tools(llm_api) -> None:
     client = Client(servers)
 
     async with client:
-        tools_response = await client.list_tools()
+        try:
+            tools_response = await client.list_tools()
+        except Exception as e:
+            tool_logger.error(f"Failed to list MCP tools: {e}")
         if isinstance(tools_response, dict):
             tools = tools_response.get("tools", [])
         elif isinstance(tools_response, list):

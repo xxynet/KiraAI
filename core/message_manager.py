@@ -181,8 +181,13 @@ class MessageProcessor:
         new_memory_chunk = [{"role": "user", "content": formatted_messages_str}]
         messages.extend(session_memory)
 
-        tool_messages = []
-        llm_text = ""
+        def append_msg(msg: dict):
+            messages.append(msg)
+            new_memory_chunk.append(msg)
+
+        def extend_msg(msg: list):
+            messages.extend(msg)
+            new_memory_chunk.extend(msg)
 
         # Get max tool loop config, defaults to 2 if not a valid integer
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
@@ -191,33 +196,38 @@ class MessageProcessor:
         except ValueError:
             max_tool_loop = 2
 
-        for _ in range(max_tool_loop+1):
+        max_agent_steps = max_tool_loop+1
+
+        for _ in range(max_agent_steps):
             llm_resp = await self.llm_api.agent_run(messages)
             if llm_resp:
-                if not llm_resp.tool_results:
-                    llm_text = llm_resp.text_response.strip()
+                if not llm_resp.tool_calls:
+                    session_lock = self.get_session_lock(sid)
+                    async with session_lock:
+                        message_ids, actual_xml = await self.send_xml_messages(sid, llm_resp.text_response.strip())
+                        response_with_ids = self._add_message_ids(actual_xml, message_ids)
+                        logger.info(f"LLM: {response_with_ids}")
+                    append_msg({"role": "assistant",
+                                "content": response_with_ids if llm_resp.text_response else None})
                     break
                 else:
                     if llm_resp.text_response:
-                        # Implement sending messages and add to new chunk
-                        pass
-                    tool_messages.extend(llm_resp.tool_results)
-                    messages.extend(llm_resp.tool_results)
+                        session_lock = self.get_session_lock(sid)
+                        async with session_lock:
+                            message_ids, actual_xml = await self.send_xml_messages(sid, llm_resp.text_response.strip())
+                            response_with_ids = self._add_message_ids(actual_xml, message_ids)
+                            logger.info(f"LLM: {response_with_ids}")
+                    await self.llm_api.execute_tool(llm_resp)
+                    append_msg({"role": "assistant",
+                                "content": response_with_ids if llm_resp.text_response else None,
+                                "tool_calls": llm_resp.tool_calls})
+                    extend_msg(llm_resp.tool_results)
+            else:
+                append_msg({"role": "assistant",
+                            "content": None})
+                break
 
-        # 按会话加锁，防止同会话并发
-        session_lock = self.get_session_lock(sid)
-
-        async with session_lock:
-            message_ids, actual_xml = await self.send_xml_messages(sid, llm_text)
-            response_with_ids = self._add_message_ids(actual_xml, message_ids)
-            logger.info(f"LLM: {response_with_ids}")
-
-            # Update memory
-            if tool_messages:
-                new_memory_chunk.extend(tool_messages)
-
-            new_memory_chunk.append({"role": "assistant", "content": response_with_ids})
-            self.memory_manager.update_memory(sid, new_memory_chunk)
+        self.memory_manager.update_memory(sid, new_memory_chunk)
 
     async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""

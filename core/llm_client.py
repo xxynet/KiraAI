@@ -12,6 +12,7 @@ from .provider import LLMRequest, LLMResponse
 from .provider import ProviderManager, ImageResult
 
 logger = get_logger("llm", "purple")
+tool_logger = get_logger("tool_use", "orange")
 
 
 class LLMClient:
@@ -67,6 +68,40 @@ class LLMClient:
             llm_provider = self.provider_mgr.get_provider(llm_model.provider_id)
             response = await llm_provider.chat(llm_model, request)
             return response
+
+    async def execute_tool(self, resp: LLMResponse):
+        for tool_call in resp.tool_calls:
+            tool_call_id = tool_call.get("id")
+            name = tool_call.get("function", {}).get("name")
+
+            raw_args = tool_call.get("function", {}).get("arguments")
+            try:
+                args = json.loads(raw_args)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse function calling arguments: {e}")
+                logger.error(f"Raw args: {raw_args}")
+                args = {}
+            tool_logger.info(f"{name} args: {args}")
+
+            # Call corresponding Python function(s)
+            if self.tools_functions and name in self.tools_functions:
+                try:
+                    result = await self.tools_functions[name](**args)
+                    tool_logger.info(f"tool_result: {result}")
+                except Exception as e:
+                    result = {"error": f"Failed to call tool '{name}': {e}"}
+                    tool_logger.error(f"Failed to call tool '{name}': {e}")
+            else:
+                result = {"error": f"Tool {name} not implemented"}
+                tool_logger.error(f"Tool {name} not implemented")
+
+            # Save tool results
+            resp.tool_results.append({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "name": name,
+                "content": str(result)
+            })
 
     async def agent_run(self, user_message) -> LLMResponse:
 
