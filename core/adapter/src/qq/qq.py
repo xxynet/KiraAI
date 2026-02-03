@@ -143,7 +143,15 @@ class QQAdapter(IMAdapter):
                 message_content.append(MessageType.Emoji(str(ele.get("data").get("id"))))
             elif ele.get("type") == "image":
                 img_url = ele.get("data", "").get("url", "")
-                message_content.append(MessageType.Image(img_url))
+
+                summary = ele.get("data", "").get("summary", "")
+                sub_type = ele.get("data", "").get("sub_type", 0)
+
+                if sub_type == 1 or summary == "[动画表情]":
+                    from core.utils.common_utils import image_to_base64
+                    message_content.append(MessageType.Sticker(sticker_bs64=image_to_base64(img_url)))
+                else:
+                    message_content.append(MessageType.Image(img_url))
             elif ele.get("type") == "video":
                 video_file_name = ele.get("data", {}).get("file", "")  # e.g. xxx.mp4
                 video_file_url = ele.get("data", {}).get("url", "")

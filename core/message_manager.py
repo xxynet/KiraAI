@@ -85,6 +85,9 @@ class MessageProcessor:
             elif isinstance(ele, MessageType.Image):
                 img_desc = await self.llm_api.desc_img(ele.url)
                 message_str += f"[Image {img_desc}]"
+            elif isinstance(ele, MessageType.Sticker):
+                sticker_desc = await self.llm_api.desc_img(ele.sticker_bs64, is_base64=True)
+                message_str += f"[Sticker {sticker_desc}]"
             elif isinstance(ele, MessageType.Reply):
                 if ele.message_content:
                     message_str += f"[Reply {ele.message_content}]"

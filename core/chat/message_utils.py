@@ -112,7 +112,7 @@ class MessageType:
             return f"[Emoji {self.emoji_id}]"
 
     class Sticker:
-        def __init__(self, sticker_id: Union[int, str], sticker_bs64: str):
+        def __init__(self, sticker_id: Union[int, str] = None, sticker_bs64: str = None):
             self.sticker_id: str = str(sticker_id)
             self.sticker_bs64: str = sticker_bs64
 
