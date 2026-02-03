@@ -38,7 +38,7 @@ class SendMessageTool(BaseTool):
 3. 只需要输出最终要发给用户的xml格式消息"""
 
             message_obj = KiraMessageEvent(
-                platform=ada.name,
+                platform=ada.info.platform,
                 adapter_name=target.split(":")[0],
                 message_types=ada.message_types,
                 user_id=target.split(":")[2] if target.split(":")[1] == "dm" else "unknown",
