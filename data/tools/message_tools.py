@@ -1,7 +1,12 @@
 import time
 
 from core.services.runtime import get_event_bus, get_adapter_by_name
-from core.chat.message_utils import KiraMessageEvent, MessageType
+from core.chat.message_utils import KiraMessageEvent
+
+from core.chat.message_elements import (
+    Notice
+)
+
 from core.utils.tool_utils import BaseTool
 
 
@@ -40,7 +45,7 @@ class SendMessageTool(BaseTool):
                 user_nickname="system",
                 message_id="system_message",
                 self_id=ada.config.get("self_id"),
-                content=[MessageType.Notice(cross_session_prompt)],
+                content=[Notice(cross_session_prompt)],
                 timestamp=int(time.time()),
                 group_id=target.split(":")[2] if target.split(":")[1] == "gm" else None,
                 group_name="unknown"
