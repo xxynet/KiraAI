@@ -7,7 +7,20 @@ from typing import Any, Dict
 
 from core.adapter.adapter_utils import IMAdapter
 from core.logging_manager import get_logger
-from core.chat import KiraMessageEvent, MessageChain, MessageType
+from core.chat import KiraMessageEvent, MessageChain
+
+from core.chat.message_elements import (
+    Text,
+    Image,
+    At,
+    Reply,
+    Emoji,
+    Sticker,
+    Record,
+    Notice,
+    Poke,
+    File
+)
 
 from .napcat_client import NapCatWebSocketClient, QQMessageChain, QQMessageType
 
@@ -34,7 +47,7 @@ class QQAdapter(IMAdapter):
     def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
         super().__init__(info, loop, event_bus, llm_api)
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
-        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie"]
+        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file"]
         self.bot: NapCatWebSocketClient = NapCatWebSocketClient()
         self.logger = get_logger(info.name, "blue")
 
@@ -86,8 +99,21 @@ class QQAdapter(IMAdapter):
         try:
             message_chain = self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
-            if isinstance(ele, MessageType.Poke):
+            if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid, group_id=group_id)
+                return None
+            elif isinstance(ele, File):
+                try:
+                    file_b64 = await ele.to_base64()
+                    file_name = ele.name
+                    if not file_name:
+                        import uuid
+                        file_name = uuid.uuid4().hex
+                    resp = await self.bot.upload_group_file(str(group_id), f"base64://{file_b64}", file_name)
+                    if resp.get("status") != "ok":
+                        self.logger.error(f"Failed to send file: {resp}")
+                except Exception as e:
+                    self.logger.error(f"Error occurred while uploading file: {e}")
                 return None
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_group_message(group_id=group_id, msg=message_chain)
@@ -107,8 +133,21 @@ class QQAdapter(IMAdapter):
         try:
             message_chain = self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
-            if isinstance(ele, MessageType.Poke):
+            if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid)
+                return None
+            elif isinstance(ele, File):
+                try:
+                    file_b64 = await ele.to_base64()
+                    file_name = ele.name
+                    if not file_name:
+                        import uuid
+                        file_name = uuid.uuid4().hex
+                    resp = await self.bot.upload_private_file(str(user_id), f"base64://{file_b64}", file_name)
+                    if resp.get("status") != "ok":
+                        self.logger.error(f"Failed to send file: {resp}")
+                except Exception as e:
+                    self.logger.error(f"Error occurred while uploading file: {e}")
                 return None
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_direct_message(user_id=user_id, msg=message_chain)
@@ -127,9 +166,9 @@ class QQAdapter(IMAdapter):
         message_content = []
         for ele in msg.get("message"):
             if ele.get("type") == "text":
-                message_content.append(MessageType.Text(ele.get("data").get("text")))
+                message_content.append(Text(ele.get("data").get("text")))
             elif ele.get("type") == "at":
-                at_obj = MessageType.At(str(ele.get("data").get("qq")))
+                at_obj = At(str(ele.get("data").get("qq")))
                 if str(ele.get("data").get("qq")) != "all":
                     at_user_info = await self.bot.get_user_info(user_id=str(ele.get("data").get("qq")))
                     at_nickname = at_user_info["data"]["nickname"]
@@ -138,9 +177,9 @@ class QQAdapter(IMAdapter):
             elif ele.get("type") == "reply":
                 reply_content = await self.bot.get_msg(ele.get("data").get("id"))
                 processed_reply = await self._process_reply_message(reply_content)
-                message_content.append(MessageType.Reply(ele.get("data").get("id"), processed_reply))
+                message_content.append(Reply(ele.get("data").get("id"), processed_reply))
             elif ele.get("type") == "face":
-                message_content.append(MessageType.Emoji(str(ele.get("data").get("id"))))
+                message_content.append(Emoji(str(ele.get("data").get("id"))))
             elif ele.get("type") == "image":
                 img_url = ele.get("data", "").get("url", "")
 
@@ -149,39 +188,39 @@ class QQAdapter(IMAdapter):
 
                 if sub_type == 1 or summary == "[动画表情]":
                     from core.utils.common_utils import image_to_base64
-                    message_content.append(MessageType.Sticker(sticker_bs64=image_to_base64(img_url)))
+                    message_content.append(Sticker(sticker_bs64=image_to_base64(img_url)))
                 else:
-                    message_content.append(MessageType.Image(img_url))
+                    message_content.append(Image(img_url))
             elif ele.get("type") == "video":
                 video_file_name = ele.get("data", {}).get("file", "")  # e.g. xxx.mp4
                 video_file_url = ele.get("data", {}).get("url", "")
                 video_file_size = ele.get("data", {}).get("file_size", "")  # Bytes, str
-                message_content.append(MessageType.Text("[Video]"))
+                message_content.append(Text("[Video]"))
             elif ele.get("type") == "json":
                 json_card_info = ele.get("data", "").get("data", "")
                 cleaned_card_info = extract_card_info(json_card_info)
-                message_content.append(MessageType.Text(f"[Json {cleaned_card_info}]"))
+                message_content.append(Text(f"[Json {cleaned_card_info}]"))
             elif ele.get("type") == "file":
                 file_name = ele.get("data").get("file")
                 file_id = ele.get("data").get("file_id")
                 file_size = ele.get("data").get("file_size")  # Bytes, str
-                message_content.append(MessageType.Text(f"[File {file_name}]"))
+                message_content.append(Text(f"[File {file_name}]"))
             elif ele.get("type") == "forward":
                 forward_message = await self.bot.get_forward_msg(msg.get("message_id"))
                 processed_forward = await self._process_forward_message(forward_message)
-                message_content.append(MessageType.Text(f"[Forward {processed_forward}]"))
+                message_content.append(Text(f"[Forward {processed_forward}]"))
             elif ele.get("type") == "record":
                 file_id = ele.get("data").get("file")
 
                 record_info = await self.bot.get_record(file_id, output_format="mp3")
                 audio_base64 = record_info.get("data").get("base64")
-                message_content.append(MessageType.Record(audio_base64))
+                message_content.append(Record(audio_base64))
         return message_content
 
     async def _on_notice_message(self, msg: Dict):
         if msg.get("notice_type") == "notify" and msg.get("sub_type") == "poke" and msg.get("self_id") == msg.get("target_id"):
             notice_str = f"[Poke 用户{msg.get('user_id')}{msg['raw_info'][2]['txt']}你{msg['raw_info'][4]['txt']}]"
-            message_list = [MessageType.Notice(notice_str)]
+            message_list = [Notice(notice_str)]
             if "group_id" in msg:
                 if str(msg["group_id"]) in self.group_list:
                     group_info = await self.bot.get_group_info(msg.get("group_id"))
@@ -212,7 +251,7 @@ class QQAdapter(IMAdapter):
             ban_group_id = msg["group_id"]
             if msg["sub_type"] == "ban":
                 notice_str = f"[System 用户{ban_operator_id}禁言了你{ban_duration}秒]"
-                message_list = [MessageType.Notice(notice_str)]
+                message_list = [Notice(notice_str)]
                 group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if str(msg["group_id"]) in self.group_list:
@@ -233,7 +272,7 @@ class QQAdapter(IMAdapter):
             elif msg["sub_type"] == "lift_ban":  # 人为解除禁言
                 # ban_duration 永远是0，invalid
                 notice_str = f"[System 你之前被禁言了，用户{ban_operator_id}解除了你的禁言]"
-                message_list = [MessageType.Notice(notice_str)]
+                message_list = [Notice(notice_str)]
                 group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if str(msg["group_id"]) in self.group_list:
@@ -260,7 +299,7 @@ class QQAdapter(IMAdapter):
             # and msg["sub_type"] == "approve"
             if "group_id" in msg:
                 notice_str = f"[System 用户{msg.get('user_id')}加入了群聊]"
-                message_list = [MessageType.Notice(notice_str)]
+                message_list = [Notice(notice_str)]
                 group_info = await self.bot.get_group_info(msg.get("group_id"))
                 group_name = group_info.get("data").get("group_name")
                 if str(msg["group_id"]) in self.group_list:
@@ -433,32 +472,34 @@ class QQAdapter(IMAdapter):
         """将通用消息格式转换为QQ消息格式"""
         message_chain_elements = []
         for ele in message.message_list:
-            if isinstance(ele, MessageType.Text):
+            if isinstance(ele, Text):
                 message_chain_elements.append(QQMessageType.Text(ele.text))
-            elif isinstance(ele, MessageType.Emoji):
+            elif isinstance(ele, Emoji):
                 if ele.emoji_id in self.emoji_dict:
                     message_chain_elements.append(QQMessageType.Emoji(int(ele.emoji_id)))
                 else:
                     self.logger.warning(f"未定义的 Emoji ID: {ele.emoji_id}")
-            elif isinstance(ele, MessageType.Sticker):
+            elif isinstance(ele, Sticker):
                 message_chain_elements.append(QQMessageType.Image(f"base64://{ele.sticker_bs64}"))
-            elif isinstance(ele, MessageType.At):
+            elif isinstance(ele, At):
                 val = ele.pid
                 message_chain_elements.append(QQMessageType.At(val))
                 message_chain_elements.append(QQMessageType.Text(" "))
-            elif isinstance(ele, MessageType.Image):
+            elif isinstance(ele, Image):
                 if ele.url:
                     message_chain_elements.append(QQMessageType.Image(ele.url))
                 elif ele.base64:
                     message_chain_elements.append(QQMessageType.Image(f"base64://{ele.base64}"))
-            elif isinstance(ele, MessageType.Reply):
+            elif isinstance(ele, Reply):
                 message_chain_elements.append(QQMessageType.Reply(ele.message_id))
-            elif isinstance(ele, MessageType.Record):
+            elif isinstance(ele, Record):
                 message_chain_elements.append(QQMessageType.Record(f"base64://{ele.bs64}"))
-            elif isinstance(ele, MessageType.Notice):
+            elif isinstance(ele, Notice):
                 # 可以实现定时主动消息等
                 pass
-            elif isinstance(ele, MessageType.Poke):
+            elif isinstance(ele, Poke):
+                message_chain_elements.append(ele)
+            elif isinstance(ele, File):
                 message_chain_elements.append(ele)
             else:
                 pass

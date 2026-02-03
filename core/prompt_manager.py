@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 from typing import Dict, Any, Union, Optional
 
@@ -7,6 +8,7 @@ from core.sticker_manager import StickerManager
 from core.persona import PersonaManager
 from core.chat.message_utils import KiraMessageEvent
 from core.config import KiraConfig
+from core.utils.path_utils import get_data_path
 
 logger = get_logger("prompt_manager", "yellow")
 
@@ -49,7 +51,8 @@ class PromptManager:
             "emoji": "<emoji>emoji_id</emoji> # 发送一个emoji（中文一般叫做表情）消息，通常和文字在同一个msg标签中，可以使用的emoji如下：{emoji_json}",
             "sticker": "<sticker>sticker_id</sticker> # 发送一个sticker（中文一般叫做表情包）消息，通常单独在一条消息里，你需要在聊天中主动自然使用这些sticker，可以使用的sticker id和描述如下：{sticker_prompt}",
             "poke": "<poke>user_id</poke> # 发送戳一戳消息（一个社交平台的小功能用于引起用户注意），只能单独一条消息，不能和其他元素出现在一条消息中。可以在别人对你戳一戳（捏一捏）时使用，也可以在日常交流中自然使用",
-            "selfie": "<selfie>prompt for image generator, use 'the character' to refer to the character in the reference image</selfie> # send an specific image, could be a selfie or any image with the character in it. DO NOT describe the appearance of the character, the reference image already has it."
+            "selfie": "<selfie>prompt for image generator, use 'the character' to refer to the character in the reference image</selfie> # send an specific image, could be a selfie or any image with the character in it. DO NOT describe the appearance of the character, the reference image already has it.",
+            "file": "<file>file_string</file> # send a file (do not put any other tags in the msg tag which the file tag is in), file_string could be a file url, absolute file path or relative file path specifically listed below: {relative_file_paths}"
         }
 
         logger.info("PromptManager initialized")
@@ -87,11 +90,18 @@ class PromptManager:
             if msg_type in self.builtin_msg_types_mapping:
                 supported_format_prompt += f"{self.builtin_msg_types_mapping[msg_type]}\n"
         return supported_format_prompt
+
+    @staticmethod
+    def _get_relative_file_paths():
+        file_dir = get_data_path() / "files"
+        os.makedirs(file_dir, exist_ok=True)
+        files = os.listdir(file_dir)
+        return files
     
     def _load_format_prompt(self, message_types: list[str], emoji_dict: Optional[dict] = None) -> str:
         """加载格式提示词"""
         if not message_types:
-            message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie"]
+            message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file"]
         message_type_prompt = self._load_supported_format_prompt(message_types)
         # 格式化小表情JSON
         emoji_json = json.dumps(emoji_dict, ensure_ascii=False)
@@ -99,7 +109,9 @@ class PromptManager:
         self.sticker_dict = self.sticker_manager.sticker_dict
         self.sticker_prompt = self._load_sticker_prompt(self.sticker_dict)
 
-        message_type_prompt = message_type_prompt.format(emoji_json=emoji_json, sticker_prompt=self.sticker_prompt)
+        message_type_prompt = message_type_prompt.format(emoji_json=emoji_json,
+                                                         sticker_prompt=self.sticker_prompt,
+                                                         relative_file_paths=str(self._get_relative_file_paths()))
         try:
             with open(self.format_path, 'r', encoding="utf-8") as f:
                 format_prompt = f.read()

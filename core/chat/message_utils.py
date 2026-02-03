@@ -1,6 +1,18 @@
 from dataclasses import dataclass, field
 from typing import Union, Optional, List
 
+from core.chat.message_elements import (
+    Text,
+    Image,
+    At,
+    Reply,
+    Emoji,
+    Sticker,
+    Record,
+    Notice,
+    Poke
+)
+
 
 @dataclass
 class KiraMessageEvent:
@@ -63,125 +75,43 @@ class BotGroupMessage(KiraMessageEvent):
         super().__post_init__()
 
 
-class MessageType:
-    class Text:
-        def __init__(self, text: str):
-            self.text: str = text
-
-        @property
-        def repr(self):
-            return self.text
-
-    class Image:
-        def __init__(self, url=None, base64=None):
-            self.url: Optional[str] = url
-            self.base64: Optional[str] = base64
-
-        @property
-        def repr(self):
-            return "[Image]"
-
-    class At:
-        def __init__(self, pid: Union[int, str], nickname: Optional[str] = None):
-            """set pid to 'all' to at all group members"""
-            self.pid: str = str(pid)
-            self.nickname: str = nickname
-
-        @property
-        def repr(self):
-            if self.nickname:
-                return f"[At {self.nickname}({self.pid})]"
-            else:
-                return f"[At {self.pid}]"
-
-    class Reply:
-        def __init__(self, message_id: Union[int, str], message_content: Optional[str] = None):
-            self.message_id: str = str(message_id)
-            self.message_content: str = message_content
-
-        @property
-        def repr(self):
-            return f"[Reply {self.message_id}]"
-
-    class Emoji:
-        def __init__(self, emoji_id: Union[int, str]):
-            self.emoji_id: str = str(emoji_id)
-
-        @property
-        def repr(self):
-            return f"[Emoji {self.emoji_id}]"
-
-    class Sticker:
-        def __init__(self, sticker_id: Union[int, str] = None, sticker_bs64: str = None):
-            self.sticker_id: str = str(sticker_id)
-            self.sticker_bs64: str = sticker_bs64
-
-        @property
-        def repr(self):
-            return f"[Sticker {self.sticker_id}]"
-
-    class Record:
-        def __init__(self, bs64: str):
-            self.bs64: str = bs64
-
-        @property
-        def repr(self):
-            return f"[Record]"
-
-    class Notice:
-        def __init__(self, text: str):
-            self.text = text
-
-        @property
-        def repr(self):
-            return f"[Notice]"
-
-    class Poke:
-        def __init__(self, pid: Union[int, str]):
-            self.pid = str(pid)
-
-        @property
-        def repr(self):
-            return f"[Poke]"
-
-
 class MessageChain:
-    def __init__(self, message_list: list[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]):
+    def __init__(self, message_list: list[Text, Image, At, Reply, Emoji, Sticker, Record, Notice]):
         self.message_list: list = message_list
 
     def text(self, text: str):
-        self.message_list.append(MessageType.Text(text))
+        self.message_list.append(Text(text))
         return self
 
     def image(self, url: str):
-        self.message_list.append(MessageType.Image(url))
+        self.message_list.append(Image(url))
         return self
 
     def at(self, pid: Union[int, str], nickname: Optional[str]):
-        self.message_list.append(MessageType.At(pid, nickname))
+        self.message_list.append(At(pid, nickname))
         return self
 
     def reply(self, message_id):
         if not self.message_list:
-            self.message_list.append(MessageType.Reply(message_id))
+            self.message_list.append(Reply(message_id))
         return self
 
     def emoji(self, emoji_id):
-        self.message_list.append(MessageType.Emoji(emoji_id))
+        self.message_list.append(Emoji(emoji_id))
         return self
 
     def sticker(self, sticker_id):
-        self.message_list.append(MessageType.Sticker(sticker_id))
+        self.message_list.append(Sticker(sticker_id))
         return self
 
     def record(self, bs64):
-        self.message_list.append(MessageType.Record(bs64))
+        self.message_list.append(Record(bs64))
         return self
 
     def notice(self, notice):
-        self.message_list.append(MessageType.Notice(notice))
+        self.message_list.append(Notice(notice))
         return self
 
     def poke(self, pid):
-        self.message_list.append(MessageType.Poke(pid))
+        self.message_list.append(Poke(pid))
         return self

@@ -295,6 +295,24 @@ class NapCatWebSocketClient:
         resp = await self.send_action("get_forward_msg", message_dict)
         return resp
 
+    async def upload_private_file(self, user_id: str, file: str, name: str):
+        message_dict = {
+            "user_id": user_id,
+            "file": file,
+            "name": name
+        }
+        resp = await self.send_action("upload_private_file", message_dict)
+        return resp
+
+    async def upload_group_file(self, group_id: str, file: str, name: str):
+        message_dict = {
+            "group_id": group_id,
+            "file": file,
+            "name": name
+        }
+        resp = await self.send_action("upload_group_file", message_dict)
+        return resp
+
     async def send_action(self, action: str, params: dict, timeout: float = 10.0) -> dict:
         """发送API请求并等待响应"""
         echo = str(uuid.uuid4())

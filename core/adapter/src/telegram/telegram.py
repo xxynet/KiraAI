@@ -10,7 +10,19 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 
 from core.logging_manager import get_logger
 from core.adapter.adapter_utils import IMAdapter
-from core.chat import KiraMessageEvent, MessageChain, MessageType
+from core.chat import KiraMessageEvent, MessageChain
+
+from core.chat.message_elements import (
+    Text,
+    Image,
+    At,
+    Reply,
+    Emoji,
+    Sticker,
+    Record,
+    Notice,
+    Poke
+)
 
 
 logger = get_logger("tg_adapter", "green")
@@ -220,11 +232,11 @@ class TelegramAdapter(IMAdapter):
         # Reply
         if tg_message.reply_to_message:
             replied_text = tg_message.reply_to_message.text or ""
-            elements.append(MessageType.Reply(str(tg_message.reply_to_message.id), replied_text))
+            elements.append(Reply(str(tg_message.reply_to_message.id), replied_text))
 
         # Text
         if tg_message.text:
-            elements.append(MessageType.Text(tg_message.text))
+            elements.append(Text(tg_message.text))
             # Parse @ mentions in group text messages
             try:
                 if getattr(tg_message, "entities", None):
@@ -232,10 +244,10 @@ class TelegramAdapter(IMAdapter):
                         if ent.type == "mention":
                             # Handle @username mentions
                             username = tg_message.text[ent.offset: ent.offset + ent.length]
-                            elements.append(MessageType.At(username.lstrip("@")))
+                            elements.append(At(username.lstrip("@")))
                         elif ent.type == "text_mention" and getattr(ent, "user", None):
                             # Direct user mention without username
-                            elements.append(MessageType.At(str(ent.user.id), ent.user.full_name))
+                            elements.append(At(str(ent.user.id), ent.user.full_name))
             except Exception:
                 pass
 
@@ -248,11 +260,11 @@ class TelegramAdapter(IMAdapter):
                 # Build direct download URL
 
                 image_url = tg_file.file_path
-                elements.append(MessageType.Image(image_url))
+                elements.append(Image(image_url))
             except Exception:
                 # Fallback to placeholder text to ensure non-blocking
 
-                elements.append(MessageType.Text("[Image]"))
+                elements.append(Text("[Image]"))
 
         # Voice/Audio
         if tg_message.voice:
@@ -262,7 +274,7 @@ class TelegramAdapter(IMAdapter):
 
             voice_content = requests.get(voice_url).content
             base64_data = base64.b64encode(voice_content)
-            elements.append(MessageType.Record(base64_data.decode('utf-8')))
+            elements.append(Record(base64_data.decode('utf-8')))
 
         elif tg_message.audio:
             audio_id = tg_message.audio.file_id
@@ -271,22 +283,22 @@ class TelegramAdapter(IMAdapter):
 
             audio_content = requests.get(audio_url).content
             base64_data = base64.b64encode(audio_content)
-            elements.append(MessageType.Record(base64_data.decode('utf-8')))
+            elements.append(Record(base64_data.decode('utf-8')))
 
         # Sticker
         if tg_message.sticker:
-            elements.append(MessageType.Text(str(tg_message.sticker.emoji or 'sticker')))
+            elements.append(Text(str(tg_message.sticker.emoji or 'sticker')))
 
-        return elements or [MessageType.Text("[Unsupported message]")]
+        return elements or [Text("[Unsupported message]")]
 
     # ===== Send messages (called by core) =====
     async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain):
         async def _send():
             message_id = None
             if len(send_message_obj.message_list) >= 2:
-                if isinstance(send_message_obj.message_list[0], MessageType.Reply):
+                if isinstance(send_message_obj.message_list[0], Reply):
                     # Only effective when followed by text, send as reply with text
-                    if isinstance(send_message_obj.message_list[1], MessageType.Text):
+                    if isinstance(send_message_obj.message_list[1], Text):
                         sent = await self.app.bot.send_message(chat_id=int(group_id), text=send_message_obj.message_list[1].text, reply_to_message_id=int(send_message_obj.message_list[0].message_id))
                         message_id = str(sent.message_id)
                 send_message_obj.message_list = send_message_obj.message_list[2:]
@@ -294,17 +306,16 @@ class TelegramAdapter(IMAdapter):
             idx = 0
             while idx < len(send_message_obj.message_list):
                 ele = send_message_obj.message_list[idx]
-                if isinstance(ele, MessageType.Text) or isinstance(ele, MessageType.At):
+                if isinstance(ele, Text) or isinstance(ele, At):
                     html_text = ""
                     # Accumulate contiguous At/Text messages
                     while idx < len(send_message_obj.message_list) and (
-                        isinstance(send_message_obj.message_list[idx], MessageType.Text) or isinstance(send_message_obj.message_list[idx], MessageType.At)
+                            isinstance(send_message_obj.message_list[idx], Text) or isinstance(send_message_obj.message_list[idx], At)
                     ):
                         part = send_message_obj.message_list[idx]
-                        if isinstance(part, MessageType.Text):
+                        if isinstance(part, Text):
                             html_text += part.text
                         else:
-                            # MessageType.At
                             if part.pid.lower() == "all":
                                 html_text += "@all"
                             else:
@@ -314,21 +325,21 @@ class TelegramAdapter(IMAdapter):
                     sent = await self.app.bot.send_message(chat_id=int(group_id), text=html_text, parse_mode="HTML")
                     message_id = str(sent.message_id)
                     continue
-                elif isinstance(ele, MessageType.Image):
+                elif isinstance(ele, Image):
                     if ele.url:
                         sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=ele.url)
                         message_id = str(sent.message_id)
                     elif ele.base64:
                         sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=base64.b64decode(ele.base64))
                         message_id = str(sent.message_id)
-                elif isinstance(ele, MessageType.Emoji):
+                elif isinstance(ele, Emoji):
                     emoji_content = self.emoji_dict.get(ele.emoji_id)
                     sent = await self.app.bot.send_message(chat_id=int(group_id), text=emoji_content)
                     message_id = str(sent.message_id)
-                elif isinstance(ele, MessageType.Record):
+                elif isinstance(ele, Record):
                     sent = await self.app.bot.send_voice(chat_id=int(group_id), voice=base64.b64decode(ele.bs64))
                     message_id = str(sent.message_id)
-                elif isinstance(ele, MessageType.Sticker):
+                elif isinstance(ele, Sticker):
                     sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=base64.b64decode(ele.sticker_bs64))
                     message_id = str(sent.message_id)
                 else:
@@ -349,9 +360,9 @@ class TelegramAdapter(IMAdapter):
         async def _send():
             message_id = None
             if len(send_message_obj.message_list) >= 2:
-                if isinstance(send_message_obj.message_list[0], MessageType.Reply):
+                if isinstance(send_message_obj.message_list[0], Reply):
                     # Only effective when followed by text, send as reply with text
-                    if isinstance(send_message_obj.message_list[1], MessageType.Text):
+                    if isinstance(send_message_obj.message_list[1], Text):
                         sent = await self.app.bot.send_message(chat_id=int(user_id), text=send_message_obj.message_list[1].text, reply_to_message_id=int(send_message_obj.message_list[0].message_id))
                         message_id = str(sent.message_id)
                 send_message_obj.message_list = send_message_obj.message_list[2:]
@@ -359,13 +370,13 @@ class TelegramAdapter(IMAdapter):
             idx = 0
             while idx < len(send_message_obj.message_list):
                 ele = send_message_obj.message_list[idx]
-                if isinstance(ele, MessageType.Text) or isinstance(ele, MessageType.At):
+                if isinstance(ele, Text) or isinstance(ele, At):
                     html_text = ""
                     while idx < len(send_message_obj.message_list) and (
-                        isinstance(send_message_obj.message_list[idx], MessageType.Text) or isinstance(send_message_obj.message_list[idx], MessageType.At)
+                            isinstance(send_message_obj.message_list[idx], Text) or isinstance(send_message_obj.message_list[idx], At)
                     ):
                         part = send_message_obj.message_list[idx]
-                        if isinstance(part, MessageType.Text):
+                        if isinstance(part, Text):
                             html_text += part.text
                         else:
                             if part.pid.lower() == "all":
@@ -377,21 +388,21 @@ class TelegramAdapter(IMAdapter):
                     sent = await self.app.bot.send_message(chat_id=int(user_id), text=html_text, parse_mode="HTML")
                     message_id = str(sent.message_id)
                     continue
-                elif isinstance(ele, MessageType.Image):
+                elif isinstance(ele, Image):
                     if ele.url:
                         sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=ele.url)
                         message_id = str(sent.message_id)
                     elif ele.base64:
                         sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=base64.b64decode(ele.base64))
                         message_id = str(sent.message_id)
-                elif isinstance(ele, MessageType.Emoji):
+                elif isinstance(ele, Emoji):
                     emoji_content = self.emoji_dict.get(ele.emoji_id)
                     sent = await self.app.bot.send_message(chat_id=int(user_id), text=emoji_content)
                     message_id = str(sent.message_id)
-                elif isinstance(ele, MessageType.Record):
+                elif isinstance(ele, Record):
                     sent = await self.app.bot.send_voice(chat_id=int(user_id), voice=base64.b64decode(ele.bs64))
                     message_id = str(sent.message_id)
-                elif isinstance(ele, MessageType.Sticker):
+                elif isinstance(ele, Sticker):
                     sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=base64.b64decode(ele.sticker_bs64))
                     message_id = str(sent.message_id)
                 else:

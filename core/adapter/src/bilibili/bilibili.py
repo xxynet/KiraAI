@@ -8,7 +8,19 @@ from bilibili_api import comment, Credential, homepage, search
 from bilibili_api.utils.aid_bvid_transformer import bvid2aid
 
 from core.adapter.adapter_utils import SocialMediaAdapter
-from core.chat import KiraCommentEvent, MessageType
+from core.chat import KiraCommentEvent
+
+from core.chat.message_elements import (
+    Text,
+    Image,
+    At,
+    Reply,
+    Emoji,
+    Sticker,
+    Record,
+    Notice,
+    Poke
+)
 
 
 class BiliBiliAdapter(SocialMediaAdapter):
@@ -189,7 +201,7 @@ class BiliBiliAdapter(SocialMediaAdapter):
                     commenter_nickname=commenter,
                     cmt_id=cmt_id,
                     self_id=self.bot_uid,
-                    cmt_content=[MessageType.Text(cmt_content)],
+                    cmt_content=[Text(cmt_content)],
                     timestamp=int(time.time())
                 )
                 await self.event_bus.put(cmt_obj)
@@ -209,9 +221,9 @@ class BiliBiliAdapter(SocialMediaAdapter):
                             commenter_id=sub_commenter_uid,
                             commenter_nickname=sub_commenter,
                             cmt_id=cmt_id,
-                            cmt_content=[MessageType.Text(cmt_content)],
+                            cmt_content=[Text(cmt_content)],
                             sub_cmt_id=sub_cmt_id,
-                            sub_cmt_content=[MessageType.Text(sub_cmt_content)],
+                            sub_cmt_content=[Text(sub_cmt_content)],
                             self_id=self.bot_uid,
                             timestamp=int(time.time())
                         )

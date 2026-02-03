@@ -1,4 +1,3 @@
 from .session import Session
-from .message_utils import (KiraMessageEvent, KiraCommentEvent,
-                            MessageType, MessageChain)
-__all__ = ["Session", "KiraMessageEvent", "KiraCommentEvent", "MessageType", "MessageChain"]
+from .message_utils import (KiraMessageEvent, KiraCommentEvent, MessageChain)
+__all__ = ["Session", "KiraMessageEvent", "KiraCommentEvent", "MessageChain"]

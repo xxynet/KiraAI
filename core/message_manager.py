@@ -2,6 +2,7 @@ import asyncio
 from asyncio import Lock
 import xml.etree.ElementTree as ET
 from typing import Union, Any, List
+from pathlib import Path
 from asyncio import Semaphore
 import random
 import os
@@ -10,7 +11,21 @@ from core.logging_manager import get_logger
 from core.services.runtime import get_adapter_by_name
 from core.utils.common_utils import image_to_base64
 from core.utils.path_utils import get_data_path
-from core.chat.message_utils import KiraMessageEvent, KiraCommentEvent, MessageChain, MessageType
+from core.chat.message_utils import KiraMessageEvent, KiraCommentEvent, MessageChain
+
+from core.chat.message_elements import (
+    Text,
+    Image,
+    At,
+    Reply,
+    Emoji,
+    Sticker,
+    Record,
+    Notice,
+    Poke,
+    File
+)
+
 from core.llm_client import LLMClient
 from .memory_manager import MemoryManager
 from .prompt_manager import PromptManager
@@ -69,35 +84,38 @@ class MessageProcessor:
             session_list_prompt += f"{session_id}\n"
         return session_list_prompt
 
-    async def message_format_to_text(self, message_list: list[MessageType.Text, MessageType.Image, MessageType.At, MessageType.Reply, MessageType.Emoji, MessageType.Sticker, MessageType.Record, MessageType.Notice]):
+    async def message_format_to_text(self, message_list: list[Text, Image, At, Reply, Emoji, Sticker, Record, Notice]):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
         for ele in message_list:
-            if isinstance(ele, MessageType.Text):
+            if isinstance(ele, Text):
                 message_str += ele.text
-            elif isinstance(ele, MessageType.Emoji):
+            elif isinstance(ele, Emoji):
                 message_str += f"[Emoji {ele.emoji_id}]"
-            elif isinstance(ele, MessageType.At):
+            elif isinstance(ele, At):
                 if ele.nickname:
                     message_str += f"[At {ele.pid}(nickname: {ele.nickname})]"
                 else:
                     message_str += f"[At {ele.pid}]"
-            elif isinstance(ele, MessageType.Image):
+            elif isinstance(ele, Image):
                 img_desc = await self.llm_api.desc_img(ele.url)
                 message_str += f"[Image {img_desc}]"
-            elif isinstance(ele, MessageType.Sticker):
+            elif isinstance(ele, Sticker):
                 sticker_desc = await self.llm_api.desc_img(ele.sticker_bs64, is_base64=True)
                 message_str += f"[Sticker {sticker_desc}]"
-            elif isinstance(ele, MessageType.Reply):
+            elif isinstance(ele, Reply):
                 if ele.message_content:
                     message_str += f"[Reply {ele.message_content}]"
                 else:
                     message_str += f"[Reply {ele.message_id}]"
-            elif isinstance(ele, MessageType.Record):
+            elif isinstance(ele, Record):
                 record_text = await self.llm_api.speech_to_text(ele.bs64)
                 message_str += f"[Record {record_text}]"
-            elif isinstance(ele, MessageType.Notice):
+            elif isinstance(ele, Notice):
                 message_str += f"{ele.text}"
+            elif isinstance(ele, File):
+                # TODO parse file
+                message_str += f"[File {ele.name}]"
             else:
                 pass
         return message_str
@@ -311,39 +329,39 @@ class MessageProcessor:
                 # build MessageType object
                 if tag == "text":
                     if value:
-                        message_elements.append(MessageType.Text(value))
+                        message_elements.append(Text(value))
                 elif tag == "emoji":
-                    message_elements.append(MessageType.Emoji(value))
+                    message_elements.append(Emoji(value))
                 elif tag == "sticker":
                     sticker_id = value
                     try:
                         sticker_path = self.prompt_manager.sticker_dict[sticker_id].get("path")
                         sticker_bs64 = image_to_base64(f"{get_data_path()}/sticker/{sticker_path}")
-                        message_elements.append(MessageType.Sticker(sticker_id, sticker_bs64))
+                        message_elements.append(Sticker(sticker_id, sticker_bs64))
                     except Exception as e:
                         logger.error(f"error while parsing sticker: {str(e)}")
                 elif tag == "at":
-                    message_elements.append(MessageType.At(value))
+                    message_elements.append(At(value))
                 elif tag == "img":
                     img_res = await self.llm_api.generate_img(value)
                     if img_res:
                         if img_res.url:
-                            message_elements.append(MessageType.Image(url=img_res.url))
+                            message_elements.append(Image(url=img_res.url))
                         elif img_res.base64:
-                            message_elements.append(MessageType.Image(base64=img_res.base64))
+                            message_elements.append(Image(base64=img_res.base64))
                         else:
                             pass
                 elif tag == "reply":
-                    message_elements.append(MessageType.Reply(value))
+                    message_elements.append(Reply(value))
                 elif tag == "record":
                     try:
                         record_bs64 = await self.llm_api.text_to_speech(value)
-                        message_elements.append(MessageType.Record(record_bs64))
+                        message_elements.append(Record(record_bs64))
                     except Exception as e:
                         logger.error(f"an error occurred while generating voice message: {e}")
-                        message_elements.append(MessageType.Text(f"<record>{value}</record>"))
+                        message_elements.append(Text(f"<record>{value}</record>"))
                 elif tag == "poke":
-                    message_elements.append(MessageType.Poke(value))
+                    message_elements.append(Poke(value))
                 elif tag == "selfie":
                     try:
                         ref_img_path = self.kira_config.get('bot_config', {}).get('selfie', {}).get('path', '')
@@ -353,15 +371,31 @@ class MessageProcessor:
                             img_res = await self.llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
                             if img_res:
                                 if img_res.url:
-                                    message_elements.append(MessageType.Image(url=img_res.url))
+                                    message_elements.append(Image(url=img_res.url))
                                 elif img_res.base64:
-                                    message_elements.append(MessageType.Image(base64=img_res.base64))
+                                    message_elements.append(Image(base64=img_res.base64))
                                 else:
                                     logger.warning("Invalid selfie image result")
                         else:
                             logger.warning(f"Selfie reference image not found, skipped generation")
                     except Exception as e:
                         logger.error(f"Failed to generate selfie: {e}")
+                elif tag == "file":
+                    registered_file_path = get_data_path() / "files" / value
+
+                    # Absolute path
+                    if os.path.exists(value):
+                        message_elements.append(File(value, Path(value).name))
+                    # Relative path
+                    elif os.path.exists(registered_file_path):
+                        message_elements.append(File(str(registered_file_path), value))
+                    # File URL
+                    elif value.startswith(("http://", "https://")):
+                        # TODO fetch filename from http headers
+                        message_elements.append(File(value))
+                else:
+                    # TODO hand over to plugins to parse
+                    pass
 
             if message_elements:
                 message_list.append(message_elements)
@@ -395,7 +429,7 @@ class MessageProcessor:
                 return message_list, fixed_xml
             except Exception as e:
                 logger.error(f"error after trying to fix xml error: {e}")
-                return [[MessageType.Text(fixed_xml)]], fixed_xml
+                return [[Text(fixed_xml)]], fixed_xml
 
     def _add_message_ids(self, xml_data: str, message_ids: List[str]) -> str:
         """为XML响应添加消息ID"""
