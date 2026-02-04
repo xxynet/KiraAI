@@ -1,12 +1,11 @@
 from asyncio import Semaphore
 from typing import Optional
-import requests
 import copy
 import json
 import time
-import base64
 
 from core.logging_manager import get_logger
+from core.utils.common_utils import image_to_base64
 from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse
 from .provider import ProviderManager, ImageResult
@@ -40,18 +39,6 @@ class LLMClient:
             }
         })
         self.tools_functions[name] = func
-
-    @staticmethod
-    def image_to_base64(image_url):
-        """
-        将url图片转换为Base64编码
-        :param image_url: 图片文件路径
-        :return: Base64编码的字符串
-        """
-        resp = requests.get(image_url)
-        image_data = resp.content
-        base64_data = base64.b64encode(image_data)
-        return base64_data.decode('utf-8')
 
     async def chat(self, messages) -> LLMResponse:
         """与LLM交互
@@ -148,7 +135,7 @@ class LLMClient:
             if is_base64:
                 b64_data = image
             else:
-                b64_data = self.image_to_base64(image)
+                b64_data = await image_to_base64(image)
 
             messages = [{
                 "role": "user",
@@ -183,17 +170,23 @@ class LLMClient:
         img_provider = self.provider_mgr.get_provider(image_model.provider_id)
         provider_name = image_model.provider_name
         logger.info(f"Generating image using {image_model.model_id} ({provider_name})")
-        img_res = await img_provider.text_to_image(image_model, prompt)
-        if not img_res:
-            logger.error(f"error occurred when generating image")
-        return img_res
+        try:
+            img_res = await img_provider.text_to_image(image_model, prompt)
+            if not img_res:
+                logger.error(f"Failed to generate image with text")
+            return img_res
+        except Exception as e:
+            logger.error(f"Failed to generate image with text: {e}")
 
     async def image_to_image(self, prompt, url: Optional[str] = None, bs64: Optional[str] = None):
         image_model = self.provider_mgr.get_default_model("default_image")
         img_provider = self.provider_mgr.get_provider(image_model.provider_id)
         provider_name = image_model.provider_name
         logger.info(f"Generating image using {image_model.model_id} ({provider_name}) with a reference image")
-        img_res = await img_provider.image_to_image(image_model, prompt, url=url, base64=bs64)
-        if not img_res:
-            logger.error(f"error occurred when generating image")
-        return img_res
+        try:
+            img_res = await img_provider.image_to_image(image_model, prompt, url=url, base64=bs64)
+            if not img_res:
+                logger.error(f"Failed to generate image with a reference image")
+            return img_res
+        except Exception as e:
+            logger.error(f"Failed to generate image with a reference image: {e}")

@@ -188,7 +188,8 @@ class QQAdapter(IMAdapter):
 
                 if sub_type == 1 or summary == "[动画表情]":
                     from core.utils.common_utils import image_to_base64
-                    message_content.append(Sticker(sticker_bs64=image_to_base64(img_url)))
+                    sticker_bs64 = await image_to_base64(img_url)
+                    message_content.append(Sticker(sticker_bs64=sticker_bs64))
                 else:
                     message_content.append(Image(img_url))
             elif ele.get("type") == "video":

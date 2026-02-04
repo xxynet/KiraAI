@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import asyncio
 from io import BytesIO
-import requests
+import httpx
 import base64
 import json
 import time
@@ -86,7 +86,9 @@ class SiliconflowCNProvider(NewBaseProvider):
             "Content-Type": "application/json"
         }
 
-        response = requests.post(url, json=payload, headers=headers)
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
         image_url = response.json().get("images")[0].get("url")
         return ImageResult(image_url)
 
@@ -126,6 +128,13 @@ class SiliconflowCNProvider(NewBaseProvider):
         payload = {"model": model.model_id}
         headers = {"Authorization": f"Bearer {model.provider_config.get('api_key', '')}"}
 
-        response = requests.post(url, data=payload, files=files, headers=headers)
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                url,
+                data=payload,
+                files=files,
+                headers=headers
+            )
+            response.raise_for_status()
         resp_json = response.json()
         return resp_json.get("text", "")

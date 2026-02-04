@@ -2,7 +2,6 @@ import asyncio
 import os
 from typing import Any, Dict, Union, List
 import base64
-import requests
 import json
 
 from telegram import Update
@@ -11,6 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 from core.logging_manager import get_logger
 from core.adapter.adapter_utils import IMAdapter
 from core.chat import KiraMessageEvent, MessageChain
+from core.utils.network import get_file_content
 
 from core.chat.message_elements import (
     Text,
@@ -21,7 +21,8 @@ from core.chat.message_elements import (
     Sticker,
     Record,
     Notice,
-    Poke
+    Poke,
+    File
 )
 
 
@@ -272,7 +273,7 @@ class TelegramAdapter(IMAdapter):
             voice_file = await self.app.bot.get_file(voice_id)
             voice_url = voice_file.file_path
 
-            voice_content = requests.get(voice_url).content
+            voice_content = await get_file_content(voice_url)
             base64_data = base64.b64encode(voice_content)
             elements.append(Record(base64_data.decode('utf-8')))
 
@@ -281,7 +282,7 @@ class TelegramAdapter(IMAdapter):
             audio_file = await self.app.bot.get_file(audio_id)
             audio_url = audio_file.file_path
 
-            audio_content = requests.get(audio_url).content
+            audio_content = await get_file_content(audio_url)
             base64_data = base64.b64encode(audio_content)
             elements.append(Record(base64_data.decode('utf-8')))
 

@@ -336,7 +336,7 @@ class MessageProcessor:
                     sticker_id = value
                     try:
                         sticker_path = self.prompt_manager.sticker_dict[sticker_id].get("path")
-                        sticker_bs64 = image_to_base64(f"{get_data_path()}/sticker/{sticker_path}")
+                        sticker_bs64 = await image_to_base64(f"{get_data_path()}/sticker/{sticker_path}")
                         message_elements.append(Sticker(sticker_id, sticker_bs64))
                     except Exception as e:
                         logger.error(f"error while parsing sticker: {str(e)}")
@@ -367,7 +367,7 @@ class MessageProcessor:
                         ref_img_path = self.kira_config.get('bot_config', {}).get('selfie', {}).get('path', '')
                         if os.path.exists(f"{get_data_path()}/{ref_img_path}"):
                             img_extension = ref_img_path.split(".")[-1]
-                            bs64 = image_to_base64(f"{get_data_path()}/{ref_img_path}")
+                            bs64 = await image_to_base64(f"{get_data_path()}/{ref_img_path}")
                             img_res = await self.llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
                             if img_res:
                                 if img_res.url:

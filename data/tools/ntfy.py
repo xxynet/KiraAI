@@ -1,4 +1,4 @@
-import requests
+import httpx
 import configparser
 from pathlib import Path
 
@@ -25,11 +25,12 @@ class NtfyTool(BaseTool):
         self._url = cfg.get("ntfy", "url")
 
     async def execute(self, msg: str, title: str = None) -> str:
-        resp = requests.post(
-            self._url,
-            data=msg.encode(encoding="utf-8"),
-            headers={
-                "Title": title,
-            }
-        )
-        return resp.text
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                self._url,
+                data=msg.encode(encoding="utf-8"),
+                headers={
+                    "Title": title,
+                }
+            )
+            return resp.text

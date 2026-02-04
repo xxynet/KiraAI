@@ -1,5 +1,5 @@
 import re
-import requests
+import httpx
 import configparser
 from pathlib import Path
 from datetime import datetime
@@ -26,18 +26,22 @@ def format_time(ts):
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _resolve_b23(url: str) -> str:
-    def _follow(u: str) -> str:
-        response = requests.head(u, allow_redirects=True)
-        if "location" in response.headers:
-            return _follow(response.headers["location"])  # recursive follow
-        return response.url
+async def _resolve_b23(url: str) -> str:
+    if not url.startswith("https://b23.tv/"):
+        return url
 
-    return _follow(url) if url.startswith("https://b23.tv/") else url
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        current = url
+        while True:
+            resp = await client.head(current)
+            location = resp.headers.get("location")
+            if not location:
+                return current
+            current = location
 
 
 async def _video_handle(original_url: str):
-    link = _resolve_b23(original_url)
+    link = await _resolve_b23(original_url)
     bvid = re.findall(r"BV[a-zA-Z0-9]{10}", link)[0]
     v = video.Video(bvid=bvid, credential=_credential)
     info = await v.get_info()

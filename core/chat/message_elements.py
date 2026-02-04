@@ -7,7 +7,7 @@ import base64
 import os
 
 from core.utils.path_utils import get_data_path
-from core.utils.download import download_file
+from core.utils.network import download_file
 
 
 class ElementType(Enum):

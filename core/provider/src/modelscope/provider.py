@@ -1,6 +1,6 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import asyncio
-import requests
+import httpx
 import base64
 import json
 import time
@@ -71,54 +71,53 @@ class ModelScopeProvider(NewBaseProvider):
             logger.error(f"APIConnectionError: {e}")
 
     async def text_to_image(self, model: ModelInfo, prompt) -> ImageResult:
-        base_url = 'https://api-inference.modelscope.cn/'
-        api_key = model.provider_config.get("api_key", "")  # ModelScope Token
+        base_url = "https://api-inference.modelscope.cn/"
+        api_key = model.provider_config.get("api_key", "")
 
-        common_headers = {
+        headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
-        response = requests.post(
-            f"{base_url}v1/images/generations",
-            headers={**common_headers, "X-ModelScope-Async-Mode": "true"},
-            data=json.dumps({
-                "model": model.model_id,  # ModelScope Model-Id, required
-                # "loras": "<lora-repo-id>", # optional lora(s)
-                # """
-                # LoRA(s) Configuration:
-                # - for Single LoRA:
-                # "loras": "<lora-repo-id>"
-                # - for Multiple LoRAs:
-                # "loras": {"<lora-repo-id1>": 0.6, "<lora-repo-id2>": 0.4}
-                # - Upto 6 LoRAs, all weight-coeffients must sum to 1.0
-                # """
-                "prompt": prompt
-            }, ensure_ascii=False).encode('utf-8')
-        )
+        timeout_seconds = int(model.model_config.get("timeout", 10))
 
-        response.raise_for_status()
-        task_id = response.json()["task_id"]
-
-        start_time = int(time.time())
-
-        while int(time.time()) - start_time < int(str(model.model_config.get("timeout", 10))):
-            result = requests.get(
-                f"{base_url}v1/tasks/{task_id}",
-                headers={**common_headers, "X-ModelScope-Task-Type": "image_generation"},
+        async with httpx.AsyncClient(timeout=10) as client:
+            # 提交生成任务
+            resp = await client.post(
+                f"{base_url}v1/images/generations",
+                headers={**headers, "X-ModelScope-Async-Mode": "true"},
+                json={
+                    "model": model.model_id,
+                    "prompt": prompt,
+                },
             )
-            result.raise_for_status()
-            data = result.json()
+            resp.raise_for_status()
+            task_id = resp.json()["task_id"]
 
-            if data["task_status"] == "SUCCEED":
-                image_content = requests.get(data["output_images"][0]).content
-                image_base64 = base64.b64encode(image_content).decode('utf-8')
-                return ImageResult(base64=image_base64)
-            elif data["task_status"] == "FAILED":
-                print("Image Generation Failed.")
-                break
+            start_time = time.time()
 
-            time.sleep(2)
+            # 轮询任务状态
+            while time.time() - start_time < timeout_seconds:
+                result = await client.get(
+                    f"{base_url}v1/tasks/{task_id}",
+                    headers={**headers, "X-ModelScope-Task-Type": "image_generation"},
+                )
+                result.raise_for_status()
+                data = result.json()
 
-        # TODO change this statement to logging
-        print("timeout while generating image using model scope")
+                status = data.get("task_status")
+
+                if status == "SUCCEED":
+                    image_url = data["output_images"][0]
+                    image_resp = await client.get(image_url)
+                    image_resp.raise_for_status()
+
+                    image_base64 = base64.b64encode(image_resp.content).decode("utf-8")
+                    return ImageResult(base64=image_base64)
+
+                if status == "FAILED":
+                    raise RuntimeError("Image Generation Failed")
+
+                await asyncio.sleep(2)
+
+        raise TimeoutError("Image generation timed out")

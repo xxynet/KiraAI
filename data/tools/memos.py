@@ -1,4 +1,4 @@
-import requests
+import httpx
 import configparser
 from pathlib import Path
 
@@ -27,20 +27,23 @@ class MemosTool(BaseTool):
         self._visibility = cfg.get("memos", "visibility")
 
     async def execute(self, memo: str, location: str = "") -> str:
-        response = requests.post(
-            f"{self._url.strip('/')}/api/v1/memos",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._access_token}"
-            },
-            json={
-                "state": "NORMAL",
-                "content": memo,
-                "visibility": self._visibility,
-                "pinned": False,
-                "location": {
-                    "placeholder": location
-                } if location else None
-            }
-        )
-        return response.json()
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self._url.strip('/')}/api/v1/memos",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self._access_token}"
+                },
+                json={
+                    "state": "NORMAL",
+                    "content": memo,
+                    "visibility": self._visibility,
+                    "pinned": False,
+                    "location": {
+                        "placeholder": location
+                    } if location else None
+                }
+            )
+            response.raise_for_status()
+            return response.json()
