@@ -122,6 +122,20 @@ class NapCatWebSocketClient:
         except Exception as e:
             return {"status": "failed", "message": str(e)}
 
+    async def _reconnect(self):
+        attempt = 0
+        while not self.shutdown_event.is_set() and attempt < 20:
+            attempt += 1
+            logger.warning(f"🔄 WebSocket 连接断开，正在尝试第 {attempt} 次重连")
+            resp = await self.connect()
+            if resp.get("status") == "ok":
+                logger.info("✅ WebSocket 重连成功")
+                return True
+            elif resp.get("status") == "failed":
+                logger.warning(f"WebSocket 重连失败: {resp.get('message')}")
+            await asyncio.sleep(min(2 ** attempt, 60))
+        return False
+
     def group_event(self):
         def wrapper(func):
             self.event_callbacks["group"].append(func)
@@ -155,18 +169,25 @@ class NapCatWebSocketClient:
     async def listen_messages(self):
         """唯一的消息接收入口"""
         logger.info(f"🎧 开始监听账号 {self.self_id} 的消息...")
-        try:
-            while not self.shutdown_event.is_set():
+        while not self.shutdown_event.is_set():
+            try:
                 async for message in self.websocket:
                     try:
                         data = json.loads(message)
                         await self.handle_message(data)
                     except json.JSONDecodeError:
                         logger.error(f"❌ 无法解析消息: {message}")
-        except websockets.exceptions.ConnectionClosed:
-            logger.warning("🔌 WebSocket 连接已关闭")
-        except Exception as e:
-            logger.error(f"❌ 监听错误: {e}")
+            except websockets.exceptions.ConnectionClosed:
+                logger.warning("🔌 WebSocket 连接已关闭")
+                success = await self._reconnect()
+                if not success:
+                    logger.error("❌ 重连次数达到上限，WebSocket 重连失败！")
+                    await self.close()
+                    break
+                continue
+            except Exception as e:
+                logger.error(f"❌ 监听错误: {e}")
+                break
 
     async def handle_message(self, data: dict):
         """处理收到的消息"""
