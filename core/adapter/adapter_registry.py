@@ -10,6 +10,7 @@ from typing import Union, Optional, Dict, Type
 
 from core.logging_manager import get_logger
 from core.config import KiraConfig
+from core.config.config_field import BaseConfigField, build_fields
 from .adapter_info import AdapterInfo
 from .adapter_utils import IMAdapter, SocialMediaAdapter
 
@@ -20,7 +21,7 @@ logger = get_logger("adapter", "blue")
 class AdapterManager:
     _registry: Dict[str, Type[Union[IMAdapter, SocialMediaAdapter]]] = {}
     _manifests: Dict[str, dict] = {}
-    _schemas: Dict[str, dict] = {}
+    _schemas: Dict[str, list[BaseConfigField]] = {}
 
     def __init__(self, kira_config: KiraConfig, loop: asyncio.AbstractEventLoop, event_queue: asyncio.Queue, llm_api):
         self.kira_config = kira_config
@@ -42,8 +43,8 @@ class AdapterManager:
         return list(cls._registry.keys())
 
     @classmethod
-    def get_schema(cls, platform: str) -> dict:
-        return cls._schemas.get(platform, {})
+    def get_schema(cls, platform: str) -> list[BaseConfigField]:
+        return cls._schemas.get(platform, [])
 
     def get_adapter_info(self, adapter_id: str) -> Optional[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {})
@@ -129,12 +130,14 @@ class AdapterManager:
 
             platform_name = manifest.get("name") if isinstance(manifest, dict) else None
 
-            schema = {}
+            schema_fields: list[BaseConfigField] = []
             schema_path = os.path.join(adapter_dir, "schema.json")
             if os.path.exists(schema_path):
                 try:
                     with open(schema_path, "r", encoding="utf-8") as f:
-                        schema = json.load(f)
+                        raw_schema = json.load(f)
+                    if isinstance(raw_schema, dict):
+                        schema_fields = build_fields(raw_schema)
                 except Exception as e:
                     logger.warning(f"Failed to load schema for {platform_name}: {e}")
 
@@ -177,7 +180,7 @@ class AdapterManager:
                 if inspect.isclass(attr_value) and issubclass(attr_value, (IMAdapter, SocialMediaAdapter)) and attr_value not in (IMAdapter, SocialMediaAdapter):
                     cls._registry[platform_name] = attr_value
                     cls._manifests[platform_name] = manifest
-                    cls._schemas[platform_name] = schema
+                    cls._schemas[platform_name] = schema_fields
                     logger.info(f"Registered adapter: {platform_name}")
                     found = True
                     break
@@ -199,16 +202,16 @@ class AdapterManager:
         logger.info(f"Adapters set: {list(self._adapters.keys())}")
 
     def generate_adapter_config(self, platform: str, name: str) -> Optional[str]:
-        schema = self.get_schema(platform)
-        if not isinstance(schema, dict) or not schema:
+        schema_fields = self.get_schema(platform)
+        if not schema_fields:
             logger.error(f"No schema found for adapter platform: {platform}")
             return None
 
         adapter_id = uuid.uuid4().hex[:12]
         config_fields: Dict[str, object] = {}
-        for key, value_info in schema.items():
-            if isinstance(value_info, dict):
-                config_fields[key] = value_info.get("default")
+        for field in schema_fields:
+            if isinstance(field, BaseConfigField):
+                config_fields[field.key] = field.default
 
         adapters_root = self.kira_config.get("adapters", {}) or {}
         adapters_root[adapter_id] = {
@@ -417,6 +420,7 @@ class AdapterManager:
             return False
 
         self.adas_config = adapters_config
+        logger.info(f"Deleted adapter: {name_value}")
         return True
 
     async def stop_adapters(self):

@@ -14,6 +14,7 @@ from .provider import (
 from core.utils.path_utils import get_config_path
 from core.logging_manager import get_logger
 from core.config import KiraConfig
+from core.config.config_field import BaseConfigField, build_fields
 
 logger = get_logger("provider_manager", "cyan")
 
@@ -150,9 +151,11 @@ class ProviderManager:
         if provider_format:
             schema = self.get_schema(provider_format)
             if schema:
-                model_config_schema = schema.get("model_config", {}).get(model_type, {})
-                for key, value_info in model_config_schema.items():
-                    model_defaults[key] = value_info.get("default")
+                model_fields_root = schema.get("model_config") or {}
+                type_fields = model_fields_root.get(model_type) or []
+                for field in type_fields:
+                    if isinstance(field, BaseConfigField):
+                        model_defaults[field.key] = field.default
         
         model_config = dict(model_defaults)
         if config:
@@ -284,11 +287,26 @@ class ProviderManager:
 
                 # Load schema if exists
                 schema_path = os.path.join(provider_dir, "schema.json")
-                schema = {}
+                schema: dict = {}
                 if os.path.exists(schema_path):
                     try:
                         with open(schema_path, "r", encoding="utf-8") as f:
-                            schema = json.load(f)
+                            raw_schema = json.load(f)
+                        if isinstance(raw_schema, dict):
+                            provider_fields: list[BaseConfigField] = []
+                            model_fields: Dict[str, list[BaseConfigField]] = {}
+                            provider_config_schema = raw_schema.get("provider_config") or {}
+                            if isinstance(provider_config_schema, dict):
+                                provider_fields = build_fields(provider_config_schema)
+                            model_config_schema = raw_schema.get("model_config") or {}
+                            if isinstance(model_config_schema, dict):
+                                for model_type, fields_schema in model_config_schema.items():
+                                    if isinstance(fields_schema, dict):
+                                        model_fields[model_type] = build_fields(fields_schema)
+                            schema = {
+                                "provider_config": provider_fields,
+                                "model_config": model_fields,
+                            }
                     except Exception as e:
                         logger.warning(f"Failed to load schema for {provider_name}: {e}")
 
@@ -342,7 +360,7 @@ class ProviderManager:
             logger.error(f"No schema found for provider format: {provider_format}")
             return
 
-        provider_config_schema = schema.get("provider_config", {})
+        provider_fields = schema.get("provider_config") or []
         generated_config = {
             "format": provider_format,
             "name": provider_id,
@@ -352,9 +370,9 @@ class ProviderManager:
             }
         }
 
-        for key, value_info in provider_config_schema.items():
-            default_value = value_info.get("default")
-            generated_config["provider_config"][key] = default_value
+        for field in provider_fields:
+            if isinstance(field, BaseConfigField):
+                generated_config["provider_config"][field.key] = field.default
 
         try:
             self.kira_config["providers"][provider_id] = generated_config
