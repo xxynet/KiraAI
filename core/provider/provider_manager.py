@@ -310,15 +310,23 @@ class ProviderManager:
                     except Exception as e:
                         logger.warning(f"Failed to load schema for {provider_name}: {e}")
 
-                provider_script = os.path.join(provider_dir, "provider.py")
-                if not os.path.exists(provider_script):
-                    provider_script = os.path.join(provider_dir, "__init__.py")
-                    if not os.path.exists(provider_script):
-                        logger.warning(f"No provider.py or __init__.py found in {provider_dir}")
-                        continue
+                provider_script = None
+                module_name = None
+                candidate_files = [
+                    (os.path.join(provider_dir, f"{entry}.py"), f"core.provider.src.{entry}.{entry}"),
+                    (os.path.join(provider_dir, "provider.py"), f"core.provider.src.{entry}.provider"),
+                    (os.path.join(provider_dir, "__init__.py"), f"core.provider.src.{entry}"),
+                ]
+                for script_path, candidate_module in candidate_files:
+                    if os.path.exists(script_path):
+                        provider_script = script_path
+                        module_name = candidate_module
+                        break
+                if not provider_script or not module_name:
+                    logger.warning(f"No {entry}.py, provider.py or __init__.py found in {provider_dir}")
+                    continue
                 
                 # Import the module
-                module_name = f"core.provider.src.{entry}.provider"
                 spec = importlib.util.spec_from_file_location(module_name, provider_script)
                 if spec and spec.loader:
                     module = importlib.util.module_from_spec(spec)
