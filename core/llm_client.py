@@ -63,7 +63,10 @@ class LLMClient:
 
             raw_args = tool_call.get("function", {}).get("arguments")
             try:
-                args = json.loads(raw_args)
+                if not raw_args.strip():
+                    args = {}
+                else:
+                    args = json.loads(raw_args)
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse function calling arguments: {e}")
                 logger.error(f"Raw args: {raw_args}")
