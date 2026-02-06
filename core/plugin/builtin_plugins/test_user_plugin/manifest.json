@@ -1,0 +1,8 @@
+{
+    "display_name": "Test User Plugin",
+    "plugin_id": "test_plugin",
+    "version": "1.0.0",
+    "author": "xxynet",
+    "description": "A test user plugin for KiraAI",
+    "repo": null
+}

@@ -1,0 +1,7 @@
+{
+  "test_string": {
+    "type": "string",
+    "default": "default value",
+    "hint": "Your test string value"
+  }
+}

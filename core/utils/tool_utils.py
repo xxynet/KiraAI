@@ -3,8 +3,8 @@ from typing import Dict, Any
 
 
 class BaseTool(ABC):
-    def __init__(self):
-        pass
+    def __init__(self, cfg: dict = None, *args, **kwargs):
+        self.config = cfg
 
     name = None
     description = None

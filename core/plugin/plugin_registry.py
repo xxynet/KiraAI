@@ -8,8 +8,9 @@ import sys
 import types
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable
-from core.utils.path_utils import get_data_path
+from core.utils.path_utils import get_data_path, get_config_path
 from core.logging_manager import get_logger
+from core.config.config_field import BaseConfigField, build_fields
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
 from core.event_bus import EventBus, EventType
@@ -18,6 +19,7 @@ logger = get_logger("plugin_manager", "cyan")
 
 PLUGINS_DIR = get_data_path() / "plugins"
 PLUGIN_DATA_DIR = get_data_path() / "plugin_data"
+PLUGIN_CONFIG_DIR = get_config_path() / "plugins"
 BUILTIN_PLUGINS_DIR = Path(__file__).parent / "builtin_plugins"
 
 _plugin_classes: Dict[str, type[BasePlugin]] = {}
@@ -25,34 +27,7 @@ _plugin_manifests: Dict[str, Dict[str, Any]] = {}
 _plugin_module_dirs: Dict[str, str] = {}
 _plugin_module_paths: Dict[str, Path] = {}
 _module_to_plugin: Dict[str, str] = {}
-
-
-def register(**manifest: Any) -> Callable[[type[BasePlugin]], type[BasePlugin]]:
-    def decorator(cls: type[BasePlugin]) -> type[BasePlugin]:
-        if not inspect.isclass(cls) or not issubclass(cls, BasePlugin):
-            raise TypeError("register decorator can only be used on BasePlugin subclasses")
-        plugin_name = manifest.get("name") or cls.__name__
-        _plugin_classes[plugin_name] = cls
-        _plugin_manifests[plugin_name] = dict(manifest)
-        module = inspect.getmodule(cls)
-        module_name = ""
-        module_path = None
-        if module is not None:
-            module_name = getattr(module, "__name__", "") or ""
-            file_path = getattr(module, "__file__", None)
-            if file_path:
-                module_path = Path(file_path).resolve()
-        if module_path is not None:
-            module_dir = module_path.parent
-            _plugin_module_dirs[plugin_name] = module_dir.name
-            _plugin_module_paths[plugin_name] = module_dir
-        else:
-            _plugin_module_dirs.setdefault(plugin_name, "")
-        if module_name:
-            _module_to_plugin[module_name] = plugin_name
-        return cls
-
-    return decorator
+_plugin_schemas: Dict[str, List[BaseConfigField]] = {}
 
 
 class PluginManager:
@@ -82,6 +57,33 @@ class PluginManager:
 
     def get_plugin_name_for_module(self, module_name: str) -> Optional[str]:
         return _module_to_plugin.get(module_name)
+
+    def get_plugin_schema(self, name: str) -> List[BaseConfigField]:
+        return _plugin_schemas.get(name, [])
+
+    def _ensure_plugin_config(self, plugin_name: str, schema_fields: List[BaseConfigField]) -> None:
+        if not schema_fields:
+            return
+        PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        config_path = PLUGIN_CONFIG_DIR / f"{plugin_name}.json"
+        cfg: Dict[str, Any] = {}
+        if config_path.exists():
+            try:
+                with config_path.open("r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    cfg = loaded
+            except Exception as e:
+                logger.error(f"Failed to load plugin config from {config_path}: {e}")
+        for field in schema_fields:
+            if isinstance(field, BaseConfigField) and field.key not in cfg:
+                cfg[field.key] = field.default
+        try:
+            with config_path.open("w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to save plugin config for {plugin_name}: {e}")
+        self.plugin_configs[plugin_name] = cfg
 
     async def init(self):
         """
@@ -143,15 +145,31 @@ class PluginManager:
                 continue
 
             manifest_path = plugin_dir / "manifest.json"
-            if not manifest_path.exists():
-                continue
+            schema_path = plugin_dir / "schema.json"
 
-            try:
-                with manifest_path.open("r", encoding="utf-8") as f:
-                    json.load(f)
-            except Exception as e:
-                logger.warning(f"Failed to load manifest for builtin plugin {entry}: {e}")
-                continue
+            manifest: Dict[str, Any] = {}
+            if manifest_path.exists():
+                try:
+                    with manifest_path.open("r", encoding="utf-8") as f:
+                        manifest = json.load(f)
+                except Exception as e:
+                    logger.warning(f"Failed to load manifest for builtin plugin {entry}: {e}")
+            plugin_name = manifest.get("name") or entry
+            if manifest:
+                _plugin_manifests[plugin_name] = manifest
+
+            schema_fields: List[BaseConfigField] = []
+            if schema_path.exists():
+                try:
+                    with schema_path.open("r", encoding="utf-8") as f:
+                        raw_schema = json.load(f)
+                    if isinstance(raw_schema, dict):
+                        schema_fields = build_fields(raw_schema)
+                except Exception as e:
+                    logger.warning(f"Failed to load schema for builtin plugin {plugin_name}: {e}")
+            if schema_fields:
+                _plugin_schemas[plugin_name] = schema_fields
+                self._ensure_plugin_config(plugin_name, schema_fields)
 
             module = None
             candidate_modules = [
@@ -172,6 +190,17 @@ class PluginManager:
 
             if module is None:
                 logger.warning(f"No module found for builtin plugin {entry}")
+                continue
+
+            for attr_name, attr_value in inspect.getmembers(module, inspect.isclass):
+                if issubclass(attr_value, BasePlugin) and attr_value is not BasePlugin:
+                    _plugin_classes[plugin_name] = attr_value
+                    module_file = Path(getattr(module, "__file__", plugin_dir / "__init__.py")).resolve()
+                    module_dir = module_file.parent
+                    _plugin_module_dirs[plugin_name] = module_dir.name
+                    _plugin_module_paths[plugin_name] = module_dir
+                    _module_to_plugin[module.__name__] = plugin_name
+                    break
 
     async def _discover_user_plugins(self):
         if not self.plugin_dir.exists():
@@ -190,6 +219,33 @@ class PluginManager:
             plugin_root = self.plugin_dir / entry
             if not plugin_root.is_dir():
                 continue
+
+            manifest_path = plugin_root / "manifest.json"
+            schema_path = plugin_root / "schema.json"
+
+            manifest: Dict[str, Any] = {}
+            if manifest_path.exists():
+                try:
+                    with manifest_path.open("r", encoding="utf-8") as f:
+                        manifest = json.load(f)
+                except Exception as e:
+                    logger.warning(f"Failed to load manifest for plugin {entry}: {e}")
+            plugin_name = manifest.get("name") or entry
+            if manifest:
+                _plugin_manifests[plugin_name] = manifest
+
+            schema_fields: List[BaseConfigField] = []
+            if schema_path.exists():
+                try:
+                    with schema_path.open("r", encoding="utf-8") as f:
+                        raw_schema = json.load(f)
+                    if isinstance(raw_schema, dict):
+                        schema_fields = build_fields(raw_schema)
+                except Exception as e:
+                    logger.warning(f"Failed to load schema for plugin {plugin_name}: {e}")
+            if schema_fields:
+                _plugin_schemas[plugin_name] = schema_fields
+                self._ensure_plugin_config(plugin_name, schema_fields)
 
             package_name = f"{base_package}.{entry}"
             if package_name not in sys.modules:
@@ -227,3 +283,14 @@ class PluginManager:
                 spec.loader.exec_module(module)
             except Exception as e:
                 logger.error(f"Error loading plugin from {plugin_root}: {e}")
+                continue
+
+            for attr_name, attr_value in inspect.getmembers(module, inspect.isclass):
+                if issubclass(attr_value, BasePlugin) and attr_value is not BasePlugin:
+                    _plugin_classes[plugin_name] = attr_value
+                    module_file = Path(getattr(module, "__file__", script_path)).resolve()
+                    module_dir = module_file.parent
+                    _plugin_module_dirs[plugin_name] = module_dir.name
+                    _plugin_module_paths[plugin_name] = module_dir
+                    _module_to_plugin[module.__name__] = plugin_name
+                    break

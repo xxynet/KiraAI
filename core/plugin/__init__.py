@@ -1,9 +1,6 @@
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
-from .plugin_registry import (
-    PluginManager,
-    register
-)
+from .plugin_registry import PluginManager
 
 from core.logging_manager import get_logger
 
@@ -14,7 +11,6 @@ __all__ = [
     'BasePlugin',
     'PluginContext',
     'PluginManager',
-    'register',
     'logger'
 ]
 

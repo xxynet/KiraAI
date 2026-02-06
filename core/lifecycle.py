@@ -15,6 +15,7 @@ from .tool_manager import register_all_tools
 from .event_bus import EventBus
 from .persona import PersonaManager
 from .provider import ProviderManager
+from .plugin import PluginContext, PluginManager
 
 
 logger = get_logger("lifecycle", "blue")
@@ -45,6 +46,10 @@ class KiraLifecycle:
         self.sticker_manager: Optional[StickerManager] = None
 
         self.event_bus: Optional[EventBus] = None
+
+        self.plugin_context: Optional[PluginContext] = None
+
+        self.plugin_manager: Optional[PersonaManager] = None
 
         self.tasks: list[asyncio.Task] = []
 
@@ -95,6 +100,20 @@ class KiraLifecycle:
                                                   self.llm_api,
                                                   self.memory_manager,
                                                   self.prompt_manager)
+
+        # ====== init plugin system ======
+        self.plugin_context = PluginContext(
+            config=self.kira_config,
+            event_bus=self.event_bus,
+            provider_mgr=self.provider_manager,
+            llm_api=self.llm_api,
+            adapter_mgr=self.adapter_manager,
+            persona_mgr=self.persona_manager,
+            memory_mgr=self.memory_manager
+        )
+
+        self.plugin_manager = PluginManager(self.plugin_context)
+        await self.plugin_manager.init()
 
         # ====== schedule tasks ======
         asyncio.create_task(self.schedule_tasks())
