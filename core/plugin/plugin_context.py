@@ -26,7 +26,3 @@ class PluginContext:
     persona_mgr: PersonaManager
 
     memory_mgr: MemoryManager
-
-    _registered_tools: dict = field(default_factory=dict, init=False)
-
-    _registered_hooks: dict = field(default_factory=dict, init=False)

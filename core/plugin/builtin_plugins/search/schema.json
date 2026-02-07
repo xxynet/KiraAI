@@ -1,0 +1,12 @@
+{
+  "tavily_key": {
+    "type": "string",
+    "default": null,
+    "hint": "Your Tavily key, create one in https://app.tavily.com/home "
+  },
+  "max_results": {
+    "type": "integer",
+    "default": 5,
+    "hint": "The maximum number of search results to return."
+  }
+}

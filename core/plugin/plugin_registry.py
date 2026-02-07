@@ -28,6 +28,48 @@ _plugin_module_dirs: Dict[str, str] = {}
 _plugin_module_paths: Dict[str, Path] = {}
 _module_to_plugin: Dict[str, str] = {}
 _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
+_plugin_components: Dict[str, dict] = {}
+
+
+def register_tool(name: str, description: str, params: dict):
+    def decorator(func: Callable):
+        module = inspect.getmodule(func)
+        module_name = module.__name__ if module else ""
+        plugin_id = _module_to_plugin.get(module_name, "")
+
+        if not plugin_id and module and getattr(module, "__file__", None):
+            module_path = Path(module.__file__).resolve()
+            plugin_root = module_path.parent
+            manifest_path = plugin_root / "manifest.json"
+            if manifest_path.exists():
+                try:
+                    with manifest_path.open("r", encoding="utf-8") as f:
+                        manifest = json.load(f)
+                    plugin_id = manifest.get("plugin_id") or plugin_root.name
+                    _plugin_manifests.setdefault(plugin_id, manifest)
+                    _plugin_module_dirs.setdefault(plugin_id, plugin_root.name)
+                    _plugin_module_paths.setdefault(plugin_id, plugin_root)
+                    _module_to_plugin[module_name] = plugin_id
+                except Exception:
+                    plugin_id = plugin_root.name
+
+        if not plugin_id:
+            plugin_id = module_name
+
+        plugin_entry = _plugin_components.setdefault(plugin_id, {})
+        tools = plugin_entry.setdefault("tools", {})
+        tool_funcs = plugin_entry.setdefault("tool_funcs", {})
+        tools[name] = {
+            "name": name,
+            "description": description,
+            "parameters": params,
+            "func": func,
+        }
+        tool_funcs[name] = func
+
+        return func
+
+    return decorator
 
 
 class PluginManager:
@@ -60,6 +102,39 @@ class PluginManager:
 
     def get_plugin_schema(self, name: str) -> List[BaseConfigField]:
         return _plugin_schemas.get(name, [])
+
+    def get_plugin_components(self) -> Dict[str, dict]:
+        return dict(_plugin_components)
+
+    def get_plugin_tools(self, plugin_name: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        if plugin_name is None:
+            return {name: comp.get("tools", {}) for name, comp in _plugin_components.items()}
+        entry = _plugin_components.get(plugin_name, {})
+        return entry.get("tools", {})
+
+    def register_plugin_tools(self) -> None:
+        if not self.ctx or not getattr(self.ctx, "llm_api", None):
+            return
+        for plugin_name, comp in _plugin_components.items():
+            tools = comp.get("tools", {})
+            tool_funcs = comp.get("tool_funcs", {})
+            plugin_instance = self.plugin_instances.get(plugin_name)
+            tool_names = []
+            for tool_name, meta in tools.items():
+                func = tool_funcs.get(tool_name)
+                if not func:
+                    continue
+                bound_func = func
+                if plugin_instance is not None and hasattr(plugin_instance, func.__name__):
+                    bound_func = getattr(plugin_instance, func.__name__)
+                tool_names.append(tool_name)
+                self.ctx.llm_api.register_tool(
+                    name=tool_name,
+                    description=meta.get("description", ""),
+                    parameters=meta.get("parameters") or {},
+                    func=bound_func,
+                )
+            logger.info(f"Registered {len(tool_names)} tools from {plugin_name}: {tool_names}")
 
     def _ensure_plugin_config(self, plugin_name: str, schema_fields: List[BaseConfigField]) -> None:
         if not schema_fields:
@@ -154,7 +229,7 @@ class PluginManager:
                         manifest = json.load(f)
                 except Exception as e:
                     logger.warning(f"Failed to load manifest for builtin plugin {entry}: {e}")
-            plugin_name = manifest.get("name") or entry
+            plugin_name = manifest.get("plugin_id") or entry
             if manifest:
                 _plugin_manifests[plugin_name] = manifest
 
@@ -230,7 +305,7 @@ class PluginManager:
                         manifest = json.load(f)
                 except Exception as e:
                     logger.warning(f"Failed to load manifest for plugin {entry}: {e}")
-            plugin_name = manifest.get("name") or entry
+            plugin_name = manifest.get("plugin_id") or entry
             if manifest:
                 _plugin_manifests[plugin_name] = manifest
 

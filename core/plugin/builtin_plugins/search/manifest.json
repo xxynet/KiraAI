@@ -1,0 +1,8 @@
+{
+    "display_name": "Tavily Search",
+    "plugin_id": "search",
+    "version": "1.0.0",
+    "author": "xxynet",
+    "description": "A search tool that empowers llm to search the Internet via Tavily",
+    "repo": null
+}

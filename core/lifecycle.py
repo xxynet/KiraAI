@@ -49,7 +49,7 @@ class KiraLifecycle:
 
         self.plugin_context: Optional[PluginContext] = None
 
-        self.plugin_manager: Optional[PersonaManager] = None
+        self.plugin_manager: Optional[PluginManager] = None
 
         self.tasks: list[asyncio.Task] = []
 
@@ -114,6 +114,7 @@ class KiraLifecycle:
 
         self.plugin_manager = PluginManager(self.plugin_context)
         await self.plugin_manager.init()
+        self.plugin_manager.register_plugin_tools()
 
         # ====== schedule tasks ======
         asyncio.create_task(self.schedule_tasks())
