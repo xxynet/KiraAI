@@ -75,7 +75,7 @@ pip install -r requirements.txt
 - `models.ini`：模型名称、参数与默认值
 - `adapters.ini`：启用/禁用平台适配器
 
-前往 [adapter settings](docs/adapters.md) 获取详细的消息平台配置说明
+前往 [adapter settings](/docs/adapters.md) 获取详细的消息平台配置说明
 
 如需更个性化体验，可调整：
 

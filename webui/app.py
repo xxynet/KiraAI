@@ -474,7 +474,31 @@ class KiraWebUI:
             schema = self.lifecycle.provider_manager.get_schema(provider_type)
             if not schema:
                 raise HTTPException(status_code=404, detail=f"Schema not found for provider type: {provider_type}")
-            return schema
+
+            provider_fields = schema.get("provider_config") or []
+            model_fields_root = schema.get("model_config") or {}
+
+            provider_config_dict: Dict[str, Dict] = {}
+            for field in provider_fields:
+                key = getattr(field, "key", None)
+                if not key:
+                    continue
+                provider_config_dict[key] = field.to_dict()
+
+            model_config_dict: Dict[str, Dict[str, Dict]] = {}
+            for model_type, fields in model_fields_root.items():
+                type_dict: Dict[str, Dict] = {}
+                for field in fields:
+                    key = getattr(field, "key", None)
+                    if not key:
+                        continue
+                    type_dict[key] = field.to_dict()
+                model_config_dict[model_type] = type_dict
+
+            return {
+                "provider_config": provider_config_dict,
+                "model_config": model_config_dict,
+            }
 
         @self.app.get(
             "/api/adapter-platforms",
@@ -502,10 +526,17 @@ class KiraWebUI:
             if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
                 raise HTTPException(status_code=404, detail="Adapter manager not available")
 
-            schema = self.lifecycle.adapter_manager.get_schema(platform)
-            if not schema:
+            schema_fields = self.lifecycle.adapter_manager.get_schema(platform)
+            if not schema_fields:
                 raise HTTPException(status_code=404, detail=f"Schema not found for adapter platform: {platform}")
-            return schema
+
+            schema_dict: Dict[str, Dict] = {}
+            for field in schema_fields:
+                key = getattr(field, "key", None)
+                if not key:
+                    continue
+                schema_dict[key] = field.to_dict()
+            return schema_dict
 
         @self.app.post(
             "/api/providers",

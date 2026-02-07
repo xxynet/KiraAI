@@ -75,7 +75,7 @@ Key configuration files in `data/config/`:
 - `models.ini`: model names, parameters, and defaults
 - `adapters.ini`: enable/disable platform adapters and their tokens
 
-Check [adapter settings](docs/adapters.md) for detailed documentation of messaging platforms
+Check [adapter settings](/docs/adapters.md) for detailed documentation of messaging platforms
 
 Modify the following if you want to get more custom experience:
 

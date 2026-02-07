@@ -118,10 +118,14 @@ async def _register_mcp_tools(llm_api) -> None:
 async def register_all_tools(llm_api) -> None:
     """Discover all subclasses of BaseTool under core.tools and register them."""
     package_name = "data.tools"
-    package = importlib.import_module(package_name)
-    package_path = os.path.dirname(package.__file__)
+    try:
+        package = importlib.import_module(package_name)
+        package_path = os.path.dirname(package.__file__)
 
-    modules = _iter_tool_modules(package_path, package_name)
+        modules = _iter_tool_modules(package_path, package_name)
+    except Exception as e:
+        tool_logger.error(f"Failed to register tools: {e}")
+        return
 
     for module_name in modules:
         try:
