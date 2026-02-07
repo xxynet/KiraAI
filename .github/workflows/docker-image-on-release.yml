@@ -35,7 +35,6 @@ jobs:
           platforms: |
             linux/amd64
             linux/arm64
-            linux/arm/v7
           tags: |
             ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
             ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
