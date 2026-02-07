@@ -1,0 +1,9 @@
+services:
+  app:
+    image: xxynet/kira-ai:latest
+    container_name: KiraAI
+    ports:
+      - "5267:5267"
+    volumes:
+      - ./data:/app/data
+    restart: always

@@ -1,0 +1,28 @@
+# --- Python build artifacts ---
+**/__pycache__/
+build/
+dist/
+
+# --- Virtual environments ---
+.venv/
+venv/
+
+# --- IDE and editor files ---
+.vscode/
+.idea/
+.DS_Store
+
+# --- Git data ---
+.git/
+.gitignore
+
+# --- Docker & CI/CD ---
+docker-compose.yml
+.github/
+
+# --- Local data ---
+# We ignore the local 'data' folder because it will be mounted as a volume.
+# This prevents local test data from being baked into the image.
+data/
+tests/
+*.log
