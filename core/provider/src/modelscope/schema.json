@@ -1,26 +1,30 @@
 {
   "provider_config": {
     "api_key": {
+      "name": "API 密钥",
       "type": "sensitive",
       "default": null,
-      "hint": "Your ModelScope API Key"
+      "hint": "ModelScope API 密钥"
     }
   },
   "model_config": {
     "llm": {
     "timeout": {
+      "name": "超时",
       "type": "integer",
       "default": 120,
-      "hint": "Timeout seconds"
+      "hint": "超时秒数"
     },
     "temperature": {
+      "name": "温度",
       "type": "float",
       "default": null,
-      "hint": "Model temperature"
+      "hint": "模型温度"
     }
   },
   "image": {
     "timeout": {
+      "name": "超时时间",
       "type": "integer",
       "default": 10,
       "hint": "生图超时时间"

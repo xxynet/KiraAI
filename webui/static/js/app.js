@@ -418,15 +418,17 @@ function renderAdapterList() {
                         <div class="flex justify-end space-x-3 mt-4">
                             <button
                                 class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                                data-i18n="adapter.edit"
                                 onclick="editAdapter('${id}')"
                             >
-                                Edit
+                                ${getTranslation('adapter.edit', 'Edit')}
                             </button>
                             <button
                                 class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30"
+                                data-i18n="adapter.delete"
                                 onclick="deleteAdapter('${id}')"
                             >
-                                Delete
+                                ${getTranslation('adapter.delete', 'Delete')}
                             </button>
                         </div>
                     </div>
@@ -619,6 +621,7 @@ async function openAdapterModal(adapter) {
     }
 
     const nameInput = document.getElementById('adapter-name');
+    const descInput = document.getElementById('adapter-desc');
     const platformSelect = document.getElementById('adapter-platform');
     const statusSelect = document.getElementById('adapter-status');
     const configContainer = document.getElementById('adapter-config-container');
@@ -627,6 +630,9 @@ async function openAdapterModal(adapter) {
 
     if (nameInput) {
         nameInput.value = adapter ? (adapter.name || '') : '';
+    }
+    if (descInput) {
+        descInput.value = adapter ? (adapter.description || '') : '';
     }
     if (statusSelect) {
         statusSelect.value = adapter && adapter.status === 'active' ? 'active' : 'inactive';
@@ -756,10 +762,12 @@ function closeAdapterModal() {
 
 async function saveAdapter() {
     const nameInput = document.getElementById('adapter-name');
+    const descInput = document.getElementById('adapter-desc');
     const platformSelect = document.getElementById('adapter-platform');
     const statusSelect = document.getElementById('adapter-status');
 
     const name = nameInput ? nameInput.value.trim() : '';
+    const description = descInput ? descInput.value.trim() : '';
     const platform = platformSelect ? platformSelect.value.trim() : '';
     const status = statusSelect ? statusSelect.value : 'inactive';
 
@@ -823,6 +831,7 @@ async function saveAdapter() {
         name: name,
         platform: platform,
         status: status,
+        description: description,
         config: config
     };
 
@@ -2140,7 +2149,7 @@ function renderProviderConfigFields(schema, containerOrId = 'provider-config-con
         
         const label = document.createElement('label');
         label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2';
-        label.textContent = key;
+        label.textContent = (fieldDef && fieldDef.name) ? fieldDef.name : key;
         
         let input;
         
@@ -3276,7 +3285,7 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
         
         const label = document.createElement('label');
         label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
-        label.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        label.textContent = (field && field.name) ? field.name : key;
         wrapper.appendChild(label);
         
         let input;

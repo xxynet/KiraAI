@@ -232,8 +232,14 @@ class AdapterManager:
         logger.info(f"Generated adapter config for {name} ({platform})")
         return adapter_id
 
-    async def create_adapter(self, name: str, platform: str, status: str, config: Optional[dict] = None) -> Optional[
-        AdapterInfo]:
+    async def create_adapter(
+        self,
+        name: str,
+        platform: str,
+        status: str,
+        description: Optional[str] = None,
+        config: Optional[dict] = None,
+    ) -> Optional[AdapterInfo]:
         if not name or not platform:
             logger.error("Adapter name and platform are required for creation")
             return None
@@ -254,6 +260,8 @@ class AdapterManager:
             config_entry["config"] = entry_config
 
         config_entry["name"] = name
+        if description is not None:
+            config_entry["desc"] = description
 
         enabled = status == "active"
         config_entry["enabled"] = enabled
@@ -288,6 +296,7 @@ class AdapterManager:
         name: Optional[str] = None,
         platform: Optional[str] = None,
         status: Optional[str] = None,
+        description: Optional[str] = None,
         config: Optional[dict] = None,
     ) -> Optional[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {}) or {}
@@ -301,6 +310,8 @@ class AdapterManager:
             config_entry["name"] = name
         if platform:
             config_entry["platform"] = platform
+        if description is not None:
+            config_entry["desc"] = description
         if config:
             entry_config = config_entry.get("config") or {}
             entry_config.update(config)

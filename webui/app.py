@@ -76,6 +76,7 @@ class AdapterBase(BaseModel):
     name: str
     platform: str
     status: str = "inactive"
+    description: str = ""
     config: Dict = Field(default_factory=dict)
 
 
@@ -795,6 +796,7 @@ class KiraWebUI:
                                 name=info.name,
                                 platform=info.platform,
                                 status=status,
+                                description=info.description,
                                 config=info.config,
                             )
                         )
@@ -823,6 +825,7 @@ class KiraWebUI:
                         name=name,
                         platform=platform,
                         status=payload.status,
+                        description=payload.description,
                         config=payload.config or {},
                     )
                     if not info:
@@ -834,6 +837,7 @@ class KiraWebUI:
                         name=info.name,
                         platform=info.platform,
                         status=status_value,
+                        description=info.description,
                         config=info.config,
                     )
                 except HTTPException:
@@ -867,6 +871,7 @@ class KiraWebUI:
                         name=info.name,
                         platform=info.platform,
                         status=status,
+                        description=info.description,
                         config=info.config,
                     )
                 except HTTPException:
@@ -894,6 +899,7 @@ class KiraWebUI:
                         name=payload.name,
                         platform=payload.platform,
                         status=payload.status,
+                        description=payload.description,
                         config=payload.config or {},
                     )
                     if not info:
@@ -905,6 +911,7 @@ class KiraWebUI:
                         name=info.name,
                         platform=info.platform,
                         status=status_value,
+                        description=info.description,
                         config=info.config,
                     )
                 except HTTPException:
