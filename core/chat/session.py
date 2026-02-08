@@ -1,8 +1,34 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
-@dataclass()
+@dataclass
+class User:
+    """User dataclass"""
+
+    """user unique identifier"""
+    user_id: str
+
+    """nickname"""
+    nickname: str = None
+
+    extra_info: dict = field(default_factory=dict)
+
+
+@dataclass
+class Group:
+    """Group dataclass, describing all the info of the group"""
+
+    """group unique identifier"""
+    group_id: str
+
+    """group name"""
+    group_name: str = None
+
+    extra_info: dict = field(default_factory=dict)
+
+
+@dataclass
 class Session:
     adapter_name: str
 
@@ -11,6 +37,9 @@ class Session:
 
     """group id or user id"""
     session_id: str
+
+    """session title, could be group name or user nickname"""
+    session_title: str = None
 
     @property
     def sid(self):

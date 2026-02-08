@@ -1,9 +1,7 @@
 from core.utils.path_utils import get_config_path
 
+VERSION = "v1.6.12"
 
-VERSION = "v1.6.0"
-
-# bot, adapters, providers, models, selfie
 DEFAULT_CONFIG = {
     "bot_config": {
         "bot": {

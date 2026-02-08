@@ -97,12 +97,45 @@ function initializeApp() {
     const savedTheme = localStorage.getItem('theme') || 'light';
     applyTheme(savedTheme);
 
+    setupThemeToggle();
     setupNavigation();
+    loadAppVersion();
     loadInitialData();
     setupEventListeners();
     startAutoRefresh();
     initializeMonacoEditor();
     initializeDropzones();
+}
+
+function setupThemeToggle() {
+    const button = document.getElementById('theme-toggle-button');
+    const iconPath = document.getElementById('theme-toggle-icon-path');
+    if (!button || !iconPath) {
+        return;
+    }
+
+    const updateIcon = (theme) => {
+        if (theme === 'dark') {
+            iconPath.setAttribute(
+                'd',
+                'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z'
+            );
+        } else {
+            iconPath.setAttribute(
+                'd',
+                'M12 3v2.25M18.364 5.636l-1.59 1.59M21 12h-2.25M18.364 18.364l-1.59-1.59M12 18.75V21M7.227 16.773l-1.59 1.59M5.25 12H3M7.227 7.227l-1.59-1.59M12 8.25A3.75 3.75 0 1015.75 12 3.75 3.75 0 0012 8.25z'
+            );
+        }
+    };
+
+    const currentTheme = localStorage.getItem('theme') || 'light';
+    updateIcon(currentTheme);
+
+    button.addEventListener('click', () => {
+        const theme = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+        applyTheme(theme);
+        updateIcon(theme);
+    });
 }
 
 /**
@@ -214,6 +247,19 @@ async function loadPageData(pageName) {
  */
 async function loadInitialData() {
     await loadPageData(AppState.currentPage);
+}
+
+async function loadAppVersion() {
+    try {
+        const response = await apiCall('/api/version');
+        const data = await response.json();
+        const element = document.getElementById('app-version');
+        if (element && data && data.version) {
+            element.textContent = data.version;
+        }
+    } catch (error) {
+        console.error('Error loading version:', error);
+    }
 }
 
 /**
@@ -1800,6 +1846,14 @@ function setupEventListeners() {
     
     // Initialize log level selector
     initLogLevelSelector();
+
+    const logoutButton = document.getElementById('logout-button');
+    if (logoutButton) {
+        logoutButton.addEventListener('click', () => {
+            localStorage.removeItem('jwt_token');
+            window.location.href = '/login';
+        });
+    }
     
     document.addEventListener('click', (e) => {
         const target = e.target.closest('button');

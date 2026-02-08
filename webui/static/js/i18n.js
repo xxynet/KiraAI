@@ -11,6 +11,10 @@ const resources = {
                 title: "KiraAI",
                 subtitle: "Admin Panel"
             },
+            header: {
+                logout: "Logout",
+                theme_toggle: "Toggle theme"
+            },
             nav: {
                 overview: "Overview",
                 provider: "Provider",
@@ -281,6 +285,10 @@ const resources = {
             app: {
                 title: "KiraAI",
                 subtitle: "管理面板"
+            },
+            header: {
+                logout: "退出登录",
+                theme_toggle: "切换主题"
             },
             nav: {
                 overview: "概览",

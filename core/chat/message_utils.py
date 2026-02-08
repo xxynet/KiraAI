@@ -13,6 +13,8 @@ from core.chat.message_elements import (
     Poke
 )
 
+from .session import Session, Group, User
+
 
 @dataclass
 class KiraMessageEvent:
@@ -23,8 +25,9 @@ class KiraMessageEvent:
     user_nickname: str
     message_id: str
     self_id: str
-    content: List
+    content: list
     timestamp: int
+    session: Session = None
     group_id: Optional[str] = None
     group_name: Optional[str] = None
     is_mentioned: Optional[bool] = None
@@ -33,6 +36,18 @@ class KiraMessageEvent:
 
     def __post_init__(self):
         self.message_repr = " ".join(ele.repr for ele in self.content)
+        self.session = Session(
+            adapter_name=self.adapter_name,
+            session_type="gm" if self.group_id else "dm",
+            session_id=self.group_id if self.group_id else self.user_id,
+            session_title=self.group_name if self.group_id else self.user_nickname
+        )
+
+    def get_log_info(self):
+        if self.is_group_message():
+            return f"[{self.adapter_name} | {self.message_id}] [{self.group_name} | {self.user_nickname}]: {self.message_repr}"
+        else:
+            return f"[{self.adapter_name} | {self.message_id}] [{self.user_nickname}]: {self.message_repr}"
 
     def is_group_message(self) -> bool:
         """judge whether it's a group message"""

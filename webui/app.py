@@ -24,6 +24,7 @@ import psutil
 from core.lifecycle import KiraLifecycle
 from core.logging_manager import get_logger, log_cache_manager
 from core.utils.path_utils import get_data_path
+from core.config.default import VERSION
 
 logger = get_logger("webui", "blue")
 
@@ -48,6 +49,10 @@ class OverviewResponse(BaseModel):
     runtime_duration: int = 0  # System uptime in seconds
     memory_usage: int = 0  # Process memory usage in MB
     total_memory: int = 0  # Total system memory in MB
+
+
+class VersionResponse(BaseModel):
+    version: str
 
 
 class ProviderBase(BaseModel):
@@ -157,7 +162,7 @@ def _create_jwt_token(data: Dict, expires_delta: Optional[timedelta] = None) -> 
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(hours=24)
+        expire = datetime.utcnow() + timedelta(days=5)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, "kiraai_secret_key", algorithm="HS256")
     return encoded_jwt
@@ -292,6 +297,15 @@ class KiraWebUI:
             """Health check endpoint"""
             return {"status": "ok", "lifecycle_available": self.lifecycle is not None}
 
+        @self.app.get(
+            "/api/version",
+            response_model=VersionResponse,
+            tags=["system"],
+            dependencies=[Depends(require_auth)],
+        )
+        async def get_version():
+            return VersionResponse(version=VERSION)
+
         @self.app.post(
             "/api/auth/login", response_model=LoginResponse, tags=["auth"]
         )
@@ -305,7 +319,7 @@ class KiraWebUI:
 
             access_token = _create_jwt_token(
                 data={"sub": "admin"},
-                expires_delta=timedelta(hours=24)
+                expires_delta=timedelta(days=5)
             )
             return LoginResponse(access_token=access_token)
 

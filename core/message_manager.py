@@ -132,18 +132,9 @@ class MessageProcessor:
 
     async def handle_im_message(self, msg: KiraMessageEvent):
         """process im message"""
-        if msg.is_group_message():
-            logger.info(f"[{msg.adapter_name} | {msg.message_id}] [{msg.group_name} | {msg.user_nickname}]: {msg.message_repr}")
-        else:
-            logger.info(f"[{msg.adapter_name} | {msg.message_id}] [{msg.user_nickname}]: {msg.message_repr}")
+        logger.info(msg.get_log_info())
 
-        session = Session(
-            adapter_name=msg.adapter_name,
-            session_type="gm" if msg.is_group_message() else "dm",
-            session_id=msg.group_id if msg.is_group_message() else msg.user_id,
-        )
-
-        sid = session.sid
+        sid = msg.session.sid
 
         # acquire buffer lock
         buffer_lock = self.get_buffer_lock(sid)
