@@ -4,7 +4,7 @@
 
 点亮数字生命灵魂
 
-[English](../README.md) | 简体中文
+[English](/README.md) | 简体中文
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/) [![Releases](https://img.shields.io/github/v/release/xxynet/KiraAI)](https://github.com/xxynet/KiraAI/releases) [![Commit](https://img.shields.io/github/last-commit/xxynet/KiraAI?color=green)]() [![QQ群](https://custom-icon-badges.demolab.com/badge/QQ群-874381335-00BFFF?style=flat&logo=tencent-qq)](https://qm.qq.com/q/eZBJu9wfFC) [![Discord](https://custom-icon-badges.demolab.com/badge/Discord-KiraAI-00BFFF?style=flat&logo=icons8-discord-48)](https://discord.gg/tPRNggzR)
 
@@ -28,17 +28,22 @@ KiraAI 是一个模块化、跨平台的 AI 数字生命项目，以数字生命
 - `scripts/`：便捷启动脚本
 
 ## 📷 截图
-![alt text](../screenshots/image01.jpg)
 
-![alt text](../screenshots/image02.png)
+![alt text](/screenshots/webui-light-cn.png)
 
-![alt text](../screenshots/image03.png)
+![alt text](/screenshots/webui-dark-cn.png)
 
-![alt text](../screenshots/image04.png)
+![alt text](/screenshots/image01.jpg)
 
-![alt text](../screenshots/image05.png)
+![alt text](/screenshots/image02.png)
 
-![alt text](../screenshots/image06.png)
+![alt text](/screenshots/image03.png)
+
+![alt text](/screenshots/image04.png)
+
+![alt text](/screenshots/image05.png)
+
+![alt text](/screenshots/image06.png)
 
 > [!IMPORTANT]
 > 本项目在活跃开发期间，可能会有 **破坏性更新**

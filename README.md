@@ -28,6 +28,11 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 - `scripts/`: convenience launchers
 
 ## 📷 ScreenShots
+
+![alt text](screenshots/webui-light-en.png)
+
+![alt text](screenshots/webui-dark-en.png)
+
 ![alt text](screenshots/image01.jpg)
 
 ![alt text](screenshots/image02.png)
