@@ -110,18 +110,6 @@
                 </a>
 
                 <a href="#"
-                   data-page="plugin"
-                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
-                    <div class="flex items-center">
-                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"></path>
-                        </svg>
-                        <span data-i18n="nav.plugin">Plugin</span>
-                    </div>
-                    <span class="nav-dot"></span>
-                </a>
-
-                <a href="#"
                    data-page="sticker"
                    class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
                     <div class="flex items-center">
@@ -142,6 +130,18 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
                         <span data-i18n="nav.configuration">Configuration</span>
+                    </div>
+                    <span class="nav-dot"></span>
+                </a>
+
+                <a href="#"
+                   data-page="plugin"
+                   class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 011-1V4z"></path>
+                        </svg>
+                        <span data-i18n="nav.plugin">Add-ons</span>
                     </div>
                     <span class="nav-dot"></span>
                 </a>
@@ -381,13 +381,17 @@
                 <!-- Plugin Page -->
                 <div id="page-plugin" class="page-content hidden">
                     <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-lg font-semibold text-gray-800" data-i18n="plugin.title">Plugins</h3>
+                        <h3 class="text-lg font-semibold text-gray-800" data-i18n="plugin.title">Add-ons</h3>
                         <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                             </svg>
-                            <span data-i18n="plugin.add">Add Plugin</span>
+                            <span data-i18n="plugin.add">Add Add-on</span>
                         </button>
+                    </div>
+                    <div class="flex space-x-4 mb-4 border-b border-gray-200 dark:border-gray-700">
+                        <button id="plugin-tab-plugins" class="px-3 py-2 text-sm font-medium border-b-2 border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 focus:outline-none" data-i18n="plugin.tab_plugins">Plugins</button>
+                        <button id="plugin-tab-mcp" class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 focus:outline-none" data-i18n="plugin.tab_mcp">MCP</button>
                     </div>
                     <div id="plugin-list" class="space-y-4">
                         <div class="flex justify-center items-center py-12">
@@ -396,6 +400,16 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"></path>
                                 </svg>
                                 <p class="text-gray-500" data-i18n="plugin.no_plugins">No plugins configured</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="plugin-mcp-placeholder" class="hidden">
+                        <div class="flex justify-center items-center py-12">
+                            <div class="text-center">
+                                <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"></path>
+                                </svg>
+                                <p class="text-gray-500" data-i18n="plugin.mcp_coming_soon">MCP functionality coming soon</p>
                             </div>
                         </div>
                     </div>
@@ -733,6 +747,30 @@
             <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
                 <button onclick="closeAdapterModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-i18n="adapter.modal_cancel">Cancel</button>
                 <button onclick="saveAdapter()" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" data-i18n="adapter.modal_save">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Plugin Config Modal -->
+    <div id="plugin-config-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md mx-4 flex flex-col" style="max-height: 90vh;">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100" data-i18n="plugin.config_modal_title">Configure Plugin</h3>
+                    <p id="plugin-config-modal-title" class="mt-1 text-sm text-gray-500 dark:text-gray-400"></p>
+                </div>
+                <button onclick="closePluginConfigModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="px-6 py-4 flex-1 overflow-y-auto">
+                <div id="plugin-config-container" class="space-y-4"></div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+                <button onclick="closePluginConfigModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-i18n="plugin.config_modal_cancel">Cancel</button>
+                <button onclick="savePluginConfig()" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" data-i18n="plugin.config_modal_save">Save</button>
             </div>
         </div>
     </div>

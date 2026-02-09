@@ -3,7 +3,7 @@ from enum import Enum
 
 class ConfigType(Enum):
     String = "string"
-    Integer = "int"
+    Integer = "integer"
     Float = "float"
     Sensitive = "sensitive"
     List = "list"

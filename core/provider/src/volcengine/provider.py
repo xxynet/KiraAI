@@ -66,6 +66,8 @@ class VolcengineProvider(NewBaseProvider):
         except APIConnectionError as e:
             # APIConnectionError: Connection error.(base_url error)
             logger.error(f"APIConnectionError: {e}")
+        except Exception as e:
+            logger.error(f"Error: {e}")
 
     async def text_to_image(self, model: ModelInfo, prompt) -> ImageResult:
         client = AsyncOpenAI(

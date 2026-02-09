@@ -27,9 +27,8 @@ from core.chat.message_elements import (
 )
 
 from core.llm_client import LLMClient
-from .memory_manager import MemoryManager
+from core.chat.memory_manager import MemoryManager
 from .prompt_manager import PromptManager
-from .chat import Session
 
 logger = get_logger("message_processor", "cyan")
 

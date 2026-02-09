@@ -11,6 +11,8 @@ const AppState = {
     sseEventSource: null,
     configTab: 'message',
     configurationTabsInitialized: false,
+    pluginTab: 'plugins',
+    pluginTabsInitialized: false,
     data: {
         overview: null,
         providers: [],
@@ -219,6 +221,9 @@ async function loadPageData(pageName) {
                 break;
             case 'persona':
                 await loadPersonaData();
+                break;
+            case 'plugin':
+                setupPluginTabs();
                 break;
             case 'sticker':
                 await loadStickerData();
@@ -527,6 +532,10 @@ const AdapterModalState = {
     adapterId: null
 };
 
+const PluginConfigModalState = {
+    pluginId: null
+};
+
 async function fetchAdapterSchema(platform) {
     try {
         const response = await apiCall(`/api/adapters/schema/${encodeURIComponent(platform)}`);
@@ -584,7 +593,7 @@ function renderAdapterConfigFields(schema, containerOrId = 'adapter-config-conta
                 select.appendChild(option);
             });
             input = select;
-        } else if (fieldDef.type === 'integer' || fieldDef.type === 'float') {
+        } else if (fieldDef.type === 'integer' || fieldDef.type === 'int' || fieldDef.type === 'float') {
             input = document.createElement('input');
             input.type = 'number';
             input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -834,44 +843,8 @@ async function saveAdapter() {
         }
     }
 
-    const config = {};
     const configContainer = document.getElementById('adapter-config-container');
-    if (configContainer) {
-        const inputs = configContainer.querySelectorAll('[data-config-key]');
-        inputs.forEach(input => {
-            const key = input.getAttribute('data-config-key');
-            const fieldType = input.getAttribute('data-config-type');
-            if (!key) return;
-
-            let value;
-            if (input.tagName === 'SELECT') {
-                const selectElement = input;
-                if (selectElement.multiple) {
-                    value = Array.from(selectElement.selectedOptions).map(o => o.value).filter(v => v !== '');
-                } else {
-                    value = selectElement.value;
-                }
-            } else if (input.tagName === 'TEXTAREA' && fieldType === 'list') {
-                const raw = input.value || '';
-                value = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-            } else {
-                value = input.value;
-            }
-
-            if (fieldType === 'integer') {
-                value = value === '' ? null : parseInt(value, 10);
-            } else if (fieldType === 'float') {
-                value = value === '' ? null : parseFloat(value);
-            } else if (fieldType === 'list') {
-                if (!Array.isArray(value)) {
-                    const raw = value || '';
-                    value = raw.split('\n').flatMap(s => s.split(',')).map(s => s.trim()).filter(s => s.length > 0);
-                }
-            }
-
-            config[key] = value;
-        });
-    }
+    const config = collectConfigFromContainer(configContainer);
 
     const payload = {
         name: name,
@@ -911,6 +884,56 @@ async function saveAdapter() {
         console.error('Error saving adapter:', error);
         showNotification('Failed to save adapter', 'error');
     }
+}
+
+function collectConfigFromContainer(container) {
+    const config = {};
+    if (!container) {
+        return config;
+    }
+    const inputs = container.querySelectorAll('[data-config-key]');
+    inputs.forEach((input) => {
+        const key = input.getAttribute('data-config-key');
+        const fieldType = input.getAttribute('data-config-type');
+        if (!key) {
+            return;
+        }
+        let value;
+        if (input.tagName === 'SELECT') {
+            const selectElement = input;
+            if (selectElement.multiple) {
+                value = Array.from(selectElement.selectedOptions)
+                    .map((o) => o.value)
+                    .filter((v) => v !== '');
+            } else {
+                value = selectElement.value;
+            }
+        } else if (input.tagName === 'TEXTAREA' && fieldType === 'list') {
+            const raw = input.value || '';
+            value = raw
+                .split('\n')
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0);
+        } else {
+            value = input.value;
+        }
+        if (fieldType === 'integer') {
+            value = value === '' ? null : parseInt(value, 10);
+        } else if (fieldType === 'float') {
+            value = value === '' ? null : parseFloat(value);
+        } else if (fieldType === 'list') {
+            if (!Array.isArray(value)) {
+                const raw = value || '';
+                value = raw
+                    .split('\n')
+                    .flatMap((s) => s.split(','))
+                    .map((s) => s.trim())
+                    .filter((s) => s.length > 0);
+            }
+        }
+        config[key] = value;
+    });
+    return config;
 }
 
 /**
@@ -962,6 +985,251 @@ async function loadStickerData() {
         renderStickerList();
     } catch (error) {
         console.error('Error loading sticker data:', error);
+    }
+}
+
+async function loadPluginData() {
+    try {
+        const response = await apiCall('/api/plugins');
+        const data = await response.json();
+        AppState.data.plugins = Array.isArray(data) ? data : [];
+        renderPluginList();
+    } catch (error) {
+        console.error('Error loading plugin data:', error);
+    }
+}
+
+function renderPluginList() {
+    const container = document.getElementById('plugin-list');
+    if (!container) {
+        return;
+    }
+    const plugins = AppState.data.plugins || [];
+    if (!plugins.length) {
+        container.innerHTML = `
+            <div class="flex justify-center items-center py-12">
+                <div class="text-center">
+                    <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"></path>
+                    </svg>
+                    <p class="text-gray-500" data-i18n="plugin.no_plugins">No add-ons configured</p>
+                </div>
+            </div>
+        `;
+        if (window.i18n) {
+            updateTranslations();
+        }
+        return;
+    }
+    const cards = plugins.map((plugin) => {
+        const id = plugin.id || '';
+        const name = plugin.name || id || '';
+        const version = plugin.version || '';
+        const author = plugin.author || '';
+        const description = plugin.description || '';
+        const repo = plugin.repo || '';
+        const enabled = plugin.enabled !== false;
+        const showMeta = version || author;
+        const toggleOnClasses = 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500';
+        const toggleOffClasses = 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600';
+        const knobOnClasses = 'translate-x-4';
+        const knobOffClasses = 'translate-x-0';
+        const toggleClasses = enabled ? toggleOnClasses : toggleOffClasses;
+        const knobClasses = enabled ? knobOnClasses : knobOffClasses;
+        return `
+            <div class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <div class="text-base font-semibold text-gray-900 dark:text-gray-100">${escapeHtml(name)}</div>
+                        ${showMeta ? `
+                            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                ${version ? `v${escapeHtml(String(version))}` : ''}${version && author ? ' · ' : ''}${author ? escapeHtml(String(author)) : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="flex items-start space-x-2">
+                        ${repo ? `
+                            <a href="${escapeHtml(String(repo))}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 mt-1">
+                                <span class="mr-1">Repo</span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 3h7m0 0v7m0-7L10 14"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10v11h11"></path>
+                                </svg>
+                            </a>
+                        ` : ''}
+                        <button
+                            type="button"
+                            class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none ${toggleClasses}"
+                            aria-pressed="${enabled ? 'true' : 'false'}"
+                            data-plugin-id="${escapeHtml(String(id))}"
+                            aria-label="${window.i18n ? window.i18n.t('plugin.toggle_label') : 'Enable plugin'}"
+                        >
+                            <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${knobClasses}"></span>
+                        </button>
+                    </div>
+                </div>
+                ${description ? `
+                    <p class="text-sm text-gray-600 dark:text-gray-300 line-clamp-3 mb-3" title="${escapeHtml(String(description))}">
+                        ${escapeHtml(String(description))}
+                    </p>
+                ` : ''}
+                <div class="mt-auto">
+                    <div class="text-xs font-mono text-gray-400 dark:text-gray-500 break-all mb-3">
+                        ${escapeHtml(String(id))}
+                    </div>
+                    <div class="flex items-center justify-end space-x-3">
+                        <button
+                            type="button"
+                            class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                            data-i18n="plugin.configure"
+                            data-plugin-config-id="${escapeHtml(String(id))}"
+                        >
+                            Configure
+                        </button>
+                        <button
+                            type="button"
+                            class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30"
+                            data-i18n="plugin.uninstall"
+                        >
+                            Uninstall
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    container.innerHTML = `
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4">
+            ${cards}
+        </div>
+    `;
+    attachPluginToggleHandlers();
+    if (window.i18n) {
+        updateTranslations();
+    }
+}
+
+async function togglePluginEnabled(button) {
+    const pluginId = button.getAttribute('data-plugin-id') || '';
+    if (!pluginId) {
+        return;
+    }
+    const isOn = button.getAttribute('aria-pressed') === 'true';
+    const nextState = !isOn;
+    button.setAttribute('aria-pressed', nextState ? 'true' : 'false');
+    const baseClasses = 'ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none';
+    const onClasses = 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500';
+    const offClasses = 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600';
+    button.className = `${baseClasses} ${nextState ? onClasses : offClasses}`;
+    const knob = button.querySelector('span');
+    if (knob) {
+        knob.className = `pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${nextState ? 'translate-x-4' : 'translate-x-0'}`;
+    }
+    try {
+        const response = await apiCall(`/api/plugins/${encodeURIComponent(pluginId)}/enabled`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enabled: nextState })
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to update plugin state: ${response.status}`);
+        }
+    } catch (error) {
+        console.error('Error updating plugin state:', error);
+    }
+}
+
+function attachPluginToggleHandlers() {
+    const container = document.getElementById('plugin-list');
+    if (!container) {
+        return;
+    }
+    container.querySelectorAll('button[data-plugin-id]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            togglePluginEnabled(btn);
+        });
+    });
+    container.querySelectorAll('button[data-plugin-config-id]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const pluginId = btn.getAttribute('data-plugin-config-id') || '';
+            if (pluginId) {
+                openPluginConfigModal(pluginId);
+            }
+        });
+    });
+}
+
+async function openPluginConfigModal(pluginId) {
+    if (!pluginId) {
+        return;
+    }
+    const modal = document.getElementById('plugin-config-modal');
+    const container = document.getElementById('plugin-config-container');
+    const titleElement = document.getElementById('plugin-config-modal-title');
+    if (!modal || !container) {
+        return;
+    }
+    PluginConfigModalState.pluginId = pluginId;
+    const plugins = AppState.data.plugins || [];
+    const plugin = plugins.find((p) => p.id === pluginId);
+    if (titleElement && plugin) {
+        titleElement.textContent = plugin.name || plugin.id || '';
+    }
+    container.innerHTML = '';
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    try {
+        const response = await apiCall(`/api/plugins/${encodeURIComponent(pluginId)}/config`);
+        if (!response.ok) {
+            showNotification('Failed to load plugin config', 'error');
+            return;
+        }
+        const data = await response.json();
+        const schema = data && data.schema ? data.schema : {};
+        const config = data && data.config ? data.config : {};
+        renderAdapterConfigFields(schema, container, config);
+    } catch (error) {
+        console.error('Error loading plugin config:', error);
+        showNotification('Failed to load plugin config', 'error');
+    }
+}
+
+function closePluginConfigModal() {
+    const modal = document.getElementById('plugin-config-modal');
+    const container = document.getElementById('plugin-config-container');
+    if (!modal || !container) {
+        return;
+    }
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    container.innerHTML = '';
+    PluginConfigModalState.pluginId = null;
+}
+
+async function savePluginConfig() {
+    if (!PluginConfigModalState.pluginId) {
+        return;
+    }
+    const container = document.getElementById('plugin-config-container');
+    const config = collectConfigFromContainer(container);
+    try {
+        const response = await apiCall(`/api/plugins/${encodeURIComponent(PluginConfigModalState.pluginId)}/config`, {
+            method: 'PUT',
+            body: JSON.stringify({ config: config })
+        });
+        if (!response.ok) {
+            showNotification('Failed to save plugin config', 'error');
+            return;
+        }
+        closePluginConfigModal();
+        showNotification('Plugin configuration saved', 'success');
+    } catch (error) {
+        console.error('Error saving plugin config:', error);
+        showNotification('Failed to save plugin config', 'error');
     }
 }
 
@@ -2977,6 +3245,56 @@ function setupConfigurationTabs() {
     });
     activateTab(AppState.configTab || 'message');
     AppState.configurationTabsInitialized = true;
+}
+
+function setupPluginTabs() {
+    if (AppState.pluginTabsInitialized) {
+        return;
+    }
+    const tabPlugins = document.getElementById('plugin-tab-plugins');
+    const tabMcp = document.getElementById('plugin-tab-mcp');
+    const pluginList = document.getElementById('plugin-list');
+    if (!tabPlugins || !tabMcp || !pluginList) {
+        return;
+    }
+    const activateTab = (tab) => {
+        AppState.pluginTab = tab;
+        const isPlugins = tab === 'plugins';
+        if (isPlugins) {
+            tabPlugins.classList.add('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabPlugins.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+            tabMcp.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabMcp.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        } else {
+            tabMcp.classList.add('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabMcp.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+            tabPlugins.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabPlugins.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        }
+        const pluginContent = document.getElementById('plugin-list');
+        const mcpPlaceholder = document.getElementById('plugin-mcp-placeholder');
+        if (pluginContent && mcpPlaceholder) {
+            if (isPlugins) {
+                pluginContent.classList.remove('hidden');
+                mcpPlaceholder.classList.add('hidden');
+            } else {
+                pluginContent.classList.add('hidden');
+                mcpPlaceholder.classList.remove('hidden');
+            }
+        }
+    };
+    tabPlugins.addEventListener('click', (e) => {
+        e.preventDefault();
+        activateTab('plugins');
+        loadPluginData();
+    });
+    tabMcp.addEventListener('click', (e) => {
+        e.preventDefault();
+        activateTab('mcp');
+    });
+    activateTab(AppState.pluginTab || 'plugins');
+    loadPluginData();
+    AppState.pluginTabsInitialized = true;
 }
 
 function getInputValue(id) {

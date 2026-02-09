@@ -1,13 +1,13 @@
 import asyncio
 import time
-from typing import Union, Optional
+from typing import Optional
 
 from .logging_manager import get_logger
 from .config import KiraConfig
 from .sticker_manager import StickerManager
 from .message_manager import MessageProcessor
 from .prompt_manager import PromptManager
-from .memory_manager import MemoryManager
+from core.chat.memory_manager import MemoryManager
 from .adapter import AdapterManager
 from .statistics import Statistics
 from .llm_client import LLMClient
@@ -114,7 +114,6 @@ class KiraLifecycle:
 
         self.plugin_manager = PluginManager(self.plugin_context)
         await self.plugin_manager.init()
-        self.plugin_manager.register_plugin_tools()
 
         # ====== schedule tasks ======
         asyncio.create_task(self.schedule_tasks())

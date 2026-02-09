@@ -1,10 +1,8 @@
-from dataclasses import dataclass, field
-from asyncio import Queue
-from typing import Callable
+from dataclasses import dataclass
 
 from ..provider import ProviderManager
 from ..adapter import AdapterManager
-from ..memory_manager import MemoryManager
+from core.chat.memory_manager import MemoryManager
 from core.config import KiraConfig
 from core.event_bus import EventBus
 from core.llm_client import LLMClient

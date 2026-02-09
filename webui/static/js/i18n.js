@@ -20,7 +20,7 @@ const resources = {
                 provider: "Provider",
                 adapter: "Adapter",
                 persona: "Persona",
-                plugin: "Plugin",
+                plugin: "Add-ons",
                 sticker: "Sticker",
                 configuration: "Configuration",
                 sessions: "Sessions",
@@ -39,6 +39,9 @@ const resources = {
                 },
                 persona: {
                     title: "Personas"
+                },
+                plugin: {
+                    title: "Add-ons"
                 },
                 configuration: {
                     title: "Configuration"
@@ -135,14 +138,23 @@ const resources = {
                 format_text: "Plain Text"
             },
             plugin: {
-                title: "Plugins",
-                add: "Add Plugin",
-                add_coming_soon: "Add plugin functionality coming soon",
+                title: "Add-ons",
+                add: "Add Add-on",
+                add_coming_soon: "Add add-on functionality coming soon",
                 no_plugins: "No plugins configured",
                 name: "Name",
                 version: "Version",
                 status: "Status",
-                actions: "Actions"
+                actions: "Actions",
+                tab_plugins: "Plugins",
+                tab_mcp: "MCP",
+                mcp_coming_soon: "MCP functionality coming soon",
+                toggle_label: "Enable plugin",
+                configure: "Configure",
+                uninstall: "Uninstall",
+                config_modal_title: "Configure Plugin",
+                config_modal_cancel: "Cancel",
+                config_modal_save: "Save"
             },
             sticker: {
                 title: "Stickers",
@@ -295,7 +307,7 @@ const resources = {
                 provider: "提供商",
                 adapter: "适配器",
                 persona: "人设",
-                plugin: "插件",
+                plugin: "附加功能",
                 sticker: "表情包",
                 configuration: "配置项",
                 sessions: "会话管理",
@@ -316,7 +328,7 @@ const resources = {
                     title: "人设"
                 },
                 plugin: {
-                    title: "插件"
+                    title: "附加功能"
                 },
                 sticker: {
                     title: "表情包"
@@ -416,14 +428,23 @@ const resources = {
                 format_text: "纯文本"
             },
             plugin: {
-                title: "插件",
-                add: "添加插件",
-                add_coming_soon: "添加插件功能即将推出",
+                title: "附加功能",
+                add: "添加附加功能",
+                add_coming_soon: "添加附加功能功能即将推出",
                 no_plugins: "未配置插件",
                 name: "名称",
                 version: "版本",
                 status: "状态",
-                actions: "操作"
+                actions: "操作",
+                tab_plugins: "插件",
+                tab_mcp: "MCP",
+                mcp_coming_soon: "MCP 功能即将推出",
+                toggle_label: "启用插件",
+                configure: "配置",
+                uninstall: "卸载",
+                config_modal_title: "配置插件",
+                config_modal_cancel: "取消",
+                config_modal_save: "保存"
             },
             sticker: {
                 title: "表情包",

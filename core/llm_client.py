@@ -23,7 +23,7 @@ class LLMClient:
 
         self.provider_mgr = provider_mgr
 
-        self.tools_definitions = []
+        self.tools_definitions: list[dict] = []
         self.tools_functions = {}
 
         self.llm_semaphore = Semaphore(2)
@@ -39,6 +39,14 @@ class LLMClient:
             }
         })
         self.tools_functions[name] = func
+
+    def unregister_tool(self, name: str):
+        if name in self.tools_functions:
+            del self.tools_functions[name]
+
+        for i, tool_def in enumerate(self.tools_definitions):
+            if tool_def.get("function", {}).get("name") == name:
+                del self.tools_definitions[i]
 
     async def chat(self, messages) -> LLMResponse:
         """与LLM交互

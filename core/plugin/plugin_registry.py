@@ -20,6 +20,7 @@ logger = get_logger("plugin_manager", "cyan")
 PLUGINS_DIR = get_data_path() / "plugins"
 PLUGIN_DATA_DIR = get_data_path() / "plugin_data"
 PLUGIN_CONFIG_DIR = get_config_path() / "plugins"
+PLUGIN_STATE_FILE = get_config_path() / "plugins.json"
 BUILTIN_PLUGINS_DIR = Path(__file__).parent / "builtin_plugins"
 
 _plugin_classes: Dict[str, type[BasePlugin]] = {}
@@ -84,6 +85,56 @@ class PluginManager:
         self.ctx = ctx
         self.plugin_instances: Dict[str, BasePlugin] = {}
         self.plugin_configs: Dict[str, Dict[str, Any]] = {}
+        self.plugin_enabled: Dict[str, bool] = {}
+
+        self._load_plugin_state()
+
+    def _load_plugin_state(self) -> None:
+        try:
+            config_dir = PLUGIN_STATE_FILE.parent
+            config_dir.mkdir(parents=True, exist_ok=True)
+            if PLUGIN_STATE_FILE.exists():
+                with PLUGIN_STATE_FILE.open("r", encoding="utf-8") as f:
+                    data = f.read()
+                if data.strip():
+                    raw = json.loads(data)
+                    if isinstance(raw, dict):
+                        self.plugin_enabled = {
+                            str(k): bool(v) for k, v in raw.items()
+                        }
+        except Exception as e:
+            logger.error(f"Failed to load plugin state from {PLUGIN_STATE_FILE}: {e}")
+            self.plugin_enabled = {}
+
+    def _save_plugin_state(self) -> None:
+        try:
+            config_dir = PLUGIN_STATE_FILE.parent
+            config_dir.mkdir(parents=True, exist_ok=True)
+            with PLUGIN_STATE_FILE.open("w", encoding="utf-8") as f:
+                json.dump(self.plugin_enabled, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save plugin state to {PLUGIN_STATE_FILE}: {e}")
+
+    def is_plugin_enabled(self, plugin_id: str) -> bool:
+        if not plugin_id:
+            return False
+        return self.plugin_enabled.get(plugin_id, True)
+
+    async def set_plugin_enabled(self, plugin_id: str, enabled: bool) -> None:
+        if not plugin_id:
+            return
+        plugin_id = str(plugin_id)
+        previous = self.plugin_enabled.get(plugin_id, True)
+        self.plugin_enabled[plugin_id] = bool(enabled)
+        self._save_plugin_state()
+
+        if enabled and not previous:
+            await self.init_plugin(plugin_id)
+        elif not enabled and previous:
+            try:
+                await self.terminate(plugin_id)
+            except Exception as e:
+                logger.error(f"Failed to terminate plugin {plugin_id} when disabling: {e}")
 
     def get_registered_plugins(self) -> Dict[str, type[BasePlugin]]:
         return dict(_plugin_classes)
@@ -103,6 +154,43 @@ class PluginManager:
     def get_plugin_schema(self, name: str) -> List[BaseConfigField]:
         return _plugin_schemas.get(name, [])
 
+    def get_plugin_config(self, plugin_name: str) -> Dict[str, Any]:
+        plugin_name = str(plugin_name)
+        if plugin_name in self.plugin_configs:
+            return dict(self.plugin_configs.get(plugin_name, {}))
+        schema_fields = _plugin_schemas.get(plugin_name, [])
+        if schema_fields:
+            self._ensure_plugin_config(plugin_name, schema_fields)
+            return dict(self.plugin_configs.get(plugin_name, {}))
+        cfg = self._load_plugin_config_from_file(plugin_name)
+        self.plugin_configs[plugin_name] = cfg
+        return dict(cfg)
+
+    async def update_plugin_config(self, plugin_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        plugin_name = str(plugin_name)
+        if not isinstance(config, dict):
+            config = {}
+        schema_fields = _plugin_schemas.get(plugin_name, [])
+        if schema_fields:
+            self._ensure_plugin_config(plugin_name, schema_fields)
+        current_cfg = self.plugin_configs.get(plugin_name)
+        if current_cfg is None:
+            current_cfg = self._load_plugin_config_from_file(plugin_name)
+            self.plugin_configs[plugin_name] = current_cfg
+        for key, value in config.items():
+            current_cfg[key] = value
+        PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        config_path = PLUGIN_CONFIG_DIR / f"{plugin_name}.json"
+        try:
+            with config_path.open("w", encoding="utf-8") as f:
+                json.dump(current_cfg, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to save plugin config for {plugin_name}: {e}")
+        self.plugin_configs[plugin_name] = current_cfg
+        if plugin_name in self.plugin_instances:
+            await self.init_plugin(plugin_name)
+        return dict(current_cfg)
+
     def get_plugin_components(self) -> Dict[str, dict]:
         return dict(_plugin_components)
 
@@ -112,33 +200,48 @@ class PluginManager:
         entry = _plugin_components.get(plugin_name, {})
         return entry.get("tools", {})
 
-    def register_plugin_tools(self) -> None:
-        if not self.ctx or not getattr(self.ctx, "llm_api", None):
+    def _register_plugin_tools_for(self, plugin_name: str) -> None:
+        comp = _plugin_components.get(plugin_name, {})
+        if not comp:
             return
-        for plugin_name, comp in _plugin_components.items():
-            tools = comp.get("tools", {})
-            tool_funcs = comp.get("tool_funcs", {})
-            plugin_instance = self.plugin_instances.get(plugin_name)
-            tool_names = []
-            for tool_name, meta in tools.items():
-                func = tool_funcs.get(tool_name)
-                if not func:
-                    continue
-                bound_func = func
-                if plugin_instance is not None and hasattr(plugin_instance, func.__name__):
-                    bound_func = getattr(plugin_instance, func.__name__)
-                tool_names.append(tool_name)
-                self.ctx.llm_api.register_tool(
-                    name=tool_name,
-                    description=meta.get("description", ""),
-                    parameters=meta.get("parameters") or {},
-                    func=bound_func,
-                )
+        tools = comp.get("tools", {})
+        tool_funcs = comp.get("tool_funcs", {})
+        plugin_instance = self.plugin_instances.get(plugin_name)
+        tool_names: list[str] = []
+        for tool_name, meta in tools.items():
+            func = tool_funcs.get(tool_name)
+            if not func:
+                continue
+            bound_func = func
+            if plugin_instance is not None and hasattr(plugin_instance, func.__name__):
+                bound_func = getattr(plugin_instance, func.__name__)
+            self.ctx.llm_api.register_tool(
+                name=tool_name,
+                description=meta.get("description", ""),
+                parameters=meta.get("parameters") or {},
+                func=bound_func,
+            )
+            tool_names.append(tool_name)
+        if tool_names:
             logger.info(f"Registered {len(tool_names)} tools from {plugin_name}: {tool_names}")
 
-    def _ensure_plugin_config(self, plugin_name: str, schema_fields: List[BaseConfigField]) -> None:
-        if not schema_fields:
+    def register_plugin_tools(self) -> None:
+        for plugin_name in _plugin_components.keys():
+            self._register_plugin_tools_for(plugin_name)
+
+    def _cleanup_plugin_registration(self, plugin_name: str) -> None:
+        comp = _plugin_components.get(plugin_name)
+        if not comp:
             return
+        tools = comp.get("tools", {})
+        if self.ctx and getattr(self.ctx, "llm_api", None):
+            for tool_name in list(tools.keys()):
+                try:
+                    self.ctx.llm_api.unregister_tool(tool_name)
+                except Exception as e:
+                    logger.error(f"Failed to unregister tool {tool_name} for plugin {plugin_name}: {e}")
+
+    def _load_plugin_config_from_file(self, plugin_name: str) -> Dict[str, Any]:
         PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         config_path = PLUGIN_CONFIG_DIR / f"{plugin_name}.json"
         cfg: Dict[str, Any] = {}
@@ -150,6 +253,14 @@ class PluginManager:
                     cfg = loaded
             except Exception as e:
                 logger.error(f"Failed to load plugin config from {config_path}: {e}")
+        return cfg
+
+    def _ensure_plugin_config(self, plugin_name: str, schema_fields: List[BaseConfigField]) -> None:
+        if not schema_fields:
+            return
+        PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        config_path = PLUGIN_CONFIG_DIR / f"{plugin_name}.json"
+        cfg: Dict[str, Any] = self._load_plugin_config_from_file(plugin_name)
         for field in schema_fields:
             if isinstance(field, BaseConfigField) and field.key not in cfg:
                 cfg[field.key] = field.default
@@ -173,39 +284,95 @@ class PluginManager:
         discovered = list(_plugin_classes.keys())
         logger.info(f"Discovered plugins: {discovered}")
 
-        for plugin_name, plugin_cls in _plugin_classes.items():
-            if plugin_name in self.plugin_instances:
+        for plugin_id in _plugin_classes.keys():
+            if plugin_id in self.plugin_instances:
                 continue
-            cfg = self.plugin_configs.get(plugin_name) or {}
-            try:
-                instance = plugin_cls(self.ctx, cfg)
-            except Exception as e:
-                logger.error(f"Failed to instantiate plugin {plugin_name}: {e}")
-                continue
-            self.plugin_instances[plugin_name] = instance
-            try:
-                await instance.initialize()
-            except Exception as e:
-                logger.error(f"Failed to initialize plugin {plugin_name}: {e}")
+            await self.init_plugin(plugin_id)
 
-    async def reload(self):
-        """
-        Reload all plugins by terminating existing ones and reinitializing
-        """
-        logger.info("Reloading all plugins...")
-        
-        # Terminate all existing plugins
-        for plugin_name, plugin_instance in self.plugin_instances.items():
+    async def init_plugin(self, plugin_id: Optional[str] = None):
+        if plugin_id is None:
+            for pid in list(_plugin_classes.keys()):
+                await self.init_plugin(pid)
+            return
+
+        plugin_id = str(plugin_id)
+        plugin_cls = _plugin_classes.get(plugin_id)
+        if not plugin_cls:
+            logger.warning(f"No plugin class found for {plugin_id}, cannot initialize")
+            return
+
+        if not self.is_plugin_enabled(plugin_id):
+            logger.info(f"Plugin {plugin_id} is disabled, skipping initialization")
+            return
+
+        existing = self.plugin_instances.get(plugin_id)
+        if existing is not None:
+            try:
+                await self.terminate(plugin_id)
+            except Exception as e:
+                logger.error(f"Error terminating plugin {plugin_id} before reinitialization: {e}")
+
+        schema_fields = _plugin_schemas.get(plugin_id, [])
+        if schema_fields:
+            self._ensure_plugin_config(plugin_id, schema_fields)
+            cfg = self.plugin_configs.get(plugin_id) or {}
+        else:
+            cfg: Dict[str, Any] = self._load_plugin_config_from_file(plugin_id)
+            self.plugin_configs[plugin_id] = cfg
+
+        try:
+            instance = plugin_cls(self.ctx, cfg)
+        except Exception as e:
+            logger.error(f"Failed to instantiate plugin {plugin_id}: {e}")
+            return
+        self.plugin_instances[plugin_id] = instance
+        initialized = False
+        try:
+            await instance.initialize()
+            initialized = True
+        except Exception as e:
+            logger.error(f"Failed to initialize plugin {plugin_id}: {e}")
+        if initialized:
+            self._register_plugin_tools_for(plugin_id)
+
+    async def terminate(self, plugin_id: Optional[str] = None):
+        """Terminate a specific plugin if plugin_id is given, terminate all if not given"""
+        if plugin_id:
+            try:
+                plugin_instance = self.plugin_instances.get(plugin_id)
+                if plugin_instance:
+                    await plugin_instance.terminate()
+                self.plugin_instances.pop(plugin_id, None)
+                self.plugin_configs.pop(plugin_id, None)
+                logger.info(f"Terminated plugin {plugin_id}")
+            except Exception as e:
+                logger.error(f"Error terminating plugin {plugin_id}: {e}")
+            self._cleanup_plugin_registration(plugin_id)
+            return
+
+        for plug_id, plugin_instance in list(self.plugin_instances.items()):
             try:
                 await plugin_instance.terminate()
             except Exception as e:
-                logger.error(f"Error terminating plugin {plugin_name}: {e}")
+                logger.error(f"Error terminating plugin {plug_id}: {e}")
 
         # Clear registries
         self.plugin_instances.clear()
         self.plugin_configs.clear()
+        for name in list(_plugin_components.keys()):
+            self._cleanup_plugin_registration(name)
 
-        # Reinitialize
+    async def reload(self, plugin_id: Optional[str]):
+        """
+        Reload all plugins or reload a specific plugin
+        """
+        if plugin_id:
+            logger.info(f"Reloading plugin {plugin_id}...")
+            await self.init_plugin(plugin_id)
+            return
+
+        logger.info("Reloading all plugins...")
+        await self.terminate()
         await self.init()
 
     async def _discover_builtin_plugins(self):

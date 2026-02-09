@@ -5,6 +5,8 @@ from typing import Dict, List
 from threading import Lock
 from core.logging_manager import get_logger
 
+from core.config import KiraConfig
+
 logger = get_logger("memory_manager", "green")
 
 
@@ -12,7 +14,7 @@ class MemoryManager:
     """管理聊天记忆的读写操作"""
     
     def __init__(self,
-                 kira_config,
+                 kira_config: KiraConfig,
                  chat_memory_path: str = "data/memory/chat_memory.json",
                  core_memory_path: str = "data/memory/core.txt"):
         self.kira_config = kira_config
