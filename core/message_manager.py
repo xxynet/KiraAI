@@ -135,6 +135,8 @@ class MessageProcessor:
 
         sid = msg.session.sid
 
+        msg.session.session_description = self.memory_manager.get_session_info(sid).session_description
+
         # acquire buffer lock
         buffer_lock = self.get_buffer_lock(sid)
 
@@ -168,11 +170,18 @@ class MessageProcessor:
         # Get existing session
         session_list = self.get_session_list_prompt()
 
+        session_title = self.memory_manager.get_session_info(sid).session_title
+        if not session_title:
+            session_title = msg.session.session_title
+
         # Build chat environment
         chat_env = {
             "platform": msg.platform,
+            "adapter": msg.adapter_name,
             "chat_type": 'GroupMessage' if msg.is_group_message() else 'DirectMessage',
             "self_id": msg.self_id,
+            "session_title": session_title,
+            "session_description": msg.session.session_description,
             "session_list": session_list
         }
 
@@ -239,6 +248,8 @@ class MessageProcessor:
                 break
 
         self.memory_manager.update_memory(sid, new_memory_chunk)
+        if not self.memory_manager.get_session_info(sid).session_title:
+            self.memory_manager.update_session_info(sid, msg.session.session_title)
 
     async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""

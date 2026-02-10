@@ -25,10 +25,13 @@
 当前时间是：{time_str}
 > 注意：结合时间信息判断用户说的话是否合理。
 
-## 当前聊天平台信息（Chat Environment）
+## 当前聊天会话信息（Chat Environment）
 - 当前平台：`{chat_env[platform]}`
+- 当前平台适配器名称：`{chat_env[adapter]}`
 - 当前聊天类型：`{chat_env[chat_type]}`
 - 你的账号 ID：`{chat_env[self_id]}`
+- 当前会话标题（即群名称或用户名或自定义备注名）：`{chat_env[session_title]}`
+- 当前会话描述：`{chat_env[session_description]}`
 
 ## 核心记忆（Core Memory）
 {core_memory}

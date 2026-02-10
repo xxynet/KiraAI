@@ -41,6 +41,9 @@ class Session:
     """session title, could be group name or user nickname"""
     session_title: str = None
 
+    """session description"""
+    session_description: str = None
+
     @property
     def sid(self):
         """unique session identifier"""

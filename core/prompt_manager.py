@@ -21,13 +21,9 @@ class PromptManager:
                  sticker_manager: StickerManager,
                  persona_manager: PersonaManager,
                  format_path: str = "core/prompts/format.txt",
-                 tool_path: str = "core/prompts/tool.txt",
-                 system_path: str = "core/prompts/system.txt",
                  agent_path: str = "core/prompts/agent.txt"):
         self.kira_config = kira_config
         self.format_path = format_path
-        self.tool_path = tool_path
-        self.system_path = system_path
         self.agent_path = agent_path
 
         self.sticker_manager = sticker_manager
@@ -37,8 +33,6 @@ class PromptManager:
         self.ada_config_prompt = self.load_ada_config_prompt()
 
         self.prompt_template_mapping = {
-            "system": system_path,
-            "tool": tool_path,
             "agent": agent_path
         }
 
@@ -157,25 +151,6 @@ class PromptManager:
                     你需要回复评论，直接输出评论内容，不要有任何多余信息"""
         return _prompt
 
-    def get_system_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list, emoji_dict: Optional[dict] = None) -> str:
-        """生成系统提示词"""
-        formatted_time = self.get_current_time_str()
-        
-        try:
-            with open(self.system_path, 'r', encoding="utf-8") as f:
-                system_prompt = f.read()
-            return system_prompt.format(
-                persona=self.persona_manager.get_persona(),
-                format=self._load_format_prompt(message_types, emoji_dict),
-                time_str=formatted_time,
-                chat_env=chat_env,
-                core_memory=core_memory,
-                accounts=self.ada_config_prompt
-            )
-        except Exception as e:
-            logger.error(f"Error generating system prompt: {e}")
-            return ""
-
     def get_agent_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list,
                          emoji_dict: Optional[dict] = None) -> str:
         """生成 Agent 提示词"""
@@ -195,25 +170,6 @@ class PromptManager:
             )
         except Exception as e:
             logger.error(f"Error generating system prompt: {e}")
-            return ""
-    
-    def get_tool_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list, emoji_dict: Optional[dict] = None) -> str:
-        """生成工具提示词"""
-        formatted_time = self.get_current_time_str()
-
-        try:
-            with open(self.tool_path, 'r', encoding="utf-8") as f:
-                tool_prompt = f.read()
-            return tool_prompt.format(
-                persona=self.persona_manager.get_persona(),
-                format=self._load_format_prompt(message_types, emoji_dict),
-                time_str=formatted_time,
-                chat_env=chat_env,
-                core_memory=core_memory,
-                accounts=self.ada_config_prompt
-            )
-        except Exception as e:
-            logger.error(f"Error generating tool prompt: {e}")
             return ""
 
     def format_user_message(self, msg: Union[KiraMessageEvent]) -> str:
