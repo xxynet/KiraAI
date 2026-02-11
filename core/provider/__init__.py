@@ -1,11 +1,9 @@
-from .provider import (BaseProvider, LLMProvider, TTSProvider, STTProvider,
-                       EmbeddingProvider, RerankProvider, ImageProvider, VideoProvider,
-                       NewBaseProvider, ProviderInfo, ModelInfo)
-from .llm_model import LLMModel, LLMRequest, LLMResponse, LLMClientType
+from .provider import (ModelType, BaseModelClient, BaseProvider, ProviderInfo, ModelInfo,
+                       LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient)
+from .llm_model import LLMRequest, LLMResponse
 from .provider_manager import ProviderManager
 from .image_result import ImageResult
 
-__all__ = ["BaseProvider", "LLMProvider", "TTSProvider", "STTProvider",
-           "EmbeddingProvider", "RerankProvider", "ImageProvider", "VideoProvider",
-           "LLMModel", "LLMRequest", "LLMResponse", "LLMClientType",
-           "ProviderManager", "ImageResult", "NewBaseProvider", "ProviderInfo", "ModelInfo"]
+__all__ = ["LLMRequest", "LLMResponse", "ModelType", "BaseModelClient",
+           "LLMModelClient", "TTSModelClient", "STTModelClient", "ImageModelClient",
+           "ProviderManager", "ImageResult", "BaseProvider", "ProviderInfo", "ModelInfo"]

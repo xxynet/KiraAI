@@ -32,7 +32,7 @@ const resources = {
                     title: "Overview"
                 },
                 provider: {
-                    title: "LLM Providers"
+                    title: "Providers"
                 },
                 adapter: {
                     title: "Adapters"
@@ -47,7 +47,7 @@ const resources = {
                     title: "Configuration"
                 },
                 sessions: {
-                    title: "Session Management"
+                    title: "Sessions"
                 },
                 logs: {
                     title: "System Logs"
@@ -67,7 +67,7 @@ const resources = {
                 status_stopped: "Stopped"
             },
             provider: {
-                title: "LLM Providers",
+                title: "Providers",
                 add: "Add Provider",
                 add_short: "New",
                 add_coming_soon: "Add provider functionality coming soon",
@@ -235,10 +235,11 @@ const resources = {
                 }
             },
             sessions: {
-                title: "Session Management",
+                title: "Sessions",
                 new: "New Session",
                 no_sessions: "No active sessions",
                 name: "Session Name",
+                description: "Session Description",
                 created_at: "Created At",
                 type_dm: "Direct Message",
                 type_gm: "Group Message",
@@ -319,7 +320,7 @@ const resources = {
                     title: "概览"
                 },
                 provider: {
-                    title: "LLM 提供商"
+                    title: "提供商"
                 },
                 adapter: {
                     title: "适配器"
@@ -357,7 +358,7 @@ const resources = {
                 status_stopped: "已停止"
             },
             provider: {
-                title: "LLM 提供商",
+                title: "提供商",
                 add: "添加提供商",
                 add_short: "添加",
                 add_coming_soon: "添加提供商功能即将推出",
@@ -529,6 +530,7 @@ const resources = {
                 new: "新建会话",
                 no_sessions: "无活跃会话",
                 name: "会话名称",
+                description: "会话描述",
                 created_at: "创建时间",
                 type_dm: "私聊",
                 type_gm: "群聊",

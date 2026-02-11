@@ -5,27 +5,6 @@ import asyncio
 from dataclasses import dataclass, field
 
 
-class LLMClientType(Enum):
-    OPENAI = auto()
-    ANTHROPIC = auto()
-    GEMINI = auto()
-
-
-@dataclass
-class LLMModel:
-    """provider id of the model"""
-    provider_id: str
-
-    """model name displayed on UI"""
-    model_name: str
-
-    """whether the model has vision capability"""
-    has_vision: bool = False
-
-    """whether the model support function calling"""
-    tool_call: bool = False
-
-
 @dataclass
 class LLMRequest:
     """message list provided to llm provider"""

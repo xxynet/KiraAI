@@ -1645,11 +1645,20 @@ function renderSessionList() {
         const sessionType = session.session_type || 'unknown';
         const sessionKeyId = session.session_id || 'Unknown';
         const messageCount = session.message_count || 0;
+        const sessionTitle = session.title || '';
+        const maxTitleLength = 32;
+        const displayTitleSource = sessionTitle || sessionKeyId || adapterName;
+        const displayTitle = displayTitleSource.length > maxTitleLength
+            ? displayTitleSource.slice(0, maxTitleLength) + '...'
+            : displayTitleSource;
         
         return `
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
                 <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="text-sm font-medium text-gray-900 dark:text-gray-100">${escapeHtml(adapterName)}</div>
+                    <div class="text-sm font-medium text-gray-900 dark:text-gray-100" title="${escapeHtml(displayTitleSource)}">${escapeHtml(displayTitle)}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-500 dark:text-gray-400">${escapeHtml(adapterName)}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                     <span class="px-2 py-1 text-xs rounded-full ${getSessionTypeColor(sessionType)}">
@@ -1680,6 +1689,7 @@ function renderSessionList() {
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead class="bg-gray-50 dark:bg-gray-800">
                     <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.name">${getTranslation('sessions.name', 'Session Name')}</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.adapter_name">${getTranslation('sessions.adapter_name', 'Adapter Name')}</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.session_type">${getTranslation('sessions.session_type', 'Session Type')}</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.session_id">${getTranslation('sessions.session_id', 'Session ID')}</th>
@@ -2712,10 +2722,14 @@ async function editSession(encodedSessionId) {
         sessionEditorState.currentSessionId = sessionId;
         sessionEditorState.sessionData = data;
         
-        // Update modal fields
-        document.getElementById('session-adapter-name').value = data.adapter_name || '';
-        document.getElementById('session-type').value = data.session_type || '';
-        document.getElementById('session-id').value = data.session_id || '';
+        const titleInput = document.getElementById('session-title');
+        const descriptionInput = document.getElementById('session-description');
+        if (titleInput) {
+            titleInput.value = data.title || '';
+        }
+        if (descriptionInput) {
+            descriptionInput.value = data.description || '';
+        }
         document.getElementById('session-modal-subtitle').textContent = sessionId;
         
         // Update message count
@@ -2872,11 +2886,15 @@ async function saveSession() {
             showNotification('Invalid structure: content must be a list of message lists (chunks)', 'error');
             return;
         }
-        
-        // Send update request to backend
+
+        const titleInput = document.getElementById('session-title');
+        const descriptionInput = document.getElementById('session-description');
+        const title = titleInput ? titleInput.value.trim() : '';
+        const description = descriptionInput ? descriptionInput.value.trim() : '';
+
         const response = await apiCall(`/api/sessions/${encodeURIComponent(sessionEditorState.currentSessionId)}`, {
             method: 'PUT',
-            body: JSON.stringify({ messages })
+            body: JSON.stringify({ messages, title, description })
         });
         
         if (response.ok) {
@@ -3815,6 +3833,20 @@ async function displayProviderConfig(provider) {
     
     // Define model groups
     const modelGroups = ['LLM', 'TTS', 'STT', 'Image', 'Video', 'Embedding', 'Rerank'];
+    const groupTypeMapping = {
+        LLM: 'llm',
+        TTS: 'tts',
+        STT: 'stt',
+        Image: 'image',
+        Video: 'video',
+        Embedding: 'embedding',
+        Rerank: 'rerank'
+    };
+    let visibleGroups = modelGroups;
+    if (provider && Array.isArray(provider.supported_model_types) && provider.supported_model_types.length > 0) {
+        const typesSet = new Set(provider.supported_model_types);
+        visibleGroups = modelGroups.filter(group => typesSet.has(groupTypeMapping[group]));
+    }
     
     configContainer.innerHTML = `
         <div class="space-y-6">
@@ -3836,7 +3868,7 @@ async function displayProviderConfig(provider) {
             <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
                 <h4 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4" data-i18n="provider.model_groups">Model Groups</h4>
                 <div class="space-y-3">
-                    ${modelGroups.map(group => `
+                    ${visibleGroups.map(group => `
                         <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                             <div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="toggleModelGroup('${group}')">
                                 <div class="flex items-center">

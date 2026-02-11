@@ -887,25 +887,19 @@
                 </button>
             </div>
             <div class="px-6 py-4 flex-1 overflow-y-auto">
-            <div class="mb-4 flex gap-4 flex-shrink-0">
-                <div class="flex-1">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.adapter_name">Adapter Name</label>
-                    <input type="text" id="session-adapter-name" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100" readonly>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.name">Session Name</label>
+                    <input type="text" id="session-title" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                 </div>
-                <div class="w-40">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.session_type">Session Type</label>
-                    <input type="text" id="session-type" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100" readonly>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.description">Session Description</label>
+                    <textarea id="session-description" rows="2" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-none"></textarea>
                 </div>
-                <div class="flex-1">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.session_id">Session ID</label>
-                    <input type="text" id="session-id" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100" readonly>
+                <div class="mb-4 flex flex-col" style="flex: 1; min-height: 0;">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.session_data">Session Messages</label>
+                    <div id="session-editor-container" class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="flex: 1; min-height: 350px;"></div>
                 </div>
             </div>
-            <div class="mb-4 flex flex-col" style="flex: 1; min-height: 0;">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="sessions.session_data">Session Messages</label>
-                <div id="session-editor-container" class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="flex: 1; min-height: 350px;"></div>
-            </div>
-        </div>
             <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                 <div class="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
                     <span id="session-message-count" data-i18n="sessions.message_count">Messages: 0</span>

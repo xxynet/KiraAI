@@ -65,6 +65,7 @@ class ProviderBase(BaseModel):
 class ProviderResponse(ProviderBase):
     id: str
     model_config_data: Dict = Field(default_factory=dict, alias="model_config")
+    supported_model_types: List[str] = Field(default_factory=list)
 
 
 class ModelCreateRequest(BaseModel):
@@ -288,6 +289,33 @@ class KiraWebUI:
             payload = _verify_jwt_token(token)
             return payload.get("sub", "admin")
 
+        def _get_supported_model_types(provider_id: str) -> List[str]:
+            if not self.lifecycle or not self.lifecycle.provider_manager:
+                return []
+            try:
+                providers_config = self.lifecycle.kira_config.get("providers", {}) or {}
+                provider_cfg = providers_config.get(provider_id) or {}
+                provider_format = provider_cfg.get("format")
+                if not provider_format:
+                    return []
+                provider_cls = self.lifecycle.provider_manager.get_provider_class(provider_format)
+                if not provider_cls:
+                    return []
+                models_attr = getattr(provider_cls, "models", None)
+                if not models_attr:
+                    return []
+                supported: List[str] = []
+                for key in models_attr.keys():
+                    type_key = getattr(key, "value", None)
+                    if not type_key:
+                        type_key = str(key)
+                    if isinstance(type_key, str):
+                        supported.append(type_key)
+                return supported
+            except Exception as e:
+                logger.error(f"Failed to get supported model types for provider {provider_id}: {e}")
+                return []
+
         @self.app.get("/login", response_class=HTMLResponse, tags=["web"])
         async def login_page():
             """Serve the login page"""
@@ -462,13 +490,15 @@ class KiraWebUI:
                     continue
                 is_active = provider_id in active_providers
                 config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
+                supported_model_types = _get_supported_model_types(provider_id)
                 providers.append(ProviderResponse(
                     id=provider_info.provider_id,
                     name=provider_info.provider_name,
                     type=provider_info.provider_type,
                     status="active" if is_active else "inactive",
                     config=provider_info.provider_config,
-                    model_config_data=config.get("model_config", {})
+                    model_config_data=config.get("model_config", {}),
+                    supported_model_types=supported_model_types,
                 ))
 
             return providers
@@ -623,7 +653,8 @@ class KiraWebUI:
                     type=provider_type,
                     status="active",
                     config=generated_config["provider_config"],
-                    model_config_data=generated_config.get("model_config", {})
+                    model_config_data=generated_config.get("model_config", {}),
+                    supported_model_types=_get_supported_model_types(provider_id),
                 )
                 
             except Exception as e:
@@ -650,7 +681,8 @@ class KiraWebUI:
                     type=provider_info.provider_type,
                     status="active" if provider_inst else "inactive",
                     config=provider_info.provider_config,
-                    model_config_data=config.get("model_config", {})
+                    model_config_data=config.get("model_config", {}),
+                    supported_model_types=_get_supported_model_types(provider_id),
                 )
 
             provider = self._providers.get(provider_id)
@@ -691,7 +723,8 @@ class KiraWebUI:
                     type=config.get("format", "unknown"),
                     status="active",
                     config=config["provider_config"],
-                    model_config_data=config.get("model_config", {})
+                    model_config_data=config.get("model_config", {}),
+                    supported_model_types=_get_supported_model_types(provider_id),
                 )
 
             provider = self._providers.get(provider_id)
@@ -1583,16 +1616,24 @@ class KiraWebUI:
             sessions = []
             for session_key in session_keys:
                 parts = session_key.split(":")
-                if len(parts) >= 3:
-                    adapter_name, session_type, session_id = parts[0], parts[1], ":".join(parts[2:])
-                    sessions.append({
-                        "id": session_key,
-                        "adapter_name": adapter_name,
-                        "session_type": session_type,
-                        "session_id": session_id,
-                        "message_count": sum(len(chunk) for chunk in self.lifecycle.memory_manager.chat_memory.get(session_key, []))
-                    })
-            
+                if len(parts) < 3:
+                    continue
+
+                adapter_name, session_type, session_id = parts[0], parts[1], ":".join(parts[2:])
+                session_meta = self.lifecycle.memory_manager.chat_memory.get(session_key, {})
+                title = session_meta.get("title", "")
+                description = session_meta.get("description", "")
+
+                sessions.append({
+                    "id": session_key,
+                    "adapter_name": adapter_name,
+                    "session_type": session_type,
+                    "session_id": session_id,
+                    "title": title,
+                    "description": description,
+                    "message_count": self.lifecycle.memory_manager.get_memory_count(session_key)
+                })
+
             return {"sessions": sessions}
 
         @self.app.get(
@@ -1607,19 +1648,23 @@ class KiraWebUI:
             
             # Read memory for the session (returns raw chunks)
             memory = self.lifecycle.memory_manager.read_memory(session_id)
-            
-            # Parse session id
+
             parts = session_id.split(":")
             if len(parts) < 3:
                 raise HTTPException(status_code=400, detail="Invalid session id format")
-            
+
             adapter_name, session_type, session_key = parts[0], parts[1], ":".join(parts[2:])
-            
+            session_meta = self.lifecycle.memory_manager.chat_memory.get(session_id, {})
+            title = session_meta.get("title", "")
+            description = session_meta.get("description", "")
+
             return {
                 "id": session_id,
                 "adapter_name": adapter_name,
                 "session_type": session_type,
                 "session_id": session_key,
+                "title": title,
+                "description": description,
                 "messages": memory
             }
 
@@ -1632,18 +1677,34 @@ class KiraWebUI:
             """Update session data"""
             if not self.lifecycle or not self.lifecycle.memory_manager:
                 raise HTTPException(status_code=404, detail="Memory manager not available")
-            
-            # Get messages from payload (now expects raw chunks structure)
-            messages = payload.get("messages", [])
-            
-            # Write memory directly (assuming frontend sends back the same structure it received)
-            self.lifecycle.memory_manager.write_memory(session_id, messages)
-            
+
+            messages = payload.get("messages")
+            title = payload.get("title")
+            description = payload.get("description")
+
+            if messages is not None:
+                self.lifecycle.memory_manager.write_memory(session_id, messages)
+
+            if title is not None or description is not None:
+                self.lifecycle.memory_manager.update_session_info(session_id, title=title, description=description)
+
+            parts = session_id.split(":")
+            if len(parts) >= 3:
+                adapter_name = parts[0]
+                session_type = parts[1]
+                session_key = ":".join(parts[2:])
+            else:
+                adapter_name = ""
+                session_type = ""
+                session_key = session_id
+
             return {
                 "id": session_id,
-                "adapter_name": session_id.split(":")[0] if ":" in session_id else "",
-                "session_type": session_id.split(":")[1] if ":" in session_id else "",
-                "session_id": ":".join(session_id.split(":")[2:]) if session_id.count(":") >= 2 else session_id,
+                "adapter_name": adapter_name,
+                "session_type": session_type,
+                "session_id": session_key,
+                "title": title if title is not None else "",
+                "description": description if description is not None else "",
                 "messages": messages
             }
 
