@@ -43,9 +43,6 @@ class CustomSelect {
         // Create custom dropdown structure
         this.createDropdown();
 
-        // Store instance reference on container for external access
-        this.container.__customSelect = this;
-
         // Bind events
         this.bindEvents();
 
@@ -475,7 +472,7 @@ class CustomSelect {
         return this.selectedOptions.length > 0 ? this.selectedOptions[0].value : '';
     }
 
-    setValue(value, { silent = false } = {}) {
+    setValue(value) {
         if (this.options.multiple) {
             const values = Array.isArray(value) ? value : [value];
             this.selectedOptions = this.originalOptions.filter(o => values.includes(o.value));
@@ -489,11 +486,10 @@ class CustomSelect {
 
         this.updateTrigger();
         this.renderOptions();
-        if (!silent) {
-            this.updateOriginalSelect();
-            if (this.options.onChange) {
-                this.options.onChange(this.getValue(), this.selectedOptions);
-            }
+        this.updateOriginalSelect();
+
+        if (this.options.onChange) {
+            this.options.onChange(this.getValue(), this.selectedOptions);
         }
     }
 
@@ -524,14 +520,6 @@ class CustomSelect {
     destroy() {
         this.container.remove();
         this.element.style.display = '';
-    }
-
-    refresh(silent = true) {
-        const currentValue = this.getValue();
-        this.originalOptions = [];
-        this.parseOriginalOptions();
-        this.filteredOptions = [...this.originalOptions];
-        this.setValue(currentValue, { silent });
     }
 }
 
