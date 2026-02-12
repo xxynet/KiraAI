@@ -2,7 +2,7 @@ import asyncio
 import os
 
 
-kira_logo = """
+kira_logo = r"""
       _  ___              _    ___ 
      | |/ (_)_ __ __ _   / \  |_ _|
      | ' /| | '__/ _` | / _ \  | | 
