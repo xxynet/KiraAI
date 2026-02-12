@@ -37,4 +37,3 @@ data/config/plugins/
 
 # data/memory - ignore user memory, keep core template
 data/memory/*
-!data/memory/core.txt
