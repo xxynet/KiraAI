@@ -24,10 +24,17 @@ main.spec
 *.log
 
 # Runtime data
-data/config/
-data/memory/
+data/webui.json
 data/plugin_data/
 data/files/
 data/sticker/
 data/plugins/
-data/webui.json
+
+# data/config - ignore runtime-generated configs, keep tracked ones
+data/config/*
+!data/config/sticker.json
+data/config/plugins/
+
+# data/memory - ignore user memory, keep core template
+data/memory/*
+!data/memory/core.txt
