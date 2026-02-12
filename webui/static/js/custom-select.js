@@ -489,10 +489,11 @@ class CustomSelect {
 
         this.updateTrigger();
         this.renderOptions();
-        this.updateOriginalSelect();
-
-        if (!silent && this.options.onChange) {
-            this.options.onChange(this.getValue(), this.selectedOptions);
+        if (!silent) {
+            this.updateOriginalSelect();
+            if (this.options.onChange) {
+                this.options.onChange(this.getValue(), this.selectedOptions);
+            }
         }
     }
 
