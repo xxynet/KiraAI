@@ -279,6 +279,7 @@ const resources = {
                 title: "System Settings",
                 language: "Language",
                 theme: "Theme",
+                theme_auto: "Auto",
                 theme_light: "Light",
                 theme_dark: "Dark",
                 save: "Save Settings",
@@ -570,6 +571,7 @@ const resources = {
                 title: "系统设置",
                 language: "语言",
                 theme: "主题",
+                theme_auto: "自动",
                 theme_light: "浅色",
                 theme_dark: "深色",
                 save: "保存设置",
@@ -605,14 +607,13 @@ i18next
         const languageSelector = document.getElementById('language-selector');
         if (languageSelector) {
             languageSelector.value = i18next.language;
-        }
-        
-        // Listen for language changes
-        document.getElementById('language-selector').addEventListener('change', (e) => {
-            i18next.changeLanguage(e.target.value).then(() => {
-                updateTranslations();
+            // Listen for language changes
+            languageSelector.addEventListener('change', (e) => {
+                i18next.changeLanguage(e.target.value).then(() => {
+                    updateTranslations();
+                });
             });
-        });
+        }
     });
 
 /**
@@ -628,6 +629,14 @@ function updateTranslations() {
             } else {
                 element.textContent = translation;
             }
+        }
+    });
+
+    // Refresh custom-select components to pick up translated option labels
+    document.querySelectorAll('select[data-custom-select]').forEach(select => {
+        const container = document.querySelector(`[data-custom-select="${select.id}"]`);
+        if (container && container.__customSelect) {
+            container.__customSelect.refresh();
         }
     });
 }

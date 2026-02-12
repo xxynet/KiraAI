@@ -43,6 +43,9 @@ class CustomSelect {
         // Create custom dropdown structure
         this.createDropdown();
 
+        // Store instance reference on container for external access
+        this.container.__customSelect = this;
+
         // Bind events
         this.bindEvents();
 
@@ -520,6 +523,14 @@ class CustomSelect {
     destroy() {
         this.container.remove();
         this.element.style.display = '';
+    }
+
+    refresh() {
+        const currentValue = this.getValue();
+        this.originalOptions = [];
+        this.parseOriginalOptions();
+        this.filteredOptions = [...this.originalOptions];
+        this.setValue(currentValue);
     }
 }
 

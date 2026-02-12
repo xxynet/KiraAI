@@ -2061,22 +2061,22 @@ async function loadSettingsData() {
     try {
         const response = await apiCall('/api/settings');
         const data = await response.json();
-        AppState.data.settings = data.settings || {};
+        AppState.data.settings = data || {};
         
         // Populate settings form
         const languageSelect = document.getElementById('settings-language');
         const themeSelect = document.getElementById('settings-theme');
         
-        if (languageSelect && data.settings.language) {
-            languageSelect.value = data.settings.language;
+        if (languageSelect && data.language) {
+            languageSelect.value = data.language;
         }
 
-         if (themeSelect && data.settings.theme) {
-         themeSelect.value = data.settings.theme;
-         }
+        if (themeSelect && data.theme) {
+            themeSelect.value = data.theme;
+        }
 
         // Apply theme
-        applyTheme(data.settings.theme || 'light');
+        applyTheme(data.theme || 'light');
 
     } catch (error) {
         console.error('Error loading settings data:', error);
@@ -2091,35 +2091,6 @@ function setupEventListeners() {
     const saveSettingsBtn = document.getElementById('save-settings');
     if (saveSettingsBtn) {
         saveSettingsBtn.addEventListener('click', saveSettings);
-    }
-    
-    // Settings language change
-    const settingsLanguage = document.getElementById('settings-language');
-    if (settingsLanguage) {
-        settingsLanguage.addEventListener('change', (e) => {
-            if (window.i18n) {
-                window.i18n.changeLanguage(e.target.value);
-            }
-        });
-    }
-    
-    // Settings theme change
-    const settingsTheme = document.getElementById('settings-theme');
-    if (settingsTheme) {
-        settingsTheme.addEventListener('change', (e) => {
-            const theme = e.target.value;
-            applyTheme(theme);
-            
-            // Save theme to localStorage
-            localStorage.setItem('theme', theme);
-            
-            // Update editor theme if editor is active
-            if (AppState.editor.instance) {
-                AppState.editor.instance.updateOptions({
-                    theme: theme === 'dark' ? 'vs-dark' : 'vs'
-                });
-            }
-        });
     }
     
     // Initialize log level selector
@@ -2213,19 +2184,30 @@ async function saveSettings() {
         const theme = document.getElementById('settings-theme')?.value;
         
         const response = await apiCall('/api/settings', {
-            method: 'POST',
+            method: 'PUT',
             body: JSON.stringify({
                 language,
                 theme
             })
         });
         
-        const data = await response.json();
-        
-        if (data.status === 'ok') {
-            showNotification(window.i18n ? window.i18n.t('settings.saved') : 'Settings saved successfully', 'success');
-            // Apply theme immediately
+        if (response.ok) {
+            // Apply language change
+            if (language && window.i18n) {
+                window.i18n.changeLanguage(language);
+            }
+            // Apply theme
             applyTheme(theme);
+            // Save theme to localStorage
+            localStorage.setItem('theme', theme);
+            // Update editor theme if editor is active
+            const effectiveTheme = getEffectiveTheme(theme);
+            if (AppState.editor.instance) {
+                AppState.editor.instance.updateOptions({
+                    theme: effectiveTheme === 'dark' ? 'vs-dark' : 'vs'
+                });
+            }
+            showNotification(window.i18n ? window.i18n.t('settings.saved') : 'Settings saved successfully', 'success');
         } else {
             showNotification('Failed to save settings', 'error');
         }
@@ -2236,13 +2218,26 @@ async function saveSettings() {
 }
 
 /**
+ * Get effective theme based on setting (resolves 'auto' to actual theme)
+ * @param {string} theme - Theme setting ('light', 'dark', or 'auto')
+ * @returns {string} - 'light' or 'dark'
+ */
+function getEffectiveTheme(theme) {
+    if (theme === 'auto') {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return theme;
+}
+
+/**
  * Apply theme to the application
- * @param {string} theme - Theme name ('light' or 'dark')
+ * @param {string} theme - Theme name ('light', 'dark', or 'auto')
  */
 function applyTheme(theme) {
     const htmlElement = document.documentElement;
+    const effective = getEffectiveTheme(theme);
 
-    if (theme === 'dark') {
+    if (effective === 'dark') {
         htmlElement.classList.add('dark');
         document.body.classList.add('dark');
     } else {
@@ -2250,15 +2245,20 @@ function applyTheme(theme) {
         document.body.classList.remove('dark');
     }
 
-    // Save theme to localStorage
-    localStorage.setItem('theme', theme);
-
     // Update theme selector if it exists
     const themeSelect = document.getElementById('settings-theme');
     if (themeSelect) {
         themeSelect.value = theme;
     }
 }
+
+// Listen for system theme changes when 'auto' is selected
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    if (savedTheme === 'auto') {
+        applyTheme('auto');
+    }
+});
 
 /**
  * Start auto-refresh for overview page

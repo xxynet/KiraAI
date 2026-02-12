@@ -1,10 +1,33 @@
+# IDE
 .vscode/
 .idea/
-dist/
+
+# Python
 __pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
 build/
 venv/
-Thumbs.db
+.venv/
 .env
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Build
 main.spec
+
+# Logs
 *.log
+
+# Runtime data
+data/config/
+data/memory/
+data/plugin_data/
+data/files/
+data/sticker/
+data/plugins/
+data/webui.json
