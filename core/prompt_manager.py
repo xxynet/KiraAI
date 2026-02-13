@@ -13,6 +13,15 @@ from core.utils.path_utils import get_data_path
 logger = get_logger("prompt_manager", "yellow")
 
 
+class Prompt:
+    def __init__(self, name: str, source: str, content: str, **kwargs):
+        self.name = name
+        self.source = source
+        self.content = content
+
+        self.content.format(**kwargs)
+
+
 class PromptManager:
     """Prompt manager, managing all system prompts"""
     

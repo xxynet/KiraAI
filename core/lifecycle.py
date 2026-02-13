@@ -101,6 +101,8 @@ class KiraLifecycle:
                                                   self.memory_manager,
                                                   self.prompt_manager)
 
+        self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
+
         # ====== init plugin system ======
         self.plugin_context = PluginContext(
             config=self.kira_config,
@@ -113,6 +115,7 @@ class KiraLifecycle:
         )
 
         self.plugin_manager = PluginManager(self.plugin_context)
+        self.plugin_context.plugin_mgr = self.plugin_manager
         await self.plugin_manager.init()
 
         # ====== schedule tasks ======
@@ -126,8 +129,6 @@ class KiraLifecycle:
         self.stats.set_stats("started_ts", int(time.time()))
 
         logger.info("All modules initialized, starting message processing loop...")
-
-        self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
 
         await self.event_bus.dispatch()
 

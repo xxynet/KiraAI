@@ -29,6 +29,7 @@ from core.chat.message_elements import (
 from core.llm_client import LLMClient
 from core.chat.memory_manager import MemoryManager
 from .prompt_manager import PromptManager
+from core.plugin.plugin_handlers import event_handler_reg, EventType
 
 logger = get_logger("message_processor", "cyan")
 
@@ -136,6 +137,12 @@ class MessageProcessor:
         sid = msg.session.sid
 
         msg.session.session_description = self.memory_manager.get_session_info(sid).session_description
+
+        im_handlers = event_handler_reg.get_handlers(event_type=EventType.IMMessage)
+        for handler in im_handlers:
+            await handler.exec_handler(msg)
+            if msg.is_stopped:
+                return
 
         # acquire buffer lock
         buffer_lock = self.get_buffer_lock(sid)

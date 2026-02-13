@@ -33,6 +33,7 @@ class KiraMessageEvent:
     is_mentioned: Optional[bool] = None
     message_str: Optional[str] = field(default=None, init=False)
     message_repr: Optional[str] = field(default=None, init=False)
+    is_stopped: bool = False
 
     def __post_init__(self):
         self.message_repr = " ".join(ele.repr for ele in self.content)
@@ -52,6 +53,9 @@ class KiraMessageEvent:
     def is_group_message(self) -> bool:
         """judge whether it's a group message"""
         return self.group_id is not None
+
+    def stop(self):
+        self.is_stopped = True
 
 
 @dataclass

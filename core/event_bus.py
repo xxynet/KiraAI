@@ -8,7 +8,6 @@ import uuid
 from .statistics import Statistics
 
 from core.chat import KiraMessageEvent, KiraCommentEvent
-from core.message_manager import MessageProcessor
 
 
 class EventType(Enum):
@@ -40,7 +39,7 @@ class EventType(Enum):
 class EventBus:
     """事件总线"""
 
-    def __init__(self, stats: Statistics, event_queue: asyncio.Queue, message_processor: MessageProcessor):
+    def __init__(self, stats: Statistics, event_queue: asyncio.Queue, message_processor: "MessageProcessor"):
         self.stats = stats
 
         self.event_queue: asyncio.Queue = event_queue

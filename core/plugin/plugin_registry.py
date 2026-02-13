@@ -7,13 +7,13 @@ import json
 import sys
 import types
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, Any, List, Callable, Union, Awaitable
 from core.utils.path_utils import get_data_path, get_config_path
 from core.logging_manager import get_logger
 from core.config.config_field import BaseConfigField, build_fields
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
-from core.event_bus import EventBus, EventType
+from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
 
 logger = get_logger("plugin_manager", "cyan")
 
@@ -27,36 +27,39 @@ _plugin_classes: Dict[str, type[BasePlugin]] = {}
 _plugin_manifests: Dict[str, Dict[str, Any]] = {}
 _plugin_module_dirs: Dict[str, str] = {}
 _plugin_module_paths: Dict[str, Path] = {}
+
+"""key: module name, value: plugin id"""
 _module_to_plugin: Dict[str, str] = {}
 _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
 _plugin_components: Dict[str, dict] = {}
 
 
+def get_obj_plugin_id(obj: Any):
+    module = inspect.getmodule(obj)
+    module_name = module.__name__ if module else ""
+    plugin_id = _module_to_plugin.get(module_name, "")
+
+    if not plugin_id and module and getattr(module, "__file__", None):
+        module_path = Path(module.__file__).resolve()
+        plugin_root = module_path.parent
+        manifest_path = plugin_root / "manifest.json"
+        if manifest_path.exists():
+            try:
+                with manifest_path.open("r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                plugin_id = manifest.get("plugin_id") or plugin_root.name
+                _plugin_manifests.setdefault(plugin_id, manifest)
+                _plugin_module_dirs.setdefault(plugin_id, plugin_root.name)
+                _plugin_module_paths.setdefault(plugin_id, plugin_root)
+                _module_to_plugin[module_name] = plugin_id
+            except Exception:
+                plugin_id = plugin_root.name
+    return plugin_id
+
+
 def register_tool(name: str, description: str, params: dict):
     def decorator(func: Callable):
-        module = inspect.getmodule(func)
-        module_name = module.__name__ if module else ""
-        plugin_id = _module_to_plugin.get(module_name, "")
-
-        if not plugin_id and module and getattr(module, "__file__", None):
-            module_path = Path(module.__file__).resolve()
-            plugin_root = module_path.parent
-            manifest_path = plugin_root / "manifest.json"
-            if manifest_path.exists():
-                try:
-                    with manifest_path.open("r", encoding="utf-8") as f:
-                        manifest = json.load(f)
-                    plugin_id = manifest.get("plugin_id") or plugin_root.name
-                    _plugin_manifests.setdefault(plugin_id, manifest)
-                    _plugin_module_dirs.setdefault(plugin_id, plugin_root.name)
-                    _plugin_module_paths.setdefault(plugin_id, plugin_root)
-                    _module_to_plugin[module_name] = plugin_id
-                except Exception:
-                    plugin_id = plugin_root.name
-
-        if not plugin_id:
-            plugin_id = module_name
-
+        plugin_id = get_obj_plugin_id(func)
         plugin_entry = _plugin_components.setdefault(plugin_id, {})
         tools = plugin_entry.setdefault("tools", {})
         tool_funcs = plugin_entry.setdefault("tool_funcs", {})
@@ -68,6 +71,24 @@ def register_tool(name: str, description: str, params: dict):
         }
         tool_funcs[name] = func
 
+        return func
+
+    return decorator
+
+
+def on_im_message(priority: Union[Priority, int] = Priority.MEDIUM):
+    def decorator(func: Callable):
+        plugin_id = get_obj_plugin_id(func)
+        eh = EventHandler(
+            EventType.IMMessage,
+            priority=priority,
+            handler=func,
+            desc=func.__doc__
+        )
+
+        plugin_entry = _plugin_components.setdefault(plugin_id, {})
+        hooks = plugin_entry.setdefault("hooks", [])
+        hooks.append(eh)
         return func
 
     return decorator
@@ -148,7 +169,7 @@ class PluginManager:
     def get_plugin_module_path(self, name: str) -> Optional[Path]:
         return _plugin_module_paths.get(name)
 
-    def get_plugin_name_for_module(self, module_name: str) -> Optional[str]:
+    def get_plugin_id_for_module(self, module_name: str) -> Optional[str]:
         return _module_to_plugin.get(module_name)
 
     def get_plugin_schema(self, name: str) -> List[BaseConfigField]:
@@ -200,13 +221,13 @@ class PluginManager:
         entry = _plugin_components.get(plugin_name, {})
         return entry.get("tools", {})
 
-    def _register_plugin_tools_for(self, plugin_name: str) -> None:
-        comp = _plugin_components.get(plugin_name, {})
+    def _register_plugin_tools_for(self, plugin_id: str) -> None:
+        comp = _plugin_components.get(plugin_id, {})
         if not comp:
             return
         tools = comp.get("tools", {})
         tool_funcs = comp.get("tool_funcs", {})
-        plugin_instance = self.plugin_instances.get(plugin_name)
+        plugin_instance = self.plugin_instances.get(plugin_id)
         tool_names: list[str] = []
         for tool_name, meta in tools.items():
             func = tool_funcs.get(tool_name)
@@ -223,27 +244,53 @@ class PluginManager:
             )
             tool_names.append(tool_name)
         if tool_names:
-            logger.info(f"Registered {len(tool_names)} tools from {plugin_name}: {tool_names}")
+            logger.info(f"Registered {len(tool_names)} tools from {plugin_id}: {tool_names}")
 
-    def register_plugin_tools(self) -> None:
-        for plugin_name in _plugin_components.keys():
-            self._register_plugin_tools_for(plugin_name)
-
-    def _cleanup_plugin_registration(self, plugin_name: str) -> None:
-        comp = _plugin_components.get(plugin_name)
+    def _register_plugin_hooks_for(self, plugin_id: str):
+        comp = _plugin_components.get(plugin_id, {})
         if not comp:
             return
+        hooks = comp.get("hooks", [])
+        plugin_instance = self.plugin_instances.get(plugin_id)
+        for hook in hooks:
+            bound_handler = hook.handler
+            if plugin_instance is not None and bound_handler is not None and hasattr(
+                plugin_instance, bound_handler.__name__
+            ):
+                candidate = getattr(plugin_instance, bound_handler.__name__)
+                if candidate is not None:
+                    bound_handler = candidate
+            hook.handler = bound_handler
+            event_handler_reg.register(hook)
+        if hooks:
+            logger.info(f"Registered {len(hooks)} hooks from {plugin_id}")
+
+    def register_plugin_tools(self) -> None:
+        for plugin_id in _plugin_components.keys():
+            self._register_plugin_tools_for(plugin_id)
+
+    def _cleanup_plugin_registration(self, plugin_id: str) -> None:
+        comp = _plugin_components.get(plugin_id)
+        if not comp:
+            return
+
+        # clean up tool registration
         tools = comp.get("tools", {})
         if self.ctx and getattr(self.ctx, "llm_api", None):
             for tool_name in list(tools.keys()):
                 try:
                     self.ctx.llm_api.unregister_tool(tool_name)
                 except Exception as e:
-                    logger.error(f"Failed to unregister tool {tool_name} for plugin {plugin_name}: {e}")
+                    logger.error(f"Failed to unregister tool {tool_name} for plugin {plugin_id}: {e}")
 
-    def _load_plugin_config_from_file(self, plugin_name: str) -> Dict[str, Any]:
+        # clean up hook registration
+        hooks = comp.get("hooks", [])
+        for hook in hooks:
+            event_handler_reg.del_handler(hook)
+
+    def _load_plugin_config_from_file(self, plugin_id: str) -> Dict[str, Any]:
         PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        config_path = PLUGIN_CONFIG_DIR / f"{plugin_name}.json"
+        config_path = PLUGIN_CONFIG_DIR / f"{plugin_id}.json"
         cfg: Dict[str, Any] = {}
         if config_path.exists():
             try:
@@ -334,6 +381,7 @@ class PluginManager:
             logger.error(f"Failed to initialize plugin {plugin_id}: {e}")
         if initialized:
             self._register_plugin_tools_for(plugin_id)
+            self._register_plugin_hooks_for(plugin_id)
 
     async def terminate(self, plugin_id: Optional[str] = None):
         """Terminate a specific plugin if plugin_id is given, terminate all if not given"""
@@ -375,6 +423,58 @@ class PluginManager:
         await self.terminate()
         await self.init()
 
+    def _load_plugin_meta(self, plugin_root: Path, entry: str):
+        manifest = {}
+        manifest_path = plugin_root / "manifest.json"
+        schema_path = plugin_root / "schema.json"
+
+        if manifest_path.exists():
+            try:
+                with manifest_path.open("r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load manifest for plugin {entry}: {e}")
+
+        plugin_id = manifest.get("plugin_id") or entry
+
+        if manifest:
+            _plugin_manifests[plugin_id] = manifest
+
+        schema_fields: List[BaseConfigField] = []
+        if schema_path.exists():
+            try:
+                with schema_path.open("r", encoding="utf-8") as f:
+                    raw_schema = json.load(f)
+                if isinstance(raw_schema, dict):
+                    schema_fields = build_fields(raw_schema)
+            except Exception as e:
+                logger.warning(f"Failed to load schema for plugin {plugin_id}: {e}")
+
+        if schema_fields:
+            _plugin_schemas[plugin_id] = schema_fields
+            self._ensure_plugin_config(plugin_id, schema_fields)
+
+        return plugin_id
+
+    @staticmethod
+    def _register_plugin_class(plugin_id: str, module, fallback_path: Path):
+        for _, attr_value in inspect.getmembers(module, inspect.isclass):
+            if issubclass(attr_value, BasePlugin) and attr_value is not BasePlugin:
+                _plugin_classes[plugin_id] = attr_value
+
+                module_file = Path(
+                    getattr(module, "__file__", fallback_path)
+                ).resolve()
+
+                module_dir = module_file.parent
+
+                _plugin_module_dirs[plugin_id] = module_dir.name
+                _plugin_module_paths[plugin_id] = module_dir
+                _module_to_plugin[module.__name__] = plugin_id
+                return True
+
+        return False
+
     async def _discover_builtin_plugins(self):
         if not BUILTIN_PLUGINS_DIR.exists():
             return
@@ -386,32 +486,7 @@ class PluginManager:
             if not plugin_dir.is_dir():
                 continue
 
-            manifest_path = plugin_dir / "manifest.json"
-            schema_path = plugin_dir / "schema.json"
-
-            manifest: Dict[str, Any] = {}
-            if manifest_path.exists():
-                try:
-                    with manifest_path.open("r", encoding="utf-8") as f:
-                        manifest = json.load(f)
-                except Exception as e:
-                    logger.warning(f"Failed to load manifest for builtin plugin {entry}: {e}")
-            plugin_name = manifest.get("plugin_id") or entry
-            if manifest:
-                _plugin_manifests[plugin_name] = manifest
-
-            schema_fields: List[BaseConfigField] = []
-            if schema_path.exists():
-                try:
-                    with schema_path.open("r", encoding="utf-8") as f:
-                        raw_schema = json.load(f)
-                    if isinstance(raw_schema, dict):
-                        schema_fields = build_fields(raw_schema)
-                except Exception as e:
-                    logger.warning(f"Failed to load schema for builtin plugin {plugin_name}: {e}")
-            if schema_fields:
-                _plugin_schemas[plugin_name] = schema_fields
-                self._ensure_plugin_config(plugin_name, schema_fields)
+            plugin_id = self._load_plugin_meta(plugin_dir, entry)
 
             module = None
             candidate_modules = [
@@ -434,15 +509,7 @@ class PluginManager:
                 logger.warning(f"No module found for builtin plugin {entry}")
                 continue
 
-            for attr_name, attr_value in inspect.getmembers(module, inspect.isclass):
-                if issubclass(attr_value, BasePlugin) and attr_value is not BasePlugin:
-                    _plugin_classes[plugin_name] = attr_value
-                    module_file = Path(getattr(module, "__file__", plugin_dir / "__init__.py")).resolve()
-                    module_dir = module_file.parent
-                    _plugin_module_dirs[plugin_name] = module_dir.name
-                    _plugin_module_paths[plugin_name] = module_dir
-                    _module_to_plugin[module.__name__] = plugin_name
-                    break
+            self._register_plugin_class(plugin_id, module, plugin_dir)
 
     async def _discover_user_plugins(self):
         if not self.plugin_dir.exists():
@@ -462,32 +529,7 @@ class PluginManager:
             if not plugin_root.is_dir():
                 continue
 
-            manifest_path = plugin_root / "manifest.json"
-            schema_path = plugin_root / "schema.json"
-
-            manifest: Dict[str, Any] = {}
-            if manifest_path.exists():
-                try:
-                    with manifest_path.open("r", encoding="utf-8") as f:
-                        manifest = json.load(f)
-                except Exception as e:
-                    logger.warning(f"Failed to load manifest for plugin {entry}: {e}")
-            plugin_name = manifest.get("plugin_id") or entry
-            if manifest:
-                _plugin_manifests[plugin_name] = manifest
-
-            schema_fields: List[BaseConfigField] = []
-            if schema_path.exists():
-                try:
-                    with schema_path.open("r", encoding="utf-8") as f:
-                        raw_schema = json.load(f)
-                    if isinstance(raw_schema, dict):
-                        schema_fields = build_fields(raw_schema)
-                except Exception as e:
-                    logger.warning(f"Failed to load schema for plugin {plugin_name}: {e}")
-            if schema_fields:
-                _plugin_schemas[plugin_name] = schema_fields
-                self._ensure_plugin_config(plugin_name, schema_fields)
+            plugin_id = self._load_plugin_meta(plugin_root, entry)
 
             package_name = f"{base_package}.{entry}"
             if package_name not in sys.modules:
@@ -527,12 +569,4 @@ class PluginManager:
                 logger.error(f"Error loading plugin from {plugin_root}: {e}")
                 continue
 
-            for attr_name, attr_value in inspect.getmembers(module, inspect.isclass):
-                if issubclass(attr_value, BasePlugin) and attr_value is not BasePlugin:
-                    _plugin_classes[plugin_name] = attr_value
-                    module_file = Path(getattr(module, "__file__", script_path)).resolve()
-                    module_dir = module_file.parent
-                    _plugin_module_dirs[plugin_name] = module_dir.name
-                    _plugin_module_paths[plugin_name] = module_dir
-                    _module_to_plugin[module.__name__] = plugin_name
-                    break
+            self._register_plugin_class(plugin_id, module, plugin_root)
