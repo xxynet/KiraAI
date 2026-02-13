@@ -1,0 +1,178 @@
+"""
+用户画像存储层，使用 JSON 文件持久化用户结构化信息
+"""
+import json
+import os
+import time
+from threading import Lock
+from typing import Optional
+from dataclasses import dataclass, field, asdict
+
+from core.logging_manager import get_logger
+
+logger = get_logger("user_profile", "green")
+
+USER_PROFILE_PATH = "data/memory/user_profiles.json"
+
+
+@dataclass
+class UserProfile:
+    """用户画像"""
+    user_id: str
+    platform: str = ""
+    name: str = ""
+    nickname: str = ""
+    traits: list[str] = field(default_factory=list)
+    preferences: dict = field(default_factory=dict)
+    relationships: dict = field(default_factory=dict)
+    facts: list[str] = field(default_factory=list)
+    last_interaction: float = 0.0
+    interaction_count: int = 0
+    extra: dict = field(default_factory=dict)
+
+
+class UserProfileStore:
+    """用户画像存储管理"""
+
+    def __init__(self, path: str = USER_PROFILE_PATH):
+        self.path = path
+        self._lock = Lock()
+        self._profiles: dict[str, UserProfile] = {}
+        self._load()
+        logger.info("UserProfileStore initialized")
+
+    def _load(self):
+        """从文件加载画像数据"""
+        if os.path.exists(self.path):
+            try:
+                with open(self.path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                for uid, profile_data in data.items():
+                    self._profiles[uid] = UserProfile(**profile_data)
+            except Exception as e:
+                logger.error(f"Failed to load user profiles: {e}")
+                self._profiles = {}
+        else:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+
+    def _save(self):
+        """保存画像数据到文件"""
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            data = {uid: asdict(profile) for uid, profile in self._profiles.items()}
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to save user profiles: {e}")
+
+    def get_profile(self, user_id: str) -> UserProfile:
+        """获取用户画像，不存在则创建"""
+        if user_id not in self._profiles:
+            self._profiles[user_id] = UserProfile(user_id=user_id)
+        return self._profiles[user_id]
+
+    def update_profile(self, user_id: str, **kwargs) -> UserProfile:
+        """更新用户画像字段"""
+        with self._lock:
+            profile = self.get_profile(user_id)
+            for key, value in kwargs.items():
+                if hasattr(profile, key):
+                    setattr(profile, key, value)
+            profile.last_interaction = time.time()
+            self._save()
+            return profile
+
+    def add_trait(self, user_id: str, trait: str):
+        """添加用户特征标签"""
+        with self._lock:
+            profile = self.get_profile(user_id)
+            if trait not in profile.traits:
+                profile.traits.append(trait)
+                self._save()
+
+    def remove_trait(self, user_id: str, trait: str):
+        """移除用户特征标签"""
+        with self._lock:
+            profile = self.get_profile(user_id)
+            if trait in profile.traits:
+                profile.traits.remove(trait)
+                self._save()
+
+    def add_fact(self, user_id: str, fact: str):
+        """添加确定性事实"""
+        with self._lock:
+            profile = self.get_profile(user_id)
+            if fact not in profile.facts:
+                profile.facts.append(fact)
+                self._save()
+
+    def update_fact(self, user_id: str, old_fact: str, new_fact: str):
+        """更新事实"""
+        with self._lock:
+            profile = self.get_profile(user_id)
+            for i, f in enumerate(profile.facts):
+                if f == old_fact:
+                    profile.facts[i] = new_fact
+                    self._save()
+                    return
+
+    def remove_fact(self, user_id: str, fact: str):
+        """移除事实"""
+        with self._lock:
+            profile = self.get_profile(user_id)
+            if fact in profile.facts:
+                profile.facts.remove(fact)
+                self._save()
+
+    def set_relationship(self, user_id: str, target: str, relation: str):
+        """设置关系"""
+        with self._lock:
+            profile = self.get_profile(user_id)
+            profile.relationships[target] = relation
+            self._save()
+
+    def increment_interaction(self, user_id: str):
+        """增加交互计数"""
+        with self._lock:
+            profile = self.get_profile(user_id)
+            profile.interaction_count += 1
+            profile.last_interaction = time.time()
+            self._save()
+
+    def get_profile_prompt(self, user_id: str) -> str:
+        """将用户画像格式化为 prompt 文本"""
+        profile = self.get_profile(user_id)
+        parts = []
+        if profile.name:
+            parts.append(f"名字: {profile.name}")
+        if profile.nickname:
+            parts.append(f"昵称: {profile.nickname}")
+        if profile.platform:
+            parts.append(f"平台: {profile.platform}")
+        if profile.traits:
+            parts.append(f"特征: {', '.join(profile.traits)}")
+        if profile.preferences:
+            prefs = ', '.join(f"{k}: {v}" for k, v in profile.preferences.items())
+            parts.append(f"偏好: {prefs}")
+        if profile.relationships:
+            rels = ', '.join(f"{k}: {v}" for k, v in profile.relationships.items())
+            parts.append(f"关系: {rels}")
+        if profile.facts:
+            facts_str = '\n  '.join(f"- {f}" for f in profile.facts)
+            parts.append(f"已知事实:\n  {facts_str}")
+        if profile.interaction_count:
+            parts.append(f"互动次数: {profile.interaction_count}")
+        return '\n'.join(parts) if parts else "暂无画像信息"
+
+    def get_all_profiles(self) -> dict[str, UserProfile]:
+        """获取所有用户画像"""
+        return dict(self._profiles)
+
+    def delete_profile(self, user_id: str) -> bool:
+        """删除用户画像"""
+        with self._lock:
+            if user_id in self._profiles:
+                del self._profiles[user_id]
+                self._save()
+                return True
+            return False

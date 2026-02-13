@@ -5,7 +5,7 @@ import base64
 import time
 
 from core.provider import ModelInfo
-from core.provider import LLMModelClient, ImageModelClient, TTSModelClient, STTModelClient
+from core.provider import LLMModelClient, ImageModelClient, TTSModelClient, STTModelClient, EmbeddingModelClient
 from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.provider.image_result import ImageResult
@@ -148,3 +148,23 @@ class SiliconflowSTTClient(STTModelClient):
             response.raise_for_status()
         resp_json = response.json()
         return resp_json.get("text", "")
+
+
+class SiliconflowEmbeddingClient(EmbeddingModelClient):
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        client = AsyncOpenAI(
+            api_key=self.model.provider_config.get("api_key", ""),
+            base_url="https://api.siliconflow.cn/v1"
+        )
+        try:
+            response = await client.embeddings.create(
+                model=self.model.model_id,
+                input=texts
+            )
+            return [item.embedding for item in response.data]
+        except Exception as e:
+            logger.error(f"Embedding error: {e}")
+            return []

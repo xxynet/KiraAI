@@ -55,9 +55,23 @@ class KiraLifecycle:
 
     async def schedule_tasks(self):
         self.tasks = [
-            asyncio.create_task(self.sticker_manager.scan_and_register_sticker())
+            asyncio.create_task(self.sticker_manager.scan_and_register_sticker()),
+            asyncio.create_task(self._memory_forgetting_loop())
         ]
         await asyncio.gather(*self.tasks)
+
+    async def _memory_forgetting_loop(self):
+        """定期运行记忆遗忘周期"""
+        while True:
+            try:
+                await asyncio.sleep(86400)  # 每 24 小时运行一次
+                if self.memory_manager:
+                    await self.memory_manager.run_forgetting_cycle()
+                    logger.info("Memory forgetting cycle completed")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Memory forgetting cycle error: {e}")
 
     async def init_and_run_system(self):
         """主函数：负责启动和初始化各个模块"""
@@ -85,7 +99,14 @@ class KiraLifecycle:
         self.sticker_manager = StickerManager(self.llm_api)
 
         # ====== init memory manager ======
-        self.memory_manager = MemoryManager(self.kira_config)
+        self.memory_manager = MemoryManager(self.kira_config, llm_client=self.llm_api)
+
+        # Inject memory_manager into memory tools
+        try:
+            from data.tools.memory import set_memory_manager
+            set_memory_manager(self.memory_manager)
+        except Exception as e:
+            logger.warning(f"Failed to inject memory_manager into tools: {e}")
 
         # ====== init persona manager ======
         self.persona_manager = PersonaManager()

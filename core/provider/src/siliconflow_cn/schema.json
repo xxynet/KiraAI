@@ -44,6 +44,20 @@
         "hint": "声音ID，可以在 https://docs.siliconflow.cn/cn/api-reference/audio/upload-voice 上传参考音频获取声音名称"
       }
     },
-    "stt": {}
+    "stt": {},
+    "embedding": {
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 60,
+        "hint": "请求超时时间（秒）"
+      },
+      "slow_request_threshold": {
+        "name": "慢请求阈值",
+        "type": "float",
+        "default": 5.0,
+        "hint": "超过此阈值（秒）的请求将被记录为慢请求"
+      }
+    }
   }
 }

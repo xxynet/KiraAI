@@ -175,6 +175,42 @@ const resources = {
             configuration: {
                 title: "Configuration",
                 save: "Save",
+                loading: "Loading configuration...",
+                saved: "Configuration saved successfully",
+                reset: "Configuration reset to saved state",
+                modified: "modified",
+                changes: "change(s)",
+                search_placeholder: "Search settings... ( / )",
+                validation_failed: "Please fix validation errors before saving",
+                shortcut_undo: "Undo",
+                shortcut_redo: "Redo",
+                shortcut_save: "Save",
+                shortcut_search: "Search",
+                groups: {
+                    bot: "Bot Settings",
+                    bot_desc: "Core bot behavior parameters",
+                    agent: "Agent Settings",
+                    agent_desc: "Agent and tool execution parameters",
+                    selfie: "Appearance",
+                    selfie_desc: "Bot appearance reference settings",
+                    models: "Default Models",
+                    models_desc: "Select default provider and model for each capability"
+                },
+                hints: {
+                    max_memory_length: "Maximum number of messages retained in context window",
+                    max_message_interval: "Maximum seconds to wait before processing buffered messages",
+                    max_buffer_messages: "Maximum number of messages to buffer before processing",
+                    min_message_delay: "Minimum delay in seconds before sending a reply",
+                    max_message_delay: "Maximum delay in seconds before sending a reply",
+                    max_tool_loop: "Maximum number of tool call iterations per response",
+                    selfie_path: "Path to the bot appearance reference image"
+                },
+                validation: {
+                    required: "This field is required",
+                    invalid_number: "Please enter a valid number",
+                    min: "Minimum value is",
+                    max: "Maximum value is"
+                },
                 new_file: "New File",
                 file_select: "Select File",
                 select_file: "Select a file...",
@@ -185,7 +221,6 @@ const resources = {
                 format_xml: "XML",
                 editor_ready: "Editor ready",
                 no_file: "No file selected",
-                saved: "File saved successfully",
                 copied: "Content copied to clipboard",
                 downloaded: "File downloaded",
                 enter_filename: "Enter filename:",
@@ -290,6 +325,23 @@ const resources = {
                 selected_prefix: "Selected file: ",
                 selected: "File selected",
                 selected_hint: "Click or drag to select another image"
+            },
+            model: {
+                modal_title: "Add Model",
+                modal_id_label: "Model ID",
+                modal_id_placeholder: "Enter model ID...",
+                modal_id_hint: "Use the model ID from your provider (e.g. text-embedding-3-small)",
+                modal_id_tooltip: "The model identifier from your provider, e.g. text-embedding-3-small",
+                modal_cancel: "Cancel",
+                modal_save: "Save",
+                no_config_required: "No configuration required",
+                validation_id_required: "Model ID is required",
+                validation_id_too_long: "Model ID must be 128 characters or less",
+                validation_id_format: "Model ID must start with a letter or number and contain only letters, numbers, hyphens, underscores, dots, colons, or slashes",
+                validation_integer: "{field} must be an integer",
+                validation_number: "{field} must be a valid number",
+                validation_positive: "{field} must be a positive number",
+                validation_failed: "Please fix validation errors before saving"
             }
         }
     },
@@ -466,6 +518,42 @@ const resources = {
             configuration: {
                 title: "配置项",
                 save: "保存",
+                loading: "加载配置中...",
+                saved: "配置保存成功",
+                reset: "配置已重置为已保存状态",
+                modified: "已修改",
+                changes: "项修改",
+                search_placeholder: "搜索设置... ( / )",
+                validation_failed: "请先修复验证错误后再保存",
+                shortcut_undo: "撤销",
+                shortcut_redo: "重做",
+                shortcut_save: "保存",
+                shortcut_search: "搜索",
+                groups: {
+                    bot: "机器人设置",
+                    bot_desc: "核心机器人行为参数",
+                    agent: "代理设置",
+                    agent_desc: "代理和工具执行参数",
+                    selfie: "外观",
+                    selfie_desc: "机器人外观参考设置",
+                    models: "默认模型",
+                    models_desc: "为每种能力选择默认提供商和模型"
+                },
+                hints: {
+                    max_memory_length: "上下文窗口中保留的最大消息数",
+                    max_message_interval: "处理缓冲消息前的最大等待秒数",
+                    max_buffer_messages: "处理前缓冲的最大消息数",
+                    min_message_delay: "发送回复前的最小延迟秒数",
+                    max_message_delay: "发送回复前的最大延迟秒数",
+                    max_tool_loop: "每次响应的最大工具调用迭代次数",
+                    selfie_path: "机器人外观参考图片路径"
+                },
+                validation: {
+                    required: "此字段为必填项",
+                    invalid_number: "请输入有效的数字",
+                    min: "最小值为",
+                    max: "最大值为"
+                },
                 new_file: "新建文件",
                 file_select: "选择文件",
                 select_file: "选择文件...",
@@ -476,7 +564,6 @@ const resources = {
                 format_xml: "XML",
                 editor_ready: "编辑器就绪",
                 no_file: "未选择文件",
-                saved: "文件保存成功",
                 copied: "内容已复制到剪贴板",
                 downloaded: "文件已下载",
                 enter_filename: "输入文件名:",
@@ -581,6 +668,23 @@ const resources = {
                 selected_prefix: "已选择文件：",
                 selected: "已选择文件",
                 selected_hint: "点击或拖拽可重新选择图片"
+            },
+            model: {
+                modal_title: "添加模型",
+                modal_id_label: "模型 ID",
+                modal_id_placeholder: "输入模型 ID...",
+                modal_id_hint: "填写提供商提供的模型 ID（如 text-embedding-3-small）",
+                modal_id_tooltip: "提供商提供的模型标识符，例如 text-embedding-3-small",
+                modal_cancel: "取消",
+                modal_save: "保存",
+                no_config_required: "无需额外配置",
+                validation_id_required: "模型 ID 不能为空",
+                validation_id_too_long: "模型 ID 最多 128 个字符",
+                validation_id_format: "模型 ID 必须以字母或数字开头，仅可包含字母、数字、连字符、下划线、点、冒号或斜杠",
+                validation_integer: "{field}必须为整数",
+                validation_number: "{field}必须为有效数字",
+                validation_positive: "{field}必须为正数",
+                validation_failed: "请先修正验证错误再保存"
             }
         }
     }

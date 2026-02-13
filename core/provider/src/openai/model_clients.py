@@ -3,7 +3,7 @@ import time
 from typing import Optional
 
 from core.provider import ModelInfo
-from core.provider import LLMModelClient, ImageModelClient
+from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.provider.image_result import ImageResult
 from core.logging_manager import get_logger
@@ -93,3 +93,23 @@ class OpenAIImageClient(ImageModelClient):
     async def image_to_image(self, prompt: str, url: Optional[str] = None,
                              base64: Optional[str] = None) -> ImageResult:
         pass
+
+
+class OpenAIEmbeddingClient(EmbeddingModelClient):
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        client = AsyncOpenAI(
+            api_key=self.model.provider_config.get("api_key", ""),
+            base_url=self.model.provider_config.get("base_url", "")
+        )
+        try:
+            response = await client.embeddings.create(
+                model=self.model.model_id,
+                input=texts
+            )
+            return [item.embedding for item in response.data]
+        except Exception as e:
+            logger.error(f"Embedding error: {e}")
+            return []

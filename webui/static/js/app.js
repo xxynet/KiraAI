@@ -1559,25 +1559,64 @@ function renderPersonaList() {
 }
 
 /**
- * Load configuration data
+ * Load configuration data - uses ConfigurationManager
  */
 async function loadConfigurationData() {
     try {
-        setupConfigurationTabs();
-        const response = await apiCall('/api/configuration');
-        const data = await response.json();
-        const configuration = data.configuration || {};
-        const botConfig = configuration.bot_config || {};
-        const modelsConfig = configuration.models || {};
-        const providers = data.providers || [];
-        const providerModels = data.provider_models || {};
-        AppState.data.configuration = configuration;
-        AppState.data.configProviders = providers;
-        AppState.data.configProviderModels = providerModels;
-        populateMessageConfiguration(botConfig);
-        populateModelConfiguration(modelsConfig, providers, providerModels);
+        if (window.configManager) {
+            await window.configManager.load();
+            // Bind toolbar events (idempotent)
+            _bindConfigToolbarEvents();
+        } else {
+            console.error('ConfigurationManager not loaded');
+        }
     } catch (error) {
         console.error('Error loading configuration data:', error);
+    }
+}
+
+/** Bind configuration toolbar button events */
+let _configToolbarBound = false;
+function _bindConfigToolbarEvents() {
+    if (_configToolbarBound) return;
+    _configToolbarBound = true;
+
+    const searchInput = document.getElementById('config-search-input');
+    if (searchInput) {
+        let debounceTimer;
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (window.configManager) {
+                    window.configManager.setSearch(e.target.value);
+                }
+            }, 150);
+        });
+    }
+
+    const undoBtn = document.getElementById('config-undo-btn');
+    if (undoBtn) {
+        undoBtn.addEventListener('click', () => window.configManager?.undo());
+    }
+
+    const redoBtn = document.getElementById('config-redo-btn');
+    if (redoBtn) {
+        redoBtn.addEventListener('click', () => window.configManager?.redo());
+    }
+
+    const resetBtn = document.getElementById('config-reset-btn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => window.configManager?.reset());
+    }
+
+    const expandBtn = document.getElementById('config-expand-all-btn');
+    if (expandBtn) {
+        expandBtn.addEventListener('click', () => window.configManager?.expandAll());
+    }
+
+    const collapseBtn = document.getElementById('config-collapse-all-btn');
+    if (collapseBtn) {
+        collapseBtn.addEventListener('click', () => window.configManager?.collapseAll());
     }
 }
 
@@ -2140,7 +2179,9 @@ function setupEventListeners() {
             const configurationPage = document.getElementById('page-configuration');
             if (configurationPage && configurationPage.contains(target) && !configurationPage.classList.contains('hidden')) {
                 e.preventDefault();
-                saveConfiguration();
+                if (window.configManager) {
+                    window.configManager.save();
+                }
                 return;
             }
         }
@@ -3659,7 +3700,7 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
     container.innerHTML = '';
     
     if (!schema || Object.keys(schema).length === 0) {
-        container.innerHTML = '<div class="text-gray-500 py-2">No configuration required</div>';
+        container.innerHTML = '<div class="text-gray-500 py-2">' + getTranslation('model.no_config_required', 'No configuration required') + '</div>';
         return;
     }
     
@@ -3673,10 +3714,31 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
         const wrapper = document.createElement('div');
         wrapper.className = 'mb-4';
         
+        // Label row with tooltip
+        const labelRow = document.createElement('div');
+        labelRow.className = 'flex items-center mb-1';
+        
         const label = document.createElement('label');
-        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
+        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300';
         label.textContent = (field && field.name) ? field.name : key;
-        wrapper.appendChild(label);
+        labelRow.appendChild(label);
+        
+        // Add tooltip icon if hint exists
+        if (field.hint) {
+            const tooltipContainer = document.createElement('div');
+            tooltipContainer.className = 'relative ml-1 group';
+            tooltipContainer.innerHTML = `
+                <svg class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+                    ${escapeHtml(field.hint)}
+                </div>
+            `;
+            labelRow.appendChild(tooltipContainer);
+        }
+        
+        wrapper.appendChild(labelRow);
         
         let input;
         const fieldType = field.type || 'string';
@@ -3698,9 +3760,10 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
             input.type = 'text';
         }
         
-        input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors';
         input.setAttribute('data-config-key', key);
         input.setAttribute('data-config-type', fieldType);
+        if (field.name) input.setAttribute('data-config-name', field.name);
         
         if (currentValue !== undefined && currentValue !== null) {
             input.value = currentValue;
@@ -3709,8 +3772,24 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
         if (field.hint) {
             input.placeholder = field.hint;
         }
+
+        // Add real-time validation for numeric fields
+        if (fieldType === 'integer' || fieldType === 'float') {
+            input.addEventListener('input', function() {
+                validateConfigFieldInput(this);
+            });
+            input.addEventListener('blur', function() {
+                validateConfigFieldInput(this);
+            });
+        }
         
         wrapper.appendChild(input);
+        
+        // Error message element
+        const errorEl = document.createElement('p');
+        errorEl.className = 'text-xs text-red-500 dark:text-red-400 mt-1 hidden';
+        errorEl.setAttribute('data-error-for', key);
+        wrapper.appendChild(errorEl);
         
         if (field.hint) {
             const hint = document.createElement('p');
@@ -3721,6 +3800,47 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
         
         container.appendChild(wrapper);
     });
+}
+
+/**
+ * Validate a config field input in real-time
+ * @param {HTMLInputElement} input
+ * @returns {boolean}
+ */
+function validateConfigFieldInput(input) {
+    const key = input.getAttribute('data-config-key');
+    const fieldType = input.getAttribute('data-config-type');
+    const fieldName = input.getAttribute('data-config-name') || key;
+    const value = input.value.trim();
+    const errorEl = input.parentElement.querySelector(`[data-error-for="${key}"]`);
+
+    let errorMsg = '';
+
+    if (value !== '') {
+        if (fieldType === 'integer') {
+            if (!/^-?\d+$/.test(value)) {
+                errorMsg = getTranslation('model.validation_integer', '{field} must be an integer').replace('{field}', fieldName);
+            }
+        } else if (fieldType === 'float') {
+            if (isNaN(parseFloat(value))) {
+                errorMsg = getTranslation('model.validation_number', '{field} must be a valid number').replace('{field}', fieldName);
+            } else if (key === 'slow_request_threshold' && parseFloat(value) <= 0) {
+                errorMsg = getTranslation('model.validation_positive', '{field} must be a positive number').replace('{field}', fieldName);
+            }
+        }
+    }
+
+    if (errorMsg) {
+        input.classList.remove('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
+        input.classList.add('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
+        if (errorEl) { errorEl.textContent = errorMsg; errorEl.classList.remove('hidden'); }
+        return false;
+    } else {
+        input.classList.remove('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
+        input.classList.add('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
+        if (errorEl) { errorEl.textContent = ''; errorEl.classList.add('hidden'); }
+        return true;
+    }
 }
 
 /**
@@ -4124,7 +4244,15 @@ async function openModelModal(providerId, modelType, groupLabel, modelId = null,
     modal.classList.remove('hidden');
     modal.classList.add('flex');
     const modelIdInput = document.getElementById('model-id');
+    const modelIdError = document.getElementById('model-id-error');
+    const modelIdHint = document.getElementById('model-id-hint');
     if (modelIdInput) {
+        // Reset validation state
+        modelIdInput.classList.remove('border-red-500', 'dark:border-red-400');
+        modelIdInput.classList.add('border-gray-300', 'dark:border-gray-600');
+        if (modelIdError) { modelIdError.classList.add('hidden'); modelIdError.textContent = ''; }
+        if (modelIdHint) modelIdHint.classList.remove('hidden');
+
         if (modelId) {
             modelIdInput.value = modelId;
             modelIdInput.disabled = true;
@@ -4132,6 +4260,15 @@ async function openModelModal(providerId, modelType, groupLabel, modelId = null,
             modelIdInput.value = '';
             modelIdInput.disabled = false;
         }
+        // Remove old listeners then attach new real-time validation
+        const newInput = modelIdInput.cloneNode(true);
+        modelIdInput.parentNode.replaceChild(newInput, modelIdInput);
+        newInput.addEventListener('input', function() {
+            validateModelIdInput(this);
+        });
+        newInput.addEventListener('blur', function() {
+            validateModelIdInput(this);
+        });
     }
     const groupElement = document.getElementById('model-modal-group');
     if (groupElement) {
@@ -4161,6 +4298,42 @@ async function openModelModal(providerId, modelType, groupLabel, modelId = null,
     }
 }
 
+/**
+ * Validate model ID input in real-time
+ * @param {HTMLInputElement} input
+ * @returns {boolean}
+ */
+function validateModelIdInput(input) {
+    const value = input.value.trim();
+    const errorEl = document.getElementById('model-id-error');
+    const hintEl = document.getElementById('model-id-hint');
+    // Model ID pattern: alphanumeric, hyphens, underscores, dots, colons, slashes
+    const validPattern = /^[a-zA-Z0-9][a-zA-Z0-9\-_.:\/]*$/;
+
+    let errorMsg = '';
+    if (value === '') {
+        errorMsg = getTranslation('model.validation_id_required', 'Model ID is required');
+    } else if (value.length > 128) {
+        errorMsg = getTranslation('model.validation_id_too_long', 'Model ID must be 128 characters or less');
+    } else if (!validPattern.test(value)) {
+        errorMsg = getTranslation('model.validation_id_format', 'Model ID must start with a letter or number and contain only letters, numbers, hyphens, underscores, dots, colons, or slashes');
+    }
+
+    if (errorMsg) {
+        input.classList.remove('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
+        input.classList.add('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
+        if (errorEl) { errorEl.textContent = errorMsg; errorEl.classList.remove('hidden'); }
+        if (hintEl) hintEl.classList.add('hidden');
+        return false;
+    } else {
+        input.classList.remove('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
+        input.classList.add('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
+        if (errorEl) { errorEl.textContent = ''; errorEl.classList.add('hidden'); }
+        if (hintEl) hintEl.classList.remove('hidden');
+        return true;
+    }
+}
+
 function closeModelModal() {
     const modal = document.getElementById('model-modal');
     if (modal) {
@@ -4185,13 +4358,32 @@ async function saveModel() {
     if (!modelIdInput) return;
     let modelId = modelModalState.modelId;
     if (mode === 'create') {
+        // Run real-time validation before proceeding
+        if (!validateModelIdInput(modelIdInput)) {
+            modelIdInput.focus();
+            return;
+        }
         modelId = modelIdInput.value.trim();
         if (!modelId) {
             showNotification(getTranslation('model.id_required', 'Model ID is required'), 'error');
             return;
         }
     }
+    // Validate config fields
     const configContainer = document.getElementById('model-config-container');
+    let hasValidationError = false;
+    if (configContainer) {
+        const inputs = configContainer.querySelectorAll('input[data-config-key]');
+        inputs.forEach(input => {
+            if (!validateConfigFieldInput(input)) {
+                hasValidationError = true;
+            }
+        });
+    }
+    if (hasValidationError) {
+        showNotification(getTranslation('model.validation_failed', 'Please fix validation errors before saving'), 'error');
+        return;
+    }
     const config = {};
     if (configContainer) {
         const inputs = configContainer.querySelectorAll('input[data-config-key]');

@@ -8,7 +8,7 @@ from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
 from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse, ModelType
-from .provider import ProviderManager, ImageResult
+from .provider import ProviderManager, ImageResult, EmbeddingModelClient
 
 logger = get_logger("llm", "purple")
 tool_logger = get_logger("tool_use", "orange")
@@ -110,6 +110,15 @@ class LLMClient:
             if resp:
                 logger.info(f"Time consumed: {resp.time_consumed}s, Input tokens: {resp.input_tokens}, output tokens: {resp.output_tokens}")
             return resp
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        """生成文本嵌入向量"""
+        try:
+            embedding_model = self.provider_mgr.get_default_embedding()
+            return await embedding_model.embed(texts)
+        except Exception as e:
+            logger.error(f"Embedding error: {e}")
+            return []
 
     async def text_to_speech(self, text: str):
         tts_model = self.provider_mgr.get_default_tts()

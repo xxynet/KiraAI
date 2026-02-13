@@ -161,7 +161,9 @@ class PromptManager:
         return _prompt
 
     def get_agent_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list,
-                         emoji_dict: Optional[dict] = None) -> str:
+                         emoji_dict: Optional[dict] = None,
+                         recalled_memories: str = "",
+                         user_profile: str = "") -> str:
         """生成 Agent 提示词"""
         formatted_time = self.get_current_time_str()
 
@@ -174,6 +176,8 @@ class PromptManager:
                 time_str=formatted_time,
                 chat_env=chat_env,
                 core_memory=core_memory,
+                recalled_memories=recalled_memories if recalled_memories else "暂无相关长期记忆",
+                user_profile=user_profile if user_profile else "暂无画像信息",
                 accounts=self.ada_config_prompt,
                 max_tool_loop=self.kira_config.get_config("bot_config.agent.max_tool_loop")
             )

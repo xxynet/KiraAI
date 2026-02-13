@@ -7,7 +7,8 @@ from typing import Dict, Optional, Type
 
 from .provider import (
     BaseProvider, BaseModelClient, ProviderInfo, ModelInfo, ModelType,
-    LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient
+    LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient,
+    EmbeddingModelClient
 )
 
 from core.utils.path_utils import get_config_path
@@ -125,6 +126,15 @@ class ProviderManager:
         if not isinstance(model_client, ImageModelClient):
             raise TypeError(
                 f"Expected ImageModelClient, got {type(model_client).__name__}"
+            )
+        return model_client
+
+    def get_default_embedding(self) -> EmbeddingModelClient:
+        model_info = self.get_default_model_info("default_embedding")
+        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        if not isinstance(model_client, EmbeddingModelClient):
+            raise TypeError(
+                f"Expected EmbeddingModelClient, got {type(model_client).__name__}"
             )
         return model_client
 

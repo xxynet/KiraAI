@@ -1,13 +1,25 @@
+"""
+新版记忆系统 - 双脑架构
+- 短期记忆：滑动窗口对话历史（保持原有功能）
+- 长期记忆：ChromaDB 向量检索（事实、反思、摘要）
+- 用户画像：结构化 JSON 存储
+- 海马体：后台事实提取 + 反思生成
+- 遗忘机制：基于重要性和访问频率的记忆衰减
+"""
 import asyncio
 import json
 import os
-from typing import Dict, List
+import time
+import uuid
+from typing import Dict, List, Optional
 from threading import Lock
-from core.logging_manager import get_logger
 
+from core.logging_manager import get_logger
 from core.config import KiraConfig
 
 from .session import Session
+from .vector_store import VectorStore, MemoryEntry
+from .user_profile import UserProfileStore, UserProfile
 
 logger = get_logger("memory_manager", "green")
 
@@ -16,21 +28,46 @@ CORE_MEMORY_PATH: str = "data/memory/core.txt"
 
 
 class MemoryManager:
-    """管理聊天记忆的读写操作"""
+    """双脑架构记忆管理器
     
-    def __init__(self, kira_config: KiraConfig):
+    快系统（Fast Loop）：对话时检索记忆、维护短期对话历史
+    慢系统（Slow Loop）：后台提取事实、生成反思、更新画像、遗忘清理
+    """
+
+    def __init__(self, kira_config: KiraConfig, llm_client=None):
         self.kira_config = kira_config
         self.max_memory_length = int(kira_config["bot_config"].get("bot").get("max_memory_length"))
         self.chat_memory_path = CHAT_MEMORY_PATH
         self.core_memory_path = CORE_MEMORY_PATH
 
         self.memory_lock = Lock()
-        
-        # init memory data
+
+        # === 短期记忆（原有） ===
         self.chat_memory = self._load_memory(self.chat_memory_path)
         self._ensure_memory_format()
-        
-        logger.info("MemoryManager initialized")
+
+        # === 长期记忆（向量库） ===
+        self.vector_store = VectorStore()
+
+        # === 用户画像 ===
+        self.user_profile_store = UserProfileStore()
+
+        # === LLM 客户端（用于海马体后台处理） ===
+        self._llm_client = llm_client
+
+        # === 后台处理缓冲区 ===
+        self._pending_conversations: Dict[str, list] = {}
+        self._hippocampus_threshold = 3  # 每 N 轮触发一次海马体处理
+
+        logger.info("MemoryManager initialized (dual-brain architecture)")
+
+    def set_llm_client(self, llm_client):
+        """延迟设置 LLM 客户端"""
+        self._llm_client = llm_client
+
+    # ==========================================
+    # 短期记忆（原有功能完整保留）
+    # ==========================================
 
     @staticmethod
     def _load_memory(path: str) -> Dict[str, dict]:
@@ -50,7 +87,6 @@ class MemoryManager:
                 logger.error(err)
                 return {}
         else:
-            # make sure the directory exists
             os.makedirs(os.path.dirname(path), exist_ok=True)
             return {}
 
@@ -67,7 +103,7 @@ class MemoryManager:
                     "memory": session_content
                 }
         self._save_memory(self.chat_memory, self.chat_memory_path)
-    
+
     def _save_memory(self, memory: Dict[str, dict] = None, path: str = None):
         """保存记忆到文件"""
         if not memory:
@@ -158,6 +194,9 @@ class MemoryManager:
             self._save_memory(self.chat_memory, self.chat_memory_path)
         logger.info(f"Memory updated for {session}")
 
+        # 将对话加入待处理缓冲区，异步触发海马体
+        self._buffer_for_hippocampus(session, new_chunk)
+
     def delete_session(self, session: str):
         with self.memory_lock:
             self.chat_memory.pop(session)
@@ -166,9 +205,477 @@ class MemoryManager:
 
     def get_core_memory(self):
         os.makedirs(os.path.dirname(self.core_memory_path), exist_ok=True)
+        if not os.path.exists(self.core_memory_path):
+            with open(self.core_memory_path, "w", encoding="utf-8") as f:
+                f.write("")
+            return ""
         with open(self.core_memory_path, "r", encoding='utf-8') as mem:
             lines = mem.readlines()
         memory_str = ""
         for i, line in enumerate(lines):
             memory_str += f"[{i}] {line}"
         return memory_str
+
+    # ==========================================
+    # 长期记忆（向量检索）
+    # ==========================================
+
+    async def recall(self, query: str, user_id: str = None, k: int = 5) -> list[MemoryEntry]:
+        """检索与查询相关的长期记忆（快系统 - 对话前调用）
+        
+        Args:
+            query: 当前用户输入
+            user_id: 可选的用户ID过滤
+            k: 返回最相关的 k 条记忆
+        """
+        try:
+            # 尝试使用 embedding 模型生成向量进行搜索
+            if self._llm_client:
+                try:
+                    embeddings = await self._llm_client.embed([query])
+                    if embeddings and embeddings[0]:
+                        return self.vector_store.search(
+                            query_embedding=embeddings[0],
+                            user_id=user_id,
+                            k=k
+                        )
+                except Exception as e:
+                    logger.debug(f"Embedding search failed, falling back to text search: {e}")
+
+            # 回退到 ChromaDB 内置的文本搜索
+            return self.vector_store.search(
+                query_text=query,
+                user_id=user_id,
+                k=k
+            )
+        except Exception as e:
+            logger.error(f"Recall error: {e}")
+            return []
+
+    def format_recalled_memories(self, memories: list[MemoryEntry]) -> str:
+        """将检索到的记忆格式化为 prompt 文本"""
+        if not memories:
+            return "暂无相关长期记忆"
+        parts = []
+        for mem in memories:
+            type_label = {"fact": "事实", "reflection": "洞察", "summary": "摘要"}.get(mem.memory_type, mem.memory_type)
+            parts.append(f"[{type_label}] {mem.content}")
+        return "\n".join(parts)
+
+    # ==========================================
+    # 用户画像
+    # ==========================================
+
+    def get_user_profile(self, user_id: str) -> UserProfile:
+        """获取用户画像"""
+        return self.user_profile_store.get_profile(user_id)
+
+    def get_user_profile_prompt(self, user_id: str) -> str:
+        """获取用户画像的 prompt 文本"""
+        return self.user_profile_store.get_profile_prompt(user_id)
+
+    def update_user_interaction(self, user_id: str, platform: str = "", nickname: str = ""):
+        """更新用户交互信息"""
+        self.user_profile_store.increment_interaction(user_id)
+        updates = {}
+        if platform:
+            updates["platform"] = platform
+        if nickname:
+            updates["nickname"] = nickname
+        if updates:
+            self.user_profile_store.update_profile(user_id, **updates)
+
+    # ==========================================
+    # 海马体（慢系统 - 后台处理）
+    # ==========================================
+
+    def _buffer_for_hippocampus(self, session: str, new_chunk):
+        """将新对话缓冲到待处理队列"""
+        if session not in self._pending_conversations:
+            self._pending_conversations[session] = []
+        self._pending_conversations[session].append(new_chunk)
+
+        # 当累积到阈值时，触发后台处理
+        if len(self._pending_conversations[session]) >= self._hippocampus_threshold:
+            chunks_to_process = self._pending_conversations[session][:]
+            self._pending_conversations[session] = []
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(
+                    self._hippocampus_process(session, chunks_to_process)
+                )
+            except RuntimeError:
+                # 没有运行中的事件循环，跳过
+                logger.debug("No running event loop, skipping hippocampus processing")
+
+    async def _hippocampus_process(self, session: str, chunks: list):
+        """海马体后台处理：提取事实 → 去重更新 → 生成反思 → 更新画像"""
+        if not self._llm_client:
+            logger.debug("LLM client not set, skipping hippocampus processing")
+            return
+
+        try:
+            # 1. 提取事实
+            conversation_text = self._chunks_to_text(chunks)
+            facts = await self._extract_facts(conversation_text, session)
+
+            if not facts:
+                return
+
+            # 2. 去重与写入向量库
+            user_id = self._extract_user_id_from_session(session)
+            for fact in facts:
+                await self._deduplicate_and_store(fact, user_id)
+
+            # 3. 生成反思（如果积累了足够的事实）
+            user_memories = self.vector_store.get_by_user(user_id, memory_type="fact", limit=10)
+            if len(user_memories) >= 5:
+                await self._generate_reflection(user_id, user_memories)
+
+            # 4. 更新用户画像
+            await self._update_profile_from_facts(user_id, facts)
+
+            logger.info(f"Hippocampus processing completed for session {session}")
+        except Exception as e:
+            logger.error(f"Hippocampus processing error: {e}")
+
+    async def _extract_facts(self, conversation_text: str, session: str) -> list[dict]:
+        """从对话中提取事实"""
+        prompt = f"""分析以下对话片段，提取关于用户的关键事实。忽略寒暄和无意义内容。
+
+对话:
+{conversation_text}
+
+请以 JSON 数组格式输出，每条事实包含：
+- "subject": 主语（"user" 或具体人名）
+- "content": 事实描述
+- "importance": 重要性评分(1-10)
+
+只输出 JSON 数组，不要有其他内容。如果没有值得记录的事实，输出空数组 []。"""
+
+        try:
+            resp = await self._llm_client.chat([{"role": "user", "content": prompt}])
+            if resp and resp.text_response:
+                text = resp.text_response.strip()
+                # 尝试提取 JSON
+                if text.startswith("```"):
+                    text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+                facts = json.loads(text)
+                if isinstance(facts, list):
+                    return facts
+        except Exception as e:
+            logger.error(f"Fact extraction error: {e}")
+        return []
+
+    async def _deduplicate_and_store(self, fact: dict, user_id: str):
+        """去重并存储事实到向量库"""
+        content = fact.get("content", "")
+        importance = fact.get("importance", 5)
+
+        if not content:
+            return
+
+        # 搜索已有类似记忆（带距离阈值，避免无关记忆触发 LLM 检查）
+        existing = self.vector_store.search(
+            query_text=content,
+            user_id=user_id,
+            memory_type="fact",
+            k=3,
+            threshold=0.5,
+            update_access=False
+        )
+
+        # 检查是否有高度相似的记忆（需要 LLM 判断）
+        if existing:
+            most_similar = existing[0]
+            # 让 LLM 判断是冲突、补充还是全新
+            decision = await self._check_conflict(content, most_similar.content)
+
+            if decision == "duplicate":
+                # 重复的，跳过
+                logger.debug(f"Duplicate memory skipped: {content[:30]}...")
+                return
+            elif decision == "update":
+                # 冲突/更新，合并
+                merged = await self._merge_facts(most_similar.content, content)
+                self.vector_store.update_memory(
+                    most_similar.id,
+                    content=merged,
+                    importance=max(importance, most_similar.importance)
+                )
+                logger.info(f"Memory updated (merged): {merged[:50]}...")
+                return
+
+        # 全新事实，添加
+        entry = MemoryEntry(
+            id=VectorStore.generate_id(),
+            user_id=user_id,
+            content=content,
+            memory_type="fact",
+            importance=importance,
+            timestamp=time.time(),
+        )
+
+        # 尝试用 embedding 存储
+        embedding = None
+        if self._llm_client:
+            try:
+                embeddings = await self._llm_client.embed([content])
+                if embeddings and embeddings[0]:
+                    embedding = embeddings[0]
+            except Exception:
+                pass
+
+        self.vector_store.add_memory(entry, embedding=embedding)
+        logger.info(f"New memory stored: [{entry.memory_type}] {content[:50]}...")
+
+    async def _check_conflict(self, new_content: str, existing_content: str) -> str:
+        """用 LLM 判断新旧记忆的关系: duplicate / update / new"""
+        prompt = f"""比较以下两条信息，判断它们的关系：
+
+已有信息: {existing_content}
+新信息: {new_content}
+
+只输出以下三个选项之一：
+- "duplicate"：新信息与已有信息基本相同，无需记录
+- "update"：新信息是对已有信息的更新或补充，需要合并
+- "new"：新信息与已有信息无关，是全新信息
+
+只输出选项文本，不要有其他内容。"""
+
+        try:
+            resp = await self._llm_client.chat([{"role": "user", "content": prompt}])
+            if resp and resp.text_response:
+                result = resp.text_response.strip().strip('"').lower()
+                if result in ("duplicate", "update", "new"):
+                    return result
+        except Exception as e:
+            logger.error(f"Conflict check error: {e}")
+        return "new"
+
+    async def _merge_facts(self, existing: str, new: str) -> str:
+        """合并两条事实"""
+        prompt = f"""将以下两条信息合并为一条，保留所有有用信息：
+
+已有信息: {existing}
+新信息: {new}
+
+直接输出合并后的结果，不要有其他内容。"""
+
+        try:
+            resp = await self._llm_client.chat([{"role": "user", "content": prompt}])
+            if resp and resp.text_response:
+                return resp.text_response.strip()
+        except Exception as e:
+            logger.error(f"Merge facts error: {e}")
+        return f"{existing}；{new}"
+
+    async def _generate_reflection(self, user_id: str, recent_facts: list[MemoryEntry]):
+        """从累积的事实中生成反思/洞察"""
+        facts_text = "\n".join(f"{i + 1}. {f.content}" for i, f in enumerate(recent_facts))
+
+        prompt = f"""基于以下关于用户的事实，你能推断出什么更高层面的洞察？
+
+事实:
+{facts_text}
+
+请输出 1-3 条简洁的洞察，每条一行，不需要编号。只输出洞察内容，不要有其他内容。"""
+
+        try:
+            resp = await self._llm_client.chat([{"role": "user", "content": prompt}])
+            if resp and resp.text_response:
+                insights = [line.strip() for line in resp.text_response.strip().split("\n") if line.strip()]
+                for insight in insights:
+                    # 检查是否已有高度相似的反思（距离阈值 0.3）
+                    existing = self.vector_store.search(
+                        query_text=insight,
+                        user_id=user_id,
+                        memory_type="reflection",
+                        k=1,
+                        threshold=0.3,
+                        update_access=False,
+                    )
+                    if existing:
+                        logger.debug(f"Similar reflection already exists, skipped: {insight[:30]}...")
+                        continue
+
+                    entry = MemoryEntry(
+                        id=VectorStore.generate_id(),
+                        user_id=user_id,
+                        content=insight,
+                        memory_type="reflection",
+                        importance=7,
+                        timestamp=time.time(),
+                    )
+
+                    embedding = None
+                    if self._llm_client:
+                        try:
+                            embeddings = await self._llm_client.embed([insight])
+                            if embeddings and embeddings[0]:
+                                embedding = embeddings[0]
+                        except Exception:
+                            pass
+
+                    self.vector_store.add_memory(entry, embedding=embedding)
+                    logger.info(f"Reflection stored: {insight[:50]}...")
+        except Exception as e:
+            logger.error(f"Reflection generation error: {e}")
+
+    async def _update_profile_from_facts(self, user_id: str, facts: list[dict]):
+        """从提取的事实更新用户画像"""
+        for fact in facts:
+            content = fact.get("content", "")
+            importance = fact.get("importance", 5)
+            if importance >= 7:
+                self.user_profile_store.add_fact(user_id, content)
+
+    # ==========================================
+    # 遗忘机制
+    # ==========================================
+
+    async def run_forgetting_cycle(self):
+        """执行遗忘周期：清理低价值记忆"""
+        all_memories = self.vector_store.get_all_memories()
+        now = time.time()
+        removed_count = 0
+        removed_ids = set()
+
+        for mem in all_memories:
+            score = self._calculate_retention_score(mem, now)
+
+            if score < 0.2:
+                # 太低价值，直接删除
+                self.vector_store.delete_memory(mem.id)
+                removed_count += 1
+                removed_ids.add(mem.id)
+            elif score < 0.4 and mem.memory_type == "fact":
+                # 低价值事实，标记降级
+                self.vector_store.update_memory(
+                    mem.id,
+                    importance=max(1, mem.importance - 1)
+                )
+
+        if removed_count > 0:
+            logger.info(f"Forgetting cycle: removed {removed_count} memories")
+
+        # 尝试摘要化：复用已获取的记忆列表（排除已删除的）
+        surviving_memories = [m for m in all_memories if m.id not in removed_ids]
+        await self._summarize_old_memories(surviving_memories)
+
+    @staticmethod
+    def _calculate_retention_score(mem: MemoryEntry, now: float) -> float:
+        """计算记忆保留分数
+        
+        综合考虑：重要性、时间衰减、访问频率
+        分数范围 0.0 ~ 1.0
+        """
+        # 时间衰减（天数）
+        days_since_creation = (now - mem.timestamp) / 86400 if mem.timestamp else 30
+        days_since_access = (now - mem.last_accessed) / 86400 if mem.last_accessed else 30
+
+        # 重要性权重 (0.0 ~ 1.0)
+        importance_score = mem.importance / 10.0
+
+        # 时间衰减因子（半衰期 30 天）
+        time_decay = 0.5 ** (days_since_access / 30.0)
+
+        # 访问频率加成
+        access_bonus = min(mem.access_count * 0.05, 0.3)
+
+        # 反思类型有更高保留权重
+        type_bonus = 0.2 if mem.memory_type == "reflection" else 0.0
+
+        score = (importance_score * 0.4) + (time_decay * 0.3) + access_bonus + type_bonus
+        return min(score, 1.0)
+
+    async def _summarize_old_memories(self, all_memories: list[MemoryEntry] = None):
+        """将同一用户的老旧事实合并为摘要"""
+        if not self._llm_client:
+            return
+
+        if all_memories is None:
+            all_memories = self.vector_store.get_all_memories()
+        now = time.time()
+
+        # 按用户分组
+        user_old_facts: Dict[str, list[MemoryEntry]] = {}
+        for mem in all_memories:
+            if mem.memory_type != "fact":
+                continue
+            days_old = (now - mem.timestamp) / 86400 if mem.timestamp else 0
+            if days_old > 30:  # 超过 30 天的事实
+                if mem.user_id not in user_old_facts:
+                    user_old_facts[mem.user_id] = []
+                user_old_facts[mem.user_id].append(mem)
+
+        for user_id, old_facts in user_old_facts.items():
+            if len(old_facts) < 5:
+                continue
+
+            # 合并为摘要
+            facts_text = "\n".join(f"- {f.content}" for f in old_facts)
+            prompt = f"""将以下关于用户的多条事实合并为 1-2 条简洁的摘要：
+
+{facts_text}
+
+直接输出摘要，每条一行，不要有其他内容。"""
+
+            try:
+                resp = await self._llm_client.chat([{"role": "user", "content": prompt}])
+                if resp and resp.text_response:
+                    summaries = [line.strip() for line in resp.text_response.strip().split("\n") if line.strip()]
+                    for summary in summaries:
+                        entry = MemoryEntry(
+                            id=VectorStore.generate_id(),
+                            user_id=user_id,
+                            content=summary,
+                            memory_type="summary",
+                            importance=6,
+                            timestamp=time.time(),
+                        )
+                        self.vector_store.add_memory(entry)
+
+                    # 删除已摘要化的旧事实
+                    for old_fact in old_facts:
+                        self.vector_store.delete_memory(old_fact.id)
+
+                    logger.info(f"Summarized {len(old_facts)} old facts into {len(summaries)} summaries for user {user_id}")
+            except Exception as e:
+                logger.error(f"Summarization error: {e}")
+
+    # ==========================================
+    # 工具方法
+    # ==========================================
+
+    @staticmethod
+    def _chunks_to_text(chunks: list) -> str:
+        """将对话 chunks 转为纯文本"""
+        lines = []
+        for chunk in chunks:
+            for msg in chunk:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                if role == "user":
+                    lines.append(f"User: {content}")
+                elif role == "assistant":
+                    lines.append(f"Bot: {content}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _extract_user_id_from_session(session: str) -> str:
+        """从 session ID 提取会话标识
+        
+        session 格式: adapter:type:id
+        - 私聊: adapter:pm:user_id → adapter:user_id
+        - 群聊: adapter:gm:group_id → adapter:group:group_id
+        群聊用 'group:' 前缀区分，避免与个人 user_id 冲突
+        """
+        parts = session.split(":")
+        if len(parts) >= 3:
+            session_type = parts[1]
+            session_id = parts[2]
+            if session_type == "gm":
+                return f"{parts[0]}:group:{session_id}"
+            return f"{parts[0]}:{session_id}"
+        return session
