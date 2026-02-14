@@ -119,7 +119,12 @@ class MemoryUpdateTool(BaseTool):
                                 embedding = embeddings[0]
                         except Exception as e:
                             logger.debug(f"Failed to generate embedding for updated memory: {e}")
-                    _memory_manager.vector_store.update_memory(entry.id, content=text, embedding=embedding)
+                    try:
+                        ok = _memory_manager.vector_store.update_memory(entry.id, content=text, embedding=embedding)
+                        if not ok:
+                            logger.warning(f"update_memory returned False for entry {entry.id} (old='{old_text[:40]}', new='{text[:40]}', embedding={'present' if embedding else 'None'})")
+                    except Exception as e:
+                        logger.error(f"update_memory raised for entry {entry.id}: {e}")
             except Exception as e:
                 logger.warning(f"Failed to sync update to vector DB: {e}")
 

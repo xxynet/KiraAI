@@ -439,13 +439,19 @@ class MemoryManager:
                             merged_embedding = embs[0]
                     except Exception:
                         logger.debug("Failed to generate embedding for merged content")
-                self.vector_store.update_memory(
+                updated = self.vector_store.update_memory(
                     most_similar.id,
                     content=merged,
                     importance=max(importance, most_similar.importance),
                     embedding=merged_embedding
                 )
-                logger.info(f"Memory updated (merged): {merged[:50]}...")
+                if updated:
+                    logger.info(f"Memory updated (merged): {merged[:50]}...")
+                else:
+                    logger.warning(
+                        f"update_memory failed for {most_similar.id} "
+                        f"(embedding={'present' if merged_embedding else 'None'})"
+                    )
                 return
 
         # 全新事实，添加
