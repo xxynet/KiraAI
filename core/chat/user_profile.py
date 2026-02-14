@@ -150,31 +150,42 @@ class UserProfileStore:
         """将用户画像格式化为 prompt 文本"""
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
+            # 在锁内快照所有可变字段，避免释放锁后读取发生竞态
+            name = profile.name
+            nickname = profile.nickname
+            platform = profile.platform
+            traits = list(profile.traits)
+            preferences = dict(profile.preferences)
+            relationships = dict(profile.relationships)
+            facts = list(profile.facts)
+            interaction_count = profile.interaction_count
+
         parts = []
-        if profile.name:
-            parts.append(f"名字: {profile.name}")
-        if profile.nickname:
-            parts.append(f"昵称: {profile.nickname}")
-        if profile.platform:
-            parts.append(f"平台: {profile.platform}")
-        if profile.traits:
-            parts.append(f"特征: {', '.join(profile.traits)}")
-        if profile.preferences:
-            prefs = ', '.join(f"{k}: {v}" for k, v in profile.preferences.items())
+        if name:
+            parts.append(f"名字: {name}")
+        if nickname:
+            parts.append(f"昵称: {nickname}")
+        if platform:
+            parts.append(f"平台: {platform}")
+        if traits:
+            parts.append(f"特征: {', '.join(traits)}")
+        if preferences:
+            prefs = ', '.join(f"{k}: {v}" for k, v in preferences.items())
             parts.append(f"偏好: {prefs}")
-        if profile.relationships:
-            rels = ', '.join(f"{k}: {v}" for k, v in profile.relationships.items())
+        if relationships:
+            rels = ', '.join(f"{k}: {v}" for k, v in relationships.items())
             parts.append(f"关系: {rels}")
-        if profile.facts:
-            facts_str = '\n  '.join(f"- {f}" for f in profile.facts)
+        if facts:
+            facts_str = '\n  '.join(f"- {f}" for f in facts)
             parts.append(f"已知事实:\n  {facts_str}")
-        if profile.interaction_count:
-            parts.append(f"互动次数: {profile.interaction_count}")
+        if interaction_count:
+            parts.append(f"互动次数: {interaction_count}")
         return '\n'.join(parts) if parts else "暂无画像信息"
 
     def get_all_profiles(self) -> dict[str, UserProfile]:
-        """获取所有用户画像"""
-        return dict(self._profiles)
+        """获取所有用户画像（线程安全快照）"""
+        with self._lock:
+            return dict(self._profiles)
 
     def delete_profile(self, user_id: str) -> bool:
         """删除用户画像"""

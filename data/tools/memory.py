@@ -1,6 +1,9 @@
 import os
 import time
 from core.utils.tool_utils import BaseTool
+from core.logging_manager import get_logger
+
+logger = get_logger("memory_tools", "green")
 
 
 CORE_MEMORY_PATH = "data/memory/core.txt"
@@ -64,10 +67,13 @@ class MemoryAddTool(BaseTool):
                     embeddings = await _memory_manager._llm_client.embed([text])
                     if embeddings and embeddings[0]:
                         embedding = embeddings[0]
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to generate embedding for memory (text length={len(text)}): {e}")
 
-            _memory_manager.vector_store.add_memory(entry, embedding=embedding)
+            try:
+                _memory_manager.vector_store.add_memory(entry, embedding=embedding)
+            except ValueError as e:
+                logger.warning(f"Could not store memory to vector DB: {e}")
 
         return "Core memory added"
 

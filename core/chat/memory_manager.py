@@ -459,8 +459,11 @@ class MemoryManager:
             except Exception:
                 pass
 
-        self.vector_store.add_memory(entry, embedding=embedding)
-        logger.info(f"New memory stored: [{entry.memory_type}] {content[:50]}...")
+        try:
+            self.vector_store.add_memory(entry, embedding=embedding)
+            logger.info(f"New memory stored: [{entry.memory_type}] {content[:50]}...")
+        except ValueError as e:
+            logger.warning(f"Could not store memory (no embedding available): {e}")
 
     async def _check_conflict(self, new_content: str, existing_content: str) -> str:
         """用 LLM 判断新旧记忆的关系: duplicate / update / new"""
@@ -618,8 +621,11 @@ class MemoryManager:
         # 重要性权重 (0.0 ~ 1.0)
         importance_score = mem.importance / 10.0
 
-        # 时间衰减因子（半衰期 30 天）
-        time_decay = 0.5 ** (days_since_access / 30.0)
+        # 时间衰减因子（基于最后访问，半衰期 30 天）
+        access_decay = 0.5 ** (days_since_access / 30.0)
+
+        # 创建时间衰减因子（半衰期 90 天，较慢的自然遗忘）
+        creation_decay = 0.5 ** (days_since_creation / 90.0)
 
         # 访问频率加成
         access_bonus = min(mem.access_count * 0.05, 0.3)
@@ -627,7 +633,7 @@ class MemoryManager:
         # 反思类型有更高保留权重
         type_bonus = 0.2 if mem.memory_type == "reflection" else 0.0
 
-        score = (importance_score * 0.4) + (time_decay * 0.3) + access_bonus + type_bonus
+        score = (importance_score * 0.35) + (access_decay * 0.25) + (creation_decay * 0.1) + access_bonus + type_bonus
         return min(score, 1.0)
 
     async def _summarize_old_memories(self, all_memories: list[MemoryEntry] = None):

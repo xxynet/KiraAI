@@ -83,9 +83,11 @@ class VectorStore:
     def add_memory(self, entry: MemoryEntry, embedding: list[float] = None):
         """添加一条记忆到向量库
         
-        当提供 embedding 时，使用外部嵌入向量存储。
-        当未提供 embedding 且已有外部嵌入时，仅存储文档和元数据（不生成向量），
-        避免 ChromaDB 默认嵌入函数维度与外部嵌入不一致。
+        Args:
+            embedding: 外部嵌入向量。传入 None 表示未提供，传入空列表视为无效。
+        
+        Raises:
+            ValueError: 当外部嵌入模式已启用但未提供有效 embedding 时抛出。
         """
         metadata = {
             "user_id": entry.user_id,
@@ -97,7 +99,10 @@ class VectorStore:
         }
         metadata.update(entry.metadata)
 
-        if embedding:
+        if embedding is not None:
+            if not embedding or len(embedding) == 0:
+                logger.error(f"Empty embedding provided for memory: {entry.content[:50]}...")
+                raise ValueError("Embedding must be a non-empty list of floats")
             # 有外部嵌入，使用 upsert 存储文档+向量
             if not self._has_external_embeddings:
                 self._has_external_embeddings = True
@@ -109,11 +114,12 @@ class VectorStore:
                 embeddings=[embedding],
             )
         elif self._has_external_embeddings:
-            # 已有外部嵌入但本次没有提供，仅存文档和元数据
-            # 不调用 upsert/add（会触发默认嵌入函数导致维度冲突）
-            # 改用 upsert + 占位嵌入 不可行，所以跳过向量索引
-            logger.warning(f"No embedding provided, skipping vector storage: {entry.content[:50]}...")
-            return
+            # 已启用外部嵌入但未提供，抛出异常而非静默丢失数据
+            logger.error(f"External embeddings enabled but no embedding provided for: {entry.content[:50]}...")
+            raise ValueError(
+                "Collection uses external embeddings but no embedding was provided. "
+                "Provide an embedding or disable external embedding mode."
+            )
         else:
             # 没有外部嵌入，使用 ChromaDB 默认嵌入函数
             self._collection.upsert(
@@ -257,7 +263,6 @@ class VectorStore:
                 return False
 
             old_meta = existing["metadatas"][0] if existing["metadatas"] else {}
-            old_doc = existing["documents"][0] if existing["documents"] else ""
 
             new_meta = dict(old_meta)
             if importance is not None:
