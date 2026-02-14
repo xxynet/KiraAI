@@ -9,6 +9,7 @@
 import asyncio
 import json
 import os
+import re
 import time
 import uuid
 from typing import Dict, List, Optional
@@ -375,6 +376,14 @@ class MemoryManager:
                 # 尝试提取 JSON
                 if text.startswith("```"):
                     text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+                # 提取第一个 JSON 数组片段
+                start = text.find("[")
+                end = text.rfind("]")
+                if start != -1 and end != -1 and end > start:
+                    text = text[start:end + 1]
+                # 修复常见的 LLM JSON 格式问题
+                text = text.replace("'", '"')  # 单引号 → 双引号
+                text = re.sub(r',\s*([}\]])', r'\1', text)  # 移除尾随逗号
                 facts = json.loads(text)
                 if isinstance(facts, list):
                     return facts
