@@ -53,28 +53,35 @@ class UserProfileStore:
                 logger.error(f"Failed to load user profiles: {e}")
                 self._profiles = {}
         else:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            dir_path = os.path.dirname(self.path) or '.'
+            os.makedirs(dir_path, exist_ok=True)
 
     def _save(self):
         """保存画像数据到文件"""
         try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            dir_path = os.path.dirname(self.path) or '.'
+            os.makedirs(dir_path, exist_ok=True)
             data = {uid: asdict(profile) for uid, profile in self._profiles.items()}
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Failed to save user profiles: {e}")
 
-    def get_profile(self, user_id: str) -> UserProfile:
-        """获取用户画像，不存在则创建"""
+    def _get_profile_unlocked(self, user_id: str) -> UserProfile:
+        """获取用户画像（调用方须已持有 _lock），不存在则创建"""
         if user_id not in self._profiles:
             self._profiles[user_id] = UserProfile(user_id=user_id)
         return self._profiles[user_id]
 
+    def get_profile(self, user_id: str) -> UserProfile:
+        """获取用户画像，不存在则创建（线程安全）"""
+        with self._lock:
+            return self._get_profile_unlocked(user_id)
+
     def update_profile(self, user_id: str, **kwargs) -> UserProfile:
         """更新用户画像字段"""
         with self._lock:
-            profile = self.get_profile(user_id)
+            profile = self._get_profile_unlocked(user_id)
             for key, value in kwargs.items():
                 if hasattr(profile, key):
                     setattr(profile, key, value)
@@ -85,7 +92,7 @@ class UserProfileStore:
     def add_trait(self, user_id: str, trait: str):
         """添加用户特征标签"""
         with self._lock:
-            profile = self.get_profile(user_id)
+            profile = self._get_profile_unlocked(user_id)
             if trait not in profile.traits:
                 profile.traits.append(trait)
                 self._save()
@@ -93,7 +100,7 @@ class UserProfileStore:
     def remove_trait(self, user_id: str, trait: str):
         """移除用户特征标签"""
         with self._lock:
-            profile = self.get_profile(user_id)
+            profile = self._get_profile_unlocked(user_id)
             if trait in profile.traits:
                 profile.traits.remove(trait)
                 self._save()
@@ -101,7 +108,7 @@ class UserProfileStore:
     def add_fact(self, user_id: str, fact: str):
         """添加确定性事实"""
         with self._lock:
-            profile = self.get_profile(user_id)
+            profile = self._get_profile_unlocked(user_id)
             if fact not in profile.facts:
                 profile.facts.append(fact)
                 self._save()
@@ -109,7 +116,7 @@ class UserProfileStore:
     def update_fact(self, user_id: str, old_fact: str, new_fact: str):
         """更新事实"""
         with self._lock:
-            profile = self.get_profile(user_id)
+            profile = self._get_profile_unlocked(user_id)
             for i, f in enumerate(profile.facts):
                 if f == old_fact:
                     profile.facts[i] = new_fact
@@ -119,7 +126,7 @@ class UserProfileStore:
     def remove_fact(self, user_id: str, fact: str):
         """移除事实"""
         with self._lock:
-            profile = self.get_profile(user_id)
+            profile = self._get_profile_unlocked(user_id)
             if fact in profile.facts:
                 profile.facts.remove(fact)
                 self._save()
@@ -127,21 +134,22 @@ class UserProfileStore:
     def set_relationship(self, user_id: str, target: str, relation: str):
         """设置关系"""
         with self._lock:
-            profile = self.get_profile(user_id)
+            profile = self._get_profile_unlocked(user_id)
             profile.relationships[target] = relation
             self._save()
 
     def increment_interaction(self, user_id: str):
         """增加交互计数"""
         with self._lock:
-            profile = self.get_profile(user_id)
+            profile = self._get_profile_unlocked(user_id)
             profile.interaction_count += 1
             profile.last_interaction = time.time()
             self._save()
 
     def get_profile_prompt(self, user_id: str) -> str:
         """将用户画像格式化为 prompt 文本"""
-        profile = self.get_profile(user_id)
+        with self._lock:
+            profile = self._get_profile_unlocked(user_id)
         parts = []
         if profile.name:
             parts.append(f"名字: {profile.name}")

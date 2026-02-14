@@ -465,9 +465,9 @@ class ConfigurationManager {
                 let newVal = e.target.value;
 
                 if (field.type === 'integer') {
-                    newVal = newVal === '' ? null : parseInt(newVal, 10);
+                    newVal = newVal === '' ? null : Number(newVal);
                 } else if (field.type === 'float') {
-                    newVal = newVal === '' ? null : parseFloat(newVal);
+                    newVal = newVal === '' ? null : Number(newVal);
                 }
 
                 this._recordChange(field.key, oldVal, newVal);
@@ -670,6 +670,10 @@ class ConfigurationManager {
                 this.validationErrors[field.key] = this._t('configuration.validation.invalid_number', 'Please enter a valid number');
                 return false;
             }
+            if (field.type === 'integer' && !Number.isInteger(num)) {
+                this.validationErrors[field.key] = this._t('configuration.validation.integer', 'Please enter a whole number');
+                return false;
+            }
             if (v.min !== undefined && num < v.min) {
                 this.validationErrors[field.key] = this._t('configuration.validation.min', 'Minimum value is') + ' ' + v.min;
                 return false;
@@ -725,7 +729,7 @@ class ConfigurationManager {
                 badge.textContent = this._t('configuration.modified', 'modified');
                 label.appendChild(badge);
             } else if (!isModified) {
-                badges.forEach(b => b.remove());
+                badges.forEach(b => { b.remove(); });
             }
         }
     }

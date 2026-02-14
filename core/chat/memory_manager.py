@@ -58,6 +58,8 @@ class MemoryManager:
         # === 后台处理缓冲区 ===
         self._pending_conversations: Dict[str, list] = {}
         self._hippocampus_threshold = 3  # 每 N 轮触发一次海马体处理
+        self._hippocampus_lock = Lock()
+        self._background_tasks: set = set()  # 持久化后台任务引用
 
         logger.info("MemoryManager initialized (dual-brain architecture)")
 
@@ -289,22 +291,37 @@ class MemoryManager:
 
     def _buffer_for_hippocampus(self, session: str, new_chunk):
         """将新对话缓冲到待处理队列"""
-        if session not in self._pending_conversations:
-            self._pending_conversations[session] = []
-        self._pending_conversations[session].append(new_chunk)
+        chunks_to_process = None
+        with self._hippocampus_lock:
+            if session not in self._pending_conversations:
+                self._pending_conversations[session] = []
+            self._pending_conversations[session].append(new_chunk)
 
-        # 当累积到阈值时，触发后台处理
-        if len(self._pending_conversations[session]) >= self._hippocampus_threshold:
-            chunks_to_process = self._pending_conversations[session][:]
-            self._pending_conversations[session] = []
+            # 当累积到阈值时，原子地取出并清空
+            if len(self._pending_conversations[session]) >= self._hippocampus_threshold:
+                chunks_to_process = self._pending_conversations[session][:]
+                self._pending_conversations[session] = []
+
+        if chunks_to_process is not None:
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(
+                task = loop.create_task(
                     self._hippocampus_process(session, chunks_to_process)
                 )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._on_background_task_done)
             except RuntimeError:
                 # 没有运行中的事件循环，跳过
                 logger.debug("No running event loop, skipping hippocampus processing")
+
+    def _on_background_task_done(self, task: asyncio.Task):
+        """后台任务完成回调：清理引用并记录异常"""
+        self._background_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            logger.error(f"Background hippocampus task failed: {exc}")
 
     async def _hippocampus_process(self, session: str, chunks: list):
         """海马体后台处理：提取事实 → 去重更新 → 生成反思 → 更新画像"""
@@ -658,7 +675,16 @@ class MemoryManager:
                             importance=6,
                             timestamp=time.time(),
                         )
-                        self.vector_store.add_memory(entry)
+                        # 为摘要生成 embedding，避免 VectorStore 跳过无嵌入的记忆
+                        summary_embedding = None
+                        if self._llm_client:
+                            try:
+                                embs = await self._llm_client.embed([summary])
+                                if embs and embs[0]:
+                                    summary_embedding = embs[0]
+                            except Exception:
+                                pass
+                        self.vector_store.add_memory(entry, embedding=summary_embedding)
 
                     # 删除已摘要化的旧事实
                     for old_fact in old_facts:

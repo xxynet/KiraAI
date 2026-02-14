@@ -1569,9 +1569,17 @@ async function loadConfigurationData() {
             _bindConfigToolbarEvents();
         } else {
             console.error('ConfigurationManager not loaded');
+            showNotification('Configuration subsystem failed to load. Please refresh the page.', 'error');
+            // Disable config controls to prevent silent failures
+            const configContainer = document.getElementById('config-container');
+            if (configContainer) {
+                configContainer.innerHTML = '<div class="text-center text-red-500 py-8">Configuration module unavailable</div>';
+            }
+            return;
         }
     } catch (error) {
         console.error('Error loading configuration data:', error);
+        showNotification('Failed to load configuration: ' + error.message, 'error');
     }
 }
 
@@ -2181,6 +2189,8 @@ function setupEventListeners() {
                 e.preventDefault();
                 if (window.configManager) {
                     window.configManager.save();
+                } else {
+                    showNotification('Configuration manager not loaded, unable to save', 'error');
                 }
                 return;
             }

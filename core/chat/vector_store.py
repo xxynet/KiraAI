@@ -51,11 +51,34 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"}
         )
 
-        # 检查现有数据是否使用了外部嵌入
-        if self._collection.count() > 0:
+        # 通过集合元数据标志检测是否使用了外部嵌入
+        col_meta = self._collection.metadata or {}
+        if col_meta.get("external_embeddings"):
             self._has_external_embeddings = True
+        elif self._collection.count() > 0:
+            # 回退检测：获取一条现有记徆的嵌入维度
+            try:
+                sample = self._collection.peek(limit=1)
+                if sample and sample.get("embeddings") and sample["embeddings"]:
+                    emb = sample["embeddings"][0]
+                    if emb and len(emb) > 0:
+                        # ChromaDB 默认嵌入 (all-MiniLM-L6-v2) 是 384 维
+                        if len(emb) != 384:
+                            self._has_external_embeddings = True
+                            self._persist_external_flag()
+            except Exception as e:
+                logger.debug(f"Could not detect embedding dimension: {e}")
 
-        logger.info("VectorStore initialized")
+        logger.info(f"VectorStore initialized (external_embeddings={self._has_external_embeddings})")
+
+    def _persist_external_flag(self):
+        """将外部嵌入标志持久化到 collection 元数据"""
+        try:
+            self._collection.modify(
+                metadata={"hnsw:space": "cosine", "external_embeddings": "true"}
+            )
+        except Exception as e:
+            logger.debug(f"Could not persist external_embeddings flag: {e}")
 
     def add_memory(self, entry: MemoryEntry, embedding: list[float] = None):
         """添加一条记忆到向量库
@@ -76,7 +99,9 @@ class VectorStore:
 
         if embedding:
             # 有外部嵌入，使用 upsert 存储文档+向量
-            self._has_external_embeddings = True
+            if not self._has_external_embeddings:
+                self._has_external_embeddings = True
+                self._persist_external_flag()
             self._collection.upsert(
                 ids=[entry.id],
                 documents=[entry.content],

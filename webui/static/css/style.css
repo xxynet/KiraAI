@@ -1300,10 +1300,10 @@ input, select, textarea {
 
 /* Modified field indicator animation */
 .config-field-wrapper .text-amber-500 {
-    animation: fadeIn 0.2s ease-in-out;
+    animation: fade-in-config-badge 0.2s ease-in-out;
 }
 
-@keyframes fadeIn {
+@keyframes fade-in-config-badge {
     from { opacity: 0; transform: translateY(-2px); }
     to { opacity: 1; transform: translateY(0); }
 }
@@ -1328,7 +1328,7 @@ kbd {
 
 /* Config change count badge */
 #config-change-count {
-    animation: fadeIn 0.2s ease-in-out;
+    animation: fade-in-config-badge 0.2s ease-in-out;
 }
 
 /* Config search input clear animation */
