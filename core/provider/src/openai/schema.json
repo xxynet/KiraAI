@@ -28,6 +28,7 @@
       "hint": "Model temperature"
     }
   },
-  "image": {}
+    "image": {},
+    "embedding": {}
   }
 }

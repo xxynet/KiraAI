@@ -109,6 +109,21 @@ class ImageModelClient(BaseModelClient):
         pass
 
 
+class EmbeddingModelClient(BaseModelClient):
+    type = ModelType.EMBEDDING
+
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    async def generate(self, text: str) -> list[float]:
+        """Generate embedding vector of the given text"""
+        pass
+
+    async def generate_batch(self, texts: List[str]) -> List[List[float]]:
+        """Generate embedding vector batch of the given texts"""
+        pass
+
+
 class BaseProvider(ABC):
     models: dict[ModelType, type(BaseModelClient)]
 
@@ -121,24 +136,3 @@ class BaseProvider(ABC):
         if model_type not in self.models:
             raise ValueError(f"Model type {model_type.value} not implemented")
         return self.models[model_type]
-
-    async def chat(self, model: ModelInfo,  request: LLMRequest) -> LLMResponse:
-        """
-
-        :param model: ModelInfo dataclass that describes full info of the model
-        :param request: LLMRequest instance
-        :return: LLMResponse instance
-        """
-        pass
-
-    async def text_to_speech(self, model: ModelInfo, text: str) -> str:
-        pass
-
-    async def speech_to_text(self, model: ModelInfo, audio_base64: str) -> str:
-        pass
-
-    async def text_to_image(self, model: ModelInfo, prompt) -> ImageResult:
-        pass
-
-    async def image_to_image(self, model: ModelInfo, prompt: str, url: Optional[str] = None, base64: Optional[str] = None) -> ImageResult:
-        pass
