@@ -155,15 +155,23 @@ class SiliconflowEmbeddingClient(EmbeddingModelClient):
         super().__init__(model)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        timeout_sec = self.model.model_config.get("timeout", 60)
+        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0)
+
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
-            base_url="https://api.siliconflow.cn/v1"
+            base_url="https://api.siliconflow.cn/v1",
+            timeout=timeout_sec
         )
         try:
+            start_time = time.time()
             response = await client.embeddings.create(
                 model=self.model.model_id,
                 input=texts
             )
+            elapsed = round(time.time() - start_time, 2)
+            if elapsed > slow_threshold:
+                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
             return [item.embedding for item in response.data]
         except Exception as e:
             logger.error(f"Embedding error: {e}")

@@ -795,14 +795,18 @@ class ConfigurationManager {
         const changeCount = document.getElementById('config-change-count');
 
         if (undoBtn) {
-            undoBtn.disabled = this.undoStack.length === 0;
-            undoBtn.classList.toggle('opacity-40', this.undoStack.length === 0);
-            undoBtn.classList.toggle('cursor-not-allowed', this.undoStack.length === 0);
+            const undoEmpty = this.undoStack.length === 0;
+            undoBtn.disabled = undoEmpty;
+            undoBtn.setAttribute('aria-disabled', String(undoEmpty));
+            undoBtn.classList.toggle('opacity-40', undoEmpty);
+            undoBtn.classList.toggle('cursor-not-allowed', undoEmpty);
         }
         if (redoBtn) {
-            redoBtn.disabled = this.redoStack.length === 0;
-            redoBtn.classList.toggle('opacity-40', this.redoStack.length === 0);
-            redoBtn.classList.toggle('cursor-not-allowed', this.redoStack.length === 0);
+            const redoEmpty = this.redoStack.length === 0;
+            redoBtn.disabled = redoEmpty;
+            redoBtn.setAttribute('aria-disabled', String(redoEmpty));
+            redoBtn.classList.toggle('opacity-40', redoEmpty);
+            redoBtn.classList.toggle('cursor-not-allowed', redoEmpty);
         }
         if (changeCount) {
             const count = this.modifiedFields.size;

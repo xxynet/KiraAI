@@ -208,6 +208,7 @@ const resources = {
                 validation: {
                     required: "This field is required",
                     invalid_number: "Please enter a valid number",
+                    integer: "Please enter a whole number",
                     min: "Minimum value is",
                     max: "Maximum value is"
                 },
@@ -551,6 +552,7 @@ const resources = {
                 validation: {
                     required: "此字段为必填项",
                     invalid_number: "请输入有效的数字",
+                    integer: "请输入整数",
                     min: "最小值为",
                     max: "最大值为"
                 },

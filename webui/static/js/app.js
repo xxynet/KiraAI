@@ -4271,8 +4271,12 @@ async function openModelModal(providerId, modelType, groupLabel, modelId = null,
             modelIdInput.disabled = false;
         }
         // Remove old listeners then attach new real-time validation
+        const currentValue = modelIdInput.value;
+        const currentDisabled = modelIdInput.disabled;
         const newInput = modelIdInput.cloneNode(true);
         modelIdInput.parentNode.replaceChild(newInput, modelIdInput);
+        newInput.value = currentValue;
+        newInput.disabled = currentDisabled;
         newInput.addEventListener('input', function() {
             validateModelIdInput(this);
         });
