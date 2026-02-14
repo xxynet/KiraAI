@@ -229,7 +229,8 @@ class MemoryManager:
             k: 返回最相关的 k 条记忆
         """
         try:
-            # 尝试使用 embedding 模型生成向量进行搜索
+            # 使用外部 embedding 模型生成向量进行搜索
+            # 不回退到 ChromaDB 默认文本搜索，避免嵌入维度不匹配
             if self._llm_client:
                 try:
                     embeddings = await self._llm_client.embed([query])
@@ -240,14 +241,11 @@ class MemoryManager:
                             k=k
                         )
                 except Exception as e:
-                    logger.debug(f"Embedding search failed, falling back to text search: {e}")
+                    logger.warning(f"Embedding search failed: {e}")
 
-            # 回退到 ChromaDB 内置的文本搜索
-            return self.vector_store.search(
-                query_text=query,
-                user_id=user_id,
-                k=k
-            )
+            # 无可用的 embedding 模型，无法进行向量搜索
+            logger.debug("No embedding available for recall, skipping vector search")
+            return []
         except Exception as e:
             logger.error(f"Recall error: {e}")
             return []
@@ -376,14 +374,22 @@ class MemoryManager:
             return
 
         # 搜索已有类似记忆（带距离阈值，避免无关记忆触发 LLM 检查）
-        existing = self.vector_store.search(
-            query_text=content,
-            user_id=user_id,
-            memory_type="fact",
-            k=3,
-            threshold=0.5,
-            update_access=False
-        )
+        # 只使用外部 embedding 模型搜索，不回退到 ChromaDB 默认文本搜索（避免维度冲突）
+        existing = []
+        if self._llm_client:
+            try:
+                embeddings = await self._llm_client.embed([content])
+                if embeddings and embeddings[0]:
+                    existing = self.vector_store.search(
+                        query_embedding=embeddings[0],
+                        user_id=user_id,
+                        memory_type="fact",
+                        k=3,
+                        threshold=0.5,
+                        update_access=False
+                    )
+            except Exception as e:
+                logger.debug(f"Embedding search for dedup failed, skipping dedup: {e}")
 
         # 检查是否有高度相似的记忆（需要 LLM 判断）
         if existing:
@@ -398,10 +404,20 @@ class MemoryManager:
             elif decision == "update":
                 # 冲突/更新，合并
                 merged = await self._merge_facts(most_similar.content, content)
+                # 为合并后的内容生成新的 embedding，避免维度不匹配
+                merged_embedding = None
+                if self._llm_client:
+                    try:
+                        embs = await self._llm_client.embed([merged])
+                        if embs and embs[0]:
+                            merged_embedding = embs[0]
+                    except Exception:
+                        pass
                 self.vector_store.update_memory(
                     most_similar.id,
                     content=merged,
-                    importance=max(importance, most_similar.importance)
+                    importance=max(importance, most_similar.importance),
+                    embedding=merged_embedding
                 )
                 logger.info(f"Memory updated (merged): {merged[:50]}...")
                 return
@@ -487,14 +503,22 @@ class MemoryManager:
                 insights = [line.strip() for line in resp.text_response.strip().split("\n") if line.strip()]
                 for insight in insights:
                     # 检查是否已有高度相似的反思（距离阈值 0.3）
-                    existing = self.vector_store.search(
-                        query_text=insight,
-                        user_id=user_id,
-                        memory_type="reflection",
-                        k=1,
-                        threshold=0.3,
-                        update_access=False,
-                    )
+                    # 只用外部 embedding 模型检查，避免维度冲突
+                    existing = []
+                    if self._llm_client:
+                        try:
+                            check_embs = await self._llm_client.embed([insight])
+                            if check_embs and check_embs[0]:
+                                existing = self.vector_store.search(
+                                    query_embedding=check_embs[0],
+                                    user_id=user_id,
+                                    memory_type="reflection",
+                                    k=1,
+                                    threshold=0.3,
+                                    update_access=False,
+                                )
+                        except Exception:
+                            pass
                     if existing:
                         logger.debug(f"Similar reflection already exists, skipped: {insight[:30]}...")
                         continue

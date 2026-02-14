@@ -38,6 +38,7 @@ class VectorStore:
         os.makedirs(VECTOR_DB_PATH, exist_ok=True)
 
         self._embedding_func = embedding_func
+        self._has_external_embeddings = False  # 是否存储过外部嵌入向量
 
         self._client = chromadb.PersistentClient(
             path=VECTOR_DB_PATH,
@@ -50,10 +51,19 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"}
         )
 
+        # 检查现有数据是否使用了外部嵌入
+        if self._collection.count() > 0:
+            self._has_external_embeddings = True
+
         logger.info("VectorStore initialized")
 
     def add_memory(self, entry: MemoryEntry, embedding: list[float] = None):
-        """添加一条记忆到向量库"""
+        """添加一条记忆到向量库
+        
+        当提供 embedding 时，使用外部嵌入向量存储。
+        当未提供 embedding 且已有外部嵌入时，仅存储文档和元数据（不生成向量），
+        避免 ChromaDB 默认嵌入函数维度与外部嵌入不一致。
+        """
         metadata = {
             "user_id": entry.user_id,
             "memory_type": entry.memory_type,
@@ -64,16 +74,29 @@ class VectorStore:
         }
         metadata.update(entry.metadata)
 
-        kwargs = {
-            "ids": [entry.id],
-            "documents": [entry.content],
-            "metadatas": [metadata],
-        }
-
         if embedding:
-            kwargs["embeddings"] = [embedding]
+            # 有外部嵌入，使用 upsert 存储文档+向量
+            self._has_external_embeddings = True
+            self._collection.upsert(
+                ids=[entry.id],
+                documents=[entry.content],
+                metadatas=[metadata],
+                embeddings=[embedding],
+            )
+        elif self._has_external_embeddings:
+            # 已有外部嵌入但本次没有提供，仅存文档和元数据
+            # 不调用 upsert/add（会触发默认嵌入函数导致维度冲突）
+            # 改用 upsert + 占位嵌入 不可行，所以跳过向量索引
+            logger.warning(f"No embedding provided, skipping vector storage: {entry.content[:50]}...")
+            return
+        else:
+            # 没有外部嵌入，使用 ChromaDB 默认嵌入函数
+            self._collection.upsert(
+                ids=[entry.id],
+                documents=[entry.content],
+                metadatas=[metadata],
+            )
 
-        self._collection.upsert(**kwargs)
         logger.debug(f"Memory added: [{entry.memory_type}] {entry.content[:50]}...")
 
     def search(self, query_text: str = None, query_embedding: list[float] = None,
@@ -85,6 +108,11 @@ class VectorStore:
         Args:
             update_access: 是否更新访问计数，内部去重搜索时应设为 False
         """
+        # 如果集合使用了外部嵌入，拒绝 query_text 搜索（避免维度冲突）
+        if query_text and not query_embedding and self._has_external_embeddings:
+            logger.debug("Rejecting text search: collection uses external embeddings, use query_embedding instead")
+            return []
+
         where_conditions = []
         if user_id:
             where_conditions.append({"user_id": user_id})
@@ -190,8 +218,14 @@ class VectorStore:
         return entries
 
     def update_memory(self, memory_id: str, content: str = None,
-                      importance: int = None, metadata: dict = None):
-        """更新一条记忆"""
+                      importance: int = None, metadata: dict = None,
+                      embedding: list[float] = None):
+        """更新一条记忆
+        
+        Args:
+            embedding: 当 content 更新时应同时提供新的 embedding，
+                       避免 ChromaDB 使用默认嵌入函数导致维度不匹配
+        """
         try:
             existing = self._collection.get(ids=[memory_id])
             if not existing or not existing["ids"]:
@@ -212,6 +246,8 @@ class VectorStore:
             }
             if content is not None:
                 update_kwargs["documents"] = [content]
+                if embedding:
+                    update_kwargs["embeddings"] = [embedding]
 
             self._collection.update(**update_kwargs)
             return True
