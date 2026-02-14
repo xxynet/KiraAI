@@ -223,7 +223,7 @@ class MemoryManager:
     # 长期记忆（向量检索）
     # ==========================================
 
-    async def recall(self, query: str, user_id: str = None, k: int = 5) -> list[MemoryEntry]:
+    async def recall(self, query: str, user_id: Optional[str] = None, k: int = 5) -> list[MemoryEntry]:
         """检索与查询相关的长期记忆（快系统 - 对话前调用）
         
         Args:
@@ -333,7 +333,7 @@ class MemoryManager:
         try:
             # 1. 提取事实
             conversation_text = self._chunks_to_text(chunks)
-            facts = await self._extract_facts(conversation_text, session)
+            facts = await self._extract_facts(conversation_text)
 
             if not facts:
                 return
@@ -355,7 +355,7 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"Hippocampus processing error: {e}")
 
-    async def _extract_facts(self, conversation_text: str, session: str) -> list[dict]:
+    async def _extract_facts(self, conversation_text: str) -> list[dict]:
         """从对话中提取事实"""
         prompt = f"""分析以下对话片段，提取关于用户的关键事实。忽略寒暄和无意义内容。
 
@@ -438,7 +438,7 @@ class MemoryManager:
                         if embs and embs[0]:
                             merged_embedding = embs[0]
                     except Exception:
-                        pass
+                        logger.debug("Failed to generate embedding for merged content")
                 self.vector_store.update_memory(
                     most_similar.id,
                     content=merged,
@@ -466,7 +466,7 @@ class MemoryManager:
                 if embeddings and embeddings[0]:
                     embedding = embeddings[0]
             except Exception:
-                pass
+                logger.debug("Failed to generate embedding for new memory")
 
         try:
             self.vector_store.add_memory(entry, embedding=embedding)
@@ -531,23 +531,27 @@ class MemoryManager:
             if resp and resp.text_response:
                 insights = [line.strip() for line in resp.text_response.strip().split("\n") if line.strip()]
                 for insight in insights:
-                    # 检查是否已有高度相似的反思（距离阈值 0.3）
-                    # 只用外部 embedding 模型检查，避免维度冲突
-                    existing = []
+                    # 生成 embedding（只调用一次，同时用于去重检查和存储）
+                    embedding = None
                     if self._llm_client:
                         try:
-                            check_embs = await self._llm_client.embed([insight])
-                            if check_embs and check_embs[0]:
-                                existing = self.vector_store.search(
-                                    query_embedding=check_embs[0],
-                                    user_id=user_id,
-                                    memory_type="reflection",
-                                    k=1,
-                                    threshold=0.3,
-                                    update_access=False,
-                                )
+                            embs = await self._llm_client.embed([insight])
+                            if embs and embs[0]:
+                                embedding = embs[0]
                         except Exception:
-                            pass
+                            logger.debug("Failed to generate embedding for reflection")
+
+                    # 检查是否已有高度相似的反思（距离阈值 0.3）
+                    existing = []
+                    if embedding:
+                        existing = self.vector_store.search(
+                            query_embedding=embedding,
+                            user_id=user_id,
+                            memory_type="reflection",
+                            k=1,
+                            threshold=0.3,
+                            update_access=False,
+                        )
                     if existing:
                         logger.debug(f"Similar reflection already exists, skipped: {insight[:30]}...")
                         continue
@@ -560,15 +564,6 @@ class MemoryManager:
                         importance=7,
                         timestamp=time.time(),
                     )
-
-                    embedding = None
-                    if self._llm_client:
-                        try:
-                            embeddings = await self._llm_client.embed([insight])
-                            if embeddings and embeddings[0]:
-                                embedding = embeddings[0]
-                        except Exception:
-                            pass
 
                     self.vector_store.add_memory(entry, embedding=embedding)
                     logger.info(f"Reflection stored: {insight[:50]}...")
@@ -698,7 +693,7 @@ class MemoryManager:
                                 if embs and embs[0]:
                                     summary_embedding = embs[0]
                             except Exception:
-                                pass
+                                logger.debug("Failed to generate embedding for summary")
                         self.vector_store.add_memory(entry, embedding=summary_embedding)
 
                     # 删除已摘要化的旧事实

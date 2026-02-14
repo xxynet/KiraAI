@@ -1,5 +1,6 @@
 import os
 import time
+from typing import Optional
 from core.utils.tool_utils import BaseTool
 from core.logging_manager import get_logger
 
@@ -96,9 +97,32 @@ class MemoryUpdateTool(BaseTool):
             lines = mem.readlines()
         if index < 0 or index >= len(lines):
             return "Index out of range"
+        old_text = lines[index].strip()
         lines[index] = text + ("\n" if not text.endswith("\n") else "")
         with open(CORE_MEMORY_PATH, "w", encoding="utf-8") as mem:
             mem.writelines(lines)
+
+        # 同步更新向量长期记忆中匹配的条目
+        if _memory_manager and hasattr(_memory_manager, 'vector_store'):
+            try:
+                from core.chat.vector_store import MemoryEntry
+                # 按内容匹配查找旧条目
+                all_entries = _memory_manager.vector_store.get_all_memories()
+                matched = [e for e in all_entries if e.content.strip() == old_text and e.memory_type == "fact"]
+                if matched:
+                    entry = matched[0]
+                    embedding = None
+                    if hasattr(_memory_manager, '_llm_client') and _memory_manager._llm_client:
+                        try:
+                            embeddings = await _memory_manager._llm_client.embed([text])
+                            if embeddings and embeddings[0]:
+                                embedding = embeddings[0]
+                        except Exception as e:
+                            logger.debug(f"Failed to generate embedding for updated memory: {e}")
+                    _memory_manager.vector_store.update_memory(entry.id, content=text, embedding=embedding)
+            except Exception as e:
+                logger.warning(f"Failed to sync update to vector DB: {e}")
+
         return "Core memory updated"
 
 
@@ -122,7 +146,19 @@ class MemoryRemoveTool(BaseTool):
         removed = lines.pop(index)
         with open(CORE_MEMORY_PATH, "w", encoding="utf-8") as mem:
             mem.writelines(lines)
-        return f"Core memory removed: {removed.strip()}"
+
+        # 同步删除向量长期记忆中匹配的条目
+        removed_text = removed.strip()
+        if removed_text and _memory_manager and hasattr(_memory_manager, 'vector_store'):
+            try:
+                all_entries = _memory_manager.vector_store.get_all_memories()
+                matched = [e for e in all_entries if e.content.strip() == removed_text and e.memory_type == "fact"]
+                if matched:
+                    _memory_manager.vector_store.delete_memory(matched[0].id)
+            except Exception as e:
+                logger.warning(f"Failed to sync delete to vector DB: {e}")
+
+        return f"Core memory removed: {removed_text}"
 
 
 class MemorySearchTool(BaseTool):
@@ -138,7 +174,7 @@ class MemorySearchTool(BaseTool):
         "required": ["query"]
     }
 
-    async def execute(self, query: str, user_id: str = None, k: int = 5) -> str:
+    async def execute(self, query: str, user_id: Optional[str] = None, k: int = 5) -> str:
         if not _memory_manager or not hasattr(_memory_manager, 'recall'):
             return "Memory system not available"
 

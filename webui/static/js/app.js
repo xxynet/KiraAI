@@ -1571,7 +1571,7 @@ async function loadConfigurationData() {
             console.error('ConfigurationManager not loaded');
             showNotification('Configuration subsystem failed to load. Please refresh the page.', 'error');
             // Disable config controls to prevent silent failures
-            const configContainer = document.getElementById('config-container');
+            const configContainer = document.getElementById('config-dynamic-container') || document.getElementById('config-container');
             if (configContainer) {
                 configContainer.innerHTML = '<div class="text-center text-red-500 py-8">Configuration module unavailable</div>';
             }

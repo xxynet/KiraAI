@@ -819,6 +819,8 @@ class ConfigurationManager {
         }
         if (saveBtn) {
             const hasChanges = this.modifiedFields.size > 0;
+            saveBtn.disabled = !hasChanges;
+            saveBtn.setAttribute('aria-disabled', String(!hasChanges));
             saveBtn.classList.toggle('opacity-60', !hasChanges);
         }
     }
@@ -883,18 +885,27 @@ class ConfigurationManager {
             const botConfig = this._getNestedValue(this.currentData, 'bot_config') || {};
             const models = this._getNestedValue(this.currentData, 'models') || {};
 
-            // Parse numeric values
+            // Parse numeric values based on schema types
+            const numericFieldKeys = new Set();
+            this.getSchema().forEach(group => {
+                group.fields.forEach(field => {
+                    if (field.type === 'integer' || field.type === 'float') {
+                        numericFieldKeys.add(field.key);
+                    }
+                });
+            });
+
             const parsedBotConfig = this._deepClone(botConfig);
             if (parsedBotConfig.bot) {
                 for (const [k, v] of Object.entries(parsedBotConfig.bot)) {
-                    if (v !== null && v !== undefined && v !== '') {
+                    if (numericFieldKeys.has(`bot_config.bot.${k}`) && v !== null && v !== undefined && v !== '') {
                         parsedBotConfig.bot[k] = Number(v);
                     }
                 }
             }
             if (parsedBotConfig.agent) {
                 for (const [k, v] of Object.entries(parsedBotConfig.agent)) {
-                    if (v !== null && v !== undefined && v !== '') {
+                    if (numericFieldKeys.has(`bot_config.agent.${k}`) && v !== null && v !== undefined && v !== '') {
                         parsedBotConfig.agent[k] = Number(v);
                     }
                 }

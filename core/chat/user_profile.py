@@ -47,10 +47,15 @@ class UserProfileStore:
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
                     data = json.load(f)
+                allowed_keys = {f.name for f in __import__('dataclasses').fields(UserProfile)}
                 for uid, profile_data in data.items():
-                    self._profiles[uid] = UserProfile(**profile_data)
+                    try:
+                        sanitized = {k: v for k, v in profile_data.items() if k in allowed_keys}
+                        self._profiles[uid] = UserProfile(**sanitized)
+                    except Exception as e:
+                        logger.warning(f"Skipping malformed profile '{uid}': {e}")
             except Exception as e:
-                logger.error(f"Failed to load user profiles: {e}")
+                logger.exception(f"Failed to load user profiles: {e}")
                 self._profiles = {}
         else:
             dir_path = os.path.dirname(self.path) or '.'
@@ -65,7 +70,7 @@ class UserProfileStore:
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"Failed to save user profiles: {e}")
+            logger.exception(f"Failed to save user profiles: {e}")
 
     def _get_profile_unlocked(self, user_id: str) -> UserProfile:
         """获取用户画像（调用方须已持有 _lock），不存在则创建"""
@@ -79,10 +84,12 @@ class UserProfileStore:
             return self._get_profile_unlocked(user_id)
 
     def update_profile(self, user_id: str, **kwargs) -> UserProfile:
-        """更新用户画像字段"""
+        """更新用户画像字段（user_id 字段不可修改）"""
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             for key, value in kwargs.items():
+                if key == 'user_id':
+                    continue  # user_id 由 dict key 决定，不允许通过 kwargs 覆盖
                 if hasattr(profile, key):
                     setattr(profile, key, value)
             profile.last_interaction = time.time()

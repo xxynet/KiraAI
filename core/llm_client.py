@@ -8,7 +8,7 @@ from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
 from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse, ModelType
-from .provider import ProviderManager, ImageResult, EmbeddingModelClient
+from .provider import ProviderManager, ImageResult
 
 logger = get_logger("llm", "purple")
 tool_logger = get_logger("tool_use", "orange")
@@ -117,7 +117,7 @@ class LLMClient:
             embedding_model = self.provider_mgr.get_default_embedding()
             return await embedding_model.embed(texts)
         except Exception as e:
-            logger.error(f"Embedding error: {e}")
+            logger.exception(f"Embedding error: {e}")
             return []
 
     async def text_to_speech(self, text: str):

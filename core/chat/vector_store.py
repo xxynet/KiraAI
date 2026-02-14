@@ -298,7 +298,11 @@ class VectorStore:
             return False
 
     def get_all_memories(self, limit: int = 1000) -> list[MemoryEntry]:
-        """获取所有记忆（用于遗忘机制扫描）"""
+        """获取所有记忆（用于遗忘机制扫描）
+
+        注意：默认 limit=1000，当记忆量超过此值时只返回部分结果。
+        如需获取全部记忆，请传入更大的 limit 值或使用分页查询。
+        """
         try:
             results = self._collection.get(limit=limit)
         except Exception as e:
