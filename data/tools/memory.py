@@ -36,8 +36,8 @@ def _load_vector_map() -> dict[int, str]:
                 data = json.load(f)
             # JSON keys are strings, convert back to int
             return {int(k): v for k, v in data.items()}
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to load vector map from {CORE_VECTOR_MAP_PATH}: {e}")
     return {}
 
 

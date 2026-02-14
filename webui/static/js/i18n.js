@@ -736,6 +736,17 @@ function updateTranslations() {
             }
         }
     });
+
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
+        const key = element.getAttribute('data-i18n-placeholder');
+        const translation = i18next.t(key);
+        if (translation && translation !== key) {
+            element.placeholder = translation;
+            if (element.hasAttribute('aria-label')) {
+                element.setAttribute('aria-label', translation);
+            }
+        }
+    });
 }
 
 // Export for use in other scripts

@@ -240,6 +240,32 @@ class ConfigurationManager {
         return JSON.parse(JSON.stringify(obj));
     }
 
+    /**
+     * Ensure all schema fields with defaults are populated in currentData.
+     * Does NOT mark them as modified — this is for load-time initialisation only.
+     */
+    _ensureDefaults() {
+        const schema = this.getSchema();
+        schema.forEach(group => {
+            group.fields.forEach(field => {
+                this._ensureDefaultForField(field);
+            });
+        });
+    }
+
+    /**
+     * If a field's value is null/undefined in currentData and the schema
+     * defines a default, write the default into currentData silently
+     * (no undo record, no modifiedFields entry).
+     */
+    _ensureDefaultForField(field) {
+        if (field.default == null) return;
+        const current = this._getNestedValue(this.currentData, field.key);
+        if (current == null) {
+            this._setNestedValue(this.currentData, field.key, field.default);
+        }
+    }
+
     _t(key, fallback) {
         if (window.i18n) {
             const val = window.i18n.t(key);
@@ -253,6 +279,9 @@ class ConfigurationManager {
     async load() {
         try {
             const response = await apiCall('/api/configuration');
+            if (!response.ok) {
+                throw new Error(`API returned ${response.status} ${response.statusText}`);
+            }
             const data = await response.json();
             const configuration = data.configuration || {};
             this.originalData = this._deepClone(configuration);
@@ -271,6 +300,9 @@ class ConfigurationManager {
             this.redoStack = [];
             this.modifiedFields = new Set();
             this.validationErrors = {};
+
+            // Ensure schema defaults are present in currentData
+            this._ensureDefaults();
 
             this.render();
             this._bindKeyboard();
@@ -382,6 +414,9 @@ class ConfigurationManager {
     }
 
     _renderField(field) {
+        // Ensure default is written to currentData if missing
+        this._ensureDefaultForField(field);
+
         const value = this._getNestedValue(this.currentData, field.key);
         const isModified = this.modifiedFields.has(field.key);
         const error = this.validationErrors[field.key];

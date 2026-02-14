@@ -600,11 +600,23 @@ class MemoryManager:
     # ==========================================
 
     async def run_forgetting_cycle(self):
-        """执行遗忘周期：清理低价值记忆"""
-        all_memories = self.vector_store.get_all_memories()
+        """执行遗忘周期：清理低价值记忆（分页遍历全部记忆）"""
         now = time.time()
         removed_count = 0
-        removed_ids = set()
+        removed_ids: set = set()
+        all_memories: list[MemoryEntry] = []
+
+        # 分页获取全部记忆
+        page_size = 1000
+        offset = 0
+        while True:
+            page = self.vector_store.get_all_memories(limit=page_size, offset=offset)
+            if not page:
+                break
+            all_memories.extend(page)
+            if len(page) < page_size:
+                break
+            offset += page_size
 
         for mem in all_memories:
             score = self._calculate_retention_score(mem, now)

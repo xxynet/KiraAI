@@ -317,14 +317,18 @@ class VectorStore:
             logger.error(f"Delete memory error: {e}")
             return False
 
-    def get_all_memories(self, limit: int = 1000) -> list[MemoryEntry]:
+    def get_all_memories(self, limit: int = 1000, offset: int = 0) -> list[MemoryEntry]:
         """获取所有记忆（用于遗忘机制扫描）
 
         注意：默认 limit=1000，当记忆量超过此值时只返回部分结果。
         如需获取全部记忆，请传入更大的 limit 值或使用分页查询。
+
+        Args:
+            limit: 每页返回的最大条目数
+            offset: 跳过前 offset 条结果（用于分页）
         """
         try:
-            results = self._collection.get(limit=limit)
+            results = self._collection.get(limit=limit, offset=offset)
         except Exception as e:
             logger.error(f"Get all memories error: {e}")
             return []
