@@ -288,6 +288,26 @@ class VectorStore:
             logger.error(f"Update memory error: {e}")
             return False
 
+    def get_memory_by_id(self, memory_id: str) -> Optional[MemoryEntry]:
+        """按 ID 精确查找一条记忆"""
+        try:
+            results = self._collection.get(ids=[memory_id])
+            if results and results["ids"]:
+                meta = results["metadatas"][0] if results["metadatas"] else {}
+                return MemoryEntry(
+                    id=results["ids"][0],
+                    user_id=meta.get("user_id", ""),
+                    content=results["documents"][0],
+                    memory_type=meta.get("memory_type", "fact"),
+                    importance=meta.get("importance", 5),
+                    timestamp=meta.get("timestamp", 0),
+                    access_count=meta.get("access_count", 0),
+                    last_accessed=meta.get("last_accessed", 0),
+                )
+        except Exception as e:
+            logger.debug(f"get_memory_by_id({memory_id}) failed: {e}")
+        return None
+
     def delete_memory(self, memory_id: str) -> bool:
         """删除一条记忆"""
         try:

@@ -61,6 +61,7 @@ class MemoryManager:
         self._hippocampus_threshold = 3  # 每 N 轮触发一次海马体处理
         self._hippocampus_lock = Lock()
         self._background_tasks: set = set()  # 持久化后台任务引用
+        self._background_tasks_lock = Lock()  # 保护 _background_tasks 集合
 
         logger.info("MemoryManager initialized (dual-brain architecture)")
 
@@ -309,7 +310,8 @@ class MemoryManager:
                 task = loop.create_task(
                     self._hippocampus_process(session, chunks_to_process)
                 )
-                self._background_tasks.add(task)
+                with self._background_tasks_lock:
+                    self._background_tasks.add(task)
                 task.add_done_callback(self._on_background_task_done)
             except RuntimeError:
                 # 没有运行中的事件循环，跳过
@@ -317,7 +319,8 @@ class MemoryManager:
 
     def _on_background_task_done(self, task: asyncio.Task):
         """后台任务完成回调：清理引用并记录异常"""
-        self._background_tasks.discard(task)
+        with self._background_tasks_lock:
+            self._background_tasks.discard(task)
         if task.cancelled():
             return
         exc = task.exception()
@@ -425,7 +428,7 @@ class MemoryManager:
 
             if decision == "duplicate":
                 # 重复的，跳过
-                logger.debug(f"Duplicate memory skipped: {content[:30]}...")
+                logger.debug(f"Duplicate memory skipped (len={len(content)})")
                 return
             elif decision == "update":
                 # 冲突/更新，合并
@@ -446,7 +449,11 @@ class MemoryManager:
                     embedding=merged_embedding
                 )
                 if updated:
-                    logger.info(f"Memory updated (merged): {merged[:50]}...")
+                    logger.info(
+                        f"Memory updated (merged): id={most_similar.id}, "
+                        f"type={most_similar.memory_type}, len={len(merged)}, "
+                        f"embedding={'present' if merged_embedding else 'None'}"
+                    )
                 else:
                     logger.warning(
                         f"update_memory failed for {most_similar.id} "
@@ -476,7 +483,7 @@ class MemoryManager:
 
         try:
             self.vector_store.add_memory(entry, embedding=embedding)
-            logger.info(f"New memory stored: [{entry.memory_type}] {content[:50]}...")
+            logger.info(f"New memory stored: type={entry.memory_type}, id={entry.id}, len={len(content)}, embedding={'present' if embedding else 'None'}")
         except ValueError as e:
             logger.warning(f"Could not store memory (no embedding available): {e}")
 
@@ -559,7 +566,7 @@ class MemoryManager:
                             update_access=False,
                         )
                     if existing:
-                        logger.debug(f"Similar reflection already exists, skipped: {insight[:30]}...")
+                        logger.debug(f"Similar reflection already exists, skipped (len={len(insight)})")
                         continue
 
                     entry = MemoryEntry(
@@ -571,8 +578,12 @@ class MemoryManager:
                         timestamp=time.time(),
                     )
 
-                    self.vector_store.add_memory(entry, embedding=embedding)
-                    logger.info(f"Reflection stored: {insight[:50]}...")
+                    try:
+                        self.vector_store.add_memory(entry, embedding=embedding)
+                        logger.info(f"Reflection stored: id={entry.id}, len={len(insight)}, embedding={'present' if embedding else 'None'}")
+                    except Exception as e:
+                        logger.error(f"Failed to store reflection (id={entry.id}, len={len(insight)}, embedding={'present' if embedding else 'None'}): {e}")
+                        continue
         except Exception as e:
             logger.error(f"Reflection generation error: {e}")
 
@@ -682,6 +693,7 @@ class MemoryManager:
                 resp = await self._llm_client.chat([{"role": "user", "content": prompt}])
                 if resp and resp.text_response:
                     summaries = [line.strip() for line in resp.text_response.strip().split("\n") if line.strip()]
+                    summaries_added = 0
                     for summary in summaries:
                         entry = MemoryEntry(
                             id=VectorStore.generate_id(),
@@ -700,13 +712,19 @@ class MemoryManager:
                                     summary_embedding = embs[0]
                             except Exception:
                                 logger.debug("Failed to generate embedding for summary")
-                        self.vector_store.add_memory(entry, embedding=summary_embedding)
+                        try:
+                            self.vector_store.add_memory(entry, embedding=summary_embedding)
+                            summaries_added += 1
+                        except Exception as e:
+                            logger.error(f"Failed to store summary (id={entry.id}): {e}")
 
-                    # 删除已摘要化的旧事实
-                    for old_fact in old_facts:
-                        self.vector_store.delete_memory(old_fact.id)
-
-                    logger.info(f"Summarized {len(old_facts)} old facts into {len(summaries)} summaries for user {user_id}")
+                    # 仅在至少一条摘要成功写入后才删除旧事实
+                    if summaries_added > 0:
+                        for old_fact in old_facts:
+                            self.vector_store.delete_memory(old_fact.id)
+                        logger.info(f"Summarized {len(old_facts)} old facts into {summaries_added} summaries for user {user_id}")
+                    else:
+                        logger.warning(f"No summaries stored successfully, keeping {len(old_facts)} old facts for user {user_id}")
             except Exception as e:
                 logger.error(f"Summarization error: {e}")
 

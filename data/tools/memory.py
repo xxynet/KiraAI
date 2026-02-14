@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from typing import Optional
@@ -8,6 +9,7 @@ logger = get_logger("memory_tools", "green")
 
 
 CORE_MEMORY_PATH = "data/memory/core.txt"
+CORE_VECTOR_MAP_PATH = "data/memory/core_vector_map.json"
 
 # 全局引用，由 tool_manager 注入
 _memory_manager = None
@@ -24,6 +26,29 @@ def _ensure_memory_file() -> None:
     if not os.path.exists(CORE_MEMORY_PATH):
         with open(CORE_MEMORY_PATH, "w", encoding="utf-8") as _:
             _.write("")
+
+
+def _load_vector_map() -> dict[int, str]:
+    """加载核心记忆行号 → 向量 ID 映射"""
+    if os.path.exists(CORE_VECTOR_MAP_PATH):
+        try:
+            with open(CORE_VECTOR_MAP_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # JSON keys are strings, convert back to int
+            return {int(k): v for k, v in data.items()}
+        except Exception:
+            pass
+    return {}
+
+
+def _save_vector_map(mapping: dict[int, str]) -> None:
+    """保存核心记忆行号 → 向量 ID 映射"""
+    try:
+        os.makedirs(os.path.dirname(CORE_VECTOR_MAP_PATH), exist_ok=True)
+        with open(CORE_VECTOR_MAP_PATH, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to save vector map: {e}")
 
 
 class MemoryAddTool(BaseTool):
@@ -44,6 +69,8 @@ class MemoryAddTool(BaseTool):
         _ensure_memory_file()
         with open(CORE_MEMORY_PATH, "r", encoding="utf-8") as mem:
             mem_str = mem.read()
+        # 计算新行的索引（写入前的行数）
+        line_index = len(mem_str.splitlines()) if mem_str.strip() else 0
         with open(CORE_MEMORY_PATH, "a", encoding="utf-8") as mem:
             if mem_str and not mem_str.endswith("\n"):
                 mem.write("\n")
@@ -73,6 +100,10 @@ class MemoryAddTool(BaseTool):
 
             try:
                 _memory_manager.vector_store.add_memory(entry, embedding=embedding)
+                # 持久化行号 → 向量 ID 映射
+                vmap = _load_vector_map()
+                vmap[line_index] = entry.id
+                _save_vector_map(vmap)
             except ValueError as e:
                 logger.warning(f"Could not store memory to vector DB: {e}")
 
@@ -105,12 +136,25 @@ class MemoryUpdateTool(BaseTool):
         # 同步更新向量长期记忆中匹配的条目
         if _memory_manager and hasattr(_memory_manager, 'vector_store'):
             try:
-                from core.chat.vector_store import MemoryEntry
-                # 按内容匹配查找旧条目
-                all_entries = _memory_manager.vector_store.get_all_memories()
-                matched = [e for e in all_entries if e.content.strip() == old_text and e.memory_type == "fact"]
-                if matched:
-                    entry = matched[0]
+                vector_id = None
+                vmap = _load_vector_map()
+
+                # 优先通过持久化映射查找
+                if index in vmap:
+                    candidate = _memory_manager.vector_store.get_memory_by_id(vmap[index])
+                    if candidate:
+                        vector_id = candidate.id
+                    else:
+                        logger.debug(f"Mapped vector_id {vmap[index]} not found in store, falling back")
+
+                # 回退：按内容匹配查找
+                if not vector_id and old_text:
+                    all_entries = _memory_manager.vector_store.get_all_memories()
+                    matched = [e for e in all_entries if e.content.strip() == old_text and e.memory_type == "fact"]
+                    if matched:
+                        vector_id = matched[0].id
+
+                if vector_id:
                     embedding = None
                     if hasattr(_memory_manager, '_llm_client') and _memory_manager._llm_client:
                         try:
@@ -120,11 +164,11 @@ class MemoryUpdateTool(BaseTool):
                         except Exception as e:
                             logger.debug(f"Failed to generate embedding for updated memory: {e}")
                     try:
-                        ok = _memory_manager.vector_store.update_memory(entry.id, content=text, embedding=embedding)
+                        ok = _memory_manager.vector_store.update_memory(vector_id, content=text, embedding=embedding)
                         if not ok:
-                            logger.warning(f"update_memory returned False for entry {entry.id} (old='{old_text[:40]}', new='{text[:40]}', embedding={'present' if embedding else 'None'})")
+                            logger.warning(f"update_memory returned False for entry {vector_id} (embedding={'present' if embedding else 'None'})")
                     except Exception as e:
-                        logger.error(f"update_memory raised for entry {entry.id}: {e}")
+                        logger.error(f"update_memory raised for entry {vector_id}: {e}")
             except Exception as e:
                 logger.warning(f"Failed to sync update to vector DB: {e}")
 
@@ -156,10 +200,34 @@ class MemoryRemoveTool(BaseTool):
         removed_text = removed.strip()
         if removed_text and _memory_manager and hasattr(_memory_manager, 'vector_store'):
             try:
-                all_entries = _memory_manager.vector_store.get_all_memories()
-                matched = [e for e in all_entries if e.content.strip() == removed_text and e.memory_type == "fact"]
-                if matched:
-                    _memory_manager.vector_store.delete_memory(matched[0].id)
+                vector_id = None
+                vmap = _load_vector_map()
+
+                # 优先通过持久化映射查找
+                if index in vmap:
+                    candidate = _memory_manager.vector_store.get_memory_by_id(vmap[index])
+                    if candidate:
+                        vector_id = candidate.id
+
+                # 回退：按内容匹配查找
+                if not vector_id:
+                    all_entries = _memory_manager.vector_store.get_all_memories()
+                    matched = [e for e in all_entries if e.content.strip() == removed_text and e.memory_type == "fact"]
+                    if matched:
+                        vector_id = matched[0].id
+
+                if vector_id:
+                    _memory_manager.vector_store.delete_memory(vector_id)
+
+                # 更新映射：删除当前行并将后续行号前移
+                new_map = {}
+                for k, v in vmap.items():
+                    if k < index:
+                        new_map[k] = v
+                    elif k > index:
+                        new_map[k - 1] = v
+                    # k == index 已删除，跳过
+                _save_vector_map(new_map)
             except Exception as e:
                 logger.warning(f"Failed to sync delete to vector DB: {e}")
 
