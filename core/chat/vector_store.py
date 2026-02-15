@@ -276,10 +276,14 @@ class VectorStore:
             }
             if content is not None:
                 update_kwargs["documents"] = [content]
-                if embedding is not None:
+                if embedding and len(embedding) > 0:
                     update_kwargs["embeddings"] = [embedding]
                 elif self._has_external_embeddings:
-                    logger.warning("update_memory: content changed but no embedding provided in external-embedding mode, skipping update")
+                    logger.warning(
+                        f"update_memory: content changed but no valid embedding provided in external-embedding mode "
+                        f"(embedding={'empty list' if embedding is not None else 'None'}), "
+                        f"skipping update for {memory_id}"
+                    )
                     return False
 
             self._collection.update(**update_kwargs)

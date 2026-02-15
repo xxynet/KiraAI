@@ -105,12 +105,17 @@ class MemoryAddTool(BaseTool):
 
                 try:
                     _memory_manager.vector_store.add_memory(entry, embedding=embedding)
-                    # 持久化行号 → 向量 ID 映射
+                except (ValueError, Exception) as e:
+                    logger.warning(f"Could not store memory to vector DB (entry.id={entry.id}): {e}")
+                    return f"Core memory added, but vector store write failed: {e}"
+
+                try:
                     vmap = _load_vector_map()
                     vmap[line_index] = entry.id
                     _save_vector_map(vmap)
-                except ValueError as e:
-                    logger.warning(f"Could not store memory to vector DB: {e}")
+                except Exception as e:
+                    logger.warning(f"Core memory added and vector stored, but vector map persistence failed (entry.id={entry.id}): {e}")
+                    return f"Core memory added, but vector map save failed: {e}"
 
         return "Core memory added"
 
