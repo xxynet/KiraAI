@@ -53,6 +53,7 @@ def _save_vector_map(mapping: dict[int, str]) -> None:
             json.dump(mapping, f, indent=2)
     except Exception as e:
         logger.warning(f"Failed to save vector map: {e}")
+        raise
 
 
 class MemoryAddTool(BaseTool):

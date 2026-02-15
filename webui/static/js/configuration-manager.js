@@ -263,6 +263,7 @@ class ConfigurationManager {
         const current = this._getNestedValue(this.currentData, field.key);
         if (current == null) {
             this._setNestedValue(this.currentData, field.key, field.default);
+            this._setNestedValue(this.originalData, field.key, field.default);
         }
     }
 
