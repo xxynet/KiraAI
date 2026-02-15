@@ -971,6 +971,15 @@ class ConfigurationManager {
                 })
             });
 
+            if (!response.ok) {
+                let errorMsg = `API returned ${response.status} ${response.statusText}`;
+                try {
+                    const errBody = await response.json();
+                    if (errBody && errBody.message) errorMsg = errBody.message;
+                } catch (_) { /* ignore parse error */ }
+                throw new Error(errorMsg);
+            }
+
             const data = await response.json();
 
             if (data.status === 'ok') {

@@ -240,17 +240,21 @@ class MemoryRemoveTool(BaseTool):
                             vector_id = matched[0].id
 
                     if vector_id:
-                        _memory_manager.vector_store.delete_memory(vector_id)
+                        delete_ok = _memory_manager.vector_store.delete_memory(vector_id)
+                        if not delete_ok:
+                            vector_sync_error = f"delete_memory returned False for entry {vector_id}"
+                            logger.warning(vector_sync_error)
 
-                    # 更新映射：删除当前行并将后续行号前移
-                    new_map = {}
-                    for k, v in vmap.items():
-                        if k < index:
-                            new_map[k] = v
-                        elif k > index:
-                            new_map[k - 1] = v
-                        # k == index 已删除，跳过
-                    _save_vector_map(new_map)
+                    # 仅在删除成功（或无需删除）时更新映射
+                    if not vector_sync_error:
+                        new_map = {}
+                        for k, v in vmap.items():
+                            if k < index:
+                                new_map[k] = v
+                            elif k > index:
+                                new_map[k - 1] = v
+                            # k == index 已删除，跳过
+                        _save_vector_map(new_map)
                 except Exception as e:
                     vector_sync_error = f"Failed to sync delete to vector DB: {e}"
                     logger.warning(vector_sync_error)
