@@ -113,6 +113,28 @@ class VectorStore:
                 metadatas=[metadata],
                 embeddings=[embedding],
             )
+        elif self._embedding_func is not None:
+            # 使用构造时注入的嵌入函数生成向量
+            try:
+                generated = self._embedding_func([entry.content])
+                if generated and generated[0] and len(generated[0]) > 0:
+                    if not self._has_external_embeddings:
+                        self._has_external_embeddings = True
+                        self._persist_external_flag()
+                    self._collection.upsert(
+                        ids=[entry.id],
+                        documents=[entry.content],
+                        metadatas=[metadata],
+                        embeddings=[generated[0]],
+                    )
+                else:
+                    logger.warning(f"embedding_func returned empty result for: {entry.content[:50]}...")
+                    raise ValueError("embedding_func returned empty or invalid embedding")
+            except ValueError:
+                raise
+            except Exception as e:
+                logger.error(f"embedding_func failed: {e}")
+                raise ValueError(f"Failed to generate embedding via embedding_func: {e}") from e
         elif self._has_external_embeddings:
             # 已启用外部嵌入但未提供，抛出异常而非静默丢失数据
             logger.error(f"External embeddings enabled but no embedding provided for: {entry.content[:50]}...")
@@ -281,6 +303,27 @@ class VectorStore:
                     if not self._has_external_embeddings:
                         self._has_external_embeddings = True
                         self._persist_external_flag()
+                elif self._embedding_func is not None:
+                    # 使用构造时注入的嵌入函数生成向量
+                    try:
+                        generated = self._embedding_func([content])
+                        if generated and generated[0] and len(generated[0]) > 0:
+                            update_kwargs["embeddings"] = [generated[0]]
+                            if not self._has_external_embeddings:
+                                self._has_external_embeddings = True
+                                self._persist_external_flag()
+                        else:
+                            logger.warning(
+                                f"update_memory: embedding_func returned empty result for {memory_id}, "
+                                f"skipping update"
+                            )
+                            return False
+                    except Exception as e:
+                        logger.warning(
+                            f"update_memory: embedding_func failed for {memory_id}: {e}, "
+                            f"skipping update"
+                        )
+                        return False
                 elif self._has_external_embeddings:
                     logger.warning(
                         f"update_memory: content changed but no valid embedding provided in external-embedding mode "

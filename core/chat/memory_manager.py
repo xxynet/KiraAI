@@ -401,7 +401,7 @@ class MemoryManager:
                         except (ValueError, SyntaxError):
                             facts = None
                 if isinstance(facts, list):
-                    return facts
+                    return [f for f in facts if isinstance(f, dict) and "content" in f]
         except Exception as e:
             logger.error(f"Fact extraction error: {e}")
         return []
