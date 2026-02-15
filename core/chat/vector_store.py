@@ -278,6 +278,9 @@ class VectorStore:
                 update_kwargs["documents"] = [content]
                 if embedding and len(embedding) > 0:
                     update_kwargs["embeddings"] = [embedding]
+                    if not self._has_external_embeddings:
+                        self._has_external_embeddings = True
+                        self._persist_external_flag()
                 elif self._has_external_embeddings:
                     logger.warning(
                         f"update_memory: content changed but no valid embedding provided in external-embedding mode "

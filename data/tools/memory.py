@@ -145,6 +145,7 @@ class MemoryUpdateTool(BaseTool):
                 mem.writelines(lines)
 
             # 同步更新向量长期记忆中匹配的条目
+            vector_sync_error = None
             if _memory_manager and hasattr(_memory_manager, 'vector_store'):
                 try:
                     vector_id = None
@@ -173,16 +174,25 @@ class MemoryUpdateTool(BaseTool):
                                 if embeddings and embeddings[0]:
                                     embedding = embeddings[0]
                             except Exception as e:
-                                logger.debug(f"Failed to generate embedding for updated memory: {e}")
+                                vector_sync_error = f"Failed to generate embedding for updated memory: {e}"
+                                logger.debug(vector_sync_error)
                         try:
                             ok = _memory_manager.vector_store.update_memory(vector_id, content=text, embedding=embedding)
                             if not ok:
-                                logger.warning(f"update_memory returned False for entry {vector_id} (embedding={'present' if embedding else 'None'})")
+                                vector_sync_error = f"update_memory returned False for entry {vector_id} (embedding={'present' if embedding else 'None'})"
+                                logger.warning(vector_sync_error)
                         except Exception as e:
-                            logger.error(f"update_memory raised for entry {vector_id}: {e}")
+                            vector_sync_error = f"update_memory raised for entry {vector_id}: {e}"
+                            logger.error(vector_sync_error)
+                    else:
+                        vector_sync_error = f"Could not locate vector entry for core memory index {index}"
+                        logger.warning(vector_sync_error)
                 except Exception as e:
-                    logger.warning(f"Failed to sync update to vector DB: {e}")
+                    vector_sync_error = f"Failed to sync update to vector DB: {e}"
+                    logger.warning(vector_sync_error)
 
+        if vector_sync_error:
+            return f"Core memory updated, but vector sync failed: {vector_sync_error}"
         return "Core memory updated"
 
 
@@ -210,6 +220,7 @@ class MemoryRemoveTool(BaseTool):
 
             # 同步删除向量长期记忆中匹配的条目
             removed_text = removed.strip()
+            vector_sync_error = None
             if removed_text and _memory_manager and hasattr(_memory_manager, 'vector_store'):
                 try:
                     vector_id = None
@@ -241,8 +252,11 @@ class MemoryRemoveTool(BaseTool):
                         # k == index 已删除，跳过
                     _save_vector_map(new_map)
                 except Exception as e:
-                    logger.warning(f"Failed to sync delete to vector DB: {e}")
+                    vector_sync_error = f"Failed to sync delete to vector DB: {e}"
+                    logger.warning(vector_sync_error)
 
+        if vector_sync_error:
+            return f"Core memory removed: {removed_text} (vector sync failed: {vector_sync_error})"
         return f"Core memory removed: {removed_text}"
 
 

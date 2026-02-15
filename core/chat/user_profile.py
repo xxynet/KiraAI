@@ -1,6 +1,7 @@
 """
 用户画像存储层，使用 JSON 文件持久化用户结构化信息
 """
+import copy
 import json
 import os
 import time
@@ -191,9 +192,9 @@ class UserProfileStore:
         return '\n'.join(parts) if parts else "暂无画像信息"
 
     def get_all_profiles(self) -> dict[str, UserProfile]:
-        """获取所有用户画像（线程安全快照）"""
+        """获取所有用户画像（线程安全深拷贝快照）"""
         with self._lock:
-            return dict(self._profiles)
+            return copy.deepcopy(self._profiles)
 
     def delete_profile(self, user_id: str) -> bool:
         """删除用户画像"""
