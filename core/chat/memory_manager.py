@@ -7,6 +7,7 @@
 - 遗忘机制：基于重要性和访问频率的记忆衰减
 """
 import asyncio
+import ast
 import json
 import os
 import re
@@ -384,10 +385,21 @@ class MemoryManager:
                 end = text.rfind("]")
                 if start != -1 and end != -1 and end > start:
                     text = text[start:end + 1]
-                # 修复常见的 LLM JSON 格式问题
-                text = text.replace("'", '"')  # 单引号 → 双引号
-                text = re.sub(r',\s*([}\]])', r'\1', text)  # 移除尾随逗号
-                facts = json.loads(text)
+                # 尝试解析 JSON
+                try:
+                    facts = json.loads(text)
+                except json.JSONDecodeError:
+                    # 移除尾随逗号后重试
+                    text = re.sub(r',\s*([}\]])', r'\1', text)
+                    try:
+                        facts = json.loads(text)
+                    except json.JSONDecodeError:
+                        # 最后回退到 ast.literal_eval
+                        try:
+                            obj = ast.literal_eval(text)
+                            facts = json.loads(json.dumps(obj))
+                        except (ValueError, SyntaxError):
+                            facts = None
                 if isinstance(facts, list):
                     return facts
         except Exception as e:
@@ -777,11 +789,11 @@ class MemoryManager:
         - 群聊: adapter:gm:group_id → adapter:group:group_id
         群聊用 'group:' 前缀区分，避免与个人 user_id 冲突
         """
-        parts = session.split(":")
-        if len(parts) >= 3:
-            session_type = parts[1]
-            session_id = parts[2]
-            if session_type == "gm":
-                return f"{parts[0]}:group:{session_id}"
-            return f"{parts[0]}:{session_id}"
-        return session
+        parts = session.split(":", maxsplit=2)
+        if len(parts) != 3:
+            raise ValueError("Invalid session ID")
+        session_type = parts[1]
+        session_id = parts[2]
+        if session_type == "gm":
+            return f"{parts[0]}:group:{session_id}"
+        return f"{parts[0]}:{session_id}"

@@ -118,6 +118,6 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
             if elapsed > slow_threshold:
                 logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
             return [item.embedding for item in response.data]
-        except Exception as e:
-            logger.exception(f"Embedding error: {e}")
+        except Exception:
+            logger.exception("Embedding error")
             return []

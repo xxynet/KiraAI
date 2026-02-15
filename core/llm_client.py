@@ -116,8 +116,8 @@ class LLMClient:
         try:
             embedding_model = self.provider_mgr.get_default_embedding()
             return await embedding_model.embed(texts)
-        except Exception as e:
-            logger.exception(f"Embedding error: {e}")
+        except Exception:
+            logger.exception("Embedding error")
             return []
 
     async def text_to_speech(self, text: str):

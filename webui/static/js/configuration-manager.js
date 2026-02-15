@@ -875,6 +875,7 @@ class ConfigurationManager {
             saveBtn.disabled = !hasChanges;
             saveBtn.setAttribute('aria-disabled', String(!hasChanges));
             saveBtn.classList.toggle('opacity-60', !hasChanges);
+            saveBtn.classList.toggle('cursor-not-allowed', !hasChanges);
         }
     }
 

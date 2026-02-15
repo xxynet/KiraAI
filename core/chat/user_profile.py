@@ -57,7 +57,7 @@ class UserProfileStore:
                     except Exception as e:
                         logger.warning(f"Skipping malformed profile '{uid}': {e}")
             except Exception as e:
-                logger.exception(f"Failed to load user profiles: {e}")
+                logger.exception("Failed to load user profiles")
                 self._profiles = {}
         else:
             dir_path = os.path.dirname(self.path) or '.'
@@ -72,7 +72,7 @@ class UserProfileStore:
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            logger.exception(f"Failed to save user profiles: {e}")
+            logger.exception("Failed to save user profiles")
 
     def _get_profile_unlocked(self, user_id: str) -> UserProfile:
         """获取用户画像（调用方须已持有 _lock），不存在则创建"""

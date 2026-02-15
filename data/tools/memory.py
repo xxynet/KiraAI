@@ -246,16 +246,15 @@ class MemoryRemoveTool(BaseTool):
                             vector_sync_error = f"delete_memory returned False for entry {vector_id}"
                             logger.warning(vector_sync_error)
 
-                    # 仅在删除成功（或无需删除）时更新映射
-                    if not vector_sync_error:
-                        new_map = {}
-                        for k, v in vmap.items():
-                            if k < index:
-                                new_map[k] = v
-                            elif k > index:
-                                new_map[k - 1] = v
-                            # k == index 已删除，跳过
-                        _save_vector_map(new_map)
+                    # 始终更新映射：文件已删除行，映射必须同步前移
+                    new_map = {}
+                    for k, v in vmap.items():
+                        if k < index:
+                            new_map[k] = v
+                        elif k > index:
+                            new_map[k - 1] = v
+                        # k == index 已删除，跳过
+                    _save_vector_map(new_map)
                 except Exception as e:
                     vector_sync_error = f"Failed to sync delete to vector DB: {e}"
                     logger.warning(vector_sync_error)
