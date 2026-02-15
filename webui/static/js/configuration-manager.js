@@ -803,12 +803,25 @@ class ConfigurationManager {
         this.redoStack = [];
     }
 
+    _findFieldByKey(key) {
+        for (const group of this.getSchema()) {
+            for (const field of group.fields) {
+                if (field.key === key) return field;
+            }
+        }
+        return null;
+    }
+
     undo() {
         if (this.undoStack.length === 0) return;
         const change = this.undoStack.pop();
         this.redoStack.push(change);
         this._setNestedValue(this.currentData, change.key, this._deepClone(change.oldValue));
         this._updateModifiedState(change.key);
+        const field = this._findFieldByKey(change.key);
+        if (field) {
+            this._validateField(field, this._getNestedValue(this.currentData, change.key));
+        }
         this.render();
     }
 
@@ -818,6 +831,10 @@ class ConfigurationManager {
         this.undoStack.push(change);
         this._setNestedValue(this.currentData, change.key, this._deepClone(change.newValue));
         this._updateModifiedState(change.key);
+        const field = this._findFieldByKey(change.key);
+        if (field) {
+            this._validateField(field, this._getNestedValue(this.currentData, change.key));
+        }
         this.render();
     }
 
