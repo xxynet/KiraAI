@@ -126,7 +126,7 @@ class LLMClient:
         provider_name = stt_model.model.provider_name
         model_id = stt_model.model.model_id
         logger.info(f"Recognizing text using {model_id} ({provider_name})")
-        text = await stt_model.speech_to_text(stt_model, bs64)
+        text = await stt_model.speech_to_text(bs64)
         logger.info(f"Recognized text: {text}")
         return text
 

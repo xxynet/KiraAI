@@ -168,11 +168,11 @@ class MessageProcessor:
         # Start processing
         formatted_messages_str = ""
         for message in message_processing:
-            message_list = message.content
+            message_list = message.chain
             message.message_str = await self.message_format_to_text(message_list)
             formatted_message = self.prompt_manager.format_user_message(message)
             formatted_messages_str += f"{formatted_message}\n"
-        logger.info(f"processing message(s) from {msg.adapter_name}:\n{formatted_messages_str}")
+        logger.info(f"processing message(s) from {msg.adapter.name}:\n{formatted_messages_str}")
 
         # Get existing session
         session_list = self.get_session_list_prompt()
@@ -183,8 +183,8 @@ class MessageProcessor:
 
         # Build chat environment
         chat_env = {
-            "platform": msg.platform,
-            "adapter": msg.adapter_name,
+            "platform": msg.adapter.platform,
+            "adapter": msg.adapter.name,
             "chat_type": 'GroupMessage' if msg.is_group_message() else 'DirectMessage',
             "self_id": msg.self_id,
             "session_title": session_title,
@@ -198,7 +198,7 @@ class MessageProcessor:
         core_memory = self.memory_manager.get_core_memory()
 
         # Get emoji_dict
-        emoji_dict = getattr(get_adapter_by_name(msg.adapter_name), "emoji_dict", {})
+        emoji_dict = getattr(get_adapter_by_name(msg.adapter.name), "emoji_dict", {})
 
         # Generate agent prompt
         agent_prompt = self.prompt_manager.get_agent_prompt(chat_env, core_memory, msg.message_types, emoji_dict)

@@ -19,7 +19,12 @@ class Prompt:
         self.source = source
         self.content = content
 
-        self.content.format(**kwargs)
+        try:
+            self.content.format(**kwargs)
+        except KeyError:
+            pass
+        except Exception:
+            pass
 
 
 class PromptManager:
@@ -188,9 +193,9 @@ class PromptManager:
         if isinstance(msg, KiraMessageEvent):
             if msg.is_group_message():
                 # group message format
-                return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [group_name: {msg.group_name} group_id: {msg.group_id} user_nickname: {msg.user_nickname}, user_id: {msg.user_id}] | {msg.message_str}"
+                return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [group_name: {msg.group.group_name} group_id: {msg.group.group_id} user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
             else:
                 # direct message format
-                return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [user_nickname: {msg.user_nickname}, user_id: {msg.user_id}] | {msg.message_str}"
+                return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
         else:
             return ""

@@ -76,22 +76,28 @@ def register_tool(name: str, description: str, params: dict):
     return decorator
 
 
-def on_im_message(priority: Union[Priority, int] = Priority.MEDIUM):
-    def decorator(func: Callable):
-        plugin_id = get_obj_plugin_id(func)
-        eh = EventHandler(
-            EventType.IMMessage,
-            priority=priority,
-            handler=func,
-            desc=func.__doc__
-        )
+class OnEventDeco:
 
-        plugin_entry = _plugin_components.setdefault(plugin_id, {})
-        hooks = plugin_entry.setdefault("hooks", [])
-        hooks.append(eh)
-        return func
+    @staticmethod
+    def im_message(priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            eh = EventHandler(
+                EventType.IMMessage,
+                priority=priority,
+                handler=func,
+                desc=func.__doc__
+            )
 
-    return decorator
+            plugin_entry = _plugin_components.setdefault(plugin_id, {})
+            hooks = plugin_entry.setdefault("hooks", [])
+            hooks.append(eh)
+            return func
+
+        return decorator
+
+
+on = OnEventDeco()
 
 
 class PluginManager:

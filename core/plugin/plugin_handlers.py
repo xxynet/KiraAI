@@ -2,6 +2,10 @@ from enum import Enum, auto
 from dataclasses import dataclass
 from typing import Optional, Union, Callable, Any, Dict, List
 
+from core.logging_manager import get_logger
+
+logger = get_logger("hook", "orange")
+
 
 class Priority(Enum):
     """Priority of a event handler"""
@@ -37,7 +41,11 @@ class EventHandler:
         return self.priority > other.priority
 
     async def exec_handler(self, event, *args, **kwargs):
-        await self.handler(event, *args, **kwargs)
+        try:
+            await self.handler(event, *args, **kwargs)
+        except Exception:
+            import traceback
+            logger.error(traceback.format_exc())
 
 
 class EventHandlerRegistry:

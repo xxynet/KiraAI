@@ -12,7 +12,7 @@ class User:
     """nickname"""
     nickname: str = None
 
-    extra_info: dict = field(default_factory=dict)
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -25,7 +25,7 @@ class Group:
     """group name"""
     group_name: str = None
 
-    extra_info: dict = field(default_factory=dict)
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass

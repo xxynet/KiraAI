@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from core.plugin import BasePlugin, logger, on_im_message, Priority
+from core.plugin import BasePlugin, logger, on, Priority
 from core.chat.message_utils import KiraMessageEvent
 
 from core.utils.tool_utils import BaseTool
@@ -32,6 +32,6 @@ class TestPlugin(BasePlugin):
         """
         pass
 
-    @on_im_message(priority=Priority.MEDIUM)
+    @on.im_message(priority=Priority.MEDIUM)
     async def handle_msg(self, event: KiraMessageEvent):
         pass
