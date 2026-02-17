@@ -343,6 +343,11 @@ const resources = {
                 validation_number: "{field} must be a valid number",
                 validation_positive: "{field} must be a positive number",
                 validation_failed: "Please fix validation errors before saving"
+            },
+            config: {
+                load_failed: "Configuration subsystem failed to load. Please refresh the page.",
+                module_unavailable: "Configuration module unavailable",
+                load_error: "Failed to load configuration"
             }
         }
     },
@@ -687,6 +692,11 @@ const resources = {
                 validation_number: "{field}必须为有效数字",
                 validation_positive: "{field}必须为正数",
                 validation_failed: "请先修正验证错误再保存"
+            },
+            config: {
+                load_failed: "配置子系统加载失败，请刷新页面。",
+                module_unavailable: "配置模块不可用",
+                load_error: "加载配置失败"
             }
         }
     }
@@ -748,9 +758,11 @@ function updateTranslations() {
                 const ariaTranslation = i18next.t(ariaKey);
                 if (ariaTranslation && ariaTranslation !== ariaKey) {
                     element.setAttribute('aria-label', ariaTranslation);
+                    element.setAttribute('data-i18n-aria-generated', 'false');
                 }
-            } else if (!element.getAttribute('aria-label')) {
+            } else if (!element.getAttribute('aria-label') || element.getAttribute('data-i18n-aria-generated') === 'true') {
                 element.setAttribute('aria-label', translation);
+                element.setAttribute('data-i18n-aria-generated', 'true');
             }
         }
     });

@@ -106,7 +106,7 @@ class MemoryAddTool(BaseTool):
 
                 try:
                     _memory_manager.vector_store.add_memory(entry, embedding=embedding)
-                except (ValueError, Exception) as e:
+                except Exception as e:
                     logger.warning(f"Could not store memory to vector DB (entry.id={entry.id}): {e}")
                     return f"Core memory added, but vector store write failed: {e}"
 

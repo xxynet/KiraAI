@@ -48,7 +48,7 @@ class UserProfileStore:
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                allowed_keys = {f.name for f in __import__('dataclasses').fields(UserProfile)}
+                allowed_keys = {f.name for f in fields(UserProfile)}
                 for uid, profile_data in data.items():
                     try:
                         sanitized = {k: v for k, v in profile_data.items() if k in allowed_keys}

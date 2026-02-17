@@ -155,6 +155,9 @@ class SiliconflowEmbeddingClient(EmbeddingModelClient):
         super().__init__(model)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+
         timeout_sec = self.model.model_config.get("timeout", 60)
         slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0)
 
@@ -173,6 +176,15 @@ class SiliconflowEmbeddingClient(EmbeddingModelClient):
             if elapsed > slow_threshold:
                 logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
             return [item.embedding for item in response.data]
+        except APIStatusError as e:
+            logger.exception(f"Embedding APIStatusError: {e}")
+            return []
+        except APITimeoutError as e:
+            logger.exception(f"Embedding APITimeoutError: {e}")
+            return []
+        except APIConnectionError as e:
+            logger.exception(f"Embedding APIConnectionError: {e}")
+            return []
         except Exception:
             logger.exception("Embedding error")
             return []

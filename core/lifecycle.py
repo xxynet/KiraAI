@@ -61,7 +61,7 @@ class KiraLifecycle:
         results = await asyncio.gather(*self.tasks, return_exceptions=True)
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                task_name = ['sticker_scan', 'memory_forgetting'][i]
+                task_name = getattr(self.tasks[i], 'get_name', lambda: f'task_{i}')()
                 logger.error(f"Scheduled task '{task_name}' failed: {result}")
 
     async def _memory_forgetting_loop(self):
@@ -75,7 +75,7 @@ class KiraLifecycle:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Memory forgetting cycle error: {e}")
+                logger.exception("Memory forgetting cycle error")
                 await asyncio.sleep(60)  # 失败后等待 60 秒再重试，避免日志风暴
 
     async def init_and_run_system(self):

@@ -1569,18 +1569,18 @@ async function loadConfigurationData() {
             _bindConfigToolbarEvents();
         } else {
             console.error('ConfigurationManager not loaded');
-            showNotification('Configuration subsystem failed to load. Please refresh the page.', 'error');
+            showNotification(getTranslation('config.load_failed', 'Configuration subsystem failed to load. Please refresh the page.'), 'error');
             // Disable config controls to prevent silent failures
             const configContainer = document.getElementById('config-dynamic-container') || document.getElementById('config-container');
             if (configContainer) {
-                configContainer.innerHTML = '<div class="text-center text-red-500 py-8">Configuration module unavailable</div>';
+                configContainer.innerHTML = '<div class="text-center text-red-500 py-8">' + getTranslation('config.module_unavailable', 'Configuration module unavailable') + '</div>';
             }
             return;
         }
     } catch (error) {
         console.error('Error loading configuration data:', error);
         const msg = error && error.message ? error.message : String(error) || 'Unknown error';
-        showNotification('Failed to load configuration: ' + msg, 'error');
+        showNotification(getTranslation('config.load_error', 'Failed to load configuration') + ': ' + msg, 'error');
     }
 }
 
@@ -3649,11 +3649,13 @@ function validateConfigFieldInput(input) {
         if (fieldType === 'integer') {
             if (!/^-?\d+$/.test(value)) {
                 errorMsg = getTranslation('model.validation_integer', '{field} must be an integer').replace('{field}', fieldName);
+            } else if (input.hasAttribute('data-config-min') && parseInt(value, 10) < parseInt(input.getAttribute('data-config-min'), 10)) {
+                errorMsg = getTranslation('model.validation_positive', '{field} must be a positive number').replace('{field}', fieldName);
             }
         } else if (fieldType === 'float') {
             if (isNaN(parseFloat(value))) {
                 errorMsg = getTranslation('model.validation_number', '{field} must be a valid number').replace('{field}', fieldName);
-            } else if (input.hasAttribute('data-config-min') && parseFloat(value) <= parseFloat(input.getAttribute('data-config-min'))) {
+            } else if (input.hasAttribute('data-config-min') && parseFloat(value) < parseFloat(input.getAttribute('data-config-min'))) {
                 errorMsg = getTranslation('model.validation_positive', '{field} must be a positive number').replace('{field}', fieldName);
             }
         }
@@ -3681,7 +3683,6 @@ function closeProviderModal() {
         modal.classList.add('hidden');
         modal.classList.remove('flex');
     }
-    AppState.selectedProviderId = null;
 }
 
 /**

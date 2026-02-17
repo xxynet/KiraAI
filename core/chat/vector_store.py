@@ -192,7 +192,7 @@ class VectorStore:
         try:
             results = self._collection.query(**query_kwargs)
         except Exception as e:
-            logger.error(f"Vector search error: {e}")
+            logger.exception(f"Vector search error: {e}")
             return []
 
         entries = []
@@ -251,7 +251,7 @@ class VectorStore:
                 limit=limit
             )
         except Exception as e:
-            logger.error(f"Get by user error: {e}")
+            logger.exception(f"Get by user error: {e}")
             return []
 
         entries = []
@@ -335,7 +335,7 @@ class VectorStore:
             self._collection.update(**update_kwargs)
             return True
         except Exception as e:
-            logger.error(f"Update memory error: {e}")
+            logger.exception(f"Update memory error: {e}")
             return False
 
     def get_memory_by_id(self, memory_id: str) -> Optional[MemoryEntry]:
@@ -364,7 +364,7 @@ class VectorStore:
             self._collection.delete(ids=[memory_id])
             return True
         except Exception as e:
-            logger.error(f"Delete memory error: {e}")
+            logger.exception(f"Delete memory error: {e}")
             return False
 
     def get_all_memories(self, limit: int = 1000, offset: int = 0) -> list[MemoryEntry]:
@@ -380,7 +380,7 @@ class VectorStore:
         try:
             results = self._collection.get(limit=limit, offset=offset)
         except Exception as e:
-            logger.error(f"Get all memories error: {e}")
+            logger.exception(f"Get all memories error: {e}")
             return []
 
         entries = []
