@@ -451,7 +451,7 @@ class ConfigurationManager {
                 if (field.validation.min !== undefined) input.min = field.validation.min;
                 if (field.validation.max !== undefined) input.max = field.validation.max;
             }
-            input.value = value != null ? value : (field.default != null ? field.default : '');
+            input.value = value !== undefined && value !== null ? value : (field.default !== undefined && field.default !== null ? field.default : '');
         } else if (field.type === 'float') {
             input = document.createElement('input');
             input.type = 'number';
@@ -461,7 +461,7 @@ class ConfigurationManager {
                 if (field.validation.min !== undefined) input.min = field.validation.min;
                 if (field.validation.max !== undefined) input.max = field.validation.max;
             }
-            input.value = value != null ? value : (field.default != null ? field.default : '');
+            input.value = value !== undefined && value !== null ? value : (field.default !== undefined && field.default !== null ? field.default : '');
         } else if (field.type === 'switch') {
             input = document.createElement('button');
             input.type = 'button';
@@ -484,7 +484,7 @@ class ConfigurationManager {
             input = document.createElement('input');
             input.type = 'text';
             input.className = this._getInputClass(error);
-            input.value = value != null ? String(value) : (field.default != null ? String(field.default) : '');
+            input.value = value !== undefined && value !== null ? String(value) : (field.default !== undefined && field.default !== null ? String(field.default) : '');
         }
 
         if (input.tagName !== 'BUTTON') {
@@ -753,14 +753,14 @@ class ConfigurationManager {
             input.className = this._getInputClass(error);
         }
         if (hint) {
-            if (hint.dataset.originalHint === undefined) {
-                hint.dataset.originalHint = hint.textContent;
+            if (hint.dataset.originalHintHtml === undefined) {
+                hint.dataset.originalHintHtml = hint.innerHTML;
             }
             hint.className = `text-xs mt-1 ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`;
             if (error) {
                 hint.textContent = error;
             } else {
-                hint.textContent = hint.dataset.originalHint;
+                hint.innerHTML = hint.dataset.originalHintHtml;
             }
         }
         if (label) {

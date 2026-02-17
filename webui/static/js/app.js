@@ -3681,7 +3681,7 @@ function validateConfigFieldInput(input) {
                 errorMsg = getTranslation('model.validation_positive', '{field} must be a positive number').replace('{field}', fieldName);
             }
         } else if (fieldType === 'float') {
-            if (!/^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(value)) {
+            if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(value)) {
                 errorMsg = getTranslation('model.validation_number', '{field} must be a valid number').replace('{field}', fieldName);
             } else if (input.hasAttribute('data-config-min') && parseFloat(value) < parseFloat(input.getAttribute('data-config-min'))) {
                 errorMsg = getTranslation('model.validation_positive', '{field} must be a positive number').replace('{field}', fieldName);

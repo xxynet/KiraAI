@@ -153,7 +153,7 @@ class VectorStore:
             except ValueError:
                 raise
             except Exception as e:
-                logger.error(f"embedding_func failed: {e}")
+                logger.exception(f"embedding_func failed: {e}")
                 raise ValueError(f"Failed to generate embedding via embedding_func: {e}") from e
         elif self._has_external_embeddings:
             # 已启用外部嵌入但未提供，抛出异常而非静默丢失数据

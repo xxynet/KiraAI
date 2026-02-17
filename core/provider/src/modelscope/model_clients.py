@@ -6,7 +6,7 @@ import base64
 from typing import Optional
 
 from core.provider import ModelInfo
-from core.provider import LLMModelClient, ImageModelClient
+from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.provider.image_result import ImageResult
 from core.logging_manager import get_logger
@@ -61,16 +61,16 @@ class ModelScopeLLMClient(LLMModelClient):
                 llm_resp.output_tokens = response.usage.completion_tokens
             return llm_resp
         except APIStatusError as e:
-            logger.error(f"APIStatusError: {e}")
+            logger.exception(f"APIStatusError: {e}")
             return LLMResponse(text_response=f"[Error] APIStatusError: {e}")
         except APITimeoutError as e:
-            logger.error(f"APITimeoutError: {e}")
+            logger.exception(f"APITimeoutError: {e}")
             return LLMResponse(text_response=f"[Error] APITimeoutError: {e}")
         except APIConnectionError as e:
-            logger.error(f"APIConnectionError: {e}")
+            logger.exception(f"APIConnectionError: {e}")
             return LLMResponse(text_response=f"[Error] APIConnectionError: {e}")
         except Exception as e:
-            logger.error(f"Error: {e}")
+            logger.exception(f"Error: {e}")
             return LLMResponse(text_response=f"[Error] {e}")
 
 
@@ -129,3 +129,43 @@ class ModelScopeImageClient(ImageModelClient):
                 await asyncio.sleep(2)
 
         raise TimeoutError("Image generation timed out")
+
+
+class ModelScopeEmbeddingClient(EmbeddingModelClient):
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+
+        timeout_sec = self.model.model_config.get("timeout", 60)
+        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0)
+
+        client = AsyncOpenAI(
+            api_key=self.model.provider_config.get("api_key", ""),
+            base_url="https://api-inference.modelscope.cn/v1",
+            timeout=timeout_sec
+        )
+        try:
+            start_time = time.perf_counter()
+            response = await client.embeddings.create(
+                model=self.model.model_id,
+                input=texts
+            )
+            elapsed = round(time.perf_counter() - start_time, 2)
+            if elapsed > slow_threshold:
+                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
+            return [item.embedding for item in response.data]
+        except APIStatusError:
+            logger.exception("Embedding APIStatusError")
+            return []
+        except APITimeoutError:
+            logger.exception("Embedding APITimeoutError")
+            return []
+        except APIConnectionError:
+            logger.exception("Embedding APIConnectionError")
+            return []
+        except Exception:
+            logger.exception("Embedding error")
+            return []

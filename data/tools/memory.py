@@ -141,6 +141,10 @@ class MemoryUpdateTool(BaseTool):
     }
 
     async def execute(self, index: int, text: str) -> str:
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            return "Index must be an integer"
         async with MEMORY_IO_LOCK:
             _ensure_memory_file()
             with open(CORE_MEMORY_PATH, "r", encoding="utf-8") as mem:
@@ -215,6 +219,10 @@ class MemoryRemoveTool(BaseTool):
     }
 
     async def execute(self, index: int) -> str:
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            return "Index must be an integer"
         async with MEMORY_IO_LOCK:
             _ensure_memory_file()
             with open(CORE_MEMORY_PATH, "r", encoding="utf-8") as mem:
