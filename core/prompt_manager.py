@@ -170,14 +170,19 @@ class PromptManager:
         try:
             with open(self.agent_path, 'r', encoding="utf-8") as f:
                 agent_prompt = f.read()
+
+            # Escape braces in external content to prevent KeyError/ValueError
+            def _escape_braces(s: str) -> str:
+                return s.replace("{", "{{").replace("}", "}}")
+
             return agent_prompt.format(
                 persona=self.persona_manager.get_persona(),
                 format=self._load_format_prompt(message_types, emoji_dict),
                 time_str=formatted_time,
                 chat_env=chat_env,
-                core_memory=core_memory,
-                recalled_memories=recalled_memories if recalled_memories else "暂无相关长期记忆",
-                user_profile=user_profile if user_profile else "暂无画像信息",
+                core_memory=_escape_braces(core_memory),
+                recalled_memories=_escape_braces(recalled_memories) if recalled_memories else "暂无相关长期记忆",
+                user_profile=_escape_braces(user_profile) if user_profile else "暂无画像信息",
                 accounts=self.ada_config_prompt,
                 max_tool_loop=self.kira_config.get_config("bot_config.agent.max_tool_loop")
             )

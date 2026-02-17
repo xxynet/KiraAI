@@ -251,7 +251,7 @@ class MemoryManager:
                     logger.warning(f"Embedding search failed: {e}")
 
             # 无外部 embedding 模型时，尝试使用 ChromaDB 内置文本搜索
-            if not self.vector_store._has_external_embeddings:
+            if not self.vector_store.has_external_embeddings:
                 try:
                     return await asyncio.to_thread(
                         self.vector_store.search,
@@ -451,7 +451,8 @@ class MemoryManager:
             try:
                 embeddings = await self._llm_client.embed([content])
                 if embeddings and embeddings[0]:
-                    existing = self.vector_store.search(
+                    existing = await asyncio.to_thread(
+                        self.vector_store.search,
                         query_embedding=embeddings[0],
                         user_id=user_id,
                         memory_type="fact",
@@ -484,7 +485,8 @@ class MemoryManager:
                             merged_embedding = embs[0]
                     except Exception:
                         logger.debug("Failed to generate embedding for merged content")
-                updated = self.vector_store.update_memory(
+                updated = await asyncio.to_thread(
+                    self.vector_store.update_memory,
                     most_similar.id,
                     content=merged,
                     importance=max(importance, most_similar.importance),
@@ -524,7 +526,7 @@ class MemoryManager:
                 logger.debug("Failed to generate embedding for new memory")
 
         try:
-            self.vector_store.add_memory(entry, embedding=embedding)
+            await asyncio.to_thread(self.vector_store.add_memory, entry, embedding=embedding)
             logger.info(f"New memory stored: type={entry.memory_type}, id={entry.id}, len={len(content)}, embedding={'present' if embedding else 'None'}")
         except ValueError as e:
             logger.warning(f"Could not store memory (no embedding available): {e}")
@@ -599,7 +601,8 @@ class MemoryManager:
                     # 检查是否已有高度相似的反思（距离阈值 0.3）
                     existing = []
                     if embedding:
-                        existing = self.vector_store.search(
+                        existing = await asyncio.to_thread(
+                            self.vector_store.search,
                             query_embedding=embedding,
                             user_id=user_id,
                             memory_type="reflection",
@@ -621,7 +624,7 @@ class MemoryManager:
                     )
 
                     try:
-                        self.vector_store.add_memory(entry, embedding=embedding)
+                        await asyncio.to_thread(self.vector_store.add_memory, entry, embedding=embedding)
                         logger.info(f"Reflection stored: id={entry.id}, len={len(insight)}, embedding={'present' if embedding else 'None'}")
                     except Exception as e:
                         logger.error(f"Failed to store reflection (id={entry.id}, len={len(insight)}, embedding={'present' if embedding else 'None'}): {e}")
@@ -652,7 +655,7 @@ class MemoryManager:
         page_size = 1000
         offset = 0
         while True:
-            page = self.vector_store.get_all_memories(limit=page_size, offset=offset)
+            page = await asyncio.to_thread(self.vector_store.get_all_memories, limit=page_size, offset=offset)
             if not page:
                 break
             all_memories.extend(page)
@@ -665,14 +668,15 @@ class MemoryManager:
 
             if score < 0.2:
                 # 太低价值，直接删除
-                if self.vector_store.delete_memory(mem.id):
+                if await asyncio.to_thread(self.vector_store.delete_memory, mem.id):
                     removed_count += 1
                     removed_ids.add(mem.id)
                 else:
                     logger.warning(f"Failed to delete memory {mem.id} during forgetting cycle")
             elif score < 0.4 and mem.memory_type == "fact":
                 # 低价值事实，标记降级
-                if not self.vector_store.update_memory(
+                if not await asyncio.to_thread(
+                    self.vector_store.update_memory,
                     mem.id,
                     importance=max(1, mem.importance - 1)
                 ):
@@ -724,7 +728,7 @@ class MemoryManager:
             page_size = 1000
             offset = 0
             while True:
-                page = self.vector_store.get_all_memories(limit=page_size, offset=offset)
+                page = await asyncio.to_thread(self.vector_store.get_all_memories, limit=page_size, offset=offset)
                 if not page:
                     break
                 all_memories.extend(page)
@@ -780,16 +784,23 @@ class MemoryManager:
                             except Exception:
                                 logger.debug("Failed to generate embedding for summary")
                         try:
-                            self.vector_store.add_memory(entry, embedding=summary_embedding)
+                            await asyncio.to_thread(self.vector_store.add_memory, entry, embedding=summary_embedding)
                             summaries_added += 1
                         except Exception as e:
                             logger.error(f"Failed to store summary (id={entry.id}): {e}")
 
                     # 仅在至少一条摘要成功写入后才删除旧事实
                     if summaries_added > 0:
+                        deleted_count = 0
+                        failed_ids = []
                         for old_fact in old_facts:
-                            self.vector_store.delete_memory(old_fact.id)
-                        logger.info(f"Summarized {len(old_facts)} old facts into {summaries_added} summaries for user {user_id}")
+                            if await asyncio.to_thread(self.vector_store.delete_memory, old_fact.id):
+                                deleted_count += 1
+                            else:
+                                failed_ids.append(old_fact.id)
+                        if failed_ids:
+                            logger.warning(f"Failed to delete {len(failed_ids)} old facts during summarization for user {user_id}: {failed_ids}")
+                        logger.info(f"Summarized {len(old_facts)} old facts into {summaries_added} summaries for user {user_id} (deleted {deleted_count}/{len(old_facts)})")
                     else:
                         logger.warning(f"No summaries stored successfully, keeping {len(old_facts)} old facts for user {user_id}")
             except Exception as e:

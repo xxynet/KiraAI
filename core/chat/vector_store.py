@@ -85,6 +85,11 @@ class VectorStore:
 
         logger.info(f"VectorStore initialized (external_embeddings={self._has_external_embeddings})")
 
+    @property
+    def has_external_embeddings(self) -> bool:
+        """Whether the collection uses external embeddings."""
+        return self._has_external_embeddings
+
     def _persist_external_flag(self):
         """将外部嵌入标志持久化到 collection 元数据"""
         try:

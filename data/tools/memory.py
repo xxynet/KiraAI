@@ -125,6 +125,9 @@ class MemoryAddTool(BaseTool):
                 except Exception as e:
                     logger.warning(f"Core memory added and vector stored, but vector map persistence failed (entry.id={entry.id}): {e}")
                     return f"Core memory added, but vector map save failed: {e}"
+            else:
+                logger.warning("memory_manager not available, long-term memory not written")
+                return "Core memory added; long-term memory not available"
 
         return "Core memory added"
 
@@ -148,6 +151,17 @@ class MemoryUpdateTool(BaseTool):
             index = int(index)
         except (TypeError, ValueError):
             return "Index must be an integer"
+
+        # 在锁外生成 embedding（可能耗时较长）
+        embedding = None
+        if _memory_manager and hasattr(_memory_manager, '_llm_client') and _memory_manager._llm_client:
+            try:
+                embeddings = await _memory_manager._llm_client.embed([text])
+                if embeddings and embeddings[0]:
+                    embedding = embeddings[0]
+            except Exception as e:
+                logger.debug(f"Failed to generate embedding for updated memory: {e}")
+
         async with MEMORY_IO_LOCK:
             _ensure_memory_file()
             with open(CORE_MEMORY_PATH, "r", encoding="utf-8") as mem:
@@ -182,14 +196,6 @@ class MemoryUpdateTool(BaseTool):
                             vector_id = matched[0].id
 
                     if vector_id:
-                        embedding = None
-                        if hasattr(_memory_manager, '_llm_client') and _memory_manager._llm_client:
-                            try:
-                                embeddings = await _memory_manager._llm_client.embed([text])
-                                if embeddings and embeddings[0]:
-                                    embedding = embeddings[0]
-                            except Exception as e:
-                                logger.debug(f"Failed to generate embedding for updated memory: {e}")
                         try:
                             ok = _memory_manager.vector_store.update_memory(vector_id, content=text, embedding=embedding)
                             if not ok:

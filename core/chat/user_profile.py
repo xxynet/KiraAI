@@ -44,7 +44,12 @@ class UserProfileStore:
         logger.info("UserProfileStore initialized")
 
     def _load(self):
-        """从文件加载画像数据"""
+        """从文件加载画像数据
+        
+        注意: 单条 profile 解析失败不会阻止其余 profile 的加载。
+        已成功加载的 profile 会保留在 _profiles 中，即使后续条目出错。
+        这是有意为之的行为——确保部分损坏的文件不会导致全部数据丢失。
+        """
         if os.path.exists(self.path):
             try:
                 with open(self.path, "r", encoding="utf-8") as f:

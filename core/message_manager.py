@@ -197,10 +197,12 @@ class MessageProcessor:
         # Get core memory
         core_memory = self.memory_manager.get_core_memory()
 
+        # 构建用户标识（跨 recall / profile 复用）
+        user_key = f"{msg.adapter_name}:{msg.user_id}"
+
         # Recall long-term memories (RAG)
         recalled_memories_str = ""
         try:
-            user_key = f"{msg.adapter_name}:{msg.user_id}"
             recalled = await self.memory_manager.recall(formatted_messages_str, user_id=user_key, k=5)
 
             # 群聊场景：额外搜索群级记忆（海马体在群聊中提取的事实存储在群 ID 下）
@@ -217,12 +219,11 @@ class MessageProcessor:
 
             recalled_memories_str = self.memory_manager.format_recalled_memories(recalled)
         except Exception as e:
-            logger.debug(f"Long-term memory recall skipped: {e}")
+            logger.warning(f"Long-term memory recall failed: {e}")
 
         # Get user profile
         user_profile_str = ""
         try:
-            user_key = f"{msg.adapter_name}:{msg.user_id}"
             user_profile_str = self.memory_manager.get_user_profile_prompt(user_key)
             # Update interaction stats
             self.memory_manager.update_user_interaction(

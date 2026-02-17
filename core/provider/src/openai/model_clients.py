@@ -106,8 +106,8 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
         if not texts:
             return []
 
-        timeout_sec = self.model.model_config.get("timeout", 60)
-        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0)
+        timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
+        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
 
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
@@ -124,14 +124,8 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
             if elapsed > slow_threshold:
                 logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
             return [item.embedding for item in response.data]
-        except APIStatusError:
-            logger.exception("Embedding APIStatusError")
-            return []
-        except APITimeoutError:
-            logger.exception("Embedding APITimeoutError")
-            return []
-        except APIConnectionError:
-            logger.exception("Embedding APIConnectionError")
+        except (APIStatusError, APITimeoutError, APIConnectionError):
+            logger.exception("Embedding API error")
             return []
         except Exception:
             logger.exception("Embedding error")

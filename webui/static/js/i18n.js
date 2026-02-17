@@ -744,11 +744,13 @@ i18next
         }
         
         // Listen for language changes
-        document.getElementById('language-selector').addEventListener('change', (e) => {
-            i18next.changeLanguage(e.target.value).then(() => {
-                updateTranslations();
+        if (languageSelector) {
+            languageSelector.addEventListener('change', (e) => {
+                i18next.changeLanguage(e.target.value).then(() => {
+                    updateTranslations();
+                });
             });
-        });
+        }
     });
 
 /**

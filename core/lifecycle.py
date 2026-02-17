@@ -55,16 +55,14 @@ class KiraLifecycle:
 
     async def schedule_tasks(self):
         self.tasks = [
-            asyncio.create_task(self.sticker_manager.scan_and_register_sticker()),
-            asyncio.create_task(self._memory_forgetting_loop())
+            asyncio.create_task(self.sticker_manager.scan_and_register_sticker(), name="sticker_scan"),
+            asyncio.create_task(self._memory_forgetting_loop(), name="memory_forgetting")
         ]
         results = await asyncio.gather(*self.tasks, return_exceptions=True)
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 task = self.tasks[i]
-                name_attr = getattr(task, 'get_name', None)
-                task_name = name_attr() if callable(name_attr) else f"task_{i}"
-                logger.error(f"Scheduled task '{task_name}' failed: {result}")
+                logger.error(f"Scheduled task '{task.get_name()}' failed: {result}")
 
     async def _memory_forgetting_loop(self):
         """定期运行记忆遗忘周期"""

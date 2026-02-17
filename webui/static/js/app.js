@@ -1148,6 +1148,13 @@ async function togglePluginEnabled(button) {
         if (!response.ok) {
             throw new Error(`Failed to update plugin state: ${response.status}`);
         }
+        // Sync local state so subsequent reads see the updated value
+        if (AppState.data.plugins) {
+            const plugin = AppState.data.plugins.find(p => p.id === pluginId || p.name === pluginId);
+            if (plugin) {
+                plugin.enabled = nextState;
+            }
+        }
     } catch (error) {
         console.error('Error updating plugin state:', error);
         // Rollback UI to original state
@@ -3587,7 +3594,7 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
                 <svg class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-normal max-w-xs z-50">
+                <div class="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-normal max-w-xs z-50">
                     ${escapeHtml(field.hint)}
                 </div>
             `;
@@ -4246,22 +4253,18 @@ async function saveModel() {
     // Validate config fields
     const configContainer = document.getElementById('model-config-container');
     let hasValidationError = false;
-    if (configContainer) {
-        const inputs = configContainer.querySelectorAll('input[data-config-key]');
-        inputs.forEach(input => {
-            if (!validateConfigFieldInput(input)) {
-                hasValidationError = true;
-            }
-        });
-    }
+    const configInputs = configContainer ? configContainer.querySelectorAll('input[data-config-key]') : [];
+    configInputs.forEach(input => {
+        if (!validateConfigFieldInput(input)) {
+            hasValidationError = true;
+        }
+    });
     if (hasValidationError) {
         showNotification(getTranslation('model.validation_failed', 'Please fix validation errors before saving'), 'error');
         return;
     }
     const config = {};
-    if (configContainer) {
-        const inputs = configContainer.querySelectorAll('input[data-config-key]');
-        inputs.forEach(input => {
+    configInputs.forEach(input => {
             const key = input.getAttribute('data-config-key');
             const fieldType = input.getAttribute('data-config-type');
             if (!key) {
@@ -4275,7 +4278,6 @@ async function saveModel() {
             }
             config[key] = value;
         });
-    }
     try {
         let response;
         if (mode === 'edit') {
