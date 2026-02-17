@@ -39,6 +39,7 @@
         "name": "超时",
         "type": "integer",
         "default": 60,
+        "min": 1,
         "hint": "请求超时时间（秒）"
       },
       "slow_request_threshold": {

@@ -61,16 +61,17 @@ class ModelScopeLLMClient(LLMModelClient):
                 llm_resp.output_tokens = response.usage.completion_tokens
             return llm_resp
         except APIStatusError as e:
-            # the model does not support function calling etc.
-            # 403 Authorization failed (api key error)
             logger.error(f"APIStatusError: {e}")
+            return LLMResponse(text_response=f"[Error] APIStatusError: {e}")
         except APITimeoutError as e:
             logger.error(f"APITimeoutError: {e}")
+            return LLMResponse(text_response=f"[Error] APITimeoutError: {e}")
         except APIConnectionError as e:
-            # APIConnectionError: Connection error.(base_url error)
             logger.error(f"APIConnectionError: {e}")
+            return LLMResponse(text_response=f"[Error] APIConnectionError: {e}")
         except Exception as e:
             logger.error(f"Error: {e}")
+            return LLMResponse(text_response=f"[Error] {e}")
 
 
 class ModelScopeImageClient(ImageModelClient):
@@ -88,7 +89,7 @@ class ModelScopeImageClient(ImageModelClient):
 
         timeout_seconds = int(self.model.model_config.get("timeout", 10))
 
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             # 提交生成任务
             resp = await client.post(
                 f"{base_url}v1/images/generations",

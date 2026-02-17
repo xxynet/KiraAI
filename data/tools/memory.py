@@ -296,6 +296,15 @@ class MemorySearchTool(BaseTool):
         if not _memory_manager or not hasattr(_memory_manager, 'recall'):
             return "Memory system not available"
 
+        # Validate k parameter
+        if not isinstance(k, int) or k <= 0:
+            try:
+                k = int(k)
+            except (TypeError, ValueError):
+                return "Error: k must be a positive integer"
+            if k <= 0:
+                return "Error: k must be a positive integer"
+
         memories = await _memory_manager.recall(query, user_id=user_id, k=k)
         if not memories:
             return "No relevant memories found"

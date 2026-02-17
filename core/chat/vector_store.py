@@ -1,10 +1,11 @@
 """
 向量数据库存储层，使用 ChromaDB 实现长期记忆的向量检索
 """
+import inspect
 import os
 import time
 import uuid
-from typing import Optional
+from typing import Optional, Callable, Sequence
 from dataclasses import dataclass, field
 
 import chromadb
@@ -42,9 +43,14 @@ class MemoryEntry:
 class VectorStore:
     """基于 ChromaDB 的向量存储"""
 
-    def __init__(self, embedding_func=None):
+    def __init__(self, embedding_func: Optional[Callable[[list[str]], list[Sequence[float]]]] = None):
         os.makedirs(VECTOR_DB_PATH, exist_ok=True)
 
+        if embedding_func is not None and inspect.iscoroutinefunction(embedding_func):
+            raise TypeError(
+                "embedding_func must be a synchronous callable, got async function. "
+                "Wrap it with a sync adapter or pass the already-awaited embedding list instead."
+            )
         self._embedding_func = embedding_func
         self._has_external_embeddings = False  # 是否存储过外部嵌入向量
 
@@ -64,9 +70,9 @@ class VectorStore:
         if col_meta.get("external_embeddings"):
             self._has_external_embeddings = True
         elif self._collection.count() > 0:
-            # 回退检测：获取一条现有记徆的嵌入维度
+            # 回退检测：获取一条现有记忆的嵌入维度
             try:
-                sample = self._collection.peek(limit=1, include=['embeddings'])
+                sample = self._collection.get(limit=1, include=['embeddings'])
                 if sample and sample.get("embeddings") and sample["embeddings"]:
                     emb = sample["embeddings"][0]
                     if emb and len(emb) > 0:
@@ -126,6 +132,11 @@ class VectorStore:
             # 使用构造时注入的嵌入函数生成向量
             try:
                 generated = self._embedding_func([entry.content])
+                if inspect.isawaitable(generated):
+                    raise TypeError(
+                        "embedding_func returned a coroutine/awaitable. "
+                        "Pass a synchronous callable or the already-awaited embedding list."
+                    )
                 if generated and generated[0] and len(generated[0]) > 0:
                     if not self._has_external_embeddings:
                         self._has_external_embeddings = True
@@ -318,6 +329,11 @@ class VectorStore:
                     # 使用构造时注入的嵌入函数生成向量
                     try:
                         generated = self._embedding_func([content])
+                        if inspect.isawaitable(generated):
+                            raise TypeError(
+                                "embedding_func returned a coroutine/awaitable. "
+                                "Pass a synchronous callable or the already-awaited embedding list."
+                            )
                         if generated and generated[0] and len(generated[0]) > 0:
                             update_kwargs["embeddings"] = [generated[0]]
                             if not self._has_external_embeddings:

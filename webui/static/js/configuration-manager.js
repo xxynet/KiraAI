@@ -417,9 +417,6 @@ class ConfigurationManager {
     }
 
     _renderField(field) {
-        // Ensure default is written to currentData if missing
-        this._ensureDefaultForField(field);
-
         const value = this._getNestedValue(this.currentData, field.key);
         const isModified = this.modifiedFields.has(field.key);
         const error = this.validationErrors[field.key];
