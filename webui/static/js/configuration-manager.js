@@ -451,7 +451,7 @@ class ConfigurationManager {
                 if (field.validation.min !== undefined) input.min = field.validation.min;
                 if (field.validation.max !== undefined) input.max = field.validation.max;
             }
-            input.value = value !== undefined && value !== null ? value : (field.default !== undefined && field.default !== null ? field.default : '');
+            input.value = value === null ? '' : (value !== undefined ? value : (field.default !== undefined && field.default !== null ? field.default : ''));
         } else if (field.type === 'float') {
             input = document.createElement('input');
             input.type = 'number';
@@ -461,7 +461,7 @@ class ConfigurationManager {
                 if (field.validation.min !== undefined) input.min = field.validation.min;
                 if (field.validation.max !== undefined) input.max = field.validation.max;
             }
-            input.value = value !== undefined && value !== null ? value : (field.default !== undefined && field.default !== null ? field.default : '');
+            input.value = value === null ? '' : (value !== undefined ? value : (field.default !== undefined && field.default !== null ? field.default : ''));
         } else if (field.type === 'switch') {
             input = document.createElement('button');
             input.type = 'button';
@@ -484,7 +484,7 @@ class ConfigurationManager {
             input = document.createElement('input');
             input.type = 'text';
             input.className = this._getInputClass(error);
-            input.value = value !== undefined && value !== null ? String(value) : (field.default !== undefined && field.default !== null ? String(field.default) : '');
+            input.value = value === null ? '' : (value !== undefined ? String(value) : (field.default !== undefined && field.default !== null ? String(field.default) : ''));
         }
 
         if (input.tagName !== 'BUTTON') {

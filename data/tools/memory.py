@@ -77,6 +77,27 @@ class MemoryAddTool(BaseTool):
             importance = 5
         importance = min(max(importance, 1), 10)
 
+        # 在锁外生成 embedding（可能耗时较长）
+        embedding = None
+        entry = None
+        if _memory_manager and hasattr(_memory_manager, 'vector_store'):
+            from core.chat.vector_store import VectorStore, MemoryEntry
+            entry = MemoryEntry(
+                id=VectorStore.generate_id(),
+                user_id=user_id,
+                content=text,
+                memory_type="fact",
+                importance=importance,
+                timestamp=time.time(),
+            )
+            if hasattr(_memory_manager, '_llm_client') and _memory_manager._llm_client:
+                try:
+                    embeddings = await _memory_manager._llm_client.embed([text])
+                    if embeddings and embeddings[0]:
+                        embedding = embeddings[0]
+                except Exception as e:
+                    logger.debug(f"Failed to generate embedding for memory (text length={len(text)}): {e}")
+
         async with MEMORY_IO_LOCK:
             # 写入核心记忆文件（保持向后兼容）
             _ensure_memory_file()
@@ -90,27 +111,7 @@ class MemoryAddTool(BaseTool):
                 mem.write(text + "\n")
 
             # 同时写入向量长期记忆
-            if _memory_manager and hasattr(_memory_manager, 'vector_store'):
-                from core.chat.vector_store import VectorStore, MemoryEntry
-                entry = MemoryEntry(
-                    id=VectorStore.generate_id(),
-                    user_id=user_id,
-                    content=text,
-                    memory_type="fact",
-                    importance=importance,
-                    timestamp=time.time(),
-                )
-
-                # 尝试生成 embedding 向量
-                embedding = None
-                if hasattr(_memory_manager, '_llm_client') and _memory_manager._llm_client:
-                    try:
-                        embeddings = await _memory_manager._llm_client.embed([text])
-                        if embeddings and embeddings[0]:
-                            embedding = embeddings[0]
-                    except Exception as e:
-                        logger.debug(f"Failed to generate embedding for memory (text length={len(text)}): {e}")
-
+            if entry is not None:
                 try:
                     _memory_manager.vector_store.add_memory(entry, embedding=embedding)
                 except Exception as e:
@@ -142,6 +143,8 @@ class MemoryUpdateTool(BaseTool):
 
     async def execute(self, index: int, text: str) -> str:
         try:
+            if isinstance(index, float) and not index.is_integer():
+                return "Index must be an integer"
             index = int(index)
         except (TypeError, ValueError):
             return "Index must be an integer"
@@ -220,6 +223,8 @@ class MemoryRemoveTool(BaseTool):
 
     async def execute(self, index: int) -> str:
         try:
+            if isinstance(index, float) and not index.is_integer():
+                return "Index must be an integer"
             index = int(index)
         except (TypeError, ValueError):
             return "Index must be an integer"

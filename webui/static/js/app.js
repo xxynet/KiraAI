@@ -3734,7 +3734,18 @@ async function saveProvider() {
     const config = {};
     const configContainer = document.getElementById('provider-config-container');
     if (configContainer) {
+        // Validate all config fields before saving
+        let hasValidationError = false;
         const inputs = configContainer.querySelectorAll('input[data-config-key]');
+        inputs.forEach(input => {
+            if (!validateConfigFieldInput(input)) {
+                hasValidationError = true;
+            }
+        });
+        if (hasValidationError) {
+            showNotification('Please fix validation errors before saving', 'error');
+            return;
+        }
         inputs.forEach(input => {
             const key = input.getAttribute('data-config-key');
             const fieldType = input.getAttribute('data-config-type');

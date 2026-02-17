@@ -58,16 +58,16 @@ class OpenAILLMClient(LLMModelClient):
                 llm_resp.output_tokens = response.usage.completion_tokens
             return llm_resp
         except APIStatusError as e:
-            logger.exception(f"APIStatusError: {e}")
+            logger.exception("APIStatusError")
             return LLMResponse(text_response=f"[Error] APIStatusError: {e}")
         except APITimeoutError as e:
-            logger.exception(f"APITimeoutError: {e}")
+            logger.exception("APITimeoutError")
             return LLMResponse(text_response=f"[Error] APITimeoutError: {e}")
         except APIConnectionError as e:
-            logger.exception(f"APIConnectionError: {e}")
+            logger.exception("APIConnectionError")
             return LLMResponse(text_response=f"[Error] APIConnectionError: {e}")
         except Exception as e:
-            logger.exception(f"Error: {e}")
+            logger.exception("Error")
             return LLMResponse(text_response=f"[Error] {e}")
 
 

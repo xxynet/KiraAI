@@ -115,7 +115,7 @@ class VectorStore:
         metadata.update(entry.metadata)
 
         if embedding is not None:
-            if not embedding or len(embedding) == 0:
+            if not embedding:
                 logger.error(f"Empty embedding provided for memory id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
                 raise ValueError("Embedding must be a non-empty list of floats")
             # 有外部嵌入，使用 upsert 存储文档+向量
@@ -242,12 +242,15 @@ class VectorStore:
 
                 # 更新访问计数（内部去重搜索时不更新）
                 if update_access:
+                    now = time.time()
+                    entry.access_count += 1
+                    entry.last_accessed = now
                     self._collection.update(
                         ids=[doc_id],
                         metadatas=[{
                             **meta,
-                            "access_count": entry.access_count + 1,
-                            "last_accessed": time.time()
+                            "access_count": entry.access_count,
+                            "last_accessed": now
                         }]
                     )
                 entries.append(entry)

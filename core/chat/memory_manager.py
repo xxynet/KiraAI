@@ -231,8 +231,9 @@ class MemoryManager:
         Args:
             query: 当前用户输入
             user_id: 可选的用户ID过滤
-            k: 返回最相关的 k 条记忆
+            k: 返回最相关的 k 条记忆（最小为 1）
         """
+        k = max(1, k)
         try:
             # 使用外部 embedding 模型生成向量进行搜索
             # 不回退到 ChromaDB 默认文本搜索，避免嵌入维度不匹配
