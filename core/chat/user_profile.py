@@ -4,6 +4,7 @@
 import copy
 import json
 import os
+import tempfile
 import time
 from threading import Lock
 from typing import Optional
@@ -48,31 +49,52 @@ class UserProfileStore:
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
                     data = json.load(f)
+                if not isinstance(data, dict):
+                    logger.error(f"User profiles file is not a JSON object (got {type(data).__name__}), keeping existing profiles")
+                    return
                 allowed_keys = {f.name for f in fields(UserProfile)}
                 for uid, profile_data in data.items():
+                    if not isinstance(profile_data, dict):
+                        logger.warning(f"Skipping non-dict profile '{uid}'")
+                        continue
                     try:
                         sanitized = {k: v for k, v in profile_data.items() if k in allowed_keys}
-                        sanitized['user_id'] = sanitized.get('user_id', uid)
+                        sanitized['user_id'] = uid
                         self._profiles[uid] = UserProfile(**sanitized)
                     except Exception as e:
                         logger.warning(f"Skipping malformed profile '{uid}': {e}")
             except Exception:
                 logger.exception("Failed to load user profiles")
-                self._profiles = {}
         else:
             dir_path = os.path.dirname(self.path) or '.'
             os.makedirs(dir_path, exist_ok=True)
 
     def _save(self):
-        """保存画像数据到文件"""
+        """保存画像数据到文件（原子写入）"""
+        fd = None
+        tmp_path = None
         try:
             dir_path = os.path.dirname(self.path) or '.'
             os.makedirs(dir_path, exist_ok=True)
             data = {uid: asdict(profile) for uid, profile in self._profiles.items()}
-            with open(self.path, "w", encoding="utf-8") as f:
+            fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                fd = None  # os.fdopen takes ownership
                 json.dump(data, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self.path)
+            tmp_path = None
         except Exception:
             logger.exception("Failed to save user profiles")
+        finally:
+            if fd is not None:
+                os.close(fd)
+            if tmp_path is not None:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
 
     def _get_profile_unlocked(self, user_id: str) -> UserProfile:
         """获取用户画像（调用方须已持有 _lock），不存在则创建"""
@@ -81,22 +103,22 @@ class UserProfileStore:
         return self._profiles[user_id]
 
     def get_profile(self, user_id: str) -> UserProfile:
-        """获取用户画像，不存在则创建（线程安全）"""
+        """获取用户画像的快照副本（线程安全，调用方不能修改内部状态）"""
         with self._lock:
-            return self._get_profile_unlocked(user_id)
+            profile = self._get_profile_unlocked(user_id)
+            return copy.deepcopy(profile)
 
     def update_profile(self, user_id: str, **kwargs) -> UserProfile:
         """更新用户画像字段（user_id 字段不可修改）"""
+        allowed = {f.name for f in fields(UserProfile)} - {'user_id'}
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             for key, value in kwargs.items():
-                if key == 'user_id':
-                    continue  # user_id 由 dict key 决定，不允许通过 kwargs 覆盖
-                if hasattr(profile, key):
+                if key in allowed:
                     setattr(profile, key, value)
             profile.last_interaction = time.time()
             self._save()
-            return profile
+            return copy.deepcopy(profile)
 
     def add_trait(self, user_id: str, trait: str):
         """添加用户特征标签"""
@@ -153,6 +175,18 @@ class UserProfileStore:
             profile = self._get_profile_unlocked(user_id)
             profile.interaction_count += 1
             profile.last_interaction = time.time()
+            self._save()
+
+    def increment_and_update_profile(self, user_id: str, **kwargs):
+        """原子地增加交互计数并更新其他字段（单次 _save）"""
+        allowed = {f.name for f in fields(UserProfile)} - {'user_id'}
+        with self._lock:
+            profile = self._get_profile_unlocked(user_id)
+            profile.interaction_count += 1
+            profile.last_interaction = time.time()
+            for key, value in kwargs.items():
+                if key in allowed:
+                    setattr(profile, key, value)
             self._save()
 
     def get_profile_prompt(self, user_id: str) -> str:

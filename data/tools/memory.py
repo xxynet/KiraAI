@@ -70,6 +70,13 @@ class MemoryAddTool(BaseTool):
     }
 
     async def execute(self, text: str, user_id: str = "", importance: int = 5) -> str:
+        # Sanitize importance: coerce to int and clamp to 1-10
+        try:
+            importance = int(importance)
+        except (TypeError, ValueError):
+            importance = 5
+        importance = min(max(importance, 1), 10)
+
         async with MEMORY_IO_LOCK:
             # 写入核心记忆文件（保持向后兼容）
             _ensure_memory_file()

@@ -122,8 +122,8 @@ class MemoryManager:
             logger.error(f"Error saving memory to {path}: {e}")
 
     def get_session_info(self, session: str):
-        parts = session.split(":")
-        if not len(parts) == 3:
+        parts = session.split(":", maxsplit=2)
+        if len(parts) != 3:
             raise ValueError("Invalid session ID")
         if session not in self.chat_memory:
             self.chat_memory[session] = {
@@ -248,8 +248,19 @@ class MemoryManager:
                 except Exception as e:
                     logger.warning(f"Embedding search failed: {e}")
 
-            # 无可用的 embedding 模型，无法进行向量搜索
-            logger.debug("No embedding available for recall, skipping vector search")
+            # 无外部 embedding 模型时，尝试使用 ChromaDB 内置文本搜索
+            if not self.vector_store._has_external_embeddings:
+                try:
+                    return await asyncio.to_thread(
+                        self.vector_store.search,
+                        query_text=query,
+                        user_id=user_id,
+                        k=k
+                    )
+                except Exception:
+                    logger.exception("Text-based recall fallback failed")
+            else:
+                logger.debug("No embedding model available and collection uses external embeddings, skipping recall")
             return []
         except Exception as e:
             logger.error(f"Recall error: {e}")
@@ -279,14 +290,12 @@ class MemoryManager:
 
     def update_user_interaction(self, user_id: str, platform: str = "", nickname: str = ""):
         """更新用户交互信息"""
-        self.user_profile_store.increment_interaction(user_id)
         updates = {}
         if platform:
             updates["platform"] = platform
         if nickname:
             updates["nickname"] = nickname
-        if updates:
-            self.user_profile_store.update_profile(user_id, **updates)
+        self.user_profile_store.increment_and_update_profile(user_id, **updates)
 
     # ==========================================
     # 海马体（慢系统 - 后台处理）
@@ -315,7 +324,12 @@ class MemoryManager:
                     self._background_tasks.add(task)
                 task.add_done_callback(self._on_background_task_done)
             except RuntimeError:
-                # 没有运行中的事件循环，跳过
+                # 没有运行中的事件循环，恢复已取出的数据块
+                with self._hippocampus_lock:
+                    if session in self._pending_conversations:
+                        self._pending_conversations[session] = chunks_to_process + self._pending_conversations[session]
+                    else:
+                        self._pending_conversations[session] = chunks_to_process
                 logger.debug("No running event loop, skipping hippocampus processing")
 
     def _on_background_task_done(self, task: asyncio.Task):
@@ -326,7 +340,7 @@ class MemoryManager:
             return
         exc = task.exception()
         if exc:
-            logger.error(f"Background hippocampus task failed: {exc}")
+            logger.error("Background hippocampus task failed", exc_info=exc)
 
     async def _hippocampus_process(self, session: str, chunks: list):
         """海马体后台处理：提取事实 → 去重更新 → 生成反思 → 更新画像"""
@@ -649,15 +663,18 @@ class MemoryManager:
 
             if score < 0.2:
                 # 太低价值，直接删除
-                self.vector_store.delete_memory(mem.id)
-                removed_count += 1
-                removed_ids.add(mem.id)
+                if self.vector_store.delete_memory(mem.id):
+                    removed_count += 1
+                    removed_ids.add(mem.id)
+                else:
+                    logger.warning(f"Failed to delete memory {mem.id} during forgetting cycle")
             elif score < 0.4 and mem.memory_type == "fact":
                 # 低价值事实，标记降级
-                self.vector_store.update_memory(
+                if not self.vector_store.update_memory(
                     mem.id,
                     importance=max(1, mem.importance - 1)
-                )
+                ):
+                    logger.warning(f"Failed to downgrade memory {mem.id} during forgetting cycle")
 
         if removed_count > 0:
             logger.info(f"Forgetting cycle: removed {removed_count} memories")

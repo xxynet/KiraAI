@@ -1132,6 +1132,11 @@ async function togglePluginEnabled(button) {
     if (knob) {
         knob.className = `pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${nextState ? 'translate-x-4' : 'translate-x-0'}`;
     }
+
+    // Disable button during API call
+    button.disabled = true;
+    button.setAttribute('aria-disabled', 'true');
+
     try {
         const response = await apiCall(`/api/plugins/${encodeURIComponent(pluginId)}/enabled`, {
             method: 'POST',
@@ -1152,6 +1157,9 @@ async function togglePluginEnabled(button) {
             knob.className = origKnobClass;
         }
         showNotification(getTranslation('plugin.toggle_error', 'Failed to update plugin state'), 'error');
+    } finally {
+        button.disabled = false;
+        button.removeAttribute('aria-disabled');
     }
 }
 
@@ -2205,8 +2213,14 @@ function setupEventListeners() {
                 if (window.configManager) {
                     window.configManager.save();
                 } else {
-                    showNotification(getTranslation('config.fallback_save_warning', 'Configuration manager not loaded, falling back to legacy save'), 'warning');
-                    saveConfiguration();
+                    // Only call legacy save if its expected form fields exist
+                    const hasLegacyFields = document.getElementById('msg-max-memory-length');
+                    if (hasLegacyFields) {
+                        showNotification(getTranslation('config.fallback_save_warning', 'Configuration manager not loaded, falling back to legacy save'), 'warning');
+                        saveConfiguration();
+                    } else {
+                        showNotification(getTranslation('config.manager_not_loaded', 'Configuration manager not loaded'), 'warning');
+                    }
                 }
                 return;
             }

@@ -16,6 +16,14 @@ logger = get_logger("vector_store", "green")
 
 VECTOR_DB_PATH = "data/memory/vector_db"
 
+_STANDARD_META_KEYS = frozenset({
+    "user_id", "memory_type", "importance", "timestamp", "access_count", "last_accessed"
+})
+
+def _extract_extra_metadata(meta: dict) -> dict:
+    """Extract non-standard metadata keys for preservation in MemoryEntry.metadata."""
+    return {k: v for k, v in meta.items() if k not in _STANDARD_META_KEYS}
+
 
 @dataclass
 class MemoryEntry:
@@ -74,9 +82,9 @@ class VectorStore:
     def _persist_external_flag(self):
         """将外部嵌入标志持久化到 collection 元数据"""
         try:
-            self._collection.modify(
-                metadata={"hnsw:space": "cosine", "external_embeddings": "true"}
-            )
+            col_meta = dict(self._collection.metadata or {})
+            col_meta["external_embeddings"] = True
+            self._collection.modify(metadata=col_meta)
         except Exception as e:
             logger.debug(f"Could not persist external_embeddings flag: {e}")
 
@@ -191,7 +199,7 @@ class VectorStore:
 
         try:
             results = self._collection.query(**query_kwargs)
-        except Exception as e:
+        except Exception:
             logger.exception("Vector search error")
             return []
 
@@ -217,6 +225,7 @@ class VectorStore:
                     timestamp=meta.get("timestamp", 0),
                     access_count=meta.get("access_count", 0),
                     last_accessed=meta.get("last_accessed", 0),
+                    metadata=_extract_extra_metadata(meta),
                 )
 
                 # 更新访问计数（内部去重搜索时不更新）
@@ -250,7 +259,7 @@ class VectorStore:
                 where=where_filter,
                 limit=limit
             )
-        except Exception as e:
+        except Exception:
             logger.exception("Get by user error")
             return []
 
@@ -267,6 +276,7 @@ class VectorStore:
                     timestamp=meta.get("timestamp", 0),
                     access_count=meta.get("access_count", 0),
                     last_accessed=meta.get("last_accessed", 0),
+                    metadata=_extract_extra_metadata(meta),
                 ))
         return entries
 
@@ -334,7 +344,7 @@ class VectorStore:
 
             self._collection.update(**update_kwargs)
             return True
-        except Exception as e:
+        except Exception:
             logger.exception("Update memory error")
             return False
 
@@ -353,6 +363,7 @@ class VectorStore:
                     timestamp=meta.get("timestamp", 0),
                     access_count=meta.get("access_count", 0),
                     last_accessed=meta.get("last_accessed", 0),
+                    metadata=_extract_extra_metadata(meta),
                 )
         except Exception as e:
             logger.debug(f"get_memory_by_id({memory_id}) failed: {e}")
@@ -363,7 +374,7 @@ class VectorStore:
         try:
             self._collection.delete(ids=[memory_id])
             return True
-        except Exception as e:
+        except Exception:
             logger.exception("Delete memory error")
             return False
 
@@ -379,7 +390,7 @@ class VectorStore:
         """
         try:
             results = self._collection.get(limit=limit, offset=offset)
-        except Exception as e:
+        except Exception:
             logger.exception("Get all memories error")
             return []
 
@@ -396,6 +407,7 @@ class VectorStore:
                     timestamp=meta.get("timestamp", 0),
                     access_count=meta.get("access_count", 0),
                     last_accessed=meta.get("last_accessed", 0),
+                    metadata=_extract_extra_metadata(meta),
                 ))
         return entries
 

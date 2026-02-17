@@ -350,7 +350,8 @@ const resources = {
                 load_failed: "Configuration subsystem failed to load. Please refresh the page.",
                 module_unavailable: "Configuration module unavailable",
                 load_error: "Failed to load configuration",
-                fallback_save_warning: "Configuration manager not loaded, falling back to legacy save"
+                fallback_save_warning: "Configuration manager not loaded, falling back to legacy save",
+                manager_not_loaded: "Configuration manager not loaded"
             }
         }
     },
@@ -702,7 +703,8 @@ const resources = {
                 load_failed: "配置子系统加载失败，请刷新页面。",
                 module_unavailable: "配置模块不可用",
                 load_error: "加载配置失败",
-                fallback_save_warning: "配置管理器未加载，已回退到旧版保存"
+                fallback_save_warning: "配置管理器未加载，已回退到旧版保存",
+                manager_not_loaded: "配置管理器未加载"
             }
         }
     }

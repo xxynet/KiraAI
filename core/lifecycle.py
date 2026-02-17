@@ -78,7 +78,7 @@ class KiraLifecycle:
                 break
             except Exception:
                 logger.exception("Memory forgetting cycle error")
-                await asyncio.sleep(60)  # 失败后等待 60 秒再重试，避免日志风暴
+                await asyncio.sleep(60)  # 失败后等待 60 秒再重试, 避免日志风暴
 
     async def init_and_run_system(self):
         """主函数：负责启动和初始化各个模块"""
