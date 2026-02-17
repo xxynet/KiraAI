@@ -40,6 +40,7 @@
       "name": "Slow Request Threshold",
       "type": "float",
       "default": 5.0,
+      "min": 0,
       "hint": "Requests slower than this threshold (seconds) will be logged as slow requests"
     }
   }

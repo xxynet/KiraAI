@@ -742,7 +742,14 @@ function updateTranslations() {
         const translation = i18next.t(key);
         if (translation && translation !== key) {
             element.placeholder = translation;
-            if (element.hasAttribute('aria-label')) {
+            // Only set aria-label if a dedicated i18n key is provided, or if it was previously empty
+            const ariaKey = element.getAttribute('data-i18n-aria-label');
+            if (ariaKey) {
+                const ariaTranslation = i18next.t(ariaKey);
+                if (ariaTranslation && ariaTranslation !== ariaKey) {
+                    element.setAttribute('aria-label', ariaTranslation);
+                }
+            } else if (!element.getAttribute('aria-label')) {
                 element.setAttribute('aria-label', translation);
             }
         }

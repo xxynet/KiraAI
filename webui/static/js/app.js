@@ -1579,7 +1579,8 @@ async function loadConfigurationData() {
         }
     } catch (error) {
         console.error('Error loading configuration data:', error);
-        showNotification('Failed to load configuration: ' + error.message, 'error');
+        const msg = error && error.message ? error.message : String(error) || 'Unknown error';
+        showNotification('Failed to load configuration: ' + msg, 'error');
     }
 }
 
@@ -2190,7 +2191,8 @@ function setupEventListeners() {
                 if (window.configManager) {
                     window.configManager.save();
                 } else {
-                    showNotification('Configuration manager not loaded, unable to save', 'error');
+                    showNotification('Configuration manager not loaded, falling back to legacy save', 'warning');
+                    saveConfiguration();
                 }
                 return;
             }
@@ -2472,190 +2474,6 @@ async function openProviderModal() {
                 showNotification(`Failed to load provider types: ${error.message}`, 'error');
             }
         }
-    }
-}
-
-/**
- * Close provider modal
- */
-function closeProviderModal() {
-    const modal = document.getElementById('provider-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-    }
-    AppState.selectedProviderId = null;
-}
-
-/**
- * Fetch provider schema
- * @param {string} providerType - Type of the provider
- * @returns {Promise<object>} Schema object
- */
-async function fetchProviderSchema(providerType) {
-    try {
-        const response = await apiCall(`/api/providers/schema/${providerType}`);
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching provider schema:', error);
-        showNotification('Failed to load provider schema', 'error');
-        return null;
-    }
-}
-
-/**
- * Load provider schema and render to default container
- */
-async function loadProviderSchema(providerType) {
-    const schema = await fetchProviderSchema(providerType);
-    if (schema) {
-        renderProviderConfigFields(schema, 'provider-config-container');
-    }
-}
-
-/**
- * Render provider config fields based on schema
- * @param {object} schema - The schema definition
- * @param {HTMLElement|string} containerOrId - Container element or ID
- * @param {object} currentValues - Current configuration values (optional)
- */
-function renderProviderConfigFields(schema, containerOrId = 'provider-config-container', currentValues = {}) {
-    const container = typeof containerOrId === 'string' ? document.getElementById(containerOrId) : containerOrId;
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    // Create fields for each schema item
-    Object.entries(schema).forEach(([key, fieldDef]) => {
-        const fieldWrapper = document.createElement('div');
-        fieldWrapper.className = 'mb-4';
-        
-        const label = document.createElement('label');
-        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2';
-        label.textContent = (fieldDef && fieldDef.name) ? fieldDef.name : key;
-        
-        let input;
-        
-        if (fieldDef.type === 'sensitive') {
-            input = document.createElement('input');
-            input.type = 'password';
-            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
-        } else if (fieldDef.type === 'integer' || fieldDef.type === 'float') {
-            input = document.createElement('input');
-            input.type = 'number';
-            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
-            if (fieldDef.type === 'float') {
-                input.step = 'any';
-            } else {
-                input.step = '1';
-            }
-        } else {
-            // Default to text for string and others
-            input = document.createElement('input');
-            input.type = 'text';
-            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
-        }
-        
-        // Set common attributes
-        input.id = `config-${key}`;
-        input.setAttribute('data-config-key', key);
-        input.setAttribute('data-config-type', fieldDef.type);
-        
-        // Determine value: currentValues > default > ''
-        let value = currentValues[key];
-        if (value === undefined || value === null) {
-            value = fieldDef.default;
-        }
-        
-        if (value !== undefined && value !== null) {
-            input.value = value;
-        }
-        
-        if (fieldDef.hint) {
-            input.placeholder = fieldDef.hint;
-            input.title = fieldDef.hint;
-        }
-        
-        fieldWrapper.appendChild(label);
-        fieldWrapper.appendChild(input);
-        
-        // Add hint text if available
-        if (fieldDef.hint) {
-            const hint = document.createElement('p');
-            hint.className = 'text-xs text-gray-500 mt-1';
-            hint.textContent = fieldDef.hint;
-            fieldWrapper.appendChild(hint);
-        }
-        
-        container.appendChild(fieldWrapper);
-    });
-}
-
-/**
- * Save provider
- */
-async function saveProvider() {
-    const name = document.getElementById('provider-name').value.trim();
-    const typeSelect = document.getElementById('provider-type');
-    const type = typeSelect ? typeSelect.value : '';
-    
-    if (!name) {
-        showNotification('Please enter provider name', 'error');
-        return;
-    }
-    
-    if (!type) {
-        showNotification('Please select provider type', 'error');
-        return;
-    }
-    
-    // Collect dynamic config
-    const config = {};
-    const configContainer = document.getElementById('provider-config-container');
-    if (configContainer) {
-        const inputs = configContainer.querySelectorAll('input[data-config-key]');
-        inputs.forEach(input => {
-            const key = input.getAttribute('data-config-key');
-            const fieldType = input.getAttribute('data-config-type');
-            
-            if (key) {
-                let value = input.value;
-                if (fieldType === 'integer') {
-                    value = value === '' ? null : parseInt(value, 10);
-                } else if (fieldType === 'float') {
-                    value = value === '' ? null : parseFloat(value);
-                }
-                config[key] = value;
-            }
-        });
-    }
-    
-    try {
-        const response = await apiCall('/api/providers', {
-            method: 'POST',
-            body: JSON.stringify({
-                name: name,
-                type: type,
-                config: config
-            })
-        });
-        
-        if (response.ok) {
-            // Reload provider list
-            await loadProviderData();
-            
-            // Close modal
-            closeProviderModal();
-            
-            // Show success notification
-            showNotification('Provider added successfully', 'success');
-        } else {
-            const errorData = await response.json();
-            showNotification(errorData.detail || 'Failed to add provider', 'error');
-        }
-    } catch (error) {
-        console.error('Error saving provider:', error);
-        showNotification('Error saving provider', 'error');
     }
 }
 
@@ -3741,7 +3559,7 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
                 <svg class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+                <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-normal max-w-xs z-50">
                     ${escapeHtml(field.hint)}
                 </div>
             `;
@@ -3774,6 +3592,7 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
         input.setAttribute('data-config-key', key);
         input.setAttribute('data-config-type', fieldType);
         if (field.name) input.setAttribute('data-config-name', field.name);
+        if (field.min !== undefined) input.setAttribute('data-config-min', field.min);
         
         if (currentValue !== undefined && currentValue !== null) {
             input.value = currentValue;
@@ -3834,7 +3653,7 @@ function validateConfigFieldInput(input) {
         } else if (fieldType === 'float') {
             if (isNaN(parseFloat(value))) {
                 errorMsg = getTranslation('model.validation_number', '{field} must be a valid number').replace('{field}', fieldName);
-            } else if (key === 'slow_request_threshold' && parseFloat(value) <= 0) {
+            } else if (input.hasAttribute('data-config-min') && parseFloat(value) <= parseFloat(input.getAttribute('data-config-min'))) {
                 errorMsg = getTranslation('model.validation_positive', '{field} must be a positive number').replace('{field}', fieldName);
             }
         }
@@ -3862,6 +3681,7 @@ function closeProviderModal() {
         modal.classList.add('hidden');
         modal.classList.remove('flex');
     }
+    AppState.selectedProviderId = null;
 }
 
 /**
@@ -4581,77 +4401,6 @@ function closePersonaModal() {
             AppState.personaEditor.instance.dispose();
             AppState.personaEditor.instance = null;
         }
-    }
-}
-
-/**
- * Create persona editor instance
- */
-function createPersonaEditor() {
-    const container = document.getElementById('persona-editor-container');
-    if (!container) return;
-    
-    // Dispose of existing editor if any
-    if (AppState.personaEditor.instance) {
-        AppState.personaEditor.instance.dispose();
-    }
-    
-    // Get default content based on format
-    const format = document.getElementById('persona-format').value;
-    const defaultContent = getDefaultPersonaContent(format);
-    
-    // Create new editor instance
-    AppState.personaEditor.instance = monaco.editor.create(container, {
-        value: defaultContent,
-        language: format === 'markdown' ? 'markdown' : format,
-        theme: document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs',
-        automaticLayout: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        fontSize: 14,
-        wordWrap: 'on',
-        folding: true,
-        lineNumbers: 'on',
-        renderWhitespace: 'selection'
-    });
-    
-    AppState.personaEditor.format = format;
-    
-    // Set up format change listener
-    const formatSelector = document.getElementById('persona-format');
-    if (formatSelector) {
-        formatSelector.onchange = null; // Remove any existing listener
-        formatSelector.onchange = function() {
-            const newFormat = this.value;
-            const newContent = getDefaultPersonaContent(newFormat);
-            
-            if (AppState.personaEditor.instance) {
-                AppState.personaEditor.instance.setValue(newContent);
-                monaco.editor.setModelLanguage(AppState.personaEditor.instance.getModel(), 
-                    newFormat === 'markdown' ? 'markdown' : newFormat);
-            }
-            AppState.personaEditor.format = newFormat;
-        };
-    }
-}
-
-/**
- * Get default persona content based on format
- * @param {string} format - Format type
- * @returns {string} Default content
- */
-function getDefaultPersonaContent(format) {
-    switch (format) {
-        case 'json':
-            return '{\n  "name": "My Persona",\n  "description": "A helpful AI assistant",\n  "traits": ["friendly", "knowledgeable"],\n  "instructions": "You are a helpful AI assistant."\n}';
-        case 'yaml':
-            return 'name: My Persona\ndescription: A helpful AI assistant\ntraits:\n  - friendly\n  - knowledgeable\ninstructions: You are a helpful AI assistant.';
-        case 'markdown':
-            return '# My Persona\n\n## Description\nA helpful AI assistant\n\n## Traits\n- Friendly\n- Knowledgeable\n\n## Instructions\nYou are a helpful AI assistant.';
-        case 'text':
-            return 'My Persona\n\nDescription: A helpful AI assistant\n\nTraits: Friendly, Knowledgeable\n\nInstructions: You are a helpful AI assistant.';
-        default:
-            return '';
     }
 }
 

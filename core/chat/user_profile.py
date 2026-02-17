@@ -56,7 +56,7 @@ class UserProfileStore:
                         self._profiles[uid] = UserProfile(**sanitized)
                     except Exception as e:
                         logger.warning(f"Skipping malformed profile '{uid}': {e}")
-            except Exception as e:
+            except Exception:
                 logger.exception("Failed to load user profiles")
                 self._profiles = {}
         else:
@@ -71,7 +71,7 @@ class UserProfileStore:
             data = {uid: asdict(profile) for uid, profile in self._profiles.items()}
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to save user profiles")
 
     def _get_profile_unlocked(self, user_id: str) -> UserProfile:

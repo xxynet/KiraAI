@@ -175,8 +175,7 @@ class MemoryUpdateTool(BaseTool):
                                 if embeddings and embeddings[0]:
                                     embedding = embeddings[0]
                             except Exception as e:
-                                vector_sync_error = f"Failed to generate embedding for updated memory: {e}"
-                                logger.debug(vector_sync_error)
+                                logger.debug(f"Failed to generate embedding for updated memory: {e}")
                         try:
                             ok = _memory_manager.vector_store.update_memory(vector_id, content=text, embedding=embedding)
                             if not ok:

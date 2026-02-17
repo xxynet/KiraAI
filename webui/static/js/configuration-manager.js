@@ -1034,7 +1034,7 @@ class ConfigurationManager {
 
     collapseAll() {
         const schema = this.getSchema();
-        schema.forEach(g => this.collapsedGroups.add(g.id));
+        schema.forEach(g => { this.collapsedGroups.add(g.id); });
         this.render();
     }
 }

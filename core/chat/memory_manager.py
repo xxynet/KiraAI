@@ -401,7 +401,19 @@ class MemoryManager:
                         except (ValueError, SyntaxError):
                             facts = None
                 if isinstance(facts, list):
-                    return [f for f in facts if isinstance(f, dict) and "content" in f]
+                    cleaned = []
+                    for f in facts:
+                        if not isinstance(f, dict) or "content" not in f:
+                            continue
+                        # Normalize importance to int
+                        raw_imp = f.get("importance")
+                        if raw_imp is not None:
+                            try:
+                                f["importance"] = int(float(raw_imp))
+                            except (ValueError, TypeError):
+                                f["importance"] = 5
+                        cleaned.append(f)
+                    return cleaned
         except Exception as e:
             logger.error(f"Fact extraction error: {e}")
         return []
