@@ -183,6 +183,11 @@ const resources = {
                 changes: "change(s)",
                 search_placeholder: "Search settings... ( / )",
                 search_aria_label: "Search settings",
+                undo_aria: "Undo (Ctrl+Z)",
+                redo_aria: "Redo (Ctrl+Shift+Z)",
+                reset_aria: "Reset",
+                expand_all_aria: "Expand All",
+                collapse_all_aria: "Collapse All",
                 validation_failed: "Please fix validation errors before saving",
                 shortcut_undo: "Undo",
                 shortcut_redo: "Redo",
@@ -536,6 +541,11 @@ const resources = {
                 changes: "项修改",
                 search_placeholder: "搜索设置... ( / )",
                 search_aria_label: "搜索设置",
+                undo_aria: "撤销 (Ctrl+Z)",
+                redo_aria: "重做 (Ctrl+Shift+Z)",
+                reset_aria: "重置",
+                expand_all_aria: "展开全部",
+                collapse_all_aria: "折叠全部",
                 validation_failed: "请先修复验证错误后再保存",
                 shortcut_undo: "撤销",
                 shortcut_redo: "重做",
@@ -772,6 +782,16 @@ function updateTranslations() {
                 element.setAttribute('aria-label', translation);
                 element.setAttribute('data-i18n-aria-generated', 'true');
             }
+        }
+    });
+
+    // Standalone aria-label translations for elements without data-i18n-placeholder
+    document.querySelectorAll('[data-i18n-aria-label]:not([data-i18n-placeholder])').forEach(element => {
+        const ariaKey = element.getAttribute('data-i18n-aria-label');
+        const ariaTranslation = i18next.t(ariaKey);
+        if (ariaTranslation && ariaTranslation !== ariaKey) {
+            element.setAttribute('aria-label', ariaTranslation);
+            element.setAttribute('title', ariaTranslation);
         }
     });
 }

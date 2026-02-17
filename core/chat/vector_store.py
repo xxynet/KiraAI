@@ -66,7 +66,7 @@ class VectorStore:
         elif self._collection.count() > 0:
             # 回退检测：获取一条现有记徆的嵌入维度
             try:
-                sample = self._collection.peek(limit=1)
+                sample = self._collection.peek(limit=1, include=['embeddings'])
                 if sample and sample.get("embeddings") and sample["embeddings"]:
                     emb = sample["embeddings"][0]
                     if emb and len(emb) > 0:

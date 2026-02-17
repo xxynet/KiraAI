@@ -240,7 +240,8 @@ class MemoryManager:
                 try:
                     embeddings = await self._llm_client.embed([query])
                     if embeddings and embeddings[0]:
-                        return self.vector_store.search(
+                        return await asyncio.to_thread(
+                            self.vector_store.search,
                             query_embedding=embeddings[0],
                             user_id=user_id,
                             k=k

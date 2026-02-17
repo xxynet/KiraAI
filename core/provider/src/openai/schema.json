@@ -26,6 +26,8 @@
         "name": "Temperature",
         "type": "float",
         "default": null,
+        "min": 0,
+        "max": 2,
         "hint": "Model temperature"
       }
     },

@@ -19,12 +19,15 @@
         "name": "超时",
         "type": "integer",
         "default": 120,
+        "min": 1,
         "hint": "超时秒数"
       },
       "temperature": {
         "name": "温度",
         "type": "float",
         "default": null,
+        "min": 0,
+        "max": 2,
         "hint": "模型温度"
       }
     },
