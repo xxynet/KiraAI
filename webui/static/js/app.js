@@ -1122,6 +1122,8 @@ async function togglePluginEnabled(button) {
     const origButtonClass = button.className;
     const knob = button.querySelector('span');
     const origKnobClass = knob ? knob.className : null;
+    const origDisabled = button.disabled;
+    const origAriaDisabled = button.getAttribute('aria-disabled');
 
     // Optimistically update UI
     button.setAttribute('aria-pressed', nextState ? 'true' : 'false');
@@ -1165,8 +1167,12 @@ async function togglePluginEnabled(button) {
         }
         showNotification(getTranslation('plugin.toggle_error', 'Failed to update plugin state'), 'error');
     } finally {
-        button.disabled = false;
-        button.removeAttribute('aria-disabled');
+        button.disabled = origDisabled;
+        if (origAriaDisabled === null) {
+            button.removeAttribute('aria-disabled');
+        } else {
+            button.setAttribute('aria-disabled', origAriaDisabled);
+        }
     }
 }
 
@@ -1614,13 +1620,10 @@ async function loadConfigurationData() {
 }
 
 /** Bind configuration toolbar button events */
-let _configToolbarBound = false;
 function _bindConfigToolbarEvents() {
-    if (_configToolbarBound) return;
-    _configToolbarBound = true;
-
     const searchInput = document.getElementById('config-search-input');
-    if (searchInput) {
+    if (searchInput && searchInput.dataset.boundConfigToolbar !== '1') {
+        searchInput.dataset.boundConfigToolbar = '1';
         let debounceTimer;
         searchInput.addEventListener('input', (e) => {
             clearTimeout(debounceTimer);
@@ -1633,27 +1636,32 @@ function _bindConfigToolbarEvents() {
     }
 
     const undoBtn = document.getElementById('config-undo-btn');
-    if (undoBtn) {
+    if (undoBtn && undoBtn.dataset.boundConfigToolbar !== '1') {
+        undoBtn.dataset.boundConfigToolbar = '1';
         undoBtn.addEventListener('click', () => window.configManager?.undo());
     }
 
     const redoBtn = document.getElementById('config-redo-btn');
-    if (redoBtn) {
+    if (redoBtn && redoBtn.dataset.boundConfigToolbar !== '1') {
+        redoBtn.dataset.boundConfigToolbar = '1';
         redoBtn.addEventListener('click', () => window.configManager?.redo());
     }
 
     const resetBtn = document.getElementById('config-reset-btn');
-    if (resetBtn) {
+    if (resetBtn && resetBtn.dataset.boundConfigToolbar !== '1') {
+        resetBtn.dataset.boundConfigToolbar = '1';
         resetBtn.addEventListener('click', () => window.configManager?.reset());
     }
 
     const expandBtn = document.getElementById('config-expand-all-btn');
-    if (expandBtn) {
+    if (expandBtn && expandBtn.dataset.boundConfigToolbar !== '1') {
+        expandBtn.dataset.boundConfigToolbar = '1';
         expandBtn.addEventListener('click', () => window.configManager?.expandAll());
     }
 
     const collapseBtn = document.getElementById('config-collapse-all-btn');
-    if (collapseBtn) {
+    if (collapseBtn && collapseBtn.dataset.boundConfigToolbar !== '1') {
+        collapseBtn.dataset.boundConfigToolbar = '1';
         collapseBtn.addEventListener('click', () => window.configManager?.collapseAll());
     }
 }
@@ -3750,7 +3758,7 @@ async function saveProvider() {
             }
         });
         if (hasValidationError) {
-            showNotification('Please fix validation errors before saving', 'error');
+            showNotification(getTranslation('model.validation_failed', 'Please fix validation errors before saving'), 'error');
             return;
         }
         inputs.forEach(input => {

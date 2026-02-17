@@ -315,14 +315,12 @@ class MemorySearchTool(BaseTool):
         if not _memory_manager or not hasattr(_memory_manager, 'recall'):
             return "Memory system not available"
 
-        # Validate k parameter
-        if not isinstance(k, int) or k <= 0:
-            try:
-                k = int(k)
-            except (TypeError, ValueError):
-                return "Error: k must be a positive integer"
-            if k <= 0:
-                return "Error: k must be a positive integer"
+        try:
+            k = int(k)
+        except (TypeError, ValueError):
+            return "Error: k must be a positive integer"
+        if k <= 0:
+            return "Error: k must be a positive integer"
 
         memories = await _memory_manager.recall(query, user_id=user_id, k=k)
         if not memories:
@@ -363,9 +361,21 @@ class ProfileUpdateTool(BaseTool):
             "action": {"type": "string", "description": "操作类型: add_trait, remove_trait, add_fact, set_name, set_relationship",
                         "enum": ["add_trait", "remove_trait", "add_fact", "set_name", "set_relationship"]},
             "value": {"type": "string", "description": "操作值（特征标签、事实、名字等）"},
-            "target": {"type": "string", "description": "关系目标（仅 set_relationship 时使用）"}
+            "target": {"type": "string", "description": "关系目标（当 action=set_relationship 时必填）"}
         },
-        "required": ["user_id", "action", "value"]
+        "required": ["user_id", "action", "value"],
+        "allOf": [
+            {
+                "if": {
+                    "properties": {
+                        "action": {"const": "set_relationship"}
+                    }
+                },
+                "then": {
+                    "required": ["target"]
+                }
+            }
+        ]
     }
 
     async def execute(self, user_id: str, action: str, value: str, target: str = "") -> str:

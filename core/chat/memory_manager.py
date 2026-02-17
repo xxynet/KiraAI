@@ -233,6 +233,10 @@ class MemoryManager:
             user_id: 可选的用户ID过滤
             k: 返回最相关的 k 条记忆（最小为 1）
         """
+        try:
+            k = int(k)
+        except (TypeError, ValueError):
+            k = 1
         k = max(1, k)
         try:
             # 使用外部 embedding 模型生成向量进行搜索

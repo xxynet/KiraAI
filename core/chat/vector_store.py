@@ -310,6 +310,10 @@ class VectorStore:
                        避免 ChromaDB 使用默认嵌入函数导致维度不匹配
         """
         try:
+            if embedding is not None and len(embedding) == 0:
+                logger.error(f"Empty embedding provided for update memory_id={memory_id}")
+                return False
+
             existing = self._collection.get(ids=[memory_id])
             if not existing or not existing["ids"]:
                 return False
