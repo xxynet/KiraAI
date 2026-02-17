@@ -407,7 +407,9 @@ class MemoryManager:
                             continue
                         # Normalize importance to int
                         raw_imp = f.get("importance")
-                        if raw_imp is not None:
+                        if raw_imp is None or raw_imp == "":
+                            f["importance"] = 5
+                        else:
                             try:
                                 f["importance"] = int(float(raw_imp))
                             except (ValueError, TypeError):

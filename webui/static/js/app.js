@@ -2191,7 +2191,7 @@ function setupEventListeners() {
                 if (window.configManager) {
                     window.configManager.save();
                 } else {
-                    showNotification('Configuration manager not loaded, falling back to legacy save', 'warning');
+                    showNotification(getTranslation('config.fallback_save_warning', 'Configuration manager not loaded, falling back to legacy save'), 'warning');
                     saveConfiguration();
                 }
                 return;

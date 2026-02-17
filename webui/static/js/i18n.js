@@ -181,6 +181,7 @@ const resources = {
                 modified: "modified",
                 changes: "change(s)",
                 search_placeholder: "Search settings... ( / )",
+                search_aria_label: "Search settings",
                 validation_failed: "Please fix validation errors before saving",
                 shortcut_undo: "Undo",
                 shortcut_redo: "Redo",
@@ -347,7 +348,8 @@ const resources = {
             config: {
                 load_failed: "Configuration subsystem failed to load. Please refresh the page.",
                 module_unavailable: "Configuration module unavailable",
-                load_error: "Failed to load configuration"
+                load_error: "Failed to load configuration",
+                fallback_save_warning: "Configuration manager not loaded, falling back to legacy save"
             }
         }
     },
@@ -530,6 +532,7 @@ const resources = {
                 modified: "已修改",
                 changes: "项修改",
                 search_placeholder: "搜索设置... ( / )",
+                search_aria_label: "搜索设置",
                 validation_failed: "请先修复验证错误后再保存",
                 shortcut_undo: "撤销",
                 shortcut_redo: "重做",
@@ -696,7 +699,8 @@ const resources = {
             config: {
                 load_failed: "配置子系统加载失败，请刷新页面。",
                 module_unavailable: "配置模块不可用",
-                load_error: "加载配置失败"
+                load_error: "加载配置失败",
+                fallback_save_warning: "配置管理器未加载，已回退到旧版保存"
             }
         }
     }

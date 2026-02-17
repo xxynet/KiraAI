@@ -76,7 +76,7 @@ class MemoryAddTool(BaseTool):
             with open(CORE_MEMORY_PATH, "r", encoding="utf-8") as mem:
                 mem_str = mem.read()
             # 计算新行的索引（写入前的行数）
-            line_index = len(mem_str.splitlines()) if mem_str.strip() else 0
+            line_index = len(mem_str.splitlines())
             with open(CORE_MEMORY_PATH, "a", encoding="utf-8") as mem:
                 if mem_str and not mem_str.endswith("\n"):
                     mem.write("\n")
@@ -183,7 +183,7 @@ class MemoryUpdateTool(BaseTool):
                                 logger.warning(vector_sync_error)
                         except Exception as e:
                             vector_sync_error = f"update_memory raised for entry {vector_id}: {e}"
-                            logger.error(vector_sync_error)
+                            logger.exception("update_memory raised for entry %s", vector_id)
                     else:
                         vector_sync_error = f"Could not locate vector entry for core memory index {index}"
                         logger.warning(vector_sync_error)

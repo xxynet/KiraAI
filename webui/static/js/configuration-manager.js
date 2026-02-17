@@ -590,7 +590,8 @@ class ConfigurationManager {
             const oldVal = this._getNestedValue(this.currentData, field.key);
             const providerId = providerSelect.value;
             this._fillModelOptions(modelSelect, providerId, field.modelType, '');
-            const newVal = providerId ? (providerId + ':') : null;
+            const selectedModel = modelSelect.value;
+            const newVal = (providerId && selectedModel) ? (providerId + ':' + selectedModel) : null;
             this._recordChange(field.key, oldVal, newVal);
             this._setNestedValue(this.currentData, field.key, newVal);
             this._updateModifiedState(field.key);
@@ -904,7 +905,9 @@ class ConfigurationManager {
         // Ctrl+S = Save
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
             e.preventDefault();
-            this.save();
+            if (this.modifiedFields.size > 0) {
+                this.save();
+            }
         }
         // Ctrl+F or / = Focus search (when not in input)
         if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {

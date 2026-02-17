@@ -7,7 +7,7 @@ import os
 import time
 from threading import Lock
 from typing import Optional
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, fields, asdict
 
 from core.logging_manager import get_logger
 

@@ -101,7 +101,7 @@ class VectorStore:
 
         if embedding is not None:
             if not embedding or len(embedding) == 0:
-                logger.error(f"Empty embedding provided for memory: {entry.content[:50]}...")
+            logger.error(f"Empty embedding provided for memory id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
                 raise ValueError("Embedding must be a non-empty list of floats")
             # 有外部嵌入，使用 upsert 存储文档+向量
             if not self._has_external_embeddings:
@@ -128,7 +128,7 @@ class VectorStore:
                         embeddings=[generated[0]],
                     )
                 else:
-                    logger.warning(f"embedding_func returned empty result for: {entry.content[:50]}...")
+                    logger.warning(f"embedding_func returned empty result for id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
                     raise ValueError("embedding_func returned empty or invalid embedding")
             except ValueError:
                 raise
@@ -137,7 +137,7 @@ class VectorStore:
                 raise ValueError(f"Failed to generate embedding via embedding_func: {e}") from e
         elif self._has_external_embeddings:
             # 已启用外部嵌入但未提供，抛出异常而非静默丢失数据
-            logger.error(f"External embeddings enabled but no embedding provided for: {entry.content[:50]}...")
+            logger.error(f"External embeddings enabled but no embedding provided for id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
             raise ValueError(
                 "Collection uses external embeddings but no embedding was provided. "
                 "Provide an embedding or disable external embedding mode."
@@ -150,7 +150,7 @@ class VectorStore:
                 metadatas=[metadata],
             )
 
-        logger.debug(f"Memory added: [{entry.memory_type}] {entry.content[:50]}...")
+        logger.debug(f"Memory added: id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
 
     def search(self, query_text: str = None, query_embedding: list[float] = None,
                user_id: str = None, memory_type: str = None,
