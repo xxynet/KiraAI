@@ -248,7 +248,7 @@ class ConfigurationManager {
         const schema = this.getSchema();
         schema.forEach(group => {
             group.fields.forEach(field => {
-                this._ensureDefaultForField(field);
+                this._ensureDefaultForField(field, true);
             });
         });
     }
@@ -258,12 +258,14 @@ class ConfigurationManager {
      * defines a default, write the default into currentData silently
      * (no undo record, no modifiedFields entry).
      */
-    _ensureDefaultForField(field) {
+    _ensureDefaultForField(field, writeOriginal = false) {
         if (field.default == null) return;
         const current = this._getNestedValue(this.currentData, field.key);
         if (current == null) {
             this._setNestedValue(this.currentData, field.key, field.default);
-            this._setNestedValue(this.originalData, field.key, field.default);
+            if (writeOriginal) {
+                this._setNestedValue(this.originalData, field.key, field.default);
+            }
         }
     }
 
@@ -925,7 +927,6 @@ class ConfigurationManager {
             if (typeof showNotification === 'function') {
                 showNotification(this._t('configuration.validation_failed', 'Please fix validation errors before saving'), 'error');
             }
-            this.render();
             // Expand groups with errors
             const schema = this.getSchema();
             schema.forEach(group => {

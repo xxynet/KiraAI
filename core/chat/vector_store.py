@@ -80,7 +80,7 @@ class VectorStore:
         except Exception as e:
             logger.debug(f"Could not persist external_embeddings flag: {e}")
 
-    def add_memory(self, entry: MemoryEntry, embedding: list[float] = None):
+    def add_memory(self, entry: MemoryEntry, embedding: Optional[list[float]] = None):
         """添加一条记忆到向量库
         
         Args:
@@ -152,9 +152,9 @@ class VectorStore:
 
         logger.debug(f"Memory added: id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
 
-    def search(self, query_text: str = None, query_embedding: list[float] = None,
-               user_id: str = None, memory_type: str = None,
-               k: int = 5, threshold: float = None,
+    def search(self, query_text: Optional[str] = None, query_embedding: Optional[list[float]] = None,
+               user_id: Optional[str] = None, memory_type: Optional[str] = None,
+               k: int = 5, threshold: Optional[float] = None,
                update_access: bool = True) -> list[MemoryEntry]:
         """语义搜索记忆
         
@@ -192,7 +192,7 @@ class VectorStore:
         try:
             results = self._collection.query(**query_kwargs)
         except Exception as e:
-            logger.exception(f"Vector search error: {e}")
+            logger.exception("Vector search error")
             return []
 
         entries = []
@@ -233,7 +233,7 @@ class VectorStore:
 
         return entries
 
-    def get_by_user(self, user_id: str, memory_type: str = None,
+    def get_by_user(self, user_id: str, memory_type: Optional[str] = None,
                     limit: int = 100) -> list[MemoryEntry]:
         """获取某用户的所有记忆"""
         where_conditions = [{"user_id": user_id}]
@@ -251,7 +251,7 @@ class VectorStore:
                 limit=limit
             )
         except Exception as e:
-            logger.exception(f"Get by user error: {e}")
+            logger.exception("Get by user error")
             return []
 
         entries = []
@@ -270,9 +270,9 @@ class VectorStore:
                 ))
         return entries
 
-    def update_memory(self, memory_id: str, content: str = None,
-                      importance: int = None, metadata: dict = None,
-                      embedding: list[float] = None):
+    def update_memory(self, memory_id: str, content: Optional[str] = None,
+                      importance: Optional[int] = None, metadata: Optional[dict] = None,
+                      embedding: Optional[list[float]] = None):
         """更新一条记忆
         
         Args:
@@ -335,7 +335,7 @@ class VectorStore:
             self._collection.update(**update_kwargs)
             return True
         except Exception as e:
-            logger.exception(f"Update memory error: {e}")
+            logger.exception("Update memory error")
             return False
 
     def get_memory_by_id(self, memory_id: str) -> Optional[MemoryEntry]:
@@ -364,7 +364,7 @@ class VectorStore:
             self._collection.delete(ids=[memory_id])
             return True
         except Exception as e:
-            logger.exception(f"Delete memory error: {e}")
+            logger.exception("Delete memory error")
             return False
 
     def get_all_memories(self, limit: int = 1000, offset: int = 0) -> list[MemoryEntry]:
@@ -380,7 +380,7 @@ class VectorStore:
         try:
             results = self._collection.get(limit=limit, offset=offset)
         except Exception as e:
-            logger.exception(f"Get all memories error: {e}")
+            logger.exception("Get all memories error")
             return []
 
         entries = []

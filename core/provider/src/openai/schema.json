@@ -28,7 +28,14 @@
         "hint": "Model temperature"
       }
     },
-    "image": {},
+    "image": {
+      "size": {
+        "name": "Image Size",
+        "type": "string",
+        "default": null,
+        "hint": "Image size (e.g., 1024x1024)"
+      }
+    },
     "embedding": {
       "timeout": {
         "name": "Timeout",

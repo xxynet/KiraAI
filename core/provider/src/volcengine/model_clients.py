@@ -2,7 +2,7 @@ from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionEr
 import time
 from typing import Optional
 
-from core.provider import ModelInfo, LLMModelClient, ImageModelClient
+from core.provider import ModelInfo, LLMModelClient, ImageModelClient, EmbeddingModelClient
 from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.provider.image_result import ImageResult
@@ -114,3 +114,43 @@ class VolcengineImageClient(ImageModelClient):
             }
         )
         return ImageResult(images_response.data[0].url)
+
+
+class VolcengineEmbeddingClient(EmbeddingModelClient):
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+
+        timeout_sec = self.model.model_config.get("timeout", 60)
+        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0)
+
+        client = AsyncOpenAI(
+            api_key=self.model.provider_config.get("api_key", ""),
+            base_url=self.model.provider_config.get("base_url", ""),
+            timeout=timeout_sec
+        )
+        try:
+            start_time = time.perf_counter()
+            response = await client.embeddings.create(
+                model=self.model.model_id,
+                input=texts
+            )
+            elapsed = round(time.perf_counter() - start_time, 2)
+            if elapsed > slow_threshold:
+                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
+            return [item.embedding for item in response.data]
+        except APIStatusError:
+            logger.exception("Embedding APIStatusError")
+            return []
+        except APITimeoutError:
+            logger.exception("Embedding APITimeoutError")
+            return []
+        except APIConnectionError:
+            logger.exception("Embedding APIConnectionError")
+            return []
+        except Exception:
+            logger.exception("Embedding error")
+            return []
