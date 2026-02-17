@@ -247,13 +247,19 @@ class MemoryRemoveTool(BaseTool):
             # 同步删除向量长期记忆中匹配的条目
             removed_text = removed.strip()
             vector_sync_error = None
+            vmap = None
+            try:
+                vmap = _load_vector_map()
+            except Exception as e:
+                map_load_error = f"Failed to load vector map before deletion: {e}"
+                logger.warning(map_load_error)
+                vector_sync_error = map_load_error
             if removed_text and _memory_manager and hasattr(_memory_manager, 'vector_store'):
                 try:
                     vector_id = None
-                    vmap = _load_vector_map()
 
                     # 优先通过持久化映射查找
-                    if index in vmap:
+                    if vmap and index in vmap:
                         candidate = _memory_manager.vector_store.get_memory_by_id(vmap[index])
                         if candidate:
                             vector_id = candidate.id
@@ -276,7 +282,8 @@ class MemoryRemoveTool(BaseTool):
 
             # 始终更新映射：文件已删除行，映射必须同步前移（无论向量操作是否执行）
             try:
-                vmap = _load_vector_map()
+                if vmap is None:
+                    raise RuntimeError("vector map unavailable")
                 new_map = {}
                 for k, v in vmap.items():
                     if k < index:
@@ -381,6 +388,13 @@ class ProfileUpdateTool(BaseTool):
     async def execute(self, user_id: str, action: str, value: str, target: str = "") -> str:
         if not _memory_manager or not hasattr(_memory_manager, 'user_profile_store'):
             return "Profile system not available"
+
+        if not isinstance(action, str) or not action.strip():
+            return "action is required"
+        action = action.strip()
+        allowed_actions = {"add_trait", "remove_trait", "add_fact", "set_name", "set_relationship"}
+        if action not in allowed_actions:
+            return f"Unknown action: {action}"
 
         store = _memory_manager.user_profile_store
         if action == "add_trait":

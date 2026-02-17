@@ -796,6 +796,7 @@ function updateTranslations() {
         if (ariaTranslation && ariaTranslation !== ariaKey) {
             element.setAttribute('aria-label', ariaTranslation);
             element.setAttribute('title', ariaTranslation);
+            element.setAttribute('data-i18n-aria-generated', 'true');
         }
     });
 }

@@ -2229,7 +2229,16 @@ function setupEventListeners() {
                     window.configManager.save();
                 } else {
                     // Only call legacy save if its expected form fields exist
-                    const hasLegacyFields = document.getElementById('msg-max-memory-length');
+                    const requiredLegacyFieldIds = [
+                        'msg-max-memory-length',
+                        'msg-max-message-interval',
+                        'msg-max-buffer-messages',
+                        'msg-min-message-delay',
+                        'msg-max-message-delay',
+                        'msg-agent-max-tool-loop',
+                        'msg-selfie-path'
+                    ];
+                    const hasLegacyFields = requiredLegacyFieldIds.every(id => document.getElementById(id));
                     if (hasLegacyFields) {
                         showNotification(getTranslation('config.fallback_save_warning', 'Configuration manager not loaded, falling back to legacy save'), 'warning');
                         saveConfiguration();
