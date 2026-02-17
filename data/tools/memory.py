@@ -267,7 +267,12 @@ class MemoryRemoveTool(BaseTool):
                     # k == index 已删除，跳过
                 _save_vector_map(new_map)
             except Exception as e:
-                logger.warning(f"Failed to update vector map after deletion: {e}")
+                map_error = f"Failed to update vector map after deletion: {e}"
+                logger.warning(map_error)
+                if vector_sync_error:
+                    vector_sync_error += f"; {map_error}"
+                else:
+                    vector_sync_error = map_error
 
         if vector_sync_error:
             return f"Core memory removed: {removed_text} (vector sync failed: {vector_sync_error})"

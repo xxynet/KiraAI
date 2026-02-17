@@ -19,6 +19,7 @@
         "name": "Timeout",
         "type": "integer",
         "default": 120,
+        "min": 1,
         "hint": "Timeout seconds"
       },
       "temperature": {

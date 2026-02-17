@@ -756,8 +756,15 @@ class ConfigurationManager {
             input.className = this._getInputClass(error);
         }
         if (hint) {
+            if (hint.dataset.originalHint === undefined) {
+                hint.dataset.originalHint = hint.textContent;
+            }
             hint.className = `text-xs mt-1 ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`;
-            if (error) hint.textContent = error;
+            if (error) {
+                hint.textContent = error;
+            } else {
+                hint.textContent = hint.dataset.originalHint;
+            }
         }
         if (label) {
             const isModified = this.modifiedFields.has(key);
