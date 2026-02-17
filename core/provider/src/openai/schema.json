@@ -15,34 +15,34 @@
   },
   "model_config": {
     "llm": {
-    "timeout": {
-      "name": "Timeout",
-      "type": "integer",
-      "default": 120,
-      "hint": "Timeout seconds"
+      "timeout": {
+        "name": "Timeout",
+        "type": "integer",
+        "default": 120,
+        "hint": "Timeout seconds"
+      },
+      "temperature": {
+        "name": "Temperature",
+        "type": "float",
+        "default": null,
+        "hint": "Model temperature"
+      }
     },
-    "temperature": {
-      "name": "Temperature",
-      "type": "float",
-      "default": null,
-      "hint": "Model temperature"
+    "image": {},
+    "embedding": {
+      "timeout": {
+        "name": "Timeout",
+        "type": "integer",
+        "default": 60,
+        "hint": "Request timeout in seconds"
+      },
+      "slow_request_threshold": {
+        "name": "Slow Request Threshold",
+        "type": "float",
+        "default": 5.0,
+        "min": 0,
+        "hint": "Requests slower than this threshold (seconds) will be logged as slow requests"
+      }
     }
-  },
-  "image": {},
-  "embedding": {
-    "timeout": {
-      "name": "Timeout",
-      "type": "integer",
-      "default": 60,
-      "hint": "Request timeout in seconds"
-    },
-    "slow_request_threshold": {
-      "name": "Slow Request Threshold",
-      "type": "float",
-      "default": 5.0,
-      "min": 0,
-      "hint": "Requests slower than this threshold (seconds) will be logged as slow requests"
-    }
-  }
   }
 }

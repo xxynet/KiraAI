@@ -101,7 +101,7 @@ class VectorStore:
 
         if embedding is not None:
             if not embedding or len(embedding) == 0:
-            logger.error(f"Empty embedding provided for memory id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
+                logger.error(f"Empty embedding provided for memory id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
                 raise ValueError("Embedding must be a non-empty list of floats")
             # 有外部嵌入，使用 upsert 存储文档+向量
             if not self._has_external_embeddings:

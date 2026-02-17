@@ -61,7 +61,9 @@ class KiraLifecycle:
         results = await asyncio.gather(*self.tasks, return_exceptions=True)
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                task_name = getattr(self.tasks[i], 'get_name', lambda: f'task_{i}')()
+                task = self.tasks[i]
+                name_attr = getattr(task, 'get_name', None)
+                task_name = name_attr() if callable(name_attr) else f"task_{i}"
                 logger.error(f"Scheduled task '{task_name}' failed: {result}")
 
     async def _memory_forgetting_loop(self):
@@ -110,7 +112,7 @@ class KiraLifecycle:
         try:
             from data.tools.memory import set_memory_manager
             set_memory_manager(self.memory_manager)
-        except Exception as e:
+        except (ImportError, ModuleNotFoundError, AttributeError) as e:
             logger.warning(f"Failed to inject memory_manager into tools: {e}")
 
         # ====== init persona manager ======

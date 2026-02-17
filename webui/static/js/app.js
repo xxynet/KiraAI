@@ -1116,12 +1116,19 @@ async function togglePluginEnabled(button) {
     }
     const isOn = button.getAttribute('aria-pressed') === 'true';
     const nextState = !isOn;
+
+    // Save original UI state for rollback
+    const origAriaPressed = button.getAttribute('aria-pressed');
+    const origButtonClass = button.className;
+    const knob = button.querySelector('span');
+    const origKnobClass = knob ? knob.className : null;
+
+    // Optimistically update UI
     button.setAttribute('aria-pressed', nextState ? 'true' : 'false');
     const baseClasses = 'ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none';
     const onClasses = 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500';
     const offClasses = 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600';
     button.className = `${baseClasses} ${nextState ? onClasses : offClasses}`;
-    const knob = button.querySelector('span');
     if (knob) {
         knob.className = `pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${nextState ? 'translate-x-4' : 'translate-x-0'}`;
     }
@@ -1138,6 +1145,13 @@ async function togglePluginEnabled(button) {
         }
     } catch (error) {
         console.error('Error updating plugin state:', error);
+        // Rollback UI to original state
+        button.setAttribute('aria-pressed', origAriaPressed);
+        button.className = origButtonClass;
+        if (knob && origKnobClass !== null) {
+            knob.className = origKnobClass;
+        }
+        showNotification(getTranslation('plugin.toggle_error', 'Failed to update plugin state'), 'error');
     }
 }
 

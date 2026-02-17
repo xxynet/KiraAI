@@ -9,33 +9,33 @@
   },
   "model_config": {
     "llm": {
-    "timeout": {
-      "name": "超时",
-      "type": "integer",
-      "default": 120,
-      "hint": "超时秒数"
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 120,
+        "hint": "超时秒数"
+      },
+      "temperature": {
+        "name": "温度",
+        "type": "float",
+        "default": null,
+        "hint": "模型温度"
+      }
     },
-    "temperature": {
-      "name": "温度",
-      "type": "float",
-      "default": null,
-      "hint": "模型温度"
-    }
-  },
-  "image": {
-    "image_size": {
-      "name": "图片尺寸",
-      "type": "string",
-      "default": "1024x1024",
-      "hint": "图片尺寸"
+    "image": {
+      "image_size": {
+        "name": "图片尺寸",
+        "type": "string",
+        "default": "1024x1024",
+        "hint": "图片尺寸"
+      },
+      "num_inference_steps": {
+        "name": "推理步数",
+        "type": "integer",
+        "default": 20,
+        "hint": "推理步数"
+      }
     },
-    "num_inference_steps": {
-      "name": "推理步数",
-      "type": "integer",
-      "default": 20,
-      "hint": "推理步数"
-    }
-  },
     "tts": {
       "voice_name": {
         "name": "声音ID",

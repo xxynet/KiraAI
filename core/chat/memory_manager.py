@@ -695,7 +695,7 @@ class MemoryManager:
         score = (importance_score * 0.35) + (access_decay * 0.25) + (creation_decay * 0.1) + access_bonus + type_bonus
         return min(score, 1.0)
 
-    async def _summarize_old_memories(self, all_memories: list[MemoryEntry] = None):
+    async def _summarize_old_memories(self, all_memories: Optional[list[MemoryEntry]] = None):
         """将同一用户的老旧事实合并为摘要"""
         if not self._llm_client:
             return
