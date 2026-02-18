@@ -266,7 +266,6 @@ class MessageProcessor:
             max_tool_loop = 2
 
         max_agent_steps = max_tool_loop+1
-        logger.debug("888888")
         
         for _ in range(max_agent_steps):
             llm_resp = await self.llm_api.agent_run(messages)

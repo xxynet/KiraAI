@@ -829,12 +829,15 @@ function updateTranslations() {
     });
 }
 
-// Export for use in other scripts
 window.i18n = {
     t: (key) => i18next.t(key),
     changeLanguage: (lng) => i18next.changeLanguage(lng).then(() => {
         try {
             updateTranslations();
+            const page = document.getElementById('page-configuration');
+            if (page && !page.classList.contains('hidden') && window.configManager && typeof window.configManager.render === 'function') {
+                window.configManager.render();
+            }
         } catch (error) {
             console.error('Failed to update translations after language change:', error);
         }
