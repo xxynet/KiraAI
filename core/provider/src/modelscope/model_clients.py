@@ -66,16 +66,16 @@ class ModelScopeLLMClient(LLMModelClient):
                 llm_resp.output_tokens = response.usage.completion_tokens
             return llm_resp
         except APIStatusError as e:
-            logger.exception("APIStatusError")
+            logger.error(f"APIStatusError: {e}")
             return LLMResponse(text_response=f"[Error] APIStatusError: {e}")
         except APITimeoutError as e:
-            logger.exception("APITimeoutError")
+            logger.error(f"APITimeoutError: {e}")
             return LLMResponse(text_response=f"[Error] APITimeoutError: {e}")
         except APIConnectionError as e:
-            logger.exception("APIConnectionError")
+            logger.error(f"APIConnectionError: {e}")
             return LLMResponse(text_response=f"[Error] APIConnectionError: {e}")
         except Exception as e:
-            logger.exception("Error")
+            logger.error(f"Error: {e}")
             return LLMResponse(text_response=f"[Error] {e}")
 
 
@@ -173,9 +173,9 @@ class ModelScopeEmbeddingClient(EmbeddingModelClient):
             if slow_threshold is not None and elapsed > slow_threshold:
                 logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
             return [item.embedding for item in response.data]
-        except (APIStatusError, APITimeoutError, APIConnectionError):
-            logger.exception("Embedding API error")
+        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+            logger.error(f"Embedding API error: {e}")
             return []
-        except Exception:
-            logger.exception("Embedding error")
+        except Exception as e:
+            logger.error(f"Embedding error: {e}")
             return []

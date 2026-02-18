@@ -74,8 +74,8 @@ class KiraLifecycle:
                 await asyncio.sleep(86400)  # 每 24 小时运行一次
             except asyncio.CancelledError:
                 break
-            except Exception:
-                logger.exception("Memory forgetting cycle error")
+            except Exception as e:
+                logger.error(f"Memory forgetting cycle error: {e}")
                 await asyncio.sleep(60)  # 失败后等待 60 秒再重试, 避免日志风暴
 
     async def init_and_run_system(self):

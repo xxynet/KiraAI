@@ -263,8 +263,8 @@ class MemoryManager:
                         user_id=user_id,
                         k=k
                     )
-                except Exception:
-                    logger.exception("Text-based recall fallback failed")
+                except Exception as e:
+                    logger.error(f"Text-based recall fallback failed: {e}")
             else:
                 logger.debug("No embedding model available and collection uses external embeddings, skipping recall")
             return []

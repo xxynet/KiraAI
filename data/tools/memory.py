@@ -203,7 +203,7 @@ class MemoryUpdateTool(BaseTool):
                                 logger.warning(vector_sync_error)
                         except Exception as e:
                             vector_sync_error = f"update_memory raised for entry {vector_id}: {e}"
-                            logger.exception("update_memory raised for entry %s", vector_id)
+                            logger.error(vector_sync_error)
                     else:
                         vector_sync_error = f"Could not locate vector entry for core memory index {index}"
                         logger.warning(vector_sync_error)

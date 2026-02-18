@@ -199,7 +199,7 @@ class MessageProcessor:
         core_memory = self.memory_manager.get_core_memory()
 
         # 构建用户标识（跨 recall / profile 复用）
-        user_key = f"{msg.adapter_name}:{msg.user_id}"
+        user_key = f"{msg.adapter.name}:{msg.sender.user_id}"
 
         # Recall long-term memories (RAG)
         recalled_memories_str = ""
@@ -208,7 +208,7 @@ class MessageProcessor:
 
             # 群聊场景：额外搜索群级记忆（海马体在群聊中提取的事实存储在群 ID 下）
             if msg.is_group_message():
-                group_key = f"{msg.adapter_name}:group:{msg.group_id}"
+                group_key = f"{msg.adapter.name}:group:{msg.group.group_id}"
                 group_recalled = await self.memory_manager.recall(
                     formatted_messages_str, user_id=group_key, k=3
                 )
@@ -220,7 +220,7 @@ class MessageProcessor:
 
             recalled_memories_str = self.memory_manager.format_recalled_memories(recalled)
         except Exception:
-            logger.exception("Long-term memory recall failed")
+            logger.error("Long-term memory recall failed")
 
         # Get user profile
         user_profile_str = ""
@@ -229,11 +229,11 @@ class MessageProcessor:
             # Update interaction stats
             await self.memory_manager.update_user_interaction(
                 user_key,
-                platform=msg.platform,
-                nickname=msg.user_nickname
+                platform=msg.adapter.platform,
+                nickname=msg.sender.nickname
             )
         except Exception:
-            logger.exception("User profile retrieval skipped")
+            logger.error("User profile retrieval skipped")
 
         # Get emoji_dict
         emoji_dict = getattr(get_adapter_by_name(msg.adapter.name), "emoji_dict", {})
@@ -266,7 +266,8 @@ class MessageProcessor:
             max_tool_loop = 2
 
         max_agent_steps = max_tool_loop+1
-
+        logger.debug("888888")
+        
         for _ in range(max_agent_steps):
             llm_resp = await self.llm_api.agent_run(messages)
             if llm_resp:

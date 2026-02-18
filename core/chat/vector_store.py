@@ -164,7 +164,7 @@ class VectorStore:
             except ValueError:
                 raise
             except Exception as e:
-                logger.exception("embedding_func failed")
+                logger.error(f"embedding_func failed: {e}")
                 raise ValueError(f"Failed to generate embedding via embedding_func: {e}") from e
         elif self._has_external_embeddings:
             # 已启用外部嵌入但未提供，抛出异常而非静默丢失数据
@@ -222,8 +222,8 @@ class VectorStore:
 
         try:
             results = self._collection.query(**query_kwargs)
-        except Exception:
-            logger.exception("Vector search error")
+        except Exception as e:
+            logger.error(f"Vector search error: {e}")
             return []
 
         entries = []
@@ -285,8 +285,8 @@ class VectorStore:
                 where=where_filter,
                 limit=limit
             )
-        except Exception:
-            logger.exception("Get by user error")
+        except Exception as e:
+            logger.error(f"Get by user error: {e}")
             return []
 
         entries = []
@@ -381,8 +381,8 @@ class VectorStore:
 
             self._collection.update(**update_kwargs)
             return True
-        except Exception:
-            logger.exception("Update memory error")
+        except Exception as e:
+            logger.error(f"Update memory error: {e}")
             return False
 
     def get_memory_by_id(self, memory_id: str) -> Optional[MemoryEntry]:
@@ -411,8 +411,8 @@ class VectorStore:
         try:
             self._collection.delete(ids=[memory_id])
             return True
-        except Exception:
-            logger.exception("Delete memory error")
+        except Exception as e:
+            logger.error(f"Delete memory error: {e}")
             return False
 
     def get_all_memories(self, limit: int = 1000, offset: int = 0) -> list[MemoryEntry]:
@@ -427,8 +427,8 @@ class VectorStore:
         """
         try:
             results = self._collection.get(limit=limit, offset=offset)
-        except Exception:
-            logger.exception("Get all memories error")
+        except Exception as e:
+            logger.error(f"Get all memories error: {e}")
             return []
 
         entries = []

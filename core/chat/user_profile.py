@@ -69,8 +69,8 @@ class UserProfileStore:
                         self._profiles[uid] = UserProfile(**sanitized)
                     except (TypeError, ValueError) as e:
                         logger.warning(f"Skipping malformed profile '{uid}': {e}")
-            except Exception:
-                logger.exception("Failed to load user profiles")
+            except Exception as e:
+                logger.error(f"Failed to load user profiles: {e}")
         else:
             dir_path = os.path.dirname(self.path) or '.'
             os.makedirs(dir_path, exist_ok=True)
@@ -94,8 +94,8 @@ class UserProfileStore:
                 os.fsync(f.fileno())
             os.replace(tmp_path, self.path)
             tmp_path = None
-        except Exception:
-            logger.exception("Failed to save user profiles")
+        except Exception as e:
+            logger.error(f"Failed to save user profiles: {e}")
         finally:
             if fd is not None:
                 os.close(fd)
