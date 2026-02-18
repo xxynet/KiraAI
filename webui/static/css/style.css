@@ -1270,3 +1270,102 @@ input, select, textarea {
 .dark .custom-select-empty {
     color: #9ca3af;
 }
+
+/* ========== Configuration Manager Styles ========== */
+
+/* Config group header hover */
+.config-group-header {
+    user-select: none;
+}
+
+.config-group-header:active {
+    transform: scale(0.995);
+}
+
+/* Config group body transition */
+.config-group-body {
+    transition: max-height 0.25s ease-in-out, opacity 0.2s ease-in-out, padding 0.2s ease-in-out;
+}
+
+/* Config field wrapper */
+.config-field-wrapper {
+    position: relative;
+}
+
+/* Search highlight */
+.config-field-wrapper mark {
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+/* Modified field indicator animation */
+.config-field-wrapper .text-amber-500 {
+    animation: fade-in-config-badge 0.2s ease-in-out;
+}
+
+@keyframes fade-in-config-badge {
+    from { opacity: 0; transform: translateY(-2px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Validation error shake */
+.config-field-wrapper input.border-red-400,
+.config-field-wrapper input.border-red-500 {
+    animation: shake 0.3s ease-in-out;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+}
+
+/* Keyboard shortcut badges */
+kbd {
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+    line-height: 1;
+}
+
+/* Config change count badge */
+#config-change-count {
+    animation: fade-in-config-badge 0.2s ease-in-out;
+}
+
+/* Config search input clear animation */
+#config-search-input:focus {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Dark mode hover for config groups */
+.dark .config-group-header:hover {
+    background-color: rgba(55, 65, 81, 0.8);
+}
+
+/* Config group smooth transitions */
+.config-group {
+    transition: opacity 0.15s ease-in-out;
+}
+
+/* Responsive: stack toolbar on small screens */
+@media (max-width: 640px) {
+    #config-search-input {
+        width: 100%;
+    }
+    .config-field-wrapper select {
+        width: 100% !important;
+    }
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+    .config-field-wrapper .text-amber-500,
+    #config-change-count,
+    .config-field-wrapper input.border-red-400,
+    .config-field-wrapper input.border-red-500 {
+        animation: none;
+    }
+    .config-group-body,
+    .config-group {
+        transition: none;
+    }
+}

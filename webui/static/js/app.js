@@ -1116,15 +1116,29 @@ async function togglePluginEnabled(button) {
     }
     const isOn = button.getAttribute('aria-pressed') === 'true';
     const nextState = !isOn;
+
+    // Save original UI state for rollback
+    const origAriaPressed = button.getAttribute('aria-pressed');
+    const origButtonClass = button.className;
+    const knob = button.querySelector('span');
+    const origKnobClass = knob ? knob.className : null;
+    const origDisabled = button.disabled;
+    const origAriaDisabled = button.getAttribute('aria-disabled');
+
+    // Optimistically update UI
     button.setAttribute('aria-pressed', nextState ? 'true' : 'false');
     const baseClasses = 'ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none';
     const onClasses = 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500';
     const offClasses = 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600';
     button.className = `${baseClasses} ${nextState ? onClasses : offClasses}`;
-    const knob = button.querySelector('span');
     if (knob) {
         knob.className = `pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${nextState ? 'translate-x-4' : 'translate-x-0'}`;
     }
+
+    // Disable button during API call
+    button.disabled = true;
+    button.setAttribute('aria-disabled', 'true');
+
     try {
         const response = await apiCall(`/api/plugins/${encodeURIComponent(pluginId)}/enabled`, {
             method: 'POST',
@@ -1136,8 +1150,29 @@ async function togglePluginEnabled(button) {
         if (!response.ok) {
             throw new Error(`Failed to update plugin state: ${response.status}`);
         }
+        // Sync local state so subsequent reads see the updated value
+        if (AppState.data.plugins) {
+            const plugin = AppState.data.plugins.find(p => p.id === pluginId || p.name === pluginId);
+            if (plugin) {
+                plugin.enabled = nextState;
+            }
+        }
     } catch (error) {
         console.error('Error updating plugin state:', error);
+        // Rollback UI to original state
+        button.setAttribute('aria-pressed', origAriaPressed);
+        button.className = origButtonClass;
+        if (knob && origKnobClass !== null) {
+            knob.className = origKnobClass;
+        }
+        showNotification(getTranslation('plugin.toggle_error', 'Failed to update plugin state'), 'error');
+    } finally {
+        button.disabled = origDisabled;
+        if (origAriaDisabled === null) {
+            button.removeAttribute('aria-disabled');
+        } else {
+            button.setAttribute('aria-disabled', origAriaDisabled);
+        }
     }
 }
 
@@ -1559,25 +1594,75 @@ function renderPersonaList() {
 }
 
 /**
- * Load configuration data
+ * Load configuration data - uses ConfigurationManager
  */
 async function loadConfigurationData() {
     try {
-        setupConfigurationTabs();
-        const response = await apiCall('/api/configuration');
-        const data = await response.json();
-        const configuration = data.configuration || {};
-        const botConfig = configuration.bot_config || {};
-        const modelsConfig = configuration.models || {};
-        const providers = data.providers || [];
-        const providerModels = data.provider_models || {};
-        AppState.data.configuration = configuration;
-        AppState.data.configProviders = providers;
-        AppState.data.configProviderModels = providerModels;
-        populateMessageConfiguration(botConfig);
-        populateModelConfiguration(modelsConfig, providers, providerModels);
+        if (window.configManager) {
+            await window.configManager.load();
+            // Bind toolbar events (idempotent)
+            _bindConfigToolbarEvents();
+        } else {
+            console.error('ConfigurationManager not loaded');
+            showNotification(getTranslation('config.load_failed', 'Configuration subsystem failed to load. Please refresh the page.'), 'error');
+            // Disable config controls to prevent silent failures
+            const configContainer = document.getElementById('config-dynamic-container') || document.getElementById('config-container');
+            if (configContainer) {
+                configContainer.innerHTML = '<div class="text-center text-red-500 py-8">' + getTranslation('config.module_unavailable', 'Configuration module unavailable') + '</div>';
+            }
+            return;
+        }
     } catch (error) {
         console.error('Error loading configuration data:', error);
+        const msg = error && error.message ? error.message : String(error) || 'Unknown error';
+        showNotification(getTranslation('config.load_error', 'Failed to load configuration') + ': ' + msg, 'error');
+    }
+}
+
+/** Bind configuration toolbar button events */
+function _bindConfigToolbarEvents() {
+    const searchInput = document.getElementById('config-search-input');
+    if (searchInput && searchInput.dataset.boundConfigToolbar !== '1') {
+        searchInput.dataset.boundConfigToolbar = '1';
+        let debounceTimer;
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (window.configManager) {
+                    window.configManager.setSearch(e.target.value);
+                }
+            }, 150);
+        });
+    }
+
+    const undoBtn = document.getElementById('config-undo-btn');
+    if (undoBtn && undoBtn.dataset.boundConfigToolbar !== '1') {
+        undoBtn.dataset.boundConfigToolbar = '1';
+        undoBtn.addEventListener('click', () => window.configManager?.undo());
+    }
+
+    const redoBtn = document.getElementById('config-redo-btn');
+    if (redoBtn && redoBtn.dataset.boundConfigToolbar !== '1') {
+        redoBtn.dataset.boundConfigToolbar = '1';
+        redoBtn.addEventListener('click', () => window.configManager?.redo());
+    }
+
+    const resetBtn = document.getElementById('config-reset-btn');
+    if (resetBtn && resetBtn.dataset.boundConfigToolbar !== '1') {
+        resetBtn.dataset.boundConfigToolbar = '1';
+        resetBtn.addEventListener('click', () => window.configManager?.reset());
+    }
+
+    const expandBtn = document.getElementById('config-expand-all-btn');
+    if (expandBtn && expandBtn.dataset.boundConfigToolbar !== '1') {
+        expandBtn.dataset.boundConfigToolbar = '1';
+        expandBtn.addEventListener('click', () => window.configManager?.expandAll());
+    }
+
+    const collapseBtn = document.getElementById('config-collapse-all-btn');
+    if (collapseBtn && collapseBtn.dataset.boundConfigToolbar !== '1') {
+        collapseBtn.dataset.boundConfigToolbar = '1';
+        collapseBtn.addEventListener('click', () => window.configManager?.collapseAll());
     }
 }
 
@@ -2140,7 +2225,27 @@ function setupEventListeners() {
             const configurationPage = document.getElementById('page-configuration');
             if (configurationPage && configurationPage.contains(target) && !configurationPage.classList.contains('hidden')) {
                 e.preventDefault();
-                saveConfiguration();
+                if (window.configManager) {
+                    window.configManager.save();
+                } else {
+                    // Only call legacy save if its expected form fields exist
+                    const requiredLegacyFieldIds = [
+                        'msg-max-memory-length',
+                        'msg-max-message-interval',
+                        'msg-max-buffer-messages',
+                        'msg-min-message-delay',
+                        'msg-max-message-delay',
+                        'msg-agent-max-tool-loop',
+                        'msg-selfie-path'
+                    ];
+                    const hasLegacyFields = requiredLegacyFieldIds.every(id => document.getElementById(id));
+                    if (hasLegacyFields) {
+                        showNotification(getTranslation('config.fallback_save_warning', 'Configuration manager not loaded, falling back to legacy save'), 'warning');
+                        saveConfiguration();
+                    } else {
+                        showNotification(getTranslation('config.manager_not_loaded', 'Configuration manager not loaded'), 'warning');
+                    }
+                }
                 return;
             }
         }
@@ -2421,190 +2526,6 @@ async function openProviderModal() {
                 showNotification(`Failed to load provider types: ${error.message}`, 'error');
             }
         }
-    }
-}
-
-/**
- * Close provider modal
- */
-function closeProviderModal() {
-    const modal = document.getElementById('provider-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-    }
-    AppState.selectedProviderId = null;
-}
-
-/**
- * Fetch provider schema
- * @param {string} providerType - Type of the provider
- * @returns {Promise<object>} Schema object
- */
-async function fetchProviderSchema(providerType) {
-    try {
-        const response = await apiCall(`/api/providers/schema/${providerType}`);
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching provider schema:', error);
-        showNotification('Failed to load provider schema', 'error');
-        return null;
-    }
-}
-
-/**
- * Load provider schema and render to default container
- */
-async function loadProviderSchema(providerType) {
-    const schema = await fetchProviderSchema(providerType);
-    if (schema) {
-        renderProviderConfigFields(schema, 'provider-config-container');
-    }
-}
-
-/**
- * Render provider config fields based on schema
- * @param {object} schema - The schema definition
- * @param {HTMLElement|string} containerOrId - Container element or ID
- * @param {object} currentValues - Current configuration values (optional)
- */
-function renderProviderConfigFields(schema, containerOrId = 'provider-config-container', currentValues = {}) {
-    const container = typeof containerOrId === 'string' ? document.getElementById(containerOrId) : containerOrId;
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    // Create fields for each schema item
-    Object.entries(schema).forEach(([key, fieldDef]) => {
-        const fieldWrapper = document.createElement('div');
-        fieldWrapper.className = 'mb-4';
-        
-        const label = document.createElement('label');
-        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2';
-        label.textContent = (fieldDef && fieldDef.name) ? fieldDef.name : key;
-        
-        let input;
-        
-        if (fieldDef.type === 'sensitive') {
-            input = document.createElement('input');
-            input.type = 'password';
-            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
-        } else if (fieldDef.type === 'integer' || fieldDef.type === 'float') {
-            input = document.createElement('input');
-            input.type = 'number';
-            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
-            if (fieldDef.type === 'float') {
-                input.step = 'any';
-            } else {
-                input.step = '1';
-            }
-        } else {
-            // Default to text for string and others
-            input = document.createElement('input');
-            input.type = 'text';
-            input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
-        }
-        
-        // Set common attributes
-        input.id = `config-${key}`;
-        input.setAttribute('data-config-key', key);
-        input.setAttribute('data-config-type', fieldDef.type);
-        
-        // Determine value: currentValues > default > ''
-        let value = currentValues[key];
-        if (value === undefined || value === null) {
-            value = fieldDef.default;
-        }
-        
-        if (value !== undefined && value !== null) {
-            input.value = value;
-        }
-        
-        if (fieldDef.hint) {
-            input.placeholder = fieldDef.hint;
-            input.title = fieldDef.hint;
-        }
-        
-        fieldWrapper.appendChild(label);
-        fieldWrapper.appendChild(input);
-        
-        // Add hint text if available
-        if (fieldDef.hint) {
-            const hint = document.createElement('p');
-            hint.className = 'text-xs text-gray-500 mt-1';
-            hint.textContent = fieldDef.hint;
-            fieldWrapper.appendChild(hint);
-        }
-        
-        container.appendChild(fieldWrapper);
-    });
-}
-
-/**
- * Save provider
- */
-async function saveProvider() {
-    const name = document.getElementById('provider-name').value.trim();
-    const typeSelect = document.getElementById('provider-type');
-    const type = typeSelect ? typeSelect.value : '';
-    
-    if (!name) {
-        showNotification('Please enter provider name', 'error');
-        return;
-    }
-    
-    if (!type) {
-        showNotification('Please select provider type', 'error');
-        return;
-    }
-    
-    // Collect dynamic config
-    const config = {};
-    const configContainer = document.getElementById('provider-config-container');
-    if (configContainer) {
-        const inputs = configContainer.querySelectorAll('input[data-config-key]');
-        inputs.forEach(input => {
-            const key = input.getAttribute('data-config-key');
-            const fieldType = input.getAttribute('data-config-type');
-            
-            if (key) {
-                let value = input.value;
-                if (fieldType === 'integer') {
-                    value = value === '' ? null : parseInt(value, 10);
-                } else if (fieldType === 'float') {
-                    value = value === '' ? null : parseFloat(value);
-                }
-                config[key] = value;
-            }
-        });
-    }
-    
-    try {
-        const response = await apiCall('/api/providers', {
-            method: 'POST',
-            body: JSON.stringify({
-                name: name,
-                type: type,
-                config: config
-            })
-        });
-        
-        if (response.ok) {
-            // Reload provider list
-            await loadProviderData();
-            
-            // Close modal
-            closeProviderModal();
-            
-            // Show success notification
-            showNotification('Provider added successfully', 'success');
-        } else {
-            const errorData = await response.json();
-            showNotification(errorData.detail || 'Failed to add provider', 'error');
-        }
-    } catch (error) {
-        console.error('Error saving provider:', error);
-        showNotification('Error saving provider', 'error');
     }
 }
 
@@ -3610,6 +3531,8 @@ function refreshLogs() {
 window.AppState = AppState;
 window.switchPage = switchPage;
 window.loadPageData = loadPageData;
+window.apiCall = apiCall;
+window.showNotification = showNotification;
 
 // Remove duplicate openProviderModal if present at the end of file
 // The valid one is around line 1325
@@ -3659,7 +3582,7 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
     container.innerHTML = '';
     
     if (!schema || Object.keys(schema).length === 0) {
-        container.innerHTML = '<div class="text-gray-500 py-2">No configuration required</div>';
+        container.innerHTML = '<div class="text-gray-500 py-2">' + getTranslation('model.no_config_required', 'No configuration required') + '</div>';
         return;
     }
     
@@ -3673,10 +3596,31 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
         const wrapper = document.createElement('div');
         wrapper.className = 'mb-4';
         
+        // Label row with tooltip
+        const labelRow = document.createElement('div');
+        labelRow.className = 'flex items-center mb-1';
+        
         const label = document.createElement('label');
-        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
+        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300';
         label.textContent = (field && field.name) ? field.name : key;
-        wrapper.appendChild(label);
+        labelRow.appendChild(label);
+        
+        // Add tooltip icon if hint exists
+        if (field.hint) {
+            const tooltipContainer = document.createElement('div');
+            tooltipContainer.className = 'relative ml-1 group';
+            tooltipContainer.innerHTML = `
+                <svg class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-normal break-words max-w-[80vw] sm:max-w-xs z-50">
+                    ${escapeHtml(field.hint)}
+                </div>
+            `;
+            labelRow.appendChild(tooltipContainer);
+        }
+        
+        wrapper.appendChild(labelRow);
         
         let input;
         const fieldType = field.type || 'string';
@@ -3698,9 +3642,11 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
             input.type = 'text';
         }
         
-        input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        input.className = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors';
         input.setAttribute('data-config-key', key);
         input.setAttribute('data-config-type', fieldType);
+        if (field.name) input.setAttribute('data-config-name', field.name);
+        if (field.min !== undefined) input.setAttribute('data-config-min', field.min);
         
         if (currentValue !== undefined && currentValue !== null) {
             input.value = currentValue;
@@ -3709,8 +3655,24 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
         if (field.hint) {
             input.placeholder = field.hint;
         }
+
+        // Add real-time validation for numeric fields
+        if (fieldType === 'integer' || fieldType === 'float') {
+            input.addEventListener('input', function() {
+                validateConfigFieldInput(this);
+            });
+            input.addEventListener('blur', function() {
+                validateConfigFieldInput(this);
+            });
+        }
         
         wrapper.appendChild(input);
+        
+        // Error message element
+        const errorEl = document.createElement('p');
+        errorEl.className = 'text-xs text-red-500 dark:text-red-400 mt-1 hidden';
+        errorEl.setAttribute('data-error-for', key);
+        wrapper.appendChild(errorEl);
         
         if (field.hint) {
             const hint = document.createElement('p');
@@ -3721,6 +3683,55 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
         
         container.appendChild(wrapper);
     });
+}
+
+/**
+ * Validate a config field input in real-time
+ * @param {HTMLInputElement} input
+ * @returns {boolean}
+ */
+function validateConfigFieldInput(input) {
+    const key = input.getAttribute('data-config-key');
+    const fieldType = input.getAttribute('data-config-type');
+    const fieldName = input.getAttribute('data-config-name') || key;
+    const value = input.value.trim();
+    const errorEl = input.parentElement.querySelector(`[data-error-for="${key}"]`);
+
+    let errorMsg = '';
+
+    if (value !== '') {
+        if (fieldType === 'integer') {
+            if (!/^-?\d+$/.test(value)) {
+                errorMsg = getTranslation('model.validation_integer', '{field} must be an integer').replace('{field}', fieldName);
+            } else if (input.hasAttribute('data-config-min') && parseInt(value, 10) < parseInt(input.getAttribute('data-config-min'), 10)) {
+                const min = input.getAttribute('data-config-min');
+                errorMsg = getTranslation('model.validation_min', '{field} must be at least {min}')
+                    .replace('{field}', fieldName)
+                    .replace('{min}', min);
+            }
+        } else if (fieldType === 'float') {
+            if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(value)) {
+                errorMsg = getTranslation('model.validation_number', '{field} must be a valid number').replace('{field}', fieldName);
+            } else if (input.hasAttribute('data-config-min') && parseFloat(value) < parseFloat(input.getAttribute('data-config-min'))) {
+                const min = input.getAttribute('data-config-min');
+                errorMsg = getTranslation('model.validation_min', '{field} must be at least {min}')
+                    .replace('{field}', fieldName)
+                    .replace('{min}', min);
+            }
+        }
+    }
+
+    if (errorMsg) {
+        input.classList.remove('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
+        input.classList.add('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
+        if (errorEl) { errorEl.textContent = errorMsg; errorEl.classList.remove('hidden'); }
+        return false;
+    } else {
+        input.classList.remove('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
+        input.classList.add('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
+        if (errorEl) { errorEl.textContent = ''; errorEl.classList.add('hidden'); }
+        return true;
+    }
 }
 
 /**
@@ -3755,7 +3766,18 @@ async function saveProvider() {
     const config = {};
     const configContainer = document.getElementById('provider-config-container');
     if (configContainer) {
+        // Validate all config fields before saving
+        let hasValidationError = false;
         const inputs = configContainer.querySelectorAll('input[data-config-key]');
+        inputs.forEach(input => {
+            if (!validateConfigFieldInput(input)) {
+                hasValidationError = true;
+            }
+        });
+        if (hasValidationError) {
+            showNotification(getTranslation('model.validation_failed', 'Please fix validation errors before saving'), 'error');
+            return;
+        }
         inputs.forEach(input => {
             const key = input.getAttribute('data-config-key');
             const fieldType = input.getAttribute('data-config-type');
@@ -4124,7 +4146,15 @@ async function openModelModal(providerId, modelType, groupLabel, modelId = null,
     modal.classList.remove('hidden');
     modal.classList.add('flex');
     const modelIdInput = document.getElementById('model-id');
+    const modelIdError = document.getElementById('model-id-error');
+    const modelIdHint = document.getElementById('model-id-hint');
     if (modelIdInput) {
+        // Reset validation state
+        modelIdInput.classList.remove('border-red-500', 'dark:border-red-400');
+        modelIdInput.classList.add('border-gray-300', 'dark:border-gray-600');
+        if (modelIdError) { modelIdError.classList.add('hidden'); modelIdError.textContent = ''; }
+        if (modelIdHint) modelIdHint.classList.remove('hidden');
+
         if (modelId) {
             modelIdInput.value = modelId;
             modelIdInput.disabled = true;
@@ -4132,6 +4162,19 @@ async function openModelModal(providerId, modelType, groupLabel, modelId = null,
             modelIdInput.value = '';
             modelIdInput.disabled = false;
         }
+        // Remove old listeners then attach new real-time validation
+        const currentValue = modelIdInput.value;
+        const currentDisabled = modelIdInput.disabled;
+        const newInput = modelIdInput.cloneNode(true);
+        modelIdInput.parentNode.replaceChild(newInput, modelIdInput);
+        newInput.value = currentValue;
+        newInput.disabled = currentDisabled;
+        newInput.addEventListener('input', function() {
+            validateModelIdInput(this);
+        });
+        newInput.addEventListener('blur', function() {
+            validateModelIdInput(this);
+        });
     }
     const groupElement = document.getElementById('model-modal-group');
     if (groupElement) {
@@ -4161,6 +4204,42 @@ async function openModelModal(providerId, modelType, groupLabel, modelId = null,
     }
 }
 
+/**
+ * Validate model ID input in real-time
+ * @param {HTMLInputElement} input
+ * @returns {boolean}
+ */
+function validateModelIdInput(input) {
+    const value = input.value.trim();
+    const errorEl = document.getElementById('model-id-error');
+    const hintEl = document.getElementById('model-id-hint');
+    // Model ID pattern: alphanumeric, hyphens, underscores, dots, colons, slashes
+    const validPattern = /^[a-zA-Z0-9][a-zA-Z0-9\-_.:\/]*$/;
+
+    let errorMsg = '';
+    if (value === '') {
+        errorMsg = getTranslation('model.validation_id_required', 'Model ID is required');
+    } else if (value.length > 128) {
+        errorMsg = getTranslation('model.validation_id_too_long', 'Model ID must be 128 characters or less');
+    } else if (!validPattern.test(value)) {
+        errorMsg = getTranslation('model.validation_id_format', 'Model ID must start with a letter or number and contain only letters, numbers, hyphens, underscores, dots, colons, or slashes');
+    }
+
+    if (errorMsg) {
+        input.classList.remove('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
+        input.classList.add('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
+        if (errorEl) { errorEl.textContent = errorMsg; errorEl.classList.remove('hidden'); }
+        if (hintEl) hintEl.classList.add('hidden');
+        return false;
+    } else {
+        input.classList.remove('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
+        input.classList.add('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
+        if (errorEl) { errorEl.textContent = ''; errorEl.classList.add('hidden'); }
+        if (hintEl) hintEl.classList.remove('hidden');
+        return true;
+    }
+}
+
 function closeModelModal() {
     const modal = document.getElementById('model-modal');
     if (modal) {
@@ -4185,17 +4264,32 @@ async function saveModel() {
     if (!modelIdInput) return;
     let modelId = modelModalState.modelId;
     if (mode === 'create') {
+        // Run real-time validation before proceeding
+        if (!validateModelIdInput(modelIdInput)) {
+            modelIdInput.focus();
+            return;
+        }
         modelId = modelIdInput.value.trim();
         if (!modelId) {
             showNotification(getTranslation('model.id_required', 'Model ID is required'), 'error');
             return;
         }
     }
+    // Validate config fields
     const configContainer = document.getElementById('model-config-container');
+    let hasValidationError = false;
+    const configInputs = configContainer ? configContainer.querySelectorAll('input[data-config-key]') : [];
+    configInputs.forEach(input => {
+        if (!validateConfigFieldInput(input)) {
+            hasValidationError = true;
+        }
+    });
+    if (hasValidationError) {
+        showNotification(getTranslation('model.validation_failed', 'Please fix validation errors before saving'), 'error');
+        return;
+    }
     const config = {};
-    if (configContainer) {
-        const inputs = configContainer.querySelectorAll('input[data-config-key]');
-        inputs.forEach(input => {
+    configInputs.forEach(input => {
             const key = input.getAttribute('data-config-key');
             const fieldType = input.getAttribute('data-config-type');
             if (!key) {
@@ -4209,7 +4303,6 @@ async function saveModel() {
             }
             config[key] = value;
         });
-    }
     try {
         let response;
         if (mode === 'edit') {
@@ -4375,77 +4468,6 @@ function closePersonaModal() {
             AppState.personaEditor.instance.dispose();
             AppState.personaEditor.instance = null;
         }
-    }
-}
-
-/**
- * Create persona editor instance
- */
-function createPersonaEditor() {
-    const container = document.getElementById('persona-editor-container');
-    if (!container) return;
-    
-    // Dispose of existing editor if any
-    if (AppState.personaEditor.instance) {
-        AppState.personaEditor.instance.dispose();
-    }
-    
-    // Get default content based on format
-    const format = document.getElementById('persona-format').value;
-    const defaultContent = getDefaultPersonaContent(format);
-    
-    // Create new editor instance
-    AppState.personaEditor.instance = monaco.editor.create(container, {
-        value: defaultContent,
-        language: format === 'markdown' ? 'markdown' : format,
-        theme: document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs',
-        automaticLayout: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        fontSize: 14,
-        wordWrap: 'on',
-        folding: true,
-        lineNumbers: 'on',
-        renderWhitespace: 'selection'
-    });
-    
-    AppState.personaEditor.format = format;
-    
-    // Set up format change listener
-    const formatSelector = document.getElementById('persona-format');
-    if (formatSelector) {
-        formatSelector.onchange = null; // Remove any existing listener
-        formatSelector.onchange = function() {
-            const newFormat = this.value;
-            const newContent = getDefaultPersonaContent(newFormat);
-            
-            if (AppState.personaEditor.instance) {
-                AppState.personaEditor.instance.setValue(newContent);
-                monaco.editor.setModelLanguage(AppState.personaEditor.instance.getModel(), 
-                    newFormat === 'markdown' ? 'markdown' : newFormat);
-            }
-            AppState.personaEditor.format = newFormat;
-        };
-    }
-}
-
-/**
- * Get default persona content based on format
- * @param {string} format - Format type
- * @returns {string} Default content
- */
-function getDefaultPersonaContent(format) {
-    switch (format) {
-        case 'json':
-            return '{\n  "name": "My Persona",\n  "description": "A helpful AI assistant",\n  "traits": ["friendly", "knowledgeable"],\n  "instructions": "You are a helpful AI assistant."\n}';
-        case 'yaml':
-            return 'name: My Persona\ndescription: A helpful AI assistant\ntraits:\n  - friendly\n  - knowledgeable\ninstructions: You are a helpful AI assistant.';
-        case 'markdown':
-            return '# My Persona\n\n## Description\nA helpful AI assistant\n\n## Traits\n- Friendly\n- Knowledgeable\n\n## Instructions\nYou are a helpful AI assistant.';
-        case 'text':
-            return 'My Persona\n\nDescription: A helpful AI assistant\n\nTraits: Friendly, Knowledgeable\n\nInstructions: You are a helpful AI assistant.';
-        default:
-            return '';
     }
 }
 

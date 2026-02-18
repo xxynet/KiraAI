@@ -3,7 +3,7 @@ import time
 from typing import Optional
 
 from core.provider import ModelInfo
-from core.provider import LLMModelClient, ImageModelClient
+from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.provider.image_result import ImageResult
 from core.logging_manager import get_logger
@@ -22,11 +22,13 @@ class OpenAILLMClient(LLMModelClient):
         )
         try:
             start_time = time.perf_counter()
+            temperature = self.model.model_config.get("temperature") if self.model.model_config else None
             response = await client.chat.completions.create(
                 model=self.model.model_id,
                 messages=request.messages,
                 tools=request.tools if request.tools else None,
-                tool_choice=request.tool_choice if request.tool_choice != "none" else None
+                tool_choice=request.tool_choice if request.tool_choice != "none" else None,
+                temperature=temperature if temperature is not None else 1
             )
             end_time = time.perf_counter()
             llm_resp = LLMResponse("")
@@ -56,16 +58,17 @@ class OpenAILLMClient(LLMModelClient):
                 llm_resp.output_tokens = response.usage.completion_tokens
             return llm_resp
         except APIStatusError as e:
-            # the model does not support function calling etc.
-            # 403 Authorization failed (api key error)
-            logger.error(f"APIStatusError: {e}")
+            logger.exception("APIStatusError")
+            return LLMResponse(text_response=f"[Error] APIStatusError: {e}")
         except APITimeoutError as e:
-            logger.error(f"APITimeoutError: {e}")
+            logger.exception("APITimeoutError")
+            return LLMResponse(text_response=f"[Error] APITimeoutError: {e}")
         except APIConnectionError as e:
-            # APIConnectionError: Connection error.(base_url error)
-            logger.error(f"APIConnectionError: {e}")
+            logger.exception("APIConnectionError")
+            return LLMResponse(text_response=f"[Error] APIConnectionError: {e}")
         except Exception as e:
-            logger.error(f"Error: {e}")
+            logger.exception("Error")
+            return LLMResponse(text_response=f"[Error] {e}")
 
 
 class OpenAIImageClient(ImageModelClient):
@@ -93,3 +96,37 @@ class OpenAIImageClient(ImageModelClient):
     async def image_to_image(self, prompt: str, url: Optional[str] = None,
                              base64: Optional[str] = None) -> ImageResult:
         pass
+
+
+class OpenAIEmbeddingClient(EmbeddingModelClient):
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+
+        timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
+        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
+
+        client = AsyncOpenAI(
+            api_key=self.model.provider_config.get("api_key", ""),
+            base_url=self.model.provider_config.get("base_url", ""),
+            timeout=timeout_sec
+        )
+        try:
+            start_time = time.perf_counter()
+            response = await client.embeddings.create(
+                model=self.model.model_id,
+                input=texts
+            )
+            elapsed = round(time.perf_counter() - start_time, 2)
+            if elapsed > slow_threshold:
+                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
+            return [item.embedding for item in response.data]
+        except (APIStatusError, APITimeoutError, APIConnectionError):
+            logger.exception("Embedding API error")
+            return []
+        except Exception:
+            logger.exception("Embedding error")
+            return []

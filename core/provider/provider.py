@@ -109,6 +109,17 @@ class ImageModelClient(BaseModelClient):
         pass
 
 
+class EmbeddingModelClient(BaseModelClient, ABC):
+    type = ModelType.EMBEDDING
+
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    @abstractmethod
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        pass
+
+
 class BaseProvider(ABC):
     models: dict[ModelType, type(BaseModelClient)]
 

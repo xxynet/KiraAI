@@ -13,3 +13,4 @@ pydantic>=2.11.7
 psutil>=5.9.0
 fastmcp==2.14.4
 httpx>=0.28.1
+chromadb~=1.0

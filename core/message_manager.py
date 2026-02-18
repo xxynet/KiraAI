@@ -197,11 +197,52 @@ class MessageProcessor:
         # Get core memory
         core_memory = self.memory_manager.get_core_memory()
 
+        # 构建用户标识（跨 recall / profile 复用）
+        user_key = f"{msg.adapter_name}:{msg.user_id}"
+
+        # Recall long-term memories (RAG)
+        recalled_memories_str = ""
+        try:
+            recalled = await self.memory_manager.recall(formatted_messages_str, user_id=user_key, k=5)
+
+            # 群聊场景：额外搜索群级记忆（海马体在群聊中提取的事实存储在群 ID 下）
+            if msg.is_group_message():
+                group_key = f"{msg.adapter_name}:group:{msg.group_id}"
+                group_recalled = await self.memory_manager.recall(
+                    formatted_messages_str, user_id=group_key, k=3
+                )
+                # 去重后合并
+                existing_ids = {m.id for m in recalled}
+                for gm in group_recalled:
+                    if gm.id not in existing_ids:
+                        recalled.append(gm)
+
+            recalled_memories_str = self.memory_manager.format_recalled_memories(recalled)
+        except Exception:
+            logger.exception("Long-term memory recall failed")
+
+        # Get user profile
+        user_profile_str = ""
+        try:
+            user_profile_str = self.memory_manager.get_user_profile_prompt(user_key)
+            # Update interaction stats
+            await self.memory_manager.update_user_interaction(
+                user_key,
+                platform=msg.platform,
+                nickname=msg.user_nickname
+            )
+        except Exception:
+            logger.exception("User profile retrieval skipped")
+
         # Get emoji_dict
         emoji_dict = getattr(get_adapter_by_name(msg.adapter_name), "emoji_dict", {})
 
         # Generate agent prompt
-        agent_prompt = self.prompt_manager.get_agent_prompt(chat_env, core_memory, msg.message_types, emoji_dict)
+        agent_prompt = self.prompt_manager.get_agent_prompt(
+            chat_env, core_memory, msg.message_types, emoji_dict,
+            recalled_memories=recalled_memories_str,
+            user_profile=user_profile_str
+        )
         messages = [{"role": "system", "content": agent_prompt}]
 
         session_memory.append({"role": "user", "content": formatted_messages_str})

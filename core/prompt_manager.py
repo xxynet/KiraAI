@@ -161,22 +161,31 @@ class PromptManager:
         return _prompt
 
     def get_agent_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list,
-                         emoji_dict: Optional[dict] = None) -> str:
+                         emoji_dict: Optional[dict] = None,
+                         recalled_memories: str = "",
+                         user_profile: str = "") -> str:
         """生成 Agent 提示词"""
         formatted_time = self.get_current_time_str()
 
         try:
             with open(self.agent_path, 'r', encoding="utf-8") as f:
                 agent_prompt = f.read()
-            return agent_prompt.format(
-                persona=self.persona_manager.get_persona(),
-                format=self._load_format_prompt(message_types, emoji_dict),
-                time_str=formatted_time,
-                chat_env=chat_env,
-                core_memory=core_memory,
-                accounts=self.ada_config_prompt,
-                max_tool_loop=self.kira_config.get_config("bot_config.agent.max_tool_loop")
-            )
+
+            context = {
+                "persona": self.persona_manager.get_persona(),
+                "format": self._load_format_prompt(message_types, emoji_dict),
+                "time_str": formatted_time,
+                "chat_env": chat_env,
+                "core_memory": core_memory,
+                "recalled_memories": recalled_memories if recalled_memories else "暂无相关长期记忆",
+                "user_profile": user_profile if user_profile else "暂无画像信息",
+                "accounts": self.ada_config_prompt,
+                "max_tool_loop": self.kira_config.get_config("bot_config.agent.max_tool_loop")
+            }
+            return agent_prompt.format(**context)
+        except KeyError as e:
+            logger.error(f"Error generating system prompt, missing template key: {e}")
+            return ""
         except Exception as e:
             logger.error(f"Error generating system prompt: {e}")
             return ""

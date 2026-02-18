@@ -15,26 +15,45 @@
   },
   "model_config": {
     "llm": {
-    "timeout": {
-      "name": "超时",
-      "type": "integer",
-      "default": 120,
-      "hint": "超时秒数"
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "超时秒数"
+      },
+      "temperature": {
+        "name": "温度",
+        "type": "float",
+        "default": null,
+        "min": 0,
+        "max": 2,
+        "hint": "模型温度"
+      }
     },
-    "temperature": {
-      "name": "温度",
-      "type": "float",
-      "default": null,
-      "hint": "模型温度"
+    "image": {
+      "size": {
+        "name": "图片尺寸",
+        "type": "string",
+        "default": null,
+        "hint": "图片尺寸"
+      }
+    },
+    "embedding": {
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 60,
+        "min": 1,
+        "hint": "请求超时时间（秒）"
+      },
+      "slow_request_threshold": {
+        "name": "慢请求阈值",
+        "type": "float",
+        "default": 5.0,
+        "min": 0,
+        "hint": "超过此阈值（秒）的请求将被记录为慢请求"
+      }
     }
-  },
-  "image": {
-    "size": {
-      "name": "图片尺寸",
-      "type": "string",
-      "default": null,
-      "hint": "图片尺寸"
-    }
-  }
   }
 }
