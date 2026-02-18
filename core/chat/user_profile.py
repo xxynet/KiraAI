@@ -39,6 +39,7 @@ class UserProfileStore:
     def __init__(self, path: str = USER_PROFILE_PATH):
         self.path = path
         self._lock = Lock()
+        self._save_lock = Lock()
         self._profiles: dict[str, UserProfile] = {}
         self._load()
         logger.info("UserProfileStore initialized")
@@ -74,14 +75,17 @@ class UserProfileStore:
             dir_path = os.path.dirname(self.path) or '.'
             os.makedirs(dir_path, exist_ok=True)
 
-    def _save(self):
+    def _build_snapshot_unlocked(self) -> dict[str, dict]:
+        return {uid: asdict(profile) for uid, profile in self._profiles.items()}
+
+    def _save(self, snapshot: dict[str, dict]):
         """保存画像数据到文件（原子写入）"""
         fd = None
         tmp_path = None
         try:
             dir_path = os.path.dirname(self.path) or '.'
             os.makedirs(dir_path, exist_ok=True)
-            data = {uid: asdict(profile) for uid, profile in self._profiles.items()}
+            data = snapshot
             fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 fd = None  # os.fdopen takes ownership
@@ -122,57 +126,82 @@ class UserProfileStore:
                 if key in allowed:
                     setattr(profile, key, value)
             profile.last_interaction = time.time()
-            self._save()
-            return copy.deepcopy(profile)
+            profile_snapshot = copy.deepcopy(profile)
+            snapshot = self._build_snapshot_unlocked()
+        with self._save_lock:
+            self._save(snapshot)
+        return profile_snapshot
 
     def add_trait(self, user_id: str, trait: str):
         """添加用户特征标签"""
+        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             if trait not in profile.traits:
                 profile.traits.append(trait)
-                self._save()
+                snapshot = self._build_snapshot_unlocked()
+        if snapshot is not None:
+            with self._save_lock:
+                self._save(snapshot)
 
     def remove_trait(self, user_id: str, trait: str):
         """移除用户特征标签"""
+        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             if trait in profile.traits:
                 profile.traits.remove(trait)
-                self._save()
+                snapshot = self._build_snapshot_unlocked()
+        if snapshot is not None:
+            with self._save_lock:
+                self._save(snapshot)
 
     def add_fact(self, user_id: str, fact: str):
         """添加确定性事实"""
+        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             if fact not in profile.facts:
                 profile.facts.append(fact)
-                self._save()
+                snapshot = self._build_snapshot_unlocked()
+        if snapshot is not None:
+            with self._save_lock:
+                self._save(snapshot)
 
     def update_fact(self, user_id: str, old_fact: str, new_fact: str):
         """更新事实"""
+        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             for i, f in enumerate(profile.facts):
                 if f == old_fact:
                     profile.facts[i] = new_fact
-                    self._save()
-                    return
+                    snapshot = self._build_snapshot_unlocked()
+                    break
+        if snapshot is not None:
+            with self._save_lock:
+                self._save(snapshot)
 
     def remove_fact(self, user_id: str, fact: str):
         """移除事实"""
+        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             if fact in profile.facts:
                 profile.facts.remove(fact)
-                self._save()
+                snapshot = self._build_snapshot_unlocked()
+        if snapshot is not None:
+            with self._save_lock:
+                self._save(snapshot)
 
     def set_relationship(self, user_id: str, target: str, relation: str):
         """设置关系"""
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             profile.relationships[target] = relation
-            self._save()
+            snapshot = self._build_snapshot_unlocked()
+        with self._save_lock:
+            self._save(snapshot)
 
     def increment_interaction(self, user_id: str):
         """增加交互计数"""
@@ -180,7 +209,9 @@ class UserProfileStore:
             profile = self._get_profile_unlocked(user_id)
             profile.interaction_count += 1
             profile.last_interaction = time.time()
-            self._save()
+            snapshot = self._build_snapshot_unlocked()
+        with self._save_lock:
+            self._save(snapshot)
 
     def increment_and_update_profile(self, user_id: str, **kwargs):
         """原子地增加交互计数并更新其他字段（单次 _save）"""
@@ -192,7 +223,9 @@ class UserProfileStore:
             for key, value in kwargs.items():
                 if key in allowed:
                     setattr(profile, key, value)
-            self._save()
+            snapshot = self._build_snapshot_unlocked()
+        with self._save_lock:
+            self._save(snapshot)
 
     def get_profile_prompt(self, user_id: str) -> str:
         """将用户画像格式化为 prompt 文本"""
@@ -237,9 +270,13 @@ class UserProfileStore:
 
     def delete_profile(self, user_id: str) -> bool:
         """删除用户画像"""
+        snapshot = None
         with self._lock:
             if user_id in self._profiles:
                 del self._profiles[user_id]
-                self._save()
-                return True
-            return False
+                snapshot = self._build_snapshot_unlocked()
+            else:
+                return False
+        with self._save_lock:
+            self._save(snapshot)
+        return True

@@ -226,7 +226,7 @@ class MessageProcessor:
         try:
             user_profile_str = self.memory_manager.get_user_profile_prompt(user_key)
             # Update interaction stats
-            self.memory_manager.update_user_interaction(
+            await self.memory_manager.update_user_interaction(
                 user_key,
                 platform=msg.platform,
                 nickname=msg.user_nickname

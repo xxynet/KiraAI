@@ -127,8 +127,23 @@ class VolcengineEmbeddingClient(EmbeddingModelClient):
         if not texts:
             return []
 
-        timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
-        slow_threshold_raw = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
+        model_cfg = self.model.model_config or {}
+        embedding_cfg = model_cfg.get("embedding", {}) if isinstance(model_cfg, dict) else {}
+
+        timeout_raw = embedding_cfg.get("timeout", model_cfg.get("timeout", 60) if isinstance(model_cfg, dict) else 60)
+        try:
+            validated_timeout = float(timeout_raw)
+            if validated_timeout < 0:
+                logger.warning(f"Invalid negative embedding timeout '{timeout_raw}', fallback to 60")
+                validated_timeout = 60.0
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid embedding timeout '{timeout_raw}', fallback to 60")
+            validated_timeout = 60.0
+
+        slow_threshold_raw = embedding_cfg.get(
+            "slow_request_threshold",
+            model_cfg.get("slow_request_threshold", 5.0) if isinstance(model_cfg, dict) else 5.0
+        )
         try:
             slow_threshold = None if slow_threshold_raw is None else float(slow_threshold_raw)
         except (TypeError, ValueError):
@@ -137,7 +152,7 @@ class VolcengineEmbeddingClient(EmbeddingModelClient):
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
-            timeout=timeout_sec
+            timeout=validated_timeout
         )
         try:
             start_time = time.perf_counter()

@@ -109,14 +109,15 @@ class ImageModelClient(BaseModelClient):
         pass
 
 
-class EmbeddingModelClient(BaseModelClient):
+class EmbeddingModelClient(BaseModelClient, ABC):
     type = ModelType.EMBEDDING
 
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
+    @abstractmethod
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        raise NotImplementedError("EmbeddingModelClient.embed must be implemented by subclasses")
+        pass
 
 
 class BaseProvider(ABC):

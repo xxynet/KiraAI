@@ -236,7 +236,7 @@ class MemoryManager:
         try:
             k = int(k)
         except (TypeError, ValueError):
-            k = 1
+            k = 5
         k = max(1, k)
         try:
             # 使用外部 embedding 模型生成向量进行搜索
@@ -294,14 +294,14 @@ class MemoryManager:
         """获取用户画像的 prompt 文本"""
         return self.user_profile_store.get_profile_prompt(user_id)
 
-    def update_user_interaction(self, user_id: str, platform: str = "", nickname: str = ""):
+    async def update_user_interaction(self, user_id: str, platform: str = "", nickname: str = ""):
         """更新用户交互信息"""
         updates = {}
         if platform:
             updates["platform"] = platform
         if nickname:
             updates["nickname"] = nickname
-        self.user_profile_store.increment_and_update_profile(user_id, **updates)
+        await asyncio.to_thread(self.user_profile_store.increment_and_update_profile, user_id, **updates)
 
     # ==========================================
     # 海马体（慢系统 - 后台处理）
@@ -346,7 +346,7 @@ class MemoryManager:
             return
         exc = task.exception()
         if exc:
-            logger.error("Background hippocampus task failed", exc_info=exc)
+            logger.error("Background hippocampus task failed", exc_info=(type(exc), exc, exc.__traceback__))
 
     async def _hippocampus_process(self, session: str, chunks: list):
         """海马体后台处理：提取事实 → 去重更新 → 生成反思 → 更新画像"""
@@ -649,7 +649,7 @@ class MemoryManager:
             content = fact.get("content", "")
             importance = fact.get("importance", 5)
             if importance >= 7:
-                self.user_profile_store.add_fact(user_id, content)
+                await asyncio.to_thread(self.user_profile_store.add_fact, user_id, content)
 
     # ==========================================
     # 遗忘机制
