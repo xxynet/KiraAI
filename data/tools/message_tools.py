@@ -7,6 +7,8 @@ from core.chat.message_elements import (
     Notice
 )
 
+from core.chat import User, Group
+
 from core.utils.tool_utils import BaseTool
 
 
@@ -37,18 +39,26 @@ class SendMessageTool(BaseTool):
 2. 不要再次尝试发送跨会话消息。
 3. 只需要输出最终要发给用户的xml格式消息"""
 
+            group = None
+            group_id = target.split(":")[2] if target.split(":")[1] == "gm" else None,
+            if group_id:
+                group = Group(
+                    group_id=target.split(":")[2],
+                    group_name="unknown"
+                )
+
             message_obj = KiraMessageEvent(
-                platform=ada.info.platform,
-                adapter_name=target.split(":")[0],
+                adapter=ada.info,
                 message_types=ada.message_types,
-                user_id=target.split(":")[2] if target.split(":")[1] == "dm" else "unknown",
-                user_nickname="system",
+                sender=User(
+                    user_id=target.split(":")[2] if target.split(":")[1] == "dm" else "unknown",
+                    nickname="system"
+                ),
+                group=group,
                 message_id="system_message",
                 self_id=ada.config.get("self_id"),
-                content=[Notice(cross_session_prompt)],
+                chain=[Notice(cross_session_prompt)],
                 timestamp=int(time.time()),
-                group_id=target.split(":")[2] if target.split(":")[1] == "gm" else None,
-                group_name="unknown"
             )
             event_bus = get_event_bus()
             await event_bus.put(message_obj)

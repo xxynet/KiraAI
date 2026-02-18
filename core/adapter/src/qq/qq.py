@@ -22,6 +22,8 @@ from core.chat.message_elements import (
     File
 )
 
+from core.chat import Session, Group, User
+
 from .napcat_client import NapCatWebSocketClient, QQMessageChain, QQMessageType
 
 
@@ -219,105 +221,107 @@ class QQAdapter(IMAdapter):
         return message_content
 
     async def _on_notice_message(self, msg: Dict):
-        if msg.get("notice_type") == "notify" and msg.get("sub_type") == "poke" and msg.get("self_id") == msg.get("target_id"):
-            notice_str = f"[Poke 用户{msg.get('user_id')}{msg['raw_info'][2]['txt']}你{msg['raw_info'][4]['txt']}]"
-            message_list = [Notice(notice_str)]
-            if "group_id" in msg:
-                if str(msg["group_id"]) in self.group_list:
-                    group_info = await self.bot.get_group_info(msg.get("group_id"))
-                    group_name = group_info.get("data").get("group_name")
-                    message_obj = KiraMessageEvent(
-                        platform=self.info.platform,
-                        adapter_name=self.info.name,
-                        message_types=self.message_types,
-                        group_id=str(msg.get("group_id")),
-                        group_name=group_name,
-                        user_id=str(msg.get("user_id")),
-                        user_nickname="None",
-                        message_id="None",
-                        self_id=str(msg.get("self_id")),
-                        content=message_list,
-                        timestamp=int(msg.get("time"))
-                    )
-                    self.publish(message_obj)
-            else:
-                if str(msg["user_id"]) in self.user_list:
-                    message_obj = KiraMessageEvent(self.info.platform, self.info.name, self.message_types, str(msg['user_id']), "user_name 未获取",
-                                                    "None", str(msg["self_id"]), message_list, int(time.time()))
-                    self.publish(message_obj)
+        notice_type = msg.get("notice_type")
+        sub_type = msg.get("sub_type")
+        self_id = msg.get("self_id")
+        user_id = msg.get("user_id")
+        target_id = msg.get("target_id")
+        group_id = msg.get("group_id")
 
-        elif msg.get("notice_type") == "group_ban" and msg.get("self_id") == msg.get("user_id"):
+        group_obj = None
+
+        if notice_type == "notify" and sub_type == "poke" and self_id == target_id:
+            notice_str = f"[Poke 用户{user_id}{msg['raw_info'][2]['txt']}你{msg['raw_info'][4]['txt']}]"
+            message_list = [Notice(notice_str)]
+
+            if group_id:
+                if str(group_id) not in self.group_list:
+                    return
+
+                group_info = await self.bot.get_group_info(group_id)
+                group_name = group_info.get("data").get("group_name")
+
+                group_obj = Group(
+                    group_id=str(group_id),
+                    group_name=group_name
+                )
+            else:
+                if str(user_id) not in self.user_list:
+                    return
+
+        elif notice_type == "group_ban" and self_id == user_id:
             ban_duration = msg["duration"]
             ban_operator_id = msg["operator_id"]
             ban_group_id = msg["group_id"]
-            if msg["sub_type"] == "ban":
+            if sub_type == "ban":
                 notice_str = f"[System 用户{ban_operator_id}禁言了你{ban_duration}秒]"
                 message_list = [Notice(notice_str)]
-                group_info = await self.bot.get_group_info(msg.get("group_id"))
+                group_info = await self.bot.get_group_info(group_id)
                 group_name = group_info.get("data").get("group_name")
-                if str(msg["group_id"]) in self.group_list:
-                    message_obj = KiraMessageEvent(
-                        platform=self.info.platform,
-                        adapter_name=self.info.name,
-                        message_types=self.message_types,
-                        group_id=str(msg.get("group_id")),
-                        group_name=group_name,
-                        user_id=str(msg.get("user_id")),
-                        user_nickname="None",
-                        message_id="None",
-                        self_id=str(msg.get("self_id")),
-                        content=message_list,
-                        timestamp=int(msg.get("time"))
-                    )
-                    self.publish(message_obj)
-            elif msg["sub_type"] == "lift_ban":  # 人为解除禁言
+
+                group_obj = Group(
+                    group_id=str(group_id),
+                    group_name=group_name
+                )
+
+                if str(group_id) not in self.group_list:
+                    return
+
+            elif sub_type == "lift_ban":  # 人为解除禁言
                 # ban_duration 永远是0，invalid
                 notice_str = f"[System 你之前被禁言了，用户{ban_operator_id}解除了你的禁言]"
                 message_list = [Notice(notice_str)]
-                group_info = await self.bot.get_group_info(msg.get("group_id"))
+                group_info = await self.bot.get_group_info(group_id)
                 group_name = group_info.get("data").get("group_name")
-                if str(msg["group_id"]) in self.group_list:
-                    message_obj = KiraMessageEvent(
-                        platform=self.info.platform,
-                        adapter_name=self.info.name,
-                        message_types=self.message_types,
-                        group_id=str(msg.get("group_id")),
-                        group_name=group_name,
-                        user_id=str(msg.get("user_id")),
-                        user_nickname="None",
-                        message_id="None",
-                        self_id=str(msg.get("self_id")),
-                        content=message_list,
-                        timestamp=int(msg.get("time"))
-                    )
-                    self.publish(message_obj)
+
+                group_obj = Group(
+                    group_id=str(group_id),
+                    group_name=group_name
+                )
+
+                if str(group_id) not in self.group_list:
+                    return
+
             else:
-                pass
+                return
             # print(ban_duration)
             # print(ban_operator_id)
             # print(ban_group_id)
-        elif msg.get("notice_type") == "group_increase":
+        elif notice_type == "group_increase":
             # and msg["sub_type"] == "approve"
-            if "group_id" in msg:
-                notice_str = f"[System 用户{msg.get('user_id')}加入了群聊]"
-                message_list = [Notice(notice_str)]
-                group_info = await self.bot.get_group_info(msg.get("group_id"))
-                group_name = group_info.get("data").get("group_name")
-                if str(msg["group_id"]) in self.group_list:
-                    message_obj = KiraMessageEvent(
-                        platform=self.info.platform,
-                        adapter_name=self.info.name,
-                        message_types=self.message_types,
-                        group_id=str(msg.get("group_id")),
-                        group_name=group_name,
-                        user_id=str(msg.get("user_id")),
-                        user_nickname="None",
-                        message_id="None",
-                        self_id=str(msg.get("self_id")),
-                        content=message_list,
-                        timestamp=int(msg.get("time"))
-                    )
-                    self.publish(message_obj)
+            if not group_id:
+                return
+
+            notice_str = f"[System 用户{user_id}加入了群聊]"
+            message_list = [Notice(notice_str)]
+            group_info = await self.bot.get_group_info(group_id)
+            group_name = group_info.get("data").get("group_name")
+
+            group_obj = Group(
+                group_id=str(group_id),
+                group_name=group_name
+            )
+
+            if str(group_id) not in self.group_list:
+                return
+        else:
+            return
+
+        message_obj = KiraMessageEvent(
+            adapter=self.info,
+            message_types=self.message_types,
+            group=group_obj,
+            sender=User(
+                user_id=str(user_id),
+                nickname="None"
+            ),
+            is_notice=True,
+            message_id="None",
+            self_id=str(self_id),
+            chain=message_list,
+            timestamp=int(msg.get("time") or time.time())
+        )
+        self.publish(message_obj)
 
     async def _on_group_message(self, msg):
         should_process = False
@@ -327,54 +331,62 @@ class QQAdapter(IMAdapter):
         elif self.permission_mode == "deny_list" and str(msg.get("group_id")) not in self.group_list:
             should_process = True
 
-        if should_process:
-            # self._log.info(msg)
+        if not should_process:
+            return
 
-            should_respond = False
+        should_respond = False
+        is_mentioned = False
 
-            for m in msg.get("message", {}):
-                if m.get("type") == "at" and (
-                        m.get("data", {}).get("qq", "") == str(msg.get("self_id")) or m.get("data", {}).get("qq", "") == "all"):
+        for m in msg.get("message", {}):
+            if m.get("type") == "at" and (
+                    m.get("data", {}).get("qq", "") == str(msg.get("self_id")) or m.get("data", {}).get("qq", "") == "all"):
+                should_respond = True
+                is_mentioned = True
+                break
+            elif m.get("type") == "reply":
+                reply_msg_info = await self.bot.get_msg(m.get("data", {}).get("id", ""))
+                if reply_msg_info.get("data", {}).get("user_id") == msg.get("self_id"):  # int int
                     should_respond = True
+                    is_mentioned = True
                     break
-                elif m.get("type") == "reply":
-                    reply_msg_info = await self.bot.get_msg(m.get("data", {}).get("id", ""))
-                    if reply_msg_info.get("data", {}).get("user_id") == msg.get("self_id"):  # int int
+            elif m.get("type") == "text":
+                message_text = m.get("data").get("text")
+                waking_keywords_config = self.config.get("waking_keywords", [])
+                if waking_keywords_config:
+                    if isinstance(waking_keywords_config, str):
+                        waking_keywords = [kw.strip() for kw in self.config.get("waking_keywords", "").split(",")]
+                    else:
+                        waking_keywords = waking_keywords_config
+                    if any(kw in message_text for kw in waking_keywords):
                         should_respond = True
                         break
-                elif m.get("type") == "text":
-                    message_text = m.get("data").get("text")
-                    waking_keywords_config = self.config.get("waking_keywords", [])
-                    if waking_keywords_config:
-                        if isinstance(waking_keywords_config, str):
-                            waking_keywords = [kw.strip() for kw in self.config.get("waking_keywords", "").split(",")]
-                        else:
-                            waking_keywords = waking_keywords_config
-                        if any(kw in message_text for kw in waking_keywords):
-                            should_respond = True
-                            break
 
-            # should_respond = True
+        # should_respond = True
 
-            if should_respond:
-                message_list = await self.process_incoming_message(msg)
+        if should_respond:
+            message_list = await self.process_incoming_message(msg)
 
-                group_info = await self.bot.get_group_info(msg.get("group_id"))
-                group_name = group_info.get("data").get("group_name")
-                message_obj = KiraMessageEvent(
-                    platform=self.info.platform,
-                    adapter_name=self.info.name,
-                    message_types=self.message_types,
+            group_info = await self.bot.get_group_info(msg.get("group_id"))
+            group_name = group_info.get("data").get("group_name")
+
+            message_obj = KiraMessageEvent(
+                adapter=self.info,
+                message_types=self.message_types,
+                group=Group(
                     group_id=str(msg.get("group_id")),
-                    group_name=group_name,
+                    group_name=group_name
+                ),
+                sender=User(
                     user_id=str(msg.get("user_id")),
-                    user_nickname=msg.get("sender").get("nickname"),
-                    message_id=str(msg.get("message_id")),
-                    self_id=str(msg.get("self_id")),
-                    content=message_list,
-                    timestamp=int(msg.get("time"))
-                )
-                self.publish(message_obj)
+                    nickname=msg.get("sender").get("nickname")
+                ),
+                is_mentioned=is_mentioned,
+                message_id=str(msg.get("message_id")),
+                self_id=str(msg.get("self_id")),
+                chain=message_list,
+                timestamp=int(msg.get("time") or time.time())
+            )
+            self.publish(message_obj)
 
     async def _on_private_message(self, msg: dict):
         should_process = False
@@ -384,23 +396,25 @@ class QQAdapter(IMAdapter):
         elif self.permission_mode == "deny_list" and str(msg.get("user_id")) not in self.user_list:
             should_process = True
 
-        if should_process:
+        if not should_process:
+            return
 
-            # self._log.info(msg)
+        message_list = await self.process_incoming_message(msg)
 
-            message_list = await self.process_incoming_message(msg)
-
-            message_obj = KiraMessageEvent(
-                platform=self.info.platform,
-                adapter_name=self.info.name,
-                message_types=self.message_types,
+        message_obj = KiraMessageEvent(
+            adapter=self.info,
+            message_types=self.message_types,
+            sender=User(
                 user_id=str(msg.get("user_id")),
-                user_nickname=msg.get("sender").get("nickname"),
-                message_id=str(msg.get("message_id")),
-                self_id=str(msg.get("self_id")),
-                content=message_list,
-                timestamp=int(msg.get("time")))
-            self.publish(message_obj)
+                nickname=msg.get("sender").get("nickname")
+            ),
+            message_id=str(msg.get("message_id")),
+            is_mentioned=True,
+            self_id=str(msg.get("self_id")),
+            chain=message_list,
+            timestamp=int(msg.get("time") or time.time())
+        )
+        self.publish(message_obj)
 
     async def _process_reply_message(self, message_data):
         msg = message_data.get("data", {})
@@ -472,7 +486,7 @@ class QQAdapter(IMAdapter):
     def _process_outgoing_message(self, message: MessageChain):
         """将通用消息格式转换为QQ消息格式"""
         message_chain_elements = []
-        for ele in message.message_list:
+        for ele in message:
             if isinstance(ele, Text):
                 message_chain_elements.append(QQMessageType.Text(ele.text))
             elif isinstance(ele, Emoji):

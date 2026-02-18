@@ -2,6 +2,7 @@ import asyncio
 import os
 from typing import Any, Dict, Union, List
 import base64
+import time
 import json
 
 from telegram import Update
@@ -10,6 +11,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 from core.logging_manager import get_logger
 from core.adapter.adapter_utils import IMAdapter
 from core.chat import KiraMessageEvent, MessageChain
+from core.chat import Session, Group, User
 from core.utils.network import get_file_content
 
 from core.chat.message_elements import (
@@ -157,11 +159,13 @@ class TelegramAdapter(IMAdapter):
                 logger.error(e)
 
             triggered = False
+            is_mentioned = False
             # 1) Check if message is a reply to bot
             try:
                 if msg.reply_to_message and getattr(msg.reply_to_message, "from_user", None):
                     if bot_id is not None and msg.reply_to_message.from_user.id == bot_id:
                         triggered = True
+                        is_mentioned = True
             except Exception as e:
                 logger.error(e)
             # 2) Check if bot is mentioned by username or text_mention
@@ -173,9 +177,11 @@ class TelegramAdapter(IMAdapter):
                                 mention_text = msg.text[ent.offset: ent.offset + ent.length]
                                 if mention_text.lower() == f"@{bot_username.lower()}":
                                     triggered = True
+                                    is_mentioned = True
                                     break
                             elif ent.type == "text_mention" and getattr(ent, "user", None) and bot_id is not None:
                                 if ent.user.id == bot_id:
+                                    is_mentioned = True
                                     triggered = True
                                     break
                 except Exception as e:
@@ -185,19 +191,23 @@ class TelegramAdapter(IMAdapter):
                 return
 
             message_list = await self._process_incoming_message(msg)
+
             message_obj = KiraMessageEvent(
-                platform=self.info.platform,
-                adapter_name=self.info.name,
+                adapter=self.info,
                 message_types=self.message_types,
-                group_id=str(chat.id),
-                group_name=chat.title or str(chat.id),
-                user_id=str(user.id),
-                user_nickname=user.full_name or str(user.id),
+                group=Group(
+                    group_id=str(chat.id),
+                    group_name=chat.title or str(chat.id)
+                ),
+                sender=User(
+                    user_id=str(user.id),
+                    nickname=user.full_name or str(user.id)
+                ),
+                is_mentioned=is_mentioned,
                 message_id=str(msg.id),
-                # str(context.bot.id)
                 self_id=self.config["bot_pid"],
-                content=message_list,
-                timestamp=int(msg.date.timestamp())
+                chain=message_list,
+                timestamp=int(msg.date.timestamp() or time.time())
             )
             self.publish(message_obj)
         else:
@@ -213,17 +223,19 @@ class TelegramAdapter(IMAdapter):
             if not should_process:
                 return
             message_list = await self._process_incoming_message(msg)
+
             message_obj = KiraMessageEvent(
-                platform=self.info.platform,
-                adapter_name=self.info.name,
+                adapter=self.info,
                 message_types=self.message_types,
-                user_id=str(user.id),
-                user_nickname=user.full_name or str(user.id),
+                sender=User(
+                    user_id=str(user.id),
+                    nickname=user.full_name or str(user.id)
+                ),
+                is_mentioned=True,
                 message_id=str(msg.id),
-                # str(context.bot.id)
                 self_id=self.config["bot_pid"],
-                content=message_list,
-                timestamp=int(msg.date.timestamp())
+                chain=message_list,
+                timestamp=int(msg.date.timestamp() or time.time())
             )
             self.publish(message_obj)
 
@@ -296,24 +308,24 @@ class TelegramAdapter(IMAdapter):
     async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain):
         async def _send():
             message_id = None
-            if len(send_message_obj.message_list) >= 2:
-                if isinstance(send_message_obj.message_list[0], Reply):
+            if len(send_message_obj) >= 2:
+                if isinstance(send_message_obj[0], Reply):
                     # Only effective when followed by text, send as reply with text
-                    if isinstance(send_message_obj.message_list[1], Text):
-                        sent = await self.app.bot.send_message(chat_id=int(group_id), text=send_message_obj.message_list[1].text, reply_to_message_id=int(send_message_obj.message_list[0].message_id))
+                    if isinstance(send_message_obj[1], Text):
+                        sent = await self.app.bot.send_message(chat_id=int(group_id), text=send_message_obj[1].text, reply_to_message_id=int(send_message_obj[0].message_id))
                         message_id = str(sent.message_id)
-                send_message_obj.message_list = send_message_obj.message_list[2:]
+                del send_message_obj[2:]
             # merge At + Text into HTML-formatted message chunks
             idx = 0
-            while idx < len(send_message_obj.message_list):
-                ele = send_message_obj.message_list[idx]
+            while idx < len(send_message_obj):
+                ele = send_message_obj[idx]
                 if isinstance(ele, Text) or isinstance(ele, At):
                     html_text = ""
                     # Accumulate contiguous At/Text messages
-                    while idx < len(send_message_obj.message_list) and (
-                            isinstance(send_message_obj.message_list[idx], Text) or isinstance(send_message_obj.message_list[idx], At)
+                    while idx < len(send_message_obj) and (
+                            isinstance(send_message_obj[idx], Text) or isinstance(send_message_obj[idx], At)
                     ):
-                        part = send_message_obj.message_list[idx]
+                        part = send_message_obj[idx]
                         if isinstance(part, Text):
                             html_text += part.text
                         else:
@@ -360,23 +372,23 @@ class TelegramAdapter(IMAdapter):
     async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageChain):
         async def _send():
             message_id = None
-            if len(send_message_obj.message_list) >= 2:
-                if isinstance(send_message_obj.message_list[0], Reply):
+            if len(send_message_obj) >= 2:
+                if isinstance(send_message_obj[0], Reply):
                     # Only effective when followed by text, send as reply with text
-                    if isinstance(send_message_obj.message_list[1], Text):
-                        sent = await self.app.bot.send_message(chat_id=int(user_id), text=send_message_obj.message_list[1].text, reply_to_message_id=int(send_message_obj.message_list[0].message_id))
+                    if isinstance(send_message_obj[1], Text):
+                        sent = await self.app.bot.send_message(chat_id=int(user_id), text=send_message_obj[1].text, reply_to_message_id=int(send_message_obj[0].message_id))
                         message_id = str(sent.message_id)
-                send_message_obj.message_list = send_message_obj.message_list[2:]
+                del send_message_obj[2:]
             # merge At + Text into HTML-formatted message chunks
             idx = 0
-            while idx < len(send_message_obj.message_list):
-                ele = send_message_obj.message_list[idx]
+            while idx < len(send_message_obj):
+                ele = send_message_obj[idx]
                 if isinstance(ele, Text) or isinstance(ele, At):
                     html_text = ""
-                    while idx < len(send_message_obj.message_list) and (
-                            isinstance(send_message_obj.message_list[idx], Text) or isinstance(send_message_obj.message_list[idx], At)
+                    while idx < len(send_message_obj) and (
+                            isinstance(send_message_obj[idx], Text) or isinstance(send_message_obj[idx], At)
                     ):
-                        part = send_message_obj.message_list[idx]
+                        part = send_message_obj[idx]
                         if isinstance(part, Text):
                             html_text += part.text
                         else:

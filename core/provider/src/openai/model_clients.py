@@ -130,3 +130,58 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
         except Exception:
             logger.exception("Embedding error")
             return []
+
+
+# class OpenAIEmbeddingClient(EmbeddingModelClient):
+#     def __init__(self, model: ModelInfo):
+#         super().__init__(model)
+#         self._client: Optional[AsyncOpenAI] = None
+
+#     async def generate(self, text: str) -> list[float]:
+#         if self._client is None:
+#             self._client = AsyncOpenAI(
+#                 api_key=self.model.provider_config.get("api_key", ""),
+#                 base_url=self.model.provider_config.get("base_url", "")
+#             )
+#         try:
+#             response = await self._client.embeddings.create(
+#                 model=self.model.model_id,
+#                 input=text
+#             )
+#             return response.data[0].embedding
+#         except APIStatusError as e:
+#             # the model does not support function calling etc.
+#             # 403 Authorization failed (api key error)
+#             logger.error(f"APIStatusError: {e}")
+#         except APITimeoutError as e:
+#             logger.error(f"APITimeoutError: {e}")
+#         except APIConnectionError as e:
+#             # APIConnectionError: Connection error.(base_url error)
+#             logger.error(f"APIConnectionError: {e}")
+#         except Exception as e:
+#             logger.error(f"Error: {e}")
+
+#     async def generate_batch(self, texts: list[str]) -> list[list[float]]:
+#         if self._client is None:
+#             self._client = AsyncOpenAI(
+#                 api_key=self.model.provider_config.get("api_key", ""),
+#                 base_url=self.model.provider_config.get("base_url", "")
+#             )
+#         try:
+#             response = await self._client.embeddings.create(
+#                 model=self.model.model_id,
+#                 input=texts
+#             )
+#             sorted_data = sorted(response.data, key=lambda x: x.index)
+#             return [item.embedding for item in sorted_data]
+#         except APIStatusError as e:
+#             # the model does not support function calling etc.
+#             # 403 Authorization failed (api key error)
+#             logger.error(f"APIStatusError: {e}")
+#         except APITimeoutError as e:
+#             logger.error(f"APITimeoutError: {e}")
+#         except APIConnectionError as e:
+#             # APIConnectionError: Connection error.(base_url error)
+#             logger.error(f"APIConnectionError: {e}")
+#         except Exception as e:
+#             logger.error(f"Error: {e}")
