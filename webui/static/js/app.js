@@ -3531,6 +3531,8 @@ function refreshLogs() {
 window.AppState = AppState;
 window.switchPage = switchPage;
 window.loadPageData = loadPageData;
+window.apiCall = apiCall;
+window.showNotification = showNotification;
 
 // Remove duplicate openProviderModal if present at the end of file
 // The valid one is around line 1325
@@ -3611,7 +3613,7 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
                 <svg class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                <div class="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-normal max-w-xs z-50">
+                <div class="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-normal break-words max-w-[80vw] sm:max-w-xs z-50">
                     ${escapeHtml(field.hint)}
                 </div>
             `;
@@ -3702,13 +3704,19 @@ function validateConfigFieldInput(input) {
             if (!/^-?\d+$/.test(value)) {
                 errorMsg = getTranslation('model.validation_integer', '{field} must be an integer').replace('{field}', fieldName);
             } else if (input.hasAttribute('data-config-min') && parseInt(value, 10) < parseInt(input.getAttribute('data-config-min'), 10)) {
-                errorMsg = getTranslation('model.validation_positive', '{field} must be a positive number').replace('{field}', fieldName);
+                const min = input.getAttribute('data-config-min');
+                errorMsg = getTranslation('model.validation_min', '{field} must be at least {min}')
+                    .replace('{field}', fieldName)
+                    .replace('{min}', min);
             }
         } else if (fieldType === 'float') {
             if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(value)) {
                 errorMsg = getTranslation('model.validation_number', '{field} must be a valid number').replace('{field}', fieldName);
             } else if (input.hasAttribute('data-config-min') && parseFloat(value) < parseFloat(input.getAttribute('data-config-min'))) {
-                errorMsg = getTranslation('model.validation_positive', '{field} must be a positive number').replace('{field}', fieldName);
+                const min = input.getAttribute('data-config-min');
+                errorMsg = getTranslation('model.validation_min', '{field} must be at least {min}')
+                    .replace('{field}', fieldName)
+                    .replace('{min}', min);
             }
         }
     }

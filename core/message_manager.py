@@ -206,7 +206,7 @@ class MessageProcessor:
             recalled = await self.memory_manager.recall(formatted_messages_str, user_id=user_key, k=5)
 
             # 群聊场景：额外搜索群级记忆（海马体在群聊中提取的事实存储在群 ID 下）
-            if msg.is_group_message() and msg.group_id:
+            if msg.is_group_message():
                 group_key = f"{msg.adapter_name}:group:{msg.group_id}"
                 group_recalled = await self.memory_manager.recall(
                     formatted_messages_str, user_id=group_key, k=3
@@ -218,8 +218,8 @@ class MessageProcessor:
                         recalled.append(gm)
 
             recalled_memories_str = self.memory_manager.format_recalled_memories(recalled)
-        except Exception as e:
-            logger.warning(f"Long-term memory recall failed: {e}")
+        except Exception:
+            logger.exception("Long-term memory recall failed")
 
         # Get user profile
         user_profile_str = ""
@@ -231,8 +231,8 @@ class MessageProcessor:
                 platform=msg.platform,
                 nickname=msg.user_nickname
             )
-        except Exception as e:
-            logger.debug(f"User profile retrieval skipped: {e}")
+        except Exception:
+            logger.exception("User profile retrieval skipped")
 
         # Get emoji_dict
         emoji_dict = getattr(get_adapter_by_name(msg.adapter_name), "emoji_dict", {})

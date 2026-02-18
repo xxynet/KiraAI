@@ -66,7 +66,7 @@ class UserProfileStore:
                         sanitized = {k: v for k, v in profile_data.items() if k in allowed_keys}
                         sanitized['user_id'] = uid
                         self._profiles[uid] = UserProfile(**sanitized)
-                    except Exception as e:
+                    except (TypeError, ValueError) as e:
                         logger.warning(f"Skipping malformed profile '{uid}': {e}")
             except Exception:
                 logger.exception("Failed to load user profiles")

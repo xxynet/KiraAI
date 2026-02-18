@@ -14,6 +14,10 @@ from core.logging_manager import get_logger
 logger = get_logger("provider", "purple")
 
 
+class ImageGenerationTimeoutError(TimeoutError):
+    pass
+
+
 class ModelScopeLLMClient(LLMModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
@@ -133,7 +137,7 @@ class ModelScopeImageClient(ImageModelClient):
 
                 await asyncio.sleep(2)
 
-        raise TimeoutError("Image generation timed out")
+        raise ImageGenerationTimeoutError("timed out")
 
 
 class ModelScopeEmbeddingClient(EmbeddingModelClient):
@@ -145,7 +149,7 @@ class ModelScopeEmbeddingClient(EmbeddingModelClient):
             return []
 
         timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
-        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
+        slow_threshold = self.model.model_config.get("slow_request_threshold", None) if self.model.model_config else None
 
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
@@ -159,7 +163,7 @@ class ModelScopeEmbeddingClient(EmbeddingModelClient):
                 input=texts
             )
             elapsed = round(time.perf_counter() - start_time, 2)
-            if elapsed > slow_threshold:
+            if slow_threshold is not None and elapsed > slow_threshold:
                 logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError):

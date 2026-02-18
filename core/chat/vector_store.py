@@ -3,6 +3,7 @@
 """
 import inspect
 import os
+import threading
 import time
 import uuid
 from typing import Optional, Callable, Sequence
@@ -53,6 +54,7 @@ class VectorStore:
             )
         self._embedding_func = embedding_func
         self._has_external_embeddings = False  # 是否存储过外部嵌入向量
+        self._external_embeddings_lock = threading.Lock()
 
         self._client = chromadb.PersistentClient(
             path=VECTOR_DB_PATH,
@@ -78,8 +80,10 @@ class VectorStore:
                     if emb and len(emb) > 0:
                         # ChromaDB 默认嵌入 (all-MiniLM-L6-v2) 是 384 维
                         if len(emb) != 384:
-                            self._has_external_embeddings = True
-                            self._persist_external_flag()
+                            with self._external_embeddings_lock:
+                                if not self._has_external_embeddings:
+                                    self._has_external_embeddings = True
+                                    self._persist_external_flag()
             except Exception as e:
                 logger.debug(f"Could not detect embedding dimension: {e}")
 
@@ -124,9 +128,10 @@ class VectorStore:
                 logger.error(f"Empty embedding provided for memory id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
                 raise ValueError("Embedding must be a non-empty list of floats")
             # 有外部嵌入，使用 upsert 存储文档+向量
-            if not self._has_external_embeddings:
-                self._has_external_embeddings = True
-                self._persist_external_flag()
+            with self._external_embeddings_lock:
+                if not self._has_external_embeddings:
+                    self._has_external_embeddings = True
+                    self._persist_external_flag()
             self._collection.upsert(
                 ids=[entry.id],
                 documents=[entry.content],
@@ -143,9 +148,10 @@ class VectorStore:
                         "Pass a synchronous callable or the already-awaited embedding list."
                     )
                 if generated and generated[0] and len(generated[0]) > 0:
-                    if not self._has_external_embeddings:
-                        self._has_external_embeddings = True
-                        self._persist_external_flag()
+                    with self._external_embeddings_lock:
+                        if not self._has_external_embeddings:
+                            self._has_external_embeddings = True
+                            self._persist_external_flag()
                     self._collection.upsert(
                         ids=[entry.id],
                         documents=[entry.content],
@@ -158,7 +164,7 @@ class VectorStore:
             except ValueError:
                 raise
             except Exception as e:
-                logger.exception(f"embedding_func failed: {e}")
+                logger.exception("embedding_func failed")
                 raise ValueError(f"Failed to generate embedding via embedding_func: {e}") from e
         elif self._has_external_embeddings:
             # 已启用外部嵌入但未提供，抛出异常而非静默丢失数据
@@ -334,9 +340,10 @@ class VectorStore:
                 update_kwargs["documents"] = [content]
                 if embedding and len(embedding) > 0:
                     update_kwargs["embeddings"] = [embedding]
-                    if not self._has_external_embeddings:
-                        self._has_external_embeddings = True
-                        self._persist_external_flag()
+                    with self._external_embeddings_lock:
+                        if not self._has_external_embeddings:
+                            self._has_external_embeddings = True
+                            self._persist_external_flag()
                 elif self._embedding_func is not None:
                     # 使用构造时注入的嵌入函数生成向量
                     try:
@@ -348,9 +355,10 @@ class VectorStore:
                             )
                         if generated and generated[0] and len(generated[0]) > 0:
                             update_kwargs["embeddings"] = [generated[0]]
-                            if not self._has_external_embeddings:
-                                self._has_external_embeddings = True
-                                self._persist_external_flag()
+                            with self._external_embeddings_lock:
+                                if not self._has_external_embeddings:
+                                    self._has_external_embeddings = True
+                                    self._persist_external_flag()
                         else:
                             logger.warning(
                                 f"update_memory: embedding_func returned empty result for {memory_id}, "

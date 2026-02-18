@@ -116,7 +116,7 @@ class EmbeddingModelClient(BaseModelClient):
         super().__init__(model)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        pass
+        raise NotImplementedError("EmbeddingModelClient.embed must be implemented by subclasses")
 
 
 class BaseProvider(ABC):

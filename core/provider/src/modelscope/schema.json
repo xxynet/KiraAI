@@ -29,9 +29,9 @@
       "timeout": {
         "name": "超时时间",
         "type": "integer",
-        "default": 10,
+        "default": 30,
         "min": 1,
-        "hint": "生图超时时间"
+        "hint": "生图超时时间（秒）"
       }
     },
     "embedding": {
@@ -45,9 +45,8 @@
       "slow_request_threshold": {
         "name": "慢请求阈值",
         "type": "float",
-        "default": 5.0,
-        "min": 0,
-        "hint": "超过此阈值（秒）的请求将被记录为慢请求"
+        "default": null,
+        "hint": "超过此阈值（秒）的请求将被记录为慢请求，null 表示禁用慢请求记录"
       }
     }
   }

@@ -24,7 +24,6 @@ class ConfigurationManager {
      * Configuration schema definition
      */
     getSchema() {
-        const t = (key, fallback) => (window.i18n ? window.i18n.t(key) : fallback);
         return [
             {
                 id: 'bot',
@@ -281,7 +280,7 @@ class ConfigurationManager {
 
     async load() {
         try {
-            const response = await apiCall('/api/configuration');
+            const response = await window.apiCall('/api/configuration');
             if (!response.ok) {
                 throw new Error(`API returned ${response.status} ${response.statusText}`);
             }
@@ -312,8 +311,8 @@ class ConfigurationManager {
             this.initialized = true;
         } catch (error) {
             console.error('Error loading configuration:', error);
-            if (typeof showNotification === 'function') {
-                showNotification('Failed to load configuration', 'error');
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Failed to load configuration', 'error');
             }
         }
     }
@@ -351,6 +350,8 @@ class ConfigurationManager {
         // Check if any field in this group is modified
         const hasModified = group.fields.some(f => this.modifiedFields.has(f.key));
         const hasErrors = group.fields.some(f => this.validationErrors[f.key]);
+        const labelHtml = this._highlightSearch(this._t(group.labelKey, group.labelFallback));
+        const descHtml = this._highlightSearch(this._t(group.descKey, group.descFallback));
 
         // Group header
         const header = document.createElement('div');
@@ -362,11 +363,11 @@ class ConfigurationManager {
                 <span class="text-gray-500 dark:text-gray-400">${group.icon}</span>
                 <div>
                     <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                        ${this._t(group.labelKey, group.labelFallback)}
+                        ${labelHtml}
                         ${hasModified ? '<span class="ml-2 inline-block w-2 h-2 bg-amber-400 rounded-full" title="Modified"></span>' : ''}
                         ${hasErrors ? '<span class="ml-1 inline-block w-2 h-2 bg-red-500 rounded-full" title="Has errors"></span>' : ''}
                     </h4>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">${this._t(group.descKey, group.descFallback)}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">${descHtml}</p>
                 </div>
             </div>
             <svg class="w-5 h-5 text-gray-400 dark:text-gray-500 transform transition-transform duration-200 ${isCollapsed ? '' : 'rotate-180'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -928,8 +929,8 @@ class ConfigurationManager {
     async save() {
         // Validate all fields
         if (!this.validateAll()) {
-            if (typeof showNotification === 'function') {
-                showNotification(this._t('configuration.validation_failed', 'Please fix validation errors before saving'), 'error');
+            if (typeof window.showNotification === 'function') {
+                window.showNotification(this._t('configuration.validation_failed', 'Please fix validation errors before saving'), 'error');
             }
             // Expand groups with errors
             const schema = this.getSchema();
@@ -958,22 +959,36 @@ class ConfigurationManager {
             });
 
             const parsedBotConfig = this._deepClone(botConfig);
-            if (parsedBotConfig.bot) {
-                for (const [k, v] of Object.entries(parsedBotConfig.bot)) {
-                    if (numericFieldKeys.has(`bot_config.bot.${k}`) && v !== null && v !== undefined && v !== '') {
-                        parsedBotConfig.bot[k] = Number(v);
+            const setPathValue = (obj, path, transform) => {
+                const parts = path.split('.');
+                let cursor = obj;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    const segment = parts[i];
+                    if (!cursor || typeof cursor !== 'object' || !(segment in cursor)) {
+                        return;
                     }
+                    cursor = cursor[segment];
                 }
-            }
-            if (parsedBotConfig.agent) {
-                for (const [k, v] of Object.entries(parsedBotConfig.agent)) {
-                    if (numericFieldKeys.has(`bot_config.agent.${k}`) && v !== null && v !== undefined && v !== '') {
-                        parsedBotConfig.agent[k] = Number(v);
+                const leaf = parts[parts.length - 1];
+                if (!cursor || typeof cursor !== 'object' || !(leaf in cursor)) {
+                    return;
+                }
+                cursor[leaf] = transform(cursor[leaf]);
+            };
+            for (const key of numericFieldKeys) {
+                if (!key.startsWith('bot_config.')) {
+                    continue;
+                }
+                const relativePath = key.slice('bot_config.'.length);
+                setPathValue(parsedBotConfig, relativePath, (value) => {
+                    if (value === null || value === undefined || value === '') {
+                        return value;
                     }
-                }
+                    return Number(value);
+                });
             }
 
-            const response = await apiCall('/api/configuration', {
+            const response = await window.apiCall('/api/configuration', {
                 method: 'POST',
                 body: JSON.stringify({
                     bot_config: parsedBotConfig,
@@ -999,22 +1014,22 @@ class ConfigurationManager {
                 this.undoStack = [];
                 this.redoStack = [];
 
-                if (typeof showNotification === 'function') {
-                    showNotification(
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification(
                         this._t('configuration.saved', 'Configuration saved successfully'),
                         'success'
                     );
                 }
                 this.render();
             } else {
-                if (typeof showNotification === 'function') {
-                    showNotification('Failed to save configuration', 'error');
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification('Failed to save configuration', 'error');
                 }
             }
         } catch (error) {
             console.error('Error saving configuration:', error);
-            if (typeof showNotification === 'function') {
-                showNotification('Error saving configuration', 'error');
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Error saving configuration', 'error');
             }
         }
     }
@@ -1028,8 +1043,8 @@ class ConfigurationManager {
         this.undoStack = [];
         this.redoStack = [];
         this.render();
-        if (typeof showNotification === 'function') {
-            showNotification(this._t('configuration.reset', 'Configuration reset to saved state'), 'info');
+        if (typeof window.showNotification === 'function') {
+            window.showNotification(this._t('configuration.reset', 'Configuration reset to saved state'), 'info');
         }
     }
 

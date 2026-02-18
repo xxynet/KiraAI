@@ -113,7 +113,7 @@ class MemoryAddTool(BaseTool):
             # 同时写入向量长期记忆
             if entry is not None:
                 try:
-                    _memory_manager.vector_store.add_memory(entry, embedding=embedding)
+                    await asyncio.to_thread(_memory_manager.vector_store.add_memory, entry, embedding=embedding)
                 except Exception as e:
                     logger.warning(f"Could not store memory to vector DB (entry.id={entry.id}): {e}")
                     return f"Core memory added, but vector store write failed: {e}"
@@ -182,7 +182,7 @@ class MemoryUpdateTool(BaseTool):
 
                     # 优先通过持久化映射查找
                     if index in vmap:
-                        candidate = _memory_manager.vector_store.get_memory_by_id(vmap[index])
+                        candidate = await asyncio.to_thread(_memory_manager.vector_store.get_memory_by_id, vmap[index])
                         if candidate:
                             vector_id = candidate.id
                         else:
@@ -190,14 +190,14 @@ class MemoryUpdateTool(BaseTool):
 
                     # 回退：按内容匹配查找
                     if not vector_id and old_text:
-                        all_entries = _memory_manager.vector_store.get_all_memories()
+                        all_entries = await asyncio.to_thread(_memory_manager.vector_store.get_all_memories)
                         matched = [e for e in all_entries if e.content.strip() == old_text and e.memory_type == "fact"]
                         if matched:
                             vector_id = matched[0].id
 
                     if vector_id:
                         try:
-                            ok = _memory_manager.vector_store.update_memory(vector_id, content=text, embedding=embedding)
+                            ok = await asyncio.to_thread(_memory_manager.vector_store.update_memory, vector_id, content=text, embedding=embedding)
                             if not ok:
                                 vector_sync_error = f"update_memory returned False for entry {vector_id} (embedding={'present' if embedding else 'None'})"
                                 logger.warning(vector_sync_error)
@@ -260,19 +260,19 @@ class MemoryRemoveTool(BaseTool):
 
                     # 优先通过持久化映射查找
                     if vmap and index in vmap:
-                        candidate = _memory_manager.vector_store.get_memory_by_id(vmap[index])
+                        candidate = await asyncio.to_thread(_memory_manager.vector_store.get_memory_by_id, vmap[index])
                         if candidate:
                             vector_id = candidate.id
 
                     # 回退：按内容匹配查找
                     if not vector_id:
-                        all_entries = _memory_manager.vector_store.get_all_memories()
+                        all_entries = await asyncio.to_thread(_memory_manager.vector_store.get_all_memories)
                         matched = [e for e in all_entries if e.content.strip() == removed_text and e.memory_type == "fact"]
                         if matched:
                             vector_id = matched[0].id
 
                     if vector_id:
-                        delete_ok = _memory_manager.vector_store.delete_memory(vector_id)
+                        delete_ok = await asyncio.to_thread(_memory_manager.vector_store.delete_memory, vector_id)
                         if not delete_ok:
                             vector_sync_error = f"delete_memory returned False for entry {vector_id}"
                             logger.warning(vector_sync_error)
@@ -370,19 +370,7 @@ class ProfileUpdateTool(BaseTool):
             "value": {"type": "string", "description": "操作值（特征标签、事实、名字等）"},
             "target": {"type": "string", "description": "关系目标（当 action=set_relationship 时必填）"}
         },
-        "required": ["user_id", "action", "value"],
-        "allOf": [
-            {
-                "if": {
-                    "properties": {
-                        "action": {"const": "set_relationship"}
-                    }
-                },
-                "then": {
-                    "required": ["target"]
-                }
-            }
-        ]
+        "required": ["user_id", "action", "value"]
     }
 
     async def execute(self, user_id: str, action: str, value: str, target: str = "") -> str:

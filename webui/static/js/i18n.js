@@ -349,6 +349,7 @@ const resources = {
                 validation_id_format: "Model ID must start with a letter or number and contain only letters, numbers, hyphens, underscores, dots, colons, or slashes",
                 validation_integer: "{field} must be an integer",
                 validation_number: "{field} must be a valid number",
+                validation_min: "{field} must be at least {min}",
                 validation_positive: "{field} must be a positive number",
                 validation_failed: "Please fix validation errors before saving"
             },
@@ -708,6 +709,7 @@ const resources = {
                 validation_id_format: "模型 ID 必须以字母或数字开头，仅可包含字母、数字、连字符、下划线、点、冒号或斜杠",
                 validation_integer: "{field}必须为整数",
                 validation_number: "{field}必须为有效数字",
+                validation_min: "{field}最小值为{min}",
                 validation_positive: "{field}必须为正数",
                 validation_failed: "请先修正验证错误再保存"
             },
@@ -804,5 +806,12 @@ function updateTranslations() {
 // Export for use in other scripts
 window.i18n = {
     t: (key) => i18next.t(key),
-    changeLanguage: (lng) => i18next.changeLanguage(lng).then(() => updateTranslations())
+    changeLanguage: (lng) => i18next.changeLanguage(lng).then(() => {
+        try {
+            updateTranslations();
+        } catch (error) {
+            console.error('Failed to update translations after language change:', error);
+            throw error;
+        }
+    })
 };

@@ -127,9 +127,8 @@ class VolcengineEmbeddingClient(EmbeddingModelClient):
         if not texts:
             return []
 
-        embedding_cfg = self.model.model_config.get("embedding", {}) if self.model.model_config else {}
-        timeout_sec = embedding_cfg.get("timeout", 60)
-        slow_threshold = embedding_cfg.get("slow_request_threshold", 5.0)
+        timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
+        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
 
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),

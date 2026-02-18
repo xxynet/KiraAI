@@ -368,7 +368,12 @@ class MemoryManager:
                 await self._deduplicate_and_store(fact, user_id)
 
             # 3. 生成反思（如果积累了足够的事实）
-            user_memories = self.vector_store.get_by_user(user_id, memory_type="fact", limit=10)
+            user_memories = await asyncio.to_thread(
+                self.vector_store.get_by_user,
+                user_id,
+                "fact",
+                10,
+            )
             if len(user_memories) >= 5:
                 await self._generate_reflection(user_id, user_memories)
 
@@ -451,13 +456,15 @@ class MemoryManager:
         # 搜索已有类似记忆（带距离阈值，避免无关记忆触发 LLM 检查）
         # 只使用外部 embedding 模型搜索，不回退到 ChromaDB 默认文本搜索（避免维度冲突）
         existing = []
+        initial_embedding = None
         if self._llm_client:
             try:
                 embeddings = await self._llm_client.embed([content])
                 if embeddings and embeddings[0]:
+                    initial_embedding = embeddings[0]
                     existing = await asyncio.to_thread(
                         self.vector_store.search,
-                        query_embedding=embeddings[0],
+                        query_embedding=initial_embedding,
                         user_id=user_id,
                         memory_type="fact",
                         k=3,
@@ -520,8 +527,8 @@ class MemoryManager:
         )
 
         # 尝试用 embedding 存储
-        embedding = None
-        if self._llm_client:
+        embedding = initial_embedding
+        if embedding is None and self._llm_client:
             try:
                 embeddings = await self._llm_client.embed([content])
                 if embeddings and embeddings[0]:
