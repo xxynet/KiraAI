@@ -181,8 +181,8 @@ class PromptManager:
             }
 
             return agent_prompt.format(
-                persona=_escape_braces(self.persona_manager.get_persona()),
-                format=_escape_braces(self._load_format_prompt(message_types, emoji_dict)),
+                persona=self.persona_manager.get_persona(),
+                format=self._load_format_prompt(message_types, emoji_dict),
                 time_str=formatted_time,
                 chat_env=escaped_chat_env,
                 core_memory=_escape_braces(core_memory),

@@ -430,6 +430,10 @@ class ConfigurationManager {
 
         // Label
         const labelEl = document.createElement('label');
+        const safeFieldKey = field.key.replace(/[^a-zA-Z0-9_-]/g, '-');
+        const labelId = `config-field-label-${safeFieldKey}`;
+        const hintId = `config-field-hint-${safeFieldKey}`;
+        labelEl.id = labelId;
         labelEl.className = `block text-sm font-medium mb-1 ${
             error ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'
         }`;
@@ -467,18 +471,33 @@ class ConfigurationManager {
             input = document.createElement('button');
             input.type = 'button';
             const isOn = !!value;
-            input.className = `relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                isOn ? 'bg-blue-600 dark:bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
-            }`;
-            input.innerHTML = `<span class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition-transform duration-200 ${
-                isOn ? 'translate-x-6' : 'translate-x-1'
-            }"></span>`;
-            input.addEventListener('click', () => {
+            const applySwitchState = (state) => {
+                input.className = `relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    state ? 'bg-blue-600 dark:bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                }`;
+                input.innerHTML = `<span class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition-transform duration-200 ${
+                    state ? 'translate-x-6' : 'translate-x-1'
+                }"></span>`;
+                input.setAttribute('aria-checked', state ? 'true' : 'false');
+            };
+            input.setAttribute('role', 'switch');
+            input.setAttribute('aria-labelledby', `${labelId} ${hintId}`);
+            input.setAttribute('aria-label', label);
+            applySwitchState(isOn);
+
+            const toggleSwitch = () => {
                 const newVal = !this._getNestedValue(this.currentData, field.key);
                 this._recordChange(field.key, this._getNestedValue(this.currentData, field.key), newVal);
                 this._setNestedValue(this.currentData, field.key, newVal);
                 this._updateModifiedState(field.key);
                 this.render();
+            };
+            input.addEventListener('click', toggleSwitch);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    toggleSwitch();
+                }
             });
         } else {
             // String type
@@ -524,6 +543,7 @@ class ConfigurationManager {
 
         // Hint text
         const hintEl = document.createElement('p');
+        hintEl.id = hintId;
         hintEl.className = `text-xs mt-1 ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`;
         hintEl.innerHTML = error ? this._escapeHtml(error) : this._highlightSearch(hint || '');
 
@@ -1023,13 +1043,13 @@ class ConfigurationManager {
                 this.render();
             } else {
                 if (typeof window.showNotification === 'function') {
-                    window.showNotification('Failed to save configuration', 'error');
+                    window.showNotification(this._t('configuration.save_failed', 'Failed to save configuration'), 'error');
                 }
             }
         } catch (error) {
             console.error('Error saving configuration:', error);
             if (typeof window.showNotification === 'function') {
-                window.showNotification('Error saving configuration', 'error');
+                window.showNotification(this._t('configuration.save_error', 'Error saving configuration'), 'error');
             }
         }
     }

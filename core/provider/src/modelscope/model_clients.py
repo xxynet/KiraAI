@@ -92,11 +92,11 @@ class ModelScopeImageClient(ImageModelClient):
         }
 
         config = self.model.model_config or {}
-        raw_timeout = config.get("timeout", 10)
+        raw_timeout = config.get("timeout", 30)
         try:
             timeout_seconds = int(raw_timeout)
         except (TypeError, ValueError):
-            timeout_seconds = 10
+            timeout_seconds = 30
 
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             # 提交生成任务

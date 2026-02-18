@@ -178,6 +178,8 @@ const resources = {
                 save: "Save",
                 loading: "Loading configuration...",
                 saved: "Configuration saved successfully",
+                save_failed: "Failed to save configuration",
+                save_error: "Error saving configuration",
                 reset: "Configuration reset to saved state",
                 modified: "modified",
                 changes: "change(s)",
@@ -538,6 +540,8 @@ const resources = {
                 save: "保存",
                 loading: "加载配置中...",
                 saved: "配置保存成功",
+                save_failed: "保存配置失败",
+                save_error: "保存配置出错",
                 reset: "配置已重置为已保存状态",
                 modified: "已修改",
                 changes: "项修改",
@@ -748,9 +752,17 @@ i18next
         // Listen for language changes
         if (languageSelector) {
             languageSelector.addEventListener('change', (e) => {
-                i18next.changeLanguage(e.target.value).then(() => {
-                    updateTranslations();
-                });
+                if (window.i18n && typeof window.i18n.changeLanguage === 'function') {
+                    window.i18n.changeLanguage(e.target.value).catch((error) => {
+                        console.error('Failed to change language:', error);
+                    });
+                } else {
+                    i18next.changeLanguage(e.target.value).then(() => {
+                        updateTranslations();
+                    }).catch((error) => {
+                        console.error('Failed to change language:', error);
+                    });
+                }
             });
         }
     });
@@ -783,6 +795,9 @@ function updateTranslations() {
                 if (ariaTranslation && ariaTranslation !== ariaKey) {
                     element.setAttribute('aria-label', ariaTranslation);
                     element.setAttribute('data-i18n-aria-generated', 'false');
+                } else {
+                    element.setAttribute('aria-label', translation);
+                    element.setAttribute('data-i18n-aria-generated', 'true');
                 }
             } else if (!element.getAttribute('aria-label') || element.getAttribute('data-i18n-aria-generated') === 'true') {
                 element.setAttribute('aria-label', translation);
@@ -798,7 +813,22 @@ function updateTranslations() {
         if (ariaTranslation && ariaTranslation !== ariaKey) {
             element.setAttribute('aria-label', ariaTranslation);
             element.setAttribute('title', ariaTranslation);
-            element.setAttribute('data-i18n-aria-generated', 'true');
+            element.setAttribute('data-i18n-aria-generated', 'false');
+        } else {
+            const placeholderKey = element.getAttribute('data-i18n-placeholder');
+            const placeholderTranslation = placeholderKey ? i18next.t(placeholderKey) : null;
+            const fallbackLabel = (placeholderTranslation && placeholderTranslation !== placeholderKey)
+                ? placeholderTranslation
+                : (element.placeholder || '');
+            if (fallbackLabel) {
+                element.setAttribute('aria-label', fallbackLabel);
+                element.setAttribute('title', fallbackLabel);
+                element.setAttribute('data-i18n-aria-generated', 'true');
+            } else if (element.getAttribute('data-i18n-aria-generated') === 'true') {
+                element.removeAttribute('aria-label');
+                element.removeAttribute('title');
+                element.removeAttribute('data-i18n-aria-generated');
+            }
         }
     });
 }

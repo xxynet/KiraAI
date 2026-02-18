@@ -402,5 +402,5 @@ class ProfileUpdateTool(BaseTool):
                 return "target is required for set_relationship"
             store.set_relationship(user_id, target, value)
             return f"Set relationship '{value}' with '{target}' for user {user_id}"
-        else:
-            return f"Unknown action: {action}"
+
+        raise RuntimeError("Unreachable action branch in ProfileUpdateTool.execute")
