@@ -829,6 +829,7 @@ function updateTranslations() {
     });
 }
 
+// Export for use in other scripts
 window.i18n = {
     t: (key) => i18next.t(key),
     changeLanguage: (lng) => i18next.changeLanguage(lng).then(() => {
