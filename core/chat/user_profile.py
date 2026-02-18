@@ -128,71 +128,61 @@ class UserProfileStore:
             profile.last_interaction = time.time()
             profile_snapshot = copy.deepcopy(profile)
             snapshot = self._build_snapshot_unlocked()
-        with self._save_lock:
-            self._save(snapshot)
+            with self._save_lock:
+                self._save(snapshot)
         return profile_snapshot
 
     def add_trait(self, user_id: str, trait: str):
         """添加用户特征标签"""
-        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             if trait not in profile.traits:
                 profile.traits.append(trait)
                 snapshot = self._build_snapshot_unlocked()
-        if snapshot is not None:
-            with self._save_lock:
-                self._save(snapshot)
+                with self._save_lock:
+                    self._save(snapshot)
 
     def remove_trait(self, user_id: str, trait: str):
         """移除用户特征标签"""
-        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             if trait in profile.traits:
                 profile.traits.remove(trait)
                 snapshot = self._build_snapshot_unlocked()
-        if snapshot is not None:
-            with self._save_lock:
-                self._save(snapshot)
+                with self._save_lock:
+                    self._save(snapshot)
 
     def add_fact(self, user_id: str, fact: str):
         """添加确定性事实"""
-        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             if fact not in profile.facts:
                 profile.facts.append(fact)
                 snapshot = self._build_snapshot_unlocked()
-        if snapshot is not None:
-            with self._save_lock:
-                self._save(snapshot)
+                with self._save_lock:
+                    self._save(snapshot)
 
     def update_fact(self, user_id: str, old_fact: str, new_fact: str):
         """更新事实"""
-        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             for i, f in enumerate(profile.facts):
                 if f == old_fact:
                     profile.facts[i] = new_fact
                     snapshot = self._build_snapshot_unlocked()
+                    with self._save_lock:
+                        self._save(snapshot)
                     break
-        if snapshot is not None:
-            with self._save_lock:
-                self._save(snapshot)
 
     def remove_fact(self, user_id: str, fact: str):
         """移除事实"""
-        snapshot = None
         with self._lock:
             profile = self._get_profile_unlocked(user_id)
             if fact in profile.facts:
                 profile.facts.remove(fact)
                 snapshot = self._build_snapshot_unlocked()
-        if snapshot is not None:
-            with self._save_lock:
-                self._save(snapshot)
+                with self._save_lock:
+                    self._save(snapshot)
 
     def set_relationship(self, user_id: str, target: str, relation: str):
         """设置关系"""
@@ -200,8 +190,8 @@ class UserProfileStore:
             profile = self._get_profile_unlocked(user_id)
             profile.relationships[target] = relation
             snapshot = self._build_snapshot_unlocked()
-        with self._save_lock:
-            self._save(snapshot)
+            with self._save_lock:
+                self._save(snapshot)
 
     def increment_interaction(self, user_id: str):
         """增加交互计数"""
@@ -210,8 +200,8 @@ class UserProfileStore:
             profile.interaction_count += 1
             profile.last_interaction = time.time()
             snapshot = self._build_snapshot_unlocked()
-        with self._save_lock:
-            self._save(snapshot)
+            with self._save_lock:
+                self._save(snapshot)
 
     def increment_and_update_profile(self, user_id: str, **kwargs):
         """原子地增加交互计数并更新其他字段（单次 _save）"""
@@ -224,8 +214,8 @@ class UserProfileStore:
                 if key in allowed:
                     setattr(profile, key, value)
             snapshot = self._build_snapshot_unlocked()
-        with self._save_lock:
-            self._save(snapshot)
+            with self._save_lock:
+                self._save(snapshot)
 
     def get_profile_prompt(self, user_id: str) -> str:
         """将用户画像格式化为 prompt 文本"""
@@ -270,13 +260,12 @@ class UserProfileStore:
 
     def delete_profile(self, user_id: str) -> bool:
         """删除用户画像"""
-        snapshot = None
         with self._lock:
             if user_id in self._profiles:
                 del self._profiles[user_id]
                 snapshot = self._build_snapshot_unlocked()
+                with self._save_lock:
+                    self._save(snapshot)
             else:
                 return False
-        with self._save_lock:
-            self._save(snapshot)
         return True

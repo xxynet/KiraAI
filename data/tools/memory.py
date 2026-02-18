@@ -386,21 +386,21 @@ class ProfileUpdateTool(BaseTool):
 
         store = _memory_manager.user_profile_store
         if action == "add_trait":
-            store.add_trait(user_id, value)
+            await asyncio.to_thread(store.add_trait, user_id, value)
             return f"Added trait '{value}' to user {user_id}"
         elif action == "remove_trait":
-            store.remove_trait(user_id, value)
+            await asyncio.to_thread(store.remove_trait, user_id, value)
             return f"Removed trait '{value}' from user {user_id}"
         elif action == "add_fact":
-            store.add_fact(user_id, value)
+            await asyncio.to_thread(store.add_fact, user_id, value)
             return f"Added fact for user {user_id}"
         elif action == "set_name":
-            store.update_profile(user_id, name=value)
+            await asyncio.to_thread(store.update_profile, user_id, name=value)
             return f"Set name '{value}' for user {user_id}"
         elif action == "set_relationship":
             if not target:
                 return "target is required for set_relationship"
-            store.set_relationship(user_id, target, value)
+            await asyncio.to_thread(store.set_relationship, user_id, target, value)
             return f"Set relationship '{value}' with '{target}' for user {user_id}"
 
         raise RuntimeError("Unreachable action branch in ProfileUpdateTool.execute")

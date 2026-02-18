@@ -815,11 +815,7 @@ function updateTranslations() {
             element.setAttribute('title', ariaTranslation);
             element.setAttribute('data-i18n-aria-generated', 'false');
         } else {
-            const placeholderKey = element.getAttribute('data-i18n-placeholder');
-            const placeholderTranslation = placeholderKey ? i18next.t(placeholderKey) : null;
-            const fallbackLabel = (placeholderTranslation && placeholderTranslation !== placeholderKey)
-                ? placeholderTranslation
-                : (element.placeholder || '');
+            const fallbackLabel = element.placeholder || '';
             if (fallbackLabel) {
                 element.setAttribute('aria-label', fallbackLabel);
                 element.setAttribute('title', fallbackLabel);
@@ -841,7 +837,6 @@ window.i18n = {
             updateTranslations();
         } catch (error) {
             console.error('Failed to update translations after language change:', error);
-            throw error;
         }
     })
 };

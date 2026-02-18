@@ -98,6 +98,7 @@ class VectorStore:
         """将外部嵌入标志持久化到 collection 元数据"""
         try:
             col_meta = dict(self._collection.metadata or {})
+            col_meta.pop("hnsw:space", None)
             col_meta["external_embeddings"] = True
             self._collection.modify(metadata=col_meta)
         except Exception as e:

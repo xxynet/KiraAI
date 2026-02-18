@@ -15,7 +15,8 @@ logger = get_logger("provider", "purple")
 
 
 class ImageGenerationTimeoutError(TimeoutError):
-    pass
+    def __init__(self, message: str = "Image generation timed out"):
+        super().__init__(message)
 
 
 class ModelScopeLLMClient(LLMModelClient):
@@ -137,7 +138,7 @@ class ModelScopeImageClient(ImageModelClient):
 
                 await asyncio.sleep(2)
 
-        raise ImageGenerationTimeoutError("timed out")
+        raise ImageGenerationTimeoutError()
 
 
 class ModelScopeEmbeddingClient(EmbeddingModelClient):
@@ -148,8 +149,14 @@ class ModelScopeEmbeddingClient(EmbeddingModelClient):
         if not texts:
             return []
 
-        timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
-        slow_threshold = self.model.model_config.get("slow_request_threshold", None) if self.model.model_config else None
+        model_cfg = self.model.model_config or {}
+        embedding_cfg = model_cfg.get("embedding", {}) if isinstance(model_cfg, dict) else {}
+
+        timeout_sec = embedding_cfg.get("timeout", model_cfg.get("timeout", 60) if isinstance(model_cfg, dict) else 60)
+        slow_threshold = embedding_cfg.get(
+            "slow_request_threshold",
+            model_cfg.get("slow_request_threshold", None) if isinstance(model_cfg, dict) else None
+        )
 
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),

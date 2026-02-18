@@ -235,6 +235,27 @@ class ConfigurationManager {
         target[lastKey] = value;
     }
 
+    /**
+     * Walk a dot-separated path on obj; if every segment exists, apply transform
+     * to the leaf value. Returns silently if any segment is missing.
+     */
+    _transformNestedValue(obj, path, transform) {
+        const parts = path.split('.');
+        let cursor = obj;
+        for (let i = 0; i < parts.length - 1; i++) {
+            const segment = parts[i];
+            if (!cursor || typeof cursor !== 'object' || !(segment in cursor)) {
+                return;
+            }
+            cursor = cursor[segment];
+        }
+        const leaf = parts[parts.length - 1];
+        if (!cursor || typeof cursor !== 'object' || !(leaf in cursor)) {
+            return;
+        }
+        cursor[leaf] = transform(cursor[leaf]);
+    }
+
     _deepClone(obj) {
         return JSON.parse(JSON.stringify(obj));
     }
@@ -280,6 +301,9 @@ class ConfigurationManager {
 
     async load() {
         try {
+            if (typeof window.apiCall !== 'function') {
+                throw new Error('apiCall is not available');
+            }
             const response = await window.apiCall('/api/configuration');
             if (!response.ok) {
                 throw new Error(`API returned ${response.status} ${response.statusText}`);
@@ -979,28 +1003,12 @@ class ConfigurationManager {
             });
 
             const parsedBotConfig = this._deepClone(botConfig);
-            const setPathValue = (obj, path, transform) => {
-                const parts = path.split('.');
-                let cursor = obj;
-                for (let i = 0; i < parts.length - 1; i++) {
-                    const segment = parts[i];
-                    if (!cursor || typeof cursor !== 'object' || !(segment in cursor)) {
-                        return;
-                    }
-                    cursor = cursor[segment];
-                }
-                const leaf = parts[parts.length - 1];
-                if (!cursor || typeof cursor !== 'object' || !(leaf in cursor)) {
-                    return;
-                }
-                cursor[leaf] = transform(cursor[leaf]);
-            };
             for (const key of numericFieldKeys) {
                 if (!key.startsWith('bot_config.')) {
                     continue;
                 }
                 const relativePath = key.slice('bot_config.'.length);
-                setPathValue(parsedBotConfig, relativePath, (value) => {
+                this._transformNestedValue(parsedBotConfig, relativePath, (value) => {
                     if (value === null || value === undefined || value === '') {
                         return value;
                     }
@@ -1008,13 +1016,16 @@ class ConfigurationManager {
                 });
             }
 
-            const response = await window.apiCall('/api/configuration', {
-                method: 'POST',
-                body: JSON.stringify({
-                    bot_config: parsedBotConfig,
-                    models: models
+            const response = await (typeof window.apiCall === 'function'
+                ? window.apiCall('/api/configuration', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        bot_config: parsedBotConfig,
+                        models: models
+                    })
                 })
-            });
+                : Promise.reject(new Error('apiCall is not available'))
+            );
 
             if (!response.ok) {
                 let errorMsg = `API returned ${response.status} ${response.statusText}`;
