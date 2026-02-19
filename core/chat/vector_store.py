@@ -3,7 +3,6 @@
 """
 import inspect
 import os
-import threading
 import time
 import uuid
 from typing import Optional, Callable, Sequence
@@ -11,6 +10,7 @@ from dataclasses import dataclass, field
 
 import chromadb
 from chromadb.config import Settings
+from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
 
 from core.logging_manager import get_logger
 
@@ -41,8 +41,32 @@ class MemoryEntry:
     metadata: dict = field(default_factory=dict)
 
 
+class _NoDefaultEmbedding(EmbeddingFunction[Documents]):
+    """阻止 ChromaDB 加载内置默认嵌入模型 (all-MiniLM-L6-v2, 384维)"""
+
+    def __init__(self):
+        pass
+
+    def __call__(self, input: Documents) -> Embeddings:
+        raise RuntimeError(
+            "Default embedding is disabled. "
+            "Always provide embeddings explicitly."
+        )
+
+    @staticmethod
+    def name() -> str:
+        return "disabled_no_default"
+
+    @staticmethod
+    def build_from_config(config: dict) -> "_NoDefaultEmbedding":
+        return _NoDefaultEmbedding()
+
+    def get_config(self) -> dict:
+        return {}
+
+
 class VectorStore:
-    """基于 ChromaDB 的向量存储"""
+    """基于 ChromaDB 的向量存储（已禁用默认嵌入，所有向量必须外部提供）"""
 
     def __init__(self, embedding_func: Optional[Callable[[list[str]], list[Sequence[float]]]] = None):
         os.makedirs(VECTOR_DB_PATH, exist_ok=True)
@@ -53,65 +77,47 @@ class VectorStore:
                 "Wrap it with a sync adapter or pass the already-awaited embedding list instead."
             )
         self._embedding_func = embedding_func
-        self._has_external_embeddings = False  # 是否存储过外部嵌入向量
-        self._external_embeddings_lock = threading.Lock()
 
         self._client = chromadb.PersistentClient(
             path=VECTOR_DB_PATH,
             settings=Settings(anonymized_telemetry=False)
         )
 
-        # 长期记忆集合
-        self._collection = self._client.get_or_create_collection(
-            name="long_term_memory",
-            metadata={"hnsw:space": "cosine"}
-        )
-
-        # 通过集合元数据标志检测是否使用了外部嵌入
-        col_meta = self._collection.metadata or {}
-        if col_meta.get("external_embeddings"):
-            self._has_external_embeddings = True
-        elif self._collection.count() > 0:
-            # 回退检测：获取一条现有记忆的嵌入维度
-            try:
-                sample = self._collection.get(limit=1, include=['embeddings'])
-                if sample and sample.get("embeddings") and sample["embeddings"]:
-                    emb = sample["embeddings"][0]
-                    if emb and len(emb) > 0:
-                        # ChromaDB 默认嵌入 (all-MiniLM-L6-v2) 是 384 维
-                        if len(emb) != 384:
-                            with self._external_embeddings_lock:
-                                if not self._has_external_embeddings:
-                                    self._has_external_embeddings = True
-                                    self._persist_external_flag()
-            except Exception as e:
-                logger.debug(f"Could not detect embedding dimension: {e}")
-
-        logger.info(f"VectorStore initialized (external_embeddings={self._has_external_embeddings})")
-
-    @property
-    def has_external_embeddings(self) -> bool:
-        """Whether the collection uses external embeddings."""
-        return self._has_external_embeddings
-
-    def _persist_external_flag(self):
-        """将外部嵌入标志持久化到 collection 元数据"""
+        # 长期记忆集合 — 禁用 ChromaDB 默认嵌入，所有向量必须外部提供
+        no_default_ef = _NoDefaultEmbedding()
         try:
-            col_meta = dict(self._collection.metadata or {})
-            col_meta.pop("hnsw:space", None)
-            col_meta["external_embeddings"] = True
-            self._collection.modify(metadata=col_meta)
-        except Exception as e:
-            logger.debug(f"Could not persist external_embeddings flag: {e}")
+            self._collection = self._client.get_or_create_collection(
+                name="long_term_memory",
+                metadata={"hnsw:space": "cosine"},
+                embedding_function=no_default_ef,
+            )
+        except ValueError as e:
+            if "conflict" in str(e).lower():
+                # 旧 collection 使用了 ChromaDB 默认嵌入函数，删除后重建
+                logger.warning(
+                    "Existing collection uses default embedding function, "
+                    "deleting and recreating with external-only embeddings. "
+                    "Old vector memories (if any) will be lost."
+                )
+                self._client.delete_collection("long_term_memory")
+                self._collection = self._client.get_or_create_collection(
+                    name="long_term_memory",
+                    metadata={"hnsw:space": "cosine"},
+                    embedding_function=no_default_ef,
+                )
+            else:
+                raise
+
+        logger.info("VectorStore initialized (external embeddings only)")
 
     def add_memory(self, entry: MemoryEntry, embedding: Optional[list[float]] = None):
         """添加一条记忆到向量库
         
         Args:
-            embedding: 外部嵌入向量。传入 None 表示未提供，传入空列表视为无效。
+            embedding: 外部嵌入向量。传入 None 时将尝试使用 embedding_func 生成。
         
         Raises:
-            ValueError: 当外部嵌入模式已启用但未提供有效 embedding 时抛出。
+            ValueError: 当无法获取有效 embedding 时抛出。
         """
         metadata = {
             "user_id": entry.user_id,
@@ -127,17 +133,6 @@ class VectorStore:
             if not embedding:
                 logger.error(f"Empty embedding provided for memory id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
                 raise ValueError("Embedding must be a non-empty list of floats")
-            # 有外部嵌入，使用 upsert 存储文档+向量
-            with self._external_embeddings_lock:
-                if not self._has_external_embeddings:
-                    self._has_external_embeddings = True
-                    self._persist_external_flag()
-            self._collection.upsert(
-                ids=[entry.id],
-                documents=[entry.content],
-                metadatas=[metadata],
-                embeddings=[embedding],
-            )
         elif self._embedding_func is not None:
             # 使用构造时注入的嵌入函数生成向量
             try:
@@ -148,39 +143,28 @@ class VectorStore:
                         "Pass a synchronous callable or the already-awaited embedding list."
                     )
                 if generated and generated[0] and len(generated[0]) > 0:
-                    with self._external_embeddings_lock:
-                        if not self._has_external_embeddings:
-                            self._has_external_embeddings = True
-                            self._persist_external_flag()
-                    self._collection.upsert(
-                        ids=[entry.id],
-                        documents=[entry.content],
-                        metadatas=[metadata],
-                        embeddings=[generated[0]],
-                    )
+                    embedding = generated[0]
                 else:
                     logger.warning(f"embedding_func returned empty result for id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
                     raise ValueError("embedding_func returned empty or invalid embedding")
-            except ValueError:
+            except (ValueError, TypeError):
                 raise
             except Exception as e:
                 logger.error(f"embedding_func failed: {e}")
                 raise ValueError(f"Failed to generate embedding via embedding_func: {e}") from e
-        elif self._has_external_embeddings:
-            # 已启用外部嵌入但未提供，抛出异常而非静默丢失数据
-            logger.error(f"External embeddings enabled but no embedding provided for id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
-            raise ValueError(
-                "Collection uses external embeddings but no embedding was provided. "
-                "Provide an embedding or disable external embedding mode."
-            )
         else:
-            # 没有外部嵌入，使用 ChromaDB 默认嵌入函数
-            self._collection.upsert(
-                ids=[entry.id],
-                documents=[entry.content],
-                metadatas=[metadata],
+            logger.error(f"No embedding provided and no embedding_func available for id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
+            raise ValueError(
+                "No embedding provided and no embedding_func available. "
+                "Provide an embedding vector or configure an embedding function."
             )
 
+        self._collection.upsert(
+            ids=[entry.id],
+            documents=[entry.content],
+            metadatas=[metadata],
+            embeddings=[embedding],
+        )
         logger.debug(f"Memory added: id={entry.id}, type={entry.memory_type}, len={len(entry.content)}")
 
     def search(self, query_text: Optional[str] = None, query_embedding: Optional[list[float]] = None,
@@ -189,12 +173,23 @@ class VectorStore:
                update_access: bool = True) -> list[MemoryEntry]:
         """语义搜索记忆
         
+        必须提供 query_embedding；如果仅提供 query_text，将尝试使用 embedding_func 转换。
+        
         Args:
             update_access: 是否更新访问计数，内部去重搜索时应设为 False
         """
-        # 如果集合使用了外部嵌入，拒绝 query_text 搜索（避免维度冲突）
-        if query_text and not query_embedding and self._has_external_embeddings:
-            logger.debug("Rejecting text search: collection uses external embeddings, use query_embedding instead")
+        # 如果没有直接提供嵌入向量，尝试用 embedding_func 从文本生成
+        if not query_embedding and query_text and self._embedding_func:
+            try:
+                generated = self._embedding_func([query_text])
+                if generated and generated[0] and len(generated[0]) > 0:
+                    query_embedding = generated[0]
+            except Exception as e:
+                logger.debug(f"embedding_func failed during search: {e}")
+
+        if not query_embedding:
+            if query_text:
+                logger.debug("No embedding available for text query, skipping search")
             return []
 
         where_conditions = []
@@ -205,14 +200,8 @@ class VectorStore:
 
         query_kwargs = {
             "n_results": k,
+            "query_embeddings": [query_embedding],
         }
-
-        if query_embedding:
-            query_kwargs["query_embeddings"] = [query_embedding]
-        elif query_text:
-            query_kwargs["query_texts"] = [query_text]
-        else:
-            return []
 
         # ChromaDB 多条件需要 $and
         if len(where_conditions) > 1:
@@ -312,8 +301,7 @@ class VectorStore:
         """更新一条记忆
         
         Args:
-            embedding: 当 content 更新时应同时提供新的 embedding，
-                       避免 ChromaDB 使用默认嵌入函数导致维度不匹配
+            embedding: 当 content 更新时应同时提供新的 embedding。
         """
         try:
             if embedding is not None and len(embedding) == 0:
@@ -340,10 +328,6 @@ class VectorStore:
                 update_kwargs["documents"] = [content]
                 if embedding and len(embedding) > 0:
                     update_kwargs["embeddings"] = [embedding]
-                    with self._external_embeddings_lock:
-                        if not self._has_external_embeddings:
-                            self._has_external_embeddings = True
-                            self._persist_external_flag()
                 elif self._embedding_func is not None:
                     # 使用构造时注入的嵌入函数生成向量
                     try:
@@ -355,10 +339,6 @@ class VectorStore:
                             )
                         if generated and generated[0] and len(generated[0]) > 0:
                             update_kwargs["embeddings"] = [generated[0]]
-                            with self._external_embeddings_lock:
-                                if not self._has_external_embeddings:
-                                    self._has_external_embeddings = True
-                                    self._persist_external_flag()
                         else:
                             logger.warning(
                                 f"update_memory: embedding_func returned empty result for {memory_id}, "
@@ -371,11 +351,10 @@ class VectorStore:
                             f"skipping update"
                         )
                         return False
-                elif self._has_external_embeddings:
+                else:
                     logger.warning(
-                        f"update_memory: content changed but no valid embedding provided in external-embedding mode "
-                        f"(embedding={'empty list' if embedding is not None else 'None'}), "
-                        f"skipping update for {memory_id}"
+                        f"update_memory: content changed but no embedding provided and no embedding_func "
+                        f"available, skipping update for {memory_id}"
                     )
                     return False
 

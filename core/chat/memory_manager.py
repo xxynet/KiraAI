@@ -239,34 +239,19 @@ class MemoryManager:
             k = 5
         k = max(1, k)
         try:
-            # 使用外部 embedding 模型生成向量进行搜索
-            # 不回退到 ChromaDB 默认文本搜索，避免嵌入维度不匹配
-            if self._llm_client:
-                try:
-                    embeddings = await self._llm_client.embed([query])
-                    if embeddings and embeddings[0]:
-                        return await asyncio.to_thread(
-                            self.vector_store.search,
-                            query_embedding=embeddings[0],
-                            user_id=user_id,
-                            k=k
-                        )
-                except Exception as e:
-                    logger.warning(f"Embedding search failed: {e}")
+            if not self._llm_client:
+                logger.debug("No LLM client available, skipping recall")
+                return []
 
-            # 无外部 embedding 模型时，尝试使用 ChromaDB 内置文本搜索
-            if not self.vector_store.has_external_embeddings:
-                try:
-                    return await asyncio.to_thread(
-                        self.vector_store.search,
-                        query_text=query,
-                        user_id=user_id,
-                        k=k
-                    )
-                except Exception as e:
-                    logger.error(f"Text-based recall fallback failed: {e}")
-            else:
-                logger.debug("No embedding model available and collection uses external embeddings, skipping recall")
+            embeddings = await self._llm_client.embed([query])
+            if embeddings and embeddings[0]:
+                return await asyncio.to_thread(
+                    self.vector_store.search,
+                    query_embedding=embeddings[0],
+                    user_id=user_id,
+                    k=k
+                )
+            logger.warning("Embedding generation returned empty result, skipping recall")
             return []
         except Exception as e:
             logger.error(f"Recall error: {e}")
