@@ -57,6 +57,12 @@ class _NoDefaultEmbedding(EmbeddingFunction[Documents]):
     def name() -> str:
         return "disabled_no_default"
 
+    def default_space(self) -> str:
+        return "cosine"
+
+    def supported_spaces(self) -> list:
+        return ["cosine", "l2", "ip"]
+
     @staticmethod
     def build_from_config(config: dict) -> "_NoDefaultEmbedding":
         return _NoDefaultEmbedding()
@@ -92,7 +98,8 @@ class VectorStore:
                 embedding_function=no_default_ef,
             )
         except ValueError as e:
-            if "conflict" in str(e).lower():
+            _msg = str(e)
+            if "Embedding function conflict" in _msg or "embedding function already exists" in _msg.lower():
                 # 旧 collection 使用了 ChromaDB 默认嵌入函数，删除后重建
                 logger.warning(
                     "Existing collection uses default embedding function, "
