@@ -14,6 +14,7 @@ from core.utils.path_utils import get_data_path
 
 if TYPE_CHECKING:
     from .plugin_registry import PluginManager
+    from core.message_manager import MessageProcessor
 
 
 @dataclass
@@ -31,6 +32,8 @@ class PluginContext:
     persona_mgr: PersonaManager
 
     memory_mgr: MemoryManager
+
+    message_processor: "MessageProcessor"
 
     plugin_mgr: Optional["PluginManager"] = None
 
@@ -51,3 +54,6 @@ class PluginContext:
         plugin_dir = base_dir / plugin_id
         plugin_dir.mkdir(parents=True, exist_ok=True)
         return plugin_dir
+    
+    async def flush_session_messages(self, sid: str):
+        await self.message_processor.flush_session_messages(sid)

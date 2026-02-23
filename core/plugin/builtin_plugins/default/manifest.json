@@ -1,0 +1,8 @@
+{
+    "display_name": "KiraAI",
+    "plugin_id": "kira_default_plugin",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "Default plugin, controlling IM message workflow",
+    "repo": null
+}
