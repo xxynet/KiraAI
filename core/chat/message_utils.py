@@ -50,7 +50,7 @@ class KiraMessageEvent:
     message_types: list
     timestamp: int
     message: KiraIMMessage
-    _process_strategy: Literal["trigger", "buffer", "discard", "flush"] = "buffer"
+    _process_strategy: Literal["trigger", "buffer", "discard", "flush"] = "discard"
     adapter: AdapterInfo = None
     extra: Optional[dict] = None
     message_str: Optional[str] = field(default=None, init=False)

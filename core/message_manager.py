@@ -365,6 +365,13 @@ class MessageProcessor:
             messages.extend(msg)
             new_memory_chunk.extend(msg)
 
+        # # EventType.BEFORE_LLM_REQUEST
+        # im_handlers = event_handler_reg.get_handlers(event_type=EventType.BEFORE_LLM_REQUEST)
+        # for handler in im_handlers:
+        #     await handler.exec_handler(event)
+        #     if event.is_stopped:
+        #         return
+
         # Get max tool loop config, defaults to 2 if not a valid integer
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
         try:
