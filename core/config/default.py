@@ -1,6 +1,6 @@
 from core.utils.path_utils import get_config_path
 
-VERSION = "v1.7.1"
+VERSION = "v1.8.0"
 
 DEFAULT_CONFIG = {
     "bot_config": {

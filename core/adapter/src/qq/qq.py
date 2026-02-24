@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from core.adapter.adapter_utils import IMAdapter
 from core.logging_manager import get_logger
-from core.chat import KiraMessageEvent, MessageChain
+from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain
 
 from core.chat.message_elements import (
     Text,
@@ -310,15 +310,19 @@ class QQAdapter(IMAdapter):
         message_obj = KiraMessageEvent(
             adapter=self.info,
             message_types=self.message_types,
-            group=group_obj,
-            sender=User(
-                user_id=str(user_id),
-                nickname="None"
+            message=KiraIMMessage(
+                timestamp=int(msg.get("time") or time.time()),
+                message_id="None",
+                group=group_obj,
+                sender=User(
+                    user_id=str(user_id),
+                    nickname="None"
+                ),
+                is_notice=True,
+                is_mentioned=True,
+                self_id=str(self_id),
+                chain=message_list,
             ),
-            is_notice=True,
-            message_id="None",
-            self_id=str(self_id),
-            chain=message_list,
             timestamp=int(msg.get("time") or time.time())
         )
         self.publish(message_obj)
@@ -372,18 +376,22 @@ class QQAdapter(IMAdapter):
             message_obj = KiraMessageEvent(
                 adapter=self.info,
                 message_types=self.message_types,
-                group=Group(
-                    group_id=str(msg.get("group_id")),
-                    group_name=group_name
+                message=KiraIMMessage(
+                    timestamp=int(msg.get("time") or time.time()),
+                    group=Group(
+                        group_id=str(msg.get("group_id")),
+                        group_name=group_name
+                    ),
+                    sender=User(
+                        user_id=str(msg.get("user_id")),
+                        nickname=msg.get("sender").get("nickname")
+                    ),
+                    is_mentioned=is_mentioned,
+                    message_id=str(msg.get("message_id")),
+                    self_id=str(msg.get("self_id")),
+                    chain=message_list,
+                    extra=msg
                 ),
-                sender=User(
-                    user_id=str(msg.get("user_id")),
-                    nickname=msg.get("sender").get("nickname")
-                ),
-                is_mentioned=is_mentioned,
-                message_id=str(msg.get("message_id")),
-                self_id=str(msg.get("self_id")),
-                chain=message_list,
                 timestamp=int(msg.get("time") or time.time())
             )
             self.publish(message_obj)
@@ -404,14 +412,18 @@ class QQAdapter(IMAdapter):
         message_obj = KiraMessageEvent(
             adapter=self.info,
             message_types=self.message_types,
-            sender=User(
-                user_id=str(msg.get("user_id")),
-                nickname=msg.get("sender").get("nickname")
+            message=KiraIMMessage(
+                timestamp=int(msg.get("time") or time.time()),
+                sender=User(
+                    user_id=str(msg.get("user_id")),
+                    nickname=msg.get("sender").get("nickname")
+                ),
+                message_id=str(msg.get("message_id")),
+                is_mentioned=True,
+                self_id=str(msg.get("self_id")),
+                chain=message_list,
+                extra=msg
             ),
-            message_id=str(msg.get("message_id")),
-            is_mentioned=True,
-            self_id=str(msg.get("self_id")),
-            chain=message_list,
             timestamp=int(msg.get("time") or time.time())
         )
         self.publish(message_obj)

@@ -83,7 +83,25 @@ class OnEventDeco:
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
             eh = EventHandler(
-                EventType.IMMessage,
+                EventType.ON_IM_MESSAGE,
+                priority=priority,
+                handler=func,
+                desc=func.__doc__
+            )
+
+            plugin_entry = _plugin_components.setdefault(plugin_id, {})
+            hooks = plugin_entry.setdefault("hooks", [])
+            hooks.append(eh)
+            return func
+
+        return decorator
+
+    @staticmethod
+    def im_batch_message(priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            eh = EventHandler(
+                EventType.ON_IM_BATCH_MESSAGE,
                 priority=priority,
                 handler=func,
                 desc=func.__doc__

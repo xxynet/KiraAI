@@ -10,7 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 
 from core.logging_manager import get_logger
 from core.adapter.adapter_utils import IMAdapter
-from core.chat import KiraMessageEvent, MessageChain
+from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain
 from core.chat import Session, Group, User
 from core.utils.network import get_file_content
 
@@ -195,18 +195,21 @@ class TelegramAdapter(IMAdapter):
             message_obj = KiraMessageEvent(
                 adapter=self.info,
                 message_types=self.message_types,
-                group=Group(
-                    group_id=str(chat.id),
-                    group_name=chat.title or str(chat.id)
+                message=KiraIMMessage(
+                    timestamp=int(msg.date.timestamp() or time.time()),
+                    group=Group(
+                        group_id=str(chat.id),
+                        group_name=chat.title or str(chat.id)
+                    ),
+                    sender=User(
+                        user_id=str(user.id),
+                        nickname=user.full_name or str(user.id)
+                    ),
+                    is_mentioned=is_mentioned,
+                    message_id=str(msg.id),
+                    self_id=self.config["bot_pid"],
+                    chain=message_list,
                 ),
-                sender=User(
-                    user_id=str(user.id),
-                    nickname=user.full_name or str(user.id)
-                ),
-                is_mentioned=is_mentioned,
-                message_id=str(msg.id),
-                self_id=self.config["bot_pid"],
-                chain=message_list,
                 timestamp=int(msg.date.timestamp() or time.time())
             )
             self.publish(message_obj)
@@ -227,14 +230,17 @@ class TelegramAdapter(IMAdapter):
             message_obj = KiraMessageEvent(
                 adapter=self.info,
                 message_types=self.message_types,
-                sender=User(
-                    user_id=str(user.id),
-                    nickname=user.full_name or str(user.id)
+                message=KiraIMMessage(
+                    timestamp=int(msg.date.timestamp() or time.time()),
+                    sender=User(
+                        user_id=str(user.id),
+                        nickname=user.full_name or str(user.id)
+                    ),
+                    is_mentioned=True,
+                    message_id=str(msg.id),
+                    self_id=self.config["bot_pid"],
+                    chain=message_list,
                 ),
-                is_mentioned=True,
-                message_id=str(msg.id),
-                self_id=self.config["bot_pid"],
-                chain=message_list,
                 timestamp=int(msg.date.timestamp() or time.time())
             )
             self.publish(message_obj)

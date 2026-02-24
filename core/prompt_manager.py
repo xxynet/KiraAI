@@ -6,7 +6,7 @@ from typing import Dict, Any, Union, Optional
 from core.logging_manager import get_logger
 from core.sticker_manager import StickerManager
 from core.persona import PersonaManager
-from core.chat.message_utils import KiraMessageEvent
+# from core.chat.message_utils import KiraMessageEvent, KiraIMMessage
 from core.config import KiraConfig
 from core.utils.path_utils import get_data_path
 
@@ -14,17 +14,20 @@ logger = get_logger("prompt_manager", "yellow")
 
 
 class Prompt:
-    def __init__(self, name: str, source: str, content: str, **kwargs):
+    def __init__(self, name: str, source: str, content: str, end: Optional[str] = "\n", **kwargs):
         self.name = name
         self.source = source
         self.content = content
 
+        if end:
+            self.content += end
+
         try:
-            self.content.format(**kwargs)
+            self.content = self.content.format(**kwargs)
         except KeyError:
             pass
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Prompt format failed: {e}")
 
 
 class PromptManager:
@@ -195,16 +198,16 @@ class PromptManager:
             logger.error(f"Error generating system prompt: {e}")
             return ""
 
-    def format_user_message(self, msg: Union[KiraMessageEvent]) -> str:
-        """格式化用户消息"""
-        date_str = self.get_current_time_str()
-        # TODO format it in message processor
-        if isinstance(msg, KiraMessageEvent):
-            if msg.is_group_message():
-                # group message format
-                return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [group_name: {msg.group.group_name} group_id: {msg.group.group_id} user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
-            else:
-                # direct message format
-                return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
-        else:
-            return ""
+    # def format_user_message(self, msg: Union[KiraIMMessage]) -> str:
+    #     """格式化用户消息"""
+    #     date_str = self.get_current_time_str()
+    #     # TODO format it in message processor
+    #     if isinstance(msg, KiraIMMessage):
+    #         if msg.is_group_message():
+    #             # group message format
+    #             return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [group_name: {msg.group.group_name} group_id: {msg.group.group_id} user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
+    #         else:
+    #             # direct message format
+    #             return f"[received_time: {date_str} message_id: {str(msg.message_id)}] [user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
+    #     else:
+    #         return ""

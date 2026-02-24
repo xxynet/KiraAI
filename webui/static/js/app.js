@@ -1149,6 +1149,7 @@ function renderMcpServers() {
                 </div>
             </div>
         `;
+        attachMcpHandlers();
         if (window.i18n) {
             updateTranslations();
         }

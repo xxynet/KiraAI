@@ -1,4 +1,5 @@
 import asyncio
+import time
 from asyncio import Lock
 import xml.etree.ElementTree as ET
 from typing import Union, Any, List
@@ -11,9 +12,11 @@ from core.logging_manager import get_logger
 from core.services.runtime import get_adapter_by_name
 from core.utils.common_utils import image_to_base64
 from core.utils.path_utils import get_data_path
-from core.chat.message_utils import KiraMessageEvent, KiraCommentEvent, MessageChain
+from core.chat.message_utils import KiraMessageEvent,KiraMessageBatchEvent,  KiraCommentEvent, MessageChain
+from core.prompt_manager import Prompt
 
 from core.chat.message_elements import (
+    BaseMessageElement,
     Text,
     Image,
     At,
@@ -32,6 +35,43 @@ from .prompt_manager import PromptManager
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 
 logger = get_logger("message_processor", "cyan")
+
+
+class SessionBuffer:
+    def __init__(self, max_count: int = None):
+        self.buffer: list = []
+        self.lock: asyncio.Lock = asyncio.Lock()
+        self.max_count = max_count
+
+    def add(self, message: KiraMessageEvent):
+        self.buffer.append(message)
+
+    def flush(self, count: int = None):
+        if count and count <= len(self.buffer):
+            pending_messages = self.buffer[:count]
+            del self.buffer[:count]
+        else:
+            pending_messages = self.buffer[:]
+            self.buffer.clear()
+        return pending_messages
+
+    def get_length(self):
+        return len(self.buffer)
+
+    def get_buffer_lock(self) -> Lock:
+        """get buffer lock"""
+        return self.lock
+
+
+class SessionBufferManager:
+    def __init__(self, max_count: int = None):
+        self.buffers: dict[str, SessionBuffer] = {}
+        self.max_count = max_count
+
+    def get_buffer(self, session: str):
+        if session not in self.buffers:
+            self.buffers[session] = SessionBuffer(self.max_count)
+        return self.buffers[session]
 
 
 class MessageProcessor:
@@ -62,6 +102,8 @@ class MessageProcessor:
         self.message_buffer: dict[str, Any] = {}
         self.buffer_locks: dict[str, asyncio.Lock] = {}
         self.session_locks: dict[str, asyncio.Lock] = {}
+
+        self.session_buffer = SessionBufferManager(max_count=self.max_buffer_messages)
         
         logger.info("MessageProcessor initialized")
 
@@ -84,7 +126,30 @@ class MessageProcessor:
             session_list_prompt += f"{session_id}\n"
         return session_list_prompt
 
-    async def message_format_to_text(self, message_list: list[Text, Image, At, Reply, Emoji, Sticker, Record, Notice]):
+    def get_session_buffer_length(self, sid: str) -> int:
+        buffer = self.session_buffer.get_buffer(sid)
+        return buffer.get_length()
+
+    async def flush_session_messages(self, sid: str, extra_event: KiraMessageEvent | None = None) -> bool:
+        buffer = self.session_buffer.get_buffer(sid)
+        async with buffer.lock:
+            if extra_event is not None:
+                buffer.add(extra_event)
+            pending_messages: list[KiraMessageEvent] = buffer.flush()
+        if not pending_messages:
+            return False
+        last_event = pending_messages[-1]
+        batch_msg = KiraMessageBatchEvent(
+            message_types=last_event.message_types,
+            timestamp=int(time.time()),
+            adapter=last_event.adapter,
+            session=last_event.session,
+            messages=[m.message for m in pending_messages]
+        )
+        await self.handle_im_batch_message(batch_msg)
+        return True
+
+    async def message_format_to_text(self, message_list: list[BaseMessageElement]):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
         for ele in message_list:
@@ -119,77 +184,119 @@ class MessageProcessor:
             else:
                 pass
         return message_str
-    
-    async def handle_message(self, msg: Union[KiraMessageEvent, KiraCommentEvent]):
-        """处理消息，带并发控制"""
-        async with self.message_processing_semaphore:
-            if isinstance(msg, KiraMessageEvent):
-                await self.handle_im_message(msg)
-            elif isinstance(msg, KiraCommentEvent):
-                await self.handle_cmt_message(msg)
-            else:
-                logger.warning(f"Unknown message type: {type(msg)}")
 
-    async def handle_im_message(self, msg: KiraMessageEvent):
+    async def handle_im_message(self, event: KiraMessageEvent):
         """process im message"""
-        logger.info(msg.get_log_info())
+        logger.info(event.get_log_info())
 
-        sid = msg.session.sid
+        # decorating event info
 
-        msg.session.session_description = self.memory_manager.get_session_info(sid).session_description
+        sid = event.session.sid
 
-        # EventType.IMMessage
-        im_handlers = event_handler_reg.get_handlers(event_type=EventType.IMMessage)
+        event.session.session_description = self.memory_manager.get_session_info(sid).session_description
+
+        # EventType.ON_IM_MESSAGE
+        im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_MESSAGE)
         for handler in im_handlers:
-            await handler.exec_handler(msg)
-            if msg.is_stopped:
+            await handler.exec_handler(event)
+            if event.is_stopped:
+                return
+        if event.process_strategy == "discard":
+            return
+
+        if event.process_strategy == "trigger":
+            batch_msg = KiraMessageBatchEvent(
+                message_types=event.message_types,
+                timestamp=int(time.time()),
+                adapter=event.adapter,
+                session=event.session,
+                messages=[event.message]
+            )
+            await self.handle_im_batch_message(batch_msg)
+            return
+
+        if event.process_strategy == "buffer":
+            buffer = self.session_buffer.get_buffer(sid)
+            async with buffer.lock:
+                buffer.add(event)
+            return
+
+        if event.process_strategy == "flush":
+            flushed = await self.flush_session_messages(sid, extra_event=event)
+            if not flushed:
+                logger.warning(f"No pending messages to flush for session {sid}")
+            return
+
+        # # buffer
+        # buffer = self.session_buffer.get_buffer(sid)
+        #
+        # async with buffer.lock:
+        #     buffer.add(event)
+        #     message_count = buffer.get_length()
+        #
+        # if message_count < self.max_buffer_messages:
+        #     await asyncio.sleep(self.max_message_interval)
+        #
+        # if buffer.get_length() == message_count:
+        #     # print("no new message coming, processing")
+        #     async with buffer.lock:
+        #         pending_messages: list[KiraMessageEvent] = buffer.flush(count=message_count)
+        #     logger.info(f"deleted {message_count} message(s) from buffer")
+        # else:
+        #     # print("new message coming")
+        #     return None
+        #
+        # last_event = pending_messages[-1]
+        #
+        # batch_msg = KiraMessageBatchEvent(
+        #     message_types=last_event.message_types,
+        #     timestamp=int(time.time()),
+        #     adapter=last_event.adapter,
+        #     session=last_event.session,
+        #     messages=[m.message for m in pending_messages]
+        # )
+        # await self.handle_im_batch_message(batch_msg)
+
+    async def handle_im_batch_message(self, event: KiraMessageBatchEvent):
+        # Start processing
+        sid = event.session.sid
+
+        # formatted_messages_str = ""
+        for i, message in enumerate(event.messages):
+            message_list = message.chain
+            message_str = await self.message_format_to_text(message_list)
+            message.message_str = message_str
+
+            # formatted_message = self.prompt_manager.format_user_message(message)
+            # formatted_messages_str += f"{formatted_message}\n"
+        # user_prompt = "".join([p.content for p in event.prompt])
+        # logger.info(f"processing message(s) from {event.adapter.name}:\n{formatted_messages_str}")
+
+        # EventType.ON_IM_BATCH_MESSAGE
+        im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_BATCH_MESSAGE)
+        for handler in im_handlers:
+            await handler.exec_handler(event)
+            if event.is_stopped:
                 return
 
-        # acquire buffer lock
-        buffer_lock = self.get_buffer_lock(sid)
-
-        async with buffer_lock:
-            if sid not in self.message_buffer:
-                self.message_buffer[sid] = []
-            self.message_buffer[sid].append(msg)
-            msg_amount = len(self.message_buffer[sid])
-
-        if msg_amount < self.max_buffer_messages:
-            await asyncio.sleep(self.max_message_interval)
-        if len(self.message_buffer[sid]) == msg_amount:
-            # print("no new message coming, processing")
-            async with buffer_lock:
-                pending_messages: list[KiraMessageEvent] = self.message_buffer[sid][:msg_amount]
-                del self.message_buffer[sid][:msg_amount]
-            logger.info(f"deleted {msg_amount} message(s) from buffer")
-        else:
-            # print("new message coming")
-            return None
-
-        # Start processing
-        formatted_messages_str = ""
-        for message in pending_messages:
-            message_list = message.chain
-            message.message_str = await self.message_format_to_text(message_list)
-            formatted_message = self.prompt_manager.format_user_message(message)
-            formatted_messages_str += f"{formatted_message}\n"
-        logger.info(f"processing message(s) from {msg.adapter.name}:\n{formatted_messages_str}")
+        user_prompt = "".join([p.content for p in event.prompt])
+        logger.info(f"processing message(s) from {sid}:\n{user_prompt}")
 
         # Get existing session
         session_list = self.get_session_list_prompt()
 
         session_title = self.memory_manager.get_session_info(sid).session_title
         if not session_title:
-            session_title = msg.session.session_title
+            session_title = event.session.session_title
 
         # Build chat environment
         chat_env = {
-            "platform": msg.adapter.platform,
-            "adapter": msg.adapter.name,
-            "chat_type": 'GroupMessage' if msg.is_group_message() else 'DirectMessage',
-            "self_id": msg.self_id,
+            "platform": event.adapter.platform,
+            "adapter": event.adapter.name,
+            "chat_type": 'GroupMessage' if event.is_group_message() else 'DirectMessage',
+            "self_id": event.self_id,
             "session_title": session_title,
-            "session_description": msg.session.session_description,
+            "session_description": event.session.session_description,
             "session_list": session_list
         }
 
@@ -199,18 +306,18 @@ class MessageProcessor:
         core_memory = self.memory_manager.get_core_memory()
 
         # 构建用户标识（跨 recall / profile 复用）
-        user_key = f"{msg.adapter.name}:{msg.sender.user_id}"
+        user_key = f"{event.adapter.name}:{event.messages[-1].sender.user_id}"
 
         # Recall long-term memories (RAG)
         recalled_memories_str = ""
         try:
-            recalled = await self.memory_manager.recall(formatted_messages_str, user_id=user_key, k=5)
+            recalled = await self.memory_manager.recall(user_prompt, user_id=user_key, k=5)
 
             # 群聊场景：额外搜索群级记忆（海马体在群聊中提取的事实存储在群 ID 下）
-            if msg.is_group_message():
-                group_key = f"{msg.adapter.name}:group:{msg.group.group_id}"
+            if event.is_group_message():
+                group_key = f"{event.adapter.name}:group:{event.session.session_id}"
                 group_recalled = await self.memory_manager.recall(
-                    formatted_messages_str, user_id=group_key, k=3
+                    user_prompt, user_id=group_key, k=3
                 )
                 # 去重后合并
                 existing_ids = {m.id for m in recalled}
@@ -229,25 +336,25 @@ class MessageProcessor:
             # Update interaction stats
             await self.memory_manager.update_user_interaction(
                 user_key,
-                platform=msg.adapter.platform,
-                nickname=msg.sender.nickname
+                platform=event.adapter.platform,
+                nickname=event.messages[-1].sender.nickname
             )
         except Exception:
             logger.error("User profile retrieval skipped")
 
         # Get emoji_dict
-        emoji_dict = getattr(get_adapter_by_name(msg.adapter.name), "emoji_dict", {})
+        emoji_dict = getattr(get_adapter_by_name(event.adapter.name), "emoji_dict", {})
 
         # Generate agent prompt
         agent_prompt = self.prompt_manager.get_agent_prompt(
-            chat_env, core_memory, msg.message_types, emoji_dict,
+            chat_env, core_memory, event.message_types, emoji_dict,
             recalled_memories=recalled_memories_str,
             user_profile=user_profile_str
         )
         messages = [{"role": "system", "content": agent_prompt}]
 
-        session_memory.append({"role": "user", "content": formatted_messages_str})
-        new_memory_chunk = [{"role": "user", "content": formatted_messages_str}]
+        session_memory.append({"role": "user", "content": user_prompt})
+        new_memory_chunk = [{"role": "user", "content": user_prompt}]
         messages.extend(session_memory)
 
         def append_msg(msg: dict):
@@ -258,6 +365,13 @@ class MessageProcessor:
             messages.extend(msg)
             new_memory_chunk.extend(msg)
 
+        # # EventType.BEFORE_LLM_REQUEST
+        # im_handlers = event_handler_reg.get_handlers(event_type=EventType.BEFORE_LLM_REQUEST)
+        # for handler in im_handlers:
+        #     await handler.exec_handler(event)
+        #     if event.is_stopped:
+        #         return
+
         # Get max tool loop config, defaults to 2 if not a valid integer
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
         try:
@@ -265,8 +379,8 @@ class MessageProcessor:
         except ValueError:
             max_tool_loop = 2
 
-        max_agent_steps = max_tool_loop+1
-        
+        max_agent_steps = max_tool_loop + 1
+
         for _ in range(max_agent_steps):
             llm_resp = await self.llm_api.agent_run(messages)
             if llm_resp:
@@ -298,7 +412,7 @@ class MessageProcessor:
 
         self.memory_manager.update_memory(sid, new_memory_chunk)
         if not self.memory_manager.get_session_info(sid).session_title:
-            self.memory_manager.update_session_info(sid, msg.session.session_title)
+            self.memory_manager.update_session_info(sid, event.session.session_title)
 
     async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""

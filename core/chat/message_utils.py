@@ -17,50 +17,129 @@ from core.chat.message_elements import (
 
 from .session import Session, Group, User
 from core.adapter.adapter_info import AdapterInfo
+from core.prompt_manager import Prompt
 
 
 class MessageType(Enum):
-    GroupMsg =  "gm"
+    GroupMsg = "gm"
     DirectMsg = "dm"
     SystemMsg = "sm"
 
 
 @dataclass
-class KiraMessageEvent:
-    message_types: list
+class KiraIMMessage:
     message_id: str
     self_id: str
     chain: list
     timestamp: int
-    process_strategy: Literal["default", "buffer", "discard"] = "default"
-    adapter: AdapterInfo = None
     sender: User = None
     session: Session = None
     group: Group = None
     is_notice: bool = False
     is_mentioned: Optional[bool] = None
+    extra: Optional[dict] = None
+    message_str: Optional[str] = field(default=None, init=False)
+    message_repr: Optional[str] = field(default=None, init=False)
+
+    def is_group_message(self):
+        return self.group is not None
+
+
+@dataclass
+class KiraMessageEvent:
+    message_types: list
+    timestamp: int
+    message: KiraIMMessage
+    _process_strategy: Literal["trigger", "buffer", "discard", "flush"] = "discard"
+    adapter: AdapterInfo = None
+    extra: Optional[dict] = None
     message_str: Optional[str] = field(default=None, init=False)
     message_repr: Optional[str] = field(default=None, init=False)
     _is_stopped: bool = False
+    _is_forced: bool = False
 
     def __post_init__(self):
-        self.message_repr = " ".join(ele.repr for ele in self.chain)
+        self.message_repr = " ".join(ele.repr for ele in self.message.chain)
         self.session = Session(
             adapter_name=self.adapter.name,
-            session_type="gm" if self.group else "dm",
-            session_id=self.group.group_id if self.group else self.sender.user_id,
-            session_title=self.group.group_name if self.group else self.sender.nickname
+            session_type="gm" if self.message.group else "dm",
+            session_id=self.message.group.group_id if self.message.group else self.message.sender.user_id,
+            session_title=self.message.group.group_name if self.message.group else self.message.sender.nickname
         )
 
     def get_log_info(self):
         if self.is_group_message():
-            return f"[{self.adapter.name} | {self.message_id}] [{self.group.group_name} | {self.sender.nickname}]: {self.message_repr}"
+            return f"[{self.adapter.name} | {self.message.message_id}] [{self.message.group.group_name} | {self.message.sender.nickname}]: {self.message_repr}"
         else:
-            return f"[{self.adapter.name} | {self.message_id}] [{self.sender.nickname}]: {self.message_repr}"
+            return f"[{self.adapter.name} | {self.message.message_id}] [{self.message.sender.nickname}]: {self.message_repr}"
 
     def is_group_message(self) -> bool:
         """judge whether it's a group message"""
-        return self.group is not None
+        return self.message.group is not None
+
+    @property
+    def is_stopped(self):
+        return self._is_stopped
+
+    @property
+    def process_strategy(self):
+        return self._process_strategy
+
+    def stop(self):
+        self._is_stopped = True
+
+    def trigger(self, force: bool = False):
+        if self._is_forced:
+            return False
+        self._process_strategy = "trigger"
+        self._is_forced = force
+        return True
+
+    def buffer(self, force: bool = False):
+        if self._is_forced:
+            return False
+        self._process_strategy = "buffer"
+        self._is_forced = force
+        return True
+
+    def flush(self, force: bool = False):
+        if self._is_forced:
+            return False
+        self._process_strategy = "flush"
+        self._is_forced = force
+        return True
+
+    def discard(self, force: bool = False):
+        if self._is_forced:
+            return False
+        self._process_strategy = "discard"
+        self._is_forced = force
+        return True
+
+
+@dataclass
+class KiraMessageBatchEvent:
+    message_types: list
+    timestamp: int
+    adapter: AdapterInfo = None
+    session: Session = None
+
+    messages: list[KiraIMMessage] = field(default_factory=list)
+
+    extra: Optional[dict] = None
+    message_str: Optional[str] = field(default=None, init=False)
+    message_repr: Optional[str] = field(default=None, init=False)
+
+    prompt: list[Prompt] = field(default_factory=list)
+
+    _is_stopped: bool = False
+
+    def is_group_message(self):
+        return self.messages[-1].group is not None
+
+    @property
+    def self_id(self):
+        return self.messages[-1].self_id
 
     @property
     def is_stopped(self):
