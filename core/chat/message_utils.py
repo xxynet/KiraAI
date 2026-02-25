@@ -46,6 +46,14 @@ class KiraIMMessage:
 
 
 @dataclass
+class KiraIMSentResult:
+    message_id: Optional[str] = None
+    is_notice: bool = False
+    ok: bool = True
+    err: str = ""
+
+
+@dataclass
 class KiraMessageEvent:
     message_types: list
     timestamp: int
