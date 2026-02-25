@@ -79,39 +79,41 @@ def register_tool(name: str, description: str, params: dict):
 class OnEventDeco:
 
     @staticmethod
-    def im_message(priority: Union[Priority, int] = Priority.MEDIUM):
+    def _register_hook(func: Callable, priority: Union[Priority, int], event_type: EventType):
+        plugin_id = get_obj_plugin_id(func)
+        eh = EventHandler(
+            event_type=event_type,
+            priority=priority,
+            handler=func,
+            desc=func.__doc__
+        )
+
+        plugin_entry = _plugin_components.setdefault(plugin_id, {})
+        hooks = plugin_entry.setdefault("hooks", [])
+        hooks.append(eh)
+
+    def im_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            eh = EventHandler(
-                EventType.ON_IM_MESSAGE,
-                priority=priority,
-                handler=func,
-                desc=func.__doc__
-            )
-
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            hooks = plugin_entry.setdefault("hooks", [])
-            hooks.append(eh)
+            self._register_hook(func, priority, EventType.ON_IM_MESSAGE)
             return func
-
         return decorator
 
-    @staticmethod
-    def im_batch_message(priority: Union[Priority, int] = Priority.MEDIUM):
+    def im_batch_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            eh = EventHandler(
-                EventType.ON_IM_BATCH_MESSAGE,
-                priority=priority,
-                handler=func,
-                desc=func.__doc__
-            )
-
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            hooks = plugin_entry.setdefault("hooks", [])
-            hooks.append(eh)
+            self._register_hook(func, priority, EventType.ON_IM_BATCH_MESSAGE)
             return func
+        return decorator
 
+    def llm_request(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_LLM_REQUEST)
+            return func
+        return decorator
+
+    def llm_response(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_LLM_RESPONSE)
+            return func
         return decorator
 
 

@@ -12,7 +12,7 @@ from core.logging_manager import get_logger
 from core.services.runtime import get_adapter_by_name
 from core.utils.common_utils import image_to_base64
 from core.utils.path_utils import get_data_path
-from core.chat.message_utils import KiraMessageEvent,KiraMessageBatchEvent,  KiraCommentEvent, MessageChain
+from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent,  KiraCommentEvent, MessageChain
 from core.prompt_manager import Prompt
 
 from core.chat.message_elements import (
@@ -32,6 +32,7 @@ from core.chat.message_elements import (
 from core.llm_client import LLMClient
 from core.chat.memory_manager import MemoryManager
 from .prompt_manager import PromptManager
+from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 
 logger = get_logger("message_processor", "cyan")
@@ -76,10 +77,11 @@ class SessionBufferManager:
 
 class MessageProcessor:
     """Core message processor, responsible for handling all message sending and receiving logic"""
-    
+
     def __init__(self,
                  kira_config,
                  llm_api: LLMClient,
+                 provider_manager: ProviderManager,
                  memory_manager: MemoryManager,
                  prompt_manager: PromptManager,
                  max_concurrent_messages: int = 3):
@@ -91,27 +93,20 @@ class MessageProcessor:
         self.max_message_delay = float(self.bot_config.get("max_message_delay", "1.5"))
 
         self.llm_api = llm_api
+        self.provider_mgr = provider_manager
 
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
-        
+
         # managers
         self.memory_manager = memory_manager
         self.prompt_manager = prompt_manager
 
         # message buffer
-        self.message_buffer: dict[str, Any] = {}
-        self.buffer_locks: dict[str, asyncio.Lock] = {}
         self.session_locks: dict[str, asyncio.Lock] = {}
 
         self.session_buffer = SessionBufferManager(max_count=self.max_buffer_messages)
-        
-        logger.info("MessageProcessor initialized")
 
-    def get_buffer_lock(self, sid: str) -> Lock:
-        """get buffer lock"""
-        if sid not in self.buffer_locks:
-            self.buffer_locks[sid] = asyncio.Lock()
-        return self.buffer_locks[sid]
+        logger.info("MessageProcessor initialized")
 
     def get_session_lock(self, sid: str) -> Lock:
         """get session lock to avoid sending message simultaneously"""
@@ -200,6 +195,7 @@ class MessageProcessor:
         for handler in im_handlers:
             await handler.exec_handler(event)
             if event.is_stopped:
+                logger.info("Event stopped")
                 return
         if event.process_strategy == "discard":
             return
@@ -273,14 +269,15 @@ class MessageProcessor:
         # logger.info(f"processing message(s) from {event.adapter.name}:\n{formatted_messages_str}")
 
         # EventType.ON_IM_BATCH_MESSAGE
-        im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_BATCH_MESSAGE)
-        for handler in im_handlers:
+        im_batch_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_BATCH_MESSAGE)
+        for handler in im_batch_handlers:
             await handler.exec_handler(event)
             if event.is_stopped:
                 return
 
-        user_prompt = "".join([p.content for p in event.prompt])
-        logger.info(f"processing message(s) from {sid}:\n{user_prompt}")
+        # user_prompt = "".join([p.content for p in event.prompt])
+        # user_prompt = "废弃的 user prompt"
+        # logger.info(f"processing message(s) from {sid}:\n{user_prompt}")
 
         # Get existing session
         session_list = self.get_session_list_prompt()
@@ -310,37 +307,37 @@ class MessageProcessor:
 
         # Recall long-term memories (RAG)
         recalled_memories_str = ""
-        try:
-            recalled = await self.memory_manager.recall(user_prompt, user_id=user_key, k=5)
-
-            # 群聊场景：额外搜索群级记忆（海马体在群聊中提取的事实存储在群 ID 下）
-            if event.is_group_message():
-                group_key = f"{event.adapter.name}:group:{event.session.session_id}"
-                group_recalled = await self.memory_manager.recall(
-                    user_prompt, user_id=group_key, k=3
-                )
-                # 去重后合并
-                existing_ids = {m.id for m in recalled}
-                for gm in group_recalled:
-                    if gm.id not in existing_ids:
-                        recalled.append(gm)
-
-            recalled_memories_str = self.memory_manager.format_recalled_memories(recalled)
-        except Exception:
-            logger.error("Long-term memory recall failed")
+        # try:
+        #     recalled = await self.memory_manager.recall(user_prompt, user_id=user_key, k=5)
+        #
+        #     # 群聊场景：额外搜索群级记忆（海马体在群聊中提取的事实存储在群 ID 下）
+        #     if event.is_group_message():
+        #         group_key = f"{event.adapter.name}:group:{event.session.session_id}"
+        #         group_recalled = await self.memory_manager.recall(
+        #             user_prompt, user_id=group_key, k=3
+        #         )
+        #         # 去重后合并
+        #         existing_ids = {m.id for m in recalled}
+        #         for gm in group_recalled:
+        #             if gm.id not in existing_ids:
+        #                 recalled.append(gm)
+        #
+        #     recalled_memories_str = self.memory_manager.format_recalled_memories(recalled)
+        # except Exception:
+        #     logger.error("Long-term memory recall failed")
 
         # Get user profile
         user_profile_str = ""
-        try:
-            user_profile_str = self.memory_manager.get_user_profile_prompt(user_key)
-            # Update interaction stats
-            await self.memory_manager.update_user_interaction(
-                user_key,
-                platform=event.adapter.platform,
-                nickname=event.messages[-1].sender.nickname
-            )
-        except Exception:
-            logger.error("User profile retrieval skipped")
+        # try:
+        #     user_profile_str = self.memory_manager.get_user_profile_prompt(user_key)
+        #     # Update interaction stats
+        #     await self.memory_manager.update_user_interaction(
+        #         user_key,
+        #         platform=event.adapter.platform,
+        #         nickname=event.messages[-1].sender.nickname
+        #     )
+        # except Exception:
+        #     logger.error("User profile retrieval skipped")
 
         # Get emoji_dict
         emoji_dict = getattr(get_adapter_by_name(event.adapter.name), "emoji_dict", {})
@@ -351,26 +348,57 @@ class MessageProcessor:
             recalled_memories=recalled_memories_str,
             user_profile=user_profile_str
         )
-        messages = [{"role": "system", "content": agent_prompt}]
+        # messages = [{"role": "system", "content": agent_prompt}]
 
-        session_memory.append({"role": "user", "content": user_prompt})
-        new_memory_chunk = [{"role": "user", "content": user_prompt}]
-        messages.extend(session_memory)
+        # session_memory.append({"role": "user", "content": user_prompt})
+        # new_memory_chunk = [{"role": "user", "content": user_prompt}]
+        new_memory_chunk = []
+        # messages.extend(session_memory)
+
+        # New Logic Start
+        llm_model = self.provider_mgr.get_default_llm()
+        if not llm_model:
+            logger.error(f"Default LLM model not set, please set it in Configuration")
+            return
+
+        request = LLMRequest(messages=session_memory[:], tools=self.llm_api.tools_definitions, tool_funcs=self.llm_api.tools_functions)
+        request.system_prompt.append(Prompt(agent_prompt, name="system", source="system"))
+
+        # Add received im messages
+        for i, message in enumerate(event.messages):
+            request.user_prompt.append(Prompt(message.message_str, name="message", source="system"))
+
+        # EventType.ON_LLM_REQUEST
+        llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_REQUEST)
+        for handler in llm_handlers:
+            await handler.exec_handler(event, request)
+            if event.is_stopped:
+                return
+
+        # Assemble messages
+        request.assemble_prompt()
+
+        # Print user message info
+        user_message = "".join(p.content for p in request.user_prompt if isinstance(p, Prompt))
+        logger.info(f"processing message(s) from {sid}:\n{user_message}")
+
+        # 把收到的消息放到新收到的消息内容中
+        new_memory_chunk.append(request.messages[-1])
+
+        provider_name = llm_model.model.provider_name
+        model_id = llm_model.model.model_id
+        logger.info(f"Running agent using {model_id} ({provider_name})")
+        # resp = await llm_model.chat(request)
+        # logger.debug(resp)
+        # if resp:
+        #     logger.info(
+        #         f"Time consumed: {resp.time_consumed}s, Input tokens: {resp.input_tokens}, output tokens: {resp.output_tokens}")
 
         def append_msg(msg: dict):
-            messages.append(msg)
             new_memory_chunk.append(msg)
 
         def extend_msg(msg: list):
-            messages.extend(msg)
             new_memory_chunk.extend(msg)
-
-        # # EventType.BEFORE_LLM_REQUEST
-        # im_handlers = event_handler_reg.get_handlers(event_type=EventType.BEFORE_LLM_REQUEST)
-        # for handler in im_handlers:
-        #     await handler.exec_handler(event)
-        #     if event.is_stopped:
-        #         return
 
         # Get max tool loop config, defaults to 2 if not a valid integer
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
@@ -382,14 +410,24 @@ class MessageProcessor:
         max_agent_steps = max_tool_loop + 1
 
         for _ in range(max_agent_steps):
-            llm_resp = await self.llm_api.agent_run(messages)
+            llm_resp = await llm_model.chat(request)
             if llm_resp:
+
+                # EventType.ON_LLM_RESPONSE
+                llm_resp_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_RESPONSE)
+                for handler in llm_resp_handlers:
+                    await handler.exec_handler(event, llm_resp)
+                    if event.is_stopped:
+                        return
+
                 if not llm_resp.tool_calls:
                     session_lock = self.get_session_lock(sid)
                     async with session_lock:
                         message_ids, actual_xml = await self.send_xml_messages(sid, llm_resp.text_response.strip())
                         response_with_ids = self._add_message_ids(actual_xml, message_ids)
                         logger.info(f"LLM: {response_with_ids}")
+                    request.messages.append({"role": "assistant",
+                                            "content": response_with_ids if llm_resp.text_response else ""})
                     append_msg({"role": "assistant",
                                 "content": response_with_ids if llm_resp.text_response else ""})
                     break
@@ -401,13 +439,17 @@ class MessageProcessor:
                             response_with_ids = self._add_message_ids(actual_xml, message_ids)
                             logger.info(f"LLM: {response_with_ids}")
                     await self.llm_api.execute_tool(llm_resp)
+                    request.messages.append({"role": "assistant",
+                                             "content": response_with_ids if llm_resp.text_response else "",
+                                             "tool_calls": llm_resp.tool_calls})
                     append_msg({"role": "assistant",
                                 "content": response_with_ids if llm_resp.text_response else "",
                                 "tool_calls": llm_resp.tool_calls})
+                    request.messages.extend(llm_resp.tool_results)
                     extend_msg(llm_resp.tool_results)
             else:
-                append_msg({"role": "assistant",
-                            "content": ""})
+                request.messages.append({"role": "assistant", "content": ""})
+                append_msg({"role": "assistant", "content": ""})
                 break
 
         self.memory_manager.update_memory(sid, new_memory_chunk)
@@ -481,6 +523,7 @@ class MessageProcessor:
         return message_ids, actual_xml
 
     async def _parse_xml_msg(self, xml_data):
+        """Parse xml to list[list[BaseMessageElement]]"""
         root = ET.fromstring(f"<root>{xml_data}</root>")
         message_list = []
 
@@ -565,7 +608,7 @@ class MessageProcessor:
                 message_list.append(message_elements)
 
         return message_list
-    
+
     async def _parse_and_generate_messages(self, xml_data: str) -> tuple[List[List], str]:
         """
         parse xml generated by llm & generate MessageType list

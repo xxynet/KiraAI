@@ -1,12 +1,13 @@
 import json
 import asyncio
 from pathlib import Path
+import xml.etree.ElementTree as ET
 from typing import Union, Optional
 from datetime import datetime
 
 from core.plugin import BasePlugin, logger, on, Priority
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraIMMessage
-
+from core.provider import LLMRequest, LLMResponse
 from core.prompt_manager import Prompt
 
 from core.utils.tool_utils import BaseTool
@@ -51,6 +52,9 @@ class DefaultPlugin(BasePlugin):
 
     @on.im_message(priority=Priority.HIGH)
     async def handle_msg(self, event: KiraMessageEvent):
+        if not event.is_mentioned:
+            event.stop()
+            return
         sid = event.session.sid
         event.buffer()
 
@@ -83,12 +87,41 @@ class DefaultPlugin(BasePlugin):
 
     @on.im_batch_message(priority=Priority.MEDIUM)
     async def handle_batch_event(self, event: KiraMessageBatchEvent):
-        for message in event.messages:
-            formatted_message = self._format_user_message(message)
-            message_prompt = Prompt(
-                name=f"message",
-                source="system",
-                content=formatted_message
-            )
-            event.prompt.append(message_prompt)
+        pass
 
+    @on.llm_request()
+    async def on_llm_req(self, event: KiraMessageBatchEvent, req: LLMRequest):
+        message_index = 0
+        for i, p in enumerate(req.user_prompt):
+            if p.name == "message" and p.source == "system":
+                formatted_message = self._format_user_message(event.messages[message_index])
+                p.content = formatted_message
+
+    @on.llm_response()
+    async def on_llm_resp(self, event: KiraMessageBatchEvent, resp: LLMResponse):
+        pass
+        # xml_data = resp.text_response
+        # if not xml_data:
+        #     return
+        # root = ET.fromstring(f"<root>{xml_data}</root>")
+        #
+        # try:
+        #     for msg in root.findall("msg"):
+        #         for child in msg:
+        #             tag = child.tag
+        #             value = child.text.strip() if child.text else ""
+        # except ET.ParseError as e:
+        #     logger.error(f"Error parsing message: {str(e)}")
+        #     logger.debug(f"previously wrong format: {xml_data}")
+        #
+        #     try:
+        #         llm_resp = await self.ctx.llm_api.chat([
+        #             {"role": "system",
+        #              "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。直接输出修改后的内容，不要解释，不要输出任何多余内容"},
+        #             {"role": "user", "content": xml_data}
+        #         ])
+        #         fixed_xml = llm_resp.text_response
+        #         logger.debug(f"fixed xml data: {fixed_xml}")
+        #         resp.text_response = fixed_xml
+        #     except Exception as e:
+        #         logger.error(f"Failed to fix xml parse error: {e}")

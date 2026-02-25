@@ -78,6 +78,14 @@ class KiraMessageEvent:
         return self.message.group is not None
 
     @property
+    def is_mentioned(self):
+        return self.message.is_mentioned
+
+    @property
+    def is_notice(self):
+        return self.message.is_notice
+
+    @property
     def is_stopped(self):
         return self._is_stopped
 
@@ -129,8 +137,6 @@ class KiraMessageBatchEvent:
     extra: Optional[dict] = None
     message_str: Optional[str] = field(default=None, init=False)
     message_repr: Optional[str] = field(default=None, init=False)
-
-    prompt: list[Prompt] = field(default_factory=list)
 
     _is_stopped: bool = False
 

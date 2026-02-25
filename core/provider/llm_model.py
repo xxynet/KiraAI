@@ -4,9 +4,19 @@ from typing import Optional, Callable, Literal
 import asyncio
 from dataclasses import dataclass, field
 
+from core.prompt_manager import Prompt
+
 
 @dataclass
 class LLMRequest:
+    """LLMRequest object"""
+
+    """Latest user prompt"""
+    user_prompt: list[Prompt] = field(default_factory=list)
+
+    """System prompt"""
+    system_prompt: list[Prompt] = field(default_factory=list)
+
     """message list provided to llm provider"""
     messages: list = field(default_factory=list)
 
@@ -25,6 +35,17 @@ class LLMRequest:
                 self.tool_choice = "auto"
             else:
                 self.tool_choice = "none"
+
+    def assemble_prompt(self):
+        if self.system_prompt:
+            if self.messages and self.messages[0].get("role") == "system":
+                self.messages.pop(0)
+            system_prompt = "".join(p.content for p in self.system_prompt if isinstance(p, Prompt))
+            self.messages.insert(0, {"role": "system", "content": system_prompt})
+
+        if self.user_prompt:
+            user_prompt = "".join(p.content for p in self.user_prompt if isinstance(p, Prompt))
+            self.messages.append({"role": "user", "content": user_prompt})
 
 
 @dataclass

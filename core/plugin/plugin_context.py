@@ -3,7 +3,7 @@ import inspect
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
-from ..provider import ProviderManager
+from ..provider import ProviderManager, LLMModelClient
 from ..adapter import AdapterManager
 from core.chat.memory_manager import MemoryManager
 from core.config import KiraConfig
@@ -57,3 +57,30 @@ class PluginContext:
     
     async def flush_session_messages(self, sid: str):
         await self.message_processor.flush_session_messages(sid)
+
+    async def get_llm_client(self, model_uuid: Optional[str] = None, llm_type: Optional[str] = None) -> Optional[LLMModelClient]:
+        """
+        Get LLMModelClient object by model uuid
+        :param model_uuid: provider_id:model_id
+        :param llm_type: default or fast or None
+        :return: LLMModelClient
+        """
+        if llm_type and llm_type == "default":
+            client = self.provider_mgr.get_default_llm()
+            if isinstance(client, LLMModelClient):
+                return client
+
+        if llm_type and llm_type == "fast":
+            client = self.provider_mgr.get_default_fast_llm()
+            if isinstance(client, LLMModelClient):
+                return client
+        try:
+            parts = model_uuid.split(":")
+            provider_id = parts[0]
+            model_id = ":".join(parts[1:])
+            client = self.provider_mgr.get_model_client(provider_id, model_id)
+        except:
+            return
+        if isinstance(client, LLMModelClient):
+            return client
+        return
