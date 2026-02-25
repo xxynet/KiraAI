@@ -12,7 +12,7 @@ from core.logging_manager import get_logger
 from core.services.runtime import get_adapter_by_name
 from core.utils.common_utils import image_to_base64
 from core.utils.path_utils import get_data_path
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent,  KiraCommentEvent, MessageChain
+from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent,  KiraCommentEvent, MessageChain, KiraIMSentResult
 from core.prompt_manager import Prompt
 
 from core.chat.message_elements import (
@@ -36,6 +36,7 @@ from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 
 logger = get_logger("message_processor", "cyan")
+llm_logger = get_logger("llm", "purple")
 
 
 class SessionBuffer:
@@ -343,7 +344,7 @@ class MessageProcessor:
         emoji_dict = getattr(get_adapter_by_name(event.adapter.name), "emoji_dict", {})
 
         # Generate agent prompt
-        agent_prompt = self.prompt_manager.get_agent_prompt(
+        agent_prompt_list = self.prompt_manager.get_agent_prompt(
             chat_env, core_memory, event.message_types, emoji_dict,
             recalled_memories=recalled_memories_str,
             user_profile=user_profile_str
@@ -358,11 +359,11 @@ class MessageProcessor:
         # New Logic Start
         llm_model = self.provider_mgr.get_default_llm()
         if not llm_model:
-            logger.error(f"Default LLM model not set, please set it in Configuration")
+            llm_logger.error(f"Default LLM model not set, please set it in Configuration")
             return
 
         request = LLMRequest(messages=session_memory[:], tools=self.llm_api.tools_definitions, tool_funcs=self.llm_api.tools_functions)
-        request.system_prompt.append(Prompt(agent_prompt, name="system", source="system"))
+        request.system_prompt.extend(agent_prompt_list)
 
         # Add received im messages
         for i, message in enumerate(event.messages):
@@ -387,12 +388,7 @@ class MessageProcessor:
 
         provider_name = llm_model.model.provider_name
         model_id = llm_model.model.model_id
-        logger.info(f"Running agent using {model_id} ({provider_name})")
-        # resp = await llm_model.chat(request)
-        # logger.debug(resp)
-        # if resp:
-        #     logger.info(
-        #         f"Time consumed: {resp.time_consumed}s, Input tokens: {resp.input_tokens}, output tokens: {resp.output_tokens}")
+        llm_logger.info(f"Running agent using {model_id} ({provider_name})")
 
         def append_msg(msg: dict):
             new_memory_chunk.append(msg)
@@ -412,6 +408,9 @@ class MessageProcessor:
         for _ in range(max_agent_steps):
             llm_resp = await llm_model.chat(request)
             if llm_resp:
+                llm_logger.debug(llm_resp)
+                llm_logger.info(
+                    f"Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}")
 
                 # EventType.ON_LLM_RESPONSE
                 llm_resp_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_RESPONSE)
@@ -423,8 +422,8 @@ class MessageProcessor:
                 if not llm_resp.tool_calls:
                     session_lock = self.get_session_lock(sid)
                     async with session_lock:
-                        message_ids, actual_xml = await self.send_xml_messages(sid, llm_resp.text_response.strip())
-                        response_with_ids = self._add_message_ids(actual_xml, message_ids)
+                        message_ids = await self.send_xml_messages(sid, llm_resp.text_response.strip())
+                        response_with_ids = self._add_message_ids(llm_resp.text_response, message_ids)
                         logger.info(f"LLM: {response_with_ids}")
                     request.messages.append({"role": "assistant",
                                             "content": response_with_ids if llm_resp.text_response else ""})
@@ -435,8 +434,8 @@ class MessageProcessor:
                     if llm_resp.text_response:
                         session_lock = self.get_session_lock(sid)
                         async with session_lock:
-                            message_ids, actual_xml = await self.send_xml_messages(sid, llm_resp.text_response.strip())
-                            response_with_ids = self._add_message_ids(actual_xml, message_ids)
+                            message_ids = await self.send_xml_messages(sid, llm_resp.text_response.strip())
+                            response_with_ids = self._add_message_ids(llm_resp.text_response, message_ids)
                             logger.info(f"LLM: {response_with_ids}")
                     await self.llm_api.execute_tool(llm_resp)
                     request.messages.append({"role": "assistant",
@@ -485,42 +484,67 @@ class MessageProcessor:
         else:
             logger.warning("Blank LLM response")
 
-    async def send_xml_messages(self, target: str, xml: str) -> tuple[List[str], str]:
+    async def send_xml_messages(self, target: str, xml_data: str) -> List[str]:
         """
         send message via session id & xml data
         :param target: adapter_name:session_type:session_id
-        :param xml: xml string
-        :return: (message_ids, actual_xml) - actual_xml 是实际使用的XML（可能是修复后的）
+        :param xml_data: xml string
+        :return: message_ids
         """
-        message_ids = []
-        resp_list, actual_xml = await self._parse_and_generate_messages(xml)
-
         parts = target.split(":")
         if len(parts) != 3:
             raise ValueError("invalid target, must follow the form of <adapter>:<dm|gm>:<id>")
         adapter_name, chat_type, pid = parts[0], parts[1], parts[2]
 
+        message_ids = []
+        try:
+            resp_list = await self._parse_xml_msg(xml_data)
+        except Exception as e:
+            logger.error(f"Error parsing message: {str(e)}")
+            return []
+
         for message_list in resp_list:
             if message_list:
                 message_obj = MessageChain(message_list)
 
-                if chat_type == "dm":
-                    message_id = await get_adapter_by_name(adapter_name).send_direct_message(pid, message_obj)
-                elif chat_type == "gm":
-                    message_id = await get_adapter_by_name(adapter_name).send_group_message(pid, message_obj)
-                else:
-                    message_id = None
-
-                if not message_id:
-                    message_id = ''
-                message_ids.append(message_id)
+                result = await self.send_message_chain(target, message_obj)
+                if not result.ok and result.err:
+                    logger.error(result.err)
+                message_ids.append(result.message_id)
 
                 # add random message delay
                 await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
             else:
                 message_ids.append('')
 
-        return message_ids, actual_xml
+        return message_ids
+
+    async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
+        """
+        Send a MessageChain to target.
+
+        :param session: adapter_name:dm|gm:session_id
+        :param chain: MessageChain instance
+        :return: message_id (empty string if failed)
+        """
+        parts = session.split(":")
+        if len(parts) != 3:
+            raise ValueError("invalid target, must follow <adapter>:<dm|gm>:<id>")
+
+        adapter_name, chat_type, pid = parts
+        adapter = get_adapter_by_name(adapter_name)
+
+        if chat_type == "dm":
+            result = await adapter.send_direct_message(pid, chain)
+        elif chat_type == "gm":
+            result = await adapter.send_group_message(pid, chain)
+        else:
+            raise ValueError("chat_type must be 'dm' or 'gm'")
+
+        if not result:
+            return KiraIMSentResult(ok=False)
+
+        return result
 
     async def _parse_xml_msg(self, xml_data):
         """Parse xml to list[list[BaseMessageElement]]"""
@@ -608,35 +632,6 @@ class MessageProcessor:
                 message_list.append(message_elements)
 
         return message_list
-
-    async def _parse_and_generate_messages(self, xml_data: str) -> tuple[List[List], str]:
-        """
-        parse xml generated by llm & generate MessageType list
-        :return: (message_list, actual_xml) - actual_xml 是实际使用的XML（可能是修复后的）
-        """
-        try:
-            message_list = await self._parse_xml_msg(xml_data)
-            return message_list, xml_data
-        except Exception as e:
-            logger.error(f"Error parsing message: {str(e)}")
-            logger.debug(f"previously wrong format: {xml_data}")
-
-            # init fixed_xml
-            fixed_xml = xml_data
-            try:
-                llm_resp = await self.llm_api.chat([
-                    {"role": "system",
-                     "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。直接输出修改后的内容，不要解释，不要输出任何多余内容"},
-                    {"role": "user", "content": xml_data}
-                ])
-                fixed_xml = llm_resp.text_response
-                logger.debug(f"fixed xml data: {fixed_xml}")
-                message_list = await self._parse_xml_msg(fixed_xml)
-
-                return message_list, fixed_xml
-            except Exception as e:
-                logger.error(f"error after trying to fix xml error: {e}")
-                return [[Text(fixed_xml)]], fixed_xml
 
     def _add_message_ids(self, xml_data: str, message_ids: List[str]) -> str:
         """为XML响应添加消息ID"""

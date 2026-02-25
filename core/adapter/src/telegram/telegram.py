@@ -10,7 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 
 from core.logging_manager import get_logger
 from core.adapter.adapter_utils import IMAdapter
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain
+from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult
 from core.chat import Session, Group, User
 from core.utils.network import get_file_content
 
@@ -368,12 +368,12 @@ class TelegramAdapter(IMAdapter):
             return message_id
 
         if not self.app:
-            return None
+            return KiraIMSentResult(ok=False, err="Telegram bot not started")
         try:
-            return await self.message_sender.send_with_retry(_send)
+            msg_id = await self.message_sender.send_with_retry(_send)
+            return KiraIMSentResult(msg_id)
         except Exception as e:
-            logger.error(f"Failed to send group message: {e}")
-            return None
+            return KiraIMSentResult(ok=False, err=f"Failed to send group message: {e}")
 
     async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageChain):
         async def _send():
@@ -431,12 +431,12 @@ class TelegramAdapter(IMAdapter):
             return message_id
 
         if not self.app:
-            return None
+            return KiraIMSentResult(ok=False, err=f"Telegram bot not started")
         try:
-            return await self.message_sender.send_with_retry(_send)
+            msg_id = await self.message_sender.send_with_retry(_send)
+            return KiraIMSentResult(msg_id)
         except Exception as e:
-            logger.error(f"Failed to send direct message: {e}")
-            return None
+            return KiraIMSentResult(ok=False, err=f"Failed to send direct message: {e}")
 
 
 __all__ = ["TelegramAdapter"]

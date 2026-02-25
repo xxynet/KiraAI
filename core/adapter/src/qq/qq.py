@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from core.adapter.adapter_utils import IMAdapter
 from core.logging_manager import get_logger
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain
+from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult
 
 from core.chat.message_elements import (
     Text,
@@ -103,8 +103,9 @@ class QQAdapter(IMAdapter):
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid, group_id=group_id)
-                return None
+                return KiraIMSentResult(message_id=None, is_notice=True)
             elif isinstance(ele, File):
+                msg_res = KiraIMSentResult(None)
                 try:
                     file_b64 = await ele.to_base64()
                     file_name = ele.name
@@ -112,32 +113,43 @@ class QQAdapter(IMAdapter):
                         import uuid
                         file_name = uuid.uuid4().hex
                     resp = await self.bot.upload_group_file(str(group_id), f"base64://{file_b64}", file_name)
+                    message_id = str(resp.get("data", {}).get("message_id"))
                     if resp.get("status") != "ok":
-                        self.logger.error(f"Failed to send file: {resp}")
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send file: {resp}"
+                        return msg_res
+                    msg_res.message_id = message_id
                 except Exception as e:
-                    self.logger.error(f"Error occurred while uploading file: {e}")
-                return None
+                    msg_res.ok = False
+                    msg_res.err = f"Error occurred while uploading file: {e}"
+                return msg_res
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_group_message(group_id=group_id, msg=message_chain)
             status = result.get("status")
             retcode = result.get("retcode")
+            msg_res = KiraIMSentResult(None)
             if status == "failed":
+                msg_res.ok = False
                 if retcode == 1200:
-                    self.logger.error("禁言中或达到发言频率限制，消息发送失败")
+                    msg_res.err = "禁言中或达到发言频率限制，消息发送失败"
                 else:
-                    self.logger.error(f"未知错误，消息发送失败，错误码：{retcode}")
+                    msg_res.err = f"未知错误，消息发送失败，错误码：{retcode}"
+                return msg_res
             message_id = str(result.get("data", {}).get("message_id"))
-        except:
-            message_id = None
-        return message_id
+            msg_res.message_id = message_id
+            return msg_res
+        except Exception as e:
+            return KiraIMSentResult(None, ok=False, err=str(e))
 
     async def send_direct_message(self, user_id, send_message_obj):
+        msg_res = KiraIMSentResult(None)
         try:
             message_chain = self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid)
-                return None
+                msg_res.is_notice = True
+                return msg_res
             elif isinstance(ele, File):
                 try:
                     file_b64 = await ele.to_base64()
@@ -146,22 +158,31 @@ class QQAdapter(IMAdapter):
                         import uuid
                         file_name = uuid.uuid4().hex
                     resp = await self.bot.upload_private_file(str(user_id), f"base64://{file_b64}", file_name)
+                    message_id = str(resp.get("data", {}).get("message_id"))
                     if resp.get("status") != "ok":
-                        self.logger.error(f"Failed to send file: {resp}")
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send file: {resp}"
+                        return msg_res
+                    msg_res.message_id = message_id
                 except Exception as e:
-                    self.logger.error(f"Error occurred while uploading file: {e}")
-                return None
+                    msg_res.ok = False
+                    msg_res.err = f"Error occurred while uploading file: {e}"
+                    return msg_res
+                return msg_res
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_direct_message(user_id=user_id, msg=message_chain)
             status = result.get("status")
             retcode = result.get("retcode")
             if status == "failed":
-                self.logger.error(f"未知错误，消息发送失败，错误码：{retcode}")
-
+                msg_res.ok = False
+                msg_res.err = f"未知错误，消息发送失败，错误码：{retcode}"
+                return msg_res
             message_id = str(result.get("data", {}).get("message_id"))
-        except:
-            message_id = None
-        return message_id
+            msg_res.message_id = message_id
+        except Exception as e:
+            msg_res.ok = False
+            msg_res.err = str(e)
+            return msg_res
 
     async def process_incoming_message(self, msg):
         """把QQ平台消息转换为项目通用消息格式"""
