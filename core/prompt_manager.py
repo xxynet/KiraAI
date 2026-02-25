@@ -14,7 +14,7 @@ logger = get_logger("prompt_manager", "yellow")
 
 
 class Prompt:
-    def __init__(self, name: str, source: str, content: str, end: Optional[str] = "\n", **kwargs):
+    def __init__(self, content: str, name: Optional[str] = None, source: Optional[str] = None, end: Optional[str] = "\n", **kwargs):
         self.name = name
         self.source = source
         self.content = content

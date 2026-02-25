@@ -126,6 +126,7 @@ class KiraLifecycle:
         # ====== init message processor ======
         self.message_processor = MessageProcessor(self.kira_config,
                                                   self.llm_api,
+                                                  self.provider_manager,
                                                   self.memory_manager,
                                                   self.prompt_manager)
 
