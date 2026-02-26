@@ -45,7 +45,7 @@ class LLMClient:
             if tool_def.get("function", {}).get("name") == name:
                 del self.tools_definitions[i]
 
-    async def chat(self, messages) -> LLMResponse:
+    async def chat(self, messages: list) -> LLMResponse:
         """与LLM交互
 
         Args:
@@ -170,7 +170,7 @@ class LLMClient:
                 ]
             }]
 
-            request = LLMRequest(messages)
+            request = LLMRequest(messages=messages)
             vlm_model = self.provider_mgr.get_default_vlm()
             provider_name = vlm_model.model.provider_name
             model_id = vlm_model.model.model_id

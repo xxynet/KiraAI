@@ -11,14 +11,14 @@ from core.prompt_manager import Prompt
 class LLMRequest:
     """LLMRequest object"""
 
+    """message list provided to llm provider"""
+    messages: list = field(default_factory=list)
+
     """Latest user prompt"""
     user_prompt: list[Prompt] = field(default_factory=list)
 
     """System prompt"""
     system_prompt: list[Prompt] = field(default_factory=list)
-
-    """message list provided to llm provider"""
-    messages: list = field(default_factory=list)
 
     """optional: tool definitions for llm to call"""
     tools: Optional[list[dict]] = None

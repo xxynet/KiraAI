@@ -100,26 +100,21 @@ class EventBus:
 
     async def publish(self, event):
         """publish an event"""
-        try:
-            # 通过中间件处理
-            for middleware in self.middlewares:
-                event = await middleware(event)
-                if event is None:  # 中间件可以过滤事件
-                    return
-
-            try:
-                self.event_queue.put_nowait(event)
-            except asyncio.QueueFull:
-                self.event_bus_stats["dropped"] += 1
-                self.stats.set_stats("event_bus", self.event_bus_stats)
-
-            self.event_bus_stats["published"] += 1
-            self.stats.set_stats("event_bus", self.event_bus_stats)
-
-        except Exception as e:
-            self.event_bus_stats["errors"] += 1
-            self.stats.set_stats("event_bus", self.event_bus_stats)
-            raise
+        await self.event_queue.put(event)
+        # try:
+        #     # 通过中间件处理
+        #     for middleware in self.middlewares:
+        #         event = await middleware(event)
+        #         if event is None:  # 中间件可以过滤事件
+        #             return
+        #
+        #     try:
+        #         self.event_queue.put_nowait(event)
+        #     except asyncio.QueueFull:
+        #         pass
+        #
+        # except Exception as e:
+        #     raise
 
     async def _consumer_loop(self):
         """消费者循环"""

@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 import inspect
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Literal
 
-from ..provider import ProviderManager, LLMModelClient
+from ..provider import ProviderManager, LLMModelClient, EmbeddingModelClient
 from ..adapter import AdapterManager
 from core.chat.memory_manager import MemoryManager
 from core.config import KiraConfig
@@ -11,6 +11,8 @@ from core.event_bus import EventBus
 from core.llm_client import LLMClient
 from core.persona import PersonaManager
 from core.utils.path_utils import get_data_path
+from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group
+from core.chat.message_elements import Text
 
 if TYPE_CHECKING:
     from .plugin_registry import PluginManager
@@ -84,3 +86,53 @@ class PluginContext:
         if isinstance(client, LLMModelClient):
             return client
         return
+
+    async def get_embedding_client(self, model_uuid: str, default: bool = False) -> Optional[EmbeddingModelClient]:
+        if default:
+            client = self.provider_mgr.get_default_embedding()
+            if isinstance(client, EmbeddingModelClient):
+                return client
+            return
+        try:
+            parts = model_uuid.split(":")
+            provider_id = parts[0]
+            model_id = ":".join(parts[1:])
+            client = self.provider_mgr.get_model_client(provider_id, model_id)
+        except:
+            return
+        if isinstance(client, EmbeddingModelClient):
+            return client
+        return
+
+    async def publish_event(self, session: str, chain: MessageChain):
+        import time
+        cur_time = int(time.time())
+        parts = session.split(":")
+        if not len(parts) == 3:
+            raise ValueError("Failed to parse session string")
+        ada_name, st, sid = parts
+        ada = self.adapter_mgr.get_adapter(ada_name)
+        if not ada:
+            raise ValueError(f"Failed to get adapter: {parts[0]}")
+        group = None
+        if st == "gm":
+            group = Group(group_id=sid)
+        message_obj = KiraMessageEvent(
+            adapter=ada.info,
+            message_types=ada.message_types,
+            message=KiraIMMessage(
+                timestamp=cur_time,
+                sender=User(
+                    user_id=sid if st == "dm" else "unknown",
+                    nickname="system"
+                ),
+                group=group,
+                message_id="system_message",
+                self_id=ada.config.get("self_id"),
+                is_notice=True,
+                is_mentioned=True,
+                chain=chain.message_list,
+            ),
+            timestamp=cur_time,
+        )
+        await self.event_bus.publish(message_obj)

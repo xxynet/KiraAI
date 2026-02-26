@@ -10,9 +10,9 @@ logger = get_logger("hook", "orange")
 class Priority(Enum):
     """Priority of a event handler"""
 
-    LOW = 0
-    MEDIUM = 20
-    HIGH = 40
+    LOW = -50
+    MEDIUM = 0
+    HIGH = 50
 
 
 class EventType(Enum):
