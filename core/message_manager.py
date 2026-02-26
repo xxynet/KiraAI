@@ -21,6 +21,7 @@ from core.chat.message_elements import (
     Image,
     At,
     Reply,
+    Forward,
     Emoji,
     Sticker,
     Record,
@@ -165,10 +166,22 @@ class MessageProcessor:
                 sticker_desc = await self.llm_api.desc_img(ele.sticker_bs64, is_base64=True)
                 message_str += f"[Sticker {sticker_desc}]"
             elif isinstance(ele, Reply):
-                if ele.message_content:
+                if ele.chain:
+                    ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
+                    reply_content = await self.message_format_to_text(ele.chain.message_list)
+                    message_str += f"[Reply {reply_content}]"
+                elif ele.message_content:
                     message_str += f"[Reply {ele.message_content}]"
                 else:
                     message_str += f"[Reply {ele.message_id}]"
+            elif isinstance(ele, Forward):
+                if ele.chains:
+                    forward_contents = ""
+                    for i, chain in enumerate(ele.chains):
+                        ele.chains[i].message_list = [x for x in chain if not isinstance(x, Forward)]
+                        forward_content = await self.message_format_to_text(ele.chains[i].message_list)
+                        forward_contents += f"\n{forward_content}\n"
+                    message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
                 record_text = await self.llm_api.speech_to_text(ele.bs64)
                 message_str += f"[Record {record_text}]"
@@ -510,12 +523,12 @@ class MessageProcessor:
                 result = await self.send_message_chain(target, message_obj)
                 if not result.ok and result.err:
                     logger.error(result.err)
-                message_ids.append(result.message_id)
+                message_ids.append(result.message_id if result.message_id is not None else "")
 
                 # add random message delay
                 await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
             else:
-                message_ids.append('')
+                message_ids.append("")
 
         return message_ids
 
@@ -579,7 +592,7 @@ class MessageProcessor:
                         if img_res.url:
                             message_elements.append(Image(url=img_res.url))
                         elif img_res.base64:
-                            message_elements.append(Image(base64=img_res.base64))
+                            message_elements.append(Image(b64=img_res.base64))
                         else:
                             pass
                 elif tag == "reply":
@@ -604,7 +617,7 @@ class MessageProcessor:
                                 if img_res.url:
                                     message_elements.append(Image(url=img_res.url))
                                 elif img_res.base64:
-                                    message_elements.append(Image(base64=img_res.base64))
+                                    message_elements.append(Image(b64=img_res.base64))
                                 else:
                                     logger.warning("Invalid selfie image result")
                         else:
