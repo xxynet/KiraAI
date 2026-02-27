@@ -209,7 +209,6 @@ class MessageProcessor:
         for handler in im_handlers:
             await handler.exec_handler(event)
             if event.is_stopped:
-                logger.info("Event stopped")
                 return
         if event.process_strategy == "discard":
             return
@@ -271,27 +270,18 @@ class MessageProcessor:
         # Start processing
         sid = event.session.sid
 
-        # formatted_messages_str = ""
         for i, message in enumerate(event.messages):
             message_list = message.chain
             message_str = await self.message_format_to_text(message_list)
             message.message_str = message_str
-
-            # formatted_message = self.prompt_manager.format_user_message(message)
-            # formatted_messages_str += f"{formatted_message}\n"
-        # user_prompt = "".join([p.content for p in event.prompt])
-        # logger.info(f"processing message(s) from {event.adapter.name}:\n{formatted_messages_str}")
 
         # EventType.ON_IM_BATCH_MESSAGE
         im_batch_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_BATCH_MESSAGE)
         for handler in im_batch_handlers:
             await handler.exec_handler(event)
             if event.is_stopped:
+                logger.info("Event stopped")
                 return
-
-        # user_prompt = "".join([p.content for p in event.prompt])
-        # user_prompt = "废弃的 user prompt"
-        # logger.info(f"processing message(s) from {sid}:\n{user_prompt}")
 
         # Get existing session
         session_list = self.get_session_list_prompt()
@@ -387,6 +377,7 @@ class MessageProcessor:
         for handler in llm_handlers:
             await handler.exec_handler(event, request)
             if event.is_stopped:
+                logger.info("Event stopped")
                 return
 
         # Assemble messages
@@ -430,6 +421,7 @@ class MessageProcessor:
                 for handler in llm_resp_handlers:
                     await handler.exec_handler(event, llm_resp)
                     if event.is_stopped:
+                        logger.info("Event stopped")
                         return
 
                 if not llm_resp.tool_calls:
@@ -450,7 +442,7 @@ class MessageProcessor:
                             message_ids = await self.send_xml_messages(sid, llm_resp.text_response.strip())
                             response_with_ids = self._add_message_ids(llm_resp.text_response, message_ids)
                             logger.info(f"LLM: {response_with_ids}")
-                    await self.llm_api.execute_tool(llm_resp)
+                    await self.llm_api.execute_tool(event, llm_resp)
                     request.messages.append({"role": "assistant",
                                              "content": response_with_ids if llm_resp.text_response else "",
                                              "tool_calls": llm_resp.tool_calls})

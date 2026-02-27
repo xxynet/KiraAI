@@ -23,7 +23,3 @@ def get_adapter_by_name(adapter_name: str):
 def set_event_bus(event_queue):
     global _event_queue
     _event_queue = event_queue
-
-
-def get_event_bus() -> Queue:
-    return _event_queue

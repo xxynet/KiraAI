@@ -389,34 +389,34 @@ class QQAdapter(IMAdapter):
 
         # should_respond = True
 
-        if should_respond:
-            message_list = await self.process_incoming_message(msg)
+        # if should_respond:
+        message_list = await self.process_incoming_message(msg)
 
-            group_info = await self.bot.get_group_info(msg.get("group_id"))
-            group_name = group_info.get("data").get("group_name")
+        group_info = await self.bot.get_group_info(msg.get("group_id"))
+        group_name = group_info.get("data").get("group_name")
 
-            message_obj = KiraMessageEvent(
-                adapter=self.info,
-                message_types=self.message_types,
-                message=KiraIMMessage(
-                    timestamp=int(msg.get("time") or time.time()),
-                    group=Group(
-                        group_id=str(msg.get("group_id")),
-                        group_name=group_name
-                    ),
-                    sender=User(
-                        user_id=str(msg.get("user_id")),
-                        nickname=msg.get("sender").get("nickname")
-                    ),
-                    is_mentioned=is_mentioned,
-                    message_id=str(msg.get("message_id")),
-                    self_id=str(msg.get("self_id")),
-                    chain=message_list,
-                    extra=msg
+        message_obj = KiraMessageEvent(
+            adapter=self.info,
+            message_types=self.message_types,
+            message=KiraIMMessage(
+                timestamp=int(msg.get("time") or time.time()),
+                group=Group(
+                    group_id=str(msg.get("group_id")),
+                    group_name=group_name
                 ),
-                timestamp=int(msg.get("time") or time.time())
-            )
-            self.publish(message_obj)
+                sender=User(
+                    user_id=str(msg.get("user_id")),
+                    nickname=msg.get("sender").get("nickname")
+                ),
+                is_mentioned=is_mentioned,
+                message_id=str(msg.get("message_id")),
+                self_id=str(msg.get("self_id")),
+                chain=message_list,
+                extra=msg
+            ),
+            timestamp=int(msg.get("time") or time.time())
+        )
+        self.publish(message_obj)
 
     async def _on_private_message(self, msg: dict):
         should_process = False

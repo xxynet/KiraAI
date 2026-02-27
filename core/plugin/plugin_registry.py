@@ -136,6 +136,9 @@ class PluginManager:
 
         self._load_plugin_state()
 
+    def get_plugin_inst(self, plugin_id: str):
+        return self.plugin_instances.get(plugin_id)
+
     def _load_plugin_state(self) -> None:
         try:
             config_dir = PLUGIN_STATE_FILE.parent

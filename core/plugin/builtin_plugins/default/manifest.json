@@ -1,8 +1,8 @@
 {
-    "display_name": "KiraAI",
-    "plugin_id": "kira_default_plugin",
+    "display_name": "builtin",
+    "plugin_id": "kira_builtin_plugin",
     "version": "1.0.0",
     "author": "KiraAI",
-    "description": "Default plugin, controlling IM message workflow",
+    "description": "Builtin plugin, decorating message metadata",
     "repo": null
 }

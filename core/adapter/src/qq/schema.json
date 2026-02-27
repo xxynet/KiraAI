@@ -34,7 +34,7 @@
     "name": "私聊白名单",
     "type": "list",
     "default": [],
-    "hint": "私聊白名单，当 permission mode 为 deny list 时起作用"
+    "hint": "私聊白名单，当 permission mode 为 allow list 时起作用"
   },
   "group_deny_list": {
     "name": "群聊黑名单",

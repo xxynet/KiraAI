@@ -187,8 +187,8 @@ class TelegramAdapter(IMAdapter):
                 except Exception as e:
                     logger.error(e)
 
-            if not triggered:
-                return
+            # if not triggered:
+            #     return
 
             message_list = await self._process_incoming_message(msg)
 

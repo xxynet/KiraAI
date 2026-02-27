@@ -52,7 +52,7 @@ class SearchPlugin(BasePlugin):
             "required": ["query"]
         }
     )
-    async def tavily_search(self, query: str,
+    async def tavily_search(self, event, query: str,
                             topic: Literal["general", "news", "finance"] = "general",
                             search_depth: Literal["basic", "advanced"] = "basic") -> str:
         if not self.available:
@@ -78,7 +78,7 @@ class SearchPlugin(BasePlugin):
             "required": ["url"]
         }
     )
-    async def tavily_extract(self, url: str, query: str = None, extract_depth: Literal["basic", "advanced"] = "basic") -> str:
+    async def tavily_extract(self, event, url: str, query: str = None, extract_depth: Literal["basic", "advanced"] = "basic") -> str:
         if not self.available:
             return "Tavily API key not found. Please configure it in plugin config"
         client = TavilyClient(self._key)
