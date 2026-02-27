@@ -99,6 +99,11 @@ class PluginContext:
             return client
         return
 
+    async def get_default_embedding_client(self) -> Optional[EmbeddingModelClient]:
+        client = self.provider_mgr.get_default_embedding()
+        if isinstance(client, EmbeddingModelClient):
+            return client
+
     async def get_embedding_client(self, model_uuid: str, default: bool = False) -> Optional[EmbeddingModelClient]:
         if default:
             client = self.provider_mgr.get_default_embedding()
