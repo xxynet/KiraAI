@@ -370,7 +370,8 @@ class MCPManager:
 
     @staticmethod
     async def _make_mcp_func(server: MCPServer, tool_name: str):
-        async def _wrapped(**kwargs):
+        async def _wrapped(*_, **kwargs):
+            # ignore positional args, e.g. MessageEvent
             client_inner = Client(server.to_dict())
             async with client_inner:
                 result = await client_inner.call_tool(tool_name, kwargs, timeout=server.timeout)

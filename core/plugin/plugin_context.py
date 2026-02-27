@@ -56,9 +56,21 @@ class PluginContext:
         plugin_dir = base_dir / plugin_id
         plugin_dir.mkdir(parents=True, exist_ok=True)
         return plugin_dir
+
+    def get_plugin_inst(self, plugin_id: str):
+        inst = self.plugin_mgr.get_plugin_inst(plugin_id)
+        return inst
     
     async def flush_session_messages(self, sid: str):
         await self.message_processor.flush_session_messages(sid)
+
+    async def get_default_llm_client(self):
+        client = await self.get_llm_client(llm_type="default")
+        return client
+
+    async def get_default_fast_llm_client(self):
+        client = await self.get_llm_client(llm_type="fast")
+        return client
 
     async def get_llm_client(self, model_uuid: Optional[str] = None, llm_type: Optional[str] = None) -> Optional[LLMModelClient]:
         """
@@ -104,7 +116,7 @@ class PluginContext:
             return client
         return
 
-    async def publish_event(self, session: str, chain: MessageChain):
+    async def publish_notice(self, session: str, chain: MessageChain, is_mentioned: bool = True):
         import time
         cur_time = int(time.time())
         parts = session.split(":")
@@ -113,7 +125,7 @@ class PluginContext:
         ada_name, st, sid = parts
         ada = self.adapter_mgr.get_adapter(ada_name)
         if not ada:
-            raise ValueError(f"Failed to get adapter: {parts[0]}")
+            raise ValueError(f"Failed to get adapter: {ada_name}")
         group = None
         if st == "gm":
             group = Group(group_id=sid)
@@ -130,7 +142,7 @@ class PluginContext:
                 message_id="system_message",
                 self_id=ada.config.get("self_id"),
                 is_notice=True,
-                is_mentioned=True,
+                is_mentioned=is_mentioned,
                 chain=chain.message_list,
             ),
             timestamp=cur_time,

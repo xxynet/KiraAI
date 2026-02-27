@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Union, Optional, Literal
 
 from core.chat.message_elements import (
+    BaseMessageElement,
     Text,
     Image,
     At,
@@ -156,6 +157,10 @@ class KiraMessageBatchEvent:
         return self.messages[-1].self_id
 
     @property
+    def sid(self):
+        return self.session.sid
+
+    @property
     def is_stopped(self):
         return self._is_stopped
 
@@ -193,7 +198,7 @@ class KiraExceptionEvent:
 
 
 class MessageChain:
-    def __init__(self, message_list: list[Text, Image, At, Reply, Emoji, Sticker, Record, Notice, File]):
+    def __init__(self, message_list: list[BaseMessageElement]):
         self.message_list: list = message_list
 
     def __iter__(self):

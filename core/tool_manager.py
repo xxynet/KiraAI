@@ -142,8 +142,8 @@ async def register_all_tools(llm_api) -> None:
             schema = tool_instance.get_schema()
 
             def _make_func(tool):
-                def _wrapped(**kwargs):
-                    return tool.execute(**kwargs)
+                async def _wrapped(*args, **kwargs):
+                    return await tool.execute(*args, **kwargs)
 
                 return _wrapped
 

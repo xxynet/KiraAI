@@ -1,5 +1,5 @@
 from asyncio import Semaphore
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import copy
 import json
 import time
@@ -12,6 +12,9 @@ from .provider import ProviderManager, ImageResult
 
 logger = get_logger("llm", "purple")
 tool_logger = get_logger("tool_use", "orange")
+
+if TYPE_CHECKING:
+    from core.chat import KiraMessageBatchEvent
 
 
 class LLMClient:
@@ -60,7 +63,7 @@ class LLMClient:
             response = await llm_model.chat(request)
             return response
 
-    async def execute_tool(self, resp: LLMResponse):
+    async def execute_tool(self, event: "KiraMessageBatchEvent", resp: LLMResponse):
         for tool_call in resp.tool_calls:
             tool_call_id = tool_call.get("id")
             name = tool_call.get("function", {}).get("name")
@@ -80,7 +83,7 @@ class LLMClient:
             # Call corresponding Python function(s)
             if self.tools_functions and name in self.tools_functions:
                 try:
-                    result = await self.tools_functions[name](**args)
+                    result = await self.tools_functions[name](event, **args)
                     tool_logger.info(f"tool_result: {result}")
                 except Exception as e:
                     result = {"error": f"Failed to call tool '{name}': {e}"}

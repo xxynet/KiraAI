@@ -1,0 +1,8 @@
+{
+  "test_string": {
+    "name": "Config Key",
+    "type": "string",
+    "default": "default value",
+    "hint": "Your test string value"
+  }
+}

@@ -159,9 +159,8 @@ class KiraLifecycle:
         asyncio.create_task(self.schedule_tasks())
 
         # expose adapters and loop globally for runtime usage everywhere
-        from core.services.runtime import set_adapters, set_event_bus
+        from core.services.runtime import set_adapters
         set_adapters(self.adapter_manager.get_adapters())
-        set_event_bus(event_queue)
 
         self.stats.set_stats("started_ts", int(time.time()))
 

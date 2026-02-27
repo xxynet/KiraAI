@@ -1,0 +1,8 @@
+{
+    "display_name": "Message Debounce",
+    "plugin_id": "kira_debounce_plugin",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "Message debounce plugin, merge messages received in a certain duration",
+    "repo": null
+}
