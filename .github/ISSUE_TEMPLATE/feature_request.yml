@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest an idea to improve KiraAI
+title: "[Feature]: "
+labels:
+  - enhancement
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a feature for KiraAI!
+        Please describe your idea clearly so we can understand the value and scope.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Short description
+      description: Briefly describe the feature
+      placeholder: Add support for ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What problem does this feature solve for you?
+      placeholder: |
+        I often run into the following issue when using KiraAI...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: Describe the solution you'd like to see.
+      placeholder: I would like KiraAI to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you considered any alternative solutions or workarounds?
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Add any other context, screenshots, or examples about the feature request here.
