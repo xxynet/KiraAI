@@ -49,17 +49,20 @@ class DefaultPlugin(BasePlugin):
         message_index = 0
         for i, p in enumerate(req.user_prompt):
             if p.name == "message" and p.source == "system":
+                if message_index >= len(event.messages):
+                    break
                 formatted_message = self._format_user_message(event.messages[message_index])
                 p.content = formatted_message
+                message_index += 1
 
     @on.llm_response()
     async def on_llm_resp(self, _, resp: LLMResponse):
         xml_data = resp.text_response
         if not xml_data:
             return
-        root = ET.fromstring(f"<root>{xml_data}</root>")
 
         try:
+            root = ET.fromstring(f"<root>{xml_data}</root>")
             for msg in root.findall("msg"):
                 for child in msg:
                     tag = child.tag
