@@ -6,7 +6,6 @@ from typing import Dict, Any, Union, Optional
 from core.logging_manager import get_logger
 from core.sticker_manager import StickerManager
 from core.persona import PersonaManager
-# from core.chat.message_utils import KiraMessageEvent, KiraIMMessage
 from core.config import KiraConfig
 from core.utils.path_utils import get_data_path
 import core.prompts.agent_tmpl as prompt_tmpl
@@ -19,16 +18,18 @@ class Prompt:
         self.name = name
         self.source = source
         self.content = content
+        self.end = end
         self.kwargs = kwargs
 
-        if end:
-            self.content += end
-
-        self._format_prompt()
+    def to_string(self):
+        p = self._format_prompt() or self.content
+        if self.end:
+            p += self.end
+        return p
 
     def _format_prompt(self):
         try:
-            self.content = self.content.format(**self.kwargs)
+            return self.content.format(**self.kwargs)
         except KeyError:
             pass
         except Exception as e:
@@ -173,10 +174,8 @@ class PromptManager:
                     你需要回复评论，直接输出评论内容，不要有任何多余信息"""
         return _prompt
 
-    def get_agent_prompt(self, chat_env: Dict[str, Any], core_memory: str, message_types: list,
-                         emoji_dict: Optional[dict] = None,
-                         recalled_memories: str = "",
-                         user_profile: str = "") -> list[Prompt]:
+    def get_agent_prompt(self, chat_env: Dict[str, Any], message_types: list,
+                         emoji_dict: Optional[dict] = None) -> list[Prompt]:
         """生成 Agent 提示词"""
         formatted_time = self.get_current_time_str()
 
@@ -192,33 +191,9 @@ class PromptManager:
             Prompt(prompt_tmpl.persona_tmpl, name="attention", source="system", persona=persona_prompt),
             Prompt(prompt_tmpl.time_tmpl, name="time", source="system", time_str=formatted_time),
             Prompt(prompt_tmpl.chat_env_tmpl, name="chat_env", source="system", chat_env=chat_env),
-            Prompt(prompt_tmpl.memory_tmpl, name="memory", source="system",
-                   core_memory=core_memory, recalled_memories=recalled_memories, user_profile=user_profile),
+            Prompt(prompt_tmpl.memory_tmpl, name="memory", source="system"),
             Prompt(prompt_tmpl.tools_tmpl, name="tools", source="system"),
             Prompt(prompt_tmpl.output_tmpl, name="output", source="system", max_tool_loop=max_tool_loop),
             Prompt(prompt_tmpl.format_tmpl, name="format", source="system", format=format_prompt)
         ]
         return agent_prompt
-
-        # try:
-        #     with open(self.agent_path, 'r', encoding="utf-8") as f:
-        #         agent_prompt = f.read()
-        #
-        #     context = {
-        #         "persona": self.persona_manager.get_persona(),
-        #         "format": self._load_format_prompt(message_types, emoji_dict),
-        #         "time_str": formatted_time,
-        #         "chat_env": chat_env,
-        #         "core_memory": core_memory,
-        #         "recalled_memories": recalled_memories if recalled_memories else "暂无相关长期记忆",
-        #         "user_profile": user_profile if user_profile else "暂无画像信息",
-        #         "accounts": self.ada_config_prompt,
-        #         "max_tool_loop": self.kira_config.get_config("bot_config.agent.max_tool_loop")
-        #     }
-        #     return agent_prompt.format(**context)
-        # except KeyError as e:
-        #     logger.error(f"Error generating system prompt, missing template key: {e}")
-        #     return ""
-        # except Exception as e:
-        #     logger.error(f"Error generating system prompt: {e}")
-        #     return ""

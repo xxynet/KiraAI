@@ -5,9 +5,23 @@ from typing import Union, Optional
 
 from core.plugin import BasePlugin, logger, on, Priority, register_tool
 from core.chat.message_utils import KiraMessageBatchEvent
+from core.provider import LLMRequest
 
 from core.chat import Group, User, MessageChain
 from core.chat.message_elements import Text
+
+SESSION_TOOL_FEW_SHOT = """
+### session_send 工具说明
+当你需要在其他会话（私聊、群聊等）发送消息时，
+即 当前会话 ≠ 发消息目标会话时，需要调用 `session_send` 工具进行**跨会话发送**。
+
+#### 示例
+* 场景：在群 1 中
+* user：到群 12345678（群 2）发一条消息
+* 行为：
+  * 调用 `session_send` 工具
+  * 完成跨会话消息发送
+"""
 
 
 class DefaultPlugin(BasePlugin):
@@ -66,3 +80,9 @@ class DefaultPlugin(BasePlugin):
             return f"message sent"
         except Exception as e:
             return f"failed to send: {e}"
+
+    @on.llm_request()
+    async def inject_few_shot(self, _, req: LLMRequest):
+        for p in req.system_prompt:
+            if p.name == "tools":
+                p.content += SESSION_TOOL_FEW_SHOT

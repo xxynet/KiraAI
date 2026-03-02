@@ -57,28 +57,13 @@ class KiraLifecycle:
 
     async def schedule_tasks(self):
         self.tasks = [
-            asyncio.create_task(self.sticker_manager.scan_and_register_sticker(), name="sticker_scan"),
-            asyncio.create_task(self._memory_forgetting_loop(), name="memory_forgetting")
+            asyncio.create_task(self.sticker_manager.scan_and_register_sticker(), name="sticker_scan")
         ]
         results = await asyncio.gather(*self.tasks, return_exceptions=True)
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 task = self.tasks[i]
                 logger.error(f"Scheduled task '{task.get_name()}' failed: {result}")
-
-    async def _memory_forgetting_loop(self):
-        """定期运行记忆遗忘周期"""
-        while True:
-            try:
-                if self.memory_manager:
-                    await self.memory_manager.run_forgetting_cycle()
-                    logger.info("Memory forgetting cycle completed")
-                await asyncio.sleep(86400)  # 每 24 小时运行一次
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Memory forgetting cycle error: {e}")
-                await asyncio.sleep(60)  # 失败后等待 60 秒再重试, 避免日志风暴
 
     async def init_and_run_system(self):
         """主函数：负责启动和初始化各个模块"""
@@ -106,14 +91,7 @@ class KiraLifecycle:
         self.sticker_manager = StickerManager(self.llm_api)
 
         # ====== init memory manager ======
-        self.memory_manager = MemoryManager(self.kira_config, llm_client=self.llm_api)
-
-        # Inject memory_manager into memory tools
-        try:
-            from data.tools.memory import set_memory_manager
-            set_memory_manager(self.memory_manager)
-        except (ImportError, ModuleNotFoundError, AttributeError) as e:
-            logger.warning(f"Failed to inject memory_manager into tools: {e}")
+        self.memory_manager = MemoryManager(self.kira_config)
 
         # ====== init persona manager ======
         self.persona_manager = PersonaManager()

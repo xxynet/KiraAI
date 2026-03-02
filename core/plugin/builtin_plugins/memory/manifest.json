@@ -1,0 +1,8 @@
+{
+    "display_name": "Simple Memory",
+    "plugin_id": "kira_plugin_simple_memory",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "Default & simple long term memory implementation, disable it before using third party memory plugins.",
+    "repo": null
+}

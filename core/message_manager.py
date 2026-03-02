@@ -303,63 +303,18 @@ class MessageProcessor:
 
         # Get chat history memory
         session_memory = self.memory_manager.fetch_memory(sid)
-        # Get core memory
-        core_memory = self.memory_manager.get_core_memory()
-
-        # 构建用户标识（跨 recall / profile 复用）
-        user_key = f"{event.adapter.name}:{event.messages[-1].sender.user_id}"
-
-        # Recall long-term memories (RAG)
-        recalled_memories_str = ""
-        # try:
-        #     recalled = await self.memory_manager.recall(user_prompt, user_id=user_key, k=5)
-        #
-        #     # 群聊场景：额外搜索群级记忆（海马体在群聊中提取的事实存储在群 ID 下）
-        #     if event.is_group_message():
-        #         group_key = f"{event.adapter.name}:group:{event.session.session_id}"
-        #         group_recalled = await self.memory_manager.recall(
-        #             user_prompt, user_id=group_key, k=3
-        #         )
-        #         # 去重后合并
-        #         existing_ids = {m.id for m in recalled}
-        #         for gm in group_recalled:
-        #             if gm.id not in existing_ids:
-        #                 recalled.append(gm)
-        #
-        #     recalled_memories_str = self.memory_manager.format_recalled_memories(recalled)
-        # except Exception:
-        #     logger.error("Long-term memory recall failed")
-
-        # Get user profile
-        user_profile_str = ""
-        # try:
-        #     user_profile_str = self.memory_manager.get_user_profile_prompt(user_key)
-        #     # Update interaction stats
-        #     await self.memory_manager.update_user_interaction(
-        #         user_key,
-        #         platform=event.adapter.platform,
-        #         nickname=event.messages[-1].sender.nickname
-        #     )
-        # except Exception:
-        #     logger.error("User profile retrieval skipped")
 
         # Get emoji_dict
         emoji_dict = getattr(get_adapter_by_name(event.adapter.name), "emoji_dict", {})
 
         # Generate agent prompt
         agent_prompt_list = self.prompt_manager.get_agent_prompt(
-            chat_env, core_memory, event.message_types, emoji_dict,
-            recalled_memories=recalled_memories_str,
-            user_profile=user_profile_str
+            chat_env, event.message_types, emoji_dict
         )
-        # messages = [{"role": "system", "content": agent_prompt}]
 
-        # session_memory.append({"role": "user", "content": user_prompt})
-        # new_memory_chunk = [{"role": "user", "content": user_prompt}]
         new_memory_chunk = []
-        # messages.extend(session_memory)
 
-        # New Logic Start
+        # Get default LLM model client
         llm_model = self.provider_mgr.get_default_llm()
         if not llm_model:
             llm_logger.error(f"Default LLM model not set, please set it in Configuration")
@@ -377,14 +332,14 @@ class MessageProcessor:
         for handler in llm_handlers:
             await handler.exec_handler(event, request)
             if event.is_stopped:
-                logger.info("Event stopped")
+                logger.info("Event stopped while llm request stage")
                 return
 
         # Assemble messages
         request.assemble_prompt()
 
         # Print user message info
-        user_message = "".join(p.content for p in request.user_prompt if isinstance(p, Prompt))
+        user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt))
         logger.info(f"processing message(s) from {sid}:\n{user_message}")
 
         # 把收到的消息放到新收到的消息内容中

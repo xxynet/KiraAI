@@ -1,0 +1,14 @@
+{
+  "max_memory_num": {
+    "name": "Max memory num",
+    "type": "integer",
+    "default": 100,
+    "hint": "Maximum number of memories, triggers memory compression while hit this number"
+  },
+  "compression_model": {
+    "name": "Compression_model",
+    "type": "string",
+    "default": null,
+    "hint": "Model ID used to compress memories, use default fast LLM by default"
+  }
+}

@@ -40,11 +40,11 @@ class LLMRequest:
         if self.system_prompt:
             if self.messages and self.messages[0].get("role") == "system":
                 self.messages.pop(0)
-            system_prompt = "".join(p.content for p in self.system_prompt if isinstance(p, Prompt))
+            system_prompt = "".join(p.to_string() for p in self.system_prompt if isinstance(p, Prompt))
             self.messages.insert(0, {"role": "system", "content": system_prompt})
 
         if self.user_prompt:
-            user_prompt = "".join(p.content for p in self.user_prompt if isinstance(p, Prompt))
+            user_prompt = "".join(p.to_string() for p in self.user_prompt if isinstance(p, Prompt))
             self.messages.append({"role": "user", "content": user_prompt})
 
 
