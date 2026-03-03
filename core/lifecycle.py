@@ -105,6 +105,7 @@ class KiraLifecycle:
         self.message_processor = MessageProcessor(self.kira_config,
                                                   self.llm_api,
                                                   self.provider_manager,
+                                                  self.adapter_manager,
                                                   self.memory_manager,
                                                   self.prompt_manager)
 
@@ -135,10 +136,6 @@ class KiraLifecycle:
 
         # ====== schedule tasks ======
         asyncio.create_task(self.schedule_tasks())
-
-        # expose adapters and loop globally for runtime usage everywhere
-        from core.services.runtime import set_adapters
-        set_adapters(self.adapter_manager.get_adapters())
 
         self.stats.set_stats("started_ts", int(time.time()))
 

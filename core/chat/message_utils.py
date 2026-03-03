@@ -31,7 +31,7 @@ class MessageType(Enum):
 class KiraIMMessage:
     message_id: str
     self_id: str
-    chain: list
+    chain: list[BaseMessageElement]
     timestamp: int
     sender: User = None
     session: Session = None

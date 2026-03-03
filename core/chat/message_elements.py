@@ -244,11 +244,14 @@ class Forward(BaseMessageElement):
 class Emoji(BaseMessageElement):
     type = ElementType.Emoji
 
-    def __init__(self, emoji_id: Union[str, int]):
+    def __init__(self, emoji_id: Union[str, int], emoji_desc: Optional[str] = None):
         self.emoji_id = str(emoji_id)
+        self.emoji_desc = emoji_desc
 
     @property
     def repr(self) -> str:
+        if self.emoji_desc:
+            return f"[Emoji {self.emoji_desc}(ID: {self.emoji_id})]"
         return f"[Emoji {self.emoji_id}]"
 
 

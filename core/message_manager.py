@@ -9,7 +9,6 @@ import random
 import os
 
 from core.logging_manager import get_logger
-from core.services.runtime import get_adapter_by_name
 from core.utils.common_utils import image_to_base64
 from core.utils.path_utils import get_data_path
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent,  KiraCommentEvent, MessageChain, KiraIMSentResult
@@ -33,6 +32,7 @@ from core.chat.message_elements import (
 from core.llm_client import LLMClient
 from core.chat.memory_manager import MemoryManager
 from .prompt_manager import PromptManager
+from .adapter import AdapterManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 
@@ -84,6 +84,7 @@ class MessageProcessor:
                  kira_config,
                  llm_api: LLMClient,
                  provider_manager: ProviderManager,
+                 adapter_manager: AdapterManager,
                  memory_manager: MemoryManager,
                  prompt_manager: PromptManager,
                  max_concurrent_messages: int = 3):
@@ -95,13 +96,14 @@ class MessageProcessor:
         self.max_message_delay = float(self.bot_config.get("max_message_delay", "1.5"))
 
         self.llm_api = llm_api
-        self.provider_mgr = provider_manager
 
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
 
         # managers
         self.memory_manager = memory_manager
         self.prompt_manager = prompt_manager
+        self.provider_mgr = provider_manager
+        self.adapter_mgr = adapter_manager
 
         # message buffer
         self.session_locks: dict[str, asyncio.Lock] = {}
@@ -153,7 +155,10 @@ class MessageProcessor:
             if isinstance(ele, Text):
                 message_str += ele.text
             elif isinstance(ele, Emoji):
-                message_str += f"[Emoji {ele.emoji_id}]"
+                if ele.emoji_desc:
+                    message_str += f"[Emoji {ele.emoji_desc} (ID: {ele.emoji_id})]"
+                else:
+                    message_str += f"[Emoji {ele.emoji_id}]"
             elif isinstance(ele, At):
                 if ele.nickname:
                     message_str += f"[At {ele.pid}(nickname: {ele.nickname})]"
@@ -305,7 +310,7 @@ class MessageProcessor:
         session_memory = self.memory_manager.fetch_memory(sid)
 
         # Get emoji_dict
-        emoji_dict = getattr(get_adapter_by_name(event.adapter.name), "emoji_dict", {})
+        emoji_dict = getattr(self.adapter_mgr.get_adapter(event.adapter.name), "emoji_dict", {})
 
         # Generate agent prompt
         agent_prompt_list = self.prompt_manager.get_agent_prompt(
@@ -436,7 +441,7 @@ class MessageProcessor:
         logger.info(f"LLM: {response}")
 
         if response:
-            await get_adapter_by_name(msg.adapter_name).send_comment(
+            await self.adapter_mgr.get_adapter(msg.adapter_name).send_comment(
                 text=response,
                 root=msg.cmt_id,
                 sub=msg.sub_cmt_id
@@ -492,7 +497,7 @@ class MessageProcessor:
             raise ValueError("invalid target, must follow <adapter>:<dm|gm>:<id>")
 
         adapter_name, chat_type, pid = parts
-        adapter = get_adapter_by_name(adapter_name)
+        adapter = self.adapter_mgr.get_adapter(adapter_name)
 
         if chat_type == "dm":
             result = await adapter.send_direct_message(pid, chain)

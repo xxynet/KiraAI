@@ -1,7 +1,4 @@
-import json
 import asyncio
-import time
-from typing import Union, Optional
 
 from core.plugin import BasePlugin, logger, on, Priority, register_tool
 from core.chat.message_utils import KiraMessageBatchEvent
@@ -22,6 +19,18 @@ SESSION_TOOL_FEW_SHOT = """
   * 调用 `session_send` 工具
   * 完成跨会话消息发送
 """
+
+CROSS_SESSION_PROMPT = """\
+你接收到来自其他会话转发到本会话的跨会话消息。
+
+下面是跨会话消息的内容说明：
+{description}
+
+请你根据描述，直接生成要发送给最终用户的自然语言消息。
+⚠注意：
+1. 你当前已经在目标会话中，不需要再次调用跨会话工具。
+2. 不要再次尝试发送跨会话消息。
+3. 只需要输出最终要发给用户的xml格式消息"""
 
 
 class DefaultPlugin(BasePlugin):
@@ -58,23 +67,10 @@ class DefaultPlugin(BasePlugin):
         parts = target.split(":")
         if not len(parts) == 3:
             raise ValueError(f"Failed to parse sid")
-        ada_name, st, sid = parts
         if event.sid == target:
             return "Do not send messages to current session using this tool, output directly to send messages"
         try:
-            ada = self.ctx.adapter_mgr.get_adapter(ada_name)
-
-            cross_session_prompt = f"""\
-        你接收到来自其他会话转发到本会话的跨会话消息。
-
-        下面是跨会话消息的内容说明：
-        {description}
-
-        请你根据描述，直接生成要发送给最终用户的自然语言消息。
-        ⚠注意：
-        1. 你当前已经在目标会话中，不需要再次调用跨会话工具。
-        2. 不要再次尝试发送跨会话消息。
-        3. 只需要输出最终要发给用户的xml格式消息"""
+            cross_session_prompt = CROSS_SESSION_PROMPT.format(description=description)
 
             await self.ctx.publish_notice(target, MessageChain([Text(cross_session_prompt)]))
             return f"message sent"

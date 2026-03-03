@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Union, Optional, List, Dict, Any
-
-from core.chat.message_utils import KiraMessageEvent, MessageChain
+from typing import Union, Optional, List, TYPE_CHECKING
 
 from core.llm_client import LLMClient
 
 from core.adapter.adapter_info import AdapterInfo
+
+if TYPE_CHECKING:
+    from core.chat.message_utils import KiraMessageEvent, MessageChain
 
 
 class IMAdapter(ABC):

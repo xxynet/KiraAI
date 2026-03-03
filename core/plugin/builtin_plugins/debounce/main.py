@@ -1,19 +1,11 @@
-import json
 import asyncio
-from pathlib import Path
-import xml.etree.ElementTree as ET
-from typing import Union, Optional
-from datetime import datetime
 
 from core.plugin import BasePlugin, logger, on, Priority
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraIMMessage
-from core.provider import LLMRequest, LLMResponse
-from core.prompt_manager import Prompt
-
-from core.utils.tool_utils import BaseTool
+from core.chat.message_elements import Text
 
 
-class DefaultPlugin(BasePlugin):
+class DebouncePlugin(BasePlugin):
     def __init__(self, ctx, cfg: dict):
         super().__init__(ctx, cfg)
         self.session_events: dict[str, asyncio.Event] = {}
@@ -21,9 +13,11 @@ class DefaultPlugin(BasePlugin):
         bot_cfg = ctx.config["bot_config"].get("bot", {})
         self.debounce_interval = float(bot_cfg.get("max_message_interval", 1.5))
         self.max_buffer_messages = int(bot_cfg.get("max_buffer_messages", 3))
+
+        self.waking_words = cfg.get("waking_words", [])
     
     async def initialize(self):
-        logger.info(f"[Debounce Plugin] enabled")
+        logger.info(f"[Debounce] enabled")
     
     async def terminate(self):
         """
@@ -33,9 +27,18 @@ class DefaultPlugin(BasePlugin):
 
     @on.im_message(priority=Priority.HIGH)
     async def handle_msg(self, event: KiraMessageEvent):
+
+        # === Check waking words ===
+        for m in event.message.chain:
+            if isinstance(m, Text) and any(w in m.text for w in self.waking_words):
+                event.message.is_mentioned = True
+                break
+
+        # Ignore unmentioned messages
         if not event.is_mentioned:
             event.stop()
             return
+
         sid = event.session.sid
         event.buffer()
 

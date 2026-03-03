@@ -47,11 +47,5 @@
     "type": "list",
     "default": [],
     "hint": "私聊黑名单，当 permission mode 为 deny list 时起作用"
-  },
-  "waking_keywords": {
-    "name": "唤醒关键词",
-    "type": "list",
-    "default": [],
-    "hint": "当接收到的消息包含设置的关键词时触发回复"
   }
 }

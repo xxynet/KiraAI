@@ -197,8 +197,6 @@ class AdapterManager:
                 await self.register_adapter(info)
             except Exception as e:
                 logger.error(f"Failed to register adapter {adapter_id}: {e}")
-        from core.services.runtime import set_adapters
-        set_adapters(self._adapters)
         logger.info(f"Adapters set: {list(self._adapters.keys())}")
 
     def generate_adapter_config(self, platform: str, name: str) -> Optional[str]:
@@ -382,8 +380,6 @@ class AdapterManager:
             return
 
         self._adapters[name] = instance
-        from core.services.runtime import set_adapters
-        set_adapters(self._adapters)
         await self.start_adapter(name)
 
     async def start_adapter(self, name):
@@ -401,8 +397,6 @@ class AdapterManager:
             await adapter.stop()
             self._adapters.pop(name, None)
             logger.info(f"Stopped adapter {name}")
-            from core.services.runtime import set_adapters
-            set_adapters(self._adapters)
 
     async def delete_adapter(self, adapter_id: str) -> bool:
         adapters_config = self.kira_config.get("adapters", {}) or {}
@@ -419,8 +413,6 @@ class AdapterManager:
             except Exception as e:
                 logger.error(f"Failed to stop adapter {adapter_id} before deletion: {e}")
             self._adapters.pop(name_value, None)
-            from core.services.runtime import set_adapters
-            set_adapters(self._adapters)
 
         del adapters_config[adapter_id]
         self.kira_config["adapters"] = adapters_config
@@ -438,8 +430,6 @@ class AdapterManager:
         """stop all running adapters"""
         for ada in self._adapters:
             await self._adapters[ada].stop()
-        from core.services.runtime import set_adapters
-        set_adapters(self._adapters)
 
     def get_adapters(self) -> dict[str, Union[IMAdapter, SocialMediaAdapter]]:
         """return the entire dict where adapters are registered"""

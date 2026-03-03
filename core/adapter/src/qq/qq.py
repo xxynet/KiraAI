@@ -203,7 +203,9 @@ class QQAdapter(IMAdapter):
                 reply_chain = await self._process_reply_message(reply_content)
                 message_content.append(Reply(ele.get("data").get("id"), chain=reply_chain))
             elif ele.get("type") == "face":
-                message_content.append(Emoji(str(ele.get("data").get("id"))))
+                emoji_id = str(ele.get("data").get("id"))
+                emoji_desc = self.emoji_dict.get(emoji_id)
+                message_content.append(Emoji(emoji_id, emoji_desc))
             elif ele.get("type") == "image":
                 img_url = ele.get("data", "").get("url", "")
 
@@ -360,7 +362,6 @@ class QQAdapter(IMAdapter):
         if not should_process:
             return
 
-        should_respond = False
         is_mentioned = False
 
         for m in msg.get("message", {}):
@@ -375,21 +376,7 @@ class QQAdapter(IMAdapter):
                     should_respond = True
                     is_mentioned = True
                     break
-            elif m.get("type") == "text":
-                message_text = m.get("data").get("text")
-                waking_keywords_config = self.config.get("waking_keywords", [])
-                if waking_keywords_config:
-                    if isinstance(waking_keywords_config, str):
-                        waking_keywords = [kw.strip() for kw in self.config.get("waking_keywords", "").split(",")]
-                    else:
-                        waking_keywords = waking_keywords_config
-                    if any(kw in message_text for kw in waking_keywords):
-                        should_respond = True
-                        break
 
-        # should_respond = True
-
-        # if should_respond:
         message_list = await self.process_incoming_message(msg)
 
         group_info = await self.bot.get_group_info(msg.get("group_id"))
