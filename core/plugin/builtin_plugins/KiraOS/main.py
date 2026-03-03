@@ -96,8 +96,8 @@ class UserMemoryPlugin(BasePlugin):
         for name in self._registered_skill_names:
             try:
                 self.ctx.llm_api.unregister_tool(name)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to unregister tool '{name}': {e}")
         self._registered_skill_names.clear()
 
         if self.db:
@@ -238,14 +238,16 @@ class UserMemoryPlugin(BasePlugin):
 
             if op == "set":
                 if not key or not value:
-                    results.append(f"skip: set requires key+value")
+                    results.append("skip: set requires key+value")
                     continue
-                count = self.db.get_profile_count(user_id)
-                if count >= self.max_profiles:
-                    results.append(f"skip: profile limit ({self.max_profiles})")
-                    continue
+                is_update = self.db.profile_exists(user_id, key)
+                if not is_update:
+                    count = self.db.get_profile_count(user_id)
+                    if count >= self.max_profiles:
+                        results.append(f"skip: profile limit ({self.max_profiles})")
+                        continue
                 self.db.save_profile(user_id, key, value)
-                results.append(f"set {key}={value}")
+                results.append(f"{'updated' if is_update else 'set'} {key}={value}")
 
             elif op == "event":
                 if not value:

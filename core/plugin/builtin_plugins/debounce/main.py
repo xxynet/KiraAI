@@ -66,8 +66,8 @@ class DefaultPlugin(BasePlugin):
                 continue
             try:
                 await self.ctx.message_processor.flush_session_messages(sid)
-            except Exception as e:
-                logger.error(f"[Debounce] Error flushing session {sid}: {e}")
+            except Exception:
+                logger.exception(f"[Debounce] Error flushing session {sid}")
 
     @on.im_batch_message(priority=Priority.MEDIUM)
     async def handle_batch_event(self, event: KiraMessageBatchEvent):

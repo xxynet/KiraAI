@@ -31,6 +31,10 @@ class UserMemoryDB:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
     def _get_conn(self) -> sqlite3.Connection:
+        """Return (and lazily create) the shared connection.
+
+        **Caller must hold ``self._lock``** before invoking this method.
+        """
         if self._conn is None:
             self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self._conn.execute("PRAGMA journal_mode=WAL")
@@ -105,6 +109,16 @@ class UserMemoryDB:
             )
             conn.commit()
             return cursor.rowcount > 0
+
+    def profile_exists(self, user_id: str, key: str) -> bool:
+        """Return True if a profile entry exists for the given user and key."""
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "SELECT 1 FROM user_profiles WHERE user_id = ? AND memory_key = ? LIMIT 1",
+                (user_id, key)
+            )
+            return cursor.fetchone() is not None
 
     def get_profile_count(self, user_id: str) -> int:
         """Return the number of profile entries for a user."""
