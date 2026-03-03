@@ -90,6 +90,10 @@ class SkillRouter:
                 logger.warning(f"Failed to parse manifest in {entry.name}: {e}")
                 continue
 
+            if not isinstance(manifest, dict):
+                logger.warning(f"Manifest for {entry.name} is not a JSON object, skipping")
+                continue
+
             name = manifest.get("name")
             if not name:
                 logger.warning(f"Skill {entry.name} has no 'name' in manifest, skipping")
@@ -112,6 +116,13 @@ class SkillRouter:
                 manifest_path=manifest_path,
                 root_path=entry,
             )
+            if name in self.skills:
+                existing = self.skills[name]
+                logger.warning(
+                    f"Duplicate skill name '{name}': {entry.name}/manifest.json "
+                    f"conflicts with {existing.root_path.name}/manifest.json, skipping"
+                )
+                continue
             self.skills[name] = skill
             discovered.append(skill)
             logger.info(f"Discovered skill: {name} ({entry.name})")

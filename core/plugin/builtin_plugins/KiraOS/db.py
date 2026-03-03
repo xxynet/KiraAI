@@ -28,7 +28,9 @@ class UserMemoryDB:
         self._init_db()
 
     def _ensure_dir(self):
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        dir_path = os.path.dirname(self.db_path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
 
     def _get_conn(self) -> sqlite3.Connection:
         """Return (and lazily create) the shared connection.
@@ -43,9 +45,10 @@ class UserMemoryDB:
 
     def close(self):
         """Close the persistent connection."""
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn:
+                self._conn.close()
+                self._conn = None
 
     def _init_db(self):
         """Create tables if they don't exist."""
@@ -164,6 +167,7 @@ class UserMemoryDB:
 
     def cleanup_old_events(self, user_id: str, keep: int = 50) -> int:
         """Delete oldest events beyond the *keep* threshold. Returns rows deleted."""
+        keep = max(keep, 0)
         with self._lock:
             conn = self._get_conn()
             cursor = conn.execute(

@@ -232,6 +232,9 @@ class UserMemoryPlugin(BasePlugin):
 
         results = []
         for item in operations:
+            if not isinstance(item, dict):
+                results.append("skip: invalid operation (not an object)")
+                continue
             op = item.get("op", "")
             key = item.get("key", "")
             value = item.get("value", "")
