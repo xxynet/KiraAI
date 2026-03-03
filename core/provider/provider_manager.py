@@ -141,7 +141,7 @@ class ProviderManager:
     def get_default_model_info(self, model_key: str):
         default_model = self.kira_config.get_config(f"models.{model_key}")
         if not default_model:
-            raise ValueError(f"{model_key} not set")
+            raise ValueError(f"{model_key} not set, please configure it in the WebUI Configuration page")
         if default_model and ":" in default_model:
             model_provider = default_model.split(":")[0]
             model_id = ":".join(default_model.split(":")[1:])
