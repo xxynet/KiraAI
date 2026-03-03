@@ -25,7 +25,7 @@ logger = get_logger("skill_router", "magenta")
 class SkillInfo:
     """Parsed metadata for a single skill."""
 
-    __slots__ = ("skill_id", "name", "description", "parameters", "instruction_path", "manifest_path", "root_path")
+    __slots__ = ("skill_id", "name", "description", "parameters", "instruction_path", "manifest_path", "root_path", "_instruction_cache")
 
     def __init__(self, skill_id: str, name: str, description: str, parameters: dict,
                  instruction_path: Path, manifest_path: Path, root_path: Path):
@@ -36,11 +36,15 @@ class SkillInfo:
         self.instruction_path = instruction_path
         self.manifest_path = manifest_path
         self.root_path = root_path
+        self._instruction_cache: str | None = None
 
     def load_instruction(self) -> str:
-        """Read instruction.md on demand (lazy load)."""
+        """Read instruction.md — cached after first load."""
+        if self._instruction_cache is not None:
+            return self._instruction_cache
         if self.instruction_path.exists():
-            return self.instruction_path.read_text(encoding="utf-8")
+            self._instruction_cache = self.instruction_path.read_text(encoding="utf-8")
+            return self._instruction_cache
         return ""
 
     def __repr__(self):

@@ -24,44 +24,50 @@ class UserMemoryDB:
         self.db_path = db_path
         self._lock = Lock()
         self._ensure_dir()
+        self._conn: sqlite3.Connection | None = None
         self._init_db()
 
     def _ensure_dir(self):
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
     def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA journal_mode=WAL")
-        return conn
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+        return self._conn
+
+    def close(self):
+        """Close the persistent connection."""
+        if self._conn:
+            self._conn.close()
+            self._conn = None
 
     def _init_db(self):
         """Create tables if they don't exist."""
         with self._lock:
             conn = self._get_conn()
-            try:
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS user_profiles (
-                        user_id   TEXT NOT NULL,
-                        memory_key   TEXT NOT NULL,
-                        memory_value TEXT NOT NULL,
-                        updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (user_id, memory_key)
-                    );
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS user_profiles (
+                    user_id   TEXT NOT NULL,
+                    memory_key   TEXT NOT NULL,
+                    memory_value TEXT NOT NULL,
+                    updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, memory_key)
+                );
 
-                    CREATE TABLE IF NOT EXISTS event_logs (
-                        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id       TEXT NOT NULL,
-                        event_summary TEXT NOT NULL,
-                        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-                    );
+                CREATE TABLE IF NOT EXISTS event_logs (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id       TEXT NOT NULL,
+                    event_summary TEXT NOT NULL,
+                    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
 
-                    CREATE INDEX IF NOT EXISTS idx_event_logs_user
-                        ON event_logs (user_id, created_at DESC);
-                """)
-                conn.commit()
-                logger.info(f"User memory database initialized at {self.db_path}")
-            finally:
-                conn.close()
+                CREATE INDEX IF NOT EXISTS idx_event_logs_user
+                    ON event_logs (user_id, created_at DESC);
+            """)
+            conn.commit()
+            logger.info(f"User memory database initialized at {self.db_path}")
 
     # ── Profile Operations ──────────────────────────────────────────
 
@@ -69,58 +75,46 @@ class UserMemoryDB:
         """Insert or update a user profile entry."""
         with self._lock:
             conn = self._get_conn()
-            try:
-                conn.execute(
-                    """INSERT INTO user_profiles (user_id, memory_key, memory_value, updated_at)
-                       VALUES (?, ?, ?, ?)
-                       ON CONFLICT(user_id, memory_key)
-                       DO UPDATE SET memory_value = excluded.memory_value,
-                                     updated_at   = excluded.updated_at""",
-                    (user_id, key, value, datetime.now().isoformat())
-                )
-                conn.commit()
-            finally:
-                conn.close()
+            conn.execute(
+                """INSERT INTO user_profiles (user_id, memory_key, memory_value, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(user_id, memory_key)
+                   DO UPDATE SET memory_value = excluded.memory_value,
+                                 updated_at   = excluded.updated_at""",
+                (user_id, key, value, datetime.now().isoformat())
+            )
+            conn.commit()
 
     def get_profiles(self, user_id: str) -> List[Tuple[str, str, str]]:
         """Return all profile entries for a user as (key, value, updated_at) tuples."""
         with self._lock:
             conn = self._get_conn()
-            try:
-                cursor = conn.execute(
-                    "SELECT memory_key, memory_value, updated_at FROM user_profiles WHERE user_id = ? ORDER BY updated_at DESC",
-                    (user_id,)
-                )
-                return cursor.fetchall()
-            finally:
-                conn.close()
+            cursor = conn.execute(
+                "SELECT memory_key, memory_value, updated_at FROM user_profiles WHERE user_id = ? ORDER BY updated_at DESC",
+                (user_id,)
+            )
+            return cursor.fetchall()
 
     def remove_profile(self, user_id: str, key: str) -> bool:
         """Remove a specific profile entry. Returns True if a row was deleted."""
         with self._lock:
             conn = self._get_conn()
-            try:
-                cursor = conn.execute(
-                    "DELETE FROM user_profiles WHERE user_id = ? AND memory_key = ?",
-                    (user_id, key)
-                )
-                conn.commit()
-                return cursor.rowcount > 0
-            finally:
-                conn.close()
+            cursor = conn.execute(
+                "DELETE FROM user_profiles WHERE user_id = ? AND memory_key = ?",
+                (user_id, key)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
 
     def get_profile_count(self, user_id: str) -> int:
         """Return the number of profile entries for a user."""
         with self._lock:
             conn = self._get_conn()
-            try:
-                cursor = conn.execute(
-                    "SELECT COUNT(*) FROM user_profiles WHERE user_id = ?",
-                    (user_id,)
-                )
-                return cursor.fetchone()[0]
-            finally:
-                conn.close()
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM user_profiles WHERE user_id = ?",
+                (user_id,)
+            )
+            return cursor.fetchone()[0]
 
     # ── Event Log Operations ────────────────────────────────────────
 
@@ -128,66 +122,54 @@ class UserMemoryDB:
         """Append an event log entry."""
         with self._lock:
             conn = self._get_conn()
-            try:
-                conn.execute(
-                    "INSERT INTO event_logs (user_id, event_summary, created_at) VALUES (?, ?, ?)",
-                    (user_id, event_summary, datetime.now().isoformat())
-                )
-                conn.commit()
-            finally:
-                conn.close()
+            conn.execute(
+                "INSERT INTO event_logs (user_id, event_summary, created_at) VALUES (?, ?, ?)",
+                (user_id, event_summary, datetime.now().isoformat())
+            )
+            conn.commit()
 
     def get_recent_events(self, user_id: str, limit: int = 5) -> List[Tuple[str, str]]:
         """Return the most recent events for a user as (event_summary, created_at) tuples."""
         with self._lock:
             conn = self._get_conn()
-            try:
-                cursor = conn.execute(
-                    "SELECT event_summary, created_at FROM event_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-                    (user_id, limit)
-                )
-                return cursor.fetchall()
-            finally:
-                conn.close()
+            cursor = conn.execute(
+                "SELECT event_summary, created_at FROM event_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+                (user_id, limit)
+            )
+            return cursor.fetchall()
 
     def get_event_count(self, user_id: str) -> int:
         """Return the number of event logs for a user."""
         with self._lock:
             conn = self._get_conn()
-            try:
-                cursor = conn.execute(
-                    "SELECT COUNT(*) FROM event_logs WHERE user_id = ?",
-                    (user_id,)
-                )
-                return cursor.fetchone()[0]
-            finally:
-                conn.close()
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM event_logs WHERE user_id = ?",
+                (user_id,)
+            )
+            return cursor.fetchone()[0]
 
     def cleanup_old_events(self, user_id: str, keep: int = 50) -> int:
         """Delete oldest events beyond the *keep* threshold. Returns rows deleted."""
         with self._lock:
             conn = self._get_conn()
-            try:
-                cursor = conn.execute(
-                    """DELETE FROM event_logs
-                       WHERE user_id = ? AND id NOT IN (
-                           SELECT id FROM event_logs
-                           WHERE user_id = ?
-                           ORDER BY created_at DESC
-                           LIMIT ?
-                       )""",
-                    (user_id, user_id, keep)
-                )
-                conn.commit()
-                return cursor.rowcount
-            finally:
-                conn.close()
+            cursor = conn.execute(
+                """DELETE FROM event_logs
+                   WHERE user_id = ? AND id NOT IN (
+                       SELECT id FROM event_logs
+                       WHERE user_id = ?
+                       ORDER BY created_at DESC
+                       LIMIT ?
+                   )""",
+                (user_id, user_id, keep)
+            )
+            conn.commit()
+            return cursor.rowcount
 
     # ── Context Assembly ────────────────────────────────────────────
 
     def build_user_context(self, user_id: str, max_events: int = 5) -> str:
         """
-        Assemble a natural-language memory context block for a given user.
+        Assemble a compact memory context for a given user.
         Returns an empty string if no memory exists.
         """
         profiles = self.get_profiles(user_id)
@@ -197,17 +179,12 @@ class UserMemoryDB:
             return ""
 
         parts = []
-        parts.append(f"<user_memory user_id=\"{user_id}\">")
-
         if profiles:
-            parts.append("  画像信息:")
-            for key, value, _ in profiles:
-                parts.append(f"    - {key}: {value}")
+            kvs = " | ".join(f"{k}={v}" for k, v, _ in profiles)
+            parts.append(f"[{user_id}] {kvs}")
 
         if events:
-            parts.append("  近期动态:")
-            for summary, created_at in events:
-                parts.append(f"    - [{created_at}] {summary}")
+            evts = " | ".join(f"{ts[:10]} {s}" for s, ts in events)
+            parts.append(f"[{user_id}:events] {evts}")
 
-        parts.append("</user_memory>")
         return "\n".join(parts)
