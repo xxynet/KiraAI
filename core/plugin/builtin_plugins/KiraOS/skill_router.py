@@ -74,6 +74,10 @@ class SkillRouter:
             logger.info(f"Created skills directory: {self.skills_dir}")
             return discovered
 
+        if not self.skills_dir.is_dir():
+            logger.warning(f"Skills path exists but is not a directory: {self.skills_dir}")
+            return discovered
+
         for entry in sorted(self.skills_dir.iterdir()):
             if not entry.is_dir():
                 continue

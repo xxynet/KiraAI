@@ -147,6 +147,7 @@ class UserMemoryDB:
 
     def get_recent_events(self, user_id: str, limit: int = 5) -> List[Tuple[str, str]]:
         """Return the most recent events for a user as (event_summary, created_at) tuples."""
+        limit = max(limit, 0)
         with self._lock:
             conn = self._get_conn()
             cursor = conn.execute(
