@@ -102,9 +102,15 @@ class SkillRouter:
             if not name:
                 logger.warning(f"Skill {entry.name} has no 'name' in manifest, skipping")
                 continue
+            if not isinstance(name, str):
+                logger.warning(f"Skill {entry.name} has non-string 'name': {name!r}, skipping")
+                continue
 
             description = manifest.get("description", "")
             parameters = manifest.get("parameters", {"type": "object", "properties": {}, "required": []})
+            if not isinstance(parameters, dict):
+                logger.warning(f"Skill {entry.name} has invalid 'parameters' ({type(parameters).__name__}), using default")
+                parameters = {"type": "object", "properties": {}, "required": []}
             instruction_path = entry / "instruction.md"
 
             if not instruction_path.exists():
