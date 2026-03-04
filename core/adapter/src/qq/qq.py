@@ -365,15 +365,13 @@ class QQAdapter(IMAdapter):
         is_mentioned = False
 
         for m in msg.get("message", {}):
-            if m.get("type") == "at" and (
-                    m.get("data", {}).get("qq", "") == str(msg.get("self_id")) or m.get("data", {}).get("qq", "") == "all"):
-                should_respond = True
+            at_id = m.get("data", {}).get("qq", "")
+            if m.get("type") == "at" and (at_id == str(msg.get("self_id")) or at_id == "all"):
                 is_mentioned = True
                 break
             elif m.get("type") == "reply":
                 reply_msg_info = await self.bot.get_msg(m.get("data", {}).get("id", ""))
                 if reply_msg_info.get("data", {}).get("user_id") == msg.get("self_id"):  # int int
-                    should_respond = True
                     is_mentioned = True
                     break
 

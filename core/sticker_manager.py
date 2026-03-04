@@ -98,6 +98,9 @@ class StickerManager:
                     logger.error(f"Error deleting sticker file {file_path}: {e}")
         self.save_sticker_dict()
 
+    def add_sticker_extra(self, **kwargs):
+        ...
+
     async def add_sticker(self, file_bytes: bytes, original_filename: str, sticker_id: str | None = None, desc: str | None = None):
         if not original_filename:
             raise ValueError("File name is required")

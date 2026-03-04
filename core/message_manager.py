@@ -49,6 +49,16 @@ class SessionBuffer:
     def add(self, message: KiraMessageEvent):
         self.buffer.append(message)
 
+    def pop(self, count: int = 1):
+        if self.get_length() < count:
+            popped = self.buffer[:]
+            self.buffer.clear()
+            return popped
+        popped = self.buffer[:count]
+        del self.buffer[:count]
+        return popped
+
+
     def flush(self, count: int = None):
         if count and count <= len(self.buffer):
             pending_messages = self.buffer[:count]
@@ -128,6 +138,10 @@ class MessageProcessor:
     def get_session_buffer_length(self, sid: str) -> int:
         buffer = self.session_buffer.get_buffer(sid)
         return buffer.get_length()
+
+    async def pop_session_messages(self, sid: str, count: int = 1):
+        buffer = self.session_buffer.get_buffer(sid)
+        buffer.pop(count)
 
     async def flush_session_messages(self, sid: str, extra_event: KiraMessageEvent | None = None) -> bool:
         buffer = self.session_buffer.get_buffer(sid)

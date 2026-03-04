@@ -68,15 +68,23 @@ class SessionManager:
         self._save_memory(self.chat_memory, self.chat_memory_path)
 
     def _ensure_session_data(self, session: str):
-        if session not in self.chat_memory:
-            with self.memory_lock:
+        with self.memory_lock:
+            if session not in self.chat_memory:
                 self.chat_memory[session] = {
                     "title": "",
                     "description": "",
                     "timestamp": None,
                     "memory": []
                 }
-                self._save_memory()
+            else:
+                session_data = self.chat_memory[session]
+                if "title" not in session_data:
+                    session_data["title"] = ""
+                if "description" not in session_data:
+                    session_data["description"] = ""
+                if "timestamp" not in session_data:
+                    session_data["timestamp"] = None
+            self._save_memory()
 
     def _save_memory(self, memory: Dict[str, dict] = None, path: str = None):
         """保存记忆到文件"""
