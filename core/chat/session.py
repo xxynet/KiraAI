@@ -44,6 +44,9 @@ class Session:
     """session description"""
     session_description: str = None
 
+    """last message timestamp"""
+    timestamp: int = None
+
     @property
     def sid(self):
         """unique session identifier"""

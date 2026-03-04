@@ -5,7 +5,7 @@ from typing import Optional, TYPE_CHECKING
 
 from ..provider import ProviderManager
 from ..adapter import AdapterManager
-from core.chat.memory_manager import MemoryManager
+from core.chat.session_manager import SessionManager
 from core.config import KiraConfig
 from core.event_bus import EventBus
 from core.llm_client import LLMClient
@@ -30,6 +30,6 @@ class WorkflowContext:
 
     persona_mgr: PersonaManager
 
-    memory_mgr: MemoryManager
+    memory_mgr: SessionManager
 
     plugin_mgr: Optional["PluginManager"] = None

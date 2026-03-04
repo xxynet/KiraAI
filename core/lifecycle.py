@@ -7,7 +7,7 @@ from .config import KiraConfig
 from .sticker_manager import StickerManager
 from .message_manager import MessageProcessor
 from .prompt_manager import PromptManager
-from core.chat.memory_manager import MemoryManager
+from core.chat.session_manager import SessionManager
 from .adapter import AdapterManager
 from .statistics import Statistics
 from .llm_client import LLMClient
@@ -17,6 +17,7 @@ from .persona import PersonaManager
 from .provider import ProviderManager
 from .plugin import PluginContext, PluginManager
 from core.agent.mcp_mgr import MCPManager
+from core.config import VERSION
 
 
 logger = get_logger("lifecycle", "blue")
@@ -36,7 +37,7 @@ class KiraLifecycle:
 
         self.adapter_manager: Optional[AdapterManager] = None
 
-        self.memory_manager: Optional[MemoryManager] = None
+        self.memory_manager: Optional[SessionManager] = None
 
         self.persona_manager: Optional[PersonaManager] = None
 
@@ -67,7 +68,7 @@ class KiraLifecycle:
 
     async def init_and_run_system(self):
         """主函数：负责启动和初始化各个模块"""
-        logger.info("✨ Starting KiraAI...")
+        logger.info(f"✨ Starting KiraAI {VERSION}...")
 
         # ====== event bus ======
         event_queue: asyncio.Queue = asyncio.Queue()
@@ -91,7 +92,7 @@ class KiraLifecycle:
         self.sticker_manager = StickerManager(self.llm_api)
 
         # ====== init memory manager ======
-        self.memory_manager = MemoryManager(self.kira_config)
+        self.memory_manager = SessionManager(self.kira_config)
 
         # ====== init persona manager ======
         self.persona_manager = PersonaManager()

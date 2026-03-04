@@ -152,6 +152,8 @@ class Image(BaseMessageElement):
     async def to_path(self):
         if self.image_type == "path" and self.image:
             return os.path.abspath(self.image)
+        if self._temp_path:
+            return self._temp_path
         file_path = f"{get_data_path()}/temp/{uuid.uuid4().hex}"
         self._temp_path = file_path
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -194,6 +196,7 @@ class Image(BaseMessageElement):
             return
         try:
             os.remove(self._temp_path)
+            self._temp_path = None
         except Exception as e:
             logger.warning(f"Failed to delete temp image {self._temp_path}: {e}")
 
@@ -302,6 +305,8 @@ class Sticker(BaseMessageElement):
         if self.sticker_type == "path" and self.sticker:
             return os.path.abspath(self.sticker)
         file_path = f"{get_data_path()}/temp/{uuid.uuid4().hex}"
+        if self._temp_path:
+            return self._temp_path
         self._temp_path = file_path
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         if self.sticker_type in ("base64", "data_url"):
@@ -343,6 +348,7 @@ class Sticker(BaseMessageElement):
             return
         try:
             os.remove(self._temp_path)
+            self._temp_path = None
         except Exception as e:
             logger.warning(f"Failed to delete temp sticker {self._temp_path}: {e}")
 
@@ -390,6 +396,9 @@ class Record(BaseMessageElement):
             return os.path.abspath(self.bs64)
         file_path = f"{get_data_path()}/temp/{uuid.uuid4().hex}"
 
+        if self._temp_path:
+            return self._temp_path
+
         self._temp_path = file_path
 
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -426,6 +435,7 @@ class Record(BaseMessageElement):
             return
         try:
             os.remove(self._temp_path)
+            self._temp_path = None
         except Exception as e:
             logger.warning(f"Failed to delete temp record {self._temp_path}: {e}")
 
@@ -501,6 +511,8 @@ class File(BaseMessageElement):
 
         if self.file_type == "url":
             file_path = f"{get_data_path()}/temp/{uuid.uuid4().hex}"
+            if self._temp_path:
+                return self._temp_path
             self._temp_path = file_path
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             try:
@@ -555,6 +567,7 @@ class File(BaseMessageElement):
             return
         try:
             os.remove(self._temp_path)
+            self._temp_path = None
         except Exception as e:
             logger.warning(f"Failed to delete temp file {self._temp_path}: {e}")
 

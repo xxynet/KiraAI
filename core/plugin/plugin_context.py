@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 import inspect
 from pathlib import Path
@@ -5,7 +7,7 @@ from typing import Optional, TYPE_CHECKING, Literal
 
 from ..provider import ProviderManager, LLMModelClient, EmbeddingModelClient
 from ..adapter import AdapterManager
-from core.chat.memory_manager import MemoryManager
+from core.chat.session_manager import SessionManager
 from core.config import KiraConfig
 from core.event_bus import EventBus
 from core.llm_client import LLMClient
@@ -33,11 +35,11 @@ class PluginContext:
 
     persona_mgr: PersonaManager
 
-    memory_mgr: MemoryManager
+    session_mgr: SessionManager
 
-    message_processor: "MessageProcessor"
+    message_processor: MessageProcessor
 
-    plugin_mgr: Optional["PluginManager"] = None
+    plugin_mgr: Optional[PluginManager] = None
 
     def get_plugin_data_dir(self):
         base_dir = get_data_path() / "plugin_data"

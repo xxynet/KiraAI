@@ -1,8 +1,6 @@
 import asyncio
-import ast
 import json
 import os
-import re
 import time
 import uuid
 from typing import Dict, List, Optional
@@ -10,16 +8,17 @@ from threading import Lock
 
 from core.logging_manager import get_logger
 from core.config import KiraConfig
+from core.utils.path_utils import get_data_path
 
 from .session import Session
 
-logger = get_logger("memory_manager", "green")
+logger = get_logger("session", "green")
 
-CHAT_MEMORY_PATH: str = "data/memory/chat_memory.json"
-CORE_MEMORY_PATH: str = "data/memory/core.txt"
+CHAT_MEMORY_PATH: str = f"{get_data_path()}/memory/chat_memory.json"
+CORE_MEMORY_PATH: str = f"{get_data_path()}/memory/core.txt"
 
 
-class MemoryManager:
+class SessionManager:
 
     def __init__(self, kira_config: KiraConfig):
         self.kira_config = kira_config
@@ -28,15 +27,13 @@ class MemoryManager:
 
         self.memory_lock = Lock()
 
-        # === 短期记忆 ===
+        # === Session history ===
         self.chat_memory = self._load_memory(self.chat_memory_path)
         self._ensure_memory_format()
 
-        logger.info("MemoryManager initialized")
-
     @staticmethod
     def _load_memory(path: str) -> Dict[str, dict]:
-        """加载记忆文件"""
+        """加载会话记忆文件"""
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -65,9 +62,21 @@ class MemoryManager:
                 self.chat_memory[session] = {
                     "title": "",
                     "description": "",
+                    "timestamp": None,
                     "memory": session_content
                 }
         self._save_memory(self.chat_memory, self.chat_memory_path)
+
+    def _ensure_session_data(self, session: str):
+        if session not in self.chat_memory:
+            with self.memory_lock:
+                self.chat_memory[session] = {
+                    "title": "",
+                    "description": "",
+                    "timestamp": None,
+                    "memory": []
+                }
+                self._save_memory()
 
     def _save_memory(self, memory: Dict[str, dict] = None, path: str = None):
         """保存记忆到文件"""
@@ -85,32 +94,25 @@ class MemoryManager:
         parts = session.split(":", maxsplit=2)
         if len(parts) != 3:
             raise ValueError("Invalid session ID")
-        if session not in self.chat_memory:
-            self.chat_memory[session] = {
-                "title": "",
-                "description": "",
-                "memory": []
-            }
+        self._ensure_session_data(session)
+        session_data = self.chat_memory[session]
         return Session(
             adapter_name=parts[0],
             session_type=parts[1],
             session_id=parts[2],
-            session_title=self.chat_memory[session]["title"],
-            session_description=self.chat_memory[session]["description"]
+            session_title=session_data["title"],
+            session_description=session_data["description"],
+            timestamp=session_data["timestamp"]
         )
 
     def update_session_info(self, session: str, title: str = None, description: str = None):
+        self._ensure_session_data(session)
         with self.memory_lock:
-            if session not in self.chat_memory:
-                self.chat_memory[session] = {
-                    "title": "",
-                    "description": "",
-                    "memory": []
-                }
+            session_data = self.chat_memory[session]
             if title:
-                self.chat_memory[session]["title"] = title
+                session_data["title"] = title
             if description:
-                self.chat_memory[session]["description"] = description
+                session_data["description"] = description
             self._save_memory()
 
     def get_memory_count(self, session: str) -> int:
@@ -119,31 +121,17 @@ class MemoryManager:
         return len(self.chat_memory[session].get("memory", []))
 
     def fetch_memory(self, session: str):
-        if session not in self.chat_memory:
-            self.chat_memory[session] = {
-                "title": "",
-                "description": "",
-                "memory": []
-            }
-            return []
-        else:
-            mem_list = self.chat_memory[session].get("memory", [])
-            messages = []
-            for chunk in mem_list:
-                for message in chunk:
-                    messages.append(message)
-            return messages
+        self._ensure_session_data(session)
+        mem_list = self.chat_memory[session].get("memory", [])
+        messages = []
+        for chunk in mem_list:
+            for message in chunk:
+                messages.append(message)
+        return messages
 
     def read_memory(self, session: str):
-        if session not in self.chat_memory:
-            self.chat_memory[session] = {
-                "title": "",
-                "description": "",
-                "memory": []
-            }
-            return []
-        else:
-            return self.chat_memory[session].get("memory", [])
+        self._ensure_session_data(session)
+        return self.chat_memory[session].get("memory", [])
 
     def write_memory(self, session: str, memory: list[list[dict]]):
         with self.memory_lock:
@@ -152,10 +140,14 @@ class MemoryManager:
         logger.info(f"Memory written for {session}")
 
     def update_memory(self, session: str, new_chunk):
+        self._ensure_session_data(session)
         with self.memory_lock:
-            self.chat_memory[session]["memory"].append(new_chunk)
-            if len(self.chat_memory[session]["memory"]) > self.max_memory_length:
-                self.chat_memory[session]["memory"] = self.chat_memory[session]["memory"][1:]
+            session_data = self.chat_memory[session]
+
+            session_data["timestamp"] = int(time.time())
+            session_data["memory"].append(new_chunk)
+            if len(session_data["memory"]) > self.max_memory_length:
+                session_data["memory"] = session_data["memory"][-self.max_memory_length:]
             self._save_memory(self.chat_memory, self.chat_memory_path)
         logger.info(f"Memory updated for {session}")
 

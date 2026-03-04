@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Union, Optional, Literal
@@ -31,7 +33,10 @@ class MessageType(Enum):
 class KiraIMMessage:
     message_id: str
     self_id: str
-    chain: list[BaseMessageElement]
+
+    # TODO unify to MessageChain
+    chain: Union[list[BaseMessageElement], MessageChain]
+
     timestamp: int
     sender: User = None
     session: Session = None

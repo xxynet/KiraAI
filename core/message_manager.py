@@ -30,7 +30,7 @@ from core.chat.message_elements import (
 )
 
 from core.llm_client import LLMClient
-from core.chat.memory_manager import MemoryManager
+from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
@@ -85,7 +85,7 @@ class MessageProcessor:
                  llm_api: LLMClient,
                  provider_manager: ProviderManager,
                  adapter_manager: AdapterManager,
-                 memory_manager: MemoryManager,
+                 memory_manager: SessionManager,
                  prompt_manager: PromptManager,
                  max_concurrent_messages: int = 3):
         self.kira_config = kira_config
