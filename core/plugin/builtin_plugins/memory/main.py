@@ -86,9 +86,8 @@ class MemoryPlugin(BasePlugin):
         self._ensure_memory_file()
         async with self.lock:
             with open(self.core_memory_path, "a", encoding="utf-8") as mem:
-                if text and not text.endswith("\n"):
-                    mem.write("\n")
-                mem.write(text + "\n")
+                if text:
+                    mem.write(text + "\n")
             return "Core memory added"
 
     @register_tool(

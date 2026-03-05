@@ -188,11 +188,11 @@ class MessageProcessor:
                 if ele.chain:
                     ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
                     reply_content = await self.message_format_to_text(ele.chain.message_list)
-                    message_str += f"[Reply {reply_content}]"
+                    message_str += f"[Reply ID: {ele.message_id} content: {reply_content}]"
                 elif ele.message_content:
-                    message_str += f"[Reply {ele.message_content}]"
+                    message_str += f"[Reply ID: {ele.message_id} content: {ele.message_content}]"
                 else:
-                    message_str += f"[Reply {ele.message_id}]"
+                    message_str += f"[Reply ID: {ele.message_id}]"
             elif isinstance(ele, Forward):
                 if ele.chains:
                     forward_contents = ""
