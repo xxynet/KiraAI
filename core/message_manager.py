@@ -35,6 +35,7 @@ from .prompt_manager import PromptManager
 from .adapter import AdapterManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
+from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
 
 logger = get_logger("message_processor", "cyan")
 llm_logger = get_logger("llm", "purple")
@@ -255,36 +256,6 @@ class MessageProcessor:
                 logger.warning(f"No pending messages to flush for session {sid}")
             return
 
-        # # buffer
-        # buffer = self.session_buffer.get_buffer(sid)
-        #
-        # async with buffer.lock:
-        #     buffer.add(event)
-        #     message_count = buffer.get_length()
-        #
-        # if message_count < self.max_buffer_messages:
-        #     await asyncio.sleep(self.max_message_interval)
-        #
-        # if buffer.get_length() == message_count:
-        #     # print("no new message coming, processing")
-        #     async with buffer.lock:
-        #         pending_messages: list[KiraMessageEvent] = buffer.flush(count=message_count)
-        #     logger.info(f"deleted {message_count} message(s) from buffer")
-        # else:
-        #     # print("new message coming")
-        #     return None
-        #
-        # last_event = pending_messages[-1]
-        #
-        # batch_msg = KiraMessageBatchEvent(
-        #     message_types=last_event.message_types,
-        #     timestamp=int(time.time()),
-        #     adapter=last_event.adapter,
-        #     session=last_event.session,
-        #     messages=[m.message for m in pending_messages]
-        # )
-        # await self.handle_im_batch_message(batch_msg)
-
     async def handle_im_batch_message(self, event: KiraMessageBatchEvent):
         # Start processing
         sid = event.session.sid
@@ -331,8 +302,6 @@ class MessageProcessor:
             chat_env, event.message_types, emoji_dict
         )
 
-        new_memory_chunk = []
-
         # Get default LLM model client
         llm_model = self.provider_mgr.get_default_llm()
         if not llm_model:
@@ -362,17 +331,8 @@ class MessageProcessor:
         logger.info(f"processing message(s) from {sid}:\n{user_message}")
 
         # 把收到的消息放到新收到的消息内容中
-        new_memory_chunk.append(request.messages[-1])
-
-        provider_name = llm_model.model.provider_name
-        model_id = llm_model.model.model_id
-        llm_logger.info(f"Running agent using {model_id} ({provider_name})")
-
-        def append_msg(msg: dict):
-            new_memory_chunk.append(msg)
-
-        def extend_msg(msg: list):
-            new_memory_chunk.extend(msg)
+        new_memory = NewMemory()
+        new_memory.user(user_message)
 
         # Get max tool loop config, defaults to 2 if not a valid integer
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
@@ -383,54 +343,39 @@ class MessageProcessor:
 
         max_agent_steps = max_tool_loop + 1
 
-        for _ in range(max_agent_steps):
-            llm_resp = await llm_model.chat(request)
-            if llm_resp:
-                llm_logger.debug(llm_resp)
-                llm_logger.info(
-                    f"Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}")
+        agent_executor = AgentExecutor(self.llm_api)
+        agent_ctx = AgentExecutionContext(
+            event=event,
+            request=request,
+            llm_model=llm_model,
+            new_memory=new_memory,
+        )
 
-                # EventType.ON_LLM_RESPONSE
-                llm_resp_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_RESPONSE)
-                for handler in llm_resp_handlers:
-                    await handler.exec_handler(event, llm_resp)
-                    if event.is_stopped:
-                        logger.info("Event stopped")
-                        return
+        async def send_llm_text(text: str):
+            session_lock = self.get_session_lock(sid)
+            async with session_lock:
+                message_ids = await self.send_xml_messages(sid, text.strip())
+                response_with_ids = self._add_message_ids(text, message_ids)
+                logger.info(f"LLM -> {sid}: {response_with_ids}")
 
-                if not llm_resp.tool_calls:
-                    session_lock = self.get_session_lock(sid)
-                    async with session_lock:
-                        message_ids = await self.send_xml_messages(sid, llm_resp.text_response.strip())
-                        response_with_ids = self._add_message_ids(llm_resp.text_response, message_ids)
-                        logger.info(f"LLM: {response_with_ids}")
-                    request.messages.append({"role": "assistant",
-                                            "content": response_with_ids if llm_resp.text_response else ""})
-                    append_msg({"role": "assistant",
-                                "content": response_with_ids if llm_resp.text_response else ""})
-                    break
-                else:
-                    if llm_resp.text_response:
-                        session_lock = self.get_session_lock(sid)
-                        async with session_lock:
-                            message_ids = await self.send_xml_messages(sid, llm_resp.text_response.strip())
-                            response_with_ids = self._add_message_ids(llm_resp.text_response, message_ids)
-                            logger.info(f"LLM: {response_with_ids}")
-                    await self.llm_api.execute_tool(event, llm_resp)
-                    request.messages.append({"role": "assistant",
-                                             "content": response_with_ids if llm_resp.text_response else "",
-                                             "tool_calls": llm_resp.tool_calls})
-                    append_msg({"role": "assistant",
-                                "content": response_with_ids if llm_resp.text_response else "",
-                                "tool_calls": llm_resp.tool_calls})
-                    request.messages.extend(llm_resp.tool_results)
-                    extend_msg(llm_resp.tool_results)
-            else:
-                request.messages.append({"role": "assistant", "content": ""})
-                append_msg({"role": "assistant", "content": ""})
+        # Iter agent executor to get LLMResponse
+        async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
+            llm_resp = step.llm_response
+            if not llm_resp:
                 break
 
-        self.memory_manager.update_memory(sid, new_memory_chunk)
+            if llm_resp.text_response:
+                await send_llm_text(llm_resp.text_response)
+
+            if not step.has_tool_calls or step.is_final:
+                break
+
+            # Process tool calls if existed
+
+        # Save new memory
+        self.memory_manager.update_memory(sid, new_memory.memory_list)
+
+        # Set session title
         if not self.memory_manager.get_session_info(sid).session_title:
             self.memory_manager.update_session_info(sid, event.session.session_title)
 

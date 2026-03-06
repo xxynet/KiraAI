@@ -1,4 +1,4 @@
-from enum import Enum, auto
+from enum import Enum, IntEnum
 from dataclasses import dataclass
 from typing import Optional, Union, Callable, Any, Dict, List
 
@@ -7,12 +7,14 @@ from core.logging_manager import get_logger
 logger = get_logger("hook", "orange")
 
 
-class Priority(Enum):
-    """Priority of a event handler"""
+class Priority(IntEnum):
+    """Priority of event handlers, DO NOT use SYS_LOW or SYS_HIGH in user plugins"""
 
+    SYS_LOW = -100
     LOW = -50
     MEDIUM = 0
     HIGH = 50
+    SYS_HIGH = 100
 
 
 class EventType(Enum):
@@ -35,10 +37,6 @@ class EventHandler:
     handler: Callable
 
     desc: Optional[str] = None
-
-    def __post_init__(self):
-        if isinstance(self.priority, Priority):
-            self.priority = self.priority.value
 
     def __lt__(self, other):
         return self.priority < other.priority

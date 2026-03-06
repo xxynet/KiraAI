@@ -43,21 +43,15 @@ class PromptManager:
                  kira_config: KiraConfig,
                  sticker_manager: StickerManager,
                  persona_manager: PersonaManager,
-                 format_path: str = "core/prompts/format.txt",
-                 agent_path: str = "core/prompts/agent.txt"):
+                 format_path: str = "core/prompts/format.txt"):
         self.kira_config = kira_config
         self.format_path = format_path
-        self.agent_path = agent_path
 
         self.sticker_manager = sticker_manager
         self.persona_manager = persona_manager
         self.sticker_dict = sticker_manager.sticker_dict
         self.sticker_prompt = self._load_sticker_prompt(self.sticker_dict)
         self.ada_config_prompt = self.load_ada_config_prompt()
-
-        self.prompt_template_mapping = {
-            "agent": agent_path
-        }
 
         self.builtin_msg_types_mapping = {
             "text": "<text>some text</text> # 纯文本消息",
@@ -73,21 +67,6 @@ class PromptManager:
         }
 
         logger.info("PromptManager initialized")
-
-    def get_prompt(self, template_name: str, **kwargs) -> str:
-        context = {
-            **kwargs
-        }
-
-        try:
-            path = self.prompt_template_mapping.get(template_name)
-            with open(path, 'r', encoding="utf-8") as f:
-                template_str = f.read()
-
-            return template_str.format(**context)
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            return ""
 
     @staticmethod
     def _load_sticker_prompt(sticker_dict: dict) -> str:

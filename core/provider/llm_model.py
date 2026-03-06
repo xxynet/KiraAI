@@ -68,3 +68,12 @@ class LLMResponse:
 
     """Units: seconds"""
     time_consumed: Optional[float] = None
+
+
+@dataclass
+class ToolResult:
+    """tool result, support text, image and file result"""
+
+    text: str
+
+    attachments: Optional[list] = None
