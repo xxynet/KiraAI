@@ -6,14 +6,14 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING, Literal
 
 from ..provider import ProviderManager, LLMModelClient, EmbeddingModelClient
-from ..adapter import AdapterManager
 from core.chat.session_manager import SessionManager
-from core.config import KiraConfig
+from ..adapter import AdapterManager
 from core.event_bus import EventBus
 from core.llm_client import LLMClient
+from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group
+from core.config import KiraConfig
 from core.persona import PersonaManager
 from core.utils.path_utils import get_data_path
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group
 from core.chat.message_elements import Text
 
 if TYPE_CHECKING:

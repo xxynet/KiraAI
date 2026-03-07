@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from asyncio import Semaphore
 from typing import Optional, TYPE_CHECKING
 import copy
@@ -7,7 +9,7 @@ import time
 from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
 from .config import KiraConfig
-from .provider import LLMRequest, LLMResponse, ModelType
+from .provider import LLMRequest, LLMResponse, ToolResult, Attachment
 from .provider import ProviderManager, ImageResult
 
 logger = get_logger("llm", "purple")
@@ -63,7 +65,7 @@ class LLMClient:
             response = await llm_model.chat(request)
             return response
 
-    async def execute_tool(self, event: "KiraMessageBatchEvent", resp: LLMResponse):
+    async def execute_tool(self, event: KiraMessageBatchEvent, resp: LLMResponse):
         for tool_call in resp.tool_calls:
             tool_call_id = tool_call.get("id")
             name = tool_call.get("function", {}).get("name")
@@ -92,12 +94,27 @@ class LLMClient:
                 result = {"error": f"Tool {name} not implemented"}
                 tool_logger.error(f"Tool {name} not implemented")
 
+            if isinstance(result, ToolResult):
+                tool_result_obj = result
+            else:
+                tool_result_obj = ToolResult(str(result))
+
+            from core.plugin.plugin_handlers import event_handler_reg, EventType
+
+            # EventType.ON_TOOL_RESULT
+            llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT)
+            for handler in llm_handlers:
+                await handler.exec_handler(event, tool_result_obj)
+                if event.is_stopped:
+                    logger.info("Event stopped while ON_TOOL_RESULT stage")
+                    return
+
             # Save tool results
             resp.tool_results.append({
                 "role": "tool",
                 "tool_call_id": tool_call_id,
                 "name": name,
-                "content": str(result)
+                "content": tool_result_obj.assemble_result()
             })
 
     async def agent_run(self, user_message) -> LLMResponse:

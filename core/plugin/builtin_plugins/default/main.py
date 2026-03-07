@@ -13,6 +13,15 @@ from core.prompt_manager import Prompt
 from core.utils.tool_utils import BaseTool
 
 
+XML_FIX_PROMPT = """\
+你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：
+<msg>
+    ...
+</msg>
+其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。直接输出修改后的内容，不要解释，不要输出任何多余内容。
+当前报错：{exc}"""
+
+
 class DefaultPlugin(BasePlugin):
     def __init__(self, ctx, cfg: dict):
         super().__init__(ctx, cfg)
@@ -74,7 +83,7 @@ class DefaultPlugin(BasePlugin):
             try:
                 llm_resp = await self.ctx.llm_api.chat([
                     {"role": "system",
-                     "content": "你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：\n<msg>\n    ...\n</msg>\n其中可以有多个<msg>，代表发送多条消息。每个msg标签中可以有多个子标签代表不同的消息元素，如<text>文本消息</text>。如果消息中存在未转义的特殊字符请转义。直接输出修改后的内容，不要解释，不要输出任何多余内容"},
+                     "content": XML_FIX_PROMPT.format(exc=str(e))},
                     {"role": "user", "content": xml_data}
                 ])
                 fixed_xml = llm_resp.text_response

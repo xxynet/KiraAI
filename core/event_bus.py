@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 import asyncio
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 from enum import Enum, auto
 from dataclasses import dataclass, field
 from datetime import datetime
 import uuid
 
 from .statistics import Statistics
+from .logging_manager import get_logger
 
 from core.chat import KiraMessageEvent, KiraCommentEvent
 
@@ -74,7 +77,7 @@ class EventBus:
         self.stats.set_stats("messages", self.total_messages_stats)
 
         self._running_event = asyncio.Event()
-        # self._running_tasks: List[asyncio.Task] = []
+        self.logger = get_logger("event_bus", "blue")
 
     async def _dispatch_event(self, event):
         async with self.message_processing_semaphore:
@@ -160,7 +163,19 @@ class EventBus:
             if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
                 self.total_messages_stats["total_messages"] += 1
                 self.stats.set_stats("messages", self.total_messages_stats)
-            asyncio.create_task(self._dispatch_event(event))
+            task = asyncio.create_task(self._dispatch_event(event))
+
+            def _log_task_error(t: asyncio.Task):
+                try:
+                    exc = t.exception()
+                    if exc:
+                        self.event_bus_stats["errors"] += 1
+                        self.stats.set_stats("event_bus", self.event_bus_stats)
+                        self.logger.error(f"Error in event dispatch task: {exc}")
+                except asyncio.CancelledError:
+                    return
+
+            task.add_done_callback(_log_task_error)
 
     async def stop(self):
         """stop event bus"""

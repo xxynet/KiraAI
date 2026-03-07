@@ -108,6 +108,7 @@ class AgentExecutor:
                 )
                 return
 
+            llm_resp.agent_step_index = step_index
             llm_logger.debug(llm_resp)
             llm_logger.info(
                 f"Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}"
