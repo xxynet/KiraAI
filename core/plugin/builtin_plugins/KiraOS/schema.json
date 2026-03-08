@@ -1,0 +1,29 @@
+{
+    "max_events_per_user": {
+        "name": "Max events in context",
+        "type": "integer",
+        "default": 10,
+        "minimum": 0,
+        "hint": "Maximum number of recent events injected into LLM context per user"
+    },
+    "max_profiles_per_user": {
+        "name": "Max profile entries",
+        "type": "integer",
+        "default": 50,
+        "minimum": 0,
+        "hint": "Maximum number of profile key-value pairs allowed per user"
+    },
+    "max_event_keep": {
+        "name": "Max events stored",
+        "type": "integer",
+        "default": 100,
+        "minimum": 0,
+        "hint": "Maximum number of event logs kept in database per user (oldest auto-deleted)"
+    },
+    "skills_dir": {
+        "name": "Skills directory",
+        "type": "string",
+        "default": null,
+        "hint": "Path to skills directory (defaults to data/skills/). Each skill is a subfolder with manifest.json + instruction.md"
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "tarot_reading",
+  "description": "当用户明确要求进行塔罗牌占卜、算命、或者预测运势时调用此工具。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "question": {
+        "type": "string",
+        "description": "用户想要占卜的问题"
+      }
+    },
+    "required": ["question"]
+  }
+}

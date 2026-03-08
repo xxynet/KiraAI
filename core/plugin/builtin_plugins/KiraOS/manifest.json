@@ -1,0 +1,8 @@
+{
+    "display_name": "KiraOS (Memory + Skills)",
+    "plugin_id": "kira_plugin_kiraos",
+    "version": "1.0.0",
+    "author": "LyaQanYi",
+    "description": "OS-level plugin combining SQLite user memory (per-user profiles & events) with a progressive skill router (manifest-based tool discovery, on-demand sub-agent execution). Memory is RAM, skills are programs.",
+    "repo": null
+}
