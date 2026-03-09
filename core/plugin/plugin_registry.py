@@ -116,6 +116,24 @@ class OnEventDeco:
             return func
         return decorator
 
+    def tool_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_TOOL_RESULT)
+            return func
+        return decorator
+
+    def after_xml_parse(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.AFTER_XML_PARSE)
+            return func
+        return decorator
+
+    def on_final_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_FINAL_RESULT)
+            return func
+        return decorator
+
 
 on = OnEventDeco()
 

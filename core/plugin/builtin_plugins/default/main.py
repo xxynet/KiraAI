@@ -1,12 +1,9 @@
-import json
-import asyncio
-from pathlib import Path
 import xml.etree.ElementTree as ET
 from typing import Union, Optional
 from datetime import datetime
 
 from core.plugin import BasePlugin, logger, on, Priority
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraIMMessage
+from core.chat.message_utils import KiraMessageBatchEvent, KiraIMMessage
 from core.provider import LLMRequest, LLMResponse
 from core.prompt_manager import Prompt
 
@@ -81,11 +78,21 @@ class DefaultPlugin(BasePlugin):
             logger.debug(f"previously wrong format: {xml_data}")
 
             try:
-                llm_resp = await self.ctx.llm_api.chat([
-                    {"role": "system",
-                     "content": XML_FIX_PROMPT.format(exc=str(e))},
-                    {"role": "user", "content": xml_data}
-                ])
+                llm_req = LLMRequest(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": XML_FIX_PROMPT.format(exc=str(e))
+                        },
+                        {
+                            "role": "user", "content": xml_data
+                        }
+                    ]
+                )
+                client = self.ctx.get_default_fast_llm_client()
+                if not client:
+                    client = self.ctx.get_default_llm_client()
+                llm_resp = await client.chat(llm_req)
                 fixed_xml = llm_resp.text_response
                 logger.debug(f"fixed xml data: {fixed_xml}")
                 resp.text_response = fixed_xml

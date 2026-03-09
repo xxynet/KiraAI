@@ -38,83 +38,6 @@ def _discover_tool_classes(module) -> List[Type[BaseTool]]:
     return tool_classes
 
 
-def _load_mcp_config() -> Dict[str, Any]:
-    config_path = Path(__file__).parents[1] / "data" / "tools" / "mcp.json"
-    if not config_path.exists():
-        return {}
-    try:
-        with config_path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _get_mcp_servers() -> Dict[str, Any]:
-    config = _load_mcp_config()
-    servers = config.get("mcpServers", {})
-    if not isinstance(servers, dict):
-        return {}
-    return servers
-
-
-async def _register_mcp_tools(llm_api) -> None:
-    servers = _get_mcp_servers()
-    if not servers:
-        return
-
-    client = Client(servers)
-
-    try:
-        async with client:
-            try:
-                tools_response = await client.list_tools()
-            except Exception as e:
-                tool_logger.error(f"Failed to list MCP tools: {e}")
-                return
-            if isinstance(tools_response, dict):
-                tools = tools_response.get("tools", [])
-            elif isinstance(tools_response, list):
-                tools = tools_response
-            else:
-                tools = []
-    except Exception as e:
-        tool_logger.error(f"Failed to connect to MCP servers: {e}")
-        return
-
-    for tool in tools:
-        if hasattr(tool, "model_dump"):
-            tool_dict = tool.model_dump()
-        else:
-            tool_dict = tool
-
-        name = tool_dict.get("name", "")
-        description = tool_dict.get("description", "")
-        parameters = tool_dict.get("inputSchema", {})
-
-        if not name:
-            continue
-
-        async def _make_mcp_func(tool_name: str):
-            async def _wrapped(**kwargs):
-                client_inner = Client(servers)
-                async with client_inner:
-                    result = await client_inner.call_tool(tool_name, kwargs, timeout=10)
-                    return str(result)
-
-            return _wrapped
-
-        func = await _make_mcp_func(name)
-
-        tool_logger.info(f"Registered MCP tool: {name}")
-
-        llm_api.register_tool(
-            name=name,
-            description=description,
-            parameters=parameters,
-            func=func,
-        )
-
-
 async def register_all_tools(llm_api) -> None:
     """Discover all subclasses of BaseTool under core.tools and register them."""
     package_name = "data.tools"
@@ -155,8 +78,3 @@ async def register_all_tools(llm_api) -> None:
                 parameters=schema["parameters"],
                 func=_make_func(tool_instance)
             )
-
-    # try:
-    #     asyncio.create_task(_register_mcp_tools(llm_api))
-    # except RuntimeError:
-    #     pass

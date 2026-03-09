@@ -36,6 +36,7 @@ from .adapter import AdapterManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
+from core.agent.tool import ToolSet
 
 logger = get_logger("message_processor", "cyan")
 llm_logger = get_logger("llm", "purple")
@@ -308,7 +309,7 @@ class MessageProcessor:
             llm_logger.error(f"Default LLM model not set, please set it in Configuration")
             return
 
-        request = LLMRequest(messages=session_memory[:], tools=self.llm_api.tools_definitions, tool_funcs=self.llm_api.tools_functions)
+        request = LLMRequest(messages=session_memory[:], tools=self.llm_api.tools_definitions, tool_funcs=self.llm_api.tools_functions, tool_set=ToolSet())
         request.system_prompt.extend(agent_prompt_list)
 
         # Add received im messages
@@ -325,6 +326,9 @@ class MessageProcessor:
 
         # Assemble messages
         request.assemble_prompt()
+
+        # TODO: migrate tools & tool_func params to tool_set
+        request.tools.extend(request.tool_set.to_list())
 
         # Print user message info
         user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt))
@@ -343,7 +347,7 @@ class MessageProcessor:
 
         max_agent_steps = max_tool_loop + 1
 
-        agent_executor = AgentExecutor(self.llm_api)
+        agent_executor = AgentExecutor(self.llm_api, request.tool_set)
         agent_ctx = AgentExecutionContext(
             event=event,
             request=request,
@@ -359,6 +363,7 @@ class MessageProcessor:
                 logger.info(f"LLM -> {sid}: {response_with_ids}")
 
         # Iter agent executor to get LLMResponse
+        # TODO use llm_semaphore to restrict concurrent LLM requests
         async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
             llm_resp = step.llm_response
             if not llm_resp:
@@ -393,7 +398,14 @@ class MessageProcessor:
 
         cmt_prompt = self.prompt_manager.get_comment_prompt(cmt_content)
 
-        llm_resp = await self.llm_api.chat([{"role": "user", "content": cmt_prompt}])
+        client = self.provider_mgr.get_default_llm()
+        if not client:
+            llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+            return
+
+        llm_req = LLMRequest(messages=[{"role": "user", "content": cmt_prompt}])
+
+        llm_resp = await client.chat(llm_req)
 
         response = llm_resp.text_response.strip()
 

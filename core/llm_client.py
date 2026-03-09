@@ -9,7 +9,8 @@ import time
 from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
 from .config import KiraConfig
-from .provider import LLMRequest, LLMResponse, ToolResult, Attachment
+from .provider import LLMRequest, LLMResponse
+from .agent.tool import ToolResult, Attachment, ToolSet
 from .provider import ProviderManager, ImageResult
 
 logger = get_logger("llm", "purple")
@@ -50,22 +51,7 @@ class LLMClient:
             if tool_def.get("function", {}).get("name") == name:
                 del self.tools_definitions[i]
 
-    async def chat(self, messages: list) -> LLMResponse:
-        """与LLM交互
-
-        Args:
-            messages: 消息列表
-
-        Returns:
-            LLMResponse
-        """
-        async with self.llm_semaphore:
-            request = LLMRequest(messages)
-            llm_model = self.provider_mgr.get_default_llm()
-            response = await llm_model.chat(request)
-            return response
-
-    async def execute_tool(self, event: KiraMessageBatchEvent, resp: LLMResponse):
+    async def execute_tool(self, event: KiraMessageBatchEvent, resp: LLMResponse, tool_set: Optional[ToolSet] = None):
         for tool_call in resp.tool_calls:
             tool_call_id = tool_call.get("id")
             name = tool_call.get("function", {}).get("name")
@@ -86,6 +72,14 @@ class LLMClient:
             if self.tools_functions and name in self.tools_functions:
                 try:
                     result = await self.tools_functions[name](event, **args)
+                    tool_logger.info(f"tool_result: {result}")
+                except Exception as e:
+                    result = {"error": f"Failed to call tool '{name}': {e}"}
+                    tool_logger.error(f"Failed to call tool '{name}': {e}")
+            elif tool_set and name in tool_set:
+                try:
+                    tool_inst = tool_set.get(name)
+                    result = await tool_inst.execute()
                     tool_logger.info(f"tool_result: {result}")
                 except Exception as e:
                     result = {"error": f"Failed to call tool '{name}': {e}"}
@@ -116,29 +110,6 @@ class LLMClient:
                 "name": name,
                 "content": tool_result_obj.assemble_result()
             })
-
-    async def agent_run(self, user_message) -> LLMResponse:
-
-        async with self.llm_semaphore:
-            request = LLMRequest(user_message, tools=self.tools_definitions, tool_funcs=self.tools_functions)
-            llm_model = self.provider_mgr.get_default_llm()
-            provider_name = llm_model.model.provider_name
-            model_id = llm_model.model.model_id
-            logger.info(f"Running agent using {model_id} ({provider_name})")
-            resp = await llm_model.chat(request)
-            logger.debug(resp)
-            if resp:
-                logger.info(f"Time consumed: {resp.time_consumed}s, Input tokens: {resp.input_tokens}, output tokens: {resp.output_tokens}")
-            return resp
-
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        """生成文本嵌入向量"""
-        try:
-            embedding_model = self.provider_mgr.get_default_embedding()
-            return await embedding_model.embed(texts)
-        except Exception as e:
-            logger.error(f"Embedding error: {e}")
-            return []
 
     async def text_to_speech(self, text: str):
         tts_model = self.provider_mgr.get_default_tts()

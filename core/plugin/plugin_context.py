@@ -66,15 +66,15 @@ class PluginContext:
     async def flush_session_messages(self, sid: str):
         await self.message_processor.flush_session_messages(sid)
 
-    async def get_default_llm_client(self):
-        client = await self.get_llm_client(llm_type="default")
+    def get_default_llm_client(self) -> LLMModelClient:
+        client = self.get_llm_client(llm_type="default")
         return client
 
-    async def get_default_fast_llm_client(self):
-        client = await self.get_llm_client(llm_type="fast")
+    def get_default_fast_llm_client(self) -> LLMModelClient:
+        client = self.get_llm_client(llm_type="fast")
         return client
 
-    async def get_llm_client(self, model_uuid: Optional[str] = None, llm_type: Optional[str] = None) -> Optional[LLMModelClient]:
+    def get_llm_client(self, model_uuid: Optional[str] = None, llm_type: Optional[str] = None) -> Optional[LLMModelClient]:
         """
         Get LLMModelClient object by model uuid
         :param model_uuid: provider_id:model_id
@@ -101,12 +101,12 @@ class PluginContext:
             return client
         return
 
-    async def get_default_embedding_client(self) -> Optional[EmbeddingModelClient]:
+    def get_default_embedding_client(self) -> Optional[EmbeddingModelClient]:
         client = self.provider_mgr.get_default_embedding()
         if isinstance(client, EmbeddingModelClient):
             return client
 
-    async def get_embedding_client(self, model_uuid: str, default: bool = False) -> Optional[EmbeddingModelClient]:
+    def get_embedding_client(self, model_uuid: str, default: bool = False) -> Optional[EmbeddingModelClient]:
         if default:
             client = self.provider_mgr.get_default_embedding()
             if isinstance(client, EmbeddingModelClient):

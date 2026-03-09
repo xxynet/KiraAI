@@ -6,6 +6,7 @@ from typing import Any, AsyncIterator, Optional, TYPE_CHECKING, Union, Literal
 from core.logging_manager import get_logger
 from core.llm_client import LLMClient
 from core.provider import LLMRequest, LLMResponse, LLMModelClient
+from core.agent.tool import ToolSet
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 
 if TYPE_CHECKING:
@@ -75,8 +76,9 @@ class NewMemory:
 
 
 class AgentExecutor:
-    def __init__(self, llm_api: LLMClient):
+    def __init__(self, llm_api: LLMClient, tool_set: Optional[ToolSet] = None):
         self.llm_api = llm_api
+        self.tool_set = tool_set
 
     async def run(
         self,
@@ -151,7 +153,7 @@ class AgentExecutor:
                 return
 
             assistant_content = llm_resp.text_response or ""
-            await self.llm_api.execute_tool(event, llm_resp)
+            await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
             request.messages.append(
                 {
                     "role": "assistant",
