@@ -79,16 +79,11 @@ class DefaultPlugin(BasePlugin):
 
             try:
                 llm_req = LLMRequest(
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": XML_FIX_PROMPT.format(exc=str(e))
-                        },
-                        {
-                            "role": "user", "content": xml_data
-                        }
-                    ]
+                    system_prompt=[Prompt(XML_FIX_PROMPT.format(exc=str(e)))],
+                    user_prompt=[Prompt(xml_data)]
                 )
+                llm_req.assemble_prompt()
+
                 client = self.ctx.get_default_fast_llm_client()
                 if not client:
                     client = self.ctx.get_default_llm_client()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union, Type
 
 from core.utils.tool_utils import BaseTool
 
@@ -17,11 +17,18 @@ class ToolSet:
                 return True
         return False
 
-    def add(self, tool: BaseTool):
-        for i, t in enumerate(self.tools):
-            if t.name == tool.name:
-                self.tools.pop(i)
-        self.tools.append(tool)
+    def add(self, *tools: Union[BaseTool, Type[BaseTool]]):
+        for tool in tools:
+            if isinstance(tool, type):
+                tool_inst = tool()
+            elif isinstance(tool, BaseTool):
+                tool_inst = tool
+            else:
+                continue
+            for i, t in enumerate(self.tools):
+                if t.name == tool.name:
+                    self.tools.pop(i)
+            self.tools.append(tool_inst)
 
     def remove(self, tool_name: str):
         for i, t in enumerate(self.tools):

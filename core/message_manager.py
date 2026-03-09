@@ -277,9 +277,10 @@ class MessageProcessor:
         # Get existing session
         session_list = self.get_session_list_prompt()
 
+        # Set session title
+        if not self.memory_manager.get_session_info(sid).session_title:
+            self.memory_manager.update_session_info(sid, event.session.session_title)
         session_title = self.memory_manager.get_session_info(sid).session_title
-        if not session_title:
-            session_title = event.session.session_title
 
         # Build chat environment
         chat_env = {
@@ -358,8 +359,8 @@ class MessageProcessor:
         async def send_llm_text(text: str):
             session_lock = self.get_session_lock(sid)
             async with session_lock:
-                message_ids = await self.send_xml_messages(sid, text.strip())
-                response_with_ids = self._add_message_ids(text, message_ids)
+                message_results = await self.send_xml_messages(sid, text.strip())
+                response_with_ids = self._add_message_ids(text, message_results)
                 logger.info(f"LLM -> {sid}: {response_with_ids}")
 
         # Iter agent executor to get LLMResponse
@@ -379,10 +380,6 @@ class MessageProcessor:
 
         # Save new memory
         self.memory_manager.update_memory(sid, new_memory.memory_list)
-
-        # Set session title
-        if not self.memory_manager.get_session_info(sid).session_title:
-            self.memory_manager.update_session_info(sid, event.session.session_title)
 
     async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
@@ -420,7 +417,7 @@ class MessageProcessor:
         else:
             logger.warning("Blank LLM response")
 
-    async def send_xml_messages(self, target: str, xml_data: str) -> List[str]:
+    async def send_xml_messages(self, target: str, xml_data: str) -> List[KiraIMSentResult]:
         """
         send message via session id & xml data
         :param target: adapter_name:session_type:session_id
@@ -432,7 +429,7 @@ class MessageProcessor:
             raise ValueError("invalid target, must follow the form of <adapter>:<dm|gm>:<id>")
         adapter_name, chat_type, pid = parts[0], parts[1], parts[2]
 
-        message_ids = []
+        message_results = []
         try:
             resp_list = await self._parse_xml_msg(xml_data)
         except Exception as e:
@@ -446,14 +443,15 @@ class MessageProcessor:
                 result = await self.send_message_chain(target, message_obj)
                 if not result.ok and result.err:
                     logger.error(result.err)
-                message_ids.append(result.message_id if result.message_id is not None else "")
+                # message_ids.append(result.message_id if result.message_id is not None else "")
+                message_results.append(result)
 
                 # add random message delay
                 await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
             else:
-                message_ids.append("")
+                message_results.append(KiraIMSentResult(ok=False, err="Blank message list detected"))
 
-        return message_ids
+        return message_results
 
     async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
         """
@@ -569,14 +567,17 @@ class MessageProcessor:
 
         return message_list
 
-    def _add_message_ids(self, xml_data: str, message_ids: List[str]) -> str:
+    def _add_message_ids(self, xml_data: str, message_results: List[KiraIMSentResult]) -> str:
         """为XML响应添加消息ID"""
         try:
             root = ET.fromstring(f"<root>{xml_data}</root>")
 
             for i, msg in enumerate(root.findall("msg")):
-                if i < len(message_ids):
-                    msg.set("message_id", message_ids[i])
+                if i < len(message_results):
+                    message_id = message_results[i].message_id
+                    if not message_id:
+                        message_id = ""
+                    msg.set("message_id", message_id)
 
             return ET.tostring(root, encoding='unicode', method='xml')[6:-7]
 
