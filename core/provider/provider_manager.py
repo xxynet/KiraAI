@@ -509,9 +509,9 @@ class ProviderManager:
                     provider_name,
                     provider.get("provider_config", {}) or {},
                 )
-                logger.info(f"Loaded provider {provider_name} ({provider_id}) from registry")
+                logger.info(f"Loaded provider {provider_name} ({provider_id})")
             except Exception as e:
-                logger.error(f"Failed to instantiate provider {provider_name} ({provider_id}) from registry: {e}")
+                logger.error(f"Failed to instantiate provider {provider_name} ({provider_id}): {e}")
 
         if provider_inst:
             self._providers[provider_id] = provider_inst

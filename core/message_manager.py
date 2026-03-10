@@ -2,7 +2,7 @@ import asyncio
 import time
 from asyncio import Lock
 import xml.etree.ElementTree as ET
-from typing import Union, Any, List
+from typing import Union, Any, List, Optional
 from pathlib import Path
 from asyncio import Semaphore
 import random
@@ -11,7 +11,8 @@ import os
 from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
 from core.utils.path_utils import get_data_path
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent,  KiraCommentEvent, MessageChain, KiraIMSentResult
+from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent,  KiraCommentEvent, MessageChain
+from core.chat.message_utils import KiraIMSentResult, KiraStepResult
 from core.prompt_manager import Prompt
 
 from core.chat.message_elements import (
@@ -359,9 +360,19 @@ class MessageProcessor:
         async def send_llm_text(text: str):
             session_lock = self.get_session_lock(sid)
             async with session_lock:
-                message_results = await self.send_xml_messages(sid, text.strip())
+                message_results = await self.send_xml_messages(event, text.strip())
+                if message_results is None:
+                    return
                 response_with_ids = self._add_message_ids(text, message_results)
-                logger.info(f"LLM -> {sid}: {response_with_ids}")
+                step_result = KiraStepResult(message_results=message_results, raw_output=response_with_ids)
+                # EventType.ON_STEP_RESULT
+                step_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_STEP_RESULT)
+                for step_handler in step_handlers:
+                    await step_handler.exec_handler(event, step_result)
+                    if event.is_stopped:
+                        logger.info("Event stopped while ON_STEP_RESULT stage")
+                        return
+                logger.info(f"LLM -> {sid}: {step_result.raw_output}")
 
         # Iter agent executor to get LLMResponse
         # TODO use llm_semaphore to restrict concurrent LLM requests
@@ -417,33 +428,37 @@ class MessageProcessor:
         else:
             logger.warning("Blank LLM response")
 
-    async def send_xml_messages(self, target: str, xml_data: str) -> List[KiraIMSentResult]:
+    async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str) -> Optional[List[KiraIMSentResult]]:
         """
         send message via session id & xml data
-        :param target: adapter_name:session_type:session_id
+        :param event: KiraMessageBatchEvent
         :param xml_data: xml string
         :return: message_ids
         """
-        parts = target.split(":")
+        parts = event.sid.split(":")
         if len(parts) != 3:
             raise ValueError("invalid target, must follow the form of <adapter>:<dm|gm>:<id>")
-        adapter_name, chat_type, pid = parts[0], parts[1], parts[2]
 
         message_results = []
         try:
-            resp_list = await self._parse_xml_msg(xml_data)
+            message_chains = await self._parse_xml_msg(xml_data)
+
+            # EventType.AFTER_XML_PARSE
+            llm_handlers = event_handler_reg.get_handlers(event_type=EventType.AFTER_XML_PARSE)
+            for handler in llm_handlers:
+                await handler.exec_handler(event, message_chains)
+                if event.is_stopped:
+                    logger.info("Event stopped while AFTER_XML_PARSE stage")
+                    return None
         except Exception as e:
             logger.error(f"Error parsing message: {str(e)}")
             return []
 
-        for message_list in resp_list:
-            if message_list:
-                message_obj = MessageChain(message_list)
-
-                result = await self.send_message_chain(target, message_obj)
+        for message_chain in message_chains:
+            if not message_chain.is_empty():
+                result = await self.send_message_chain(event.sid, message_chain)
                 if not result.ok and result.err:
                     logger.error(result.err)
-                # message_ids.append(result.message_id if result.message_id is not None else "")
                 message_results.append(result)
 
                 # add random message delay
@@ -480,10 +495,10 @@ class MessageProcessor:
 
         return result
 
-    async def _parse_xml_msg(self, xml_data):
+    async def _parse_xml_msg(self, xml_data) -> list[MessageChain]:
         """Parse xml to list[list[BaseMessageElement]]"""
         root = ET.fromstring(f"<root>{xml_data}</root>")
-        message_list = []
+        message_chains = []
 
         for msg in root.findall("msg"):
             message_elements = []
@@ -563,9 +578,9 @@ class MessageProcessor:
                     pass
 
             if message_elements:
-                message_list.append(message_elements)
+                message_chains.append(MessageChain(message_elements))
 
-        return message_list
+        return message_chains
 
     def _add_message_ids(self, xml_data: str, message_results: List[KiraIMSentResult]) -> str:
         """为XML响应添加消息ID"""

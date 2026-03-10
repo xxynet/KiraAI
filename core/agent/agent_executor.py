@@ -153,6 +153,7 @@ class AgentExecutor:
                 return
 
             assistant_content = llm_resp.text_response or ""
+
             await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
             request.messages.append(
                 {

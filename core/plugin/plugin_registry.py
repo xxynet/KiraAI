@@ -1,4 +1,3 @@
-import asyncio
 import importlib
 import importlib.util
 import inspect
@@ -7,7 +6,7 @@ import json
 import sys
 import types
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable, Union, Awaitable
+from typing import Optional, Dict, Any, List, Callable, Union
 from core.utils.path_utils import get_data_path, get_config_path
 from core.logging_manager import get_logger
 from core.config.config_field import BaseConfigField, build_fields
@@ -57,23 +56,38 @@ def get_obj_plugin_id(obj: Any):
     return plugin_id
 
 
-def register_tool(name: str, description: str, params: dict):
-    def decorator(func: Callable):
-        plugin_id = get_obj_plugin_id(func)
-        plugin_entry = _plugin_components.setdefault(plugin_id, {})
-        tools = plugin_entry.setdefault("tools", {})
-        tool_funcs = plugin_entry.setdefault("tool_funcs", {})
-        tools[name] = {
-            "name": name,
-            "description": description,
-            "parameters": params,
-            "func": func,
-        }
-        tool_funcs[name] = func
+class RegisterDeco:
 
-        return func
+    @staticmethod
+    def tool(name: str, description: str, params: dict):
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            plugin_entry = _plugin_components.setdefault(plugin_id, {})
+            tools = plugin_entry.setdefault("tools", {})
+            tool_funcs = plugin_entry.setdefault("tool_funcs", {})
+            tools[name] = {
+                "name": name,
+                "description": description,
+                "parameters": params,
+                "func": func,
+            }
+            tool_funcs[name] = func
 
-    return decorator
+            return func
+
+        return decorator
+
+    @staticmethod
+    def tag(name: str, description: str):
+        ...
+
+    @staticmethod
+    def page(route: str):
+        ...
+
+    @staticmethod
+    def api(route: str):
+        ...
 
 
 class OnEventDeco:
@@ -128,14 +142,23 @@ class OnEventDeco:
             return func
         return decorator
 
-    def on_final_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
+    def step_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_STEP_RESULT)
+            return func
+        return decorator
+
+    def final_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_FINAL_RESULT)
             return func
         return decorator
 
 
+register = RegisterDeco()
 on = OnEventDeco()
+
+register_tool = register.tool
 
 
 class PluginManager:

@@ -18,13 +18,14 @@ class Priority(IntEnum):
 
 
 class EventType(Enum):
-    ON_IM_MESSAGE = "on_im_message"  # 第一步：消息到达时
-    ON_IM_BATCH_MESSAGE = "on_im_batch_message"  # 第二步：消息合并后
-    ON_LLM_REQUEST = "on_llm_request"  # 第三步：LLM请求前
-    ON_LLM_RESPONSE = "on_llm_response"  # 第四步：LLM 原始输出
-    AFTER_XML_PARSE = "after_xml_parse"  # 第五步：XML 解析后
-    ON_TOOL_RESULT = "on_tool_result"  # 第六步：工具调用结果
-    ON_FINAL_RESULT = "on_final_result"  # 第七步：最终消息结果
+    ON_IM_MESSAGE = "on_im_message"  # 消息到达时
+    ON_IM_BATCH_MESSAGE = "on_im_batch_message"  # 消息合并后
+    ON_LLM_REQUEST = "on_llm_request"  # LLM请求前
+    ON_LLM_RESPONSE = "on_llm_response"  # LLM 原始输出
+    AFTER_XML_PARSE = "after_xml_parse"  # XML 解析后 (MessageChain)
+    ON_TOOL_RESULT = "on_tool_result"  # 工具调用结果
+    ON_STEP_RESULT = "on_step_result"  # Agent 步骤结果
+    ON_FINAL_RESULT = "on_final_result"  # 最终消息结果
     ...
 
 

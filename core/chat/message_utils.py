@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Union, Optional, Literal
@@ -57,6 +59,12 @@ class KiraIMSentResult:
     is_notice: bool = False
     ok: bool = True
     err: str = ""
+
+
+@dataclass
+class KiraStepResult:
+    message_results: list[KiraIMSentResult]
+    raw_output: str
 
 
 @dataclass
@@ -143,6 +151,9 @@ class KiraMessageEvent:
 class KiraMessageBatchEvent:
     message_types: list
     timestamp: int
+
+    """event id to uniquely identify a event"""
+    event_id: str = None
     adapter: AdapterInfo = None
     session: Session = None
 
@@ -150,9 +161,14 @@ class KiraMessageBatchEvent:
 
     extra: Optional[dict] = None
     message_str: Optional[str] = field(default=None, init=False)
+
+    """Message display text for logging"""
     message_repr: Optional[str] = field(default=None, init=False)
 
     _is_stopped: bool = False
+
+    def __post_init__(self):
+        self.event_id = uuid.uuid4().hex
 
     def is_group_message(self):
         return self.messages[-1].group is not None
@@ -217,6 +233,9 @@ class MessageChain:
 
     def __delitem__(self, index):
         del self.message_list[index]
+
+    def is_empty(self) -> bool:
+        return len(self.message_list) == 0
 
     def text(self, text: str):
         self.message_list.append(Text(text))
