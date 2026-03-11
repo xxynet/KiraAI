@@ -239,7 +239,15 @@ class QQAdapter(IMAdapter):
                 file_name = ele.get("data").get("file")
                 file_id = ele.get("data").get("file_id")
                 file_size = ele.get("data").get("file_size")  # Bytes, str
-                message_content.append(Text(f"[File {file_name}]"))
+
+                file_info = await self.bot.send_action("get_file", {"file_id": file_id})
+                file_b64 = file_info.get("data", {}).get("base64")
+                if not file_b64:
+                    message_content.append(Text(f"[File {file_name}]"))
+                    continue
+
+                file_obj = File(file=file_b64, name=file_name, size=file_size)
+                message_content.append(file_obj)
             elif ele.get("type") == "forward":
                 forward_message = await self.bot.get_forward_msg(msg.get("message_id"))
                 forward_chains = await self._process_forward_message(forward_message)

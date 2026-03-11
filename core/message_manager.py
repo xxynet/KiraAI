@@ -165,10 +165,10 @@ class MessageProcessor:
         await self.handle_im_batch_message(batch_msg)
         return True
 
-    async def message_format_to_text(self, message_list: list[BaseMessageElement]):
+    async def message_format_to_text(self, message_chain: MessageChain):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
-        for ele in message_list:
+        for ele in message_chain:
             if isinstance(ele, Text):
                 message_str += ele.text
             elif isinstance(ele, Emoji):
@@ -183,14 +183,16 @@ class MessageProcessor:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, Image):
                 img_desc = await self.llm_api.desc_img(ele.url)
+                ele.caption = img_desc
                 message_str += f"[Image {img_desc}]"
             elif isinstance(ele, Sticker):
                 sticker_desc = await self.llm_api.desc_img(ele.sticker_bs64, is_base64=True)
+                ele.caption = sticker_desc
                 message_str += f"[Sticker {sticker_desc}]"
             elif isinstance(ele, Reply):
                 if ele.chain:
                     ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
-                    reply_content = await self.message_format_to_text(ele.chain.message_list)
+                    reply_content = await self.message_format_to_text(ele.chain)
                     message_str += f"[Reply ID: {ele.message_id} content: {reply_content}]"
                 elif ele.message_content:
                     message_str += f"[Reply ID: {ele.message_id} content: {ele.message_content}]"
@@ -201,17 +203,38 @@ class MessageProcessor:
                     forward_contents = ""
                     for i, chain in enumerate(ele.chains):
                         ele.chains[i].message_list = [x for x in chain if not isinstance(x, Forward)]
-                        forward_content = await self.message_format_to_text(ele.chains[i].message_list)
+                        forward_content = await self.message_format_to_text(ele.chains[i])
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
                 record_text = await self.llm_api.speech_to_text(ele.bs64)
+                ele.transcript = record_text
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, Notice):
                 message_str += f"{ele.text}"
             elif isinstance(ele, File):
-                # TODO parse file
-                message_str += f"[File {ele.name}]"
+                try:
+                    file_size = int(ele.size)
+                    # TODO Make it customizable
+                    if file_size > 10 * 1024 * 1024:
+                        message_str += f"[File name: {ele.name} (File size over 10MB, not cached)]"
+                        continue
+                except Exception as _:
+                    pass
+
+                try:
+                    path = Path(await ele.to_path())
+                    data_dir = get_data_path()
+
+                    try:
+                        rel = path.relative_to(data_dir)
+                        path_result = str(rel)
+                    except ValueError:
+                        path_result = str(path)
+
+                    message_str += f"[File name: {ele.name}, file_path: {path_result}]"
+                except Exception as e:
+                    logger.error(f"Failed to save temp file: {e}")
             else:
                 pass
         return message_str
@@ -263,8 +286,8 @@ class MessageProcessor:
         sid = event.session.sid
 
         for i, message in enumerate(event.messages):
-            message_list = message.chain
-            message_str = await self.message_format_to_text(message_list)
+            # TODO Add support for multimodal image/document comprehension
+            message_str = await self.message_format_to_text(message.chain)
             message.message_str = message_str
 
         # EventType.ON_IM_BATCH_MESSAGE
