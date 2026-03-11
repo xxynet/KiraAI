@@ -8,6 +8,7 @@ async def download_file(url: str, path: str):
             with open(path, "wb") as f:
                 async for chunk in resp.aiter_bytes():
                     f.write(chunk)
+        return resp
 
 
 async def get_file_content(url: str):

@@ -2,11 +2,11 @@ from .provider import (ModelType, BaseModelClient, BaseProvider, ProviderInfo, M
                        LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient,
                        EmbeddingModelClient)
 from .llm_model import LLMRequest, LLMResponse
-from ..agent.tool import ToolResult, Attachment
+from ..agent.tool import ToolResult
 from .provider_manager import ProviderManager
 from .image_result import ImageResult
 
-__all__ = ["LLMRequest", "LLMResponse", "ModelType", "BaseModelClient",
+__all__ = ["LLMRequest", "LLMResponse", "ToolResult", "ModelType", "BaseModelClient",
            "LLMModelClient", "TTSModelClient", "STTModelClient", "ImageModelClient",
            "EmbeddingModelClient",
            "ProviderManager", "ImageResult", "BaseProvider", "ProviderInfo", "ModelInfo"]

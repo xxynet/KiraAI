@@ -569,9 +569,11 @@ class MessageProcessor:
                     # Relative path
                     elif os.path.exists(registered_file_path):
                         message_elements.append(File(str(registered_file_path), value))
+                    elif value.startswith(("data/files/", "data/temp/")):
+                        abs_path = str(get_data_path() / value.removeprefix("data/"))
+                        message_elements.append(File(abs_path, Path(abs_path).name))
                     # File URL
                     elif value.startswith(("http://", "https://")):
-                        # TODO fetch filename from http headers
                         message_elements.append(File(value))
                 else:
                     # TODO hand over to plugins to parse

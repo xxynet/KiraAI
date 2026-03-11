@@ -114,7 +114,11 @@ class QQAdapter(IMAdapter):
                         import uuid
                         file_name = uuid.uuid4().hex
                     resp = await self.bot.upload_group_file(str(group_id), f"base64://{file_b64}", file_name)
-                    message_id = str(resp.get("data", {}).get("message_id"))
+                    if not isinstance(resp, dict):
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send file: invalid response {resp!r}"
+                        return msg_res
+                    message_id = str((resp.get("data") or {}).get("message_id"))
                     if resp.get("status") != "ok":
                         msg_res.ok = False
                         msg_res.err = f"Failed to send file: {resp}"
@@ -159,7 +163,11 @@ class QQAdapter(IMAdapter):
                         import uuid
                         file_name = uuid.uuid4().hex
                     resp = await self.bot.upload_private_file(str(user_id), f"base64://{file_b64}", file_name)
-                    message_id = str(resp.get("data", {}).get("message_id"))
+                    if not isinstance(resp, dict):
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send file: invalid response {resp!r}"
+                        return msg_res
+                    message_id = str((resp.get("data") or {}).get("message_id"))
                     if resp.get("status") != "ok":
                         msg_res.ok = False
                         msg_res.err = f"Failed to send file: {resp}"
@@ -436,40 +444,24 @@ class QQAdapter(IMAdapter):
         self.publish(message_obj)
 
     async def _process_reply_message(self, message_data):
-        msg = message_data.get("data", {})
+        if not message_data:
+            return MessageChain([])
+
+        data = message_data.get("data") or {}
+        if not data:
+            return MessageChain([])
+
+        msg = data
         sender = msg.get("sender", {}).get("nickname", str(msg.get("user_id")))
         ts = msg.get("time", 0)
         dt = datetime.fromtimestamp(ts)
         time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        message_list = await self.process_incoming_message(msg)
-        return MessageChain(message_list)
-
-        # 组合消息内容
-        # parts = []
-        # for seg in msg.get("message", []):
-        #     t = seg.get("type")
-        #     d = seg.get("data", {})
-        #     if t == "text":
-        #         parts.append(d.get("text", ""))
-        #     elif t == "at":
-        #         parts.append(f"[At {d.get('qq')}]")
-        #     elif t == "image":
-        #         img_desc = await self.llm_api.desc_img(d.get('url', ''))
-        #         parts.append(f"[Image {img_desc}]")
-        #     elif t == "face":
-        #         parts.append(f"[Emoji {d.get('id')}]")
-        #     elif t == "json":
-        #         json_card_info = d.get("data", "")
-        #         cleaned_card_info = extract_card_info(json_card_info)
-        #         parts.append(f"[Json {cleaned_card_info}]")
-        #     elif t == "reply":
-        #         parts.append(f"[Reply {d.get('id')}]")
-        #     else:
-        #         parts.append(f"[{t}]")
-
-        # content = " ".join(parts).strip()
-        # return f"{sender}  [{time_str}]\n{content}"
+        inner_elements = await self.process_incoming_message(msg)
+        elements = []
+        elements.append(Text(f"[{time_str}] {sender}: "))
+        elements.extend(inner_elements)
+        return MessageChain(elements)
 
     async def _process_forward_message(self, message_data):
         # result = []
