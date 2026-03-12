@@ -223,7 +223,7 @@ class QQAdapter(IMAdapter):
                 if sub_type == 1 or summary == "[动画表情]":
                     from core.utils.common_utils import image_to_base64
                     sticker_bs64 = await image_to_base64(img_url)
-                    message_content.append(Sticker(sticker_bs64=sticker_bs64))
+                    message_content.append(Sticker(sticker=sticker_bs64))
                 else:
                     message_content.append(Image(img_url))
             elif ele.get("type") == "video":
@@ -257,7 +257,7 @@ class QQAdapter(IMAdapter):
 
                 record_info = await self.bot.get_record(file_id, output_format="mp3")
                 audio_base64 = record_info.get("data").get("base64")
-                message_content.append(Record(audio_base64))
+                message_content.append(Record(record=audio_base64))
         return message_content
 
     async def _on_notice_message(self, msg: Dict):
@@ -527,20 +527,20 @@ class QQAdapter(IMAdapter):
                 else:
                     self.logger.warning(f"未定义的 Emoji ID: {ele.emoji_id}")
             elif isinstance(ele, Sticker):
-                message_chain_elements.append(QQMessageType.Image(f"base64://{ele.sticker_bs64}"))
+                message_chain_elements.append(QQMessageType.Image(f"base64://{ele.to_base64()}"))
             elif isinstance(ele, At):
                 val = ele.pid
                 message_chain_elements.append(QQMessageType.At(val))
                 message_chain_elements.append(QQMessageType.Text(" "))
             elif isinstance(ele, Image):
-                if ele.url:
-                    message_chain_elements.append(QQMessageType.Image(ele.url))
-                elif ele.base64:
-                    message_chain_elements.append(QQMessageType.Image(f"base64://{ele.base64}"))
+                if ele.image_type == "url":
+                    message_chain_elements.append(QQMessageType.Image(ele.image))
+                else:
+                    message_chain_elements.append(QQMessageType.Image(f"base64://{ele.to_base64()}"))
             elif isinstance(ele, Reply):
                 message_chain_elements.append(QQMessageType.Reply(ele.message_id))
             elif isinstance(ele, Record):
-                message_chain_elements.append(QQMessageType.Record(f"base64://{ele.bs64}"))
+                message_chain_elements.append(QQMessageType.Record(f"base64://{ele.to_base64()}"))
             elif isinstance(ele, Notice):
                 # 可以实现定时主动消息等
                 pass

@@ -27,7 +27,8 @@ from core.chat.message_elements import (
     Record,
     Notice,
     Poke,
-    File
+    File,
+    Video
 )
 
 from core.llm_client import LLMClient
@@ -182,11 +183,11 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, Image):
-                img_desc = await self.llm_api.desc_img(ele.url)
+                img_desc = await self.llm_api.desc_img(ele.to_base64(), is_base64=True)
                 ele.caption = img_desc
                 message_str += f"[Image {img_desc}]"
             elif isinstance(ele, Sticker):
-                sticker_desc = await self.llm_api.desc_img(ele.sticker_bs64, is_base64=True)
+                sticker_desc = await self.llm_api.desc_img(ele.to_base64(), is_base64=True)
                 ele.caption = sticker_desc
                 message_str += f"[Sticker {sticker_desc}]"
             elif isinstance(ele, Reply):
@@ -207,7 +208,7 @@ class MessageProcessor:
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
-                record_text = await self.llm_api.speech_to_text(ele.bs64)
+                record_text = await self.llm_api.speech_to_text(ele.to_base64())
                 ele.transcript = record_text
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, Notice):
@@ -528,6 +529,7 @@ class MessageProcessor:
             for child in msg:
                 tag = child.tag
                 value = child.text.strip() if child.text else ""
+                attrs = child.attrib
 
                 # build MessageType object
                 if tag == "text":
@@ -540,7 +542,7 @@ class MessageProcessor:
                     try:
                         sticker_path = self.prompt_manager.sticker_dict[sticker_id].get("path")
                         sticker_bs64 = await image_to_base64(f"{get_data_path()}/sticker/{sticker_path}")
-                        message_elements.append(Sticker(sticker_id, sticker_bs64))
+                        message_elements.append(Sticker(sticker_id, sticker=sticker_bs64))
                     except Exception as e:
                         logger.error(f"error while parsing sticker: {str(e)}")
                 elif tag == "at":
@@ -549,9 +551,9 @@ class MessageProcessor:
                     img_res = await self.llm_api.generate_img(value)
                     if img_res:
                         if img_res.url:
-                            message_elements.append(Image(url=img_res.url))
+                            message_elements.append(Image(image=img_res.url))
                         elif img_res.base64:
-                            message_elements.append(Image(b64=img_res.base64))
+                            message_elements.append(Image(image=img_res.base64))
                         else:
                             pass
                 elif tag == "reply":
@@ -559,7 +561,7 @@ class MessageProcessor:
                 elif tag == "record":
                     try:
                         record_bs64 = await self.llm_api.text_to_speech(value)
-                        message_elements.append(Record(record_bs64))
+                        message_elements.append(Record(record=record_bs64))
                     except Exception as e:
                         logger.error(f"an error occurred while generating voice message: {e}")
                         message_elements.append(Text(f"<record>{value}</record>"))
@@ -574,9 +576,9 @@ class MessageProcessor:
                             img_res = await self.llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
                             if img_res:
                                 if img_res.url:
-                                    message_elements.append(Image(url=img_res.url))
+                                    message_elements.append(Image(image=img_res.url))
                                 elif img_res.base64:
-                                    message_elements.append(Image(b64=img_res.base64))
+                                    message_elements.append(Image(image=img_res.base64))
                                 else:
                                     logger.warning("Invalid selfie image result")
                         else:
@@ -584,6 +586,13 @@ class MessageProcessor:
                     except Exception as e:
                         logger.error(f"Failed to generate selfie: {e}")
                 elif tag == "file":
+                    file_type = attrs.get("type")
+                    file_type_mapping = {
+                        "image": Image,
+                        "record": Record,
+                        "video": Video
+                    }
+
                     registered_file_path = get_data_path() / "files" / value
 
                     # Absolute path

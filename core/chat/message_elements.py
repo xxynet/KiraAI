@@ -136,18 +136,82 @@ class Emoji(BaseMessageElement):
         return f"[Emoji {self.emoji_id}]"
 
 
+class BaseMediaElement(BaseMessageElement, ABC):
+    def __init__(self, file: str, name: str = None, size: str = None, mime: Optional[str] = None):
+        self.name: str = name
+        self.size: str = size  # Bytes
+        self.file = file
+        self._temp_path: Optional[str] = None
+        self.file_type: Literal["url", "path", "base64", "data_url"] = self.check_file_type()
+        self.mime: Optional[str] = mime or self._guess_mime()
+
+    def check_file_type(self) -> Literal["url", "path", "base64", "data_url"]:
+        # 1 http(s) URL
+        if self.file.startswith(("http://", "https://")):
+            return "url"
+
+        # 2 Data URL
+        if self.file.startswith("data:"):
+            return "data_url"
+
+        # 3 file:// URL
+        if self.file.startswith("file:///"):
+            self.file = self.file.removeprefix("file:///")
+            return "path"
+
+        # 4 Local path
+        if os.path.exists(self.file):
+            return "path"
+
+        # 5 base64
+        if self.file.startswith("base64://"):
+            self.file = self.file.removeprefix("base64://")
+            return "base64"
+
+        if check_base64(self.file):
+            return "base64"
+
+        raise ValueError(f"Unknown file type: {self.file!r}")
+
+    def _guess_mime(self) -> Optional[str]:
+        if self.file_type == "data_url" and self.file.startswith("data:"):
+            header = self.file[5:]
+            type_part = header.split(";", 1)[0]
+            if "/" in type_part:
+                return type_part
+        if self.name:
+            mime, _ = mimetypes.guess_type(self.name)
+            if mime:
+                return mime
+        if self.file_type == "path":
+            mime, _ = mimetypes.guess_type(self.file)
+            if mime:
+                return mime
+        if self.file_type == "url":
+            parsed = urlparse(self.file)
+            mime, _ = mimetypes.guess_type(parsed.path)
+            if mime:
+                return mime
+        return None
+
+    def del_cache(self):
+        if not self._temp_path:
+            return
+        try:
+            os.remove(self._temp_path)
+            self._temp_path = None
+        except Exception as e:
+            logger.warning(f"Failed to delete temp file {self._temp_path}: {e}")
+
+
 class Image(BaseMessageElement):
     type = ElementType.Image
 
-    def __init__(self, url: Optional[str] = None, b64: Optional[str] = None, image: Optional[str] = None, mime: Optional[str] = None, name: Optional[str] = None):
+    def __init__(self, image: str, mime: Optional[str] = None, name: Optional[str] = None):
         """
-        :param url: Backward compatibility
-        :param b64: Backward compatibility
         :param image: image data in "url", "path", "base64", "data_url"
         """
-        self.image: Optional[str] = image
-        self.url: Optional[str] = url
-        self.base64: Optional[str] = b64
+        self.image: str = image
         self.name: Optional[str] = name
         self.caption: Optional[str] = ""
         self.md5: Optional[str] = None
@@ -161,11 +225,10 @@ class Image(BaseMessageElement):
             self.mime: str = guessed if guessed else "image/jpeg"
 
     def check_image_type(self) -> Literal["url", "path", "base64", "data_url", "unknown"]:
-        value = self.image or self.url or self.base64
+        value = self.image
         if not value:
             return "unknown"
         if value.startswith(("http://", "https://")):
-            self.url = value
             return "url"
         if value.startswith("data:"):
             if not self.image:
@@ -174,11 +237,9 @@ class Image(BaseMessageElement):
         if value.startswith("file:///"):
             path = value.removeprefix("file:///")
             self.image = path
-            self.url = None
             return "path"
         if os.path.exists(value):
             self.image = value
-            self.url = None
             return "path"
         b64_str = value
         if b64_str.startswith("base64://"):
@@ -186,12 +247,11 @@ class Image(BaseMessageElement):
         if "," in b64_str:
             b64_str = b64_str.split(",", 1)[1]
         if check_base64(b64_str):
-            self.base64 = b64_str
             return "base64"
         return "unknown"
 
     def _guess_mime(self) -> Optional[str]:
-        value = self.image or self.url or ""
+        value = self.image or ""
         if self.image_type == "data_url" and value.startswith("data:"):
             header = value[5:]
             type_part = header.split(";", 1)[0]
@@ -213,20 +273,19 @@ class Image(BaseMessageElement):
             return self.name
         if self.image_type == "path" and self.image:
             return os.path.basename(self.image)
-        if self.image_type == "url" and (self.image or self.url):
-            value = self.image or self.url
-            parsed = urlparse(value)
+        if self.image_type == "url" and self.image:
+            parsed = urlparse(self.image)
             return os.path.basename(parsed.path)
         return None
 
     async def hash_image(self):
         if self.md5:
             return self.md5
-        if self.base64:
+        if self.image and self.image_type == "base64":
             md5 = await self._hash_image_from_base64()
             self.md5 = md5
             return md5
-        if self.url:
+        if self.image and self.type == "url":
             return await self._hash_image_from_url()
         if self.image and os.path.exists(self.image):
             with open(self.image, "rb") as f:
@@ -239,7 +298,7 @@ class Image(BaseMessageElement):
         raise ValueError("No image data available to hash")
 
     async def _hash_image_from_url(self):
-        image_data = await get_file_content(self.url)
+        image_data = await get_file_content(self.image)
         h = hashlib.new("md5")
         h.update(image_data)
         md5 = h.hexdigest()
@@ -247,14 +306,14 @@ class Image(BaseMessageElement):
         return md5
 
     async def _hash_image_from_base64(self):
-        if not self.base64:
+        if not self.image:
             raise ValueError("No base64 data for image")
-        b64_str = self.base64
+        b64_str = self.image
         if b64_str.startswith("base64://"):
             b64_str = b64_str[9:]
         if "," in b64_str:
             b64_str = b64_str.split(",")[1]
-        self.base64 = b64_str
+        self.image = b64_str
         image_bytes = base64.b64decode(b64_str)
         h = hashlib.new("md5")
         h.update(image_bytes)
@@ -299,7 +358,7 @@ class Image(BaseMessageElement):
                                 value = value[1:-1]
                             filename = value
                 if not filename:
-                    value = self.image or self.url
+                    value = self.image
                     if value:
                         parsed = urlparse(value)
                         filename = os.path.basename(parsed.path)
@@ -318,28 +377,22 @@ class Image(BaseMessageElement):
                 if content_type:
                     self.mime = content_type.split(";", 1)[0].strip()
             return file_path
-        if self.base64:
-            with open(file_path, "wb") as f:
-                f.write(base64.b64decode(self.base64))
-            return file_path
         return file_path
 
     async def to_base64(self) -> str:
-        if self.image_type == "base64" and self.base64 is not None:
-            return self.base64
-        if self.image_type == "data_url" and self.image:
+        if self.image_type == "base64" and self.image is not None:
+            return self.image
+        if self.image_type == "data_url" and self.image is not None:
             try:
                 return self.image.split(",", 1)[1]
             except IndexError:
                 raise ValueError("Invalid data URL")
-        if self.image_type == "path" and self.image:
+        if self.image_type == "path" and self.image is not None:
             with open(self.image, "rb") as f:
                 return base64.b64encode(f.read()).decode()
-        if self.image_type == "url" and self.image:
+        if self.image_type == "url" and self.image is not None:
             data = await get_file_content(self.image)
             return base64.b64encode(data).decode()
-        if self.base64 is not None:
-            return self.base64
         if self.image:
             return self.image
         return ""
@@ -364,20 +417,18 @@ class Sticker(BaseMessageElement):
     def __init__(
         self,
         sticker_id: Optional[Union[str, int]] = None,
-        sticker_bs64: Optional[str] = None,
         sticker: Optional[str] = None,
         mime: Optional[str] = None,
     ):
         self.sticker_id = str(sticker_id) if sticker_id is not None else None
         self.sticker = sticker
         self.caption: str = ""
-        self.sticker_bs64 = sticker_bs64
         self._temp_path: Optional[str] = None
         self.sticker_type: Literal["url", "path", "base64", "data_url", "unknown"] = self.check_sticker_type()
         self.mime: Optional[str] = mime or self._guess_mime()
 
     def check_sticker_type(self) -> Literal["url", "path", "base64", "data_url", "unknown"]:
-        value = self.sticker or self.sticker_bs64
+        value = self.sticker
         if not value:
             return "unknown"
         if value.startswith(("http://", "https://")):
@@ -400,7 +451,6 @@ class Sticker(BaseMessageElement):
         if "," in b64_str:
             b64_str = b64_str.split(",", 1)[1]
         if check_base64(b64_str):
-            self.sticker_bs64 = b64_str
             return "base64"
         return "unknown"
 
@@ -446,28 +496,22 @@ class Sticker(BaseMessageElement):
                 if content_type:
                     self.mime = content_type.split(";", 1)[0].strip()
             return file_path
-        if self.sticker_bs64:
-            with open(file_path, "wb") as f:
-                f.write(base64.b64decode(self.sticker_bs64))
-            return file_path
         return file_path
 
     async def to_base64(self) -> str:
-        if self.sticker_type == "base64" and self.sticker_bs64 is not None:
-            return self.sticker_bs64
-        if self.sticker_type == "data_url" and self.sticker:
+        if self.sticker_type == "base64" and self.sticker is not None:
+            return self.sticker
+        if self.sticker_type == "data_url" and self.sticker is not None:
             try:
                 return self.sticker.split(",", 1)[1]
             except IndexError:
                 raise ValueError("Invalid data URL")
-        if self.sticker_type == "path" and self.sticker:
+        if self.sticker_type == "path" and self.sticker is not None:
             with open(self.sticker, "rb") as f:
                 return base64.b64encode(f.read()).decode()
-        if self.sticker_type == "url" and self.sticker:
+        if self.sticker_type == "url" and self.sticker is not None:
             data = await get_file_content(self.sticker)
             return base64.b64encode(data).decode()
-        if self.sticker_bs64 is not None:
-            return self.sticker_bs64
         if self.sticker:
             return self.sticker
         return ""
@@ -491,8 +535,8 @@ class Sticker(BaseMessageElement):
 class Record(BaseMessageElement):
     type = ElementType.Record
 
-    def __init__(self, bs64: str, mime: Optional[str] = None, name: Optional[str] = None):
-        self.bs64: str = bs64
+    def __init__(self, record: Optional[str], mime: Optional[str] = None, name: Optional[str] = None):
+        self.record: str = record
         self.name: Optional[str] = name
         self.transcript: Optional[str] = ""
         self._temp_path: Optional[str] = None
@@ -500,7 +544,7 @@ class Record(BaseMessageElement):
         self.mime: Optional[str] = mime or self._guess_mime()
 
     def check_record_type(self) -> Literal["url", "path", "base64", "data_url", "unknown"]:
-        value = self.bs64
+        value = self.record
         if not value:
             return "unknown"
         if value.startswith(("http://", "https://")):
@@ -509,7 +553,7 @@ class Record(BaseMessageElement):
             return "data_url"
         if value.startswith("file:///"):
             path = value.removeprefix("file:///")
-            self.bs64 = path
+            self.record = path
             return "path"
         if os.path.exists(value):
             return "path"
@@ -519,12 +563,11 @@ class Record(BaseMessageElement):
         if "," in b64_str:
             b64_str = b64_str.split(",", 1)[1]
         if check_base64(b64_str):
-            self.bs64 = b64_str
             return "base64"
         return "unknown"
 
     def _guess_mime(self) -> Optional[str]:
-        value = self.bs64 or ""
+        value = self.record
         if self.record_type == "data_url" and value.startswith("data:"):
             header = value[5:]
             type_part = header.split(";", 1)[0]
@@ -545,15 +588,15 @@ class Record(BaseMessageElement):
         if self.name:
             return self.name
         if self.record_type == "path":
-            return os.path.basename(self.bs64)
+            return os.path.basename(self.record)
         if self.record_type == "url":
-            parsed = urlparse(self.bs64)
+            parsed = urlparse(self.record)
             return os.path.basename(parsed.path)
         return None
 
     async def to_path(self):
         if self.record_type == "path":
-            return os.path.abspath(self.bs64)
+            return os.path.abspath(self.record)
         if self._temp_path:
             return self._temp_path
         if not self.name:
@@ -569,7 +612,7 @@ class Record(BaseMessageElement):
                 f.write(base64.b64decode(b64))
             return file_path
         if self.record_type == "url":
-            resp = await download_file(self.bs64, file_path)
+            resp = await download_file(self.record, file_path)
             if self.name is None:
                 filename = None
                 content_disposition = resp.headers.get("Content-Disposition") or resp.headers.get("content-disposition")
@@ -588,7 +631,7 @@ class Record(BaseMessageElement):
                                 value = value[1:-1]
                             filename = value
                 if not filename:
-                    parsed = urlparse(self.bs64)
+                    parsed = urlparse(self.record)
                     filename = os.path.basename(parsed.path)
                 if filename:
                     desired_path = _build_temp_file_path(filename, self.mime)
@@ -605,25 +648,23 @@ class Record(BaseMessageElement):
                 if content_type:
                     self.mime = content_type.split(";", 1)[0].strip()
             return file_path
-        with open(file_path, "wb") as f:
-            f.write(base64.b64decode(self.bs64))
         return file_path
 
     async def to_base64(self) -> str:
         if self.record_type == "base64":
-            return self.bs64
+            return self.record
         if self.record_type == "data_url":
             try:
-                return self.bs64.split(",", 1)[1]
+                return self.record.split(",", 1)[1]
             except IndexError:
                 raise ValueError("Invalid data URL")
         if self.record_type == "path":
-            with open(self.bs64, "rb") as f:
+            with open(self.record, "rb") as f:
                 return base64.b64encode(f.read()).decode()
         if self.record_type == "url":
-            data = await get_file_content(self.bs64)
+            data = await get_file_content(self.record)
             return base64.b64encode(data).decode()
-        return self.bs64
+        return self.record
 
     def del_cache(self):
         if not self._temp_path:
