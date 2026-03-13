@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 from abc import abstractmethod, ABC
-from typing import Dict, Any
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.plugin import PluginContext
 
 
 class BaseTool(ABC):
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(self, *args, ctx: Optional[PluginContext] = None, **kwargs):
+        self._ctx = ctx
 
     name = None
     description = None

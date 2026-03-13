@@ -100,7 +100,7 @@ class QQAdapter(IMAdapter):
 
     async def send_group_message(self, group_id, send_message_obj):
         try:
-            message_chain = self._process_outgoing_message(send_message_obj)
+            message_chain = await self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid, group_id=group_id)
@@ -149,7 +149,7 @@ class QQAdapter(IMAdapter):
     async def send_direct_message(self, user_id, send_message_obj):
         msg_res = KiraIMSentResult(None)
         try:
-            message_chain = self._process_outgoing_message(send_message_obj)
+            message_chain = await self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid)
@@ -515,7 +515,7 @@ class QQAdapter(IMAdapter):
         #
         # return "\n".join(result)
 
-    def _process_outgoing_message(self, message: MessageChain):
+    async def _process_outgoing_message(self, message: MessageChain):
         """将通用消息格式转换为QQ消息格式"""
         message_chain_elements = []
         for ele in message:
@@ -527,7 +527,8 @@ class QQAdapter(IMAdapter):
                 else:
                     self.logger.warning(f"未定义的 Emoji ID: {ele.emoji_id}")
             elif isinstance(ele, Sticker):
-                message_chain_elements.append(QQMessageType.Image(f"base64://{ele.to_base64()}"))
+                sticker_base64 = await ele.to_base64()
+                message_chain_elements.append(QQMessageType.Image(f"base64://{sticker_base64}"))
             elif isinstance(ele, At):
                 val = ele.pid
                 message_chain_elements.append(QQMessageType.At(val))
@@ -536,11 +537,13 @@ class QQAdapter(IMAdapter):
                 if ele.image_type == "url":
                     message_chain_elements.append(QQMessageType.Image(ele.image))
                 else:
-                    message_chain_elements.append(QQMessageType.Image(f"base64://{ele.to_base64()}"))
+                    image_base64 = await ele.to_base64()
+                    message_chain_elements.append(QQMessageType.Image(f"base64://{image_base64}"))
             elif isinstance(ele, Reply):
                 message_chain_elements.append(QQMessageType.Reply(ele.message_id))
             elif isinstance(ele, Record):
-                message_chain_elements.append(QQMessageType.Record(f"base64://{ele.to_base64()}"))
+                record_base64 = await ele.to_base64()
+                message_chain_elements.append(QQMessageType.Record(f"base64://{record_base64}"))
             elif isinstance(ele, Notice):
                 # 可以实现定时主动消息等
                 pass

@@ -348,7 +348,8 @@ class TelegramAdapter(IMAdapter):
                         sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=ele.image)
                         message_id = str(sent.message_id)
                     else:
-                        sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=base64.b64decode(ele.to_base64()))
+                        image_base64 = await ele.to_base64()
+                        sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=base64.b64decode(image_base64))
                         message_id = str(sent.message_id)
                 elif isinstance(ele, Emoji):
                     emoji_content = self.emoji_dict.get(ele.emoji_id)
@@ -411,17 +412,20 @@ class TelegramAdapter(IMAdapter):
                         sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=ele.image)
                         message_id = str(sent.message_id)
                     else:
-                        sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=base64.b64decode(ele.to_base64()))
+                        image_base64 = await ele.to_base64()
+                        sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=base64.b64decode(image_base64))
                         message_id = str(sent.message_id)
                 elif isinstance(ele, Emoji):
                     emoji_content = self.emoji_dict.get(ele.emoji_id)
                     sent = await self.app.bot.send_message(chat_id=int(user_id), text=emoji_content)
                     message_id = str(sent.message_id)
                 elif isinstance(ele, Record):
-                    sent = await self.app.bot.send_voice(chat_id=int(user_id), voice=base64.b64decode(ele.to_base64()))
+                    record_base64 = await ele.to_base64()
+                    sent = await self.app.bot.send_voice(chat_id=int(user_id), voice=base64.b64decode(record_base64))
                     message_id = str(sent.message_id)
                 elif isinstance(ele, Sticker):
-                    sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=base64.b64decode(ele.to_base64()))
+                    sticker_base64 = await ele.to_base64()
+                    sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=base64.b64decode(sticker_base64))
                     message_id = str(sent.message_id)
                 else:
                     sent = await self.app.bot.send_message(chat_id=int(user_id), text=str(getattr(ele, 'text', '[Message]')))

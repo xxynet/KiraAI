@@ -183,11 +183,13 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, Image):
-                img_desc = await self.llm_api.desc_img(ele.to_base64(), is_base64=True)
+                image_base64 = await ele.to_base64()
+                img_desc = await self.llm_api.desc_img(image_base64, is_base64=True)
                 ele.caption = img_desc
                 message_str += f"[Image {img_desc}]"
             elif isinstance(ele, Sticker):
-                sticker_desc = await self.llm_api.desc_img(ele.to_base64(), is_base64=True)
+                sticker_base64 = await ele.to_base64()
+                sticker_desc = await self.llm_api.desc_img(sticker_base64, is_base64=True)
                 ele.caption = sticker_desc
                 message_str += f"[Sticker {sticker_desc}]"
             elif isinstance(ele, Reply):
@@ -208,7 +210,8 @@ class MessageProcessor:
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
-                record_text = await self.llm_api.speech_to_text(ele.to_base64())
+                record_base64 = await ele.to_base64()
+                record_text = await self.llm_api.speech_to_text(record_base64)
                 ele.transcript = record_text
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, Notice):

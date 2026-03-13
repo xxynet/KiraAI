@@ -2,7 +2,7 @@ import xml.etree.ElementTree as ET
 from typing import Union, Optional
 from datetime import datetime
 
-from core.plugin import BasePlugin, logger, on, Priority
+from core.plugin import BasePlugin, logger, on, Priority, PluginContext
 from core.chat.message_utils import KiraMessageBatchEvent, KiraIMMessage
 from core.provider import LLMRequest, LLMResponse
 from core.prompt_manager import Prompt
