@@ -686,6 +686,8 @@ class QQAdapter(IMAdapter):
                 message_chain_elements.append(ele)
             elif isinstance(ele, File):
                 message_chain_elements.append(ele)
+            elif isinstance(ele, Video):
+                message_chain_elements.append(ele)
             elif isinstance(ele, Forward):
                 message_chain_elements.append(ele)
             else:

@@ -607,16 +607,16 @@ class MessageProcessor:
 
                     # Absolute path
                     if os.path.exists(value):
-                        message_elements.append(File(value, Path(value).name))
+                        message_elements.append(File(file=value, name=Path(value).name))
                     # Relative path
                     elif os.path.exists(registered_file_path):
-                        message_elements.append(File(str(registered_file_path), value))
+                        message_elements.append(File(file=str(registered_file_path), name=value))
                     elif value.startswith(("data/files/", "data/temp/")):
                         abs_path = str(get_data_path() / value.removeprefix("data/"))
-                        message_elements.append(File(abs_path, Path(abs_path).name))
+                        message_elements.append(File(file=abs_path, name=Path(abs_path).name))
                     # File URL
                     elif value.startswith(("http://", "https://")):
-                        message_elements.append(File(value))
+                        message_elements.append(File(file=value))
                 elif tag == "forward":
                     merge = attrs.get("merge")
                     if merge == "false":
