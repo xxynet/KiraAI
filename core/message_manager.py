@@ -232,7 +232,7 @@ class MessageProcessor:
 
                     try:
                         rel = path.relative_to(data_dir)
-                        path_result = str(rel)
+                        path_result = f"data/{rel}"
                     except ValueError:
                         path_result = str(path)
 
@@ -384,7 +384,8 @@ class MessageProcessor:
             new_memory=new_memory,
         )
 
-        async def send_llm_text(text: str):
+        async def send_llm_text(resp: LLMResponse):
+            text = resp.text_response
             session_lock = self.get_session_lock(sid)
             async with session_lock:
                 message_results = await self.send_xml_messages(event, text.strip())
@@ -400,6 +401,13 @@ class MessageProcessor:
                         logger.info("Event stopped while ON_STEP_RESULT stage")
                         return
                 logger.info(f"LLM -> {sid}: {step_result.raw_output}")
+                llm_resp.text_response = step_result.raw_output
+
+                for idx in range(-1, -len(new_memory.memory_list), -1):
+                    if new_memory.memory_list[idx]["role"] == "assistant":
+                        new_memory.memory_list[idx]["content"] = step_result.raw_output
+                        request.messages[idx]["content"] = step_result.raw_output
+                        break
 
         # Iter agent executor to get LLMResponse
         # TODO use llm_semaphore to restrict concurrent LLM requests
@@ -409,7 +417,7 @@ class MessageProcessor:
                 break
 
             if llm_resp.text_response:
-                await send_llm_text(llm_resp.text_response)
+                await send_llm_text(llm_resp)
 
             if not step.has_tool_calls or step.is_final:
                 break
@@ -492,7 +500,6 @@ class MessageProcessor:
                 await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
             else:
                 message_results.append(KiraIMSentResult(ok=False, err="Blank message list detected"))
-
         return message_results
 
     async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
@@ -610,6 +617,14 @@ class MessageProcessor:
                     # File URL
                     elif value.startswith(("http://", "https://")):
                         message_elements.append(File(value))
+                elif tag == "forward":
+                    merge = attrs.get("merge")
+                    if merge == "false":
+                        merge = False
+                    else:
+                        merge = True
+                    message_id = [x.strip() for x in value.split(",") if x.strip()]
+                    message_elements.append(Forward(message_id=message_id, merge=merge))
                 else:
                     # TODO hand over to plugins to parse
                     pass
