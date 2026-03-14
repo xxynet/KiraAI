@@ -39,8 +39,9 @@ from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
 from core.agent.tool import ToolSet
+from core.tag import tag_registry, TagSet
 
-logger = get_logger("message_processor", "cyan")
+logger = get_logger("message", "cyan")
 llm_logger = get_logger("llm", "purple")
 
 
@@ -61,7 +62,6 @@ class SessionBuffer:
         popped = self.buffer[:count]
         del self.buffer[:count]
         return popped
-
 
     def flush(self, count: int = None):
         if count and count <= len(self.buffer):
@@ -324,13 +324,11 @@ class MessageProcessor:
         # Get chat history memory
         session_memory = self.memory_manager.fetch_memory(sid)
 
-        # Get emoji_dict
-        emoji_dict = getattr(self.adapter_mgr.get_adapter(event.adapter.name), "emoji_dict", {})
+        # Build tag set
+        tag_set = TagSet()
 
         # Generate agent prompt
-        agent_prompt_list = self.prompt_manager.get_agent_prompt(
-            chat_env, event.message_types, emoji_dict
-        )
+        agent_prompt_list = self.prompt_manager.get_agent_prompt(chat_env)
 
         # Get default LLM model client
         llm_model = self.provider_mgr.get_default_llm()
@@ -348,12 +346,16 @@ class MessageProcessor:
         # EventType.ON_LLM_REQUEST
         llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_REQUEST)
         for handler in llm_handlers:
-            await handler.exec_handler(event, request)
+            await handler.exec_handler(event, request, tag_set)
             if event.is_stopped:
                 logger.info("Event stopped while llm request stage")
                 return
 
         # Assemble messages
+        for sp in request.system_prompt:
+            if sp.name == "format":
+                sp.content = sp.content.replace("<|message_types|>", tag_set.to_prompt())
+                break
         request.assemble_prompt()
 
         # TODO: migrate tools & tool_func params to tool_set
@@ -596,21 +598,11 @@ class MessageProcessor:
                     except Exception as e:
                         logger.error(f"Failed to generate selfie: {e}")
                 elif tag == "file":
-                    file_type = attrs.get("type")
-                    file_type_mapping = {
-                        "image": Image,
-                        "record": Record,
-                        "video": Video
-                    }
-
-                    registered_file_path = get_data_path() / "files" / value
+                    file_type = attrs.get("type")  # image, record, file, video
 
                     # Absolute path
                     if os.path.exists(value):
                         message_elements.append(File(file=value, name=Path(value).name))
-                    # Relative path
-                    elif os.path.exists(registered_file_path):
-                        message_elements.append(File(file=str(registered_file_path), name=value))
                     elif value.startswith(("data/files/", "data/temp/")):
                         abs_path = str(get_data_path() / value.removeprefix("data/"))
                         message_elements.append(File(file=abs_path, name=Path(abs_path).name))
@@ -634,7 +626,8 @@ class MessageProcessor:
 
         return message_chains
 
-    def _add_message_ids(self, xml_data: str, message_results: List[KiraIMSentResult]) -> str:
+    @staticmethod
+    def _add_message_ids(xml_data: str, message_results: List[KiraIMSentResult]) -> str:
         """为XML响应添加消息ID"""
         try:
             root = ET.fromstring(f"<root>{xml_data}</root>")

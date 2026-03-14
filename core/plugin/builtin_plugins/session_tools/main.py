@@ -40,7 +40,7 @@ You need to precisely describe  what happened and the reason why you need to sen
 DO NOT use pronouns to refer to anything in the current session, e.g. `这段对话`"""
 
 
-class DefaultPlugin(BasePlugin):
+class SessionPlugin(BasePlugin):
     def __init__(self, ctx, cfg: dict):
         super().__init__(ctx, cfg)
         self.session_events: dict[str, asyncio.Event] = {}
@@ -85,7 +85,7 @@ class DefaultPlugin(BasePlugin):
             return f"failed to send: {e}"
 
     @on.llm_request()
-    async def inject_few_shot(self, _, req: LLMRequest):
+    async def inject_few_shot(self, _event, req: LLMRequest, *_):
         for p in req.system_prompt:
             if p.name == "tools":
                 p.content += SESSION_TOOL_FEW_SHOT

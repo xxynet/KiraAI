@@ -33,9 +33,9 @@ class ToolSet:
                     self.tools.pop(i)
             self.tools.append(tool_inst)
 
-    def remove(self, tool_name: str):
+    def remove(self, *tool_names: str):
         for i, t in enumerate(self.tools):
-            if t.name == tool_name:
+            if t.name in tool_names:
                 self.tools.pop(i)
 
     def get(self, tool_name: str):

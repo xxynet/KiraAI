@@ -13,6 +13,7 @@ from core.llm_client import LLMClient
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group
 from core.config import KiraConfig
 from core.persona import PersonaManager
+from core.sticker_manager import StickerManager
 from core.utils.path_utils import get_data_path
 from core.chat.message_elements import Text
 
@@ -34,6 +35,8 @@ class PluginContext:
     adapter_mgr: AdapterManager
 
     persona_mgr: PersonaManager
+
+    sticker_manager: StickerManager
 
     session_mgr: SessionManager
 

@@ -127,6 +127,7 @@ class KiraLifecycle:
             llm_api=self.llm_api,
             adapter_mgr=self.adapter_manager,
             persona_mgr=self.persona_manager,
+            sticker_manager=self.sticker_manager,
             session_mgr=self.memory_manager,
             message_processor=self.message_processor
         )

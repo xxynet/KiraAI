@@ -9,7 +9,9 @@ if TYPE_CHECKING:
 
 class BaseTool(ABC):
     def __init__(self, *args, ctx: Optional[PluginContext] = None, **kwargs):
-        self._ctx = ctx
+        self.ctx = ctx
+        self.args = args
+        self.kwargs = kwargs
 
     name = None
     description = None
@@ -18,7 +20,7 @@ class BaseTool(ABC):
     @abstractmethod
     async def execute(self, *args, **kwargs) -> str:
         """工具的具体执行逻辑，子类必须实现"""
-        pass
+        ...
 
     @classmethod
     def get_schema(cls) -> Dict[str, Any]:

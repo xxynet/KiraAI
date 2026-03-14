@@ -147,7 +147,7 @@ class MemoryPlugin(BasePlugin):
         return memory_str
 
     @on.llm_request()
-    async def inject_memory(self, _, req: LLMRequest):
+    async def inject_memory(self, _event, req: LLMRequest, *_):
         for p in req.system_prompt:
             if p.name == "memory":
                 p.content += self.get_core_memory()
