@@ -11,8 +11,8 @@ logger = get_logger("atm", "yellow")
 
 
 class AsyncTempMonitor:
-    def __init__(self, folder_path: str, max_size_mb: int = 100,
-                 check_interval: int = 60, batch_size: int = 50, file_protection_seconds: int = 60):
+    def __init__(self, folder_path: str, max_size_mb: int = 50,
+                 check_interval: int = 60, batch_size: int = 20, file_protection_seconds: int = 60):
         """
         Asynchronous temporary folder monitor
 

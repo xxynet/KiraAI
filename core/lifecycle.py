@@ -147,9 +147,9 @@ class KiraLifecycle:
 
         self.temp_monitor = AsyncTempMonitor(
             folder_path=str(temp_folder),
-            max_size_mb=20,
+            max_size_mb=50,
             check_interval=10,
-            batch_size=50
+            batch_size=20
         )
 
         self.tasks.append(
