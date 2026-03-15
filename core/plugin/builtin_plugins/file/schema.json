@@ -1,0 +1,7 @@
+{
+  "allowed_sessions": {
+    "type": "list",
+    "default": [],
+    "hint": "Allowed sessions in the format of `<adapter_name>:<gm/dm>:<session_id>`"
+  }
+}

@@ -1,0 +1,8 @@
+{
+    "display_name": "File",
+    "plugin_id": "file",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "A plugin to enable your AI to have access to filesystem with permission control",
+    "repo": null
+}
