@@ -57,7 +57,6 @@ class DefaultPlugin(BasePlugin):
     async def inject_builtin_tags(self, event: KiraMessageBatchEvent, _, tag_set: TagSet):
         """Inject builtin tags"""
         message_types = event.message_types
-        print(message_types)
         if "text" in message_types:
             tag_set.register(TextTag)
         if "at" in message_types:

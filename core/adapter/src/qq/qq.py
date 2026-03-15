@@ -236,7 +236,6 @@ class QQAdapter(IMAdapter):
                 except Exception as e:
                     msg_res.ok = False
                     msg_res.err = f"Error occurred while uploading file: {e}"
-                    return msg_res
                 return msg_res
             elif isinstance(ele, Forward):
                 msg_res = KiraIMSentResult(None)

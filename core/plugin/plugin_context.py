@@ -65,6 +65,10 @@ class PluginContext:
     def get_plugin_inst(self, plugin_id: str):
         inst = self.plugin_mgr.get_plugin_inst(plugin_id)
         return inst
+
+    def get_buffer(self, sid: str):
+        buffer = self.message_processor.session_buffer.get_buffer(sid)
+        return buffer
     
     async def flush_session_messages(self, sid: str):
         await self.message_processor.flush_session_messages(sid)
