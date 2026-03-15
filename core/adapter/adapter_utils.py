@@ -10,6 +10,7 @@ from core.adapter.adapter_info import AdapterInfo
 
 if TYPE_CHECKING:
     from core.chat.message_utils import KiraMessageEvent, MessageChain
+    from core.chat.message_utils import KiraIMSentResult
 
 
 class IMAdapter(ABC):
@@ -100,26 +101,22 @@ class IMAdapter(ABC):
         asyncio.run_coroutine_threadsafe(self.event_bus.put(message), self.loop)
 
     @abstractmethod
-    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain) -> Optional[str]:
+    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain) -> Optional[KiraIMSentResult]:
         """
-        发送群消息
-        参数:
-            group_id: 群组ID
-            send_message_obj: 要发送的消息对象
-        返回:
-            消息ID（字符串），发送失败返回None
+        Send group_message
+        :param group_id: str
+        :param send_message_obj: MessageChain
+        :return: KiraIMSentResult
         """
         pass
 
     @abstractmethod
-    async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageChain) -> Optional[str]:
+    async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageChain) -> Optional[KiraIMSentResult]:
         """
-        发送私聊消息
-        参数:
-            user_id: 用户ID
-            send_message_obj: 要发送的消息对象
-        返回:
-            消息ID（字符串），发送失败返回None
+        Send direct message
+        :param user_id: str
+        :param send_message_obj: MessageChain
+        :return: KiraIMSentResult
         """
         pass
 

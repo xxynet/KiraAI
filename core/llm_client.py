@@ -10,7 +10,7 @@ from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
 from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse
-from .agent.tool import ToolResult, Attachment, ToolSet
+from .agent.tool import ToolResult, ToolSet
 from .provider import ProviderManager, ImageResult
 
 logger = get_logger("llm", "purple")
@@ -72,7 +72,6 @@ class LLMClient:
             if self.tools_functions and name in self.tools_functions:
                 try:
                     result = await self.tools_functions[name](event, **args)
-                    tool_logger.info(f"tool_result: {result}")
                 except Exception as e:
                     result = {"error": f"Failed to call tool '{name}': {e}"}
                     tool_logger.error(f"Failed to call tool '{name}': {e}")
@@ -80,7 +79,6 @@ class LLMClient:
                 try:
                     tool_inst = tool_set.get(name)
                     result = await tool_inst.execute()
-                    tool_logger.info(f"tool_result: {result}")
                 except Exception as e:
                     result = {"error": f"Failed to call tool '{name}': {e}"}
                     tool_logger.error(f"Failed to call tool '{name}': {e}")
@@ -104,11 +102,13 @@ class LLMClient:
                     return
 
             # Save tool results
+            content = await tool_result_obj.assemble_result()
+            tool_logger.info(f"tool_result: {content}")
             resp.tool_results.append({
                 "role": "tool",
                 "tool_call_id": tool_call_id,
                 "name": name,
-                "content": tool_result_obj.assemble_result()
+                "content": content
             })
 
     async def text_to_speech(self, text: str):

@@ -67,7 +67,10 @@ class DebouncePlugin(BasePlugin):
             buffer_len = self.ctx.message_processor.get_session_buffer_length(sid)
             if buffer_len == 0:
                 continue
-            await self.ctx.message_processor.flush_session_messages(sid)
+            try:
+                await self.ctx.message_processor.flush_session_messages(sid)
+            except Exception:
+                logger.exception(f"[Debounce] Error flushing session {sid}")
 
     @on.im_batch_message(priority=Priority.MEDIUM)
     async def handle_batch_event(self, event: KiraMessageBatchEvent):

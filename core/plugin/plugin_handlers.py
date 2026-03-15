@@ -19,6 +19,7 @@ class Priority(IntEnum):
 
 class EventType(Enum):
     ON_IM_MESSAGE = "on_im_message"  # 消息到达时
+    ON_MESSAGE_BUFFERED = "on_message_buffered"  # 消息进入缓冲区后
     ON_IM_BATCH_MESSAGE = "on_im_batch_message"  # 消息合并后
     ON_LLM_REQUEST = "on_llm_request"  # LLM请求前
     ON_LLM_RESPONSE = "on_llm_response"  # LLM 原始输出

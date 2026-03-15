@@ -14,6 +14,8 @@ from .plugin import BasePlugin
 from .plugin_context import PluginContext
 from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
 
+from core.tag import tag_registry, BaseTag
+
 logger = get_logger("plugin_manager", "cyan")
 
 PLUGINS_DIR = get_data_path() / "plugins"
@@ -79,7 +81,18 @@ class RegisterDeco:
 
     @staticmethod
     def tag(name: str, description: str):
-        ...
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            plugin_entry = _plugin_components.setdefault(plugin_id, {})
+            tags = plugin_entry.setdefault("tags", [])
+            tag_funcs = plugin_entry.setdefault("tag_funcs", {})
+            tags.append({
+                "name": name,
+                "description": description
+            })
+            tag_funcs[name] = func
+            return func
+        return decorator
 
     @staticmethod
     def page(route: str):
@@ -109,6 +122,12 @@ class OnEventDeco:
     def im_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_IM_MESSAGE)
+            return func
+        return decorator
+
+    def message_buffered(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_MESSAGE_BUFFERED)
             return func
         return decorator
 
@@ -159,6 +178,18 @@ register = RegisterDeco()
 on = OnEventDeco()
 
 register_tool = register.tool
+
+
+def _build_tag_inst(tag_name: str, tag_description: str, func: Callable):
+    class TagInst(BaseTag):
+        name = tag_name
+        description = tag_description
+
+        async def handle(self, value: str, **kwargs):
+            res = await func(value, **kwargs)
+            return res
+
+    return TagInst()
 
 
 class PluginManager:
@@ -335,6 +366,31 @@ class PluginManager:
         if hooks:
             logger.info(f"Registered {len(hooks)} hooks from {plugin_id}")
 
+    def _register_plugin_tags_for(self, plugin_id: str):
+        comp = _plugin_components.get(plugin_id, {})
+        if not comp:
+            return
+        tags = comp.get("tags", [])
+        tag_funcs = comp.get("tag_funcs", {})
+        plugin_instance = self.plugin_instances.get(plugin_id)
+        tag_names: list[str] = []
+        for tag_meta in tags:
+            tag_name = tag_meta["name"]
+            func = tag_funcs.get(tag_name)
+            if not func:
+                continue
+            bound_func = func
+            if plugin_instance is not None and hasattr(plugin_instance, func.__name__):
+                bound_func = getattr(plugin_instance, func.__name__)
+            tag_registry.register(_build_tag_inst(
+                tag_name,
+                tag_meta["description"],
+                bound_func
+            ))
+            tag_names.append(tag_name)
+        if tag_names:
+            logger.info(f"Registered {len(tag_names)} tags from {plugin_id}: {tag_names}")
+
     def register_plugin_tools(self) -> None:
         for plugin_id in _plugin_components.keys():
             self._register_plugin_tools_for(plugin_id)
@@ -452,6 +508,7 @@ class PluginManager:
         if initialized:
             self._register_plugin_tools_for(plugin_id)
             self._register_plugin_hooks_for(plugin_id)
+            self._register_plugin_tags_for(plugin_id)
 
     async def terminate(self, plugin_id: Optional[str] = None):
         """Terminate a specific plugin if plugin_id is given, terminate all if not given"""

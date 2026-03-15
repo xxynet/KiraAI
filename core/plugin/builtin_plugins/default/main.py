@@ -2,12 +2,15 @@ import xml.etree.ElementTree as ET
 from typing import Union, Optional
 from datetime import datetime
 
-from core.plugin import BasePlugin, logger, on, Priority
+from core.plugin import BasePlugin, logger, on, Priority, PluginContext
 from core.chat.message_utils import KiraMessageBatchEvent, KiraIMMessage
 from core.provider import LLMRequest, LLMResponse
 from core.prompt_manager import Prompt
 
 from core.utils.tool_utils import BaseTool
+from core.tag import TagSet
+
+from .tags import *
 
 
 XML_FIX_PROMPT = """\
@@ -50,8 +53,37 @@ class DefaultPlugin(BasePlugin):
         else:
             return ""
 
-    @on.llm_request(priority=Priority.HIGH)
-    async def on_llm_req(self, event: KiraMessageBatchEvent, req: LLMRequest):
+    @on.llm_request(priority=Priority.SYS_HIGH)
+    async def inject_builtin_tags(self, event: KiraMessageBatchEvent, _, tag_set: TagSet):
+        """Inject builtin tags"""
+        message_types = event.message_types
+        if "text" in message_types:
+            tag_set.register(TextTag)
+        if "at" in message_types:
+            tag_set.register(AtTag)
+        if "reply" in message_types:
+            tag_set.register(ReplyTag)
+        if "img" in message_types:
+            tag_set.register(ImgTag(ctx=self.ctx))
+        if "record" in message_types:
+            tag_set.register(RecordTag(ctx=self.ctx))
+        if "emoji" in message_types:
+            emoji_dict = getattr(self.ctx.adapter_mgr.get_adapter(event.adapter.name), "emoji_dict", {})
+            tag_set.register(build_emoji_tag(emoji_json=emoji_dict)())
+        if "sticker" in message_types:
+            sticker_dict = self.ctx.sticker_manager.sticker_dict
+            tag_set.register(build_sticker_tag(sticker_dict=sticker_dict))
+        if "poke" in message_types:
+            tag_set.register(PokeTag)
+        if "selfie" in message_types:
+            tag_set.register(SelfieTag(ctx=self.ctx))
+        if "file" in message_types:
+            tag_set.register(FileTag(ctx=self.ctx))
+        if "forward" in message_types:
+            tag_set.register(ForwardTag())
+
+    @on.llm_request(priority=Priority.SYS_HIGH)
+    async def on_llm_req(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
         message_index = 0
         for i, p in enumerate(req.user_prompt):
             if p.name == "message" and p.source == "system":

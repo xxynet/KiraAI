@@ -262,8 +262,8 @@ class MessageChain:
         self.message_list.append(Sticker(sticker_id))
         return self
 
-    def record(self, bs64):
-        self.message_list.append(Record(bs64))
+    def record(self, record: str):
+        self.message_list.append(Record(record=record))
         return self
 
     def notice(self, notice):

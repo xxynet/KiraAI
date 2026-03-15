@@ -20,7 +20,8 @@ from core.chat.message_elements import (
     Record,
     Notice,
     Poke,
-    File
+    File,
+    Video
 )
 
 from core.chat import Session, Group, User
@@ -50,7 +51,7 @@ class QQAdapter(IMAdapter):
     def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
         super().__init__(info, loop, event_bus, llm_api)
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
-        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file"]
+        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file", "forward"]
         self.bot: NapCatWebSocketClient = NapCatWebSocketClient()
         self.logger = get_logger(info.name, "blue")
 
@@ -100,7 +101,7 @@ class QQAdapter(IMAdapter):
 
     async def send_group_message(self, group_id, send_message_obj):
         try:
-            message_chain = self._process_outgoing_message(send_message_obj)
+            message_chain = await self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid, group_id=group_id)
@@ -114,7 +115,11 @@ class QQAdapter(IMAdapter):
                         import uuid
                         file_name = uuid.uuid4().hex
                     resp = await self.bot.upload_group_file(str(group_id), f"base64://{file_b64}", file_name)
-                    message_id = str(resp.get("data", {}).get("message_id"))
+                    if not isinstance(resp, dict):
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send file: invalid response {resp!r}"
+                        return msg_res
+                    message_id = str((resp.get("data") or {}).get("message_id"))
                     if resp.get("status") != "ok":
                         msg_res.ok = False
                         msg_res.err = f"Failed to send file: {resp}"
@@ -124,6 +129,65 @@ class QQAdapter(IMAdapter):
                     msg_res.ok = False
                     msg_res.err = f"Error occurred while uploading file: {e}"
                 return msg_res
+            elif isinstance(ele, Forward):
+                msg_res = KiraIMSentResult(None)
+                try:
+                    forward_message_id = ele.message_id
+                    merge = ele.merge
+
+                    if merge:
+                        resp = await self.bot.send_action(
+                            action="send_group_msg",
+                            params={
+                                "group_id": group_id,
+                                "message": [
+                                    {
+                                        "type": "node",
+                                        "data": {
+                                            "id": x
+                                        }
+                                    } for x in forward_message_id
+                                ],
+
+                            }
+                        )
+                        if not isinstance(resp, dict):
+                            msg_res.ok = False
+                            msg_res.err = f"Failed to forward message: invalid response {resp!r}"
+                            return msg_res
+                        message_id = str((resp.get("data") or {}).get("message_id"))
+                        if resp.get("status") != "ok":
+                            msg_res.ok = False
+                            msg_res.err = f"Failed to forward message: {resp}"
+                            return msg_res
+                        msg_res.message_id = message_id
+
+                    elif len(forward_message_id) == 1:
+                        resp = await self.bot.send_action(
+                            action="forward_group_single_msg",
+                            params={
+                                "message_id": forward_message_id[0],
+                                "group_id": group_id
+                            }
+                        )
+                        if not isinstance(resp, dict):
+                            msg_res.ok = False
+                            msg_res.err = f"Failed to forward message: invalid response {resp!r}"
+                            return msg_res
+                        message_id = str((resp.get("data") or {}).get("message_id"))
+                        if resp.get("status") != "ok":
+                            msg_res.ok = False
+                            msg_res.err = f"Failed to forward message: {resp}"
+                            return msg_res
+                        msg_res.message_id = message_id
+                    else:
+                        self.logger.warning("尝试发送多条逐条转发消息")
+                        ...
+                except Exception as e:
+                    msg_res.ok = False
+                    msg_res.err = f"Error occurred while forwarding message: {e}"
+                return msg_res
+
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_group_message(group_id=group_id, msg=message_chain)
             status = result.get("status")
@@ -145,7 +209,7 @@ class QQAdapter(IMAdapter):
     async def send_direct_message(self, user_id, send_message_obj):
         msg_res = KiraIMSentResult(None)
         try:
-            message_chain = self._process_outgoing_message(send_message_obj)
+            message_chain = await self._process_outgoing_message(send_message_obj)
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid)
@@ -159,7 +223,11 @@ class QQAdapter(IMAdapter):
                         import uuid
                         file_name = uuid.uuid4().hex
                     resp = await self.bot.upload_private_file(str(user_id), f"base64://{file_b64}", file_name)
-                    message_id = str(resp.get("data", {}).get("message_id"))
+                    if not isinstance(resp, dict):
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send file: invalid response {resp!r}"
+                        return msg_res
+                    message_id = str((resp.get("data") or {}).get("message_id"))
                     if resp.get("status") != "ok":
                         msg_res.ok = False
                         msg_res.err = f"Failed to send file: {resp}"
@@ -168,8 +236,66 @@ class QQAdapter(IMAdapter):
                 except Exception as e:
                     msg_res.ok = False
                     msg_res.err = f"Error occurred while uploading file: {e}"
-                    return msg_res
                 return msg_res
+            elif isinstance(ele, Forward):
+                msg_res = KiraIMSentResult(None)
+                try:
+                    forward_message_id = ele.message_id
+                    merge = ele.merge
+
+                    if merge:
+                        resp = await self.bot.send_action(
+                            action="send_private_msg",
+                            params={
+                                "user_id": user_id,
+                                "message": [
+                                    {
+                                        "type": "node",
+                                        "data": {
+                                            "id": x
+                                        }
+                                    } for x in forward_message_id
+                                ],
+
+                            }
+                        )
+                        if not isinstance(resp, dict):
+                            msg_res.ok = False
+                            msg_res.err = f"Failed to forward message: invalid response {resp!r}"
+                            return msg_res
+                        message_id = str((resp.get("data") or {}).get("message_id"))
+                        if resp.get("status") != "ok":
+                            msg_res.ok = False
+                            msg_res.err = f"Failed to forward message: {resp}"
+                            return msg_res
+                        msg_res.message_id = message_id
+                    elif len(forward_message_id) == 1:
+
+                        resp = await self.bot.send_action(
+                            action="forward_friend_single_msg",
+                            params={
+                                "message_id": forward_message_id[0],
+                                "user_id": user_id
+                            }
+                        )
+                        if not isinstance(resp, dict):
+                            msg_res.ok = False
+                            msg_res.err = f"Failed to forward message: invalid response {resp!r}"
+                            return msg_res
+                        message_id = str((resp.get("data") or {}).get("message_id"))
+                        if resp.get("status") != "ok":
+                            msg_res.ok = False
+                            msg_res.err = f"Failed to forward message: {resp}"
+                            return msg_res
+                        msg_res.message_id = message_id
+                    else:
+                        self.logger.warning("尝试发送多条逐条转发消息")
+                        ...
+                except Exception as e:
+                    msg_res.ok = False
+                    msg_res.err = f"Error occurred while forwarding message: {e}"
+                return msg_res
+
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_direct_message(user_id=user_id, msg=message_chain)
             status = result.get("status")
@@ -183,10 +309,13 @@ class QQAdapter(IMAdapter):
         except Exception as e:
             msg_res.ok = False
             msg_res.err = str(e)
-            return msg_res
+        return msg_res
 
     async def process_incoming_message(self, msg):
         """把QQ平台消息转换为项目通用消息格式"""
+        message_type = msg.get("message_type")
+        group_id = msg.get("group_id")
+
         message_content = []
         for ele in msg.get("message"):
             if ele.get("type") == "text":
@@ -215,14 +344,15 @@ class QQAdapter(IMAdapter):
                 if sub_type == 1 or summary == "[动画表情]":
                     from core.utils.common_utils import image_to_base64
                     sticker_bs64 = await image_to_base64(img_url)
-                    message_content.append(Sticker(sticker_bs64=sticker_bs64))
+                    message_content.append(Sticker(sticker=sticker_bs64))
                 else:
-                    message_content.append(Image(img_url))
+                    message_content.append(Image(image=img_url))
             elif ele.get("type") == "video":
                 video_file_name = ele.get("data", {}).get("file", "")  # e.g. xxx.mp4
                 video_file_url = ele.get("data", {}).get("url", "")
                 video_file_size = ele.get("data", {}).get("file_size", "")  # Bytes, str
-                message_content.append(Text("[Video]"))
+                video_obj = Video(file=video_file_url, name=video_file_name, size=video_file_size)
+                message_content.append(video_obj)
             elif ele.get("type") == "json":
                 json_card_info = ele.get("data", "").get("data", "")
                 cleaned_card_info = extract_card_info(json_card_info)
@@ -231,9 +361,29 @@ class QQAdapter(IMAdapter):
                 file_name = ele.get("data").get("file")
                 file_id = ele.get("data").get("file_id")
                 file_size = ele.get("data").get("file_size")  # Bytes, str
-                message_content.append(Text(f"[File {file_name}]"))
+
+                if message_type == "group":
+                    file_info = await self.bot.send_action("get_group_file_url", {"group_id": group_id, "file_id": file_id})
+                    file_url = file_info.get("data", {}).get("url")
+                elif message_type == "private":
+                    file_info = await self.bot.send_action("get_private_file_url", {"file_id": file_id})
+                    file_url = file_info.get("data", {}).get("url")
+                else:
+                    continue
+
+                if not file_url:
+                    message_content.append(Text(f"[File {file_name}]"))
+                    continue
+
+                file_obj = File(file=file_url, name=file_name, size=file_size)
+                message_content.append(file_obj)
+
+                # file_info = await self.bot.send_action("get_file", {"file_id": file_id})
+                # file_b64 = file_info.get("data", {}).get("base64")
+
             elif ele.get("type") == "forward":
-                forward_message = await self.bot.get_forward_msg(msg.get("message_id"))
+                forward_message_id = msg.get("message_id")
+                forward_message = await self.bot.get_forward_msg(forward_message_id)
                 forward_chains = await self._process_forward_message(forward_message)
                 message_content.append(Forward(chains=forward_chains))
             elif ele.get("type") == "record":
@@ -241,8 +391,8 @@ class QQAdapter(IMAdapter):
 
                 record_info = await self.bot.get_record(file_id, output_format="mp3")
                 audio_base64 = record_info.get("data").get("base64")
-                message_content.append(Record(audio_base64))
-        return message_content
+                message_content.append(Record(record=audio_base64))
+        return MessageChain(message_content)
 
     async def _on_notice_message(self, msg: Dict):
         notice_type = msg.get("notice_type")
@@ -375,7 +525,7 @@ class QQAdapter(IMAdapter):
                     is_mentioned = True
                     break
 
-        message_list = await self.process_incoming_message(msg)
+        message_chain = await self.process_incoming_message(msg)
 
         group_info = await self.bot.get_group_info(msg.get("group_id"))
         group_name = group_info.get("data").get("group_name")
@@ -396,7 +546,7 @@ class QQAdapter(IMAdapter):
                 is_mentioned=is_mentioned,
                 message_id=str(msg.get("message_id")),
                 self_id=str(msg.get("self_id")),
-                chain=message_list,
+                chain=message_chain,
                 extra=msg
             ),
             timestamp=int(msg.get("time") or time.time())
@@ -414,7 +564,7 @@ class QQAdapter(IMAdapter):
         if not should_process:
             return
 
-        message_list = await self.process_incoming_message(msg)
+        message_chain = await self.process_incoming_message(msg)
 
         message_obj = KiraMessageEvent(
             adapter=self.info,
@@ -428,7 +578,7 @@ class QQAdapter(IMAdapter):
                 message_id=str(msg.get("message_id")),
                 is_mentioned=True,
                 self_id=str(msg.get("self_id")),
-                chain=message_list,
+                chain=message_chain,
                 extra=msg
             ),
             timestamp=int(msg.get("time") or time.time())
@@ -436,43 +586,28 @@ class QQAdapter(IMAdapter):
         self.publish(message_obj)
 
     async def _process_reply_message(self, message_data):
-        msg = message_data.get("data", {})
+        if not message_data:
+            return MessageChain([])
+
+        data = message_data.get("data") or {}
+        if not data:
+            return MessageChain([])
+
+        msg = data
         sender = msg.get("sender", {}).get("nickname", str(msg.get("user_id")))
         ts = msg.get("time", 0)
         dt = datetime.fromtimestamp(ts)
         time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        message_list = await self.process_incoming_message(msg)
-        return MessageChain(message_list)
-
-        # 组合消息内容
-        # parts = []
-        # for seg in msg.get("message", []):
-        #     t = seg.get("type")
-        #     d = seg.get("data", {})
-        #     if t == "text":
-        #         parts.append(d.get("text", ""))
-        #     elif t == "at":
-        #         parts.append(f"[At {d.get('qq')}]")
-        #     elif t == "image":
-        #         img_desc = await self.llm_api.desc_img(d.get('url', ''))
-        #         parts.append(f"[Image {img_desc}]")
-        #     elif t == "face":
-        #         parts.append(f"[Emoji {d.get('id')}]")
-        #     elif t == "json":
-        #         json_card_info = d.get("data", "")
-        #         cleaned_card_info = extract_card_info(json_card_info)
-        #         parts.append(f"[Json {cleaned_card_info}]")
-        #     elif t == "reply":
-        #         parts.append(f"[Reply {d.get('id')}]")
-        #     else:
-        #         parts.append(f"[{t}]")
-
-        # content = " ".join(parts).strip()
-        # return f"{sender}  [{time_str}]\n{content}"
+        inner_elements_chain = await self.process_incoming_message(msg)
+        elements = [Text(f"[{time_str}] {sender}: ")]
+        elements.extend(inner_elements_chain.message_list)
+        return MessageChain(elements)
 
     async def _process_forward_message(self, message_data):
-        # result = []
+        if not message_data:
+            self.logger.warning("处理转发消息时获取到了空消息")
+            return
         messages = message_data.get("data", {}).get("messages", [])
 
         chains = []
@@ -482,10 +617,9 @@ class QQAdapter(IMAdapter):
             dt = datetime.fromtimestamp(ts)  # 转换成可读时间
             time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
 
-            elements = []
-            elements.append(Text(f"[{time_str}] {sender}: "))
-            inner_elements = await self.process_incoming_message(msg)
-            elements.extend(inner_elements)
+            elements = [Text(f"[{time_str}] {sender}: ")]
+            inner_elements_chain = await self.process_incoming_message(msg)
+            elements.extend(inner_elements_chain.message_list)
             chains.append(MessageChain(elements))
 
         return chains
@@ -515,7 +649,7 @@ class QQAdapter(IMAdapter):
         #
         # return "\n".join(result)
 
-    def _process_outgoing_message(self, message: MessageChain):
+    async def _process_outgoing_message(self, message: MessageChain):
         """将通用消息格式转换为QQ消息格式"""
         message_chain_elements = []
         for ele in message:
@@ -527,26 +661,33 @@ class QQAdapter(IMAdapter):
                 else:
                     self.logger.warning(f"未定义的 Emoji ID: {ele.emoji_id}")
             elif isinstance(ele, Sticker):
-                message_chain_elements.append(QQMessageType.Image(f"base64://{ele.sticker_bs64}"))
+                sticker_base64 = await ele.to_base64()
+                message_chain_elements.append(QQMessageType.Image(f"base64://{sticker_base64}"))
             elif isinstance(ele, At):
                 val = ele.pid
                 message_chain_elements.append(QQMessageType.At(val))
                 message_chain_elements.append(QQMessageType.Text(" "))
             elif isinstance(ele, Image):
-                if ele.url:
-                    message_chain_elements.append(QQMessageType.Image(ele.url))
-                elif ele.base64:
-                    message_chain_elements.append(QQMessageType.Image(f"base64://{ele.base64}"))
+                if ele.image_type == "url":
+                    message_chain_elements.append(QQMessageType.Image(ele.image))
+                else:
+                    image_base64 = await ele.to_base64()
+                    message_chain_elements.append(QQMessageType.Image(f"base64://{image_base64}"))
             elif isinstance(ele, Reply):
                 message_chain_elements.append(QQMessageType.Reply(ele.message_id))
             elif isinstance(ele, Record):
-                message_chain_elements.append(QQMessageType.Record(f"base64://{ele.bs64}"))
+                record_base64 = await ele.to_base64()
+                message_chain_elements.append(QQMessageType.Record(f"base64://{record_base64}"))
             elif isinstance(ele, Notice):
                 # 可以实现定时主动消息等
                 pass
             elif isinstance(ele, Poke):
                 message_chain_elements.append(ele)
             elif isinstance(ele, File):
+                message_chain_elements.append(ele)
+            elif isinstance(ele, Video):
+                message_chain_elements.append(ele)
+            elif isinstance(ele, Forward):
                 message_chain_elements.append(ele)
             else:
                 pass

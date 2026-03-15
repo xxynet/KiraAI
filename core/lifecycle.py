@@ -18,6 +18,8 @@ from .provider import ProviderManager
 from .plugin import PluginContext, PluginManager
 from core.agent.mcp_mgr import MCPManager
 from core.config import VERSION
+from core.utils.path_utils import get_data_path
+from core.temp_monitor import AsyncTempMonitor
 
 
 logger = get_logger("lifecycle", "blue")
@@ -52,6 +54,8 @@ class KiraLifecycle:
         self.plugin_context: Optional[PluginContext] = None
 
         self.plugin_manager: Optional[PluginManager] = None
+
+        self.temp_monitor: Optional[AsyncTempMonitor] = None
 
         self.mcp_manager: Optional[MCPManager] = None
         self.tasks: list[asyncio.Task] = []
@@ -127,6 +131,7 @@ class KiraLifecycle:
             llm_api=self.llm_api,
             adapter_mgr=self.adapter_manager,
             persona_mgr=self.persona_manager,
+            sticker_manager=self.sticker_manager,
             session_mgr=self.memory_manager,
             message_processor=self.message_processor
         )
@@ -134,6 +139,25 @@ class KiraLifecycle:
         self.plugin_manager = PluginManager(self.plugin_context)
         self.plugin_context.plugin_mgr = self.plugin_manager
         await self.plugin_manager.init()
+
+        # ====== init temp folder monitor ======
+        temp_folder = get_data_path() / "temp"
+        max_temp_size = getattr(self.kira_config, "max_temp_size_mb", 100)  # 从配置读取，默认100MB
+        check_interval = getattr(self.kira_config, "temp_check_interval", 60)  # 默认60秒
+
+        self.temp_monitor = AsyncTempMonitor(
+            folder_path=str(temp_folder),
+            max_size_mb=20,
+            check_interval=10,
+            batch_size=50
+        )
+
+        self.tasks.append(
+            asyncio.create_task(
+                self.temp_monitor.start_monitoring(),
+                name="temp_folder_monitor"
+            )
+        )
 
         # ====== schedule tasks ======
         asyncio.create_task(self.schedule_tasks())

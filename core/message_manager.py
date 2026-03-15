@@ -27,7 +27,8 @@ from core.chat.message_elements import (
     Record,
     Notice,
     Poke,
-    File
+    File,
+    Video
 )
 
 from core.llm_client import LLMClient
@@ -38,8 +39,9 @@ from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
 from core.agent.tool import ToolSet
+from core.tag import tag_registry, TagSet
 
-logger = get_logger("message_processor", "cyan")
+logger = get_logger("message", "cyan")
 llm_logger = get_logger("llm", "purple")
 
 
@@ -60,7 +62,6 @@ class SessionBuffer:
         popped = self.buffer[:count]
         del self.buffer[:count]
         return popped
-
 
     def flush(self, count: int = None):
         if count and count <= len(self.buffer):
@@ -165,10 +166,10 @@ class MessageProcessor:
         await self.handle_im_batch_message(batch_msg)
         return True
 
-    async def message_format_to_text(self, message_list: list[BaseMessageElement]):
+    async def message_format_to_text(self, message_chain: MessageChain):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
-        for ele in message_list:
+        for ele in message_chain:
             if isinstance(ele, Text):
                 message_str += ele.text
             elif isinstance(ele, Emoji):
@@ -182,15 +183,19 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, Image):
-                img_desc = await self.llm_api.desc_img(ele.url)
+                image_base64 = await ele.to_base64()
+                img_desc = await self.llm_api.desc_img(image_base64, is_base64=True)
+                ele.caption = img_desc
                 message_str += f"[Image {img_desc}]"
             elif isinstance(ele, Sticker):
-                sticker_desc = await self.llm_api.desc_img(ele.sticker_bs64, is_base64=True)
+                sticker_base64 = await ele.to_base64()
+                sticker_desc = await self.llm_api.desc_img(sticker_base64, is_base64=True)
+                ele.caption = sticker_desc
                 message_str += f"[Sticker {sticker_desc}]"
             elif isinstance(ele, Reply):
                 if ele.chain:
                     ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
-                    reply_content = await self.message_format_to_text(ele.chain.message_list)
+                    reply_content = await self.message_format_to_text(ele.chain)
                     message_str += f"[Reply ID: {ele.message_id} content: {reply_content}]"
                 elif ele.message_content:
                     message_str += f"[Reply ID: {ele.message_id} content: {ele.message_content}]"
@@ -201,17 +206,39 @@ class MessageProcessor:
                     forward_contents = ""
                     for i, chain in enumerate(ele.chains):
                         ele.chains[i].message_list = [x for x in chain if not isinstance(x, Forward)]
-                        forward_content = await self.message_format_to_text(ele.chains[i].message_list)
+                        forward_content = await self.message_format_to_text(ele.chains[i])
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
-                record_text = await self.llm_api.speech_to_text(ele.bs64)
+                record_base64 = await ele.to_base64()
+                record_text = await self.llm_api.speech_to_text(record_base64)
+                ele.transcript = record_text
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, Notice):
                 message_str += f"{ele.text}"
             elif isinstance(ele, File):
-                # TODO parse file
-                message_str += f"[File {ele.name}]"
+                try:
+                    file_size = int(ele.size)
+                    # TODO Make it customizable
+                    if file_size > 10 * 1024 * 1024:
+                        message_str += f"[File name: {ele.name} (File size over 10MB, not cached)]"
+                        continue
+                except Exception as _:
+                    pass
+
+                try:
+                    path = Path(await ele.to_path())
+                    data_dir = get_data_path()
+
+                    try:
+                        rel = path.relative_to(data_dir)
+                        path_result = f"data/{rel}"
+                    except ValueError:
+                        path_result = str(path)
+
+                    message_str += f"[File name: {ele.name}, file_path: {path_result}]"
+                except Exception as e:
+                    logger.error(f"Failed to save temp file: {e}")
             else:
                 pass
         return message_str
@@ -250,6 +277,11 @@ class MessageProcessor:
             buffer = self.session_buffer.get_buffer(sid)
             async with buffer.lock:
                 buffer.add(event)
+
+            # EventType.ON_MESSAGE_BUFFERED
+            im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_MESSAGE_BUFFERED)
+            for handler in im_handlers:
+                await handler.exec_handler(event.session.sid)
             return
 
         if event.process_strategy == "flush":
@@ -263,8 +295,8 @@ class MessageProcessor:
         sid = event.session.sid
 
         for i, message in enumerate(event.messages):
-            message_list = message.chain
-            message_str = await self.message_format_to_text(message_list)
+            # TODO Add support for multimodal image/document comprehension
+            message_str = await self.message_format_to_text(message.chain)
             message.message_str = message_str
 
         # EventType.ON_IM_BATCH_MESSAGE
@@ -297,13 +329,8 @@ class MessageProcessor:
         # Get chat history memory
         session_memory = self.memory_manager.fetch_memory(sid)
 
-        # Get emoji_dict
-        emoji_dict = getattr(self.adapter_mgr.get_adapter(event.adapter.name), "emoji_dict", {})
-
         # Generate agent prompt
-        agent_prompt_list = self.prompt_manager.get_agent_prompt(
-            chat_env, event.message_types, emoji_dict
-        )
+        agent_prompt_list = self.prompt_manager.get_agent_prompt(chat_env)
 
         # Get default LLM model client
         llm_model = self.provider_mgr.get_default_llm()
@@ -318,15 +345,25 @@ class MessageProcessor:
         for i, message in enumerate(event.messages):
             request.user_prompt.append(Prompt(message.message_str, name="message", source="system"))
 
+        # Build tag set
+        tag_set = TagSet()
+
         # EventType.ON_LLM_REQUEST
         llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_REQUEST)
         for handler in llm_handlers:
-            await handler.exec_handler(event, request)
+            await handler.exec_handler(event, request, tag_set)
             if event.is_stopped:
                 logger.info("Event stopped while llm request stage")
                 return
 
+        # Register persistent tags registered by user plugins
+        tag_set.register(*tag_registry.get_all())
+
         # Assemble messages
+        for sp in request.system_prompt:
+            if sp.name == "format":
+                sp.content = sp.content.replace("<|message_types|>", tag_set.to_prompt())
+                break
         request.assemble_prompt()
 
         # TODO: migrate tools & tool_func params to tool_set
@@ -357,10 +394,11 @@ class MessageProcessor:
             new_memory=new_memory,
         )
 
-        async def send_llm_text(text: str):
+        async def send_llm_text(resp: LLMResponse):
+            text = resp.text_response
             session_lock = self.get_session_lock(sid)
             async with session_lock:
-                message_results = await self.send_xml_messages(event, text.strip())
+                message_results = await self.send_xml_messages(event, text.strip(), tag_set)
                 if message_results is None:
                     return
                 response_with_ids = self._add_message_ids(text, message_results)
@@ -373,6 +411,13 @@ class MessageProcessor:
                         logger.info("Event stopped while ON_STEP_RESULT stage")
                         return
                 logger.info(f"LLM -> {sid}: {step_result.raw_output}")
+                llm_resp.text_response = step_result.raw_output
+
+                for idx in range(-1, -len(new_memory.memory_list), -1):
+                    if new_memory.memory_list[idx]["role"] == "assistant":
+                        new_memory.memory_list[idx]["content"] = step_result.raw_output
+                        request.messages[idx]["content"] = step_result.raw_output
+                        break
 
         # Iter agent executor to get LLMResponse
         # TODO use llm_semaphore to restrict concurrent LLM requests
@@ -382,7 +427,7 @@ class MessageProcessor:
                 break
 
             if llm_resp.text_response:
-                await send_llm_text(llm_resp.text_response)
+                await send_llm_text(llm_resp)
 
             if not step.has_tool_calls or step.is_final:
                 break
@@ -428,12 +473,13 @@ class MessageProcessor:
         else:
             logger.warning("Blank LLM response")
 
-    async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str) -> Optional[List[KiraIMSentResult]]:
+    async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str, tag_set: TagSet) -> Optional[List[KiraIMSentResult]]:
         """
         send message via session id & xml data
         :param event: KiraMessageBatchEvent
         :param xml_data: xml string
-        :return: message_ids
+        :param tag_set: TagSet object
+        :return: list[KiraIMSentResult]
         """
         parts = event.sid.split(":")
         if len(parts) != 3:
@@ -441,7 +487,7 @@ class MessageProcessor:
 
         message_results = []
         try:
-            message_chains = await self._parse_xml_msg(xml_data)
+            message_chains = await self._parse_xml_msg(xml_data, tag_set)
 
             # EventType.AFTER_XML_PARSE
             llm_handlers = event_handler_reg.get_handlers(event_type=EventType.AFTER_XML_PARSE)
@@ -465,7 +511,6 @@ class MessageProcessor:
                 await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
             else:
                 message_results.append(KiraIMSentResult(ok=False, err="Blank message list detected"))
-
         return message_results
 
     async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
@@ -495,8 +540,9 @@ class MessageProcessor:
 
         return result
 
-    async def _parse_xml_msg(self, xml_data) -> list[MessageChain]:
-        """Parse xml to list[list[BaseMessageElement]]"""
+    @staticmethod
+    async def _parse_xml_msg(xml_data, tag_set: TagSet) -> list[MessageChain]:
+        """Parse xml to list[MessageChain]"""
         root = ET.fromstring(f"<root>{xml_data}</root>")
         message_chains = []
 
@@ -505,84 +551,24 @@ class MessageProcessor:
             for child in msg:
                 tag = child.tag
                 value = child.text.strip() if child.text else ""
+                attrs = child.attrib
 
-                # build MessageType object
-                if tag == "text":
-                    if value:
-                        message_elements.append(Text(value))
-                elif tag == "emoji":
-                    message_elements.append(Emoji(value))
-                elif tag == "sticker":
-                    sticker_id = value
-                    try:
-                        sticker_path = self.prompt_manager.sticker_dict[sticker_id].get("path")
-                        sticker_bs64 = await image_to_base64(f"{get_data_path()}/sticker/{sticker_path}")
-                        message_elements.append(Sticker(sticker_id, sticker_bs64))
-                    except Exception as e:
-                        logger.error(f"error while parsing sticker: {str(e)}")
-                elif tag == "at":
-                    message_elements.append(At(value))
-                elif tag == "img":
-                    img_res = await self.llm_api.generate_img(value)
-                    if img_res:
-                        if img_res.url:
-                            message_elements.append(Image(url=img_res.url))
-                        elif img_res.base64:
-                            message_elements.append(Image(b64=img_res.base64))
-                        else:
-                            pass
-                elif tag == "reply":
-                    message_elements.append(Reply(value))
-                elif tag == "record":
-                    try:
-                        record_bs64 = await self.llm_api.text_to_speech(value)
-                        message_elements.append(Record(record_bs64))
-                    except Exception as e:
-                        logger.error(f"an error occurred while generating voice message: {e}")
-                        message_elements.append(Text(f"<record>{value}</record>"))
-                elif tag == "poke":
-                    message_elements.append(Poke(value))
-                elif tag == "selfie":
-                    try:
-                        ref_img_path = self.kira_config.get('bot_config', {}).get('selfie', {}).get('path', '')
-                        if os.path.exists(f"{get_data_path()}/{ref_img_path}"):
-                            img_extension = ref_img_path.split(".")[-1]
-                            bs64 = await image_to_base64(f"{get_data_path()}/{ref_img_path}")
-                            img_res = await self.llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
-                            if img_res:
-                                if img_res.url:
-                                    message_elements.append(Image(url=img_res.url))
-                                elif img_res.base64:
-                                    message_elements.append(Image(b64=img_res.base64))
-                                else:
-                                    logger.warning("Invalid selfie image result")
-                        else:
-                            logger.warning(f"Selfie reference image not found, skipped generation")
-                    except Exception as e:
-                        logger.error(f"Failed to generate selfie: {e}")
-                elif tag == "file":
-                    registered_file_path = get_data_path() / "files" / value
+                if tag in tag_set:
+                    tag_inst = tag_set.get(name=tag)
+                    tag_res = await tag_inst.handle(value, **attrs)
 
-                    # Absolute path
-                    if os.path.exists(value):
-                        message_elements.append(File(value, Path(value).name))
-                    # Relative path
-                    elif os.path.exists(registered_file_path):
-                        message_elements.append(File(str(registered_file_path), value))
-                    # File URL
-                    elif value.startswith(("http://", "https://")):
-                        # TODO fetch filename from http headers
-                        message_elements.append(File(value))
-                else:
-                    # TODO hand over to plugins to parse
-                    pass
+                    if isinstance(tag_res, BaseMessageElement):
+                        message_elements.append(tag_res)
+                    elif isinstance(tag_res, list):
+                        message_elements.extend(tag_res)
 
             if message_elements:
                 message_chains.append(MessageChain(message_elements))
 
         return message_chains
 
-    def _add_message_ids(self, xml_data: str, message_results: List[KiraIMSentResult]) -> str:
+    @staticmethod
+    def _add_message_ids(xml_data: str, message_results: List[KiraIMSentResult]) -> str:
         """为XML响应添加消息ID"""
         try:
             root = ET.fromstring(f"<root>{xml_data}</root>")

@@ -21,7 +21,7 @@ SESSION_TOOL_FEW_SHOT = """
 """
 
 CROSS_SESSION_PROMPT = """\
-你接收到来自其他会话转发到本会话的跨会话消息。
+你接收到来自会话{session_id}转发到本会话的跨会话消息。
 
 下面是跨会话消息的内容说明：
 {description}
@@ -33,7 +33,14 @@ CROSS_SESSION_PROMPT = """\
 3. 只需要输出最终要发给用户的xml格式消息"""
 
 
-class DefaultPlugin(BasePlugin):
+DESC_PROMPT = """\
+对当前会话发生了什么的总结以及为什么需要发送跨会话消息
+NOTE that the target session doesn't know anything about the current session
+You need to precisely describe  what happened and the reason why you need to send cross session messages
+DO NOT use pronouns to refer to anything in the current session, e.g. `这段对话`"""
+
+
+class SessionPlugin(BasePlugin):
     def __init__(self, ctx, cfg: dict):
         super().__init__(ctx, cfg)
         self.session_events: dict[str, asyncio.Event] = {}
@@ -58,7 +65,7 @@ class DefaultPlugin(BasePlugin):
             "type": "object",
             "properties": {
                 "target": {"type": "string", "description": "会话标识，如 qq:dm:123456"},
-                "description": {"type": "string", "description": "对当前会话发生了什么的总结以及为什么需要发送跨会话消息，发送的消息大致方向"}
+                "description": {"type": "string", "description": DESC_PROMPT}
             },
             "required": ["target", "description"]
         }
@@ -70,7 +77,7 @@ class DefaultPlugin(BasePlugin):
         if event.sid == target:
             return "Do not send messages to current session using this tool, output directly to send messages"
         try:
-            cross_session_prompt = CROSS_SESSION_PROMPT.format(description=description)
+            cross_session_prompt = CROSS_SESSION_PROMPT.format(session_id=event.sid, description=description)
 
             await self.ctx.publish_notice(target, MessageChain([Text(cross_session_prompt)]))
             return f"message sent"
@@ -78,7 +85,7 @@ class DefaultPlugin(BasePlugin):
             return f"failed to send: {e}"
 
     @on.llm_request()
-    async def inject_few_shot(self, _, req: LLMRequest):
+    async def inject_few_shot(self, _event, req: LLMRequest, *_):
         for p in req.system_prompt:
             if p.name == "tools":
                 p.content += SESSION_TOOL_FEW_SHOT
