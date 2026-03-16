@@ -414,6 +414,11 @@ class PluginManager:
         for hook in hooks:
             event_handler_reg.del_handler(hook)
 
+        # clean up tag registration
+        tags = comp.get("tags", [])
+        for tag in tags:
+            tag_registry.unregister(tag.get("name"))
+
     def _load_plugin_config_from_file(self, plugin_id: str) -> Dict[str, Any]:
         PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         config_path = PLUGIN_CONFIG_DIR / f"{plugin_id}.json"

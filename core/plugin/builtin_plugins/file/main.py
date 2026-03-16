@@ -55,8 +55,8 @@ class FilePlugin(BasePlugin):
         if "../" in path:
             return "Permission denied: Path traversal detected"
 
-        if not path.startswith("data/"):
-            return "Permission denied"
+        if not path.startswith(("data/files", "data/temp")):
+            return "Permission denied: Path must start with data/files or data/temp"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
@@ -98,8 +98,8 @@ class FilePlugin(BasePlugin):
         if "../" in path:
             return "Permission denied: Path traversal detected"
 
-        if not path.startswith("data/"):
-            return "Permission denied: Path must start with data/"
+        if not path.startswith(("data/files", "data/temp")):
+            return "Permission denied: Path must start with data/files or data/temp"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
@@ -138,8 +138,8 @@ class FilePlugin(BasePlugin):
         if "../" in path:
             return "Permission denied: Path traversal detected"
 
-        if not path.startswith("data/"):
-            return "Permission denied: Path must start with data/"
+        if not path.startswith(("data/files", "data/temp")):
+            return "Permission denied: Path must start with data/files or data/temp"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
