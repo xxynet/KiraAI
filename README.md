@@ -13,19 +13,19 @@ English | [简体中文](docs/README.zh.md)
 KiraAI, a modular, multi-platform AI virtual being that connects Large Language Models (LLMs), and various chat platforms (QQ, Telegram) with a virtual being centered architecture.
 
 ## 🚀 Features
-- Multi-adapter messaging: QQ, Telegram...
+- Optimized for anthropomorphic scenarios
 - Customizable LLM providers and models
-- Sending multiple messages at once
-- Virtual being centered design
+- Flexible message sending mechanism, various message elements
+- Add-ons, expand the boundarieds of AI virtual being
 - Function calling
 - Persistent memory
-- Centralized logging and prompt management
 
 ## 🧩 Architecture
 - `core/`: orchestration for config, LLMs, prompts, memory, logging
 - `data/`: runtime data
     - `config/`: INI/JSON configs for adapters, models, providers, stickers
 - `scripts/`: convenience launchers
+- `webui/`: Management panel
 
 ## 📷 ScreenShots
 
@@ -51,48 +51,13 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 ## 📦 Requirements
 - Python 3.10+
 - Windows, macOS, or Linux
-- Platform credentials/tokens for enabled adapters (QQ, Telegram, etc.)
-- Python dependencies in `requirements.txt` (install via `pip install -r requirements.txt`)
 
 ## 🛠️ Setup
 1. Clone this repository.
-2. Create and activate a venv(virtual environment).
-3. Install dependencies: `pip install -r requirements.txt`.
-4. Prepare configuration files under `data/config/`
-
-Example (cmd):
-```shell
-python -m venv .venv
-.\.venv\Scripts\activate.bat
-pip install -r requirements.txt
-```
-
-Example (Bash/Linux):
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-## ⚙️ Configuration
-Key configuration files in `data/config/`:
-- `providers.ini`: LLM/TTS provider credentials and endpoints
-- `models.ini`: model names, parameters, and defaults
-- `adapters.ini`: enable/disable platform adapters and their tokens
-
-Check [adapter settings](/docs/adapters.md) for detailed documentation of messaging platforms
-
-Modify the following if you want to get more custom experience:
-
-- `bot.ini`: core bot settings and runtime toggles
-- `sticker.json`: sticker mapping used by adapters
-- `tools/*.ini`: per-tool configs like `tavily.ini`, `ntfy.ini`, `bili.ini`
-
-Also, modify `/data/persona.txt` to make your unique virtual being!
+2. Enter KiraAI folder
 
 ## ▶️ Run
-You can start KiraAI via:
-- CMD/PowerShell: `python main.py`
+You can start KiraAI via (venv):
 - Batch script: `scripts\run.bat`
 - Linux script: `scripts/run.sh` (make executable first)
 
@@ -102,9 +67,12 @@ chmod +x scripts/run.sh
 scripts/run.sh
 ```
 
-Platform-specific entry points:
-- Telegram adapter: `adapters/telegram/tg.py`
-- QQ adapter: `adapters/qq/qq_reply.py`
+## ⚙️ Configuration
+Run the project & enter webui to configure:
+- Providers
+- Adapters
+- Persona
+...
 
 ## 🗂️ Project Structure
 ```
@@ -116,9 +84,7 @@ KiraAI/
 ```
 
 ## 🐞 Troubleshooting
-- Check logs in `log.log`
-- Verify INI paths and sections match the enabled adapters and models.
-- Ensure platform tokens are valid.
+- Check errors printed in system logs on WebUI
 
 ## ✨ Star History
 [![Star History Chart](https://api.star-history.com/svg?repos=xxynet/KiraAI&type=date&legend=top-left)](https://www.star-history.com/#xxynet/KiraAI&type=date&legend=top-left)
