@@ -6,4 +6,4 @@ services:
       - "5267:5267"
     volumes:
       - ./data:/app/data
-    restart: always
+    restart: unless-stopped

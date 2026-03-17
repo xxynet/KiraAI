@@ -33,6 +33,9 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 
 ![alt text](screenshots/webui-dark-en.png)
 
+<details>
+<summary>📸 CHat screenshots</summary>
+
 ![alt text](screenshots/image01.jpg)
 
 ![alt text](screenshots/image02.png)
@@ -44,6 +47,8 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 ![alt text](screenshots/image05.png)
 
 ![alt text](screenshots/image06.png)
+
+</details>
 
 > [!IMPORTANT]
 > This project is in active development, and **breaking changes** may occur.
