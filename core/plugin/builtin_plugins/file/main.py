@@ -115,7 +115,7 @@ class FilePlugin(BasePlugin):
 
     @tool(
         "edit_file",
-        "Edit a plain text file by replacing exact text. The oldText must match exactly (including whitespace).",
+        "Edit a plain text file by replacing exact text. The oldText must match exactly (including whitespace). Better use this tool when you only want to modify or add a part of content to a file instead of using `write_file` to re-write the entire file",
         {
             "type": "object",
             "properties": {

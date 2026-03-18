@@ -336,6 +336,12 @@ class NapCatWebSocketClient:
 
     async def send_action(self, action: str, params: dict, timeout: float = 10.0) -> dict:
         """发送API请求并等待响应"""
+        try:
+            await asyncio.wait_for(self.login_success_event.wait(), timeout=10)
+        except asyncio.TimeoutError:
+            logger.error("send_action 失败： 登录成功事件未触发")
+            raise
+
         echo = str(uuid.uuid4())
 
         # 创建Future来等待响应
