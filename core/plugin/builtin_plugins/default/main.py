@@ -115,9 +115,9 @@ class DefaultPlugin(BasePlugin):
                     user_prompt=[Prompt(xml_data)]
                 )
                 llm_req.assemble_prompt()
-
-                client = self.ctx.get_default_fast_llm_client()
-                if not client:
+                try:
+                    client = self.ctx.get_default_fast_llm_client()
+                except Exception:
                     client = self.ctx.get_default_llm_client()
                 llm_resp = await client.chat(llm_req)
                 fixed_xml = llm_resp.text_response

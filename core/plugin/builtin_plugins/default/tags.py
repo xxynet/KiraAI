@@ -117,8 +117,8 @@ class RecordTag(BaseTag):
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         try:
-            record_bs64 = await self.ctx.llm_api.text_to_speech(value)
-            return [Record(record=record_bs64)]
+            record_obj = await self.ctx.llm_api.text_to_speech(value)
+            return [record_obj]
         except Exception as e:
             logger.error(f"an error occurred while generating voice message: {e}")
             return [Text(f"<record>{value}</record>")]

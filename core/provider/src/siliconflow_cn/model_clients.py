@@ -12,6 +12,8 @@ from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.provider.image_result import ImageResult
 
+from core.chat.message_elements import Record
+
 logger = get_logger("provider", "purple")
 
 
@@ -107,7 +109,7 @@ class SiliconflowTTSClient(TTSModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_speech(self, text: str, **kwargs):
+    async def text_to_speech(self, text: str, **kwargs) -> Record:
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url="https://api.siliconflow.cn/v1"
@@ -126,16 +128,18 @@ class SiliconflowTTSClient(TTSModelClient):
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         # audio_bs64 = f"base64://{b64_str}"
-        # return str(speech_file_path)
-        return b64_str
+        # return b64_str
+        return Record(record=b64_str)
 
 
 class SiliconflowSTTClient(STTModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def speech_to_text(self, audio_base64: str, **kwargs):
+    async def speech_to_text(self, record: Record, **kwargs):
         url = "https://api.siliconflow.cn/v1/audio/transcriptions"
+
+        audio_base64 = await record.to_base64()
 
         audio_data = base64.b64decode(audio_base64)
         audio_file = BytesIO(audio_data)

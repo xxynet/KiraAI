@@ -8,6 +8,7 @@ import time
 
 from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
+from core.chat.message_elements import Record
 from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse
 from .agent.tool import ToolResult, ToolSet
@@ -111,22 +112,22 @@ class LLMClient:
                 "content": content
             })
 
-    async def text_to_speech(self, text: str):
+    async def text_to_speech(self, text: str) -> Record:
         tts_model = self.provider_mgr.get_default_tts()
         provider_name = tts_model.model.provider_name
         model_id = tts_model.model.model_id
         logger.info(f"Generating speech using {model_id} ({provider_name})")
-        bs64 = await tts_model.text_to_speech(text)
-        if bs64:
+        record = await tts_model.text_to_speech(text)
+        if record:
             logger.info(f"Generated speech from text {text}")
-        return bs64
+        return record
 
-    async def speech_to_text(self, bs64):
+    async def speech_to_text(self, record: Record):
         stt_model = self.provider_mgr.get_default_stt()
         provider_name = stt_model.model.provider_name
         model_id = stt_model.model.model_id
         logger.info(f"Recognizing text using {model_id} ({provider_name})")
-        text = await stt_model.speech_to_text(bs64)
+        text = await stt_model.speech_to_text(record)
         logger.info(f"Recognized text: {text}")
         return text
 

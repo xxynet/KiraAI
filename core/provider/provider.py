@@ -7,6 +7,8 @@ import asyncio
 from .llm_model import LLMRequest, LLMResponse
 from .image_result import ImageResult
 
+from core.chat.message_elements import Record
+
 
 class ModelType(Enum):
     LLM = "llm"
@@ -81,7 +83,7 @@ class TTSModelClient(BaseModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_speech(self, text: str, **kwargs):
+    async def text_to_speech(self, text: str, **kwargs) -> Record:
         pass
 
 
@@ -91,7 +93,7 @@ class STTModelClient(BaseModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def speech_to_text(self, audio_base64: str, **kwargs):
+    async def speech_to_text(self, record: Record, **kwargs) -> str:
         pass
 
 

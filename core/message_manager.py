@@ -210,8 +210,7 @@ class MessageProcessor:
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
-                record_base64 = await ele.to_base64()
-                record_text = await self.llm_api.speech_to_text(record_base64)
+                record_text = await self.llm_api.speech_to_text(record=ele)
                 ele.transcript = record_text
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, Notice):
