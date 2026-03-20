@@ -218,12 +218,13 @@ class MessageProcessor:
             elif isinstance(ele, File):
                 try:
                     file_size = int(ele.size)
-                    # TODO Make it customizable
-                    if file_size > 10 * 1024 * 1024:
-                        message_str += f"[File name: {ele.name} (File size over 10MB, not cached)]"
-                        continue
                 except Exception as _:
-                    pass
+                    file_size = None
+
+                # TODO Make it customizable
+                if not file_size or file_size > 10 * 1024 * 1024:
+                    message_str += f"[File name: {ele.name} (File size over 10MB, not cached)]"
+                    continue
 
                 try:
                     path = Path(await ele.to_path())
@@ -238,6 +239,30 @@ class MessageProcessor:
                     message_str += f"[File name: {ele.name}, file_path: {path_result}]"
                 except Exception as e:
                     logger.error(f"Failed to save temp file: {e}")
+            elif isinstance(ele, Video):
+                try:
+                    video_file_size = int(ele.size)
+                except Exception as _:
+                    video_file_size = None
+
+                # TODO Make it customizable
+                if not video_file_size or video_file_size > 10 * 1024 * 1024:
+                    message_str += f"[Video name: {ele.name} (Video size over 10MB, not cached)]"
+                    continue
+
+                try:
+                    path = Path(await ele.to_path())
+                    data_dir = get_data_path()
+
+                    try:
+                        rel = path.relative_to(data_dir)
+                        path_result = f"data/{rel}"
+                    except ValueError:
+                        path_result = str(path)
+
+                    message_str += f"[Video name: {ele.name}, file_path: {path_result}]"
+                except Exception as e:
+                    logger.error(f"Failed to save temp video file: {e}")
             else:
                 pass
         return message_str

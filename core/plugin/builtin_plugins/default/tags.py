@@ -162,23 +162,41 @@ def _get_relative_file_paths():
 
 class FileTag(BaseTag):
     name = "file"
-    description = f"<file>file_string</file> # send a file (do not put any other tags in the msg tag which the file tag is in), file_string could be a file url, absolute file path or relative file path. Files specifically listed below could be sent with `data/files/` prefix: {_get_relative_file_paths()}"
+    description = f"<file type=\"image/record/video/file\">file_string</file> # send a file (do not put any other tags in the msg tag which the file tag is in), file_string could be a file url, absolute file path or relative file path. Use `type=` to specify the file type for platforms to parse, e.g. for audios, set `type` as `record` to send as voice message, `file` to send as audio file. defaults to `file`. Files specifically listed below could be sent with `data/files/` prefix: {_get_relative_file_paths()}"
 
     def __init__(self, ctx):
         super().__init__(ctx=ctx)
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         file_type = kwargs.get("type")  # image, record, file, video
+        if not file_type or file_type not in ("image", "record", "video"):
+            file_type = "file"
 
         # Absolute path
         if os.path.exists(value):
-            return [File(file=value, name=Path(value).name)]
+            file_string = value
+            name = Path(value).name
         elif value.startswith(("data/files/", "data/temp/")):
             abs_path = str(get_data_path() / value.removeprefix("data/"))
-            return [File(file=abs_path, name=Path(abs_path).name)]
+            file_string = abs_path
+            name = Path(abs_path).name
         # File URL
         elif value.startswith(("http://", "https://")):
-            return [File(file=value)]
+            file_string = value
+            name = None
+        else:
+            return []
+
+        if file_type == "file":
+            return [File(file=file_string, name=name)]
+        elif file_type == "image":
+            return [Image(image=file_string, name=name)]
+        elif file_type == "record":
+            return [Record(record=file_string, name=name)]
+        elif file_type == "video":
+            return [Video(file=file_string, name=name)]
+        else:
+            return []
 
 
 class ForwardTag(BaseTag):

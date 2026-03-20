@@ -129,6 +129,40 @@ class QQAdapter(IMAdapter):
                     msg_res.ok = False
                     msg_res.err = f"Error occurred while uploading file: {e}"
                 return msg_res
+            elif isinstance(ele, Video):
+                msg_res = KiraIMSentResult(None)
+                try:
+                    video_file_b64 = await ele.to_base64()
+                    video_file_name = ele.name
+                    if not video_file_name:
+                        import uuid
+                        video_file_name = uuid.uuid4().hex
+                    resp = await self.bot.send_action("send_group_msg", {
+                        "group_id": group_id,
+                        "message": [
+                            {
+                                "type": "video",
+                                "data": {
+                                    "name": video_file_name,
+                                    "file": f"base64://{video_file_b64}",
+                                }
+                            }
+                        ]
+                    })
+                    if not isinstance(resp, dict):
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send video: invalid response {resp!r}"
+                        return msg_res
+                    message_id = str((resp.get("data") or {}).get("message_id"))
+                    if resp.get("status") != "ok":
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send video: {resp}"
+                        return msg_res
+                    msg_res.message_id = message_id
+                except Exception as e:
+                    msg_res.ok = False
+                    msg_res.err = f"Error occurred while uploading video: {e}"
+                return msg_res
             elif isinstance(ele, Forward):
                 msg_res = KiraIMSentResult(None)
                 try:
@@ -236,6 +270,39 @@ class QQAdapter(IMAdapter):
                 except Exception as e:
                     msg_res.ok = False
                     msg_res.err = f"Error occurred while uploading file: {e}"
+                return msg_res
+            elif isinstance(ele, Video):
+                try:
+                    video_file_b64 = await ele.to_base64()
+                    video_file_name = ele.name
+                    if not video_file_name:
+                        import uuid
+                        video_file_name = uuid.uuid4().hex
+                    resp = await self.bot.send_action("send_private_msg", {
+                        "user_id": user_id,
+                        "message": [
+                            {
+                                "type": "video",
+                                "data": {
+                                    "name": video_file_name,
+                                    "file": f"base64://{video_file_b64}",
+                                }
+                            }
+                        ]
+                    })
+                    if not isinstance(resp, dict):
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send video: invalid response {resp!r}"
+                        return msg_res
+                    message_id = str((resp.get("data") or {}).get("message_id"))
+                    if resp.get("status") != "ok":
+                        msg_res.ok = False
+                        msg_res.err = f"Failed to send video: {resp}"
+                        return msg_res
+                    msg_res.message_id = message_id
+                except Exception as e:
+                    msg_res.ok = False
+                    msg_res.err = f"Error occurred while uploading video: {e}"
                 return msg_res
             elif isinstance(ele, Forward):
                 msg_res = KiraIMSentResult(None)
