@@ -8,7 +8,7 @@ from typing import Dict, Optional, Type
 from .provider import (
     BaseProvider, BaseModelClient, ProviderInfo, ModelInfo, ModelType,
     LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient,
-    EmbeddingModelClient
+    VideoModelClient, EmbeddingModelClient
 )
 
 from core.utils.path_utils import get_config_path
@@ -126,6 +126,15 @@ class ProviderManager:
         if not isinstance(model_client, ImageModelClient):
             raise TypeError(
                 f"Expected ImageModelClient, got {type(model_client).__name__}"
+            )
+        return model_client
+
+    def get_default_video(self) -> VideoModelClient:
+        model_info = self.get_default_model_info("default_video")
+        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        if not isinstance(model_client, VideoModelClient):
+            raise TypeError(
+                f"Expected VideoModelClient, got {type(model_client).__name__}"
             )
         return model_client
 

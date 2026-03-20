@@ -1,12 +1,13 @@
 from core.provider import BaseProvider, ModelType
 
-from .model_clients import VolcengineLLMClient, VolcengineImageClient, VolcengineEmbeddingClient
+from .model_clients import VolcengineLLMClient, VolcengineImageClient, VolcengineVideoClient, VolcengineEmbeddingClient
 
 
 class VolcengineProvider(BaseProvider):
     models = {
         ModelType.LLM: VolcengineLLMClient,
         ModelType.IMAGE: VolcengineImageClient,
+        ModelType.VIDEO: VolcengineVideoClient,
         ModelType.EMBEDDING: VolcengineEmbeddingClient
     }
 

@@ -51,7 +51,7 @@ class QQAdapter(IMAdapter):
     def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
         super().__init__(info, loop, event_bus, llm_api)
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
-        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file", "forward"]
+        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file", "video", "forward"]
         self.bot: NapCatWebSocketClient = NapCatWebSocketClient()
         self.logger = get_logger(info.name, "blue")
 
@@ -109,12 +109,16 @@ class QQAdapter(IMAdapter):
             elif isinstance(ele, File):
                 msg_res = KiraIMSentResult(None)
                 try:
-                    file_b64 = await ele.to_base64()
+                    if ele.file_type == "url":
+                        file_string = ele.file
+                    else:
+                        file_b64 = await ele.to_base64()
+                        file_string = f"base64://{file_b64}"
                     file_name = ele.name
                     if not file_name:
                         import uuid
                         file_name = uuid.uuid4().hex
-                    resp = await self.bot.upload_group_file(str(group_id), f"base64://{file_b64}", file_name)
+                    resp = await self.bot.upload_group_file(str(group_id), file_string, file_name)
                     if not isinstance(resp, dict):
                         msg_res.ok = False
                         msg_res.err = f"Failed to send file: invalid response {resp!r}"
@@ -132,7 +136,11 @@ class QQAdapter(IMAdapter):
             elif isinstance(ele, Video):
                 msg_res = KiraIMSentResult(None)
                 try:
-                    video_file_b64 = await ele.to_base64()
+                    if ele.file_type == "url":
+                        video_file = ele.file
+                    else:
+                        video_file_b64 = await ele.to_base64()
+                        video_file = f"base64://{video_file_b64}"
                     video_file_name = ele.name
                     if not video_file_name:
                         import uuid
@@ -144,7 +152,7 @@ class QQAdapter(IMAdapter):
                                 "type": "video",
                                 "data": {
                                     "name": video_file_name,
-                                    "file": f"base64://{video_file_b64}",
+                                    "file": video_file,
                                 }
                             }
                         ]
@@ -251,12 +259,16 @@ class QQAdapter(IMAdapter):
                 return msg_res
             elif isinstance(ele, File):
                 try:
-                    file_b64 = await ele.to_base64()
+                    if ele.file_type == "url":
+                        file_string = ele.file
+                    else:
+                        file_b64 = await ele.to_base64()
+                        file_string = f"base64://{file_b64}"
                     file_name = ele.name
                     if not file_name:
                         import uuid
                         file_name = uuid.uuid4().hex
-                    resp = await self.bot.upload_private_file(str(user_id), f"base64://{file_b64}", file_name)
+                    resp = await self.bot.upload_private_file(str(user_id), file_string, file_name)
                     if not isinstance(resp, dict):
                         msg_res.ok = False
                         msg_res.err = f"Failed to send file: invalid response {resp!r}"
@@ -273,7 +285,11 @@ class QQAdapter(IMAdapter):
                 return msg_res
             elif isinstance(ele, Video):
                 try:
-                    video_file_b64 = await ele.to_base64()
+                    if ele.file_type == "url":
+                        video_file = ele.file
+                    else:
+                        video_file_b64 = await ele.to_base64()
+                        video_file = f"base64://{video_file_b64}"
                     video_file_name = ele.name
                     if not video_file_name:
                         import uuid
@@ -285,7 +301,7 @@ class QQAdapter(IMAdapter):
                                 "type": "video",
                                 "data": {
                                     "name": video_file_name,
-                                    "file": f"base64://{video_file_b64}",
+                                    "file": video_file,
                                 }
                             }
                         ]
@@ -431,9 +447,13 @@ class QQAdapter(IMAdapter):
 
                 if message_type == "group":
                     file_info = await self.bot.send_action("get_group_file_url", {"group_id": group_id, "file_id": file_id})
+                    if not file_info:
+                        continue
                     file_url = file_info.get("data", {}).get("url")
                 elif message_type == "private":
                     file_info = await self.bot.send_action("get_private_file_url", {"file_id": file_id})
+                    if not file_info:
+                        continue
                     file_url = file_info.get("data", {}).get("url")
                 else:
                     continue

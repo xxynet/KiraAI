@@ -24,6 +24,7 @@ from core.utils.common_utils import image_to_base64
 from core.logging_manager import get_logger
 
 logger = get_logger("message", "cyan")
+provider_logger = get_logger("provider", "purple")
 
 
 class TextTag(BaseTag):
@@ -93,6 +94,32 @@ class ImgTag(BaseTag):
         img_res = await self.ctx.llm_api.generate_img(value)
         if img_res:
             return [img_res]
+        return []
+
+
+class VideoTag(BaseTag):
+    name = "video"
+    description = "<video>prompt for video generator</video> # Generate a video with detailed video generation prompt"
+
+    def __init__(self, ctx):
+        super().__init__(ctx=ctx)
+
+    async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
+        duration = kwargs.get("duration", "5")
+
+        video_client = self.ctx.provider_mgr.get_default_video()
+        if not video_client:
+            provider_logger.error(f"Failed to get video client, please set default video model in Configuration")
+            return []
+
+        provider_name = video_client.model.provider_name
+        model_id = video_client.model.model_id
+        provider_logger.info(f"Generating video using {model_id} ({provider_name})")
+
+        video_obj = await video_client.generate_video(prompt=value)
+        if video_obj:
+            provider_logger.info(f"Generated video from text {value}")
+            return [video_obj]
         return []
 
 

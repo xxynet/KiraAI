@@ -39,6 +39,7 @@
         "hint": "图片尺寸"
       }
     },
+    "video": {},
     "embedding": {
       "timeout": {
         "name": "超时",

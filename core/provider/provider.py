@@ -6,7 +6,7 @@ import asyncio
 
 from .llm_model import LLMRequest, LLMResponse
 
-from core.chat.message_elements import Record, Image
+from core.chat.message_elements import Record, Image, Video
 
 
 class ModelType(Enum):
@@ -102,10 +102,20 @@ class ImageModelClient(BaseModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_image(self, prompt) -> Image:
+    async def text_to_image(self, prompt: str) -> Image:
         pass
 
     async def image_to_image(self, prompt: str, image: Image) -> Image:
+        pass
+
+
+class VideoModelClient(BaseModelClient):
+    type = ModelType.VIDEO
+
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    async def generate_video(self, prompt: str, ref: list[Image] = None, duration: int = 5, **kwargs) -> Video:
         pass
 
 

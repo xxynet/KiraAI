@@ -79,6 +79,8 @@ class DefaultPlugin(BasePlugin):
             tag_set.register(SelfieTag(ctx=self.ctx))
         if "file" in message_types:
             tag_set.register(FileTag(ctx=self.ctx))
+        if "video" in message_types:
+            tag_set.register(VideoTag(ctx=self.ctx))
         if "forward" in message_types:
             tag_set.register(ForwardTag())
 

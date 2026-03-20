@@ -1,11 +1,12 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import time
+import httpx
 from typing import Optional
 
-from core.provider import ModelInfo, LLMModelClient, ImageModelClient, EmbeddingModelClient
+from core.provider import ModelInfo, LLMModelClient, ImageModelClient, VideoModelClient, EmbeddingModelClient
 from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse
-from core.chat.message_elements import Image
+from core.chat.message_elements import Image, Video
 
 logger = get_logger("provider", "purple")
 
@@ -117,6 +118,72 @@ class VolcengineImageClient(ImageModelClient):
             }
         )
         return Image(image=images_response.data[0].url)
+
+
+class VolcengineVideoClient(VideoModelClient):
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    async def generate_video(self, prompt: str, ref: list[Image] = None, duration: int = 5, **kwargs) -> Video:
+        client = httpx.AsyncClient(timeout=5)
+        task_id = await self._create_task(client=client, text=prompt, ref=ref, duration=duration)
+
+        start_ts = time.time()
+
+        data = None
+
+        while time.time() - start_ts < 30:
+            data = await self._get_task(client=client, task_id=task_id)
+
+            status = data.get("status")
+
+            if status == "succeeded":
+                url = data.get("content", {}).get("video_url")
+                logger.info(f"火山方舟视频生成耗时：{time.time() - start_ts}")
+                return Video(file=url)
+
+        logger.error(f"Timeout while generating video: {data}")
+
+    async def _create_task(self, client: httpx.AsyncClient, text: str, ref: list[Image] = None, duration: int = 5) -> str:
+        url = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}",
+        }
+        json_data = {
+            "model": self.model.model_id,
+            "content": [
+                {
+                    "type": "text",
+                    "text": text
+                }
+            ],
+            "ratio": "16:9",
+            "duration": duration,
+            "watermark": False
+        }
+
+        resp = await client.post(url, headers=headers, json=json_data)
+        resp.raise_for_status()
+
+        data = resp.json()
+
+        task_id = data.get("id")
+        return task_id
+
+    async def _get_task(self, client: httpx.AsyncClient, task_id: str):
+        url = f"https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/{task_id}"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}",
+        }
+
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+
+        data = resp.json()
+
+        return data
 
 
 class VolcengineEmbeddingClient(EmbeddingModelClient):
