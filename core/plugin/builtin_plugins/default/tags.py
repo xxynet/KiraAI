@@ -92,12 +92,8 @@ class ImgTag(BaseTag):
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         img_res = await self.ctx.llm_api.generate_img(value)
         if img_res:
-            if img_res.url:
-                return [Image(image=img_res.url)]
-            elif img_res.base64:
-                return [Image(image=img_res.base64)]
-            else:
-                return []
+            return [img_res]
+        return []
 
 
 class ReplyTag(BaseTag):
@@ -145,14 +141,11 @@ class SelfieTag(BaseTag):
             if os.path.exists(f"{get_data_path()}/{ref_img_path}"):
                 img_extension = ref_img_path.split(".")[-1]
                 bs64 = await image_to_base64(f"{get_data_path()}/{ref_img_path}")
-                img_res = await self.ctx.llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
+                # img_res = await self.ctx.llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
+                img_res = await self.ctx.llm_api.image_to_image(value, image=Image(image=bs64, name=ref_img_path, mime=f"image/{img_extension}"))
                 if img_res:
-                    if img_res.url:
-                        return [Image(image=img_res.url)]
-                    elif img_res.base64:
-                        return [Image(image=img_res.base64)]
-                    else:
-                        logger.warning("Invalid selfie image result")
+                    return [img_res]
+                logger.warning("Invalid selfie image result")
             else:
                 logger.warning(f"Selfie reference image not found, skipped generation")
         except Exception as e:

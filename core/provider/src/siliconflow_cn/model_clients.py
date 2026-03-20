@@ -10,9 +10,8 @@ from core.provider import (LLMModelClient, ImageModelClient, TTSModelClient,
                            STTModelClient, EmbeddingModelClient)
 from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse
-from core.provider.image_result import ImageResult
 
-from core.chat.message_elements import Record
+from core.chat.message_elements import Record, Image
 
 logger = get_logger("provider", "purple")
 
@@ -83,7 +82,7 @@ class SiliconflowImageClient(ImageModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_image(self, prompt) -> ImageResult:
+    async def text_to_image(self, prompt) -> Image:
         url = "https://api.siliconflow.cn/v1/images/generations"
         payload = {
             "model": self.model.model_id,
@@ -102,7 +101,7 @@ class SiliconflowImageClient(ImageModelClient):
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
         image_url = response.json().get("images")[0].get("url")
-        return ImageResult(image_url)
+        return Image(image=image_url)
 
 
 class SiliconflowTTSClient(TTSModelClient):

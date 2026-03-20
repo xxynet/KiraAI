@@ -5,7 +5,7 @@ from typing import Optional
 from core.provider import ModelInfo, LLMModelClient, ImageModelClient, EmbeddingModelClient
 from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse
-from core.provider.image_result import ImageResult
+from core.chat.message_elements import Image
 
 logger = get_logger("provider", "purple")
 
@@ -74,7 +74,7 @@ class VolcengineImageClient(ImageModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_image(self, prompt) -> ImageResult:
+    async def text_to_image(self, prompt) -> Image:
         client = AsyncOpenAI(
             base_url=self.model.provider_config.get("base_url", ""),
             api_key=self.model.provider_config.get("api_key", ""),
@@ -90,16 +90,16 @@ class VolcengineImageClient(ImageModelClient):
             },
         )
 
-        return ImageResult(images_response.data[0].url)
+        return Image(image=images_response.data[0].url)
 
-    async def image_to_image(self, prompt: str, url: Optional[str] = None,
-                             base64: Optional[str] = None) -> ImageResult:
-        if url:
-            ref_img = url
-        elif base64:
-            ref_img = base64
-        else:
-            ref_img = None
+    async def image_to_image(self, prompt: str, image: Image) -> Image:
+        # if url:
+        #     ref_img = url
+        # elif base64:
+        #     ref_img = base64
+        # else:
+        #     ref_img = None
+        ref_img = await image.to_data_url()
 
         client = AsyncOpenAI(
             base_url=self.model.provider_config.get("base_url", "https://ark.cn-beijing.volces.com/api/v3"),
@@ -116,7 +116,7 @@ class VolcengineImageClient(ImageModelClient):
                 "watermark": False
             }
         )
-        return ImageResult(images_response.data[0].url)
+        return Image(image=images_response.data[0].url)
 
 
 class VolcengineEmbeddingClient(EmbeddingModelClient):

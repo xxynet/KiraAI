@@ -283,6 +283,45 @@ class BaseMediaElement(BaseMessageElement, ABC):
             return self.file
         return ""
 
+    async def to_data_url(self) -> str:
+        """Convert media elements to Data URL
+
+        Data URL format：data:[<mime>][;base64],<data>
+
+        Returns:
+            str: Data URL
+
+        Raises:
+            ValueError:
+        """
+        # If it's originally Data UR
+        if self.file_type == "data_url" and self.file is not None:
+            return self.file
+
+        # Fetch base64 data
+        base64_str = await self.to_base64()
+        if not base64_str:
+            raise ValueError("Failed to fetch base64 data")
+
+        # Get MIME type
+        mime = self.mime
+        if not mime:
+            # Judge default type by class name
+            class_name = self.__class__.__name__.lower()
+            if "image" in class_name:
+                mime = "image/jpeg"  # Default image type
+            elif "video" in class_name:
+                mime = "video/mp4"  # Default video type
+            elif "record" in class_name:
+                mime = "audio/mpeg"  # Default audio type
+            else:
+                mime = "application/octet-stream"
+
+        # Build Data URL
+        data_url = f"data:{mime};base64,{base64_str}"
+
+        return data_url
+
     def del_cache(self):
         if not self._temp_path:
             return

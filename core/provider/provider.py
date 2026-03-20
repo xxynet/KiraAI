@@ -5,9 +5,8 @@ from typing import List, Optional
 import asyncio
 
 from .llm_model import LLMRequest, LLMResponse
-from .image_result import ImageResult
 
-from core.chat.message_elements import Record
+from core.chat.message_elements import Record, Image
 
 
 class ModelType(Enum):
@@ -103,11 +102,10 @@ class ImageModelClient(BaseModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_image(self, prompt) -> ImageResult:
+    async def text_to_image(self, prompt) -> Image:
         pass
 
-    async def image_to_image(self, prompt: str, url: Optional[str] = None,
-                             base64: Optional[str] = None) -> ImageResult:
+    async def image_to_image(self, prompt: str, image: Image) -> Image:
         pass
 
 

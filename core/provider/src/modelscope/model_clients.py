@@ -3,13 +3,12 @@ import time
 import asyncio
 import httpx
 import base64
-from typing import Optional
 
 from core.provider import ModelInfo
 from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse
-from core.provider.image_result import ImageResult
 from core.logging_manager import get_logger
+from core.chat.message_elements import Image
 
 logger = get_logger("provider", "purple")
 
@@ -83,7 +82,7 @@ class ModelScopeImageClient(ImageModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_image(self, prompt) -> ImageResult:
+    async def text_to_image(self, prompt) -> Image:
         base_url = "https://api-inference.modelscope.cn/"
         api_key = self.model.provider_config.get("api_key", "")
 
@@ -131,7 +130,7 @@ class ModelScopeImageClient(ImageModelClient):
                     image_resp.raise_for_status()
 
                     image_base64 = base64.b64encode(image_resp.content).decode("utf-8")
-                    return ImageResult(base64=image_base64)
+                    return Image(image=image_base64)
 
                 if status == "FAILED":
                     raise RuntimeError("Image Generation Failed")

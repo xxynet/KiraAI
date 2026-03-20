@@ -5,8 +5,8 @@ from typing import Optional
 from core.provider import ModelInfo
 from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse
-from core.provider.image_result import ImageResult
 from core.logging_manager import get_logger
+from core.chat.message_elements import Image
 
 logger = get_logger("provider", "purple")
 
@@ -66,7 +66,7 @@ class OpenAILLMClient(LLMModelClient):
             logger.error(f"APITimeoutError: {e}")
             return LLMResponse(text_response=f"[Error] APITimeoutError: {e}")
         except APIConnectionError as e:
-             # APIConnectionError: Connection error. (base_url error)
+            # APIConnectionError: Connection error. (base_url error)
             logger.error(f"APIConnectionError: {e}")
             return LLMResponse(text_response=f"[Error] APIConnectionError: {e}")
         except Exception as e:
@@ -78,7 +78,7 @@ class OpenAIImageClient(ImageModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_image(self, prompt) -> ImageResult:
+    async def text_to_image(self, prompt) -> Image:
         client = AsyncOpenAI(
             base_url=self.model.provider_config.get("base_url", ""),
             api_key=self.model.provider_config.get("api_key", ""),
@@ -94,10 +94,10 @@ class OpenAIImageClient(ImageModelClient):
             },
         )
 
-        return ImageResult(images_response.data[0].url)
+        return Image(image=images_response.data[0].url)
 
     async def image_to_image(self, prompt: str, url: Optional[str] = None,
-                             base64: Optional[str] = None) -> ImageResult:
+                             base64: Optional[str] = None) -> Image:
         pass
 
 

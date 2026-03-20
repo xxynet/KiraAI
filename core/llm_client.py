@@ -8,11 +8,11 @@ import time
 
 from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
-from core.chat.message_elements import Record
+from core.chat.message_elements import Record, Image
 from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse
 from .agent.tool import ToolResult, ToolSet
-from .provider import ProviderManager, ImageResult
+from .provider import ProviderManager
 
 logger = get_logger("llm", "purple")
 tool_logger = get_logger("tool_use", "orange")
@@ -173,7 +173,7 @@ class LLMClient:
             logger.error(f"error occurred when describing image: {str(e)}")
             return ""
 
-    async def generate_img(self, prompt) -> ImageResult:
+    async def generate_img(self, prompt) -> Image:
         image_model = self.provider_mgr.get_default_image()
         provider_name = image_model.model.provider_name
         model_id = image_model.model.model_id
@@ -186,13 +186,13 @@ class LLMClient:
         except Exception as e:
             logger.error(f"Failed to generate image with text: {e}")
 
-    async def image_to_image(self, prompt, url: Optional[str] = None, bs64: Optional[str] = None):
+    async def image_to_image(self, prompt, image: Image) -> Image:
         image_model = self.provider_mgr.get_default_image()
         provider_name = image_model.model.provider_name
         model_id = image_model.model.model_id
         logger.info(f"Generating image using {model_id} ({provider_name}) with a reference image")
         try:
-            img_res = await image_model.image_to_image(prompt, url=url, base64=bs64)
+            img_res = await image_model.image_to_image(prompt=prompt, image=image)
             if not img_res:
                 logger.error(f"Failed to generate image with a reference image")
             return img_res
