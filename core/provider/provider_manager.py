@@ -8,7 +8,7 @@ from typing import Dict, Optional, Type
 from .provider import (
     BaseProvider, BaseModelClient, ProviderInfo, ModelInfo, ModelType,
     LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient,
-    VideoModelClient, EmbeddingModelClient
+    VideoModelClient, EmbeddingModelClient, RerankModelClient
 )
 
 from core.utils.path_utils import get_config_path
@@ -144,6 +144,15 @@ class ProviderManager:
         if not isinstance(model_client, EmbeddingModelClient):
             raise TypeError(
                 f"Expected EmbeddingModelClient, got {type(model_client).__name__}"
+            )
+        return model_client
+
+    def get_default_rerank(self) -> RerankModelClient:
+        model_info = self.get_default_model_info("default_rerank")
+        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        if not isinstance(model_client, RerankModelClient):
+            raise TypeError(
+                f"Expected RerankModelClient, got {type(model_client).__name__}"
             )
         return model_client
 

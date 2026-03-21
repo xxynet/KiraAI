@@ -74,3 +74,12 @@ class LLMResponse:
 
     """Units: seconds"""
     time_consumed: Optional[float] = None
+
+
+@dataclass
+class RerankResult:
+    index: int
+
+    score: float
+
+    text: str

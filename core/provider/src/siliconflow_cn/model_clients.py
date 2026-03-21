@@ -7,9 +7,9 @@ import time
 
 from core.provider import ModelInfo
 from core.provider import (LLMModelClient, ImageModelClient, TTSModelClient,
-                           STTModelClient, EmbeddingModelClient)
+                           STTModelClient, EmbeddingModelClient, RerankModelClient)
 from core.logging_manager import get_logger
-from core.provider.llm_model import LLMRequest, LLMResponse
+from core.provider.llm_model import LLMRequest, LLMResponse, RerankResult
 
 from core.chat.message_elements import Record, Image
 
@@ -194,90 +194,55 @@ class SiliconflowEmbeddingClient(EmbeddingModelClient):
             return []
 
 
-class SiliconflowEmbeddingClient(EmbeddingModelClient):
+class SiliconflowRerankClient(RerankModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
+    async def rerank(
+        self,
+        query: str,
+        documents: list[str],
+        top_n: Optional[int] = None,
+        **kwargs
+    ) -> list[RerankResult]:
 
-        timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
-        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
+        url = "https://api.siliconflow.cn/v1/rerank"
 
-        client = AsyncOpenAI(
-            api_key=self.model.provider_config.get("api_key", ""),
-            base_url="https://api.siliconflow.cn/v1",
-            timeout=timeout_sec
-        )
-        try:
-            start_time = time.perf_counter()
-            response = await client.embeddings.create(
-                model=self.model.model_id,
-                input=texts
+        payload = {
+            "model": self.model.model_id,
+            "query": query,
+            "documents": documents,
+        }
+
+        if top_n:
+            payload["top_n"] = top_n
+
+        if "return_documents" in kwargs:
+            payload["return_documents"] = kwargs["return_documents"]
+
+        if "instruction" in kwargs:
+            payload["instruction"] = kwargs["instruction"]
+
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(
+                url,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}",
+                    "Content-Type": "application/json",
+                }
             )
-            elapsed = round(time.perf_counter() - start_time, 2)
-            if elapsed > slow_threshold:
-                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
-            return [item.embedding for item in response.data]
-        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Embedding API error: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Embedding error: {e}")
-            return []
 
+        resp.raise_for_status()
+        data = resp.json()
 
-# class SiliconflowEmbeddingClient(EmbeddingModelClient):
-#     def __init__(self, model: ModelInfo):
-#         super().__init__(model)
-#         self._client: Optional[AsyncOpenAI] = None
+        results = [
+            RerankResult(
+                index=item["index"],
+                score=item["relevance_score"],
+                text=documents[item["index"]]
+            )
+            for item in data.get("results", [])
+        ]
 
-#     async def generate(self, text: str) -> list[float]:
-#         if self._client is None:
-#             self._client = AsyncOpenAI(
-#                 api_key=self.model.provider_config.get("api_key", ""),
-#                 base_url="https://api.siliconflow.cn/v1"
-#             )
-#         try:
-#             response = await self._client.embeddings.create(
-#                 model=self.model.model_id,
-#                 input=text
-#             )
-#             return response.data[0].embedding
-#         except APIStatusError as e:
-#             # the model does not support function calling etc.
-#             # 403 Authorization failed (api key error)
-#             logger.error(f"APIStatusError: {e}")
-#         except APITimeoutError as e:
-#             logger.error(f"APITimeoutError: {e}")
-#         except APIConnectionError as e:
-#             # APIConnectionError: Connection error.(base_url error)
-#             logger.error(f"APIConnectionError: {e}")
-#         except Exception as e:
-#             logger.error(f"Error: {e}")
-
-#     async def generate_batch(self, texts: list[str]) -> list[list[float]]:
-#         if self._client is None:
-#             self._client = AsyncOpenAI(
-#                 api_key=self.model.provider_config.get("api_key", ""),
-#                 base_url="https://api.siliconflow.cn/v1"
-#             )
-#         try:
-#             response = await self._client.embeddings.create(
-#                 model=self.model.model_id,
-#                 input=texts
-#             )
-#             sorted_data = sorted(response.data, key=lambda x: x.index)
-#             return [item.embedding for item in sorted_data]
-#         except APIStatusError as e:
-#             # the model does not support function calling etc.
-#             # 403 Authorization failed (api key error)
-#             logger.error(f"APIStatusError: {e}")
-#         except APITimeoutError as e:
-#             logger.error(f"APITimeoutError: {e}")
-#         except APIConnectionError as e:
-#             # APIConnectionError: Connection error.(base_url error)
-#             logger.error(f"APIConnectionError: {e}")
-#         except Exception as e:
-#             logger.error(f"Error: {e}")
+        return results

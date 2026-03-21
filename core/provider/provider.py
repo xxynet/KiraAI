@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 import asyncio
 
-from .llm_model import LLMRequest, LLMResponse
+from .llm_model import LLMRequest, LLMResponse, RerankResult
 
 from core.chat.message_elements import Record, Image, Video
 
@@ -142,6 +142,30 @@ class EmbeddingModelClient(BaseModelClient):
 
     @abstractmethod
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        pass
+
+
+class RerankModelClient(BaseModelClient):
+    type = ModelType.RERANK
+
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    @abstractmethod
+    async def rerank(
+        self,
+        query: str,
+        documents: list[str],
+        top_n: Optional[int] = None,
+        **kwargs
+    ) -> list[RerankResult]:
+        """
+        Return the results sorted by relevance (High -> Low)
+
+        query: user query
+        documents: Candidate documents
+        top_n: Optional, truncate result
+        """
         pass
 
 
