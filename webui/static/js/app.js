@@ -4678,16 +4678,12 @@ function validateModelIdInput(input) {
     const value = input.value.trim();
     const errorEl = document.getElementById('model-id-error');
     const hintEl = document.getElementById('model-id-hint');
-    // Model ID pattern: alphanumeric, hyphens, underscores, dots, colons, slashes
-    const validPattern = /^[a-zA-Z0-9][a-zA-Z0-9\-_.:\/]*$/;
 
     let errorMsg = '';
     if (value === '') {
         errorMsg = getTranslation('model.validation_id_required', 'Model ID is required');
     } else if (value.length > 128) {
         errorMsg = getTranslation('model.validation_id_too_long', 'Model ID must be 128 characters or less');
-    } else if (!validPattern.test(value)) {
-        errorMsg = getTranslation('model.validation_id_format', 'Model ID must start with a letter or number and contain only letters, numbers, hyphens, underscores, dots, colons, or slashes');
     }
 
     if (errorMsg) {
