@@ -56,8 +56,11 @@ class LLMResponse:
     """Content field in chat completion response"""
     text_response: str
 
-    """reasoning content for reasoning models"""
-    reasoning_content: str = ""   # 改为空字符串，避免 Kimi API 要求字段存在时缺失（Kimi 要求 assistant 消息必须有此字段）
+    """
+    reasoning content for reasoning models
+    Make sure it's always a string to avoid missing fields in API responses
+    """
+    reasoning_content: str = ""
 
     """agent step index"""
     agent_step_index: Optional[int] = None
@@ -76,6 +79,15 @@ class LLMResponse:
     time_consumed: Optional[float] = None
 
     def __post_init__(self):
-        # 确保 reasoning_content 始终为字符串（防止从 API 得到 None）
+        # Make sure reasoning_content is always string
         if self.reasoning_content is None:
             self.reasoning_content = ""
+
+
+@dataclass
+class RerankResult:
+    index: int
+
+    score: float
+
+    text: str
