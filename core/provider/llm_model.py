@@ -56,8 +56,11 @@ class LLMResponse:
     """Content field in chat completion response"""
     text_response: str
 
-    """reasoning content for reasoning models"""
-    reasoning_content: Optional[str] = None
+    """
+    reasoning content for reasoning models
+    Make sure it's always a string to avoid missing fields in API responses
+    """
+    reasoning_content: str = ""
 
     """agent step index"""
     agent_step_index: Optional[int] = None
@@ -74,6 +77,11 @@ class LLMResponse:
 
     """Units: seconds"""
     time_consumed: Optional[float] = None
+
+    def __post_init__(self):
+        # Make sure reasoning_content is always string
+        if self.reasoning_content is None:
+            self.reasoning_content = ""
 
 
 @dataclass
