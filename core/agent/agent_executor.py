@@ -48,6 +48,7 @@ class NewMemory:
             }
         )
 
+    # 修改：添加 reasoning_content 参数，默认空字符串，以满足 Kimi API 要求
     def assistant(self, content: str, tool_calls: Optional[list[dict]] = None, reasoning_content: str = ""):
         if not tool_calls:
             self.memory_list.append(
@@ -93,6 +94,7 @@ class AgentExecutor:
             llm_resp = await llm_model.chat(request)
 
             if not llm_resp:
+                # 错误响应也添加 reasoning_content
                 request.messages.append({"role": "assistant", "content": "", "reasoning_content": ""})
                 ctx.new_memory.assistant("", reasoning_content="")
                 yield AgentStepResult(
@@ -131,7 +133,8 @@ class AgentExecutor:
 
             if not has_tool_calls:
                 assistant_content = llm_resp.text_response or ""
-                reasoning = llm_resp.reasoning_content or ""
+                reasoning = llm_resp.reasoning_content or ""  # 确保字符串
+                # 无工具调用时添加 reasoning_content
                 request.messages.append(
                     {
                         "role": "assistant",
@@ -151,9 +154,10 @@ class AgentExecutor:
                 return
 
             assistant_content = llm_resp.text_response or ""
-            reasoning = llm_resp.reasoning_content or ""
+            reasoning = llm_resp.reasoning_content or ""  # 确保字符串
 
             await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
+            # 有工具调用时添加 reasoning_content
             request.messages.append(
                 {
                     "role": "assistant",
