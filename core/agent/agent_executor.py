@@ -48,12 +48,13 @@ class NewMemory:
             }
         )
 
-    def assistant(self, content: str, tool_calls: Optional[list[dict]] = None):
+    def assistant(self, content: str, tool_calls: Optional[list[dict]] = None, reasoning_content: str = ""):
         if not tool_calls:
             self.memory_list.append(
                 {
                     "role": "assistant",
-                    "content": content
+                    "content": content,
+                    "reasoning_content": reasoning_content
                 }
             )
         else:
@@ -61,18 +62,13 @@ class NewMemory:
                 {
                     "role": "assistant",
                     "content": content,
-                    "tool_calls": tool_calls
+                    "tool_calls": tool_calls,
+                    "reasoning_content": reasoning_content
                 }
             )
 
     def tool(self, tool_results: list[dict]):
         self.memory_list.extend(tool_results)
-        # self.memory_list.append({
-        #     "role": "tool",
-        #     "tool_call_id": tool_call_id,
-        #     "name": name,
-        #     "content": str(result)
-        # })
 
 
 class AgentExecutor:
@@ -97,8 +93,8 @@ class AgentExecutor:
             llm_resp = await llm_model.chat(request)
 
             if not llm_resp:
-                request.messages.append({"role": "assistant", "content": ""})
-                ctx.new_memory.assistant("")
+                request.messages.append({"role": "assistant", "content": "", "reasoning_content": ""})
+                ctx.new_memory.assistant("", reasoning_content="")
                 yield AgentStepResult(
                     state="error",
                     err="Failed to call LLM",
@@ -135,13 +131,15 @@ class AgentExecutor:
 
             if not has_tool_calls:
                 assistant_content = llm_resp.text_response or ""
+                reasoning = llm_resp.reasoning_content or ""
                 request.messages.append(
                     {
                         "role": "assistant",
                         "content": assistant_content,
+                        "reasoning_content": reasoning
                     }
                 )
-                ctx.new_memory.assistant(assistant_content)
+                ctx.new_memory.assistant(assistant_content, reasoning_content=reasoning)
                 yield AgentStepResult(
                     state="success",
                     step_index=step_index,
@@ -153,6 +151,7 @@ class AgentExecutor:
                 return
 
             assistant_content = llm_resp.text_response or ""
+            reasoning = llm_resp.reasoning_content or ""
 
             await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
             request.messages.append(
@@ -160,9 +159,10 @@ class AgentExecutor:
                     "role": "assistant",
                     "content": assistant_content,
                     "tool_calls": llm_resp.tool_calls,
+                    "reasoning_content": reasoning
                 }
             )
-            ctx.new_memory.assistant(assistant_content, llm_resp.tool_calls)
+            ctx.new_memory.assistant(assistant_content, llm_resp.tool_calls, reasoning_content=reasoning)
             request.messages.extend(llm_resp.tool_results)
             ctx.new_memory.tool(llm_resp.tool_results)
 
