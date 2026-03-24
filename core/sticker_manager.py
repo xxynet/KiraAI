@@ -122,9 +122,6 @@ class StickerManager:
         with open(file_path, "wb") as f:
             f.write(file_bytes)
         final_desc = desc or ""
-        if not final_desc:
-            sticker_desc = await self.get_sticker_description(filename)
-            final_desc = sticker_desc or ""
         if sticker_id and str(sticker_id).strip():
             sid = str(sticker_id).strip()
             if sid in self.sticker_dict:
@@ -145,11 +142,24 @@ class StickerManager:
         }
         self.sticker_paths.append(filename)
         self.save_sticker_dict()
+        # If description is not given, call VLM to get description in background, do not block upload response
+        if not final_desc:
+            asyncio.create_task(self._update_desc_in_background(sid, filename))
         return {
             "id": sid,
             "desc": final_desc,
             "path": filename,
         }
+
+    async def _update_desc_in_background(self, sid: str, filename: str):
+        try:
+            desc = await self.get_sticker_description(filename)
+            if desc and sid in self.sticker_dict:
+                self.sticker_dict[sid]["desc"] = desc
+                self.save_sticker_dict()
+                logger.info(f"Sticker {sid} description updated by VLM: {desc}")
+        except Exception as e:
+            logger.error(f"Failed to get VLM description for sticker {sid}: {e}")
 
     async def scan_and_register_sticker(self):
         while True:
