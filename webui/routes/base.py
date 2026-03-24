@@ -26,9 +26,9 @@ class RouteDefinition:
 
 
 class Routes:
-    def __init__(self, app: FastAPI, context: Any | None = None) -> None:
+    def __init__(self, app: FastAPI, lifecycle: Any | None = None) -> None:
         self.app = app
-        self.context = context
+        self.lifecycle = lifecycle
 
     def get_routes(self) -> List[RouteDefinition]:
         raise NotImplementedError

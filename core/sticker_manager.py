@@ -39,10 +39,14 @@ class StickerManager:
 
             sticker_dict = json.loads(sticker_json)
 
-            if sticker_dict:
-                self.sticker_index = int(next(reversed(sticker_dict)))
-            else:
-                self.sticker_index = 0
+            numeric_ids = []
+            for key in sticker_dict:
+                if isinstance(key, str) and key.isdigit():
+                    try:
+                        numeric_ids.append(int(key))
+                    except Exception:
+                        pass
+            self.sticker_index = max(numeric_ids) if numeric_ids else 0
 
             self.sticker_paths = [sticker_dict[sticker_id].get("path") for sticker_id in sticker_dict]
 

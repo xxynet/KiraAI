@@ -521,10 +521,10 @@ async function toggleAdapterActive(id) {
 
         adapter.status = newStatus;
         renderAdapterList();
-        showNotification('Adapter status updated', 'success');
+        showNotification(window.i18n ? window.i18n.t('adapter.status_updated') : 'Adapter status updated', 'success');
     } catch (error) {
         console.error('Error toggling adapter status:', error);
-        showNotification('Failed to update adapter status', 'error');
+        showNotification(window.i18n ? window.i18n.t('adapter.status_update_failed') : 'Failed to update adapter status', 'error');
     }
 }
 
@@ -546,7 +546,7 @@ async function fetchAdapterSchema(platform) {
         return await response.json();
     } catch (error) {
         console.error('Error fetching adapter schema:', error);
-        showNotification('Failed to load adapter schema', 'error');
+        showNotification(window.i18n ? window.i18n.t('adapter.schema_load_failed') : 'Failed to load adapter schema', 'error');
         return null;
     }
 }
@@ -891,7 +891,7 @@ async function openAdapterModal(adapter) {
             }
         } catch (error) {
             console.error('Error fetching adapter platforms:', error);
-            showNotification('Failed to load adapter platforms', 'error');
+            showNotification(window.i18n ? window.i18n.t('adapter.platform_load_failed') : 'Failed to load adapter platforms', 'error');
         }
     }
 }
@@ -979,7 +979,7 @@ async function saveAdapter() {
             });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                showNotification(errorData.detail || 'Failed to update adapter', 'error');
+                showNotification(errorData.detail || (window.i18n ? window.i18n.t('adapter.update_failed') : 'Failed to update adapter'), 'error');
                 return;
             }
         } else {
@@ -989,17 +989,17 @@ async function saveAdapter() {
             });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                showNotification(errorData.detail || 'Failed to create adapter', 'error');
+                showNotification(errorData.detail || (window.i18n ? window.i18n.t('adapter.create_failed') : 'Failed to create adapter'), 'error');
                 return;
             }
         }
 
         await loadAdapterData();
         closeAdapterModal();
-        showNotification('Adapter saved successfully', 'success');
+        showNotification(window.i18n ? window.i18n.t('adapter.saved') : 'Adapter saved successfully', 'success');
     } catch (error) {
         console.error('Error saving adapter:', error);
-        showNotification('Failed to save adapter', 'error');
+        showNotification(window.i18n ? window.i18n.t('adapter.save_failed') : 'Failed to save adapter', 'error');
     }
 }
 
@@ -1872,7 +1872,9 @@ async function deleteSticker(id) {
         showNotification('Sticker ID is required', 'error');
         return;
     }
-    currentDeleteHandler = async () => {
+    const title = window.i18n ? window.i18n.t('sticker.delete_confirm_title') : 'Delete Sticker';
+    const message = window.i18n ? window.i18n.t('sticker.delete_confirm_message') : 'Are you sure you want to delete this sticker? This action cannot be undone.';
+    openDeleteModal(title, message, async () => {
         try {
             const response = await apiCall(`/api/stickers/${encodeURIComponent(sid)}?delete_file=true`, {
                 method: 'DELETE'
@@ -1880,19 +1882,14 @@ async function deleteSticker(id) {
             if (!response.ok && response.status !== 204) {
                 throw new Error(`Failed to delete sticker: ${response.status}`);
             }
-            showNotification('Sticker deleted', 'success');
+            showNotification(window.i18n ? window.i18n.t('sticker.delete_success') : 'Sticker deleted successfully', 'success');
             closeDeleteModal();
             await loadStickerData();
         } catch (error) {
             console.error('Error deleting sticker:', error);
-            showNotification('Failed to delete sticker', 'error');
+            showNotification(window.i18n ? window.i18n.t('sticker.delete_failed') : 'Failed to delete sticker', 'error');
         }
-    };
-    const modal = document.getElementById('delete-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-    }
+    });
 }
 
 /**
@@ -2895,7 +2892,7 @@ async function openProviderModal() {
                 
             } catch (error) {
                 console.error('Error fetching provider types:', error);
-                showNotification(`Failed to load provider types: ${error.message}`, 'error');
+                showNotification(window.i18n ? window.i18n.t('provider.type_load_failed') : 'Failed to load provider types', 'error');
             }
         }
     }
@@ -2909,10 +2906,14 @@ function editProvider(id) {
 }
 
 function deleteProvider(id) {
-    if (confirm('Are you sure you want to delete this provider?')) {
-        apiCall(`/api/providers/${id}`, { method: 'DELETE' })
-            .then(() => {
-                showNotification('Provider deleted successfully', 'success');
+    if (!id) return;
+    const title = window.i18n ? window.i18n.t('provider.delete_confirm_title') : 'Delete Provider';
+    const message = window.i18n ? window.i18n.t('provider.delete_confirm_message') : 'Are you sure you want to delete this provider? This action cannot be undone.';
+    openDeleteModal(title, message, async () => {
+        try {
+            const response = await apiCall(`/api/providers/${id}`, { method: 'DELETE' });
+            if (response.status === 204 || response.status === 200) {
+                showNotification(window.i18n ? window.i18n.t('provider.delete_success') : 'Provider deleted successfully', 'success');
                 loadProviderData();
                 if (AppState.selectedProviderId === id) {
                     AppState.selectedProviderId = null;
@@ -2930,18 +2931,22 @@ function deleteProvider(id) {
                         `;
                     }
                 }
-            })
-            .catch(error => {
-                console.error('Error deleting provider:', error);
-                showNotification('Failed to delete provider', 'error');
-            });
-    }
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                showNotification(errorData.detail || (window.i18n ? window.i18n.t('provider.delete_failed') : 'Failed to delete provider'), 'error');
+            }
+            closeDeleteModal();
+        } catch (error) {
+            console.error('Error deleting provider:', error);
+            showNotification(window.i18n ? window.i18n.t('provider.delete_failed') : 'Failed to delete provider', 'error');
+        }
+    });
 }
 
 function editAdapter(id) {
     const adapter = AppState.data.adapters.find(a => a.id === id);
     if (!adapter) {
-        showNotification('Adapter not found', 'error');
+        showNotification(window.i18n ? window.i18n.t('adapter.not_found') : 'Adapter not found', 'error');
         return;
     }
     openAdapterModal(adapter);
@@ -2949,7 +2954,9 @@ function editAdapter(id) {
 
 async function deleteAdapter(id) {
     if (!id) return;
-    currentDeleteHandler = async () => {
+    const title = window.i18n ? window.i18n.t('adapter.delete_confirm_title') : 'Delete Adapter';
+    const message = window.i18n ? window.i18n.t('adapter.delete_confirm_message') : 'Are you sure you want to delete this adapter? This action cannot be undone.';
+    openDeleteModal(title, message, async () => {
         try {
             const response = await apiCall(`/api/adapters/${encodeURIComponent(id)}`, {
                 method: 'DELETE'
@@ -2957,22 +2964,17 @@ async function deleteAdapter(id) {
             if (response.status === 204 || response.status === 200) {
                 AppState.data.adapters = AppState.data.adapters.filter(a => a.id !== id);
                 renderAdapterList();
-                showNotification('Adapter deleted successfully', 'success');
+                showNotification(window.i18n ? window.i18n.t('adapter.delete_success') : 'Adapter deleted successfully', 'success');
             } else {
                 const errorData = await response.json().catch(() => ({}));
-                showNotification(errorData.detail || 'Failed to delete adapter', 'error');
+                showNotification(errorData.detail || (window.i18n ? window.i18n.t('adapter.delete_failed') : 'Failed to delete adapter'), 'error');
             }
             closeDeleteModal();
         } catch (error) {
             console.error('Error deleting adapter:', error);
-            showNotification('Failed to delete adapter', 'error');
+            showNotification(window.i18n ? window.i18n.t('adapter.delete_failed') : 'Failed to delete adapter', 'error');
         }
-    };
-    const modal = document.getElementById('delete-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-    }
+    });
 }
 
 function editPersona(id) {
@@ -2998,6 +3000,25 @@ const sessionEditorState = {
 };
 
 let currentDeleteHandler = null;
+
+function openDeleteModal(title, message, onConfirm) {
+    const titleEl = document.getElementById('delete-modal-title');
+    const messageEl = document.getElementById('delete-modal-message');
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
+    currentDeleteHandler = onConfirm;
+    const modal = document.getElementById('delete-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+}
+
+async function confirmDelete() {
+    if (typeof currentDeleteHandler === 'function') {
+        await currentDeleteHandler();
+    }
+}
 
 /**
  * Edit session - opens modal with Monaco editor
@@ -3418,11 +3439,25 @@ async function saveSession() {
  */
 function confirmDeleteSession(encodedSessionId) {
     const sessionId = decodeURIComponent(encodedSessionId);
-    sessionEditorState.currentSessionId = sessionId;
-    
-    const modal = document.getElementById('delete-modal');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    const title = window.i18n ? window.i18n.t('sessions.delete_confirm_title') : 'Delete Session';
+    const message = window.i18n ? window.i18n.t('sessions.delete_confirm_message') : 'Are you sure you want to delete this session? This action cannot be undone.';
+    openDeleteModal(title, message, async () => {
+        try {
+            const response = await apiCall(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                showNotification(window.i18n ? window.i18n.t('sessions.deleted') : 'Session deleted successfully', 'success');
+                closeDeleteModal();
+                await loadSessionsData();
+            } else {
+                showNotification(window.i18n ? window.i18n.t('sessions.delete_failed') : 'Failed to delete session', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting session:', error);
+            showNotification(window.i18n ? window.i18n.t('sessions.delete_failed') : 'Failed to delete session', 'error');
+        }
+    });
 }
 
 /**
@@ -3432,40 +3467,7 @@ function closeDeleteModal() {
     const modal = document.getElementById('delete-modal');
     modal.classList.add('hidden');
     modal.classList.remove('flex');
-    sessionEditorState.currentSessionId = null;
     currentDeleteHandler = null;
-}
-
-/**
- * Execute delete session
- */
-async function executeDeleteSession() {
-    if (typeof currentDeleteHandler === 'function') {
-        await currentDeleteHandler();
-        return;
-    }
-    if (!sessionEditorState.currentSessionId) {
-        closeDeleteModal();
-        return;
-    }
-    
-    try {
-        const response = await apiCall(`/api/sessions/${encodeURIComponent(sessionEditorState.currentSessionId)}`, {
-            method: 'DELETE'
-        });
-        
-        if (response.ok) {
-            showNotification('Session deleted successfully', 'success');
-            closeDeleteModal();
-            // Reload session list
-            await loadSessionsData();
-        } else {
-            showNotification('Failed to delete session', 'error');
-        }
-    } catch (error) {
-        console.error('Error deleting session:', error);
-        showNotification('Failed to delete session', 'error');
-    }
 }
 
 /**
@@ -4227,12 +4229,12 @@ async function saveProvider() {
     const type = document.getElementById('provider-type').value;
     
     if (!name) {
-        showNotification('Please enter provider name', 'error');
+        showNotification(window.i18n ? window.i18n.t('provider.name_required') : 'Please enter provider name', 'error');
         return;
     }
     
     if (!type) {
-        showNotification('Please select provider type', 'error');
+        showNotification(window.i18n ? window.i18n.t('provider.type_required') : 'Please select provider type', 'error');
         return;
     }
     
@@ -4268,14 +4270,14 @@ async function saveProvider() {
             closeProviderModal();
             
             // Show success notification
-            showNotification('Provider added successfully', 'success');
+            showNotification(window.i18n ? window.i18n.t('provider.added') : 'Provider added successfully', 'success');
         } else {
             const errorData = await response.json();
-            showNotification(errorData.detail || 'Failed to add provider', 'error');
+            showNotification(errorData.detail || (window.i18n ? window.i18n.t('provider.add_failed') : 'Failed to add provider'), 'error');
         }
     } catch (error) {
         console.error('Error saving provider:', error);
-        showNotification('Error saving provider', 'error');
+        showNotification(window.i18n ? window.i18n.t('provider.save_failed') : 'Error saving provider', 'error');
     }
 }
 
@@ -4427,7 +4429,7 @@ async function saveProviderConfig(providerId) {
     // Get current provider details to preserve name and type
     const provider = AppState.data.providers.find(p => p.id === providerId);
     if (!provider) {
-        showNotification('Provider not found', 'error');
+        showNotification(window.i18n ? window.i18n.t('provider.not_found') : 'Provider not found', 'error');
         return;
     }
 
@@ -4849,7 +4851,7 @@ function toggleProviderStatus(providerId) {
         provider.status = provider.status === 'active' ? 'inactive' : 'active';
         renderProviderList();
         displayProviderConfig(provider);
-        showNotification(`Provider ${provider.status === 'active' ? 'enabled' : 'disabled'}`, 'success');
+        showNotification(window.i18n ? window.i18n.t(provider.status === 'active' ? 'provider.enabled' : 'provider.disabled') : `Provider ${provider.status === 'active' ? 'enabled' : 'disabled'}`, 'success');
     }
 }
 
