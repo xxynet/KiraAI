@@ -11,6 +11,7 @@ from webui.models import (
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
+from webui.utils import schema_to_dict
 from webui.utils import _generate_id
 
 logger = get_logger("webui", "blue")
@@ -160,22 +161,11 @@ class ProvidersRoutes(Routes):
         provider_fields = schema.get("provider_config") or []
         model_fields_root = schema.get("model_config") or {}
 
-        provider_config_dict: Dict[str, Dict] = {}
-        for field in provider_fields:
-            key = getattr(field, "key", None)
-            if not key:
-                continue
-            provider_config_dict[key] = field.to_dict()
-
-        model_config_dict: Dict[str, Dict[str, Dict]] = {}
-        for model_type, fields in model_fields_root.items():
-            type_dict: Dict[str, Dict] = {}
-            for field in fields:
-                key = getattr(field, "key", None)
-                if not key:
-                    continue
-                type_dict[key] = field.to_dict()
-            model_config_dict[model_type] = type_dict
+        provider_config_dict = schema_to_dict(provider_fields)
+        model_config_dict = {
+            model_type: schema_to_dict(fields)
+            for model_type, fields in model_fields_root.items()
+        }
 
         return {
             "provider_config": provider_config_dict,

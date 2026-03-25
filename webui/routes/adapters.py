@@ -6,6 +6,7 @@ from core.logging_manager import get_logger
 from webui.models import AdapterBase, AdapterResponse
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
+from webui.utils import schema_to_dict
 from webui.utils import _generate_id
 
 logger = get_logger("webui", "blue")
@@ -94,13 +95,7 @@ class AdaptersRoutes(Routes):
                 status_code=404,
                 detail=f"Schema not found for adapter platform: {platform}",
             )
-        schema_dict: Dict[str, Dict] = {}
-        for field in schema_fields:
-            key = getattr(field, "key", None)
-            if not key:
-                continue
-            schema_dict[key] = field.to_dict()
-        return schema_dict
+        return schema_to_dict(schema_fields)
 
     async def list_adapters(self):
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):

@@ -297,7 +297,7 @@
                         <div class="w-1/3 bg-white rounded-lg shadow p-6 flex flex-col">
                             <div class="flex justify-between items-center mb-6 flex-shrink-0">
                                 <h3 class="text-lg font-semibold text-gray-800" data-i18n="provider.title">LLM Providers</h3>
-                                <button onclick="openProviderModal()" class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                                <button data-action="add-provider" class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                                     </svg>
@@ -336,7 +336,7 @@
                 <div id="page-adapter" class="page-content hidden">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-lg font-semibold text-gray-800" data-i18n="adapter.title">Adapters</h3>
-                        <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="adapter.add">
+                        <button data-action="add-adapter" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                             </svg>
@@ -511,7 +511,7 @@
                     <div class="bg-white rounded-lg shadow p-6">
                         <div class="flex justify-between items-center mb-6">
                             <h3 class="text-lg font-semibold text-gray-800" data-i18n="sessions.title">Session Management</h3>
-                            <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="sessions.new">
+                            <button data-action="new-session" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
                                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                                 </svg>
@@ -537,13 +537,13 @@
                         <div class="flex justify-between items-center mb-6">
                             <h3 class="text-lg font-semibold text-gray-800" data-i18n="logs.title">System Logs</h3>
                             <div class="flex space-x-2">
-                                <button class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center" data-i18n="logs.clear">
+                                <button data-action="clear-logs" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center" data-i18n="logs.clear">
                                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                     </svg>
                                     <span data-i18n="logs.clear">Clear Logs</span>
                                 </button>
-                                <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="logs.refresh">
+                                <button data-action="refresh-logs" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="logs.refresh">
                                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                                     </svg>
@@ -935,12 +935,18 @@
     <script src="/static/js/core/modal.js"></script>
     <!-- Shared utilities (P1 refactor) -->
     <script src="/static/js/shared/render-config-fields.js"></script>
+    <script src="/static/js/shared/event-router.js"></script>
     <!-- Business modules (P2 refactor) -->
     <script src="/static/js/modules/overview.js"></script>
     <script src="/static/js/modules/log.js"></script>
     <script src="/static/js/modules/sticker.js"></script>
     <script src="/static/js/modules/persona.js"></script>
     <script src="/static/js/modules/session.js"></script>
+    <script src="/static/js/modules/config.js"></script>
+    <script src="/static/js/modules/settings.js"></script>
+    <script src="/static/js/modules/plugin.js"></script>
+    <script src="/static/js/modules/adapter.js"></script>
+    <script src="/static/js/modules/provider.js"></script>
     <script src="/static/js/app.js"></script>
     <script src="/static/js/configuration-manager.js"></script>
 </body>

@@ -83,3 +83,20 @@ def _verify_jwt_token(token: str) -> Dict:
 def _generate_id() -> str:
     """Generate a short unique identifier."""
     return uuid.uuid4().hex[:12]
+
+
+def schema_to_dict(fields: list) -> dict:
+    """Convert a list of BaseConfigField objects to a plain dict keyed by field.key.
+
+    Fields whose key is missing or whose to_dict() raises are silently skipped.
+    """
+    result: dict = {}
+    for f in fields:
+        key = getattr(f, "key", None)
+        if not key:
+            continue
+        try:
+            result[str(key)] = f.to_dict()
+        except Exception:
+            continue
+    return result

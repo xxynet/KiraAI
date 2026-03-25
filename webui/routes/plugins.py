@@ -6,6 +6,7 @@ from core.logging_manager import get_logger
 from webui.models import PluginConfigUpdateRequest, PluginItem
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
+from webui.utils import schema_to_dict
 
 logger = get_logger("webui", "blue")
 
@@ -84,18 +85,8 @@ class PluginsRoutes(Routes):
             if plugin_id not in registered:
                 raise HTTPException(status_code=404, detail="Plugin not found")
             schema_fields = plugin_manager.get_plugin_schema(plugin_id) or []
-            schema_dict: Dict[str, Dict[str, Any]] = {}
-            for field in schema_fields:
-                key = getattr(field, "key", None)
-                if not key:
-                    continue
-                try:
-                    field_dict = field.to_dict()
-                except Exception:
-                    continue
-                schema_dict[str(key)] = field_dict
             config = plugin_manager.get_plugin_config(plugin_id)
-            return {"schema": schema_dict, "config": config}
+            return {"schema": schema_to_dict(schema_fields), "config": config}
         except HTTPException:
             raise
         except Exception as e:
@@ -116,17 +107,7 @@ class PluginsRoutes(Routes):
                 raise HTTPException(status_code=404, detail="Plugin not found")
             updated_config = await plugin_manager.update_plugin_config(plugin_id, payload.config or {})
             schema_fields = plugin_manager.get_plugin_schema(plugin_id) or []
-            schema_dict: Dict[str, Dict[str, Any]] = {}
-            for field in schema_fields:
-                key = getattr(field, "key", None)
-                if not key:
-                    continue
-                try:
-                    field_dict = field.to_dict()
-                except Exception:
-                    continue
-                schema_dict[str(key)] = field_dict
-            return {"schema": schema_dict, "config": updated_config}
+            return {"schema": schema_to_dict(schema_fields), "config": updated_config}
         except HTTPException:
             raise
         except Exception as e:
