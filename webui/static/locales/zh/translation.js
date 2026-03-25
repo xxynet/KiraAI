@@ -380,6 +380,7 @@ window._locale_zh = {
         module_unavailable: "配置模块不可用",
         load_error: "加载配置失败",
         fallback_save_warning: "配置管理器未加载，已回退到旧版保存",
-        manager_not_loaded: "配置管理器未加载"
+        manager_not_loaded: "配置管理器未加载",
+        select_model: "— 请选择模型 —"
     }
 };

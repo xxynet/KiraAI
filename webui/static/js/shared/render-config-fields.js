@@ -101,6 +101,28 @@ function renderConfigFields(schema, containerOrId, currentConfig = {}) {
             }
             wrapper.appendChild(input);
 
+        } else if (fieldType === 'textarea') {
+            input = document.createElement('textarea');
+            input.className = inputClass;
+            input.rows = 4;
+            input.setAttribute('data-config-key', key);
+            input.setAttribute('data-config-type', fieldType);
+            if (field.hint) input.placeholder = field.hint;
+            if (currentValue !== undefined && currentValue !== null) input.value = String(currentValue);
+            wrapper.appendChild(input);
+
+        } else if (fieldType === 'model_select') {
+            input = document.createElement('select');
+            input.className = inputClass;
+            input.setAttribute('data-config-key', key);
+            input.setAttribute('data-config-type', fieldType);
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = getTranslation('config.select_model', '— Select model —');
+            input.appendChild(placeholder);
+            loadModelSelectOptions(input, field.model_type, currentValue);
+            wrapper.appendChild(input);
+
         } else if (['json', 'markdown', 'yaml', 'editor'].includes(fieldType)) {
             // Hidden textarea as value store for collectConfigFromContainer
             input = document.createElement('textarea');
@@ -323,5 +345,34 @@ function validateConfigFieldInput(input) {
         input.classList.add('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
         if (errorEl) { errorEl.textContent = ''; errorEl.classList.add('hidden'); }
         return true;
+    }
+}
+
+/**
+ * Populate a model_select <select> element with options fetched from the provider API.
+ * Options are grouped by provider and filtered to the requested model_type.
+ * Display format: "model_id (Provider Name)"
+ * Value format:   "provider_id/model_type/model_id"
+ */
+async function loadModelSelectOptions(selectEl, modelType, currentValue) {
+    try {
+        const res = await apiCall('/api/providers');
+        if (!res.ok) return;
+        const providers = await res.json();
+        for (const provider of (providers || [])) {
+            const mRes = await apiCall(`/api/providers/${provider.id}/models`);
+            if (!mRes.ok) continue;
+            const modelConfig = await mRes.json();
+            const typeModels = (modelConfig && modelConfig[modelType]) || {};
+            Object.keys(typeModels).forEach(modelId => {
+                const opt = document.createElement('option');
+                opt.value = `${provider.id}:${modelId}`;
+                opt.textContent = `${modelId} (${provider.name})`;
+                selectEl.appendChild(opt);
+            });
+        }
+        if (currentValue) selectEl.value = currentValue;
+    } catch (e) {
+        console.warn('Failed to load model options:', e);
     }
 }

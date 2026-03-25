@@ -13,6 +13,8 @@ class ConfigType(Enum):
     Markdown = "markdown"
     Yaml = "yaml"
     Editor = "editor"
+    Textarea = "textarea"
+    ModelSelect = "model_select"
 
 
 class BaseConfigField:
@@ -46,6 +48,8 @@ class BaseConfigField:
                 data["options"] = list(self.options)
         if isinstance(self, EditorField) and getattr(self, "language", None):
             data["language"] = self.language
+        if isinstance(self, ModelSelectField) and getattr(self, "model_type", None):
+            data["model_type"] = self.model_type
         return data
 
 
@@ -137,6 +141,21 @@ class EditorField(BaseConfigField):
         self.language = language
 
 
+class TextareaField(BaseConfigField):
+    type = ConfigType.Textarea
+
+    def __init__(self, key: str, name: str, hint: str, default=None):
+        super().__init__(key, name, hint, default)
+
+
+class ModelSelectField(BaseConfigField):
+    type = ConfigType.ModelSelect
+
+    def __init__(self, key: str, name: str, hint: str, model_type: str, default=None):
+        super().__init__(key, name, hint, default)
+        self.model_type = model_type
+
+
 def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     field_type = schema.get("type", "string")
     name = schema.get("name") or key
@@ -179,6 +198,13 @@ def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     if field_type == "editor":
         language = schema.get("language")
         return EditorField(key=key, name=name, hint=hint, default=default, language=language)
+
+    if field_type == "textarea":
+        return TextareaField(key=key, name=name, hint=hint, default=default)
+
+    if field_type == "model_select":
+        model_type = schema.get("model_type", "llm")
+        return ModelSelectField(key=key, name=name, hint=hint, model_type=model_type, default=default)
 
     return StringField(key=key, name=name, hint=hint, default=default)
 

@@ -11,8 +11,8 @@
 }
 
 /* Add transitions only to specific interactive elements, not theme-related properties */
-button, .nav-item, .custom-select-trigger, .custom-select-option, input, textarea {
-    transition-property: color, background-color, border-color, opacity, transform;
+button, .nav-item, .custom-select-trigger, .custom-select-option, input, select, textarea {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     transition-duration: 150ms;
     transition-timing-function: ease-in-out;
 }
@@ -199,7 +199,6 @@ button {
 }
 
 /* Global Input/Select/Textarea Styles */
-/* input:not([type="checkbox"]):not([type="radio"]), */
 input[type="text"],
 input[type="password"],
 input[type="email"],
@@ -210,11 +209,21 @@ textarea {
     transition: all 0.2s ease-in-out;
 }
 
+/* textarea/select with Tailwind's transition-colors class get overridden to 150ms
+   by the class selector (0,1,0) beating the element selector (0,0,1).
+   Use element+class (0,1,1) to match typed-input specificity and restore 0.2s. */
+textarea.transition-colors,
+select.transition-colors {
+    transition: all 0.2s ease-in-out;
+}
+
 input:not([type="checkbox"]):not([type="radio"]):hover,
 input[type="text"]:hover,
 input[type="password"]:hover,
 select:hover,
-textarea:hover {
+.dark select:hover,
+textarea:hover,
+.dark textarea:hover {
     border-color: #3b82f6 !important;
 }
 
@@ -222,7 +231,9 @@ input:not([type="checkbox"]):not([type="radio"]):focus,
 input[type="text"]:focus,
 input[type="password"]:focus,
 select:focus,
-textarea:focus {
+.dark select:focus,
+textarea:focus,
+.dark textarea:focus {
     outline: none;
     border-color: #3b82f6 !important;
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
@@ -233,7 +244,9 @@ input:not([type="checkbox"]):not([type="radio"]):focus:hover,
 input[type="text"]:focus:hover,
 input[type="password"]:focus:hover,
 select:focus:hover,
-textarea:focus:hover {
+.dark select:focus:hover,
+textarea:focus:hover,
+.dark textarea:focus:hover {
     border-color: #3b82f6 !important;
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
 }
