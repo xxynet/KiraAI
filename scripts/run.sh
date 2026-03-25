@@ -12,10 +12,16 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   PYTHON_BIN="python"
 fi
 
+# Step 1: Migrate .venv -> venv (backward compatibility)
+if [ -d .venv ] && [ ! -d venv ]; then
+  echo "[compat] Renaming .venv to venv..."
+  mv .venv venv
+fi
+
 # Step 1: Create venv if missing
-if [ ! -d .venv ]; then
+if [ ! -d venv ]; then
   echo "[1/3] Creating virtual environment..."
-  "$PYTHON_BIN" -m venv .venv
+  "$PYTHON_BIN" -m venv venv
 else
   echo "Virtual environment already exists."
 fi
@@ -23,7 +29,7 @@ fi
 # Step 2: Activate venv
 echo "[2/3] Activating virtual environment..."
 # shellcheck disable=SC1091
-source .venv/bin/activate
+source venv/bin/activate
 
 # Step 3: Install dependencies
 echo "[3/3] Installing dependencies..."
