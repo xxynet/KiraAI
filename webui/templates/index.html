@@ -359,12 +359,12 @@
                 <div id="page-persona" class="page-content hidden">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-lg font-semibold text-gray-800" data-i18n="persona.title">Personas</h3>
-                        <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="persona.add">
+                        <!-- <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" data-i18n="persona.add">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                             </svg>
                             <span data-i18n="persona.add">Add Persona</span>
-                        </button>
+                        </button> -->
                     </div>
                     <div id="persona-list" class="space-y-4">
                         <div class="flex justify-center items-center py-12">
@@ -927,6 +927,20 @@
     <script src="/static/locales/zh/translation.js"></script>
     <script src="/static/js/i18n.js"></script>
     <script src="/static/js/image-dropzone.js"></script>
+    <!-- Core modules (P1 refactor) -->
+    <script src="/static/js/core/notify.js"></script>
+    <script src="/static/js/core/api.js"></script>
+    <script src="/static/js/core/state.js"></script>
+    <script src="/static/js/core/monaco.js"></script>
+    <script src="/static/js/core/modal.js"></script>
+    <!-- Shared utilities (P1 refactor) -->
+    <script src="/static/js/shared/render-config-fields.js"></script>
+    <!-- Business modules (P2 refactor) -->
+    <script src="/static/js/modules/overview.js"></script>
+    <script src="/static/js/modules/log.js"></script>
+    <script src="/static/js/modules/sticker.js"></script>
+    <script src="/static/js/modules/persona.js"></script>
+    <script src="/static/js/modules/session.js"></script>
     <script src="/static/js/app.js"></script>
     <script src="/static/js/configuration-manager.js"></script>
 </body>

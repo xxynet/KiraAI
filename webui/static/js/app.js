@@ -1,89 +1,14 @@
 /**
  * Main application JavaScript for KiraAI Admin Panel
  * Handles page navigation, API interactions, and data updates
+ *
+ * Extracted modules (loaded via index.html <script> tags before this file):
+ *   core/state.js          — AppState
+ *   core/api.js            — apiCall
+ *   core/notify.js         — showNotification
+ *   shared/render-config-fields.js — renderConfigFields, collectConfigFromContainer,
+ *                                    initConfigMonacoEditor, validateConfigFieldInput
  */
-
-// Application state
-const AppState = {
-    currentPage: 'overview',
-    refreshInterval: null,
-    selectedProviderId: null,
-    sseEventSource: null,
-    configTab: 'message',
-    configurationTabsInitialized: false,
-    pluginTab: 'plugins',
-    pluginTabsInitialized: false,
-    data: {
-        overview: null,
-        providers: [],
-        adapters: [],
-        personas: [],
-        stickers: [],
-        mcpServers: [],
-        settings: {},
-        providerModels: {},
-        configuration: null,
-        configProviders: [],
-        configProviderModels: {},
-        logConfig: {
-            maxQueueSize: 100
-        },
-        logFilter: {
-            level: 'all'
-        }
-    },
-    editor: {
-        instance: null,
-        currentFile: null,
-        currentFormat: 'ini',
-        files: {
-            'config.ini': { content: '; Configuration file\n[database]\nhost = localhost\nport = 5432\nusername = admin\npassword = secret', format: 'ini' },
-            'settings.json': { content: '{\n  "name": "KiraAI",\n  "version": "1.0.0",\n  "debug": true,\n  "features": {\n    "logging": true,\n    "metrics": false\n  }\n}', format: 'json' },
-            'README.md': { content: '# KiraAI\n\n## Description\nKiraAI is an advanced AI system.\n\n## Installation\n```bash\nnpm install\n```\n\n## Usage\n```javascript\nconst kira = new KiraAI();\nkira.initialize();\n```', format: 'md' },
-            'app.xml': { content: '<?xml version="1.0" encoding="UTF-8"?>\n<application>\n  <name>KiraAI</name>\n  <version>1.0.0</version>\n  <settings>\n    <debug>true</debug>\n    <logging>\n      <level>info</level>\n      <file>app.log</file>\n    </logging>\n  </settings>\n</application>', format: 'xml' }
-        }
-    },
-    personaEditor: {
-        instance: null,
-        format: 'json'
-    }
-};
-
-/**
- * Unified API call function with JWT authentication
- */
-async function apiCall(url, options = {}) {
-    const jwtToken = localStorage.getItem('jwt_token');
-
-    if (!jwtToken) {
-        window.location.href = '/login';
-        throw new Error('No JWT token found');
-    }
-
-    const headers = {
-        ...options.headers
-    };
-
-    if (!(options.body instanceof FormData) && !headers['Content-Type']) {
-        headers['Content-Type'] = 'application/json';
-    }
-
-    headers['Authorization'] = `Bearer ${jwtToken}`;
-
-    const response = await fetch(url, {
-        ...options,
-        headers
-    });
-
-    // Handle 401 Unauthorized
-    if (response.status === 401) {
-        localStorage.removeItem('jwt_token');
-        window.location.href = '/login';
-        throw new Error('Unauthorized');
-    }
-
-    return response;
-}
 
 /**
  * Initialize the application
@@ -268,62 +193,7 @@ async function loadAppVersion() {
     }
 }
 
-/**
- * Load overview statistics
- */
-async function loadOverviewData() {
-    try {
-        const response = await apiCall('/api/overview');
-        const data = await response.json();
-        AppState.data.overview = data;
-        
-        // Update statistics cards
-        updateElement('stat-total-adapters', data.total_adapters || 0);
-        updateElement('stat-active-adapters', data.active_adapters || 0);
-        updateElement('stat-adapter-count', data.total_adapters || 0);
-        updateElement('stat-total-providers', data.total_providers || 0);
-        updateElement('stat-total-messages', data.total_messages || 0);
-        
-        // Update runtime duration
-        const runtimeElement = document.getElementById('stat-runtime-duration');
-        if (runtimeElement) {
-            // Store the base timestamp for real-time updates
-            AppState.data.overview.base_timestamp = Date.now();
-            AppState.data.overview.runtime_duration = data.runtime_duration || 0;
-            updateRuntimeDuration();
-        }
-        
-        // Update memory usage
-        const memoryUsage = data.memory_usage || 0;
-        const totalMemory = data.total_memory || 0;
-//        const memoryUsageDisplay = totalMemory > 0
-//            ? `${memoryUsage} MB / ${totalMemory} MB`
-//            : `${memoryUsage} MB`;
-        const memoryUsageDisplay = `${memoryUsage} MB`;
-        updateElement('stat-memory-usage', memoryUsageDisplay);
-        
-        // Update system status
-        const statusIndicator = document.getElementById('system-status-indicator');
-        const statusText = document.getElementById('system-status-text');
-        
-        if (statusIndicator && statusText) {
-            const status = data.system_status || 'unknown';
-            statusIndicator.className = `w-3 h-3 rounded-full mr-2 ${
-                status === 'running' ? 'bg-green-500' :
-                status === 'stopped' ? 'bg-red-500' : 'bg-gray-400'
-            }`;
-            
-            if (window.i18n) {
-                statusText.setAttribute('data-i18n', `overview.status_${status}`);
-                statusText.textContent = window.i18n.t(`overview.status_${status}`);
-            } else {
-                statusText.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-            }
-        }
-    } catch (error) {
-        console.error('Error loading overview data:', error);
-    }
-}
+// loadOverviewData → modules/overview.js
 
 /**
  * Load provider data
@@ -558,227 +428,7 @@ async function loadAdapterSchema(platform, currentValues = {}) {
     }
 }
 
-function renderConfigFields(schema, containerOrId, currentConfig = {}) {
-    const container = typeof containerOrId === 'string' ? document.getElementById(containerOrId) : containerOrId;
-    if (!container) return;
-
-    container.innerHTML = '';
-
-    // Support nested provider_config schema format
-    const fields = (schema && schema.provider_config) ? schema.provider_config : schema;
-
-    if (!fields || Object.keys(fields).length === 0) {
-        container.innerHTML = '<div class="text-gray-500 dark:text-gray-400 py-2">' + getTranslation('model.no_config_required', 'No configuration required') + '</div>';
-        return;
-    }
-
-    const inputClass = 'w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors';
-
-    Object.entries(fields).forEach(([key, field]) => {
-        if (!field || key.startsWith('_')) return;
-
-        const wrapper = document.createElement('div');
-        wrapper.className = 'mb-4';
-
-        const label = document.createElement('label');
-        label.className = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
-        label.textContent = field.name || key;
-        wrapper.appendChild(label);
-
-        const fieldType = field.type || 'string';
-        const currentValue = currentConfig[key] !== undefined ? currentConfig[key] : field.default;
-        const hasOptions = Array.isArray(field.options) && field.options.length > 0;
-
-        let input;
-
-        if (fieldType === 'switch') {
-            input = document.createElement('input');
-            input.type = 'checkbox';
-            input.className = 'sr-only';
-            input.setAttribute('data-config-key', key);
-            input.setAttribute('data-config-type', fieldType);
-            const isChecked = currentValue === true || currentValue === 'true';
-            input.checked = isChecked;
-
-            const toggleBg = document.createElement('span');
-            toggleBg.className = `relative inline-flex items-center h-5 w-9 rounded-full ${isChecked ? 'bg-green-500' : 'bg-gray-300'} transition-colors cursor-pointer`;
-            const toggleKnob = document.createElement('span');
-            toggleKnob.className = `inline-block h-4 w-4 bg-white rounded-full shadow transform ${isChecked ? 'translate-x-5' : 'translate-x-0'} transition-transform`;
-            toggleBg.appendChild(toggleKnob);
-            toggleBg.addEventListener('click', () => {
-                input.checked = !input.checked;
-                toggleBg.className = `relative inline-flex items-center h-5 w-9 rounded-full ${input.checked ? 'bg-green-500' : 'bg-gray-300'} transition-colors cursor-pointer`;
-                toggleKnob.className = `inline-block h-4 w-4 bg-white rounded-full shadow transform ${input.checked ? 'translate-x-5' : 'translate-x-0'} transition-transform`;
-            });
-
-            const toggleRow = document.createElement('div');
-            toggleRow.className = 'flex items-center';
-            toggleRow.appendChild(input);
-            toggleRow.appendChild(toggleBg);
-            wrapper.appendChild(toggleRow);
-
-        } else if (hasOptions) {
-            input = document.createElement('select');
-            input.className = inputClass;
-            if (fieldType === 'list') input.multiple = true;
-            if (!input.multiple) {
-                const placeholder = document.createElement('option');
-                placeholder.value = '';
-                placeholder.textContent = '';
-                input.appendChild(placeholder);
-            }
-            field.options.forEach(optionValue => {
-                const option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue;
-                input.appendChild(option);
-            });
-            input.setAttribute('data-config-key', key);
-            input.setAttribute('data-config-type', fieldType);
-            if (currentValue !== undefined && currentValue !== null) {
-                if (input.multiple && Array.isArray(currentValue)) {
-                    Array.from(input.options).forEach(o => { o.selected = currentValue.includes(o.value); });
-                } else {
-                    input.value = String(currentValue);
-                }
-            }
-            wrapper.appendChild(input);
-
-        } else if (fieldType === 'list') {
-            input = document.createElement('textarea');
-            input.className = inputClass;
-            input.rows = 3;
-            input.setAttribute('data-config-key', key);
-            input.setAttribute('data-config-type', fieldType);
-            if (field.hint) input.placeholder = field.hint;
-            if (currentValue !== undefined && currentValue !== null) {
-                input.value = Array.isArray(currentValue) ? currentValue.join('\n') : String(currentValue);
-            }
-            wrapper.appendChild(input);
-
-        } else if (['json', 'markdown', 'yaml', 'editor'].includes(fieldType)) {
-            // Hidden textarea as value store for collectConfigFromContainer
-            input = document.createElement('textarea');
-            input.className = 'hidden';
-            input.setAttribute('data-config-key', key);
-            input.setAttribute('data-config-type', fieldType);
-            let initialText = '';
-            if (currentValue !== undefined && currentValue !== null) {
-                initialText = (fieldType === 'json' && typeof currentValue === 'object')
-                    ? JSON.stringify(currentValue, null, 2)
-                    : String(currentValue);
-            }
-            input.value = initialText;
-
-            const monacoContainer = document.createElement('div');
-            monacoContainer.className = 'border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden';
-            monacoContainer.style.height = '200px';
-
-            wrapper.appendChild(input);
-            wrapper.appendChild(monacoContainer);
-
-            const langMap = { json: 'json', markdown: 'markdown', yaml: 'yaml', editor: field.language || 'plaintext' };
-            const monacoLang = langMap[fieldType];
-            // Defer initialization until the element is in the DOM
-            setTimeout(() => initConfigMonacoEditor(monacoContainer, input, monacoLang), 0);
-
-        } else {
-            // string, integer, float, sensitive
-            input = document.createElement('input');
-            if (fieldType === 'sensitive') {
-                input.type = 'password';
-            } else if (fieldType === 'integer') {
-                input.type = 'number';
-                input.step = '1';
-            } else if (fieldType === 'float') {
-                input.type = 'number';
-                input.step = 'any';
-            } else {
-                input.type = 'text';
-            }
-            input.className = inputClass + (fieldType === 'sensitive' ? ' pr-10' : '');
-            input.setAttribute('data-config-key', key);
-            input.setAttribute('data-config-type', fieldType);
-            if (field.name) input.setAttribute('data-config-name', field.name);
-            if (field.min !== undefined) input.setAttribute('data-config-min', field.min);
-            if (field.hint) input.placeholder = field.hint;
-            if (currentValue !== undefined && currentValue !== null) input.value = currentValue;
-            if (fieldType === 'integer' || fieldType === 'float') {
-                input.addEventListener('input', function() { validateConfigFieldInput(this); });
-                input.addEventListener('blur', function() { validateConfigFieldInput(this); });
-            }
-            if (fieldType === 'sensitive') {
-                const inputWrapper = document.createElement('div');
-                inputWrapper.className = 'relative';
-                inputWrapper.appendChild(input);
-                const eyeBtn = document.createElement('button');
-                eyeBtn.type = 'button';
-                eyeBtn.className = 'absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none';
-                eyeBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>`;
-                eyeBtn.addEventListener('click', () => {
-                    const visible = input.type === 'text';
-                    input.type = visible ? 'password' : 'text';
-                    eyeBtn.innerHTML = visible
-                        ? `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>`
-                        : `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>`;
-                });
-                inputWrapper.appendChild(eyeBtn);
-                wrapper.appendChild(inputWrapper);
-            } else {
-                wrapper.appendChild(input);
-            }
-        }
-
-        // Error message placeholder (for numeric validation)
-        const errorEl = document.createElement('p');
-        errorEl.className = 'text-xs text-red-500 dark:text-red-400 mt-1 hidden';
-        errorEl.setAttribute('data-error-for', key);
-        wrapper.appendChild(errorEl);
-
-        // Hint text below input
-        if (field.hint) {
-            const hintEl = document.createElement('p');
-            hintEl.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1';
-            hintEl.textContent = field.hint;
-            wrapper.appendChild(hintEl);
-        }
-
-        container.appendChild(wrapper);
-    });
-}
-
-/**
- * Initialize a Monaco editor inside a config field container.
- * Syncs changes back to the hidden textarea used by collectConfigFromContainer.
- */
-function initConfigMonacoEditor(editorContainer, hiddenTextarea, language) {
-    const doInit = () => {
-        const isDark = document.documentElement.classList.contains('dark');
-        const editor = monaco.editor.create(editorContainer, {
-            value: hiddenTextarea.value,
-            language: language,
-            theme: isDark ? 'vs-dark' : 'vs',
-            automaticLayout: true,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            fontSize: 13,
-            wordWrap: 'on',
-            folding: false,
-            lineNumbers: 'on',
-            renderWhitespace: 'selection',
-        });
-        editor.onDidChangeModelContent(() => {
-            hiddenTextarea.value = editor.getValue();
-        });
-        editorContainer._monacoInstance = editor;
-    };
-
-    if (typeof monaco !== 'undefined') {
-        doInit();
-    } else if (typeof require !== 'undefined') {
-        require(['vs/editor/editor.main'], doInit);
-    }
-}
+// renderConfigFields, initConfigMonacoEditor → shared/render-config-fields.js
 
 async function openAdapterModal(adapter) {
     const modal = document.getElementById('adapter-modal');
@@ -822,8 +472,7 @@ async function openAdapterModal(adapter) {
         configContainer.innerHTML = '';
     }
 
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    Modal.show('adapter-modal');
 
     if (platformSelect) {
         try {
@@ -916,20 +565,14 @@ document.addEventListener('click', (e) => {
 });
 
 function closeAdapterModal() {
-    const modal = document.getElementById('adapter-modal');
-    if (!modal) return;
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
-    AdapterModalState.mode = 'create';
-    AdapterModalState.adapterId = null;
-    const configContainer = document.getElementById('adapter-config-container');
-    if (configContainer) {
-        configContainer.innerHTML = '';
-    }
-    const platformSelect = document.getElementById('adapter-platform');
-    if (platformSelect) {
-        platformSelect.disabled = false;
-    }
+    Modal.hide('adapter-modal', () => {
+        AdapterModalState.mode = 'create';
+        AdapterModalState.adapterId = null;
+        const configContainer = document.getElementById('adapter-config-container');
+        if (configContainer) configContainer.innerHTML = '';
+        const platformSelect = document.getElementById('adapter-platform');
+        if (platformSelect) platformSelect.disabled = false;
+    });
 }
 
 async function saveAdapter() {
@@ -1003,109 +646,14 @@ async function saveAdapter() {
     }
 }
 
-function collectConfigFromContainer(container) {
-    const config = {};
-    if (!container) {
-        return config;
-    }
-    const inputs = container.querySelectorAll('[data-config-key]');
-    inputs.forEach((input) => {
-        const key = input.getAttribute('data-config-key');
-        const fieldType = input.getAttribute('data-config-type');
-        if (!key) {
-            return;
-        }
-        let value;
-        if (input.type === 'checkbox') {
-            value = input.checked;
-        } else if (input.tagName === 'SELECT') {
-            const selectElement = input;
-            if (selectElement.multiple) {
-                value = Array.from(selectElement.selectedOptions)
-                    .map((o) => o.value)
-                    .filter((v) => v !== '');
-            } else {
-                value = selectElement.value;
-            }
-        } else if (input.tagName === 'TEXTAREA' && fieldType === 'list') {
-            const raw = input.value || '';
-            value = raw
-                .split('\n')
-                .map((s) => s.trim())
-                .filter((s) => s.length > 0);
-        } else {
-            value = input.value;
-        }
-        if (fieldType === 'integer') {
-            value = value === '' ? null : parseInt(value, 10);
-        } else if (fieldType === 'float') {
-            value = value === '' ? null : parseFloat(value);
-        } else if (fieldType === 'list' && !Array.isArray(value)) {
-            const raw = value || '';
-            value = raw
-                .split('\n')
-                .flatMap((s) => s.split(','))
-                .map((s) => s.trim())
-                .filter((s) => s.length > 0);
-        } else if (fieldType === 'json') {
-            try { value = JSON.parse(value); } catch (e) { /* keep as string */ }
-        }
-        config[key] = value;
-    });
-    return config;
-}
+// collectConfigFromContainer → shared/render-config-fields.js
 
 /**
  * Load persona data
  */
-async function loadPersonaData() {
-    try {
-        // Fetch current persona content from backend
-        const response = await apiCall('/api/personas/current/content');
-        const data = await response.json();
-        
-        // Store persona content
-        AppState.data.personaContent = data.content || '';
-        AppState.data.personaFormat = data.format || 'text';
-        
-        // Render default persona card
-        renderDefaultPersonaCard();
-        
-        // Initialize persona editor if not already done
-        if (!AppState.personaEditor.instance) {
-            // Wait a bit for Monaco to load
-            setTimeout(() => {
-                if (typeof monaco !== 'undefined') {
-                    createPersonaEditor();
-                }
-            }, 100);
-        } else {
-            // Update editor content
-            if (AppState.personaEditor.instance) {
-                AppState.personaEditor.instance.setValue(AppState.data.personaContent);
-            }
-        }
-        
-        // Update format selector
-        const formatSelector = document.getElementById('persona-format');
-        if (formatSelector) {
-            formatSelector.value = AppState.data.personaFormat || 'text';
-        }
-    } catch (error) {
-        console.error('Error loading persona data:', error);
-    }
-}
+// loadPersonaData → modules/persona.js
 
-async function loadStickerData() {
-    try {
-        const response = await apiCall('/api/stickers');
-        const data = await response.json();
-        AppState.data.stickers = Array.isArray(data) ? data : (data.stickers || []);
-        renderStickerList();
-    } catch (error) {
-        console.error('Error loading sticker data:', error);
-    }
-}
+// loadStickerData → modules/sticker.js
 
 async function loadPluginData() {
     try {
@@ -1587,8 +1135,7 @@ async function openPluginConfigModal(pluginId) {
         titleElement.textContent = plugin.name || plugin.id || '';
     }
     container.innerHTML = '';
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    Modal.show('plugin-config-modal');
     try {
         const response = await apiCall(`/api/plugins/${encodeURIComponent(pluginId)}/config`);
         if (!response.ok) {
@@ -1606,15 +1153,11 @@ async function openPluginConfigModal(pluginId) {
 }
 
 function closePluginConfigModal() {
-    const modal = document.getElementById('plugin-config-modal');
-    const container = document.getElementById('plugin-config-container');
-    if (!modal || !container) {
-        return;
-    }
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
-    container.innerHTML = '';
-    PluginConfigModalState.pluginId = null;
+    Modal.hide('plugin-config-modal', () => {
+        const container = document.getElementById('plugin-config-container');
+        if (container) container.innerHTML = '';
+        PluginConfigModalState.pluginId = null;
+    });
 }
 
 async function savePluginConfig() {
@@ -1640,327 +1183,10 @@ async function savePluginConfig() {
     }
 }
 
-function renderStickerList() {
-    const container = document.getElementById('sticker-list');
-    if (!container) return;
+// renderStickerList, openStickerModal, closeStickerModal,
+// openAddStickerModal, saveSticker, deleteSticker → modules/sticker.js
 
-    if (!AppState.data.stickers || AppState.data.stickers.length === 0) {
-        container.innerHTML = `
-            <div class="flex justify-center items-center py-12">
-                <div class="text-center">
-                    <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    <p class="text-gray-500" data-i18n="sticker.no_stickers">No stickers configured</p>
-                </div>
-            </div>
-        `;
-        if (window.i18n) {
-            updateTranslations();
-        }
-        return;
-    }
-
-    const cards = AppState.data.stickers.map(sticker => {
-        const id = sticker.id || '';
-        const path = sticker.path || '';
-        const desc = sticker.desc || '';
-        const imgSrc = path ? `/sticker/${encodeURIComponent(path)}` : '';
-        const titleText = id ? `Sticker ${id}` : 'Sticker';
-        const altText = desc || titleText;
-        return `
-            <div class="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden flex flex-col">
-                <div class="relative bg-gray-100 dark:bg-gray-800 flex items-center justify-center pt-[100%]">
-                    ${imgSrc
-                        ? `<img src="${imgSrc}" alt="${escapeHtml(altText)}" class="absolute inset-0 w-full h-full object-contain">`
-                        : `<div class="text-gray-400 text-sm" data-i18n="sticker.no_stickers">No stickers configured</div>`}
-                </div>
-                <div class="p-4 flex-1 flex flex-col">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">#${escapeHtml(String(id))}</span>
-                    </div>
-                    <p class="text-sm text-gray-600 dark:text-gray-300 overflow-hidden text-ellipsis whitespace-nowrap" title="${escapeHtml(desc || '')}">${escapeHtml(desc || '')}</p>
-                    <div class="mt-3 flex items-center justify-end space-x-3">
-                        <button class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800" type="button" data-i18n="sticker.edit" onclick="openStickerModal('${escapeHtml(String(id))}')">
-                            Edit
-                        </button>
-                        <button class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30" type="button" data-i18n="sticker.delete" onclick="deleteSticker('${escapeHtml(String(id))}')">
-                            Delete
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    container.innerHTML = `
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            ${cards}
-        </div>
-    `;
-    if (window.i18n) {
-        updateTranslations();
-    }
-}
-
-async function openStickerModal(id) {
-    const modal = document.getElementById('sticker-modal');
-    if (!modal) return;
-
-    const idInput = document.getElementById('sticker-id');
-    const pathInput = document.getElementById('sticker-path');
-    const descInput = document.getElementById('sticker-desc');
-    const fileInput = document.getElementById('sticker-file');
-    const fileGroup = document.getElementById('sticker-file-group');
-    const titleEl = document.getElementById('sticker-modal-title');
-
-    if (!id) {
-        showNotification('Sticker ID is required', 'error');
-        return;
-    }
-
-    try {
-        const response = await apiCall(`/api/stickers/${encodeURIComponent(id)}`);
-        if (!response.ok) {
-            throw new Error(`Failed to load sticker: ${response.status}`);
-        }
-        const data = await response.json();
-
-        if (idInput) idInput.value = data.id || '';
-        if (pathInput) pathInput.value = data.path || '';
-        if (descInput) descInput.value = data.desc || '';
-        if (fileInput) fileInput.value = '';
-        if (fileGroup) {
-            fileGroup.style.display = 'none';
-        }
-        if (pathInput && pathInput.parentElement) {
-            pathInput.parentElement.style.display = '';
-        }
-        if (titleEl) {
-            titleEl.setAttribute('data-i18n', 'sticker.modal_title_edit');
-            if (window.i18n) {
-                titleEl.textContent = window.i18n.t('sticker.modal_title_edit');
-            }
-        }
-
-        modal.dataset.mode = 'edit';
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-    } catch (error) {
-        console.error('Error loading sticker:', error);
-        showNotification('Failed to load sticker', 'error');
-    }
-}
-
-function closeStickerModal() {
-    const modal = document.getElementById('sticker-modal');
-    if (!modal) return;
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
-    delete modal.dataset.mode;
-}
-
-function openAddStickerModal() {
-    const modal = document.getElementById('sticker-modal');
-    if (!modal) return;
-
-    const idInput = document.getElementById('sticker-id');
-    const pathInput = document.getElementById('sticker-path');
-    const descInput = document.getElementById('sticker-desc');
-    const fileInput = document.getElementById('sticker-file');
-    const fileGroup = document.getElementById('sticker-file-group');
-    const titleEl = document.getElementById('sticker-modal-title');
-
-    if (idInput) idInput.value = '';
-    if (pathInput) pathInput.value = '';
-    if (descInput) descInput.value = '';
-    if (fileInput) fileInput.value = '';
-    if (window.__stickerDropzoneInstance && typeof window.__stickerDropzoneInstance.reset === 'function') {
-        window.__stickerDropzoneInstance.reset();
-    }
-    if (fileGroup) {
-        fileGroup.style.display = '';
-    }
-    if (pathInput && pathInput.parentElement) {
-        pathInput.parentElement.style.display = 'none';
-    }
-    if (titleEl) {
-        titleEl.setAttribute('data-i18n', 'sticker.modal_title_add');
-        if (window.i18n) {
-            titleEl.textContent = window.i18n.t('sticker.modal_title_add');
-        }
-    }
-
-    modal.dataset.mode = 'add';
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
-}
-
-async function saveSticker() {
-    const modal = document.getElementById('sticker-modal');
-    const mode = modal && modal.dataset.mode ? modal.dataset.mode : 'edit';
-    const idInput = document.getElementById('sticker-id');
-    const pathInput = document.getElementById('sticker-path');
-    const descInput = document.getElementById('sticker-desc');
-    const fileInput = document.getElementById('sticker-file');
-
-    const id = idInput ? idInput.value.trim() : '';
-    const path = pathInput ? pathInput.value.trim() : '';
-    const desc = descInput ? descInput.value.trim() : '';
-
-    if (mode === 'edit' && !id) {
-        showNotification('Sticker ID is required', 'error');
-        return;
-    }
-
-    if (mode === 'add') {
-        if (!fileInput || !fileInput.files || !fileInput.files[0]) {
-            showNotification('Sticker image is required', 'error');
-            return;
-        }
-        try {
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            if (id) {
-                formData.append('id', id);
-            }
-            if (desc) {
-                formData.append('description', desc);
-            }
-            const response = await apiCall('/api/stickers', {
-                method: 'POST',
-                body: formData,
-            });
-            if (!response.ok) {
-                throw new Error(`Failed to save sticker: ${response.status}`);
-            }
-            showNotification('Sticker saved', 'success');
-            closeStickerModal();
-            await loadStickerData();
-        } catch (error) {
-            console.error('Error saving sticker:', error);
-            showNotification('Failed to save sticker', 'error');
-        }
-        return;
-    }
-
-    try {
-        const response = await apiCall(`/api/stickers/${encodeURIComponent(id)}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ desc })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to save sticker: ${response.status}`);
-        }
-
-        showNotification('Sticker saved', 'success');
-        closeStickerModal();
-        await loadStickerData();
-    } catch (error) {
-        console.error('Error saving sticker:', error);
-        showNotification('Failed to save sticker', 'error');
-    }
-}
-
-async function deleteSticker(id) {
-    const sid = String(id || '').trim();
-    if (!sid) {
-        showNotification('Sticker ID is required', 'error');
-        return;
-    }
-    const title = window.i18n ? window.i18n.t('sticker.delete_confirm_title') : 'Delete Sticker';
-    const message = window.i18n ? window.i18n.t('sticker.delete_confirm_message') : 'Are you sure you want to delete this sticker? This action cannot be undone.';
-    openDeleteModal(title, message, async () => {
-        try {
-            const response = await apiCall(`/api/stickers/${encodeURIComponent(sid)}?delete_file=true`, {
-                method: 'DELETE'
-            });
-            if (!response.ok && response.status !== 204) {
-                throw new Error(`Failed to delete sticker: ${response.status}`);
-            }
-            showNotification(window.i18n ? window.i18n.t('sticker.delete_success') : 'Sticker deleted successfully', 'success');
-            closeDeleteModal();
-            await loadStickerData();
-        } catch (error) {
-            console.error('Error deleting sticker:', error);
-            showNotification(window.i18n ? window.i18n.t('sticker.delete_failed') : 'Failed to delete sticker', 'error');
-        }
-    });
-}
-
-/**
- * Render default persona card
- */
-function renderDefaultPersonaCard() {
-    const container = document.getElementById('persona-list');
-    if (!container) return;
-    
-    const description = AppState.data.personaContent 
-        ? AppState.data.personaContent.substring(0, 150) + (AppState.data.personaContent.length > 150 ? '...' : '')
-        : 'No persona content';
-    
-    const card = `
-        <div class="bg-white border border-gray-200 rounded-lg p-6 glass-card cursor-pointer hover:shadow-lg transition-shadow" onclick="editPersona('default')">
-            <div class="flex justify-between items-start mb-4">
-                <div>
-                    <h4 class="text-lg font-semibold text-gray-900">default</h4>
-                    <p class="text-sm text-gray-500 mt-1">${escapeHtml(description)}</p>
-                </div>
-                <div class="flex space-x-2">
-                    <button class="text-blue-600 hover:text-blue-900 text-sm" onclick="event.stopPropagation(); editPersona('default')">Edit</button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    container.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${card}</div>`;
-}
-
-/**
- * Render persona list
- */
-function renderPersonaList() {
-    const container = document.getElementById('persona-list');
-    if (!container) return;
-    
-    if (AppState.data.personas.length === 0) {
-        container.innerHTML = `
-            <div class="flex justify-center items-center py-12">
-                <div class="text-center">
-                    <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                    </svg>
-                    <p class="text-gray-500" data-i18n="persona.no_personas">No personas configured</p>
-                </div>
-            </div>
-        `;
-        if (window.i18n) {
-            updateTranslations();
-        }
-        return;
-    }
-    
-    const cards = AppState.data.personas.map(persona => `
-        <div class="bg-white border border-gray-200 rounded-lg p-6 glass-card">
-            <div class="flex justify-between items-start mb-4">
-                <div>
-                    <h4 class="text-lg font-semibold text-gray-900">${escapeHtml(persona.name || 'Unnamed Persona')}</h4>
-                    <p class="text-sm text-gray-500 mt-1">${escapeHtml(persona.description || 'No description')}</p>
-                </div>
-                <div class="flex space-x-2">
-                    <button class="text-blue-600 hover:text-blue-900 text-sm" onclick="editPersona('${persona.id || ''}')">Edit</button>
-                    <button class="text-red-600 hover:text-red-900 text-sm" onclick="deletePersona('${persona.id || ''}')">Delete</button>
-                </div>
-            </div>
-        </div>
-    `).join('');
-    
-    container.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${cards}</div>`;
-}
+// renderDefaultPersonaCard, renderPersonaList → modules/persona.js
 
 /**
  * Load configuration data - uses ConfigurationManager
@@ -2035,134 +1261,7 @@ function _bindConfigToolbarEvents() {
     }
 }
 
-/**
- * Load sessions data
- */
-async function loadSessionsData() {
-    try {
-        const response = await apiCall('/api/sessions');
-        const data = await response.json();
-        AppState.data.sessions = data.sessions || [];
-        
-        renderSessionList();
-    } catch (error) {
-        console.error('Error loading sessions data:', error);
-    }
-}
-
-/**
- * Render session list
- */
-function renderSessionList() {
-    const container = document.getElementById('session-list');
-    if (!container) return;
-    
-    if (!AppState.data.sessions || AppState.data.sessions.length === 0) {
-        container.innerHTML = `
-            <div class="flex justify-center items-center py-12">
-                <div class="text-center">
-                    <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
-                    </svg>
-                    <p class="text-gray-500" data-i18n="sessions.no_sessions">No active sessions</p>
-                </div>
-            </div>
-        `;
-        applyTranslations();
-        return;
-    }
-    
-    // Get session type label
-    const getSessionTypeLabel = (type) => {
-        const labels = {
-            'dm': getTranslation('sessions.type_dm', 'Direct Message'),
-            'gm': getTranslation('sessions.type_gm', 'Group Message'),
-            'default': type
-        };
-        return labels[type] || labels['default'];
-    };
-    
-    // Get session type color
-    const getSessionTypeColor = (type) => {
-        const colors = {
-            'dm': 'bg-blue-100 text-blue-800',
-            'gm': 'bg-purple-100 text-purple-800',
-            'default': 'bg-gray-100 text-gray-800'
-        };
-        return colors[type] || colors['default'];
-    };
-    
-    // Build table rows
-    const rows = AppState.data.sessions.map(session => {
-        const sessionId = session.id || session.session_id || '';
-        const adapterName = session.adapter_name || 'Unknown';
-        const sessionType = session.session_type || 'unknown';
-        const sessionKeyId = session.session_id || 'Unknown';
-        const messageCount = session.message_count || 0;
-        const sessionTitle = session.title || '';
-        const maxTitleLength = 32;
-        const displayTitleSource = sessionTitle || sessionKeyId || adapterName;
-        const displayTitle = displayTitleSource.length > maxTitleLength
-            ? displayTitleSource.slice(0, maxTitleLength) + '...'
-            : displayTitleSource;
-        
-        return `
-            <tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="text-sm font-medium text-gray-900 dark:text-gray-100" title="${escapeHtml(displayTitleSource)}">${escapeHtml(displayTitle)}</div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="text-sm text-gray-500 dark:text-gray-400">${escapeHtml(adapterName)}</div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <span class="px-2 py-1 text-xs rounded-full ${getSessionTypeColor(sessionType)}">
-                        ${getSessionTypeLabel(sessionType)}
-                    </span>
-                </td>
-                <td class="px-6 py-4">
-                    <div class="text-sm text-gray-500 dark:text-gray-400 font-mono break-all max-w-xs">${escapeHtml(sessionKeyId)}</div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="text-sm text-gray-500 dark:text-gray-400">${messageCount}</div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-3" data-i18n="sessions.edit" onclick="editSession('${encodeURIComponent(sessionId)}')">
-                        ${getTranslation('sessions.edit', 'Edit')}
-                    </button>
-                    <button class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300" data-i18n="sessions.delete" onclick="confirmDeleteSession('${encodeURIComponent(sessionId)}')">
-                        ${getTranslation('sessions.delete', 'Delete')}
-                    </button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-    
-    // Build table
-    const table = `
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead class="bg-gray-50 dark:bg-gray-800">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.name">${getTranslation('sessions.name', 'Session Name')}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.adapter_name">${getTranslation('sessions.adapter_name', 'Adapter Name')}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.session_type">${getTranslation('sessions.session_type', 'Session Type')}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.session_id">${getTranslation('sessions.session_id', 'Session ID')}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.message_count">${getTranslation('sessions.message_count', 'Messages')}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" data-i18n="sessions.actions">${getTranslation('sessions.actions', 'Actions')}</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                    ${rows}
-                </tbody>
-            </table>
-        </div>
-    `;
-    
-    container.innerHTML = table;
-    
-    // Apply translations to data-i18n elements
-    applyTranslations();
-}
+// loadSessionsData, renderSessionList → modules/session.js
 
 /**
  * Get translation with fallback
@@ -2201,312 +1300,8 @@ function applyTranslations() {
     }
 }
 
-/**
- * Load logs data
- */
-async function loadLogsData() {
-    try {
-        // Fetch log configuration from backend to sync with MAX_QUEUE_SIZE
-        try {
-            const configResponse = await apiCall('/api/log-config');
-            const configData = await configResponse.json();
-            AppState.data.logConfig.maxQueueSize = configData.maxQueueSize || 100;
-        } catch (configError) {
-            console.warn('Failed to load log config, using default value:', configError);
-            AppState.data.logConfig.maxQueueSize = 100;
-        }
-        
-        // Initialize log level selector
-        initLogLevelSelector();
-        
-        // Load log history
-        const response = await apiCall('/api/log-history?limit=100');
-        const data = await response.json();
-        
-        // Initialize log container with history
-        const container = document.getElementById('log-container');
-        if (container) {
-            container.innerHTML = '';
-            
-            if (data.logs && data.logs.length > 0) {
-                data.logs.forEach(log => {
-                    addLogEntry(log);
-                });
-                
-                // Scroll to bottom on first load to show latest logs
-                container.scrollTop = container.scrollHeight;
-            } else {
-                container.innerHTML = `
-                    <div class="flex justify-center items-center h-full">
-                        <p class="text-gray-500" data-i18n="logs.no_logs">No logs available</p>
-                    </div>
-                `;
-                if (window.i18n) {
-                    updateTranslations();
-                }
-            }
-        }
-        
-        // Initialize SSE connection for real-time logs
-        initSSEConnection();
-    } catch (error) {
-        console.error('Error loading logs data:', error);
-    }
-}
-
-/**
- * Initialize log level selector event listener
- */
-function initLogLevelSelector() {
-    const selector = document.getElementById('log-level-selector');
-    if (selector) {
-        // Set initial value from state
-        selector.value = AppState.data.logFilter.level || 'all';
-        
-        // Add change event listener
-        selector.addEventListener('change', (e) => {
-            const selectedLevel = e.target.value;
-            AppState.data.logFilter.level = selectedLevel;
-            applyLogFilter();
-        });
-    }
-}
-
-/**
- * Initialize SSE connection for real-time logs
- * Uses EventSourcePolyfill with custom headers, falls back to query parameter auth
- */
-function initSSEConnection() {
-    // Close existing connection if any
-    if (AppState.sseEventSource) {
-        AppState.sseEventSource.close();
-    }
-    
-    const jwtToken = localStorage.getItem('jwt_token');
-    if (!jwtToken) {
-        console.error('No JWT token found for SSE connection');
-        return;
-    }
-    
-    try {
-        // Try to use EventSourcePolyfill with custom headers first
-        if (typeof EventSourcePolyfill !== 'undefined') {
-            console.log('Using EventSourcePolyfill with custom headers');
-            try {
-                AppState.sseEventSource = new EventSourcePolyfill('/api/live-log', {
-                    headers: {
-                        'Authorization': `Bearer ${jwtToken}`
-                    },
-                    heartbeatTimeout: 300000,
-                    withCredentials: true
-                });
-                
-                // Set up event handlers
-                setupSSEEventHandlers(AppState.sseEventSource);
-                return;
-            } catch (polyfillError) {
-                console.warn('EventSourcePolyfill failed, falling back to query parameter auth:', polyfillError);
-                // Fall through to fallback strategy
-            }
-        }
-        
-        // Fallback: Use standard EventSource with token in query parameter
-        console.log('Using fallback strategy: token in query parameter');
-        const sseUrl = `/api/live-log?token=${encodeURIComponent(jwtToken)}`;
-        AppState.sseEventSource = new EventSource(sseUrl);
-        
-        // Set up event handlers
-        setupSSEEventHandlers(AppState.sseEventSource);
-        
-    } catch (error) {
-        console.error('Error initializing SSE connection:', error);
-    }
-}
-
-/**
- * Set up event handlers for SSE connection
- * @param {EventSource} eventSource - The EventSource instance
- */
-function setupSSEEventHandlers(eventSource) {
-    eventSource.onopen = function() {
-        console.log('SSE connection established');
-    };
-    
-    eventSource.onmessage = function(event) {
-        try {
-            const logData = JSON.parse(event.data);
-            addLogEntry(logData);
-        } catch (e) {
-            console.error('Error parsing log data:', e);
-        }
-    };
-    
-    eventSource.onerror = function(err) {
-        console.error('SSE connection error:', err);
-        
-        // Check for 401 error (authentication failed)
-        if (err && err.status === 401) {
-            console.error('Authentication failed (401), token may have expired');
-            localStorage.removeItem('jwt_token');
-            window.location.href = '/login';
-        }
-        
-        // Close connection on error
-        if (AppState.sseEventSource) {
-            AppState.sseEventSource.close();
-            AppState.sseEventSource = null;
-        }
-    };
-}
-
-/**
- * Add a log entry to the log container
- * @param {object} log - Log data object
- */
-function addLogEntry(log) {
-    const container = document.getElementById('log-container');
-    if (!container) return;
-    
-    // Parse log data
-    const timestamp = log.time || log.timestamp || new Date().toLocaleString();
-    const level = log.level || 'INFO';
-    const name = log.name || '';
-    const message = log.message || log.content || '';
-    const color = log.color || 'blue';
-    
-    // Apply log level filter
-    const currentFilter = AppState.data.logFilter.level;
-    if (currentFilter !== 'all') {
-        const shouldShow = checkLogLevelMatch(level, currentFilter);
-        if (!shouldShow) {
-            return;  // Skip this log entry if it doesn't match the filter
-        }
-    }
-    
-    // Remove "No logs available" message if present
-    const noLogsMsg = container.querySelector('[data-i18n="logs.no_logs"]');
-    if (noLogsMsg) {
-        container.innerHTML = '';
-    }
-    
-    // Determine color class based on level
-    let levelClass = 'text-gray-600';
-    if (level === 'ERROR' || level === 'CRITICAL') {
-        levelClass = 'text-red-600';
-    } else if (level === 'WARNING') {
-        levelClass = 'text-yellow-600';
-    } else if (level === 'INFO') {
-        levelClass = 'text-green-600';
-    } else if (level === 'DEBUG') {
-        levelClass = 'text-cyan-600';
-    }
-    
-    // Create log entry element - all parameters on one line, wrap when overflow
-    const logEntry = document.createElement('div');
-    logEntry.className = 'font-mono text-base whitespace-normal break-words';
-    
-    // Format level to 7 characters wide for alignment (WARNING is 7 chars)
-    const paddedLevel = escapeHtml(level).padEnd(7, ' ');
-    
-    // Build log entry with space separators (no gaps between spans)
-    let logHtml = `<span class="text-gray-500 dark:text-gray-400">[${escapeHtml(timestamp)}]</span> `;
-    logHtml += `<span class="${levelClass} font-semibold whitespace-pre-wrap">${paddedLevel}</span> `;
-    if (name) {
-        logHtml += `<span style="color: ${color}" class="font-semibold">[${escapeHtml(name)}]</span> `;
-    }
-    logHtml += `<span class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">${escapeHtml(message)}</span>`;
-    
-    logEntry.innerHTML = logHtml;
-    
-    // Append to container
-    container.appendChild(logEntry);
-    
-    // Smart auto-scroll: only scroll to bottom if user is already at the bottom
-    // Calculate scroll position ratio (0 = top, 1 = bottom)
-    const scrollRatio = (container.scrollTop + container.clientHeight) / container.scrollHeight;
-
-    // Auto-scroll only if user is near the bottom (ratio > 0.99)
-    if (scrollRatio > 0.95) {
-        container.scrollTop = container.scrollHeight;
-    }
-    
-    // Limit number of log entries to prevent memory issues
-    // Remove oldest entries when exceeding maxQueueSize to maintain performance
-    // This value is synced with MAX_QUEUE_SIZE from core/logging_manager.py
-    const maxEntries = AppState.data.logConfig.maxQueueSize || 100;
-    while (container.children.length > maxEntries) {
-        container.removeChild(container.firstChild);
-    }
-}
-
-/**
- * Check if log level matches the selected filter
- * @param {string} logLevel - The log level from the log entry
- * @param {string} filterLevel - The selected filter level
- * @returns {boolean} - True if the log should be displayed
- */
-function checkLogLevelMatch(logLevel, filterLevel) {
-    const upperLogLevel = logLevel.toUpperCase();
-    const upperFilterLevel = filterLevel.toUpperCase();
-    
-    switch (upperFilterLevel) {
-        case 'ERROR':
-            return upperLogLevel === 'ERROR' || upperLogLevel === 'CRITICAL';
-        case 'WARNING':
-            return upperLogLevel === 'WARNING';
-        case 'INFO':
-            return upperLogLevel === 'INFO';
-        case 'DEBUG':
-            return upperLogLevel === 'DEBUG';
-        default:
-            return false;
-    }
-}
-
-/**
- * Apply log filter to all existing log entries in the container
- * This function is called when the filter is changed
- */
-function applyLogFilter() {
-    const container = document.getElementById('log-container');
-    if (!container) return;
-    
-    // Get current filter state
-    const currentFilter = AppState.data.logFilter.level;
-    
-    // If filter is 'all', show all logs
-    if (currentFilter === 'all') {
-        Array.from(container.children).forEach(child => {
-            child.style.display = 'block';
-        });
-        // Scroll to bottom after showing all logs
-        container.scrollTop = container.scrollHeight;
-        return;
-    }
-    
-    // Hide/show log entries based on filter
-    // Parse each log entry to extract the log level and apply filter
-    Array.from(container.children).forEach(child => {
-        // Find the level span element (second span in the log entry)
-        const levelSpan = child.querySelector('span:nth-child(2)');
-        if (levelSpan) {
-            const logLevel = levelSpan.textContent.trim();
-            const shouldShow = checkLogLevelMatch(logLevel, currentFilter);
-            child.style.display = shouldShow ? 'block' : 'none';
-        }
-    });
-    
-    // Scroll to bottom after applying filter
-    container.scrollTop = container.scrollHeight;
-}
-
-/**
- * Render logs (legacy function, kept for compatibility)
- */
-function renderLogs() {
-    // This function is now handled by loadLogsData and addLogEntry
-    console.log('renderLogs called - logs are now rendered via SSE');
-}
+// loadLogsData, initLogLevelSelector, initSSEConnection, setupSSEEventHandlers,
+// addLogEntry, checkLogLevelMatch, applyLogFilter, renderLogs → modules/log.js
 
 /**
  * Load settings data
@@ -2567,12 +1362,7 @@ function setupEventListeners() {
             // Save theme to localStorage
             localStorage.setItem('theme', theme);
             
-            // Update editor theme if editor is active
-            if (AppState.editor.instance) {
-                AppState.editor.instance.updateOptions({
-                    theme: theme === 'dark' ? 'vs-dark' : 'vs'
-                });
-            }
+            Monaco.syncTheme();
         });
     }
     
@@ -2732,6 +1522,9 @@ function applyTheme(theme) {
     if (themeSelect) {
         themeSelect.value = theme;
     }
+
+    // Sync all Monaco editor instances to the new theme
+    Monaco.syncTheme();
 }
 
 /**
@@ -2753,39 +1546,7 @@ function startAutoRefresh() {
     }, 1000);
 }
 
-/**
- * Update runtime duration display in real-time
- */
-function updateRuntimeDuration() {
-    if (!AppState.data.overview || AppState.data.overview.runtime_duration === undefined) {
-        return;
-    }
-    
-    // Calculate elapsed time since last data fetch
-    const elapsedSinceFetch = Math.floor((Date.now() - AppState.data.overview.base_timestamp) / 1000);
-    const totalSeconds = AppState.data.overview.runtime_duration + elapsedSinceFetch;
-    
-    // Format the duration as HH:MM:SS
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    
-    const formattedDuration = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    
-    updateElement('stat-runtime-duration', formattedDuration);
-}
-
-/**
- * Update element text content
- * @param {string} id - Element ID
- * @param {string|number} value - Value to set
- */
-function updateElement(id, value) {
-    const element = document.getElementById(id);
-    if (element) {
-        element.textContent = value;
-    }
-}
+// updateRuntimeDuration, updateElement → modules/overview.js
 
 /**
  * Escape HTML to prevent XSS
@@ -2798,102 +1559,77 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-/**
- * Show notification
- * @param {string} message - Notification message
- * @param {string} type - Notification type (success, error, info)
- */
-function showNotification(message, type = 'info') {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `fixed top-4 right-4 px-6 py-4 rounded-lg shadow-lg z-50 ${
-        type === 'success' ? 'bg-green-500 text-white' :
-        type === 'error' ? 'bg-red-500 text-white' :
-        'bg-blue-500 text-white'
-    }`;
-    notification.textContent = message;
-    
-    document.body.appendChild(notification);
-    
-    // Remove after 3 seconds
-    setTimeout(() => {
-        notification.remove();
-    }, 3000);
-}
+// showNotification → core/notify.js
 
 /**
  * Open provider modal
  */
 async function openProviderModal() {
-    const modal = document.getElementById('provider-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        
-        // Clear form fields
-        document.getElementById('provider-name').value = '';
-        const typeSelect = document.getElementById('provider-type');
-        
-        // Clear config container
-        const configContainer = document.getElementById('provider-config-container');
-        if (configContainer) {
-            configContainer.innerHTML = '';
-        }
-        
-        if (typeSelect) {
-            // Fetch provider types
-            try {
-                const response = await apiCall('/api/provider-types');
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch types: ${response.status}`);
-                }
-                const types = await response.json();
-                
-                if (!Array.isArray(types)) {
-                    console.error('Provider types response is not an array:', types);
-                    throw new Error('Invalid response format');
-                }
-                
-                // Re-fetch element to handle potential race conditions
-                const currentTypeSelect = document.getElementById('provider-type');
-                if (!currentTypeSelect) return;
+    Modal.show('provider-modal');
 
-                // Populate select
-                currentTypeSelect.innerHTML = '<option value="">Select provider type...</option>';
-                types.forEach(type => {
-                    const option = document.createElement('option');
-                    option.value = type;
-                    option.textContent = type;
-                    currentTypeSelect.appendChild(option);
-                });
-                
-                // Refresh CustomSelect if present
-                const customSelectWrapper = document.querySelector('.custom-select[data-custom-select="provider-type"]');
-                if (customSelectWrapper) {
-                    customSelectWrapper.remove();
-                    // Re-initialize CustomSelect for this element
-                    if (typeof CustomSelect !== 'undefined') {
-                        new CustomSelect(currentTypeSelect, {
-                             placeholder: 'Select provider type...'
-                        });
-                    }
-                }
+    // Clear form fields
+    document.getElementById('provider-name').value = '';
+    const typeSelect = document.getElementById('provider-type');
 
-                // Use onchange property to avoid stacking listeners without replacing element
-                currentTypeSelect.onchange = async (e) => {
-                    const selectedType = e.target.value;
-                    const configContainer = document.getElementById('provider-config-container');
-                    if (configContainer) configContainer.innerHTML = '';
+    // Clear config container
+    const configContainer = document.getElementById('provider-config-container');
+    if (configContainer) {
+        configContainer.innerHTML = '';
+    }
 
-                    if (selectedType) {
-                        await loadProviderSchema(selectedType);
-                    }
-                };
-                
-            } catch (error) {
-                console.error('Error fetching provider types:', error);
-                showNotification(window.i18n ? window.i18n.t('provider.type_load_failed') : 'Failed to load provider types', 'error');
+    if (typeSelect) {
+        // Fetch provider types
+        try {
+            const response = await apiCall('/api/provider-types');
+            if (!response.ok) {
+                throw new Error(`Failed to fetch types: ${response.status}`);
             }
+            const types = await response.json();
+
+            if (!Array.isArray(types)) {
+                console.error('Provider types response is not an array:', types);
+                throw new Error('Invalid response format');
+            }
+
+            // Re-fetch element to handle potential race conditions
+            const currentTypeSelect = document.getElementById('provider-type');
+            if (!currentTypeSelect) return;
+
+            // Populate select
+            currentTypeSelect.innerHTML = '<option value="">Select provider type...</option>';
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                currentTypeSelect.appendChild(option);
+            });
+
+            // Refresh CustomSelect if present
+            const customSelectWrapper = document.querySelector('.custom-select[data-custom-select="provider-type"]');
+            if (customSelectWrapper) {
+                customSelectWrapper.remove();
+                // Re-initialize CustomSelect for this element
+                if (typeof CustomSelect !== 'undefined') {
+                    new CustomSelect(currentTypeSelect, {
+                         placeholder: 'Select provider type...'
+                    });
+                }
+            }
+
+            // Use onchange property to avoid stacking listeners without replacing element
+            currentTypeSelect.onchange = async (e) => {
+                const selectedType = e.target.value;
+                const configContainer = document.getElementById('provider-config-container');
+                if (configContainer) configContainer.innerHTML = '';
+
+                if (selectedType) {
+                    await loadProviderSchema(selectedType);
+                }
+            };
+
+        } catch (error) {
+            console.error('Error fetching provider types:', error);
+            showNotification(window.i18n ? window.i18n.t('provider.type_load_failed') : 'Failed to load provider types', 'error');
         }
     }
 }
@@ -2977,145 +1713,14 @@ async function deleteAdapter(id) {
     });
 }
 
-function editPersona(id) {
-    // Open persona modal for editing
-    openPersonaModal();
-}
+// editPersona, deletePersona → modules/persona.js
+// sessionEditorState, session management → modules/session.js
 
-function deletePersona(id) {
-    if (confirm('Are you sure you want to delete this persona?')) {
-        showNotification('Delete persona functionality coming soon', 'info');
-    }
-}
+function openDeleteModal(title, message, onConfirm) { Modal.confirm(title, message, onConfirm); }
+async function confirmDelete() { await Modal.confirmExecute(); }
+function closeDeleteModal() { Modal.confirmClose(); }
 
-/**
- * Session management functions
- */
-
-// Session editor state
-const sessionEditorState = {
-    instance: null,
-    currentSessionId: null,
-    sessionData: null
-};
-
-let currentDeleteHandler = null;
-
-function openDeleteModal(title, message, onConfirm) {
-    const titleEl = document.getElementById('delete-modal-title');
-    const messageEl = document.getElementById('delete-modal-message');
-    if (titleEl) titleEl.textContent = title;
-    if (messageEl) messageEl.textContent = message;
-    currentDeleteHandler = onConfirm;
-    const modal = document.getElementById('delete-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-    }
-}
-
-async function confirmDelete() {
-    if (typeof currentDeleteHandler === 'function') {
-        await currentDeleteHandler();
-    }
-}
-
-/**
- * Edit session - opens modal with Monaco editor
- * @param {string} encodedSessionId - URL-encoded session ID
- */
-async function editSession(encodedSessionId) {
-    const sessionId = decodeURIComponent(encodedSessionId);
-    
-    try {
-        // Fetch session data from backend
-        const response = await apiCall(`/api/sessions/${encodeURIComponent(sessionId)}`);
-        const data = await response.json();
-        
-        // Store session data
-        sessionEditorState.currentSessionId = sessionId;
-        sessionEditorState.sessionData = data;
-        
-        const titleInput = document.getElementById('session-title');
-        const descriptionInput = document.getElementById('session-description');
-        if (titleInput) {
-            titleInput.value = data.title || '';
-        }
-        if (descriptionInput) {
-            descriptionInput.value = data.description || '';
-        }
-        document.getElementById('session-modal-subtitle').textContent = sessionId;
-        
-        // Update message count
-        const messageCount = data.messages ? data.messages.length : 0;
-        document.getElementById('session-message-count').textContent = 
-            (window.i18n ? window.i18n.t('sessions.message_count') : 'Messages') + ': ' + messageCount;
-        
-        // Show modal
-        const modal = document.getElementById('session-modal');
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        
-        // Initialize Monaco editor for session data
-        await initializeSessionEditor(data.messages || []);
-        
-    } catch (error) {
-        console.error('Error loading session:', error);
-        showNotification('Failed to load session data', 'error');
-    }
-}
-
-window.openStickerModal = openStickerModal;
-window.closeStickerModal = closeStickerModal;
-window.saveSticker = saveSticker;
-window.openAddStickerModal = openAddStickerModal;
-window.deleteSticker = deleteSticker;
-
-/**
- * Initialize Monaco editor for session editing
- * @param {Array} messages - Array of message objects
- */
-async function initializeSessionEditor(messages) {
-    // Wait for Monaco to load if not already loaded
-    if (typeof monaco === 'undefined') {
-        await new Promise(resolve => {
-            const checkMonaco = setInterval(() => {
-                if (typeof monaco !== 'undefined') {
-                    clearInterval(checkMonaco);
-                    resolve();
-                }
-            }, 100);
-        });
-    }
-    
-    const container = document.getElementById('session-editor-container');
-    if (!container) return;
-    
-    // Dispose of existing editor if any
-    if (sessionEditorState.instance) {
-        sessionEditorState.instance.dispose();
-    }
-    
-    // Format messages as JSON for editing
-    // Display raw JSON content to ensure consistency with file storage
-    // This allows users to see exactly what is stored (e.g., [] vs [[]])
-    const formattedContent = JSON.stringify(messages, null, 2);
-    
-    // Create new editor instance
-    sessionEditorState.instance = monaco.editor.create(container, {
-        value: formattedContent,
-        language: 'json',
-        theme: document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs',
-        automaticLayout: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        fontSize: 13,
-        wordWrap: 'on',
-        lineNumbers: 'on',
-        folding: true,
-        bracketPairColorization: { enabled: true }
-    });
-}
+// editSession, initializeSessionEditor → modules/session.js
 
 const mcpEditorState = {
     instance: null,
@@ -3147,41 +1752,19 @@ async function openMcpConfigEditor(serverId) {
             descInput.value = data.description || '';
         }
 
-        if (typeof monaco === 'undefined') {
-            await new Promise(resolve => {
-                const checkMonaco = setInterval(() => {
-                    if (typeof monaco !== 'undefined') {
-                        clearInterval(checkMonaco);
-                        resolve();
-                    }
-                }, 100);
-            });
-        }
+        await Monaco.waitForMonaco();
 
         const container = document.getElementById('mcp-editor-container');
         if (!container) {
             return;
         }
-        if (mcpEditorState.instance) {
-            mcpEditorState.instance.dispose();
-        }
         const editorValue = data.config ? JSON.stringify(data.config, null, 4) : '';
-        mcpEditorState.instance = monaco.editor.create(container, {
-            value: editorValue,
-            language: 'json',
-            theme: document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs',
-            automaticLayout: true,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
+        Monaco.register('mcp', container, 'json', editorValue, {
             fontSize: 13,
-            wordWrap: 'on',
-            lineNumbers: 'on',
-            folding: true,
-            bracketPairColorization: { enabled: true }
+            bracketPairColorization: { enabled: true },
         });
 
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
+        Modal.show('mcp-config-modal');
     } catch (error) {
         console.error('Error loading MCP config:', error);
         showNotification('Failed to load MCP config', 'error');
@@ -3206,23 +1789,11 @@ async function openMcpCreateModal() {
         descInput.value = '';
     }
 
-    if (typeof monaco === 'undefined') {
-        await new Promise(resolve => {
-            const checkMonaco = setInterval(() => {
-                if (typeof monaco !== 'undefined') {
-                    clearInterval(checkMonaco);
-                    resolve();
-                }
-            }, 100);
-        });
-    }
+    await Monaco.waitForMonaco();
 
     const container = document.getElementById('mcp-editor-container');
     if (!container) {
         return;
-    }
-    if (mcpEditorState.instance) {
-        mcpEditorState.instance.dispose();
     }
 
     const template = JSON.stringify({
@@ -3231,37 +1802,20 @@ async function openMcpCreateModal() {
         headers: {}
     }, null, 4);
 
-    mcpEditorState.instance = monaco.editor.create(container, {
-        value: template,
-        language: 'json',
-        theme: document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs',
-        automaticLayout: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
+    Monaco.register('mcp', container, 'json', template, {
         fontSize: 13,
-        wordWrap: 'on',
-        lineNumbers: 'on',
-        folding: true,
-        bracketPairColorization: { enabled: true }
+        bracketPairColorization: { enabled: true },
     });
 
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    Modal.show('mcp-config-modal');
 }
 
 function closeMcpConfigModal() {
-    const modal = document.getElementById('mcp-config-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-    }
-    const container = document.getElementById('mcp-editor-container');
-    if (container && mcpEditorState.instance) {
-        mcpEditorState.instance.dispose();
-        mcpEditorState.instance = null;
-    }
-    mcpEditorState.serverId = null;
-    mcpEditorState.mode = 'edit';
+    Modal.hide('mcp-config-modal', () => {
+        Monaco.dispose('mcp');
+        mcpEditorState.serverId = null;
+        mcpEditorState.mode = 'edit';
+    });
 }
 
 async function saveMcpConfig() {
@@ -3274,10 +1828,10 @@ async function saveMcpConfig() {
     }
     const descriptionValue = descInput ? (descInput.value || '') : '';
 
-    if (!mcpEditorState.instance) {
+    if (!Monaco.get('mcp')) {
         return;
     }
-    const content = mcpEditorState.instance.getValue();
+    const content = Monaco.getValue('mcp');
     try {
         JSON.parse(content);
     } catch (e) {
@@ -3325,161 +1879,16 @@ async function saveMcpConfig() {
     }
 }
 
-/**
- * Close session modal
- */
-function closeSessionModal() {
-    const modal = document.getElementById('session-modal');
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
-    
-    // Dispose editor instance
-    if (sessionEditorState.instance) {
-        sessionEditorState.instance.dispose();
-        sessionEditorState.instance = null;
-    }
-    
-    // Clear state
-    sessionEditorState.currentSessionId = null;
-    sessionEditorState.sessionData = null;
-}
-
-/**
- * Save session data
- */
-async function saveSession() {
-    if (!sessionEditorState.currentSessionId) {
-        showNotification('No session selected', 'error');
-        return;
-    }
-    
-    try {
-        // Get content from editor
-        const content = sessionEditorState.instance.getValue();
-        
-        // Parse JSON
-        let messages;
-        try {
-            // Check if content is empty or whitespace only
-            const trimmedContent = content.trim();
-            if (!trimmedContent) {
-                messages = [];
-            } else if (trimmedContent === '[]') {
-                // Special case: User explicitly entered [] or it was loaded as [] to represent empty memory
-                messages = [];
-            } else {
-                // Smart parsing logic:
-                // 1. Try to parse directly first (in case user entered a full JSON array [[...]])
-                // 2. If that fails or isn't a list of lists, try wrapping in [] (assuming user entered chunks list [...], [...])
-                
-                let parsed = null;
-                let directParseSuccess = false;
-                
-                try {
-                    parsed = JSON.parse(trimmedContent);
-                    // Check if it's a valid list of lists
-                    if (Array.isArray(parsed) && parsed.every(item => Array.isArray(item))) {
-                        messages = parsed;
-                        directParseSuccess = true;
-                    }
-                } catch (e) {
-                    // Direct parse failed, proceed to wrapped parse
-                }
-                
-                if (!directParseSuccess) {
-                    // Try wrapping in brackets
-                    messages = JSON.parse(`[${content}]`);
-                }
-            }
-        } catch (parseError) {
-            console.error('JSON Parse Error:', parseError);
-            showNotification('Invalid JSON format: ' + parseError.message, 'error');
-            return;
-        }
-        
-        // Validate messages array
-        if (!Array.isArray(messages)) {
-            showNotification('Messages must be an array', 'error');
-            return;
-        }
-
-        // Validate that every item in the array is also an array (chunk)
-        if (!messages.every(item => Array.isArray(item))) {
-            showNotification('Invalid structure: content must be a list of message lists (chunks)', 'error');
-            return;
-        }
-
-        const titleInput = document.getElementById('session-title');
-        const descriptionInput = document.getElementById('session-description');
-        const title = titleInput ? titleInput.value.trim() : '';
-        const description = descriptionInput ? descriptionInput.value.trim() : '';
-
-        const response = await apiCall(`/api/sessions/${encodeURIComponent(sessionEditorState.currentSessionId)}`, {
-            method: 'PUT',
-            body: JSON.stringify({ messages, title, description })
-        });
-        
-        if (response.ok) {
-            showNotification('Session saved successfully', 'success');
-            closeSessionModal();
-            // Reload session list
-            await loadSessionsData();
-        } else {
-            showNotification('Failed to save session', 'error');
-        }
-    } catch (error) {
-        console.error('Error saving session:', error);
-        showNotification('Failed to save session', 'error');
-    }
-}
-
-/**
- * Confirm delete session - shows confirmation modal
- * @param {string} encodedSessionId - URL-encoded session ID
- */
-function confirmDeleteSession(encodedSessionId) {
-    const sessionId = decodeURIComponent(encodedSessionId);
-    const title = window.i18n ? window.i18n.t('sessions.delete_confirm_title') : 'Delete Session';
-    const message = window.i18n ? window.i18n.t('sessions.delete_confirm_message') : 'Are you sure you want to delete this session? This action cannot be undone.';
-    openDeleteModal(title, message, async () => {
-        try {
-            const response = await apiCall(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-                method: 'DELETE'
-            });
-            if (response.ok) {
-                showNotification(window.i18n ? window.i18n.t('sessions.deleted') : 'Session deleted successfully', 'success');
-                closeDeleteModal();
-                await loadSessionsData();
-            } else {
-                showNotification(window.i18n ? window.i18n.t('sessions.delete_failed') : 'Failed to delete session', 'error');
-            }
-        } catch (error) {
-            console.error('Error deleting session:', error);
-            showNotification(window.i18n ? window.i18n.t('sessions.delete_failed') : 'Failed to delete session', 'error');
-        }
-    });
-}
-
-/**
- * Close delete confirmation modal
- */
-function closeDeleteModal() {
-    const modal = document.getElementById('delete-modal');
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
-    currentDeleteHandler = null;
-}
+// closeSessionModal, saveSession, confirmDeleteSession → modules/session.js
+// closeDeleteModal stays as global wrapper (used by sticker/session modules)
 
 /**
  * Initialize Monaco Editor
  */
 function initializeMonacoEditor() {
-    // Set up Monaco Editor loader
-    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs' }});
-    
-    // Load Monaco Editor
-    require(['vs/editor/editor.main'], function() {
-        // Set up the editor when the configuration page is loaded
+    // Monaco is already loading (triggered in core/monaco.js at parse time).
+    // Just attach the callback for when it's ready.
+    Monaco.load().then(() => {
         if (AppState.currentPage === 'configuration') {
             createEditor();
         }
@@ -3492,32 +1901,16 @@ function initializeMonacoEditor() {
 function createEditor() {
     const container = document.getElementById('monaco-editor-container');
     if (!container) return;
-    
-    // Dispose of existing editor if any
-    if (AppState.editor.instance) {
-        AppState.editor.instance.dispose();
-    }
-    
-    // Create new editor instance
-    AppState.editor.instance = monaco.editor.create(container, {
-        value: AppState.editor.files[AppState.editor.currentFile]?.content || '',
-        language: AppState.editor.currentFormat,
-        theme: document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs',
-        automaticLayout: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        fontSize: 14,
-        wordWrap: 'on',
-        folding: true,
-        lineNumbers: 'on',
-        renderWhitespace: 'selection'
-    });
-    
-    // Update editor status
+
+    const editor = Monaco.register('config', container,
+        AppState.editor.currentFormat,
+        AppState.editor.files[AppState.editor.currentFile]?.content || '',
+        { renderWhitespace: 'selection' }
+    );
+
     updateEditorStatus();
-    
-    // Set up editor change event
-    AppState.editor.instance.onDidChangeModelContent(() => {
+
+    editor.onDidChangeModelContent(() => {
         updateEditorStatus(true); // true indicates unsaved changes
     });
 }
@@ -3542,9 +1935,7 @@ function setupEditorEventListeners() {
     if (formatSelector) {
         formatSelector.addEventListener('change', (e) => {
             AppState.editor.currentFormat = e.target.value;
-            if (AppState.editor.instance) {
-                monaco.editor.setModelLanguage(AppState.editor.instance.getModel(), AppState.editor.currentFormat);
-            }
+            Monaco.setLanguage('config', AppState.editor.currentFormat);
             updateEditorStatus();
         });
     }
@@ -3553,8 +1944,8 @@ function setupEditorEventListeners() {
     const copyButton = document.getElementById('editor-copy');
     if (copyButton) {
         copyButton.addEventListener('click', () => {
-            if (AppState.editor.instance) {
-                navigator.clipboard.writeText(AppState.editor.instance.getValue());
+            if (Monaco.get('config')) {
+                navigator.clipboard.writeText(Monaco.getValue('config'));
                 showNotification(window.i18n ? window.i18n.t('configuration.copied') : 'Content copied to clipboard', 'success');
             }
         });
@@ -3564,8 +1955,8 @@ function setupEditorEventListeners() {
     const downloadButton = document.getElementById('editor-download');
     if (downloadButton) {
         downloadButton.addEventListener('click', () => {
-            if (AppState.editor.instance && AppState.editor.currentFile) {
-                const content = AppState.editor.instance.getValue();
+            if (Monaco.get('config') && AppState.editor.currentFile) {
+                const content = Monaco.getValue('config');
                 const blob = new Blob([content], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -3606,9 +1997,9 @@ function loadFile(fileName) {
     }
     
     // Update editor content
-    if (AppState.editor.instance) {
-        AppState.editor.instance.setValue(AppState.editor.files[fileName].content);
-        monaco.editor.setModelLanguage(AppState.editor.instance.getModel(), AppState.editor.currentFormat);
+    if (Monaco.get('config')) {
+        Monaco.get('config').setValue(AppState.editor.files[fileName].content);
+        Monaco.setLanguage('config', AppState.editor.currentFormat);
     }
     
     updateEditorStatus();
@@ -3618,9 +2009,9 @@ function loadFile(fileName) {
  * Save the current file
  */
 function saveCurrentFile() {
-    if (!AppState.editor.instance || !AppState.editor.currentFile) return;
-    
-    const content = AppState.editor.instance.getValue();
+    if (!Monaco.get('config') || !AppState.editor.currentFile) return;
+
+    const content = Monaco.getValue('config');
     AppState.editor.files[AppState.editor.currentFile].content = content;
     
     // In a real application, you would send this to the server
@@ -4080,37 +2471,7 @@ async function saveConfiguration() {
     }
 }
 
-/**
- * Logs management functions
- */
-function clearLogs() {
-    if (confirm('Are you sure you want to clear all logs?')) {
-        const container = document.getElementById('log-container');
-        if (container) {
-            container.innerHTML = `
-                <div class="flex justify-center items-center h-full">
-                    <p class="text-gray-500" data-i18n="logs.no_logs">No logs available</p>
-                </div>
-            `;
-            if (window.i18n) {
-                updateTranslations();
-            }
-        }
-        showNotification('Logs cleared', 'success');
-    }
-}
-
-function refreshLogs() {
-    // Close existing SSE connection
-    if (AppState.sseEventSource) {
-        AppState.sseEventSource.close();
-        AppState.sseEventSource = null;
-    }
-    
-    // Reload logs data
-    loadLogsData();
-    showNotification('Logs refreshed', 'success');
-}
+// clearLogs, refreshLogs → modules/log.js
 
 // Export for global access
 window.AppState = AppState;
@@ -4161,64 +2522,13 @@ function renderProviderConfigFields(schema, container, currentConfig = {}) {
     renderConfigFields(schema, container, currentConfig);
 }
 
-/**
- * Validate a config field input in real-time
- * @param {HTMLInputElement} input
- * @returns {boolean}
- */
-function validateConfigFieldInput(input) {
-    const key = input.getAttribute('data-config-key');
-    const fieldType = input.getAttribute('data-config-type');
-    const fieldName = input.getAttribute('data-config-name') || key;
-    const value = input.value.trim();
-    const errorEl = input.parentElement.querySelector(`[data-error-for="${key}"]`);
-
-    let errorMsg = '';
-
-    if (value !== '') {
-        if (fieldType === 'integer') {
-            if (!/^-?\d+$/.test(value)) {
-                errorMsg = getTranslation('model.validation_integer', '{field} must be an integer').replace('{field}', fieldName);
-            } else if (input.hasAttribute('data-config-min') && parseInt(value, 10) < parseInt(input.getAttribute('data-config-min'), 10)) {
-                const min = input.getAttribute('data-config-min');
-                errorMsg = getTranslation('model.validation_min', '{field} must be at least {min}')
-                    .replace('{field}', fieldName)
-                    .replace('{min}', min);
-            }
-        } else if (fieldType === 'float') {
-            if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(value)) {
-                errorMsg = getTranslation('model.validation_number', '{field} must be a valid number').replace('{field}', fieldName);
-            } else if (input.hasAttribute('data-config-min') && parseFloat(value) < parseFloat(input.getAttribute('data-config-min'))) {
-                const min = input.getAttribute('data-config-min');
-                errorMsg = getTranslation('model.validation_min', '{field} must be at least {min}')
-                    .replace('{field}', fieldName)
-                    .replace('{min}', min);
-            }
-        }
-    }
-
-    if (errorMsg) {
-        input.classList.remove('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
-        input.classList.add('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
-        if (errorEl) { errorEl.textContent = errorMsg; errorEl.classList.remove('hidden'); }
-        return false;
-    } else {
-        input.classList.remove('border-red-500', 'dark:border-red-400', 'focus:ring-red-500');
-        input.classList.add('border-gray-300', 'dark:border-gray-600', 'focus:ring-blue-500');
-        if (errorEl) { errorEl.textContent = ''; errorEl.classList.add('hidden'); }
-        return true;
-    }
-}
+// validateConfigFieldInput → shared/render-config-fields.js
 
 /**
  * Close provider modal
  */
 function closeProviderModal() {
-    const modal = document.getElementById('provider-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-    }
+    Modal.hide('provider-modal');
 }
 
 /**
@@ -4584,10 +2894,7 @@ async function openModelModal(providerId, modelType, groupLabel, modelId = null,
     modelModalState.modelType = modelType;
     modelModalState.mode = modelId ? 'edit' : 'create';
     modelModalState.modelId = modelId;
-    const modal = document.getElementById('model-modal');
-    if (!modal) return;
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    Modal.show('model-modal');
     const modelIdInput = document.getElementById('model-id');
     const modelIdError = document.getElementById('model-id-error');
     const modelIdHint = document.getElementById('model-id-hint');
@@ -4680,11 +2987,7 @@ function validateModelIdInput(input) {
 }
 
 function closeModelModal() {
-    const modal = document.getElementById('model-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-    }
+    Modal.hide('model-modal');
     modelModalState.providerId = null;
     modelModalState.modelType = null;
     modelModalState.mode = 'create';
@@ -4864,132 +3167,4 @@ window.openModelModal = openModelModal;
 window.closeModelModal = closeModelModal;
 window.saveModel = saveModel;
 
-/**
- * Open persona modal
- */
-function openPersonaModal() {
-    const modal = document.getElementById('persona-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        
-        // Set format selector to current format
-        document.getElementById('persona-format').value = AppState.data.personaFormat || 'text';
-        
-        // Initialize persona editor with existing content
-        setTimeout(() => {
-            createPersonaEditor();
-            // Load existing content into editor
-            if (AppState.personaEditor.instance && AppState.data.personaContent) {
-                AppState.personaEditor.instance.setValue(AppState.data.personaContent);
-            }
-            // Force layout recalculation
-            setTimeout(() => {
-                if (AppState.personaEditor.instance) {
-                    AppState.personaEditor.instance.layout();
-                }
-            }, 50);
-        }, 100);
-    }
-}
-
-/**
- * Close persona modal
- */
-function closePersonaModal() {
-    const modal = document.getElementById('persona-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-        
-        // Dispose editor instance
-        if (AppState.personaEditor.instance) {
-            AppState.personaEditor.instance.dispose();
-            AppState.personaEditor.instance = null;
-        }
-    }
-}
-
-/**
- * Create Monaco Editor instance for persona
- */
-function createPersonaEditor() {
-    const container = document.getElementById('persona-editor-container');
-    if (!container) return;
-    
-    // Dispose of existing editor if any
-    if (AppState.personaEditor.instance) {
-        AppState.personaEditor.instance.dispose();
-    }
-    
-    // Create new editor instance
-    AppState.personaEditor.instance = monaco.editor.create(container, {
-        value: AppState.data.personaContent || '',
-        language: AppState.data.personaFormat || 'text',
-        theme: document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs',
-        automaticLayout: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        fontSize: 14,
-        wordWrap: 'on',
-        folding: true,
-        lineNumbers: 'on',
-        renderWhitespace: 'selection'
-    });
-    
-    // Set up format selector change event
-    const formatSelector = document.getElementById('persona-format');
-    if (formatSelector) {
-        formatSelector.addEventListener('change', (e) => {
-            AppState.data.personaFormat = e.target.value;
-            if (AppState.personaEditor.instance) {
-                monaco.editor.setModelLanguage(AppState.personaEditor.instance.getModel(), AppState.data.personaFormat);
-            }
-        });
-    }
-}
-
-/**
- * Save persona
- */
-async function savePersona() {
-    // Get content from editor
-    let content = '';
-    if (AppState.personaEditor.instance) {
-        content = AppState.personaEditor.instance.getValue();
-    }
-    
-    if (!content.trim()) {
-        showNotification('Please enter persona content', 'error');
-        return;
-    }
-    
-    try {
-        // Save persona content to backend
-        const response = await apiCall('/api/personas/current/content', {
-            method: 'PUT',
-            body: JSON.stringify({
-                content: content
-            })
-        });
-        
-        if (response.ok) {
-            // Update local state
-            AppState.data.personaContent = content;
-
-            // Show success notification and close modal
-            showNotification('Persona saved successfully', 'success');
-            closePersonaModal();
-        } else {
-            showNotification('Failed to save persona', 'error');
-        }
-    } catch (error) {
-        console.error('Error saving persona:', error);
-        showNotification('Error saving persona', 'error');
-    }
-}
-
-// Export persona functions
-window.openPersonaModal = openPersonaModal;
-window.closePersonaModal = closePersonaModal;
-window.savePersona = savePersona;
+// openPersonaModal, closePersonaModal, createPersonaEditor, savePersona → modules/persona.js

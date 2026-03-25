@@ -5,7 +5,7 @@
 
 /* Smooth transitions for all interactive elements */
 * {
-    transition-property: border-color, opacity, transform;
+    transition-property: border-color;
     transition-duration: 150ms;
     transition-timing-function: ease-in-out;
 }
@@ -140,7 +140,32 @@ button, .nav-item, .custom-select-trigger, .custom-select-option, input, textare
 
 /* Page content animations */
 .page-content {
-    animation: fadeIn 0.3s ease-in-out;
+    animation: fadeIn 0.3s ease-in-out both;
+}
+
+/* Modal open / close animations */
+@keyframes modal-overlay-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-overlay-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes modal-panel-in  {
+    from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+@keyframes modal-panel-out {
+    from { opacity: 1; transform: scale(1)    translateY(0); }
+    to   { opacity: 0; transform: scale(0.95) translateY(-10px); }
+}
+
+.modal-opening {
+    animation: modal-overlay-in 0.2s ease both;
+}
+.modal-opening > div:first-child {
+    animation: modal-panel-in 0.2s ease both;
+}
+.modal-closing {
+    animation: modal-overlay-out 0.15s ease both;
+}
+.modal-closing > div:first-child {
+    animation: modal-panel-out 0.15s ease both;
 }
 
 @keyframes fadeIn {
