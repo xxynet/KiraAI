@@ -75,7 +75,7 @@ class GetSystemInfoTool(BaseTool):
         "required": []
     }
 
-    async def execute(self) -> str:
+    async def execute(self, *_) -> str:
         try:
             return get_system_info()
         except Exception as e:

@@ -1,12 +1,8 @@
 import importlib
 import inspect
-import json
-import asyncio
 import os
 from pathlib import Path
 from typing import Type, List, Any, Dict
-
-from fastmcp import Client
 
 from core.utils.tool_utils import BaseTool
 from core.logging_manager import get_logger
@@ -47,7 +43,7 @@ async def register_all_tools(llm_api) -> None:
 
         modules = _iter_tool_modules(package_path, package_name)
     except Exception as e:
-        tool_logger.error(f"Failed to register tools: {e}")
+        tool_logger.debug(f"Failed to register tools from {package_name}, skipping: {e}")
         return
 
     for module_name in modules:
