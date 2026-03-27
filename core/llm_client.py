@@ -79,7 +79,7 @@ class LLMClient:
             elif tool_set and name in tool_set:
                 try:
                     tool_inst = tool_set.get(name)
-                    result = await tool_inst.execute()
+                    result = await tool_inst.execute(event, **args)
                 except Exception as e:
                     result = {"error": f"Failed to call tool '{name}': {e}"}
                     tool_logger.error(f"Failed to call tool '{name}': {e}")
