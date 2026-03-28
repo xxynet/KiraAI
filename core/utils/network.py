@@ -1,8 +1,12 @@
 import httpx
+from typing import Optional
 
 
-async def download_file(url: str, path: str):
-    async with httpx.AsyncClient() as client:
+async def download_file(url: str, path: str, proxy: Optional[str] = None, timeout: float = 60.0):
+    client_kwargs: dict = {"follow_redirects": True, "timeout": timeout}
+    if proxy:
+        client_kwargs["proxy"] = proxy
+    async with httpx.AsyncClient(**client_kwargs) as client:
         async with client.stream("GET", url) as resp:
             resp.raise_for_status()
             with open(path, "wb") as f:

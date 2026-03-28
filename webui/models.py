@@ -114,6 +114,16 @@ class PluginConfigUpdateRequest(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
 
 
+class PluginInstallGithubRequest(BaseModel):
+    repo_url: str
+    proxy: Optional[str] = None
+    gh_proxy: Optional[str] = None
+
+
+class PluginInstallResult(PluginItem):
+    warnings: List[str] = Field(default_factory=list)
+
+
 class McpServerItem(BaseModel):
     id: str
     type: str = ""

@@ -63,6 +63,16 @@ function renderPluginList() {
     const plugins = AppState.data.plugins || [];
     if (!plugins.length) {
         container.innerHTML = `
+            <div class="flex items-center justify-start mb-4">
+                <button
+                    type="button"
+                    id="plugin-add-button"
+                    class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                    <span class="mr-1">+</span>
+                    <span data-i18n="plugin.install_add">Install Plugin</span>
+                </button>
+            </div>
             <div class="flex justify-center items-center py-12">
                 <div class="text-center">
                     <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -72,6 +82,7 @@ function renderPluginList() {
                 </div>
             </div>
         `;
+        attachPluginToggleHandlers();
         if (window.i18n) {
             updateTranslations();
         }
@@ -155,6 +166,16 @@ function renderPluginList() {
         `;
     }).join('');
     container.innerHTML = `
+        <div class="flex items-center justify-start mb-4">
+            <button
+                type="button"
+                id="plugin-add-button"
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+                <span class="mr-1">+</span>
+                <span data-i18n="plugin.install_add">Install Plugin</span>
+            </button>
+        </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4">
             ${cards}
         </div>
@@ -493,6 +514,13 @@ function attachPluginToggleHandlers() {
     if (!container) {
         return;
     }
+    const addButton = container.querySelector('#plugin-add-button');
+    if (addButton) {
+        addButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            openPluginInstallModal();
+        });
+    }
     container.querySelectorAll('button[data-plugin-id]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -576,6 +604,136 @@ async function savePluginConfig() {
     } catch (error) {
         console.error('Error saving plugin config:', error);
         showNotification('Failed to save plugin config', 'error');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Plugin install modal
+// ---------------------------------------------------------------------------
+
+const PluginInstallModalState = { tab: 'github', installing: false };
+
+function openPluginInstallModal() {
+    const urlInput = document.getElementById('install-github-url');
+    const proxyInput = document.getElementById('install-gh-proxy');
+    const btn = document.getElementById('install-submit-btn');
+    if (urlInput) urlInput.value = '';
+    if (proxyInput) proxyInput.value = '';
+    if (btn) {
+        btn.disabled = false;
+        btn.setAttribute('data-i18n', 'plugin.install_btn');
+        if (window.i18n) btn.textContent = window.i18n.t('plugin.install_btn');
+        else btn.textContent = 'Install';
+    }
+    PluginInstallModalState.installing = false;
+    if (!_zipDropzone) {
+        _zipDropzone = new FileDropzone('install-zip-dropzone', {
+            inputId: 'install-zip-input',
+            titleKey: 'plugin.install_upload_hint',
+            titleFallback: 'Drop a .zip file here or click to select',
+            reselectKey: 'plugin.install_upload_reselect',
+            reselectFallback: 'Click or drag to reselect',
+        });
+    } else {
+        _zipDropzone.reset();
+    }
+    switchPluginInstallTab('github');
+    Modal.show('plugin-install-modal');
+}
+
+function closePluginInstallModal() {
+    Modal.hide('plugin-install-modal', () => {
+        PluginInstallModalState.tab = 'github';
+        PluginInstallModalState.installing = false;
+    });
+}
+
+function switchPluginInstallTab(tab) {
+    PluginInstallModalState.tab = tab;
+    const githubContent = document.getElementById('install-tab-github');
+    const uploadContent = document.getElementById('install-tab-upload');
+    const githubBtn = document.getElementById('install-tab-github-btn');
+    const uploadBtn = document.getElementById('install-tab-upload-btn');
+    const activeClasses = ['border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500'];
+    const inactiveClasses = ['border-transparent', 'text-gray-500', 'dark:text-gray-400'];
+    if (tab === 'github') {
+        if (githubContent) githubContent.classList.remove('hidden');
+        if (uploadContent) uploadContent.classList.add('hidden');
+        if (githubBtn) { githubBtn.classList.add(...activeClasses); githubBtn.classList.remove(...inactiveClasses); }
+        if (uploadBtn) { uploadBtn.classList.remove(...activeClasses); uploadBtn.classList.add(...inactiveClasses); }
+    } else {
+        if (githubContent) githubContent.classList.add('hidden');
+        if (uploadContent) uploadContent.classList.remove('hidden');
+        if (uploadBtn) { uploadBtn.classList.add(...activeClasses); uploadBtn.classList.remove(...inactiveClasses); }
+        if (githubBtn) { githubBtn.classList.remove(...activeClasses); githubBtn.classList.add(...inactiveClasses); }
+    }
+}
+
+let _zipDropzone = null;
+
+async function installPlugin() {
+    if (PluginInstallModalState.installing) return;
+    const btn = document.getElementById('install-submit-btn');
+    const setLoading = (loading) => {
+        PluginInstallModalState.installing = loading;
+        if (!btn) return;
+        btn.disabled = loading;
+        btn.removeAttribute('data-i18n');
+        if (loading) {
+            btn.textContent = window.i18n ? window.i18n.t('plugin.install_installing') : 'Installing...';
+        } else {
+            btn.setAttribute('data-i18n', 'plugin.install_btn');
+            btn.textContent = window.i18n ? window.i18n.t('plugin.install_btn') : 'Install';
+        }
+    };
+    setLoading(true);
+    try {
+        let response;
+        if (PluginInstallModalState.tab === 'github') {
+            const repoUrl = (document.getElementById('install-github-url')?.value || '').trim();
+            const ghProxy = (document.getElementById('install-gh-proxy')?.value || '').trim();
+            if (!repoUrl) {
+                showNotification(window.i18n ? window.i18n.t('plugin.install_url_required') : 'Repository URL is required', 'error');
+                setLoading(false);
+                return;
+            }
+            response = await apiCall('/api/plugins/install/github', {
+                method: 'POST',
+                body: JSON.stringify({ repo_url: repoUrl, gh_proxy: ghProxy || null })
+            });
+        } else {
+            const zipFile = _zipDropzone?.getFile();
+            if (!zipFile) {
+                showNotification(window.i18n ? window.i18n.t('plugin.install_no_file') : 'Please select a .zip file', 'error');
+                setLoading(false);
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', zipFile);
+            response = await apiCall('/api/plugins/install/upload', {
+                method: 'POST',
+                body: formData
+            });
+        }
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            const msg = data.detail || `HTTP ${response.status}`;
+            showNotification(`${window.i18n ? window.i18n.t('plugin.install_failed') : 'Installation failed'}: ${msg}`, 'error');
+            setLoading(false);
+            return;
+        }
+        const result = await response.json();
+        closePluginInstallModal();
+        await loadPluginData();
+        if (result.warnings && result.warnings.length) {
+            showNotification(`${window.i18n ? window.i18n.t('plugin.install_warning') : 'Installed with warnings'}: ${result.warnings.join('; ')}`, 'warning');
+        } else {
+            showNotification(window.i18n ? window.i18n.t('plugin.install_success') : 'Plugin installed successfully', 'success');
+        }
+    } catch (error) {
+        console.error('Error installing plugin:', error);
+        showNotification(window.i18n ? window.i18n.t('plugin.install_failed') : 'Installation failed', 'error');
+        setLoading(false);
     }
 }
 

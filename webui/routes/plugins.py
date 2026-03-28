@@ -1,9 +1,10 @@
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, File, HTTPException, UploadFile
 
 from core.logging_manager import get_logger
-from webui.models import PluginConfigUpdateRequest, PluginItem
+from core.plugin.plugin_installer import install_from_github, install_from_zip, install_requirements
+from webui.models import PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 from webui.utils import schema_to_dict
@@ -40,6 +41,22 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/{plugin_id}/enabled",
                 methods=["POST"],
                 endpoint=self.set_plugin_enabled,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/install/github",
+                methods=["POST"],
+                endpoint=self.install_from_github,
+                response_model=PluginInstallResult,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/install/upload",
+                methods=["POST"],
+                endpoint=self.install_from_upload,
+                response_model=PluginInstallResult,
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -133,3 +150,66 @@ class PluginsRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to set plugin enabled state for {plugin_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to update plugin state")
+
+    async def install_from_github(self, payload: PluginInstallGithubRequest) -> PluginInstallResult:
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+
+        plugin_manager = self.lifecycle.plugin_manager
+
+        try:
+            plugin_dir = await install_from_github(
+                payload.repo_url,
+                plugin_manager.plugin_dir,
+                proxy=payload.proxy,
+                gh_proxy=payload.gh_proxy,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except ConnectionError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        warnings = await install_requirements(plugin_dir)
+
+        plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
+        if not plugin_id:
+            raise HTTPException(status_code=500, detail="Plugin files were installed but failed to load")
+
+        return self._build_install_result(plugin_manager, plugin_id, warnings)
+
+    async def install_from_upload(self, file: UploadFile = File(...)) -> PluginInstallResult:
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+
+        if not file.filename or not file.filename.endswith(".zip"):
+            raise HTTPException(status_code=400, detail="Only .zip files are accepted")
+
+        plugin_manager = self.lifecycle.plugin_manager
+
+        zip_bytes = await file.read()
+        try:
+            plugin_dir = await install_from_zip(zip_bytes, plugin_manager.plugin_dir)
+        except (ValueError, IOError) as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        warnings = await install_requirements(plugin_dir)
+
+        plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
+        if not plugin_id:
+            raise HTTPException(status_code=500, detail="Plugin files were installed but failed to load")
+
+        return self._build_install_result(plugin_manager, plugin_id, warnings)
+
+    @staticmethod
+    def _build_install_result(plugin_manager, plugin_id: str, warnings: List[str]) -> PluginInstallResult:
+        manifest = plugin_manager.get_plugin_manifest(plugin_id) or {}
+        return PluginInstallResult(
+            id=plugin_id,
+            name=str(manifest.get("display_name") or plugin_id),
+            version=str(manifest.get("version") or ""),
+            author=str(manifest.get("author") or ""),
+            description=str(manifest.get("description") or ""),
+            repo=manifest.get("repo") if isinstance(manifest.get("repo"), str) else None,
+            enabled=plugin_manager.is_plugin_enabled(plugin_id),
+            warnings=warnings,
+        )
