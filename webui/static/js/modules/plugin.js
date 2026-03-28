@@ -590,6 +590,18 @@ async function savePluginConfig() {
         return;
     }
     const container = document.getElementById('plugin-config-container');
+    let hasValidationError = false;
+    if (container) {
+        container.querySelectorAll('input[data-config-key]').forEach(input => {
+            if (!validateConfigFieldInput(input)) hasValidationError = true;
+        });
+    }
+    if (hasValidationError) {
+        showNotification(getTranslation('model.validation_failed', 'Please fix validation errors before saving'), 'error');
+        return;
+    }
+    const jsonError = validateConfigContainer(container);
+    if (jsonError) { showNotification(jsonError, 'error'); return; }
     const config = collectConfigFromContainer(container);
     try {
         const response = await apiCall(`/api/plugins/${encodeURIComponent(PluginConfigModalState.pluginId)}/config`, {

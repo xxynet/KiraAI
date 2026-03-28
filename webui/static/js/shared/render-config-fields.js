@@ -292,11 +292,34 @@ function collectConfigFromContainer(container) {
                 .map((s) => s.trim())
                 .filter((s) => s.length > 0);
         } else if (fieldType === 'json') {
-            try { value = JSON.parse(value); } catch (e) { /* keep as string */ }
+            try { value = JSON.parse(value); } catch (e) { value = value; /* validated before save */ }
         }
         config[key] = value;
     });
     return config;
+}
+
+/**
+ * Validate all fields in a config container before saving.
+ * Returns null if valid, or an error string describing the first invalid field.
+ */
+function validateConfigContainer(container) {
+    if (!container) return null;
+    const inputs = container.querySelectorAll('[data-config-key][data-config-type="json"]');
+    for (const input of inputs) {
+        const value = input.value.trim();
+        if (!value) continue;
+        try {
+            JSON.parse(value);
+        } catch (e) {
+            const key = input.getAttribute('data-config-key');
+            const label = input.closest('.mb-4')?.querySelector('label')?.textContent?.trim() || key;
+            return getTranslation('config.json_invalid', 'Invalid JSON in field "{field}": {error}')
+                .replace('{field}', label)
+                .replace('{error}', e.message);
+        }
+    }
+    return null;
 }
 
 /**

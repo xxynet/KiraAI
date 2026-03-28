@@ -383,6 +383,8 @@ async function saveProvider() {
         showNotification(getTranslation('model.validation_failed', 'Please fix validation errors before saving'), 'error');
         return;
     }
+    const jsonError = validateConfigContainer(configContainer);
+    if (jsonError) { showNotification(jsonError, 'error'); return; }
     const config = collectConfigFromContainer(configContainer);
 
     try {
@@ -553,6 +555,8 @@ async function saveProviderConfig(providerId) {
         return;
     }
 
+    const jsonError = validateConfigContainer(detailsContainer);
+    if (jsonError) { showNotification(jsonError, 'error'); return; }
     const config = collectConfigFromContainer(detailsContainer);
 
     let name = provider.name;

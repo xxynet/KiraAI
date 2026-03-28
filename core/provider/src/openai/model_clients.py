@@ -16,9 +16,13 @@ class OpenAILLMClient(LLMModelClient):
         super().__init__(model)
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
+        default_headers = self.model.provider_config.get("headers", {})
+        if not isinstance(default_headers, dict) or not default_headers:
+            default_headers = None
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
-            base_url=self.model.provider_config.get("base_url", "")
+            base_url=self.model.provider_config.get("base_url", ""),
+            default_headers=default_headers
         )
         try:
             start_time = time.perf_counter()
@@ -79,9 +83,13 @@ class OpenAIImageClient(ImageModelClient):
         super().__init__(model)
 
     async def text_to_image(self, prompt) -> Image:
+        default_headers = self.model.provider_config.get("headers", {})
+        if not isinstance(default_headers, dict) or not default_headers:
+            default_headers = None
         client = AsyncOpenAI(
             base_url=self.model.provider_config.get("base_url", ""),
             api_key=self.model.provider_config.get("api_key", ""),
+            default_headers=default_headers
         )
         image_size = self.model.model_config.get("size", None)
         images_response = await client.images.generate(
@@ -112,10 +120,15 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
         timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
         slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
 
+        default_headers = self.model.provider_config.get("headers", {})
+        if not isinstance(default_headers, dict) or not default_headers:
+            default_headers = None
+
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
-            timeout=timeout_sec
+            timeout=timeout_sec,
+            default_headers=default_headers
         )
         try:
             start_time = time.perf_counter()

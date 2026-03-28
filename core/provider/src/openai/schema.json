@@ -11,6 +11,12 @@
       "type": "sensitive",
       "default": null,
       "hint": "Your API Key from your provider"
+    },
+    "headers": {
+      "name": "Custom Headers",
+      "type": "json",
+      "default": {},
+      "hint": "Custom headers passed to OpenAI Client"
     }
   },
   "model_config": {

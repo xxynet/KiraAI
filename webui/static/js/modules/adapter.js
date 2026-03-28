@@ -366,6 +366,18 @@ async function saveAdapter() {
     }
 
     const configContainer = document.getElementById('adapter-config-container');
+    let hasValidationError = false;
+    if (configContainer) {
+        configContainer.querySelectorAll('input[data-config-key]').forEach(input => {
+            if (!validateConfigFieldInput(input)) hasValidationError = true;
+        });
+    }
+    if (hasValidationError) {
+        showNotification(getTranslation('model.validation_failed', 'Please fix validation errors before saving'), 'error');
+        return;
+    }
+    const jsonError = validateConfigContainer(configContainer);
+    if (jsonError) { showNotification(jsonError, 'error'); return; }
     const config = collectConfigFromContainer(configContainer);
 
     const payload = {

@@ -405,6 +405,7 @@ window._locale_en = {
         load_error: "Failed to load configuration",
         fallback_save_warning: "Configuration manager not loaded, falling back to legacy save",
         manager_not_loaded: "Configuration manager not loaded",
-        select_model: "— Select model —"
+        select_model: "— Select model —",
+        json_invalid: "Invalid JSON in field \"{field}\": {error}"
     }
 };
