@@ -190,7 +190,13 @@ window._locale_en = {
         install_failed: "Installation failed",
         install_warning: "Installed with warnings",
         install_url_required: "Repository URL is required",
-        install_no_file: "Please select a .zip file"
+        install_no_file: "Please select a .zip file",
+        config_saved: "Plugin configuration saved",
+        config_save_failed: "Failed to save plugin config",
+        delete_confirm_title: "Uninstall Plugin",
+        delete_confirm_message: "Are you sure you want to uninstall this plugin? The plugin files will be permanently deleted.",
+        delete_success: "Plugin uninstalled successfully",
+        delete_failed: "Failed to uninstall plugin"
     },
     sticker: {
         title: "Stickers",

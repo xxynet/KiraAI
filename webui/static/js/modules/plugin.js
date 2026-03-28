@@ -157,6 +157,7 @@ function renderPluginList() {
                             type="button"
                             class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30"
                             data-i18n="plugin.uninstall"
+                            onclick="deletePlugin('${escapeHtml(String(id))}')"
                         >
                             Uninstall
                         </button>
@@ -596,15 +597,43 @@ async function savePluginConfig() {
             body: JSON.stringify({ config: config })
         });
         if (!response.ok) {
-            showNotification('Failed to save plugin config', 'error');
+            showNotification(window.i18n ? window.i18n.t('plugin.config_save_failed') : 'Failed to save plugin config', 'error');
             return;
         }
         closePluginConfigModal();
-        showNotification('Plugin configuration saved', 'success');
+        showNotification(window.i18n ? window.i18n.t('plugin.config_saved') : 'Plugin configuration saved', 'success');
     } catch (error) {
         console.error('Error saving plugin config:', error);
-        showNotification('Failed to save plugin config', 'error');
+        showNotification(window.i18n ? window.i18n.t('plugin.config_save_failed') : 'Failed to save plugin config', 'error');
     }
+}
+
+// ---------------------------------------------------------------------------
+// Plugin delete
+// ---------------------------------------------------------------------------
+
+function deletePlugin(pluginId) {
+    if (!pluginId) return;
+    const title = window.i18n ? window.i18n.t('plugin.delete_confirm_title') : 'Uninstall Plugin';
+    const message = window.i18n ? window.i18n.t('plugin.delete_confirm_message') : 'Are you sure you want to uninstall this plugin? The plugin files will be permanently deleted.';
+    openDeleteModal(title, message, async () => {
+        try {
+            const response = await apiCall(`/api/plugins/${encodeURIComponent(pluginId)}`, { method: 'DELETE' });
+            if (response.ok) {
+                closeDeleteModal();
+                await loadPluginData();
+                showNotification(window.i18n ? window.i18n.t('plugin.delete_success') : 'Plugin uninstalled successfully', 'success');
+            } else {
+                const data = await response.json().catch(() => ({}));
+                showNotification(data.detail || (window.i18n ? window.i18n.t('plugin.delete_failed') : 'Failed to uninstall plugin'), 'error');
+                closeDeleteModal();
+            }
+        } catch (error) {
+            console.error('Error deleting plugin:', error);
+            showNotification(window.i18n ? window.i18n.t('plugin.delete_failed') : 'Failed to uninstall plugin', 'error');
+            closeDeleteModal();
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------

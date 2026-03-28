@@ -1,3 +1,4 @@
+import shutil
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, File, HTTPException, UploadFile
@@ -41,6 +42,13 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/{plugin_id}/enabled",
                 methods=["POST"],
                 endpoint=self.set_plugin_enabled,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/{plugin_id}",
+                methods=["DELETE"],
+                endpoint=self.delete_plugin,
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -150,6 +158,34 @@ class PluginsRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to set plugin enabled state for {plugin_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to update plugin state")
+
+    async def delete_plugin(self, plugin_id: str):
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+
+        plugin_manager = self.lifecycle.plugin_manager
+
+        if plugin_id not in plugin_manager.get_registered_plugins():
+            raise HTTPException(status_code=404, detail="Plugin not found")
+
+        # Only user-installed plugins (under plugin_dir) can be deleted
+        plugin_dir = plugin_manager.plugin_dir / plugin_id
+        if not plugin_dir.exists():
+            raise HTTPException(status_code=400, detail="Built-in plugins cannot be deleted")
+
+        try:
+            await plugin_manager.uninstall_plugin(plugin_id)
+        except Exception as e:
+            logger.error(f"Failed to uninstall plugin {plugin_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to uninstall plugin: {e}")
+
+        try:
+            shutil.rmtree(plugin_dir)
+        except Exception as e:
+            logger.error(f"Failed to delete plugin directory {plugin_dir}: {e}")
+            raise HTTPException(status_code=500, detail=f"Plugin unregistered but directory deletion failed: {e}")
+
+        return {"plugin_id": plugin_id, "deleted": True}
 
     async def install_from_github(self, payload: PluginInstallGithubRequest) -> PluginInstallResult:
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):

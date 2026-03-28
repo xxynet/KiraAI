@@ -542,6 +542,37 @@ class PluginManager:
         for name in list(_plugin_components.keys()):
             self._cleanup_plugin_registration(name)
 
+    async def uninstall_plugin(self, plugin_id: str) -> None:
+        """
+        Terminate a plugin and remove all its registrations from memory.
+        The caller is responsible for deleting the plugin directory afterwards.
+        """
+        if plugin_id not in _plugin_classes:
+            raise ValueError(f"Plugin '{plugin_id}' is not registered")
+
+        # Stop the running instance and unregister tools / hooks / tags
+        await self.terminate(plugin_id)
+
+        # Remove from global registries
+        _plugin_classes.pop(plugin_id, None)
+        _plugin_manifests.pop(plugin_id, None)
+        _plugin_module_dirs.pop(plugin_id, None)
+        _plugin_module_paths.pop(plugin_id, None)
+        _plugin_schemas.pop(plugin_id, None)
+        _plugin_components.pop(plugin_id, None)
+
+        # Remove module-to-plugin mappings and evict from sys.modules
+        stale_modules = [k for k, v in _module_to_plugin.items() if v == plugin_id]
+        for mod_name in stale_modules:
+            _module_to_plugin.pop(mod_name, None)
+            sys.modules.pop(mod_name, None)
+
+        # Remove enabled state and persist
+        self.plugin_enabled.pop(plugin_id, None)
+        self._save_plugin_state()
+
+        logger.info(f"Plugin '{plugin_id}' uninstalled from memory")
+
     async def reload(self, plugin_id: Optional[str]):
         """
         Reload all plugins or reload a specific plugin

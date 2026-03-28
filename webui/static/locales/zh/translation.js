@@ -190,7 +190,13 @@ window._locale_zh = {
         install_failed: "安装失败",
         install_warning: "安装完成（有警告）",
         install_url_required: "请输入仓库链接",
-        install_no_file: "请选择 .zip 文件"
+        install_no_file: "请选择 .zip 文件",
+        config_saved: "插件配置已保存",
+        config_save_failed: "保存插件配置失败",
+        delete_confirm_title: "卸载插件",
+        delete_confirm_message: "确定要卸载此插件吗？插件文件将被永久删除。",
+        delete_success: "插件已卸载",
+        delete_failed: "卸载插件失败"
     },
     sticker: {
         title: "表情包",
