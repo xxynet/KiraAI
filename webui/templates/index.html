@@ -546,14 +546,18 @@
                             </div>
                         </div>
                         <div class="mb-4 flex space-x-4">
-                            <select id="log-level-selector" data-custom-select data-placeholder="Select Level">
-                                <option value="all" data-i18n="logs.level_all">All Levels</option>
-                                <option value="debug" data-i18n="logs.level_debug">Debug</option>
-                                <option value="info" data-i18n="logs.level_info">Info</option>
-                                <option value="warning" data-i18n="logs.level_warning">Warning</option>
-                                <option value="error" data-i18n="logs.level_error">Error</option>
+                            <select id="log-level-selector" multiple data-custom-select data-multiple="true" data-placeholder="Select Level" data-placeholder-i18n="logs.level_all">
+                                <option value="debug" selected data-i18n="logs.level_debug">Debug</option>
+                                <option value="info" selected data-i18n="logs.level_info">Info</option>
+                                <option value="warning" selected data-i18n="logs.level_warning">Warning</option>
+                                <option value="error" selected data-i18n="logs.level_error">Error</option>
                             </select>
-                            <input type="text" class="flex-1 border border-gray-300 rounded-lg px-3 py-2" placeholder="Search logs..." data-i18n-placeholder="logs.search_placeholder">
+                            <button data-action="download-logs" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center whitespace-nowrap">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                <span data-i18n="logs.download">Download</span>
+                            </button>
                         </div>
                         <div id="log-container" class="bg-gray-50 rounded-lg p-4 h-96 overflow-y-auto font-mono text-base">
                             <div class="flex justify-center items-center h-full">

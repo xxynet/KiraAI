@@ -485,26 +485,32 @@ function attachMcpHandlers() {
         });
     });
     container.querySelectorAll('button[data-mcp-delete-id]').forEach((btn) => {
-        btn.addEventListener('click', async (e) => {
+        btn.addEventListener('click', (e) => {
             e.preventDefault();
             const serverId = btn.getAttribute('data-mcp-delete-id') || '';
             if (!serverId) {
                 return;
             }
-            try {
-                const response = await apiCall(`/api/mcp-servers/${encodeURIComponent(serverId)}`, {
-                    method: 'DELETE'
-                });
-                if (!response.ok) {
-                    throw new Error(`Failed to delete MCP server: ${response.status}`);
+            const title = window.i18n ? window.i18n.t('plugin.mcp_delete_confirm_title') : 'Delete MCP Server';
+            const message = window.i18n ? window.i18n.t('plugin.mcp_delete_confirm_message') : 'Are you sure you want to delete this MCP server? This action cannot be undone.';
+            openDeleteModal(title, message, async () => {
+                try {
+                    const response = await apiCall(`/api/mcp-servers/${encodeURIComponent(serverId)}`, {
+                        method: 'DELETE'
+                    });
+                    if (!response.ok) {
+                        throw new Error(`Failed to delete MCP server: ${response.status}`);
+                    }
+                    AppState.data.mcpServers = (AppState.data.mcpServers || []).filter(s => s.id !== serverId);
+                    closeDeleteModal();
+                    renderMcpServers();
+                    showNotification(window.i18n ? window.i18n.t('plugin.mcp_delete_success') : 'MCP server deleted', 'success');
+                } catch (error) {
+                    console.error('Error deleting MCP server:', error);
+                    showNotification(window.i18n ? window.i18n.t('plugin.mcp_delete_error') : 'Failed to delete MCP server', 'error');
+                    closeDeleteModal();
                 }
-                AppState.data.mcpServers = (AppState.data.mcpServers || []).filter(s => s.id !== serverId);
-                renderMcpServers();
-                showNotification(window.i18n ? window.i18n.t('plugin.mcp_delete_success') : 'MCP server deleted', 'success');
-            } catch (error) {
-                console.error('Error deleting MCP server:', error);
-                showNotification(window.i18n ? window.i18n.t('plugin.mcp_delete_error') : 'Failed to delete MCP server', 'error');
-            }
+            });
         });
     });
 }
@@ -560,7 +566,7 @@ async function openPluginConfigModal(pluginId) {
         titleElement.textContent = plugin.name || plugin.id || '';
     }
     container.innerHTML = '';
-    Modal.show('plugin-config-modal');
+    Modal.show('plugin-config-modal', closePluginConfigModal);
     try {
         const response = await apiCall(`/api/plugins/${encodeURIComponent(pluginId)}/config`);
         if (!response.ok) {
@@ -679,7 +685,7 @@ function openPluginInstallModal() {
         _zipDropzone.reset();
     }
     switchPluginInstallTab('github');
-    Modal.show('plugin-install-modal');
+    Modal.show('plugin-install-modal', closePluginInstallModal);
 }
 
 function closePluginInstallModal() {
@@ -818,7 +824,7 @@ async function openMcpConfigEditor(serverId) {
             bracketPairColorization: { enabled: true },
         });
 
-        Modal.show('mcp-config-modal');
+        Modal.show('mcp-config-modal', closeMcpConfigModal);
     } catch (error) {
         console.error('Error loading MCP config:', error);
         showNotification('Failed to load MCP config', 'error');

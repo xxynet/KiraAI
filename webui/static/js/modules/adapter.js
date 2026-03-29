@@ -233,7 +233,7 @@ async function openAdapterModal(adapter) {
         configContainer.innerHTML = '';
     }
 
-    Modal.show('adapter-modal');
+    Modal.show('adapter-modal', closeAdapterModal);
 
     if (platformSelect) {
         try {

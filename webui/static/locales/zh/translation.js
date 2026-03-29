@@ -163,6 +163,8 @@ window._locale_zh = {
         mcp_toggle_error: "更新 MCP 服务器状态失败",
         mcp_edit: "编辑",
         mcp_delete: "删除",
+        mcp_delete_confirm_title: "删除 MCP 服务器",
+        mcp_delete_confirm_message: "确定要删除此 MCP 服务器吗？此操作无法撤销。",
         mcp_delete_success: "MCP 服务器已删除",
         mcp_delete_error: "删除 MCP 服务器失败",
         mcp_modal_title: "编辑 MCP 配置",
@@ -359,10 +361,11 @@ window._locale_zh = {
         clear: "清除日志",
         refresh: "刷新",
         level_all: "所有级别",
+        level_debug: "调试",
         level_info: "信息",
         level_warning: "警告",
         level_error: "错误",
-        search_placeholder: "搜索日志...",
+        download: "下载日志",
         no_logs: "无可用日志"
     },
     settings: {

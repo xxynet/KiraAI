@@ -281,6 +281,35 @@ class MCPManager:
                     server.headers = headers_val
             break
 
+    def delete_server(self, server_name: str) -> None:
+        """Remove a server from config and in-memory state. Raises ValueError if not found."""
+        servers = self.mcp_config.get("mcpServers") or {}
+        if not isinstance(servers, dict):
+            raise ValueError(f"MCP server {server_name} not found")
+
+        key_to_delete = None
+        if server_name in servers:
+            key_to_delete = server_name
+        else:
+            for key, cfg in servers.items():
+                if isinstance(cfg, dict) and cfg.get("name") == server_name:
+                    key_to_delete = key
+                    break
+
+        if key_to_delete is None:
+            raise ValueError(f"MCP server {server_name} not found")
+
+        # Unregister tools if server was enabled
+        target_server = next((s for s in self.servers if s.name == server_name), None)
+        if target_server and target_server.enabled:
+            for tool in target_server.tools:
+                self.llm_api.unregister_tool(tool.get("name"))
+
+        servers.pop(key_to_delete)
+        self.mcp_config["mcpServers"] = servers
+        self.save_server_config()
+        self.load_servers()
+
     async def enable_server(self, server_name: str):
         target_server = None
         for server in self.servers:

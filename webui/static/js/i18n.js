@@ -128,6 +128,8 @@ window.i18n = {
             if (page && !page.classList.contains('hidden') && window.configManager && typeof window.configManager.render === 'function') {
                 window.configManager.render();
             }
+            // Refresh all CustomSelect instances so their cached labels stay in sync
+            (window._customSelectInstances || []).forEach(inst => inst.refreshLabels());
         } catch (error) {
             console.error('Failed to update translations after language change:', error);
         }

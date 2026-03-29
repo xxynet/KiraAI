@@ -112,7 +112,7 @@ function deletePersona(id) {
 }
 
 function openPersonaModal() {
-    Modal.show('persona-modal');
+    Modal.show('persona-modal', closePersonaModal);
     document.getElementById('persona-format').value = AppState.data.personaFormat || 'text';
     Monaco.load().then(() => createPersonaEditor());
 }

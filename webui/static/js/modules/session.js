@@ -172,7 +172,7 @@ async function editSession(encodedSessionId) {
             (window.i18n ? window.i18n.t('sessions.message_count') : 'Messages') + ': ' + messageCount;
 
         // Show modal
-        Modal.show('session-modal');
+        Modal.show('session-modal', closeSessionModal);
 
         // Initialize Monaco editor for session data
         await initializeSessionEditor(data.messages || []);

@@ -85,7 +85,7 @@ function renderProviderList() {
 // ---------------------------------------------------------------------------
 
 async function openProviderModal() {
-    Modal.show('provider-modal');
+    Modal.show('provider-modal', closeProviderModal);
 
     // Clear form fields
     document.getElementById('provider-name').value = '';
@@ -711,7 +711,7 @@ async function openModelModal(providerId, modelType, groupLabel, modelId = null,
     modelModalState.modelType = modelType;
     modelModalState.mode = modelId ? 'edit' : 'create';
     modelModalState.modelId = modelId;
-    Modal.show('model-modal');
+    Modal.show('model-modal', closeModelModal);
     const modelIdInput = document.getElementById('model-id');
     const modelIdError = document.getElementById('model-id-error');
     const modelIdHint = document.getElementById('model-id-hint');

@@ -25,9 +25,7 @@
  *                             saveProvider, selectProvider, closeModelModal, saveModel
  *   modules/settings.js    — loadSettingsData, saveSettings, applyTheme,
  *                             getTranslation, applyTranslations,
- *                             loadConfigurationData, setupConfigurationTabs,
- *                             initializeMonacoEditor, createEditor,
- *                             setupEditorEventListeners, saveCurrentFile, createNewFile
+ *                             loadConfigurationData, setupConfigurationTabs
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -48,7 +46,6 @@ function initializeApp() {
     loadInitialData();
     setupEventListeners();
     startAutoRefresh();
-    initializeMonacoEditor();
     initializeDropzones();
 }
 
@@ -263,6 +260,7 @@ function setupEventListeners() {
     EventRouter.on('new-session',   () => showNotification('New session functionality coming soon', 'info'));
     EventRouter.on('clear-logs',    () => clearLogs());
     EventRouter.on('refresh-logs',  () => refreshLogs());
+    EventRouter.on('download-logs', () => downloadLogs());
 }
 
 function initializeDropzones() {

@@ -163,6 +163,8 @@ window._locale_en = {
         mcp_toggle_error: "Failed to update MCP server state",
         mcp_edit: "Edit",
         mcp_delete: "Delete",
+        mcp_delete_confirm_title: "Delete MCP Server",
+        mcp_delete_confirm_message: "Are you sure you want to delete this MCP server? This action cannot be undone.",
         mcp_delete_success: "MCP server deleted",
         mcp_delete_error: "Failed to delete MCP server",
         mcp_modal_title: "Edit MCP Config",
@@ -359,10 +361,11 @@ window._locale_en = {
         clear: "Clear Logs",
         refresh: "Refresh",
         level_all: "All Levels",
+        level_debug: "Debug",
         level_info: "Info",
         level_warning: "Warning",
         level_error: "Error",
-        search_placeholder: "Search logs...",
+        download: "Download",
         no_logs: "No logs available"
     },
     settings: {

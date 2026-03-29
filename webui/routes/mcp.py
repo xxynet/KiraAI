@@ -197,31 +197,10 @@ class McpRoutes(Routes):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
             raise HTTPException(status_code=503, detail="MCP manager not available")
         try:
-            from core.agent.mcp_mgr import MCP_CONFIG_PATH
-            if not MCP_CONFIG_PATH.exists():
-                raise HTTPException(status_code=404, detail="MCP config not found")
-            with MCP_CONFIG_PATH.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            servers = data.get("mcpServers") or {}
-            if not isinstance(servers, dict):
-                raise HTTPException(status_code=404, detail="MCP server not found")
-            if server_name not in servers:
-                found_key = None
-                for key, cfg in servers.items():
-                    if isinstance(cfg, dict) and cfg.get("name") == server_name:
-                        found_key = key
-                        break
-                if not found_key:
-                    raise HTTPException(status_code=404, detail="MCP server not found")
-                servers.pop(found_key, None)
-            else:
-                servers.pop(server_name, None)
-            data["mcpServers"] = servers
-            with MCP_CONFIG_PATH.open("w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
+            self.lifecycle.mcp_manager.delete_server(server_name)
             return {"ok": True}
-        except HTTPException:
-            raise
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:
             logger.error(f"Failed to delete MCP server {server_name}: {e}")
             raise HTTPException(status_code=500, detail="Failed to delete MCP server")

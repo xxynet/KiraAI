@@ -120,7 +120,7 @@ async function openStickerModal(id) {
         }
 
         modal.dataset.mode = 'edit';
-        Modal.show('sticker-modal');
+        Modal.show('sticker-modal', closeStickerModal);
     } catch (error) {
         console.error('Error loading sticker:', error);
         showNotification('Failed to load sticker', 'error');
@@ -166,7 +166,7 @@ function openAddStickerModal() {
     }
 
     modal.dataset.mode = 'add';
-    Modal.show('sticker-modal');
+    Modal.show('sticker-modal', closeStickerModal);
 }
 
 async function saveSticker() {

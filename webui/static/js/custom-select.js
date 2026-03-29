@@ -34,6 +34,10 @@ class CustomSelect {
     }
 
     init() {
+        // Register instance for global label refresh (e.g. after i18n language change)
+        if (!window._customSelectInstances) window._customSelectInstances = [];
+        window._customSelectInstances.push(this);
+
         // Get options from the original select element
         this.parseOriginalOptions();
 
@@ -47,7 +51,14 @@ class CustomSelect {
         this.bindEvents();
 
         // Set initial value
-        this.setValue(this.element.value);
+        if (this.options.multiple) {
+            // Use pre-selected options from original <option selected> attributes
+            this.selectedOptions = this.originalOptions.filter(o => o.selected);
+            this.updateTrigger();
+            this.renderOptions();
+        } else {
+            this.setValue(this.element.value);
+        }
     }
 
     parseOriginalOptions() {
@@ -166,7 +177,21 @@ class CustomSelect {
             optionElement.setAttribute('role', 'option');
             optionElement.setAttribute('data-value', option.value);
             optionElement.setAttribute('aria-selected', option.selected ? 'true' : 'false');
-            optionElement.textContent = option.label;
+
+            if (this.options.multiple) {
+                optionElement.style.display = 'flex';
+                optionElement.style.justifyContent = 'space-between';
+                optionElement.style.alignItems = 'center';
+                const labelSpan = document.createElement('span');
+                labelSpan.textContent = option.label;
+                optionElement.appendChild(labelSpan);
+                const checkSpan = document.createElement('span');
+                checkSpan.style.visibility = option.selected ? 'visible' : 'hidden';
+                checkSpan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                optionElement.appendChild(checkSpan);
+            } else {
+                optionElement.textContent = option.label;
+            }
 
             if (option.disabled) {
                 optionElement.classList.add('disabled');
@@ -406,35 +431,23 @@ class CustomSelect {
 
     updateTrigger() {
         if (this.options.multiple) {
-            // Multiple selection - show tags
             this.triggerContent.innerHTML = '';
-            const tagsContainer = document.createElement('div');
-            tagsContainer.className = 'custom-select-tags';
-
-            this.selectedOptions.forEach(option => {
-                const tag = document.createElement('span');
-                tag.className = 'custom-select-tag';
-                tag.textContent = option.label;
-
-                const removeBtn = document.createElement('span');
-                removeBtn.className = 'custom-select-tag-remove';
-                removeBtn.innerHTML = '×';
-                removeBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.selectOption(option);
-                });
-
-                tag.appendChild(removeBtn);
-                tagsContainer.appendChild(tag);
-            });
-
-            this.triggerContent.appendChild(tagsContainer);
-
             if (this.selectedOptions.length === 0) {
                 this.trigger.classList.add('placeholder');
-                this.triggerContent.textContent = this.options.placeholder;
+                this.trigger.classList.remove('has-value');
+                const i18nKey = this.element.getAttribute('data-placeholder-i18n');
+                if (i18nKey && window.i18n) {
+                    this.triggerContent.textContent = window.i18n.t(i18nKey);
+                    this.triggerContent.setAttribute('data-i18n', i18nKey);
+                } else {
+                    this.triggerContent.removeAttribute('data-i18n');
+                    this.triggerContent.textContent = this.options.placeholder;
+                }
             } else {
                 this.trigger.classList.remove('placeholder');
+                this.trigger.classList.add('has-value');
+                this.triggerContent.removeAttribute('data-i18n');
+                this.triggerContent.textContent = this.selectedOptions.map(o => o.label).join(', ');
             }
         } else {
             // Single selection - show selected value or placeholder
@@ -518,8 +531,25 @@ class CustomSelect {
     }
 
     destroy() {
+        if (window._customSelectInstances) {
+            window._customSelectInstances = window._customSelectInstances.filter(i => i !== this);
+        }
         this.container.remove();
         this.element.style.display = '';
+    }
+
+    refreshLabels() {
+        const domOptions = this.element.querySelectorAll('option');
+        domOptions.forEach((opt, i) => {
+            if (this.originalOptions[i]) {
+                this.originalOptions[i].label = opt.textContent.trim() || opt.innerText.trim();
+            }
+        });
+        this.filteredOptions = this.originalOptions.filter(o =>
+            o.label.toLowerCase().includes(this.searchTerm || '')
+        );
+        this.renderOptions();
+        this.updateTrigger();
     }
 }
 

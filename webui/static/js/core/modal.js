@@ -10,9 +10,13 @@
 
 // Tracks pending close-animation handlers so show() can cancel them
 const _closeHandlers = new Map();
+// Stack of open modal IDs (most recently opened last)
+const _openStack = [];
+// ESC close handlers per modal ID
+const _escHandlers = new Map();
 
 const Modal = {
-    show(id) {
+    show(id, onEscape) {
         const el = document.getElementById(id);
         if (!el) return;
 
@@ -25,6 +29,9 @@ const Modal = {
 
         el.classList.remove('hidden', 'modal-closing');
         el.classList.add('flex', 'modal-opening');
+
+        if (!_openStack.includes(id)) _openStack.push(id);
+        if (onEscape) _escHandlers.set(id, onEscape);
     },
 
     hide(id, onHidden) {
@@ -44,8 +51,21 @@ const Modal = {
         };
         _closeHandlers.set(id, handler);
         el.addEventListener('animationend', handler);
+
+        const idx = _openStack.indexOf(id);
+        if (idx !== -1) _openStack.splice(idx, 1);
+        _escHandlers.delete(id);
     }
 };
+
+// Close the topmost open modal on Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || _openStack.length === 0) return;
+    const id = _openStack[_openStack.length - 1];
+    const handler = _escHandlers.get(id);
+    if (handler) handler();
+    else Modal.hide(id);
+});
 
 // ── Confirm / Delete dialog ───────────────────────────────────────────────────
 
@@ -57,7 +77,7 @@ Modal.confirm = function (title, message, onConfirm) {
     if (titleEl) titleEl.textContent = title;
     if (messageEl) messageEl.textContent = message;
     _confirmHandler = onConfirm;
-    Modal.show('delete-modal');
+    Modal.show('delete-modal', Modal.confirmClose);
 };
 
 Modal.confirmClose = function () {

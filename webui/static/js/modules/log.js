@@ -59,17 +59,46 @@ async function loadLogsData() {
  */
 function initLogLevelSelector() {
     const selector = document.getElementById('log-level-selector');
-    if (selector) {
-        // Set initial value from state
-        selector.value = AppState.data.logFilter.level || 'all';
+    if (!selector) return;
 
-        // Add change event listener
-        selector.addEventListener('change', (e) => {
-            const selectedLevel = e.target.value;
-            AppState.data.logFilter.level = selectedLevel;
-            applyLogFilter();
+    // Load persisted levels from localStorage, fall back to all levels
+    let savedLevels = ['debug', 'info', 'warning', 'error'];
+    try {
+        const raw = localStorage.getItem('log_filter_levels');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+            savedLevels = parsed;
+        }
+    } catch (_) {}
+
+    AppState.data.logFilter.levels = savedLevels;
+
+    // Sync native <option selected> states to match saved levels,
+    // then destroy and recreate CustomSelect so it picks up the correct initial state
+    Array.from(selector.options).forEach(opt => {
+        opt.selected = savedLevels.includes(opt.value);
+    });
+    const existingWrapper = document.querySelector(`.custom-select[data-custom-select="log-level-selector"]`);
+    if (existingWrapper) existingWrapper.remove();
+    if (typeof CustomSelect !== 'undefined') {
+        new CustomSelect(selector, {
+            placeholder: selector.getAttribute('data-placeholder') || 'Select Level',
+            multiple: true,
+            maxHeight: parseInt(selector.getAttribute('data-max-height')) || 300,
         });
     }
+
+    // Persist on change (remove previous listener first to avoid duplicates on re-visit)
+    if (selector._logLevelChangeHandler) {
+        selector.removeEventListener('change', selector._logLevelChangeHandler);
+    }
+    selector._logLevelChangeHandler = () => {
+        const selected = Array.from(selector.selectedOptions).map(o => o.value);
+        AppState.data.logFilter.levels = selected.length > 0 ? selected : ['debug', 'info', 'warning', 'error'];
+        localStorage.setItem('log_filter_levels', JSON.stringify(AppState.data.logFilter.levels));
+        applyLogFilter();
+    };
+    selector.addEventListener('change', selector._logLevelChangeHandler);
 }
 
 /**
@@ -174,14 +203,9 @@ function addLogEntry(log) {
     const message = log.message || log.content || '';
     const color = log.color || 'blue';
 
-    // Apply log level filter
-    const currentFilter = AppState.data.logFilter.level;
-    if (currentFilter !== 'all') {
-        const shouldShow = checkLogLevelMatch(level, currentFilter);
-        if (!shouldShow) {
-            return;  // Skip this log entry if it doesn't match the filter
-        }
-    }
+    // Determine visibility based on current filter (always add to DOM so filter changes can reveal it)
+    const activeLevels = AppState.data.logFilter.levels;
+    const isVisible = !Array.isArray(activeLevels) || checkLogLevelMatch(level, activeLevels);
 
     // Remove "No logs available" message if present
     const noLogsMsg = container.querySelector('[data-i18n="logs.no_logs"]');
@@ -217,6 +241,7 @@ function addLogEntry(log) {
     logHtml += `<span class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">${escapeHtml(message)}</span>`;
 
     logEntry.innerHTML = logHtml;
+    if (!isVisible) logEntry.style.display = 'none';
 
     // Append to container
     container.appendChild(logEntry);
@@ -240,27 +265,16 @@ function addLogEntry(log) {
 }
 
 /**
- * Check if log level matches the selected filter
+ * Check if log level matches any of the active filter levels
  * @param {string} logLevel - The log level from the log entry
- * @param {string} filterLevel - The selected filter level
+ * @param {string[]} activeLevels - Array of active filter level values (lowercase)
  * @returns {boolean} - True if the log should be displayed
  */
-function checkLogLevelMatch(logLevel, filterLevel) {
-    const upperLogLevel = logLevel.toUpperCase();
-    const upperFilterLevel = filterLevel.toUpperCase();
-
-    switch (upperFilterLevel) {
-        case 'ERROR':
-            return upperLogLevel === 'ERROR' || upperLogLevel === 'CRITICAL';
-        case 'WARNING':
-            return upperLogLevel === 'WARNING';
-        case 'INFO':
-            return upperLogLevel === 'INFO';
-        case 'DEBUG':
-            return upperLogLevel === 'DEBUG';
-        default:
-            return false;
-    }
+function checkLogLevelMatch(logLevel, activeLevels) {
+    const lower = logLevel.toLowerCase();
+    // CRITICAL is treated the same as ERROR
+    const normalized = lower === 'critical' ? 'error' : lower;
+    return activeLevels.includes(normalized);
 }
 
 /**
@@ -271,32 +285,15 @@ function applyLogFilter() {
     const container = document.getElementById('log-container');
     if (!container) return;
 
-    // Get current filter state
-    const currentFilter = AppState.data.logFilter.level;
+    const activeLevels = AppState.data.logFilter.levels || ['debug', 'info', 'warning', 'error'];
 
-    // If filter is 'all', show all logs
-    if (currentFilter === 'all') {
-        Array.from(container.children).forEach(child => {
-            child.style.display = 'block';
-        });
-        // Scroll to bottom after showing all logs
-        container.scrollTop = container.scrollHeight;
-        return;
-    }
-
-    // Hide/show log entries based on filter
-    // Parse each log entry to extract the log level and apply filter
     Array.from(container.children).forEach(child => {
-        // Find the level span element (second span in the log entry)
         const levelSpan = child.querySelector('span:nth-child(2)');
         if (levelSpan) {
-            const logLevel = levelSpan.textContent.trim();
-            const shouldShow = checkLogLevelMatch(logLevel, currentFilter);
-            child.style.display = shouldShow ? 'block' : 'none';
+            child.style.display = checkLogLevelMatch(levelSpan.textContent.trim(), activeLevels) ? 'block' : 'none';
         }
     });
 
-    // Scroll to bottom after applying filter
     container.scrollTop = container.scrollHeight;
 }
 
@@ -323,6 +320,24 @@ function clearLogs() {
         }
         showNotification('Logs cleared', 'success');
     }
+}
+
+function downloadLogs() {
+    const container = document.getElementById('log-container');
+    if (!container) return;
+
+    const lines = Array.from(container.children)
+        .filter(el => el.style.display !== 'none')
+        .map(el => el.textContent.trim())
+        .join('\n');
+
+    const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `logs_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 function refreshLogs() {
