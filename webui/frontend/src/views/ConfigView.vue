@@ -425,6 +425,7 @@ function undo() {
   } else {
     modifiedFields.value.add(entry.key)
   }
+  validateField(entry.key)
 }
 
 function redo() {
@@ -438,6 +439,7 @@ function redo() {
   } else {
     modifiedFields.value.add(entry.key)
   }
+  validateField(entry.key)
 }
 
 function resetAll() {
@@ -511,6 +513,9 @@ function toggleGroup(id: string) {
 
 // Save
 async function handleSave() {
+  // Run full validation pass
+  const allFields = [...messageGroups, ...modelGroups].flatMap(g => g.fields)
+  allFields.forEach(f => validateField(f.key))
   // Check for validation errors
   if (Object.keys(validationErrors.value).length > 0) {
     ElMessage.error(t('configuration.validation.has_errors'))
@@ -533,6 +538,10 @@ async function handleSave() {
 
 // Keyboard shortcuts
 function handleKeydown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+    return
+  }
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
     e.preventDefault()
     undo()

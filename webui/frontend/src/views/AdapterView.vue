@@ -95,6 +95,7 @@ const editId = ref<string | null>(null)
 const adapterSchema = ref<any>(null)
 const saving = ref(false)
 const formActive = ref(false)
+let platformChangeId = 0
 
 const form = ref({
   name: '',
@@ -143,11 +144,18 @@ function openEditDialog(adapter: AdapterResponse) {
 
 async function onPlatformChange(platform: string) {
   if (!platform) { adapterSchema.value = null; return }
+  adapterSchema.value = null
+  form.value.config = {}
+  const requestId = ++platformChangeId
   try {
     const res = await getAdapterSchema(platform)
-    adapterSchema.value = res.data
+    if (requestId === platformChangeId) {
+      adapterSchema.value = res.data
+    }
   } catch {
-    adapterSchema.value = null
+    if (requestId === platformChangeId) {
+      adapterSchema.value = null
+    }
   }
 }
 
@@ -197,10 +205,16 @@ async function toggleStatus(adapter: AdapterResponse) {
 async function handleDelete(id: string) {
   try {
     await ElMessageBox.confirm(t('adapter.delete_confirm'), t('adapter.delete'), { type: 'warning' })
+  } catch {
+    return // User cancelled
+  }
+  try {
     await deleteAdapter(id)
     ElMessage.success(t('adapter.delete_success'))
     await loadAdapters()
-  } catch { /* cancelled */ }
+  } catch (error: any) {
+    ElMessage.error(t('adapter.delete_failed') + (error?.message ? ': ' + error.message : ''))
+  }
 }
 
 onMounted(() => {

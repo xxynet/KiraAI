@@ -85,7 +85,9 @@ watch(
 )
 
 onUnmounted(() => {
+  const model = editor?.getModel()
   editor?.dispose()
+  model?.dispose()
   editor = null
 })
 </script>

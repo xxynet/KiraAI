@@ -82,7 +82,7 @@ async function loadContent() {
 async function handleSave() {
   saving.value = true
   try {
-    await updateCurrentPersonaContent({ content: content.value })
+    await updateCurrentPersonaContent({ content: content.value, format: format.value })
     ElMessage.success(t('persona.save_success'))
     editorVisible.value = false
   } catch {

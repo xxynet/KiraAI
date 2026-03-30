@@ -5,14 +5,14 @@
     </h2>
     <div class="flex items-center gap-3">
       <!-- Theme Toggle -->
-      <el-button circle @click="toggleTheme">
+      <el-button circle :aria-label="appStore.isDark ? 'Switch to light theme' : 'Switch to dark theme'" :title="appStore.isDark ? 'Switch to light theme' : 'Switch to dark theme'" @click="toggleTheme">
         <el-icon>
           <Moon v-if="!appStore.isDark" />
           <Sunny v-else />
         </el-icon>
       </el-button>
       <!-- Logout -->
-      <el-button circle @click="handleLogout">
+      <el-button circle aria-label="Logout" title="Logout" @click="handleLogout">
         <el-icon><SwitchButton /></el-icon>
       </el-button>
     </div>

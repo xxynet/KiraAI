@@ -65,6 +65,7 @@ const autoScroll = ref(true)
 const allLogs = ref<LogEntry[]>([])
 
 const { messages, connected, connect, disconnect } = useSSE()
+let lastProcessedIndex = 0
 
 const filteredLogs = computed(() => {
   return allLogs.value.filter(log =>
@@ -104,23 +105,26 @@ function scrollToBottom() {
 
 // Watch for new SSE messages
 watch(messages, (msgs) => {
-  if (msgs.length > 0) {
-    const latest = msgs[msgs.length - 1]
+  if (msgs.length <= lastProcessedIndex) return
+  let added = false
+  for (let i = lastProcessedIndex; i < msgs.length; i++) {
     try {
-      const logData = typeof latest === 'string' ? JSON.parse(latest) : latest
+      const logData = typeof msgs[i] === 'string' ? JSON.parse(msgs[i]) : msgs[i]
       allLogs.value.push({
         timestamp: logData.time || logData.timestamp || new Date().toLocaleString(),
         level: logData.level || 'info',
         message: logData.message || logData.msg || '',
         logger: logData.logger || logData.name || '',
       })
-      // Cap at 1000 entries
-      if (allLogs.value.length > 1000) {
-        allLogs.value = allLogs.value.slice(-800)
-      }
-      scrollToBottom()
-    } catch { /* ignore parse errors */ }
+      added = true
+    } catch { /* ignore parse errors for individual messages */ }
   }
+  lastProcessedIndex = msgs.length
+  // Cap at 1000 entries
+  if (allLogs.value.length > 1000) {
+    allLogs.value = allLogs.value.slice(-800)
+  }
+  if (added) scrollToBottom()
 }, { deep: true })
 
 onMounted(async () => {

@@ -78,15 +78,18 @@ class PersonasRoutes(Routes):
     async def get_current_persona_content(self):
         if self.lifecycle and self.lifecycle.persona_manager:
             persona_content = self.lifecycle.persona_manager.get_persona()
-            return {"content": persona_content, "format": "text"}
+            fmt = getattr(self.lifecycle.persona_manager, '_format', 'text')
+            return {"content": persona_content, "format": fmt}
         raise HTTPException(status_code=404, detail="Persona manager not available")
 
     async def update_current_persona_content(self, payload: dict):
         if not self.lifecycle or not self.lifecycle.persona_manager:
             raise HTTPException(status_code=404, detail="Persona manager not available")
         content = payload.get("content", "")
+        fmt = payload.get("format", "text")
         self.lifecycle.persona_manager.update_persona(content)
-        return {"content": content, "format": "text"}
+        self.lifecycle.persona_manager._format = fmt
+        return {"content": content, "format": fmt}
 
     async def list_personas(self):
         return list(self._personas.values())

@@ -126,8 +126,8 @@
       </template>
     </el-dialog>
 
-    <!-- Add Model Dialog -->
-    <el-dialog v-model="modelDialogVisible" :title="$t('provider.add_model')" width="500">
+    <!-- Add/Edit Model Dialog -->
+    <el-dialog v-model="modelDialogVisible" :title="modelEditMode ? $t('provider.edit_model') : $t('provider.add_model')" width="500">
       <el-form label-position="top">
         <el-form-item :label="$t('provider.model_id')">
           <el-input v-model="modelForm.model_id" />
@@ -152,7 +152,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getProviders, getProviderTypes, getProviderSchema,
   createProvider, updateProvider, deleteProvider,
-  addModel, getModels, deleteModel,
+  addModel, updateModel, getModels, deleteModel,
 } from '@/api/provider'
 import ConfigForm from '@/components/common/ConfigForm.vue'
 import type { ProviderResponse } from '@/types'
@@ -179,6 +179,8 @@ const modelDialogVisible = ref(false)
 const modelForm = ref({ model_id: '', model_type: '', config: {} as Record<string, any> })
 const modelSchema = ref<any>(null)
 const addingModel = ref(false)
+const modelEditMode = ref(false)
+const originalModelId = ref('')
 
 const selectedProvider = computed(() => providers.value.find(p => p.id === selectedId.value))
 
@@ -282,6 +284,8 @@ async function handleDelete() {
 }
 
 function openAddModelDialog(modelType: string) {
+  modelEditMode.value = false
+  originalModelId.value = ''
   modelForm.value = { model_id: '', model_type: modelType, config: {} }
   // Get model config schema from provider schema
   const modelConfigs = providerSchema.value?.model_config || {}
@@ -293,23 +297,33 @@ async function handleAddModel() {
   if (!selectedId.value || !modelForm.value.model_id) return
   addingModel.value = true
   try {
-    await addModel(selectedId.value, {
-      model_type: modelForm.value.model_type,
-      model_id: modelForm.value.model_id,
-      config: modelForm.value.config,
-    })
+    if (modelEditMode.value) {
+      await updateModel(selectedId.value, modelForm.value.model_type, originalModelId.value, {
+        config: modelForm.value.config,
+      })
+    } else {
+      await addModel(selectedId.value, {
+        model_type: modelForm.value.model_type,
+        model_id: modelForm.value.model_id,
+        config: modelForm.value.config,
+      })
+    }
     modelDialogVisible.value = false
-    ElMessage.success(t('provider.model_add_success'))
+    ElMessage.success(modelEditMode.value ? t('provider.model_update_success') : t('provider.model_add_success'))
+    modelEditMode.value = false
+    originalModelId.value = ''
     const modelsRes = await getModels(selectedId.value)
     providerModels.value = modelsRes.data || {}
   } catch {
-    ElMessage.error(t('provider.model_add_failed'))
+    ElMessage.error(modelEditMode.value ? t('provider.model_update_failed') : t('provider.model_add_failed'))
   } finally {
     addingModel.value = false
   }
 }
 
 function editModel(modelType: string, modelId: string, config: any) {
+  modelEditMode.value = true
+  originalModelId.value = modelId
   modelForm.value = { model_id: modelId, model_type: modelType, config: { ...config } }
   const modelConfigs = providerSchema.value?.model_config || {}
   modelSchema.value = modelConfigs[modelType] || null

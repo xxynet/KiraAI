@@ -68,6 +68,20 @@ const emit = defineEmits<{
 }>()
 
 function updateField(key: string, value: any) {
+  const field = props.schema[key]
+  if (field && (field.type === 'object' || field.type === 'array') && typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      if ((field.type === 'object' && typeof parsed === 'object' && !Array.isArray(parsed)) ||
+          (field.type === 'array' && Array.isArray(parsed))) {
+        emit('update:modelValue', { ...props.modelValue, [key]: parsed })
+        return
+      }
+    } catch {
+      // Invalid JSON — do not write back the raw string
+      return
+    }
+  }
   emit('update:modelValue', { ...props.modelValue, [key]: value })
 }
 </script>

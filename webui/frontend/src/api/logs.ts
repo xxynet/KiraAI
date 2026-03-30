@@ -10,9 +10,3 @@ export function getLogHistory(limit?: number) {
 export function getLogConfig() {
   return apiClient.get<LogConfig>('/log-config')
 }
-
-// SSE endpoint URL for live logs
-export function getLiveLogUrl(): string {
-  const token = localStorage.getItem('jwt_token')
-  return `/api/live-log${token ? `?token=${encodeURIComponent(token)}` : ''}`
-}

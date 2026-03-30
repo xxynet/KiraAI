@@ -25,7 +25,7 @@ export function getCurrentPersonaContent() {
   return apiClient.get<{ content: string; format: string }>('/personas/current/content')
 }
 
-export function updateCurrentPersonaContent(data: { content: string }) {
+export function updateCurrentPersonaContent(data: { content: string; format?: string }) {
   return apiClient.put('/personas/current/content', data, {
   })
 }
