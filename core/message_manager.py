@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 from asyncio import Lock
 import xml.etree.ElementTree as ET
@@ -91,6 +92,58 @@ class SessionBufferManager:
         return self.buffers[session]
 
 
+class ImageDescCache:
+    """Cache image/sticker VLM descriptions using MD5 hash to avoid duplicate requests"""
+
+    _instance: Optional["ImageDescCache"] = None
+
+    def __new__(cls, cache_file: str = None):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self, cache_file: str = None):
+        if self._initialized:
+            return
+        self._initialized = True
+        if cache_file is None:
+            cache_file = str(get_data_path() / "image_desc_cache.json")
+        self.cache_file = cache_file
+        self._cache: dict = {}
+        self._load()
+
+    def _load(self):
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, "r", encoding="utf-8") as f:
+                    self._cache = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                self._cache = {}
+
+    def _save(self):
+        os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+        with open(self.cache_file, "w", encoding="utf-8") as f:
+            json.dump(self._cache, f, ensure_ascii=False, indent=2)
+
+    def get(self, md5: str) -> Optional[str]:
+        entry = self._cache.get(md5)
+        if entry:
+            entry["count"] += 1
+            entry["last_seen"] = int(time.time())
+            self._save()
+            return entry["description"]
+        return None
+
+    def set(self, md5: str, description: str):
+        self._cache[md5] = {
+            "description": description,
+            "count": 1,
+            "last_seen": int(time.time())
+        }
+        self._save()
+
+
 class MessageProcessor:
     """Core message processor, responsible for handling all message sending and receiving logic"""
 
@@ -123,6 +176,9 @@ class MessageProcessor:
         self.session_locks: dict[str, asyncio.Lock] = {}
 
         self.session_buffer = SessionBufferManager(max_count=self.max_buffer_messages)
+
+        # image description cache
+        self.image_desc_cache = ImageDescCache()
 
         logger.info("MessageProcessor initialized")
 
@@ -183,13 +239,37 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, Image):
-                image_base64 = await ele.to_base64()
-                img_desc = await self.llm_api.desc_img(image_base64, is_base64=True)
+                try:
+                    md5 = await ele.hash_image()
+                    cached_desc = self.image_desc_cache.get(md5)
+                except (ValueError, Exception) as e:
+                    logger.warning(f"Failed to hash image: {e}")
+                    md5 = None
+                    cached_desc = None
+                if cached_desc:
+                    img_desc = cached_desc
+                else:
+                    image_base64 = await ele.to_base64()
+                    img_desc = await self.llm_api.desc_img(image_base64, is_base64=True)
+                    if md5:
+                        self.image_desc_cache.set(md5, img_desc)
                 ele.caption = img_desc
                 message_str += f"[Image {img_desc}]"
             elif isinstance(ele, Sticker):
-                sticker_base64 = await ele.to_base64()
-                sticker_desc = await self.llm_api.desc_img(sticker_base64, is_base64=True)
+                try:
+                    md5 = await ele.hash_image()
+                    cached_desc = self.image_desc_cache.get(md5)
+                except (ValueError, Exception) as e:
+                    logger.warning(f"Failed to hash sticker: {e}")
+                    md5 = None
+                    cached_desc = None
+                if cached_desc:
+                    sticker_desc = cached_desc
+                else:
+                    sticker_base64 = await ele.to_base64()
+                    sticker_desc = await self.llm_api.desc_img(sticker_base64, is_base64=True)
+                    if md5:
+                        self.image_desc_cache.set(md5, sticker_desc)
                 ele.caption = sticker_desc
                 message_str += f"[Sticker {sticker_desc}]"
             elif isinstance(ele, Reply):
