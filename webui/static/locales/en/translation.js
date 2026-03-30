@@ -370,10 +370,8 @@ window._locale_en = {
     },
     settings: {
         title: "System Settings",
-        language: "Language",
-        theme: "Theme",
-        theme_light: "Light",
-        theme_dark: "Dark",
+        custom_css: "Custom CSS",
+        custom_js: "Custom JavaScript",
         save: "Save Settings",
         saved: "Settings saved successfully"
     },

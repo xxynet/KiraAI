@@ -83,55 +83,69 @@ function applyTheme(theme) {
 }
 
 // ---------------------------------------------------------------------------
+// Custom CSS / JS injection
+// ---------------------------------------------------------------------------
+
+/** Apply custom CSS from localStorage into a persistent <style> tag */
+function applyCustomCSS() {
+    const css = localStorage.getItem('custom_css') || '';
+    let tag = document.getElementById('custom-user-css');
+    if (!tag) {
+        tag = document.createElement('style');
+        tag.id = 'custom-user-css';
+        document.head.appendChild(tag);
+    }
+    tag.textContent = css;
+}
+
+/** Apply custom JS from localStorage by replacing a <script> tag */
+function applyCustomJS() {
+    const js = localStorage.getItem('custom_js') || '';
+    const oldTag = document.getElementById('custom-user-js');
+    if (oldTag) oldTag.remove();
+    if (!js) return;
+    const tag = document.createElement('script');
+    tag.id = 'custom-user-js';
+    tag.textContent = js;
+    document.body.appendChild(tag);
+}
+
+// ---------------------------------------------------------------------------
 // Settings page
 // ---------------------------------------------------------------------------
 
 async function loadSettingsData() {
-    try {
-        const response = await apiCall('/api/settings');
-        const data = await response.json();
-        AppState.data.settings = data.settings || {};
+    const cssContainer = document.getElementById('settings-css-editor');
+    const jsContainer = document.getElementById('settings-js-editor');
+    if (!cssContainer || !jsContainer) return;
 
-        const languageSelect = document.getElementById('settings-language');
-        const themeSelect = document.getElementById('settings-theme');
+    const customCSS = localStorage.getItem('custom_css') || '';
+    const customJS = localStorage.getItem('custom_js') || '';
 
-        if (languageSelect && data.settings.language) {
-            languageSelect.value = data.settings.language;
-        }
-
-        if (themeSelect && data.settings.theme) {
-            themeSelect.value = data.settings.theme;
-        }
-
-        applyTheme(data.settings.theme || 'light');
-
-    } catch (error) {
-        console.error('Error loading settings data:', error);
-    }
+    await Monaco.waitForMonaco();
+    Monaco.register('settings-css', cssContainer, 'css', customCSS, { minimap: { enabled: false } });
+    Monaco.register('settings-js', jsContainer, 'javascript', customJS, { minimap: { enabled: false } });
 }
 
-async function saveSettings() {
-    try {
-        const language = document.getElementById('settings-language')?.value;
-        const theme = document.getElementById('settings-theme')?.value;
+function disposeSettingsEditors() {
+    Monaco.dispose('settings-css');
+    Monaco.dispose('settings-js');
+}
 
-        const response = await apiCall('/api/settings', {
-            method: 'POST',
-            body: JSON.stringify({ language, theme })
-        });
+function saveSettings() {
+    const css = Monaco.getValue('settings-css') || '';
+    const js = Monaco.getValue('settings-js') || '';
 
-        const data = await response.json();
+    localStorage.setItem('custom_css', css);
+    localStorage.setItem('custom_js', js);
 
-        if (data.status === 'ok') {
-            showNotification(window.i18n ? window.i18n.t('settings.saved') : 'Settings saved successfully', 'success');
-            applyTheme(theme);
-        } else {
-            showNotification('Failed to save settings', 'error');
-        }
-    } catch (error) {
-        console.error('Error saving settings:', error);
-        showNotification('Error saving settings', 'error');
-    }
+    applyCustomCSS();
+    applyCustomJS();
+
+    showNotification(
+        window.i18n ? window.i18n.t('settings.saved') : 'Settings saved successfully',
+        'success'
+    );
 }
 
 // loadConfigurationData, _bindConfigToolbarEvents → modules/config.js

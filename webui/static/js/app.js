@@ -23,7 +23,8 @@
  *                             saveAdapter, AdapterModalState
  *   modules/provider.js    — loadProviderData, openProviderModal, closeProviderModal,
  *                             saveProvider, selectProvider, closeModelModal, saveModel
- *   modules/settings.js    — loadSettingsData, saveSettings, applyTheme,
+ *   modules/settings.js    — loadSettingsData, saveSettings, disposeSettingsEditors,
+ *                             applyCustomCSS, applyCustomJS, applyTheme,
  *                             getTranslation, applyTranslations,
  *                             loadConfigurationData, setupConfigurationTabs
  */
@@ -47,6 +48,10 @@ function initializeApp() {
     setupEventListeners();
     startAutoRefresh();
     initializeDropzones();
+
+    // Apply user custom CSS & JS from localStorage
+    applyCustomCSS();
+    applyCustomJS();
 }
 
 function setupThemeToggle() {
@@ -107,6 +112,11 @@ function switchPage(pageName) {
             AppState.sseEventSource.close();
             AppState.sseEventSource = null;
         }
+    }
+
+    // Dispose Monaco editors when leaving settings page
+    if (AppState.currentPage === 'settings' && pageName !== 'settings') {
+        disposeSettingsEditors();
     }
 
     // Update navigation active state
@@ -211,26 +221,6 @@ function setupEventListeners() {
         saveSettingsBtn.addEventListener('click', saveSettings);
     }
 
-    // Settings language change
-    const settingsLanguage = document.getElementById('settings-language');
-    if (settingsLanguage) {
-        settingsLanguage.addEventListener('change', (e) => {
-            if (window.i18n) {
-                window.i18n.changeLanguage(e.target.value);
-            }
-        });
-    }
-
-    // Settings theme change
-    const settingsTheme = document.getElementById('settings-theme');
-    if (settingsTheme) {
-        settingsTheme.addEventListener('change', (e) => {
-            const theme = e.target.value;
-            applyTheme(theme);
-            localStorage.setItem('theme', theme);
-            Monaco.syncTheme();
-        });
-    }
 
     // Initialize log level selector
     initLogLevelSelector();
