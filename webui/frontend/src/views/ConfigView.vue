@@ -410,6 +410,7 @@ function getAvailableModels(key: string, modelType?: string): string[] {
   if (!providerId || !modelType) return []
   const providerConfig = providerModels.value[providerId] || {}
   const typeConfig = providerConfig[modelType] || {}
+  if (Array.isArray(typeConfig)) return typeConfig
   return Object.keys(typeConfig)
 }
 
@@ -513,6 +514,11 @@ function toggleGroup(id: string) {
 
 // Save
 async function handleSave() {
+  if (saving.value) return
+  if (modifiedFields.value.size === 0) {
+    ElMessage.info(t('configuration.no_changes'))
+    return
+  }
   // Run full validation pass
   const allFields = [...messageGroups, ...modelGroups].flatMap(g => g.fields)
   allFields.forEach(f => validateField(f.key))

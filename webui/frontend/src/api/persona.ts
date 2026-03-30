@@ -26,6 +26,5 @@ export function getCurrentPersonaContent() {
 }
 
 export function updateCurrentPersonaContent(data: { content: string; format?: string }) {
-  return apiClient.put('/personas/current/content', data, {
-  })
+  return apiClient.put<{ content: string; format: string }>('/personas/current/content', data)
 }

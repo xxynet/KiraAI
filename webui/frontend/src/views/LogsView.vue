@@ -105,6 +105,7 @@ function scrollToBottom() {
 
 // Watch for new SSE messages
 watch(messages, (msgs) => {
+  if (lastProcessedIndex > msgs.length) lastProcessedIndex = 0
   if (msgs.length <= lastProcessedIndex) return
   let added = false
   for (let i = lastProcessedIndex; i < msgs.length; i++) {
@@ -122,7 +123,7 @@ watch(messages, (msgs) => {
   lastProcessedIndex = msgs.length
   // Cap at 1000 entries
   if (allLogs.value.length > 1000) {
-    allLogs.value = allLogs.value.slice(-800)
+    allLogs.value = allLogs.value.slice(-1000)
   }
   if (added) scrollToBottom()
 }, { deep: true })

@@ -84,6 +84,15 @@ watch(
   },
 )
 
+watch(
+  () => props.readOnly,
+  (newVal) => {
+    if (editor) {
+      editor.updateOptions({ readOnly: newVal })
+    }
+  },
+)
+
 onUnmounted(() => {
   const model = editor?.getModel()
   editor?.dispose()

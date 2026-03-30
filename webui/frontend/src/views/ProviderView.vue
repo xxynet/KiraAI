@@ -130,7 +130,7 @@
     <el-dialog v-model="modelDialogVisible" :title="modelEditMode ? $t('provider.edit_model') : $t('provider.add_model')" width="500">
       <el-form label-position="top">
         <el-form-item :label="$t('provider.model_id')">
-          <el-input v-model="modelForm.model_id" />
+          <el-input v-model="modelForm.model_id" :disabled="modelEditMode" />
         </el-form-item>
         <div v-if="modelSchema">
           <ConfigForm v-model="modelForm.config" :schema="modelSchema" />
@@ -217,7 +217,9 @@ function openCreateDialog() {
   createSchema.value = null
   createDialogVisible.value = true
   if (providerTypes.value.length === 0) {
-    getProviderTypes().then(res => { providerTypes.value = res.data })
+    getProviderTypes().then(res => { providerTypes.value = res.data }).catch(() => {
+      ElMessage.error(t('provider.load_types_failed'))
+    })
   }
 }
 
@@ -233,7 +235,10 @@ async function onCreateTypeChange(type: string) {
 }
 
 async function handleCreate() {
-  if (!createForm.value.name || !createForm.value.type) return
+  if (!createForm.value.name || !createForm.value.type) {
+    ElMessage.warning(t('provider.fill_required_fields'))
+    return
+  }
   creating.value = true
   try {
     await createProvider({
@@ -275,12 +280,18 @@ async function handleDelete() {
   if (!selectedId.value) return
   try {
     await ElMessageBox.confirm(t('provider.delete_confirm_message'), t('provider.delete_confirm_title'), { type: 'warning' })
+  } catch {
+    return // User cancelled
+  }
+  try {
     await deleteProvider(selectedId.value)
     selectedId.value = null
     providerSchema.value = null
     ElMessage.success(t('provider.delete_success'))
     await loadProviders()
-  } catch { /* cancelled */ }
+  } catch (error: any) {
+    ElMessage.error(t('provider.delete_failed') + (error?.message ? ': ' + error.message : ''))
+  }
 }
 
 function openAddModelDialog(modelType: string) {

@@ -78,7 +78,7 @@ class PersonasRoutes(Routes):
     async def get_current_persona_content(self):
         if self.lifecycle and self.lifecycle.persona_manager:
             persona_content = self.lifecycle.persona_manager.get_persona()
-            fmt = getattr(self.lifecycle.persona_manager, '_format', 'text')
+            fmt = self.lifecycle.persona_manager._format
             return {"content": persona_content, "format": fmt}
         raise HTTPException(status_code=404, detail="Persona manager not available")
 
@@ -87,8 +87,13 @@ class PersonasRoutes(Routes):
             raise HTTPException(status_code=404, detail="Persona manager not available")
         content = payload.get("content", "")
         fmt = payload.get("format", "text")
+        if not isinstance(fmt, str) or not fmt.strip():
+            raise HTTPException(status_code=422, detail="Invalid format value")
+        from core.persona.persona_manager import ALLOWED_FORMATS
+        if fmt not in ALLOWED_FORMATS:
+            raise HTTPException(status_code=422, detail=f"Format must be one of {ALLOWED_FORMATS}")
         self.lifecycle.persona_manager.update_persona(content)
-        self.lifecycle.persona_manager._format = fmt
+        self.lifecycle.persona_manager.set_format(fmt)
         return {"content": content, "format": fmt}
 
     async def list_personas(self):
