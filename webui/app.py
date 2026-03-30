@@ -68,11 +68,25 @@ class KiraWebUI:
                 "/sticker", StaticFiles(directory=str(self.sticker_dir)), name="sticker"
             )
 
+        # Mount Vue SPA dist assets at root level
+        self.dist_dir = self.static_dir / "dist"
+        dist_assets = self.dist_dir / "assets"
+        dist_monaco = self.dist_dir / "monacoeditorwork"
+        if dist_assets.exists():
+            self.app.mount(
+                "/assets", StaticFiles(directory=str(dist_assets)), name="dist_assets"
+            )
+        if dist_monaco.exists():
+            self.app.mount(
+                "/monacoeditorwork", StaticFiles(directory=str(dist_monaco)), name="dist_monaco"
+            )
+
         # Register routes
         self._register_routes()
 
     def _register_routes(self):
-        AuthRoutes(self.app, self.lifecycle, self.access_token, self.templates_dir).register()
+        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.templates_dir)
+        auth_routes.register()
         OverviewRoutes(self.app, self.lifecycle).register()
         LogsRoutes(self.app, self.lifecycle).register()
         PersonasRoutes(self.app, self.lifecycle).register()
@@ -84,6 +98,9 @@ class KiraWebUI:
         ConfigRoutes(self.app, self.lifecycle).register()
         StickersRoutes(self.app, self.lifecycle).register()
         SettingsRoutes(self.app, self.lifecycle).register()
+
+        # SPA catch-all must be registered last
+        auth_routes.register_spa_fallback()
 
     async def run(self, host: str, port: int):
         config = uvicorn.Config(

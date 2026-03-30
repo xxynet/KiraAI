@@ -1,0 +1,351 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==================== Global Transitions ==================== */
+* {
+  transition-property: border-color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-in-out;
+}
+
+button,
+.nav-item,
+input,
+select,
+textarea {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease-in-out;
+}
+
+/* ==================== Page Background ==================== */
+.page-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -10;
+  background-color: #f2f2f3;
+}
+
+.dark .page-background {
+  background-color: #16161a;
+}
+
+/* ==================== Sidebar ==================== */
+.sidebar-gradient {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .sidebar-gradient {
+  background: rgba(0, 0, 0, 0.15);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.dark .sidebar-gradient h1 {
+  color: #f9fafb;
+}
+
+.dark .sidebar-gradient p {
+  color: #d1d5db;
+}
+
+/* ==================== Navigation ==================== */
+.nav-item {
+  color: #24141d;
+  position: relative;
+  background-color: transparent;
+}
+
+.nav-item svg {
+  color: #24141d;
+  transition: color 0.2s ease-in-out;
+}
+
+.nav-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.nav-item.active {
+  background-color: rgba(197, 213, 246, 0.7);
+  color: #3864d5;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.nav-item.active svg {
+  color: #3864d5;
+}
+
+.nav-item.active:hover {
+  background-color: rgba(197, 213, 246, 0.8);
+}
+
+.dark .nav-item {
+  color: #f9fafb;
+}
+
+.dark .nav-item svg {
+  color: #f9fafb;
+}
+
+.dark .nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .nav-item.active {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+
+.dark .nav-item.active svg {
+  color: #93c5fd;
+}
+
+.dark .nav-item.active:hover {
+  background-color: rgba(59, 130, 246, 0.4);
+}
+
+/* Navigation dot indicator */
+.nav-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: rgba(59, 130, 246, 0.4);
+  display: block;
+  transition: all 0.2s ease-in-out;
+}
+
+.nav-item.active .nav-dot {
+  background-color: rgb(59, 130, 246);
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+}
+
+/* ==================== Glass Cards ==================== */
+.glass-card {
+  background-color: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.glass-card:hover {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.dark .glass-card {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+  border: 1px solid rgba(75, 85, 99, 0.2);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* ==================== Header ==================== */
+.app-header {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .app-header {
+  background-color: rgba(0, 0, 0, 0.2) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ==================== Animations ==================== */
+.page-content {
+  animation: fadeIn 0.3s ease-in-out both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ==================== Custom Scrollbar ==================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #374151;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #6b7280;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* ==================== Form Inputs ==================== */
+input:not([type="checkbox"]):not([type="radio"]):hover,
+select:hover,
+textarea:hover {
+  border-color: #3b82f6 !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+/* ==================== Log Container ==================== */
+.log-container {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-entry {
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(107, 114, 128, 0.2);
+  line-height: 1.6;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-entry:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.dark .log-entry:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* ==================== Session Card ==================== */
+.session-card {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.session-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* ==================== Provider Item ==================== */
+.provider-item {
+  @apply p-3 rounded-lg cursor-pointer transition-colors;
+}
+
+.provider-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.provider-item.active {
+  background-color: rgba(219, 234, 254, 0.7);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.dark .provider-item:hover {
+  background-color: rgba(75, 85, 99, 0.3);
+}
+
+.dark .provider-item.active {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* ==================== Monaco Editor ==================== */
+.monaco-container {
+  height: 500px;
+  border: 1px solid rgba(107, 114, 128, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* ==================== Loading Spinner ==================== */
+.loading-spinner {
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 20px auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ==================== Dark Mode Overrides ==================== */
+.dark .text-gray-900 { color: #f9fafb !important; }
+.dark .text-gray-800 { color: #f3f4f6 !important; }
+.dark .text-gray-700 { color: #e5e7eb !important; }
+.dark .text-gray-600 { color: #d1d5db !important; }
+.dark .text-gray-500 { color: #9ca3af !important; }
+
+/* Dark mode stat card icon backgrounds */
+.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.2) !important; }
+.dark .bg-green-100 { background-color: rgba(34, 197, 94, 0.2) !important; }
+.dark .bg-purple-100 { background-color: rgba(168, 85, 247, 0.2) !important; }
+.dark .bg-yellow-100 { background-color: rgba(251, 191, 36, 0.2) !important; }
+.dark .text-blue-600 { color: #60a5fa !important; }
+.dark .text-green-600 { color: #34d399 !important; }
+.dark .text-purple-600 { color: #a78bfa !important; }
+.dark .text-yellow-600 { color: #fbbf24 !important; }
+
+/* ==================== Element Plus Overrides ==================== */
+.el-dialog {
+  backdrop-filter: blur(16px);
+}
+
+.dark .el-dialog {
+  background-color: rgba(31, 41, 55, 0.95) !important;
+}
+
+/* ==================== Responsive ==================== */
+@media (max-width: 768px) {
+  .monaco-container {
+    height: 400px;
+  }
+}

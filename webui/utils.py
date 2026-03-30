@@ -5,7 +5,7 @@ import json
 import secrets
 import string
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -55,9 +55,9 @@ def _create_jwt_token(data: Dict, expires_delta: Optional[timedelta] = None) -> 
     """Create a JWT token"""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(days=5)
+        expire = datetime.now(timezone.utc) + timedelta(days=5)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, "kiraai_secret_key", algorithm="HS256")
     return encoded_jwt

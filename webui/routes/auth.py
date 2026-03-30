@@ -28,20 +28,21 @@ class AuthRoutes(Routes):
         super().__init__(app, lifecycle)
         self.access_token = access_token
         self.templates_dir = templates_dir
+        self.dist_dir = Path(__file__).parent.parent / "static" / "dist"
 
     def get_routes(self):
         return [
             RouteDefinition(
                 path="/login",
                 methods=["GET"],
-                endpoint=self.login_page,
+                endpoint=self.serve_spa,
                 response_class=HTMLResponse,
                 tags=["web"],
             ),
             RouteDefinition(
                 path="/",
                 methods=["GET"],
-                endpoint=self.index,
+                endpoint=self.serve_spa,
                 response_class=HTMLResponse,
                 tags=["web"],
             ),
@@ -76,19 +77,32 @@ class AuthRoutes(Routes):
             ),
         ]
 
-    async def login_page(self):
-        template_path = self.templates_dir / "login.html"
-        if template_path.exists():
-            with open(template_path, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
-        return HTMLResponse(content="<h1>Login page not found</h1>", status_code=404)
+    def register_spa_fallback(self):
+        """Register SPA catch-all route. Must be called AFTER all other routes."""
+        self.app.add_api_route(
+            "/{full_path:path}",
+            self.serve_spa,
+            methods=["GET"],
+            response_class=HTMLResponse,
+            tags=["web"],
+            include_in_schema=False,
+        )
 
-    async def index(self, request: Request):
+    async def serve_spa(self, request: Request = None, full_path: str = ""):
+        """Serve Vue SPA index.html for all non-API, non-static routes"""
+        # Don't serve SPA for static asset paths — let mounts handle them
+        if full_path.startswith(("api/", "static/", "sticker/", "assets/", "monacoeditorwork/")):
+            raise HTTPException(status_code=404)
+        spa_index = self.dist_dir / "index.html"
+        if spa_index.exists():
+            with open(spa_index, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+        # Fallback to legacy templates
         template_path = self.templates_dir / "index.html"
         if template_path.exists():
             with open(template_path, "r", encoding="utf-8") as f:
                 return HTMLResponse(content=f.read())
-        return HTMLResponse(content="<h1>Template not found</h1>", status_code=404)
+        return HTMLResponse(content="<h1>Frontend not found. Run npm run build in webui/frontend/</h1>", status_code=404)
 
     async def health(self):
         return {"status": "ok", "lifecycle_available": self.lifecycle is not None}
