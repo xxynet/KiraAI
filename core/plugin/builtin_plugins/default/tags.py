@@ -13,7 +13,6 @@ from core.chat.message_elements import (
     Emoji,
     Sticker,
     Record,
-    Notice,
     Poke,
     File,
     Video
@@ -23,7 +22,7 @@ from core.utils.path_utils import get_data_path
 from core.utils.common_utils import image_to_base64
 from core.logging_manager import get_logger
 
-logger = get_logger("message", "cyan")
+message_logger = get_logger("message", "cyan")
 provider_logger = get_logger("provider", "purple")
 
 
@@ -56,7 +55,7 @@ def build_sticker_tag(sticker_dict: dict) -> Type[BaseTag]:
                 sticker_prompt += f"[{sticker_id}] {sticker_dict[sticker_id].get('desc')}\n"
             return sticker_prompt
         except Exception as e:
-            logger.warning(f"Failed to load sticker prompt: {e}")
+            message_logger.warning(f"Failed to load sticker prompt: {e}")
             return ""
 
     class StickerTag(BaseTag):
@@ -78,7 +77,7 @@ def build_sticker_tag(sticker_dict: dict) -> Type[BaseTag]:
                         cache.set(md5, sticker_desc)
                 return [sticker_obj]
             except Exception as e:
-                logger.error(f"error while parsing sticker: {str(e)}")
+                message_logger.error(f"error while parsing sticker: {str(e)}")
 
     return StickerTag
 
@@ -151,7 +150,7 @@ class RecordTag(BaseTag):
             record_obj = await self.ctx.llm_api.text_to_speech(value)
             return [record_obj]
         except Exception as e:
-            logger.error(f"an error occurred while generating voice message: {e}")
+            message_logger.error(f"an error occurred while generating voice message: {e}")
             return [Text(f"<record>{value}</record>")]
 
 
@@ -180,11 +179,11 @@ class SelfieTag(BaseTag):
                 img_res = await self.ctx.llm_api.image_to_image(value, image=Image(image=bs64, name=ref_img_path, mime=f"image/{img_extension}"))
                 if img_res:
                     return [img_res]
-                logger.warning("Invalid selfie image result")
+                message_logger.warning("Invalid selfie image result")
             else:
-                logger.warning(f"Selfie reference image not found, skipped generation")
+                message_logger.warning(f"Selfie reference image not found, skipped generation")
         except Exception as e:
-            logger.error(f"Failed to generate selfie: {e}")
+            message_logger.error(f"Failed to generate selfie: {e}")
         return []
 
 

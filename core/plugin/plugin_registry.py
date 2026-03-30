@@ -173,6 +173,12 @@ class OnEventDeco:
             return func
         return decorator
 
+    def exception(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_EXCEPTION)
+            return func
+        return decorator
+
 
 register = RegisterDeco()
 on = OnEventDeco()

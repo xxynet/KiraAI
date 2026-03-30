@@ -12,7 +12,7 @@ import os
 from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
 from core.utils.path_utils import get_data_path
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent,  KiraCommentEvent, MessageChain
+from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent, MessageChain
 from core.chat.message_utils import KiraIMSentResult, KiraStepResult
 from core.prompt_manager import Prompt
 

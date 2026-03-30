@@ -27,6 +27,7 @@ class EventType(Enum):
     ON_TOOL_RESULT = "on_tool_result"  # 工具调用结果
     ON_STEP_RESULT = "on_step_result"  # Agent 步骤结果
     ON_FINAL_RESULT = "on_final_result"  # 最终消息结果
+    ON_EXCEPTION = "on_exception"  # 异常发生时
     ...
 
 
@@ -49,9 +50,22 @@ class EventHandler:
     async def exec_handler(self, event, *args, **kwargs):
         try:
             await self.handler(event, *args, **kwargs)
-        except Exception:
-            import traceback
-            logger.error(traceback.format_exc())
+        except Exception as e:
+            import traceback as tb
+            logger.error(tb.format_exc())
+            if self.event_type != EventType.ON_EXCEPTION:
+                from core.chat.message_utils import KiraExceptionEvent
+                exc_event = KiraExceptionEvent(
+                    name=type(e).__name__,
+                    message=str(e),
+                    traceback=tb.format_exc(),
+                    source=self.event_type.value,
+                )
+                for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
+                    try:
+                        await h.handler(event, exc_event)
+                    except Exception:
+                        logger.error(tb.format_exc())
 
 
 class EventHandlerRegistry:
