@@ -172,16 +172,18 @@ async function onPlatformChange(platform: string, preserveConfig = false) {
 }
 
 async function handleSave() {
-  if (!form.value.name || !form.value.platform) {
+  const trimmedName = form.value.name?.trim()
+  const trimmedPlatform = form.value.platform?.trim()
+  if (!trimmedName || !trimmedPlatform) {
     ElMessage.warning(t('adapter.form_incomplete'))
     return
   }
   saving.value = true
   const payload = {
-    name: form.value.name,
-    platform: form.value.platform,
+    name: trimmedName,
+    platform: trimmedPlatform,
     status: formActive.value ? 'active' : 'inactive',
-    description: form.value.description,
+    description: form.value.description?.trim() || '',
     config: form.value.config,
   }
   try {
@@ -204,8 +206,11 @@ async function toggleStatus(adapter: AdapterResponse) {
   const newStatus = adapter.status === 'active' ? 'inactive' : 'active'
   try {
     await updateAdapter(adapter.id, {
-      ...adapter,
+      name: adapter.name,
+      platform: adapter.platform,
       status: newStatus,
+      description: adapter.description || '',
+      config: adapter.config || {},
     })
     ElMessage.success(t('adapter.status_updated'))
     await loadAdapters()

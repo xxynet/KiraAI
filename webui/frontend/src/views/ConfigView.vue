@@ -562,19 +562,23 @@ async function handleSave() {
 
 // Keyboard shortcuts
 function handleKeydown(e: KeyboardEvent) {
+  // Ctrl/Cmd+S should always work, even in input fields
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault()
+    handleSave()
+    return
+  }
   const target = e.target as HTMLElement
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
     return
   }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+  const key = e.key.toLowerCase()
+  if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
     e.preventDefault()
     undo()
-  } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+  } else if ((e.ctrlKey || e.metaKey) && (key === 'y' || (key === 'z' && e.shiftKey))) {
     e.preventDefault()
     redo()
-  } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-    e.preventDefault()
-    handleSave()
   }
 }
 

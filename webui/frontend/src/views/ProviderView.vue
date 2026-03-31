@@ -282,8 +282,8 @@ async function handleCreate() {
     createDialogVisible.value = false
     ElMessage.success(t('provider.create_success'))
     await loadProviders()
-  } catch {
-    ElMessage.error(t('provider.create_failed'))
+  } catch (error: any) {
+    ElMessage.error(t('provider.create_failed') + (error?.message ? ': ' + error.message : ''))
   } finally {
     creating.value = false
   }
@@ -303,8 +303,8 @@ async function saveProviderConfig() {
     })
     ElMessage.success(t('provider.save_success'))
     await loadProviders()
-  } catch {
-    ElMessage.error(t('provider.save_failed'))
+  } catch (error: any) {
+    ElMessage.error(t('provider.save_failed') + (error?.message ? ': ' + error.message : ''))
   } finally {
     saving.value = false
   }
@@ -362,8 +362,8 @@ async function handleAddModel() {
     if (selectedId.value === providerId) {
       providerModels.value = modelsRes.data || {}
     }
-  } catch {
-    ElMessage.error(modelEditMode.value ? t('provider.model_update_failed') : t('provider.model_add_failed'))
+  } catch (error: any) {
+    ElMessage.error((modelEditMode.value ? t('provider.model_update_failed') : t('provider.model_add_failed')) + (error?.message ? ': ' + error.message : ''))
   } finally {
     addingModel.value = false
   }
