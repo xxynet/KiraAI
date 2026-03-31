@@ -142,6 +142,7 @@ export default {
   },
   persona: {
     title: '人设',
+    default_title: '默认人设',
     add: '添加人设',
     no_personas: '未配置人设',
     name: '名称',

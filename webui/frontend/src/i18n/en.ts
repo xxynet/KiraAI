@@ -142,6 +142,7 @@ export default {
   },
   persona: {
     title: 'Personas',
+    default_title: 'Default',
     add: 'Add Persona',
     no_personas: 'No personas configured',
     name: 'Name',

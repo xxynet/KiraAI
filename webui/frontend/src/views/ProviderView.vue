@@ -167,6 +167,8 @@ const providerConfigValues = ref<Record<string, any>>({})
 const providerModels = ref<Record<string, any>>({})
 const activeModelGroups = ref<string[]>([])
 const saving = ref(false)
+let selectProviderRequestId = 0
+let createTypeChangeId = 0
 
 // Create provider
 const createDialogVisible = ref(false)
@@ -193,22 +195,34 @@ async function loadProviders() {
 
 async function selectProvider(id: string) {
   selectedId.value = id
+  providerSchema.value = null
+  providerConfigValues.value = {}
+  providerModels.value = {}
+  const currentRequestId = ++selectProviderRequestId
   const provider = providers.value.find(p => p.id === id)
   if (!provider) return
 
   try {
     const schemaRes = await getProviderSchema(provider.type)
-    providerSchema.value = schemaRes.data
-    providerConfigValues.value = { ...(provider.config || {}) }
+    if (selectProviderRequestId === currentRequestId) {
+      providerSchema.value = schemaRes.data
+      providerConfigValues.value = { ...(provider.config || {}) }
+    }
   } catch {
-    providerSchema.value = null
+    if (selectProviderRequestId === currentRequestId) {
+      providerSchema.value = null
+    }
   }
 
   try {
     const modelsRes = await getModels(id)
-    providerModels.value = modelsRes.data || {}
+    if (selectProviderRequestId === currentRequestId) {
+      providerModels.value = modelsRes.data || {}
+    }
   } catch {
-    providerModels.value = {}
+    if (selectProviderRequestId === currentRequestId) {
+      providerModels.value = {}
+    }
   }
 }
 
@@ -225,12 +239,18 @@ function openCreateDialog() {
 
 async function onCreateTypeChange(type: string) {
   if (!type) { createSchema.value = null; return }
+  createSchema.value = null
+  createForm.value.config = {}
+  const requestId = ++createTypeChangeId
   try {
     const res = await getProviderSchema(type)
-    createSchema.value = res.data
-    createForm.value.config = {}
+    if (requestId === createTypeChangeId) {
+      createSchema.value = res.data
+    }
   } catch {
-    createSchema.value = null
+    if (requestId === createTypeChangeId) {
+      createSchema.value = null
+    }
   }
 }
 
@@ -345,11 +365,17 @@ async function removeModel(modelType: string, modelId: string) {
   if (!selectedId.value) return
   try {
     await ElMessageBox.confirm(t('provider.model_delete_confirm'), t('provider.delete_confirm_title'), { type: 'warning' })
+  } catch {
+    return // User cancelled
+  }
+  try {
     await deleteModel(selectedId.value, modelType, modelId)
     ElMessage.success(t('provider.model_delete_success'))
     const modelsRes = await getModels(selectedId.value)
     providerModels.value = modelsRes.data || {}
-  } catch { /* cancelled */ }
+  } catch (error: any) {
+    ElMessage.error(t('provider.model_delete_failed') + (error?.message ? ': ' + error.message : ''))
+  }
 }
 
 onMounted(() => {

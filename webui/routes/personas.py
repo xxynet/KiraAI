@@ -78,7 +78,7 @@ class PersonasRoutes(Routes):
     async def get_current_persona_content(self):
         if self.lifecycle and self.lifecycle.persona_manager:
             persona_content = self.lifecycle.persona_manager.get_persona()
-            fmt = self.lifecycle.persona_manager._format
+            fmt = self.lifecycle.persona_manager.get_format()
             return {"content": persona_content, "format": fmt}
         raise HTTPException(status_code=404, detail="Persona manager not available")
 
@@ -86,6 +86,8 @@ class PersonasRoutes(Routes):
         if not self.lifecycle or not self.lifecycle.persona_manager:
             raise HTTPException(status_code=404, detail="Persona manager not available")
         content = payload.get("content", "")
+        if not isinstance(content, str):
+            raise HTTPException(status_code=422, detail="Invalid content value")
         fmt = payload.get("format", "text")
         if not isinstance(fmt, str) or not fmt.strip():
             raise HTTPException(status_code=422, detail="Invalid format value")

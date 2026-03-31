@@ -139,13 +139,15 @@ function openEditDialog(adapter: AdapterResponse) {
   }
   formActive.value = adapter.status === 'active'
   dialogVisible.value = true
-  onPlatformChange(adapter.platform)
+  onPlatformChange(adapter.platform, true)
 }
 
-async function onPlatformChange(platform: string) {
+async function onPlatformChange(platform: string, preserveConfig = false) {
   if (!platform) { adapterSchema.value = null; return }
   adapterSchema.value = null
-  form.value.config = {}
+  if (!preserveConfig) {
+    form.value.config = {}
+  }
   const requestId = ++platformChangeId
   try {
     const res = await getAdapterSchema(platform)

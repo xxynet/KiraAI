@@ -26,9 +26,13 @@ class PersonaManager:
             f.write(text)
 
     def set_format(self, fmt: str):
-        if fmt in ALLOWED_FORMATS:
-            self._format = fmt
-            self._format_path.write_text(fmt, encoding="utf-8")
+        if fmt not in ALLOWED_FORMATS:
+            raise ValueError(f"Invalid format '{fmt}', allowed: {ALLOWED_FORMATS}")
+        self._format = fmt
+        self._format_path.write_text(fmt, encoding="utf-8")
+
+    def get_format(self) -> str:
+        return self._format
 
     def reload_persona(self):
         if not self.persona_path.exists():
@@ -36,6 +40,7 @@ class PersonaManager:
         with open(self.persona_path, 'r', encoding="utf-8") as f:
             persona = f.read()
         self.persona_str = persona
+        self._format = "text"
         if self._format_path.exists():
             saved_fmt = self._format_path.read_text(encoding="utf-8").strip()
             if saved_fmt in ALLOWED_FORMATS:

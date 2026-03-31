@@ -4,7 +4,7 @@
     <div class="glass-card rounded-lg p-6 cursor-pointer hover:shadow-lg transition-shadow" @click="openEditor">
       <div class="flex justify-between items-start">
         <div>
-          <h4 class="text-lg font-semibold text-gray-900 dark:text-white">default</h4>
+          <h4 class="text-lg font-semibold text-gray-900 dark:text-white">{{ $t('persona.default_title') }}</h4>
           <p class="text-sm text-gray-500 mt-1">{{ preview }}</p>
         </div>
         <el-button size="small" @click.stop="openEditor">{{ $t('persona.edit') }}</el-button>
@@ -15,7 +15,7 @@
     <el-dialog v-model="editorVisible" :title="$t('persona.edit')" width="80%" top="5vh" :destroy-on-close="true">
       <div class="flex items-center gap-4 mb-4">
         <span class="text-sm text-gray-600 dark:text-gray-400">{{ $t('persona.format') }}</span>
-        <el-select v-model="format" size="small" style="width: 140px" @change="onFormatChange">
+        <el-select v-model="format" size="small" style="width: 140px">
           <el-option label="Text" value="text" />
           <el-option label="Markdown" value="markdown" />
           <el-option label="JSON" value="json" />
@@ -63,10 +63,6 @@ const monacoLanguage = computed(() => {
   return map[format.value] || 'plaintext'
 })
 
-function onFormatChange() {
-  // Language change is handled reactively through monacoLanguage computed
-}
-
 function openEditor() {
   editorVisible.value = true
 }
@@ -76,7 +72,9 @@ async function loadContent() {
     const res = await getCurrentPersonaContent()
     content.value = res.data.content || ''
     format.value = res.data.format || 'text'
-  } catch { /* silent */ }
+  } catch (err) {
+    console.error('loadContent failed:', err)
+  }
 }
 
 async function handleSave() {

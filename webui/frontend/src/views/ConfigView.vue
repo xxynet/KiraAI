@@ -535,7 +535,8 @@ async function handleSave() {
     undoStack.value = []
     redoStack.value = []
     ElMessage.success(t('configuration.save_success'))
-  } catch {
+  } catch (err) {
+    console.error('Save failed:', err)
     ElMessage.error(t('configuration.save_failed'))
   } finally {
     saving.value = false
