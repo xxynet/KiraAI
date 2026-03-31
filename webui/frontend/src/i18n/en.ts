@@ -68,6 +68,7 @@ export default {
     name_required: 'Please enter provider name',
     type_required: 'Please select provider type',
     type_load_failed: 'Failed to load provider types',
+    load_failed: 'Failed to load providers',
     enabled: 'Provider enabled',
     disabled: 'Provider disabled',
     config_api_key: 'API Key',
@@ -140,6 +141,7 @@ export default {
     delete_confirm: 'Are you sure you want to delete this adapter?',
     active: 'Active',
     inactive: 'Inactive',
+    form_incomplete: 'Please fill in adapter name and platform',
   },
   persona: {
     title: 'Personas',

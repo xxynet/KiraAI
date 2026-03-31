@@ -3,7 +3,7 @@ from typing import Dict, List
 from fastapi import Depends, HTTPException, status
 
 from core.logging_manager import get_logger
-from core.persona.persona_manager import ALLOWED_FORMATS
+from core.persona.persona_manager import ALLOWED_FORMATS, DEFAULT_FORMAT
 from webui.models import PersonaBase, PersonaResponse
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -89,7 +89,7 @@ class PersonasRoutes(Routes):
         content = payload.get("content", "")
         if not isinstance(content, str):
             raise HTTPException(status_code=422, detail="Invalid content value")
-        fmt = payload.get("format", "text")
+        fmt = payload.get("format", DEFAULT_FORMAT)
         if not isinstance(fmt, str) or not fmt.strip():
             raise HTTPException(status_code=422, detail="Invalid format value")
         if fmt not in ALLOWED_FORMATS:

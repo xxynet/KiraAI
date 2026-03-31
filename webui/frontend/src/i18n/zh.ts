@@ -68,6 +68,7 @@ export default {
     name_required: '请输入提供商名称',
     type_required: '请选择提供商类型',
     type_load_failed: '加载提供商类型失败',
+    load_failed: '加载提供商列表失败',
     enabled: '提供商已启用',
     disabled: '提供商已禁用',
     config_api_key: 'API 密钥',
@@ -140,6 +141,7 @@ export default {
     delete_confirm: '确定要删除此适配器吗？',
     active: '启用',
     inactive: '禁用',
+    form_incomplete: '请填写适配器名称和平台',
   },
   persona: {
     title: '人设',

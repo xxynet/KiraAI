@@ -190,7 +190,11 @@ async function loadProviders() {
   try {
     const res = await getProviders()
     providers.value = Array.isArray(res.data) ? res.data : []
-  } catch { /* silent */ }
+  } catch (e) {
+    providers.value = []
+    console.error('Failed to load providers:', e)
+    ElMessage.error(t('provider.load_failed'))
+  }
 }
 
 async function selectProvider(id: string) {
@@ -350,7 +354,9 @@ async function handleAddModel() {
     modelEditMode.value = false
     originalModelId.value = ''
     const modelsRes = await getModels(providerId)
-    providerModels.value = modelsRes.data || {}
+    if (selectedId.value === providerId) {
+      providerModels.value = modelsRes.data || {}
+    }
   } catch {
     ElMessage.error(modelEditMode.value ? t('provider.model_update_failed') : t('provider.model_add_failed'))
   } finally {
@@ -369,16 +375,19 @@ function editModel(modelType: string, modelId: string, config: any) {
 
 async function removeModel(modelType: string, modelId: string) {
   if (!selectedId.value) return
+  const providerId = selectedId.value
   try {
     await ElMessageBox.confirm(t('provider.model_delete_confirm'), t('provider.delete_confirm_title'), { type: 'warning' })
   } catch {
     return // User cancelled
   }
   try {
-    await deleteModel(selectedId.value, modelType, modelId)
+    await deleteModel(providerId, modelType, modelId)
     ElMessage.success(t('provider.model_delete_success'))
-    const modelsRes = await getModels(selectedId.value)
-    providerModels.value = modelsRes.data || {}
+    const modelsRes = await getModels(providerId)
+    if (selectedId.value === providerId) {
+      providerModels.value = modelsRes.data || {}
+    }
   } catch (error: any) {
     ElMessage.error(t('provider.model_delete_failed') + (error?.message ? ': ' + error.message : ''))
   }

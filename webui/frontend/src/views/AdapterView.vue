@@ -117,7 +117,7 @@ async function loadAdapters() {
 async function loadPlatforms() {
   try {
     const res = await getAdapterPlatforms()
-    platforms.value = res.data
+    platforms.value = Array.isArray(res.data) ? res.data : []
   } catch (e) {
     ElMessage.error(t('adapter.platform_load_failed'))
     console.error('Failed to load platforms:', e)
@@ -171,7 +171,10 @@ async function onPlatformChange(platform: string, preserveConfig = false) {
 }
 
 async function handleSave() {
-  if (!form.value.name || !form.value.platform) return
+  if (!form.value.name || !form.value.platform) {
+    ElMessage.warning(t('adapter.form_incomplete'))
+    return
+  }
   saving.value = true
   const payload = {
     name: form.value.name,
@@ -199,7 +202,10 @@ async function handleSave() {
 async function toggleStatus(adapter: AdapterResponse) {
   const newStatus = adapter.status === 'active' ? 'inactive' : 'active'
   try {
-    await updateAdapter(adapter.id, { status: newStatus })
+    await updateAdapter(adapter.id, {
+      ...adapter,
+      status: newStatus,
+    })
     ElMessage.success(t('adapter.status_updated'))
     await loadAdapters()
   } catch {
