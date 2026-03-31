@@ -126,6 +126,7 @@ class CustomSelect {
         this.optionsContainer.setAttribute('role', 'listbox');
         this.optionsContainer.style.maxHeight = `${this.options.maxHeight}px`;
         this.optionsContainer.style.zIndex = '9999';
+        this.optionsContainer.style.position = 'fixed';
 
         // Create search input if searchable
         if (this.options.searchable) {
@@ -152,7 +153,8 @@ class CustomSelect {
         this.emptyState.textContent = 'No options found';
         this.optionsContainer.appendChild(this.emptyState);
 
-        this.container.appendChild(this.optionsContainer);
+        // Append to body to escape overflow:hidden/auto clipping contexts
+        document.body.appendChild(this.optionsContainer);
 
         // Insert before original select
         this.element.parentNode.insertBefore(this.container, this.element);
@@ -319,10 +321,17 @@ class CustomSelect {
         this.isOpen = true;
         this.trigger.classList.add('active');
         this.trigger.setAttribute('aria-expanded', 'true');
+
+        // Calculate position before showing to avoid animating from wrong location
+        this.adjustPosition();
         this.optionsContainer.classList.add('show');
 
-        // Calculate position to prevent overflow
-        this.adjustPosition();
+        // Close when the scroll container containing the trigger is scrolled
+        this._scrollHandler = () => this.close();
+        this._scrollContainer = this.getScrollParent(this.trigger);
+        if (this._scrollContainer) {
+            this._scrollContainer.addEventListener('scroll', this._scrollHandler, { passive: true });
+        }
 
         if (this.options.onOpen) {
             this.options.onOpen();
@@ -334,6 +343,16 @@ class CustomSelect {
         }
     }
 
+    getScrollParent(el) {
+        let node = el.parentElement;
+        while (node && node !== document.body) {
+            const { overflowY } = getComputedStyle(node);
+            if (overflowY === 'auto' || overflowY === 'scroll') return node;
+            node = node.parentElement;
+        }
+        return null;
+    }
+
     adjustPosition() {
         const triggerRect = this.trigger.getBoundingClientRect();
         const optionsHeight = this.optionsContainer.offsetHeight;
@@ -341,19 +360,18 @@ class CustomSelect {
         const spaceBelow = windowHeight - triggerRect.bottom;
         const spaceAbove = triggerRect.top;
 
-        // Reset position
-        this.optionsContainer.style.top = '';
-        this.optionsContainer.style.bottom = '';
+        // Position fixed relative to viewport, matching trigger width
+        this.optionsContainer.style.position = 'fixed';
+        this.optionsContainer.style.left = triggerRect.left + 'px';
+        this.optionsContainer.style.right = 'auto';
+        this.optionsContainer.style.width = triggerRect.width + 'px';
 
-        // Check if there's enough space below
         if (spaceBelow < optionsHeight && spaceAbove > spaceBelow) {
             // Not enough space below, show above
-            this.optionsContainer.style.top = 'auto';
-            this.optionsContainer.style.bottom = 'calc(100% + 4px)';
+            this.optionsContainer.style.top = (triggerRect.top - optionsHeight - 4) + 'px';
         } else {
             // Show below (default)
-            this.optionsContainer.style.top = 'calc(100% + 4px)';
-            this.optionsContainer.style.bottom = 'auto';
+            this.optionsContainer.style.top = (triggerRect.bottom + 4) + 'px';
         }
     }
 
@@ -364,6 +382,12 @@ class CustomSelect {
         this.trigger.classList.remove('active');
         this.trigger.setAttribute('aria-expanded', 'false');
         this.optionsContainer.classList.remove('show');
+
+        if (this._scrollContainer && this._scrollHandler) {
+            this._scrollContainer.removeEventListener('scroll', this._scrollHandler);
+            this._scrollContainer = null;
+            this._scrollHandler = null;
+        }
 
         // Clear search
         if (this.searchInput) {
@@ -533,6 +557,9 @@ class CustomSelect {
     destroy() {
         if (window._customSelectInstances) {
             window._customSelectInstances = window._customSelectInstances.filter(i => i !== this);
+        }
+        if (this.optionsContainer.parentNode) {
+            this.optionsContainer.parentNode.removeChild(this.optionsContainer);
         }
         this.container.remove();
         this.element.style.display = '';

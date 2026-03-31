@@ -1022,7 +1022,7 @@ input, select, textarea {
     opacity: 0;
     visibility: hidden;
     transform: translateY(-8px);
-    transition: all 0.2s ease-in-out;
+    transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out, transform 0.2s ease-in-out;
 }
 
 .custom-select-options.show {
