@@ -31,6 +31,7 @@
           </div>
           <el-switch
             :model-value="adapter.status === 'active'"
+            :aria-label="$t('adapter.toggle_status', { name: adapter.name })"
             @change="toggleStatus(adapter)"
           />
         </div>
@@ -152,7 +153,7 @@ function openEditDialog(adapter: AdapterResponse) {
 }
 
 async function onPlatformChange(platform: string, preserveConfig = false) {
-  if (!platform) { adapterSchema.value = null; return }
+  if (!platform) { ++platformChangeId; adapterSchema.value = null; return }
   adapterSchema.value = null
   if (!preserveConfig) {
     form.value.config = {}

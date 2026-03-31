@@ -142,6 +142,7 @@ export default {
     active: 'Active',
     inactive: 'Inactive',
     form_incomplete: 'Please fill in adapter name and platform',
+    toggle_status: 'Toggle {name} status',
   },
   persona: {
     title: 'Personas',

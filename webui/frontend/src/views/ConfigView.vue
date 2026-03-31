@@ -44,10 +44,15 @@
             <!-- Group Header -->
             <div
               class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 cursor-pointer select-none"
+              role="button"
+              tabindex="0"
+              :aria-expanded="!collapsedGroups.has(group.id)"
               @click="toggleGroup(group.id)"
+              @keydown.enter.prevent="toggleGroup(group.id)"
+              @keydown.space.prevent="toggleGroup(group.id)"
             >
               <div class="flex items-center gap-3">
-                <span class="text-gray-500 dark:text-gray-400" v-html="group.icon"></span>
+                <span class="text-gray-500 dark:text-gray-400">{{ group.icon }}</span>
                 <div>
                   <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">
                     {{ $t(group.labelKey, group.labelFallback) }}

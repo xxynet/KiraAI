@@ -118,7 +118,16 @@ watch(messages, (msgs) => {
         logger: logData.logger || logData.name || '',
       })
       added = true
-    } catch { /* ignore parse errors for individual messages */ }
+    } catch {
+      // Preserve raw text messages when JSON parse fails
+      allLogs.value.push({
+        timestamp: new Date().toLocaleString(),
+        level: 'info',
+        message: String(msgs[i]),
+        logger: '',
+      })
+      added = true
+    }
   }
   lastProcessedIndex = msgs.length
   // Cap at 1000 entries

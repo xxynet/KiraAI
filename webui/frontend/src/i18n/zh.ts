@@ -142,6 +142,7 @@ export default {
     active: '启用',
     inactive: '禁用',
     form_incomplete: '请填写适配器名称和平台',
+    toggle_status: '切换 {name} 状态',
   },
   persona: {
     title: '人设',
