@@ -138,13 +138,7 @@ onMounted(async () => {
   // Load history
   try {
     const res = await getLogHistory(100)
-    const logs = res.data.logs || []
-    allLogs.value = logs.map((l: any) => ({
-      timestamp: l.time || l.timestamp || '',
-      level: l.level || 'info',
-      message: l.message || l.msg || '',
-      logger: l.logger || l.name || '',
-    }))
+    allLogs.value = res.data.logs || []
     scrollToBottom()
   } catch { /* silent */ }
 

@@ -89,14 +89,15 @@ class PersonasRoutes(Routes):
         content = payload.get("content", "")
         if not isinstance(content, str):
             raise HTTPException(status_code=422, detail="Invalid content value")
-        fmt = payload.get("format", DEFAULT_FORMAT)
-        if not isinstance(fmt, str) or not fmt.strip():
-            raise HTTPException(status_code=422, detail="Invalid format value")
-        if fmt not in ALLOWED_FORMATS:
-            raise HTTPException(status_code=422, detail=f"Format must be one of {ALLOWED_FORMATS}")
         self.lifecycle.persona_manager.update_persona(content)
-        self.lifecycle.persona_manager.set_format(fmt)
-        return {"content": content, "format": fmt}
+        fmt = payload.get("format")
+        if fmt is not None:
+            if not isinstance(fmt, str) or not fmt.strip():
+                raise HTTPException(status_code=422, detail="Invalid format value")
+            if fmt not in ALLOWED_FORMATS:
+                raise HTTPException(status_code=422, detail=f"Format must be one of {ALLOWED_FORMATS}")
+            self.lifecycle.persona_manager.set_format(fmt)
+        return {"content": content, "format": self.lifecycle.persona_manager.get_format()}
 
     async def list_personas(self):
         return list(self._personas.values())
