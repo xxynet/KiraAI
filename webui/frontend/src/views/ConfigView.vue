@@ -162,7 +162,7 @@
                 />
 
                 <!-- Validation error -->
-                <p v-if="validationErrors[field.key]" class="text-xs text-red-500">
+                <p v-if="field.type !== 'model_select' && validationErrors[field.key]" class="text-xs text-red-500">
                   {{ validationErrors[field.key] }}
                 </p>
               </div>

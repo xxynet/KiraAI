@@ -77,6 +77,8 @@ function updateField(key: string, value: any) {
         emit('update:modelValue', { ...props.modelValue, [key]: parsed })
         return
       }
+      // Parsed successfully but type doesn't match — do not write back
+      return
     } catch {
       // Invalid JSON — do not write back the raw string
       return
