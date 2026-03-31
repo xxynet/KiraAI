@@ -209,6 +209,7 @@ async function selectProvider(id: string) {
   providerSchema.value = null
   providerConfigValues.value = {}
   providerModels.value = {}
+  activeModelGroups.value = []
   const currentRequestId = ++selectProviderRequestId
   const provider = providers.value.find(p => p.id === id)
   if (!provider) return
@@ -291,10 +292,7 @@ async function handleCreate() {
 async function saveProviderConfig() {
   if (!selectedId.value) return
   const provider = selectedProvider.value
-  if (!provider) {
-    saving.value = false
-    return
-  }
+  if (!provider) return
   saving.value = true
   try {
     await updateProvider(selectedId.value, {

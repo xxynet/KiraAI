@@ -8,7 +8,7 @@
           :placeholder="$t('configuration.search_placeholder')"
           size="small"
           clearable
-          prefix-icon="Search"
+          :prefix-icon="Search"
           style="width: 260px;"
         />
         <el-button size="small" :disabled="undoStack.length === 0" @click="undo" title="Ctrl+Z">
@@ -118,6 +118,11 @@
                   </el-select>
                 </div>
 
+                <!-- Validation error for model_select -->
+                <p v-if="field.type === 'model_select' && validationErrors[field.key]" class="text-xs text-red-500">
+                  {{ validationErrors[field.key] }}
+                </p>
+
                 <!-- Integer type -->
                 <el-input-number
                   v-else-if="field.type === 'integer'"
@@ -225,7 +230,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 

@@ -149,7 +149,9 @@ onMounted(async () => {
     const res = await getLogHistory(100)
     allLogs.value = res.data.logs || []
     scrollToBottom()
-  } catch { /* silent */ }
+  } catch (e) {
+    console.error('Failed to load log history:', e)
+  }
 
   // Connect SSE
   const token = localStorage.getItem('jwt_token')

@@ -3,7 +3,7 @@ from typing import Dict, List
 from fastapi import Depends, HTTPException, status
 
 from core.logging_manager import get_logger
-from core.persona.persona_manager import ALLOWED_FORMATS, DEFAULT_FORMAT
+from core.persona.persona_manager import ALLOWED_FORMATS
 from webui.models import PersonaBase, PersonaResponse
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
