@@ -64,7 +64,7 @@ const filterLevels = ref<string[]>(['debug', 'info', 'warning', 'error'])
 const autoScroll = ref(true)
 const allLogs = ref<LogEntry[]>([])
 
-const { messages, connected, connect, disconnect } = useSSE()
+const { messages, connected, connect, disconnect, clear: clearSSE } = useSSE()
 let lastProcessedIndex = 0
 
 const filteredLogs = computed(() => {
@@ -130,6 +130,9 @@ watch(messages, (msgs) => {
     }
   }
   lastProcessedIndex = msgs.length
+  // Clear SSE buffer to prevent memory leak
+  clearSSE()
+  lastProcessedIndex = 0
   // Cap at 1000 entries
   if (allLogs.value.length > 1000) {
     allLogs.value = allLogs.value.slice(-1000)
