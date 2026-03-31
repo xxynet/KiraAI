@@ -24,21 +24,20 @@ import { Moon, Sunny, SwitchButton } from '@element-plus/icons-vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
-import * as monaco from 'monaco-editor'
+import { useTheme } from '@/composables/useTheme'
 
 defineProps<{ title: string }>()
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const router = useRouter()
-
-function toggleTheme() {
-  appStore.toggleTheme()
-  monaco.editor.setTheme(appStore.isDark ? 'vs-dark' : 'vs')
-}
+const { toggleTheme } = useTheme()
 
 async function handleLogout() {
-  await authStore.logout()
-  router.push('/login')
+  try {
+    await authStore.logout()
+  } finally {
+    router.push('/login')
+  }
 }
 </script>

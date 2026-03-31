@@ -164,7 +164,7 @@
       <!-- Model Configuration Tab -->
       <el-tab-pane :label="$t('configuration.model_tab')" name="model">
         <div class="space-y-4">
-          <div v-for="group in modelGroups" :key="group.id" class="glass-card rounded-lg p-4">
+          <div v-for="group in filteredModelGroups" :key="group.id" class="glass-card rounded-lg p-4">
             <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">
               {{ $t(group.labelKey, group.labelFallback) }}
             </h4>
@@ -495,6 +495,13 @@ const filteredGroups = computed(() => {
   )
 })
 
+const filteredModelGroups = computed(() => {
+  if (!searchTerm.value) return modelGroups
+  return modelGroups.filter(group =>
+    group.fields.some(f => fieldMatchesSearch(f))
+  )
+})
+
 function getVisibleFields(group: ConfigGroup): ConfigField[] {
   if (!searchTerm.value) return group.fields
   return group.fields.filter(f => fieldMatchesSearch(f))
@@ -582,7 +589,8 @@ onMounted(async () => {
         }
       }
     })
-  } catch {
+  } catch (e) {
+    console.error('Failed to load configuration:', e)
     ElMessage.error(t('configuration.load_failed'))
   }
 })

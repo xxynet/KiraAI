@@ -131,6 +131,7 @@ export default {
     not_found: 'Adapter not found',
     platform_load_failed: 'Failed to load adapter platforms',
     schema_load_failed: 'Failed to load adapter schema',
+    load_failed: 'Failed to load adapters',
     description: 'Description',
     config: 'Configuration',
     cancel: 'Cancel',

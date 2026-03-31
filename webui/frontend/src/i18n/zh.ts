@@ -131,6 +131,7 @@ export default {
     not_found: '适配器不存在',
     platform_load_failed: '加载适配器平台失败',
     schema_load_failed: '加载适配器配置结构失败',
+    load_failed: '加载适配器列表失败',
     description: '描述',
     config: '配置',
     cancel: '取消',

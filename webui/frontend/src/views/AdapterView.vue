@@ -24,7 +24,7 @@
             <div class="flex items-center gap-2">
               <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ adapter.name }}</h4>
               <el-tag :type="adapter.status === 'active' ? 'success' : 'info'" size="small">
-                {{ adapter.status }}
+                {{ $t('adapter.' + adapter.status) }}
               </el-tag>
             </div>
             <p class="mt-1 text-sm text-gray-500">{{ adapter.platform }}</p>
@@ -108,14 +108,20 @@ async function loadAdapters() {
   try {
     const res = await getAdapters()
     adapters.value = Array.isArray(res.data) ? res.data : []
-  } catch { /* silent */ }
+  } catch (e) {
+    ElMessage.error(t('adapter.load_failed'))
+    console.error('Failed to load adapters:', e)
+  }
 }
 
 async function loadPlatforms() {
   try {
     const res = await getAdapterPlatforms()
     platforms.value = res.data
-  } catch { /* silent */ }
+  } catch (e) {
+    ElMessage.error(t('adapter.platform_load_failed'))
+    console.error('Failed to load platforms:', e)
+  }
 }
 
 function openCreateDialog() {
@@ -124,6 +130,7 @@ function openCreateDialog() {
   form.value = { name: '', platform: '', description: '', config: {} }
   formActive.value = false
   adapterSchema.value = null
+  ++platformChangeId
   dialogVisible.value = true
   if (platforms.value.length === 0) loadPlatforms()
 }
@@ -138,6 +145,8 @@ function openEditDialog(adapter: AdapterResponse) {
     config: { ...(adapter.config || {}) },
   }
   formActive.value = adapter.status === 'active'
+  adapterSchema.value = null
+  ++platformChangeId
   dialogVisible.value = true
   onPlatformChange(adapter.platform, true)
 }
@@ -190,13 +199,7 @@ async function handleSave() {
 async function toggleStatus(adapter: AdapterResponse) {
   const newStatus = adapter.status === 'active' ? 'inactive' : 'active'
   try {
-    await updateAdapter(adapter.id, {
-      name: adapter.name,
-      platform: adapter.platform,
-      status: newStatus,
-      description: adapter.description,
-      config: adapter.config,
-    })
+    await updateAdapter(adapter.id, { status: newStatus })
     ElMessage.success(t('adapter.status_updated'))
     await loadAdapters()
   } catch {

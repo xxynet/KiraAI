@@ -238,7 +238,7 @@ function openCreateDialog() {
 }
 
 async function onCreateTypeChange(type: string) {
-  if (!type) { createSchema.value = null; return }
+  if (!type) { createSchema.value = null; createForm.value.config = {}; return }
   createSchema.value = null
   createForm.value.config = {}
   const requestId = ++createTypeChangeId
@@ -279,12 +279,17 @@ async function handleCreate() {
 
 async function saveProviderConfig() {
   if (!selectedId.value) return
+  const provider = selectedProvider.value
+  if (!provider) {
+    saving.value = false
+    return
+  }
   saving.value = true
   try {
     await updateProvider(selectedId.value, {
-      name: selectedProvider.value!.name,
-      type: selectedProvider.value!.type,
-      status: selectedProvider.value!.status,
+      name: provider.name,
+      type: provider.type,
+      status: provider.status,
       config: providerConfigValues.value,
     })
     ElMessage.success(t('provider.save_success'))
@@ -326,14 +331,15 @@ function openAddModelDialog(modelType: string) {
 
 async function handleAddModel() {
   if (!selectedId.value || !modelForm.value.model_id) return
+  const providerId = selectedId.value
   addingModel.value = true
   try {
     if (modelEditMode.value) {
-      await updateModel(selectedId.value, modelForm.value.model_type, originalModelId.value, {
+      await updateModel(providerId, modelForm.value.model_type, originalModelId.value, {
         config: modelForm.value.config,
       })
     } else {
-      await addModel(selectedId.value, {
+      await addModel(providerId, {
         model_type: modelForm.value.model_type,
         model_id: modelForm.value.model_id,
         config: modelForm.value.config,
@@ -343,7 +349,7 @@ async function handleAddModel() {
     ElMessage.success(modelEditMode.value ? t('provider.model_update_success') : t('provider.model_add_success'))
     modelEditMode.value = false
     originalModelId.value = ''
-    const modelsRes = await getModels(selectedId.value)
+    const modelsRes = await getModels(providerId)
     providerModels.value = modelsRes.data || {}
   } catch {
     ElMessage.error(modelEditMode.value ? t('provider.model_update_failed') : t('provider.model_add_failed'))
