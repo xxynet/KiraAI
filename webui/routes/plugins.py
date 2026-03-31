@@ -78,6 +78,8 @@ class PluginsRoutes(Routes):
             registered = plugin_manager.get_registered_plugins()
             items: List[PluginItem] = []
             for plugin_id, _ in registered.items():
+                if plugin_manager.is_plugin_hidden(plugin_id):
+                    continue
                 manifest = plugin_manager.get_plugin_manifest(plugin_id) or {}
                 display_name = manifest.get("display_name") or plugin_id
                 version = str(manifest.get("version") or "")
@@ -85,6 +87,8 @@ class PluginsRoutes(Routes):
                 desc = str(manifest.get("description") or "")
                 repo = manifest.get("repo")
                 enabled = plugin_manager.is_plugin_enabled(plugin_id)
+                is_builtin = plugin_manager.is_builtin_plugin(plugin_id)
+                uninstallable = plugin_manager.is_plugin_uninstallable(plugin_id)
                 items.append(
                     PluginItem(
                         id=str(plugin_id),
@@ -94,6 +98,8 @@ class PluginsRoutes(Routes):
                         description=desc,
                         repo=repo if isinstance(repo, str) and repo else None,
                         enabled=enabled,
+                        builtin=is_builtin,
+                        uninstallable=uninstallable,
                     )
                 )
             return items
@@ -168,10 +174,12 @@ class PluginsRoutes(Routes):
         if plugin_id not in plugin_manager.get_registered_plugins():
             raise HTTPException(status_code=404, detail="Plugin not found")
 
-        # Only user-installed plugins (under plugin_dir) can be deleted
-        plugin_dir = plugin_manager.plugin_dir / plugin_id
-        if not plugin_dir.exists():
-            raise HTTPException(status_code=400, detail="Built-in plugins cannot be deleted")
+        if not plugin_manager.is_plugin_uninstallable(plugin_id):
+            raise HTTPException(status_code=400, detail="This built-in plugin cannot be deleted")
+
+        plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)
+        if not plugin_dir:
+            raise HTTPException(status_code=500, detail="Could not resolve plugin path")
 
         try:
             await plugin_manager.uninstall_plugin(plugin_id)

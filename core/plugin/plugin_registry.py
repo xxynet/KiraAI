@@ -276,6 +276,24 @@ class PluginManager:
     def get_plugin_module_path(self, name: str) -> Optional[Path]:
         return _plugin_module_paths.get(name)
 
+    def is_builtin_plugin(self, plugin_id: str) -> bool:
+        path = _plugin_module_paths.get(plugin_id)
+        if path is None:
+            return False
+        return path.is_relative_to(BUILTIN_PLUGINS_DIR)
+
+    def is_plugin_hidden(self, plugin_id: str) -> bool:
+        if not self.is_builtin_plugin(plugin_id):
+            return False
+        manifest = _plugin_manifests.get(plugin_id, {})
+        return bool(manifest.get("hide", False))
+
+    def is_plugin_uninstallable(self, plugin_id: str) -> bool:
+        if not self.is_builtin_plugin(plugin_id):
+            return True
+        manifest = _plugin_manifests.get(plugin_id, {})
+        return bool(manifest.get("uninstallable", False))
+
     def get_plugin_id_for_module(self, module_name: str) -> Optional[str]:
         return _module_to_plugin.get(module_name)
 
