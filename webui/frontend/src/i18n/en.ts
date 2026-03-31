@@ -310,6 +310,7 @@ export default {
     model_tab: 'Model',
     select_provider: 'Select Provider',
     select_model: 'Select Model',
+    none: 'None',
     save_success: 'Configuration saved successfully',
     load_failed: 'Failed to load configuration',
     groups: {

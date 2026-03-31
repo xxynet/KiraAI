@@ -88,7 +88,7 @@
                     :placeholder="$t('configuration.select_provider')"
                     @change="(v: string) => setModelProvider(field.key, v, field.modelType)"
                   >
-                    <el-option value="" :label="''" />
+                    <el-option value="" :label="$t('configuration.none')" />
                     <el-option
                       v-for="p in providers"
                       :key="p.id"
@@ -103,7 +103,7 @@
                     :placeholder="$t('configuration.select_model')"
                     @change="(v: string) => setModelId(field.key, v)"
                   >
-                    <el-option value="" :label="''" />
+                    <el-option value="" :label="$t('configuration.none')" />
                     <el-option
                       v-for="modelId in getAvailableModels(field.key, field.modelType)"
                       :key="modelId"
@@ -170,7 +170,7 @@
             </h4>
             <p class="text-xs text-gray-500 mb-4">{{ $t(group.descKey, group.descFallback) }}</p>
             <div class="space-y-4">
-              <div v-for="field in group.fields" :key="field.key" class="flex flex-col gap-1">
+              <div v-for="field in getVisibleFields(group)" :key="field.key" class="flex flex-col gap-1">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ $t(field.labelKey, field.labelFallback) }}
                   <span v-if="modifiedFields.has(field.key)" class="text-amber-500 ml-1">●</span>
@@ -184,7 +184,7 @@
                     :placeholder="$t('configuration.select_provider')"
                     @change="(v: string) => setModelProvider(field.key, v, field.modelType)"
                   >
-                    <el-option value="" :label="''" />
+                    <el-option value="" :label="$t('configuration.none')" />
                     <el-option
                       v-for="p in providers"
                       :key="p.id"
@@ -199,7 +199,7 @@
                     :placeholder="$t('configuration.select_model')"
                     @change="(v: string) => setModelId(field.key, v)"
                   >
-                    <el-option value="" :label="''" />
+                    <el-option value="" :label="$t('configuration.none')" />
                     <el-option
                       v-for="modelId in getAvailableModels(field.key, field.modelType)"
                       :key="modelId"
@@ -576,7 +576,7 @@ onMounted(async () => {
     originalData.value = deepClone(data.configuration || data.config || {})
     currentData.value = deepClone(originalData.value)
     providers.value = data.providers || []
-    providerModels.value = data.provider_models || data.models || {}
+    providerModels.value = data.provider_models || {}
 
     // Ensure defaults
     const allFields = [...messageGroups, ...modelGroups].flatMap(g => g.fields)

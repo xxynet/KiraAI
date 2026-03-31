@@ -310,6 +310,7 @@ export default {
     model_tab: '模型',
     select_provider: '选择提供商',
     select_model: '选择模型',
+    none: '无',
     save_success: '配置保存成功',
     load_failed: '加载配置失败',
     groups: {

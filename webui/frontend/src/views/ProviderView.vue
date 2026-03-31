@@ -195,6 +195,13 @@ async function loadProviders() {
     console.error('Failed to load providers:', e)
     ElMessage.error(t('provider.load_failed'))
   }
+  // Validate selectedId still exists
+  if (selectedId.value && !providers.value.some(p => p.id === selectedId.value)) {
+    selectedId.value = null
+    providerSchema.value = null
+    providerConfigValues.value = {}
+    providerModels.value = {}
+  }
 }
 
 async function selectProvider(id: string) {
