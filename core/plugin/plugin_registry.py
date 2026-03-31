@@ -504,7 +504,7 @@ class PluginManager:
             return
 
         if not self.is_plugin_enabled(plugin_id):
-            logger.info(f"Plugin {plugin_id} is disabled, skipping initialization")
+            logger.debug(f"Plugin {plugin_id} is disabled, skipping initialization")
             return
 
         existing = self.plugin_instances.get(plugin_id)

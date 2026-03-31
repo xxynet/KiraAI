@@ -154,16 +154,14 @@ function renderPluginList() {
                         >
                             Configure
                         </button>
-                        ${uninstallable ? `
                         <button
                             type="button"
-                            class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30"
+                            class="px-3 py-1.5 text-xs font-medium rounded-md border ${uninstallable ? 'border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30' : 'border-gray-200 text-gray-300 cursor-not-allowed dark:border-gray-700 dark:text-gray-600'}"
                             data-i18n="plugin.uninstall"
-                            onclick="deletePlugin('${escapeHtml(String(id))}')"
+                            ${uninstallable ? `onclick="deletePlugin('${escapeHtml(String(id))}')"` : 'disabled'}
                         >
                             Uninstall
                         </button>
-                        ` : ''}
                     </div>
                 </div>
             </div>

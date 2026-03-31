@@ -43,6 +43,7 @@ function initializeApp() {
 
     setupThemeToggle();
     setupNavigation();
+    setupMobileSidebar();
     loadAppVersion();
     loadInitialData();
     setupEventListeners();
@@ -88,6 +89,31 @@ function setupThemeToggle() {
 /**
  * Set up navigation between pages.
  */
+function setupMobileSidebar() {
+    const menuBtn = document.getElementById('sidebar-menu-btn');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+
+    function openSidebar() {
+        sidebar.classList.add('sidebar-open');
+        overlay.classList.add('sidebar-open');
+    }
+
+    function closeSidebar() {
+        sidebar.classList.remove('sidebar-open');
+        overlay.classList.remove('sidebar-open');
+    }
+
+    menuBtn.addEventListener('click', openSidebar);
+    overlay.addEventListener('click', closeSidebar);
+
+    sidebar.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            if (window.innerWidth <= 768) closeSidebar();
+        });
+    });
+}
+
 function setupNavigation() {
     const navItems = document.querySelectorAll('.nav-item');
     navItems.forEach(item => {
