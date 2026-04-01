@@ -190,18 +190,18 @@ async function loadProviders() {
   try {
     const res = await getProviders()
     providers.value = Array.isArray(res.data) ? res.data : []
+    // Validate selectedId still exists (only after successful fetch)
+    if (selectedId.value && !providers.value.some(p => p.id === selectedId.value)) {
+      selectedId.value = null
+      providerSchema.value = null
+      providerConfigValues.value = {}
+      providerModels.value = {}
+      activeModelGroups.value = []
+    }
   } catch (e) {
     providers.value = []
     console.error('Failed to load providers:', e)
     ElMessage.error(t('provider.load_failed'))
-  }
-  // Validate selectedId still exists
-  if (selectedId.value && !providers.value.some(p => p.id === selectedId.value)) {
-    selectedId.value = null
-    providerSchema.value = null
-    providerConfigValues.value = {}
-    providerModels.value = {}
-    activeModelGroups.value = []
   }
 }
 
@@ -347,9 +347,10 @@ function openAddModelDialog(modelType: string) {
 async function handleAddModel() {
   if (!selectedId.value || !modelForm.value.model_id) return
   const providerId = selectedId.value
+  const isEdit = modelEditMode.value
   addingModel.value = true
   try {
-    if (modelEditMode.value) {
+    if (isEdit) {
       await updateModel(providerId, modelForm.value.model_type, originalModelId.value, {
         config: modelForm.value.config,
       })
@@ -361,15 +362,17 @@ async function handleAddModel() {
       })
     }
     modelDialogVisible.value = false
-    ElMessage.success(modelEditMode.value ? t('provider.model_update_success') : t('provider.model_add_success'))
+    ElMessage.success(isEdit ? t('provider.model_update_success') : t('provider.model_add_success'))
     modelEditMode.value = false
     originalModelId.value = ''
-    const modelsRes = await getModels(providerId)
-    if (selectedId.value === providerId) {
-      providerModels.value = modelsRes.data || {}
-    }
+    try {
+      const modelsRes = await getModels(providerId)
+      if (selectedId.value === providerId) {
+        providerModels.value = modelsRes.data || {}
+      }
+    } catch { /* refresh failure is non-critical */ }
   } catch (error: any) {
-    ElMessage.error((modelEditMode.value ? t('provider.model_update_failed') : t('provider.model_add_failed')) + (error?.message ? ': ' + error.message : ''))
+    ElMessage.error((isEdit ? t('provider.model_update_failed') : t('provider.model_add_failed')) + (error?.message ? ': ' + error.message : ''))
   } finally {
     addingModel.value = false
   }
@@ -396,10 +399,12 @@ async function removeModel(modelType: string, modelId: string) {
   try {
     await deleteModel(providerId, modelType, modelId)
     ElMessage.success(t('provider.model_delete_success'))
-    const modelsRes = await getModels(providerId)
-    if (selectedId.value === providerId) {
-      providerModels.value = modelsRes.data || {}
-    }
+    try {
+      const modelsRes = await getModels(providerId)
+      if (selectedId.value === providerId) {
+        providerModels.value = modelsRes.data || {}
+      }
+    } catch { /* refresh failure is non-critical */ }
   } catch (error: any) {
     ElMessage.error(t('provider.model_delete_failed') + (error?.message ? ': ' + error.message : ''))
   }

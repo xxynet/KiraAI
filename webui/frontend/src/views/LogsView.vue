@@ -45,7 +45,7 @@
         <span class="text-gray-400 mr-2">{{ log.timestamp }}</span>
         <span class="font-semibold mr-2 uppercase" :class="logLevelColor(log.level)">[{{ log.level }}]</span>
         <span v-if="log.logger" class="text-gray-500 mr-2">[{{ log.logger }}]</span>
-        <span class="text-gray-800 dark:text-gray-200">{{ log.message }}</span>
+        <span class="text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ log.message }}</span>
       </div>
     </div>
   </div>
@@ -144,8 +144,11 @@ watch(messages, (msgs) => {
 onMounted(async () => {
   // Load saved filter levels
   try {
-    const saved = JSON.parse(localStorage.getItem('log_filter_levels') || '[]')
-    if (Array.isArray(saved) && saved.length > 0) filterLevels.value = saved
+    const raw = localStorage.getItem('log_filter_levels')
+    if (raw !== null) {
+      const saved = JSON.parse(raw)
+      if (Array.isArray(saved)) filterLevels.value = saved
+    }
   } catch { /* ignore */ }
 
   // Load history

@@ -143,7 +143,7 @@ function openEditDialog(adapter: AdapterResponse) {
     name: adapter.name,
     platform: adapter.platform,
     description: adapter.description || '',
-    config: { ...(adapter.config || {}) },
+    config: structuredClone(adapter.config || {}),
   }
   formActive.value = adapter.status === 'active'
   adapterSchema.value = null
