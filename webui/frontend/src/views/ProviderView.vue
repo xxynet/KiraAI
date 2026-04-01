@@ -240,6 +240,7 @@ async function selectProvider(id: string) {
 }
 
 function openCreateDialog() {
+  ++createTypeChangeId
   createForm.value = { name: '', type: '', config: {} }
   createSchema.value = null
   createDialogVisible.value = true
@@ -251,7 +252,7 @@ function openCreateDialog() {
 }
 
 async function onCreateTypeChange(type: string) {
-  if (!type) { createSchema.value = null; createForm.value.config = {}; return }
+  if (!type) { ++createTypeChangeId; createSchema.value = null; createForm.value.config = {}; return }
   createSchema.value = null
   createForm.value.config = {}
   const requestId = ++createTypeChangeId
@@ -313,15 +314,18 @@ async function saveProviderConfig() {
 
 async function handleDelete() {
   if (!selectedId.value) return
+  const deletingId = selectedId.value
   try {
     await ElMessageBox.confirm(t('provider.delete_confirm_message'), t('provider.delete_confirm_title'), { type: 'warning' })
   } catch {
     return // User cancelled
   }
   try {
-    await deleteProvider(selectedId.value)
-    selectedId.value = null
-    providerSchema.value = null
+    await deleteProvider(deletingId)
+    if (selectedId.value === deletingId) {
+      selectedId.value = null
+      providerSchema.value = null
+    }
     ElMessage.success(t('provider.delete_success'))
     await loadProviders()
   } catch (error: any) {

@@ -195,8 +195,8 @@ async function handleSave() {
     dialogVisible.value = false
     ElMessage.success(t('adapter.save_success'))
     await loadAdapters()
-  } catch {
-    ElMessage.error(t('adapter.save_failed'))
+  } catch (error: any) {
+    ElMessage.error(t('adapter.save_failed') + (error?.message ? ': ' + error.message : ''))
   } finally {
     saving.value = false
   }
@@ -214,8 +214,8 @@ async function toggleStatus(adapter: AdapterResponse) {
     })
     ElMessage.success(t('adapter.status_updated'))
     await loadAdapters()
-  } catch {
-    ElMessage.error(t('adapter.status_update_failed'))
+  } catch (error: any) {
+    ElMessage.error(t('adapter.status_update_failed') + (error?.message ? ': ' + error.message : ''))
   }
 }
 

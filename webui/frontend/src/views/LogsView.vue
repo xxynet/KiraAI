@@ -131,7 +131,6 @@ watch(messages, (msgs) => {
       added = true
     }
   }
-  lastProcessedIndex = msgs.length
   // Clear SSE buffer to prevent memory leak
   clearSSE()
   lastProcessedIndex = 0
