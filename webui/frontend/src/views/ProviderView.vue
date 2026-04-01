@@ -219,7 +219,7 @@ async function selectProvider(id: string) {
     const schemaRes = await getProviderSchema(provider.type)
     if (selectProviderRequestId === currentRequestId) {
       providerSchema.value = schemaRes.data
-      providerConfigValues.value = { ...(provider.config || {}) }
+      providerConfigValues.value = structuredClone(provider.config || {})
     }
   } catch {
     if (selectProviderRequestId === currentRequestId) {
@@ -230,7 +230,7 @@ async function selectProvider(id: string) {
   try {
     const modelsRes = await getModels(id)
     if (selectProviderRequestId === currentRequestId) {
-      providerModels.value = modelsRes.data || {}
+      providerModels.value = structuredClone(modelsRes.data || {})
     }
   } catch {
     if (selectProviderRequestId === currentRequestId) {
@@ -269,15 +269,17 @@ async function onCreateTypeChange(type: string) {
 }
 
 async function handleCreate() {
-  if (!createForm.value.name || !createForm.value.type) {
+  const name = createForm.value.name.trim()
+  const type = createForm.value.type.trim()
+  if (!name || !type) {
     ElMessage.warning(t('provider.fill_required_fields'))
     return
   }
   creating.value = true
   try {
     await createProvider({
-      name: createForm.value.name,
-      type: createForm.value.type,
+      name,
+      type,
       status: 'active',
       config: createForm.value.config,
     })
@@ -385,7 +387,7 @@ function editModel(modelType: string, modelId: string, config: any) {
   if (!providerSchema.value) return
   modelEditMode.value = true
   originalModelId.value = modelId
-  modelForm.value = { model_id: modelId, model_type: modelType, config: { ...config } }
+  modelForm.value = { model_id: modelId, model_type: modelType, config: structuredClone(config) }
   const modelConfigs = providerSchema.value?.model_config || {}
   modelSchema.value = modelConfigs[modelType] || null
   modelDialogVisible.value = true

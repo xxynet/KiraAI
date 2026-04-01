@@ -6,7 +6,7 @@ export function getProviderTypes() {
 }
 
 export function getProviderSchema(providerType: string) {
-  return apiClient.get<any>(`/providers/schema/${providerType}`)
+  return apiClient.get<any>(`/providers/schema/${encodeURIComponent(providerType)}`)
 }
 
 export function getProviders() {
@@ -18,29 +18,29 @@ export function createProvider(data: ProviderBase) {
 }
 
 export function getProvider(id: string) {
-  return apiClient.get<ProviderResponse>(`/providers/${id}`)
+  return apiClient.get<ProviderResponse>(`/providers/${encodeURIComponent(id)}`)
 }
 
 export function updateProvider(id: string, data: Partial<ProviderBase>) {
-  return apiClient.put<ProviderResponse>(`/providers/${id}`, data)
+  return apiClient.put<ProviderResponse>(`/providers/${encodeURIComponent(id)}`, data)
 }
 
 export function deleteProvider(id: string) {
-  return apiClient.delete(`/providers/${id}`)
+  return apiClient.delete(`/providers/${encodeURIComponent(id)}`)
 }
 
 export function addModel(providerId: string, data: ModelCreateRequest) {
-  return apiClient.post(`/providers/${providerId}/models`, data)
+  return apiClient.post(`/providers/${encodeURIComponent(providerId)}/models`, data)
 }
 
 export function getModels(providerId: string) {
-  return apiClient.get<Record<string, any>>(`/providers/${providerId}/models`)
+  return apiClient.get<Record<string, any>>(`/providers/${encodeURIComponent(providerId)}/models`)
 }
 
 export function updateModel(providerId: string, modelType: string, modelId: string, data: ModelUpdateRequest) {
-  return apiClient.put(`/providers/${providerId}/models/${modelType}/${modelId}`, data)
+  return apiClient.put(`/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelType)}/${encodeURIComponent(modelId)}`, data)
 }
 
 export function deleteModel(providerId: string, modelType: string, modelId: string) {
-  return apiClient.delete(`/providers/${providerId}/models/${modelType}/${modelId}`)
+  return apiClient.delete(`/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelType)}/${encodeURIComponent(modelId)}`)
 }

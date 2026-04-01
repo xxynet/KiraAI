@@ -183,7 +183,7 @@ class McpRoutes(Routes):
             manager = self.lifecycle.mcp_manager
             manager.update_server_from_editor(
                 name=server_name,
-                description=payload.name or "",
+                description=payload.description or "",
                 editor_config=editor_config,
             )
             return {"ok": True}

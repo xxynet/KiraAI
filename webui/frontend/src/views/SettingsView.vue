@@ -38,7 +38,7 @@ import { getSettings, updateSettings } from '@/api/settings'
 import { ElMessage } from 'element-plus'
 import * as monaco from 'monaco-editor'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const appStore = useAppStore()
 const saving = ref(false)
 
@@ -62,7 +62,6 @@ async function handleSave() {
   try {
     await updateSettings(form.value)
     appStore.setLanguage(form.value.language)
-    locale.value = form.value.language
     appStore.setTheme(form.value.theme)
     monaco.editor.setTheme(form.value.theme === 'dark' ? 'vs-dark' : 'vs')
     ElMessage.success(t('settings.saved'))

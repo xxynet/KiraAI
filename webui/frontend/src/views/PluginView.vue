@@ -237,10 +237,16 @@ async function togglePlugin(plugin: PluginItem) {
 async function handleDeletePlugin(id: string) {
   try {
     await ElMessageBox.confirm(t('plugin.uninstall_confirm'), t('plugin.uninstall'), { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
     await deletePlugin(id)
     ElMessage.success(t('plugin.uninstall_success'))
     await loadPlugins()
-  } catch { /* cancelled */ }
+  } catch {
+    ElMessage.error(t('plugin.uninstall_failed'))
+  }
 }
 
 async function openPluginConfig(plugin: PluginItem) {
@@ -279,7 +285,12 @@ async function handleInstall() {
     if (installTab.value === 'github') {
       if (!installForm.value.repo_url) return
       await installFromGithub({ repo_url: installForm.value.repo_url })
-    } else if (uploadFile.value) {
+    } else {
+      if (!uploadFile.value) {
+        ElMessage.error(t('plugin.file_required'))
+        installing.value = false
+        return
+      }
       const formData = new FormData()
       formData.append('file', uploadFile.value)
       const { default: apiClient } = await import('@/api/client')
@@ -336,7 +347,7 @@ async function saveMcpForm() {
   }
   try {
     if (mcpEditMode.value && mcpEditId.value) {
-      await updateMcpServer(mcpEditId.value, { name: mcpForm.value.name, config })
+      await updateMcpServer(mcpEditId.value, { name: mcpForm.value.name, description: mcpForm.value.description, config })
     } else {
       await createMcpServer({ name: mcpForm.value.name, description: mcpForm.value.description, config })
     }
@@ -353,10 +364,16 @@ async function saveMcpForm() {
 async function handleDeleteMcp(id: string) {
   try {
     await ElMessageBox.confirm(t('plugin.mcp_delete_confirm'), t('plugin.mcp_delete'), { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
     await deleteMcpServer(id)
     ElMessage.success(t('plugin.mcp_delete_success'))
     await loadMcpServers()
-  } catch { /* cancelled */ }
+  } catch {
+    ElMessage.error(t('plugin.mcp_delete_failed'))
+  }
 }
 
 onMounted(() => {

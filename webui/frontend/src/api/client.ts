@@ -25,7 +25,7 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       const url = error.config?.url || ''
       // Don't redirect for login endpoint — let the caller handle the error
-      if (!url.includes('/auth/login')) {
+      if (!url.startsWith('/auth/login')) {
         localStorage.removeItem('jwt_token')
         window.location.href = '/login'
       }

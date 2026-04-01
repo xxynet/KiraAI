@@ -6,13 +6,13 @@ export function getSessions() {
 }
 
 export function getSession(id: string) {
-  return apiClient.get<SessionDetail>(`/sessions/${id}`)
+  return apiClient.get<SessionDetail>(`/sessions/${encodeURIComponent(id)}`)
 }
 
 export function updateSession(id: string, data: { title?: string; messages?: any[]; metadata?: Record<string, any> }) {
-  return apiClient.put(`/sessions/${id}`, data)
+  return apiClient.put(`/sessions/${encodeURIComponent(id)}`, data)
 }
 
 export function deleteSession(id: string) {
-  return apiClient.delete(`/sessions/${id}`)
+  return apiClient.delete(`/sessions/${encodeURIComponent(id)}`)
 }

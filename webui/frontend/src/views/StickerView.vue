@@ -162,10 +162,16 @@ async function handleEdit() {
 async function handleDelete(id: string) {
   try {
     await ElMessageBox.confirm(t('sticker.delete_confirm'), t('sticker.delete'), { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
     await apiDeleteSticker(id)
     ElMessage.success(t('sticker.delete_success'))
     await loadStickers()
-  } catch { /* cancelled */ }
+  } catch {
+    ElMessage.error(t('sticker.delete_failed'))
+  }
 }
 
 onMounted(() => {

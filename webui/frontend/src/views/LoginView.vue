@@ -69,6 +69,7 @@ const loading = ref(false)
 const errorMsg = ref('')
 
 async function handleLogin() {
+  if (loading.value) return
   if (!accessToken.value.trim()) return
   loading.value = true
   errorMsg.value = ''

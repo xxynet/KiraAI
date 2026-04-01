@@ -11,17 +11,21 @@ from typing import Dict, Optional
 
 from fastapi import HTTPException, status
 import jwt
+import os
 
 from core.logging_manager import get_logger
 
 logger = get_logger("webui", "blue")
+
+# JWT secret: read from environment variable, fall back to a random key per process (development only)
+_JWT_SECRET = os.environ.get("JWT_SECRET") or secrets.token_hex(32)
 
 
 def _generate_strong_password(length: int = 16) -> str:
     """Generate a strong password with upper/lower alphabets, digits, and special characters."""
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{}|;:,.<>?"
     token = ''.join(secrets.choice(alphabet) for _ in range(length))
-    logger.info(f"Generated access_token: {token}")
+    logger.info("Generated new access_token")
     return token
 
 
@@ -59,14 +63,14 @@ def _create_jwt_token(data: Dict, expires_delta: Optional[timedelta] = None) -> 
     else:
         expire = datetime.now(timezone.utc) + timedelta(days=5)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, "kiraai_secret_key", algorithm="HS256")
+    encoded_jwt = jwt.encode(to_encode, _JWT_SECRET, algorithm="HS256")
     return encoded_jwt
 
 
 def _verify_jwt_token(token: str) -> Dict:
     """Verify JWT token"""
     try:
-        payload = jwt.decode(token, "kiraai_secret_key", algorithms=["HS256"])
+        payload = jwt.decode(token, _JWT_SECRET, algorithms=["HS256"])
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(

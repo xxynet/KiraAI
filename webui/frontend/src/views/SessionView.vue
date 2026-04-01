@@ -115,6 +115,11 @@ async function handleSave() {
       saving.value = false
       return
     }
+    if (!Array.isArray(messages)) {
+      ElMessage.error(t('sessions.invalid_json'))
+      saving.value = false
+      return
+    }
     await updateSession(currentSessionId.value, {
       title: sessionTitle.value,
       messages,
@@ -132,10 +137,16 @@ async function handleSave() {
 async function handleDelete(session: SessionItem) {
   try {
     await ElMessageBox.confirm(t('sessions.delete_confirm'), t('sessions.delete'), { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
     await deleteSession(session.id)
     ElMessage.success(t('sessions.delete_success'))
     await loadSessions()
-  } catch { /* cancelled */ }
+  } catch {
+    ElMessage.error(t('sessions.delete_failed'))
+  }
 }
 
 onMounted(() => {

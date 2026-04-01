@@ -15,7 +15,7 @@
     <el-dialog v-model="editorVisible" :title="$t('persona.edit')" width="80%" top="5vh" :destroy-on-close="true">
       <div class="flex items-center gap-4 mb-4">
         <span class="text-sm text-gray-600 dark:text-gray-400">{{ $t('persona.format') }}</span>
-        <el-select v-model="format" size="small" style="width: 140px">
+        <el-select v-model="draftFormat" size="small" style="width: 140px">
           <el-option label="Text" value="text" />
           <el-option label="Markdown" value="markdown" />
           <el-option label="JSON" value="json" />
@@ -23,7 +23,7 @@
         </el-select>
       </div>
       <MonacoEditor
-        v-model="content"
+        v-model="draftContent"
         :language="monacoLanguage"
         height="60vh"
       />
@@ -45,6 +45,8 @@ import MonacoEditor from '@/components/common/MonacoEditor.vue'
 const { t } = useI18n()
 const content = ref('')
 const format = ref('text')
+const draftContent = ref('')
+const draftFormat = ref('text')
 const editorVisible = ref(false)
 const saving = ref(false)
 
@@ -60,10 +62,12 @@ const monacoLanguage = computed(() => {
     json: 'json',
     yaml: 'yaml',
   }
-  return map[format.value] || 'plaintext'
+  return map[draftFormat.value] || 'plaintext'
 })
 
 function openEditor() {
+  draftContent.value = content.value
+  draftFormat.value = format.value
   editorVisible.value = true
 }
 
@@ -80,7 +84,9 @@ async function loadContent() {
 async function handleSave() {
   saving.value = true
   try {
-    await updateCurrentPersonaContent({ content: content.value, format: format.value })
+    await updateCurrentPersonaContent({ content: draftContent.value, format: draftFormat.value })
+    content.value = draftContent.value
+    format.value = draftFormat.value
     ElMessage.success(t('persona.save_success'))
     editorVisible.value = false
   } catch {

@@ -27,7 +27,6 @@
         v-model="currentLanguage"
         size="small"
         class="w-full"
-        @change="onLanguageChange"
       >
         <el-option label="English" value="en" />
         <el-option label="中文" value="zh" />
@@ -39,7 +38,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import {
   DataAnalysis,
@@ -55,12 +53,11 @@ import {
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
-const { locale } = useI18n()
 const appStore = useAppStore()
 
 const currentLanguage = computed({
   get: () => appStore.language,
-  set: (val: string) => val,
+  set: (val: string) => appStore.setLanguage(val),
 })
 
 const navItems = [
@@ -78,10 +75,5 @@ const navItems = [
 
 function isActive(path: string): boolean {
   return route.path === path
-}
-
-function onLanguageChange(lang: string) {
-  appStore.setLanguage(lang)
-  locale.value = lang
 }
 </script>

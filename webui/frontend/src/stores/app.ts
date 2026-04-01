@@ -30,9 +30,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // Initialize theme on store creation
-  if (isDark.value) {
-    document.documentElement.classList.add('dark')
-  }
+  setTheme(theme.value)
 
   return {
     theme,

@@ -83,6 +83,7 @@ const overview = ref<OverviewResponse | null>(null)
 const runtimeSeconds = ref(0)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let runtimeTimer: ReturnType<typeof setInterval> | null = null
+let inFlight = false
 
 const formattedUptime = computed(() => {
   const s = runtimeSeconds.value
@@ -99,17 +100,23 @@ const statusType = computed(() => {
 
 const statusText = computed(() => {
   if (!overview.value) return t('overview.status_unknown')
-  const key = `overview.status_${overview.value.system_status}`
-  return t(key)
+  const validStatuses = ['running', 'stopped', 'degraded', 'starting', 'error']
+  const status = overview.value.system_status
+  if (!status || !validStatuses.includes(status)) return t('overview.status_unknown')
+  return t(`overview.status_${status}`)
 })
 
 async function fetchOverview() {
+  if (inFlight) return
+  inFlight = true
   try {
     const res = await getOverview()
     overview.value = res.data
     runtimeSeconds.value = res.data.runtime_duration
   } catch {
     // silent
+  } finally {
+    inFlight = false
   }
 }
 

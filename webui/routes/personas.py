@@ -95,6 +95,7 @@ class PersonasRoutes(Routes):
         if fmt is not None:
             if not isinstance(fmt, str) or not fmt.strip():
                 raise HTTPException(status_code=422, detail="Invalid format value")
+            fmt = fmt.strip()
             if fmt not in ALLOWED_FORMATS:
                 raise HTTPException(status_code=422, detail=f"Format must be one of {ALLOWED_FORMATS}")
         self.lifecycle.persona_manager.update_persona(content)
