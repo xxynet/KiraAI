@@ -101,7 +101,9 @@ function logLevelColor(level: string) {
 function scrollToBottom() {
   if (!autoScroll.value || !logContainerRef.value) return
   nextTick(() => {
-    logContainerRef.value!.scrollTop = logContainerRef.value!.scrollHeight
+    const container = logContainerRef.value
+    if (!container) return
+    container.scrollTop = container.scrollHeight
   })
 }
 
