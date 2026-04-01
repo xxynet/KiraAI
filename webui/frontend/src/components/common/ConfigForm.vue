@@ -72,7 +72,7 @@ function updateField(key: string, value: any) {
   if (field && (field.type === 'object' || field.type === 'array') && typeof value === 'string') {
     try {
       const parsed = JSON.parse(value)
-      if ((field.type === 'object' && typeof parsed === 'object' && !Array.isArray(parsed)) ||
+      if ((field.type === 'object' && typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) ||
           (field.type === 'array' && Array.isArray(parsed))) {
         emit('update:modelValue', { ...props.modelValue, [key]: parsed })
         return

@@ -86,7 +86,9 @@ class PersonasRoutes(Routes):
     async def update_current_persona_content(self, payload: dict):
         if not self.lifecycle or not self.lifecycle.persona_manager:
             raise HTTPException(status_code=404, detail="Persona manager not available")
-        content = payload.get("content", "")
+        if "content" not in payload:
+            raise HTTPException(status_code=422, detail="Missing content field")
+        content = payload["content"]
         if not isinstance(content, str):
             raise HTTPException(status_code=422, detail="Invalid content value")
         fmt = payload.get("format")

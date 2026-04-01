@@ -87,16 +87,16 @@
                 >
                   <span class="text-sm font-mono text-gray-700 dark:text-gray-300">{{ modelId }}</span>
                   <div class="flex gap-2">
-                    <el-button size="small" @click="editModel(modelType, String(modelId), modelConfig)">
+                    <el-button size="small" :disabled="!providerSchema" @click="editModel(modelType, String(modelId), modelConfig)">
                       {{ $t('provider.edit') }}
                     </el-button>
-                    <el-button size="small" type="danger" @click="removeModel(modelType, String(modelId))">
+                    <el-button size="small" type="danger" :disabled="!providerSchema" @click="removeModel(modelType, String(modelId))">
                       {{ $t('provider.delete') }}
                     </el-button>
                   </div>
                 </div>
               </div>
-              <el-button size="small" class="mt-2" @click="openAddModelDialog(modelType)">
+              <el-button size="small" class="mt-2" :disabled="!providerSchema" @click="openAddModelDialog(modelType)">
                 + {{ $t('provider.add_model') }}
               </el-button>
             </el-collapse-item>
@@ -330,6 +330,7 @@ async function handleDelete() {
 }
 
 function openAddModelDialog(modelType: string) {
+  if (!providerSchema.value) return
   modelEditMode.value = false
   originalModelId.value = ''
   modelForm.value = { model_id: '', model_type: modelType, config: {} }
@@ -371,6 +372,7 @@ async function handleAddModel() {
 }
 
 function editModel(modelType: string, modelId: string, config: any) {
+  if (!providerSchema.value) return
   modelEditMode.value = true
   originalModelId.value = modelId
   modelForm.value = { model_id: modelId, model_type: modelType, config: { ...config } }
