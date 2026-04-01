@@ -29,8 +29,8 @@ class PersonaManager:
     def set_format(self, fmt: str):
         if fmt not in ALLOWED_FORMATS:
             raise ValueError(f"Invalid format '{fmt}', allowed: {ALLOWED_FORMATS}")
-        self._format = fmt
         self._format_path.write_text(fmt, encoding="utf-8")
+        self._format = fmt
 
     def get_format(self) -> str:
         return self._format

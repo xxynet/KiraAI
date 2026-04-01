@@ -100,6 +100,12 @@ export default {
     model_add_failed: '添加模型失败',
     model_delete_confirm: '确定要删除此模型吗？',
     model_delete_success: '模型删除成功',
+    load_types_failed: '加载提供商类型失败',
+    fill_required_fields: '请填写必填字段',
+    edit_model: '编辑模型',
+    model_update_success: '模型更新成功',
+    model_update_failed: '更新模型失败',
+    model_delete_failed: '删除模型失败',
   },
   adapter: {
     title: '适配器',
@@ -313,6 +319,7 @@ export default {
     select_model: '选择模型',
     none: '无',
     save_success: '配置保存成功',
+    no_changes: '没有需要保存的修改',
     load_failed: '加载配置失败',
     groups: {
       bot: '机器人设置',

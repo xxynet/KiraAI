@@ -100,6 +100,12 @@ export default {
     model_add_failed: 'Failed to add model',
     model_delete_confirm: 'Are you sure you want to delete this model?',
     model_delete_success: 'Model deleted successfully',
+    load_types_failed: 'Failed to load provider types',
+    fill_required_fields: 'Please fill in required fields',
+    edit_model: 'Edit Model',
+    model_update_success: 'Model updated successfully',
+    model_update_failed: 'Failed to update model',
+    model_delete_failed: 'Failed to delete model',
   },
   adapter: {
     title: 'Adapters',
@@ -313,6 +319,7 @@ export default {
     select_model: 'Select Model',
     none: 'None',
     save_success: 'Configuration saved successfully',
+    no_changes: 'No changes to save',
     load_failed: 'Failed to load configuration',
     groups: {
       bot: 'Bot Settings',
