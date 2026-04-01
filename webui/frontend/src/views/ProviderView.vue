@@ -325,6 +325,9 @@ async function handleDelete() {
     if (selectedId.value === deletingId) {
       selectedId.value = null
       providerSchema.value = null
+      providerConfigValues.value = {}
+      providerModels.value = {}
+      activeModelGroups.value = []
     }
     ElMessage.success(t('provider.delete_success'))
     await loadProviders()

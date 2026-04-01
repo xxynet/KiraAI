@@ -72,7 +72,6 @@
                 v-for="field in getVisibleFields(group)"
                 :key="field.key"
                 class="flex flex-col gap-1"
-                :class="{ 'opacity-50': searchTerm && !fieldMatchesSearch(field) }"
               >
                 <div class="flex items-center justify-between">
                   <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
