@@ -100,3 +100,9 @@ onUnmounted(() => {
   editor = null
 })
 </script>
+
+<style scoped>
+.monaco-container {
+  width: 100%;
+}
+</style>

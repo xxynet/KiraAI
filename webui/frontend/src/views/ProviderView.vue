@@ -201,6 +201,7 @@ async function loadProviders() {
     providerSchema.value = null
     providerConfigValues.value = {}
     providerModels.value = {}
+    activeModelGroups.value = []
   }
 }
 

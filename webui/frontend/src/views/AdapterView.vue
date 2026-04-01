@@ -24,7 +24,7 @@
             <div class="flex items-center gap-2">
               <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ adapter.name }}</h4>
               <el-tag :type="adapter.status === 'active' ? 'success' : 'info'" size="small">
-                {{ $t('adapter.' + adapter.status) }}
+                {{ $t('adapter.' + adapter.status, $t('adapter.unknown')) }}
               </el-tag>
             </div>
             <p class="mt-1 text-sm text-gray-500">{{ adapter.platform }}</p>

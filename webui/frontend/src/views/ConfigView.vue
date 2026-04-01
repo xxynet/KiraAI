@@ -158,7 +158,7 @@
                   v-else
                   :model-value="getFieldValue(field.key)"
                   size="small"
-                  @input="(v: string) => setFieldValue(field.key, v)"
+                  @change="(v: string) => setFieldValue(field.key, v)"
                 />
 
                 <!-- Validation error -->
@@ -562,8 +562,9 @@ async function handleSave() {
 
 // Keyboard shortcuts
 function handleKeydown(e: KeyboardEvent) {
+  const key = e.key.toLowerCase()
   // Ctrl/Cmd+S should always work, even in input fields
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+  if ((e.ctrlKey || e.metaKey) && key === 's') {
     e.preventDefault()
     handleSave()
     return
@@ -572,7 +573,6 @@ function handleKeydown(e: KeyboardEvent) {
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
     return
   }
-  const key = e.key.toLowerCase()
   if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
     e.preventDefault()
     undo()

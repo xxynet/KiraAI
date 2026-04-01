@@ -79,6 +79,8 @@ function applyFilter() {
 
 function clearLogs() {
   allLogs.value = []
+  clearSSE()
+  lastProcessedIndex = 0
 }
 
 function logLevelClass(level: string) {
