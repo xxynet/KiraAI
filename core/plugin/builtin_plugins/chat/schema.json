@@ -1,0 +1,26 @@
+{
+  "waking_words": {
+    "name": "Waking words",
+    "type": "list",
+    "default": [],
+    "hint": "Mark as mentioned if any of the words appeared in the message"
+  },
+  "receive_unmentioned": {
+    "name": "Receive Unmentioned Messages",
+    "type": "switch",
+    "default": false,
+    "hint": "Receive unmentioned messages as context"
+  },
+  "max_unmentioned_messages": {
+    "name": "Max Unmentioned Messages",
+    "type": "integer",
+    "default": 5,
+    "hint": "Max unmentioned message count to be added to buffer as context"
+  },
+  "group_chat_prompt": {
+    "name": "Group Chat Prompt",
+    "type": "markdown",
+    "default": "",
+    "hint": "Extra prompt for AI to better behave in group chat"
+  }
+}

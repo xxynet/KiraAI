@@ -1,8 +1,0 @@
-{
-  "waking_words": {
-    "name": "Waking words",
-    "type": "list",
-    "default": [],
-    "hint": "Mark as mentioned if any of the words appeared in the message"
-  }
-}
