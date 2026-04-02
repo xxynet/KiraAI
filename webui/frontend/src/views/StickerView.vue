@@ -109,7 +109,7 @@ async function loadStickers() {
   try {
     const res = await getStickers()
     stickers.value = Array.isArray(res.data) ? res.data : []
-  } catch { /* silent */ }
+  } catch (e) { console.error('Failed to load stickers:', e) }
 }
 
 function openAddDialog() {

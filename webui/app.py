@@ -120,7 +120,9 @@ class KiraWebUI:
 
 if __name__ == '__main__':
     from core.lifecycle import KiraLifecycle
-    lifecycle = KiraLifecycle()
+    from core.statistics import Statistics
+    stats = Statistics()
+    lifecycle = KiraLifecycle(stats)
     webui = KiraWebUI(lifecycle)
     app = webui.get_app()
     uvicorn.run(

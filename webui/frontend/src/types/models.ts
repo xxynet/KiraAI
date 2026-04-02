@@ -75,6 +75,16 @@ export interface PersonaResponse extends PersonaBase {
   id: string
 }
 
+export interface PersonaContentResponse {
+  content: string
+  format: string
+}
+
+export interface PersonaContentUpdateRequest {
+  content: string
+  format?: string
+}
+
 export interface SettingsRequest {
   language: string
   theme: string

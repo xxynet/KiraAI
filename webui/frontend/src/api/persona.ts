@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { PersonaBase, PersonaResponse } from '@/types'
+import type { PersonaBase, PersonaResponse, PersonaContentResponse, PersonaContentUpdateRequest } from '@/types'
 
 export function getPersonas() {
   return apiClient.get<PersonaResponse[]>('/personas')
@@ -22,9 +22,9 @@ export function deletePersona(id: string) {
 }
 
 export function getCurrentPersonaContent() {
-  return apiClient.get<{ content: string; format: string }>('/personas/current/content')
+  return apiClient.get<PersonaContentResponse>('/personas/current/content')
 }
 
-export function updateCurrentPersonaContent(data: { content: string; format?: string }) {
-  return apiClient.put<{ content: string; format: string }>('/personas/current/content', data)
+export function updateCurrentPersonaContent(data: PersonaContentUpdateRequest) {
+  return apiClient.put<PersonaContentResponse>('/personas/current/content', data)
 }
