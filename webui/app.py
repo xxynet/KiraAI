@@ -71,6 +71,10 @@ class KiraWebUI:
         # Register routes
         self._register_routes()
 
+        # Store app reference on lifecycle so plugin_manager can pick it up
+        # after it is initialized in init_and_run_system()
+        self.lifecycle.webui_app = self.app
+
     def _register_routes(self):
         AuthRoutes(self.app, self.lifecycle, self.access_token, self.templates_dir).register()
         OverviewRoutes(self.app, self.lifecycle).register()

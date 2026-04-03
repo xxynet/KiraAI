@@ -139,6 +139,9 @@ class KiraLifecycle:
         self.plugin_manager = PluginManager(self.plugin_context)
         self.plugin_context.plugin_mgr = self.plugin_manager
         await self.plugin_manager.init()
+        webui_app = getattr(self, "webui_app", None)
+        if webui_app is not None:
+            self.plugin_manager.set_web_app(webui_app)
 
         # ====== init temp folder monitor ======
         temp_folder = get_data_path() / "temp"
