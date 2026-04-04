@@ -36,6 +36,7 @@ from core.llm_client import LLMClient
 from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager
+from .agent.skills_mgr import SkillsManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
@@ -151,6 +152,7 @@ class MessageProcessor:
                  kira_config,
                  llm_api: LLMClient,
                  provider_manager: ProviderManager,
+                 skills_manager: SkillsManager,
                  adapter_manager: AdapterManager,
                  memory_manager: SessionManager,
                  prompt_manager: PromptManager,
@@ -171,6 +173,7 @@ class MessageProcessor:
         self.prompt_manager = prompt_manager
         self.provider_mgr = provider_manager
         self.adapter_mgr = adapter_manager
+        self.skills_manager = skills_manager
 
         # message buffer
         self.session_locks: dict[str, asyncio.Lock] = {}
@@ -435,6 +438,13 @@ class MessageProcessor:
 
         # Generate agent prompt
         agent_prompt_list = self.prompt_manager.get_agent_prompt(chat_env)
+
+        # Inject skills prompt
+        if len(self.skills_manager.skills_info) > 0:
+            for i, p in enumerate(agent_prompt_list):
+                if p.name == "tools":
+                    agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt())
+                    break
 
         # Get default LLM model client
         llm_model = self.provider_mgr.get_default_llm()

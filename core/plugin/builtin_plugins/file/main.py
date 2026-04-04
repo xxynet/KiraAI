@@ -33,7 +33,7 @@ class FilePlugin(BasePlugin):
 
     @tool(
         "read_file",
-        "Read a plain text file (txt, html, py, etc..) in `data/files` or `data/temp`",
+        "Read a plain text file (txt, html, py, etc..) in `data/files` `data/temp` or `data/skills`",
         {
             "type": "object",
             "properties": {
@@ -55,8 +55,8 @@ class FilePlugin(BasePlugin):
         if "../" in path:
             return "Permission denied: Path traversal detected"
 
-        if not path.startswith(("data/files", "data/temp")):
-            return "Permission denied: Path must start with data/files or data/temp"
+        if not path.startswith(("data/files", "data/temp", "data/skills")):
+            return "Permission denied: Path must start with data/files, data/temp or data/skills"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:

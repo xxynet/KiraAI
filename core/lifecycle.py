@@ -17,6 +17,7 @@ from .persona import PersonaManager
 from .provider import ProviderManager
 from .plugin import PluginContext, PluginManager
 from core.agent.mcp_mgr import MCPManager
+from core.agent.skills_mgr import SkillsManager
 from core.config import VERSION
 from core.utils.path_utils import get_data_path
 from core.temp_monitor import AsyncTempMonitor
@@ -58,6 +59,9 @@ class KiraLifecycle:
         self.temp_monitor: Optional[AsyncTempMonitor] = None
 
         self.mcp_manager: Optional[MCPManager] = None
+
+        self.skills_manager: Optional[SkillsManager] = None
+
         self.tasks: list[asyncio.Task] = []
 
     async def schedule_tasks(self):
@@ -106,22 +110,27 @@ class KiraLifecycle:
                                             self.sticker_manager,
                                             self.persona_manager)
 
-        # ====== init message processor ======
-        self.message_processor = MessageProcessor(self.kira_config,
-                                                  self.llm_api,
-                                                  self.provider_manager,
-                                                  self.adapter_manager,
-                                                  self.memory_manager,
-                                                  self.prompt_manager)
-
-        self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
-
         # ====== init MCP manager ======
         try:
             self.mcp_manager = MCPManager(self.llm_api)
             await self.mcp_manager.init_mcp()
         except Exception as e:
             logger.error(f"Failed to initialize MCPManager: {e}")
+
+        # ====== init skills manager ======
+
+        self.skills_manager = SkillsManager()
+
+        # ====== init message processor ======
+        self.message_processor = MessageProcessor(self.kira_config,
+                                                  self.llm_api,
+                                                  self.provider_manager,
+                                                  self.skills_manager,
+                                                  self.adapter_manager,
+                                                  self.memory_manager,
+                                                  self.prompt_manager)
+
+        self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
 
         # ====== init plugin system ======
         self.plugin_context = PluginContext(

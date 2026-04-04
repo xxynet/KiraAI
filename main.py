@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     from core.utils.path_utils import get_data_path
 
-    sub_data_folders = ["config", "memory", "plugins", "files", "sticker"]
+    sub_data_folders = ["config", "memory", "plugins", "files", "sticker", "skills"]
     for folder in sub_data_folders:
         os.makedirs(get_data_path() / folder, exist_ok=True)
 
