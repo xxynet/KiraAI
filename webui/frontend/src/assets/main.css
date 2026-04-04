@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 /* ==================== Global Transitions ==================== */
-* {
+.provider-item,
+.custom-select-trigger {
   transition-property: border-color;
   transition-duration: 150ms;
   transition-timing-function: ease-in-out;
