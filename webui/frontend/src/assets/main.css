@@ -163,10 +163,10 @@ textarea {
 
 /* ==================== Animations ==================== */
 .page-content {
-  animation: fadeIn 0.3s ease-in-out both;
+  animation: fade-in 0.3s ease-in-out both;
 }
 
-@keyframes fadeIn {
+@keyframes fade-in {
   from {
     opacity: 0;
     transform: translateY(10px);
@@ -177,7 +177,7 @@ textarea {
   }
 }
 
-@keyframes slideInRight {
+@keyframes slide-in-right {
   from {
     transform: translateX(100%);
     opacity: 0;
@@ -220,13 +220,13 @@ textarea {
 }
 
 /* ==================== Form Inputs ==================== */
-input:not([type="checkbox"]):not([type="radio"]):hover,
+input:not([type="checkbox"], [type="radio"]):hover,
 select:hover,
 textarea:hover {
   border-color: #3b82f6 !important;
 }
 
-input:not([type="checkbox"]):not([type="radio"]):focus,
+input:not([type="checkbox"], [type="radio"]):focus,
 select:focus,
 textarea:focus {
   outline: none;

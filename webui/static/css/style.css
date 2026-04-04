@@ -140,7 +140,7 @@ button, .nav-item, .custom-select-trigger, .custom-select-option, input, select,
 
 /* Page content animations */
 .page-content {
-    animation: fadeIn 0.3s ease-in-out both;
+    animation: fade-in 0.3s ease-in-out both;
 }
 
 /* Modal open / close animations */
@@ -168,7 +168,7 @@ button, .nav-item, .custom-select-trigger, .custom-select-option, input, select,
     animation: modal-panel-out 0.15s ease both;
 }
 
-@keyframes fadeIn {
+@keyframes fade-in {
     from {
         opacity: 0;
         transform: translateY(10px);
@@ -217,7 +217,7 @@ select.transition-colors {
     transition: all 0.2s ease-in-out;
 }
 
-input:not([type="checkbox"]):not([type="radio"]):hover,
+input:not([type="checkbox"], [type="radio"]):hover,
 input[type="text"]:hover,
 input[type="password"]:hover,
 select:hover,
@@ -227,7 +227,7 @@ textarea:hover,
     border-color: #3b82f6 !important;
 }
 
-input:not([type="checkbox"]):not([type="radio"]):focus,
+input:not([type="checkbox"], [type="radio"]):focus,
 input[type="text"]:focus,
 input[type="password"]:focus,
 select:focus,
@@ -240,7 +240,7 @@ textarea:focus,
 }
 
 /* Ensure focus styles persist on hover */
-input:not([type="checkbox"]):not([type="radio"]):focus:hover,
+input:not([type="checkbox"], [type="radio"]):focus:hover,
 input[type="text"]:focus:hover,
 input[type="password"]:focus:hover,
 select:focus:hover,
@@ -281,7 +281,7 @@ tbody tr:hover {
 }
 
 /* Notification animations */
-@keyframes slideInRight {
+@keyframes slide-in-right {
     from {
         transform: translateX(100%);
         opacity: 0;
@@ -293,7 +293,7 @@ tbody tr:hover {
 }
 
 .fixed.top-4.right-4 {
-    animation: slideInRight 0.3s ease-out;
+    animation: slide-in-right 0.3s ease-out;
 }
 
 /* Status badge animations */
