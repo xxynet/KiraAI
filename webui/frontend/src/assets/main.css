@@ -323,6 +323,7 @@ textarea:focus {
 .dark .text-gray-700 { color: #e5e7eb !important; }
 .dark .text-gray-600 { color: #d1d5db !important; }
 .dark .text-gray-500 { color: #9ca3af !important; }
+.dark .text-gray-400 { color: #8b939f !important; }
 
 /* Dark mode stat card icon backgrounds */
 .dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.2) !important; }
