@@ -104,7 +104,7 @@ const statusType = computed(() => {
 
 const statusText = computed(() => {
   if (!overview.value) return t('overview.status_unknown')
-  const validStatuses = ['running', 'stopped', 'degraded', 'starting', 'error']
+  const validStatuses = ['running', 'stopped', 'degraded', 'starting', 'error', 'failed']
   const status = overview.value.system_status
   if (!status || !validStatuses.includes(status)) return t('overview.status_unknown')
   return t(`overview.status_${status}`)
@@ -117,6 +117,11 @@ async function fetchOverview() {
     const res = await getOverview()
     overview.value = res.data
     runtimeSeconds.value = res.data.runtime_duration
+    // Start or restart the 1s runtime tick after a successful fetch
+    if (runtimeTimer) clearInterval(runtimeTimer)
+    runtimeTimer = setInterval(() => {
+      runtimeSeconds.value++
+    }, 1000)
   } catch {
     // silent
   } finally {
@@ -127,9 +132,6 @@ async function fetchOverview() {
 onMounted(() => {
   fetchOverview()
   refreshTimer = setInterval(fetchOverview, 30000)
-  runtimeTimer = setInterval(() => {
-    runtimeSeconds.value++
-  }, 1000)
 })
 
 onUnmounted(() => {

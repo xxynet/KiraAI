@@ -485,5 +485,6 @@ export default {
     placeholder: '请输入访问令牌',
     submit: '登录',
     error: '登录失败，请检查您的访问令牌。',
+    token_required: '请输入访问令牌。',
   },
 }

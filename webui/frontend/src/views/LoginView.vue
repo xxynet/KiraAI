@@ -14,7 +14,6 @@
             :placeholder="$t('login.placeholder')"
             show-password
             size="large"
-            @keyup.enter="handleLogin"
           />
         </el-form-item>
 
@@ -32,7 +31,7 @@
           size="large"
           class="w-full"
           :loading="loading"
-          @click="handleLogin"
+          native-type="submit"
         >
           {{ $t('login.submit') }}
         </el-button>
@@ -70,12 +69,15 @@ const errorMsg = ref('')
 
 async function handleLogin() {
   if (loading.value) return
-  if (!accessToken.value.trim()) return
+  if (!accessToken.value.trim()) {
+    errorMsg.value = t('login.token_required')
+    return
+  }
   loading.value = true
   errorMsg.value = ''
   try {
     await authStore.login(accessToken.value.trim())
-    router.push('/overview')
+    await router.push('/overview')
   } catch {
     errorMsg.value = t('login.error')
   } finally {

@@ -90,6 +90,9 @@ class AuthRoutes(Routes):
 
     async def serve_spa(self, request: Request = None, full_path: str = ""):
         """Serve Vue SPA index.html for all non-API, non-static routes"""
+        # Only serve the SPA for GET requests that accept HTML (browser navigations)
+        if request and (request.method != "GET" or "text/html" not in request.headers.get("accept", "")):
+            raise HTTPException(status_code=404)
         # Don't serve SPA for static asset paths — let mounts handle them
         if full_path.startswith(("api/", "static/", "sticker/", "assets/", "monacoeditorwork/")):
             raise HTTPException(status_code=404)

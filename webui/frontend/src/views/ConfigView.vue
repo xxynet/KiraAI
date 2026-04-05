@@ -545,12 +545,23 @@ async function handleSave() {
     return
   }
   saving.value = true
+  const snapshot = deepClone(currentData.value)
   try {
-    await saveConfiguration(currentData.value)
-    originalData.value = deepClone(currentData.value)
-    modifiedFields.value.clear()
-    undoStack.value = []
-    redoStack.value = []
+    await saveConfiguration(snapshot)
+    originalData.value = snapshot
+    // Re-check which fields are still modified against the saved snapshot
+    const allFieldKeys = [...messageGroups, ...modelGroups].flatMap(g => g.fields).map(f => f.key)
+    const stillModified = new Set<string>()
+    for (const key of allFieldKeys) {
+      const current = getNestedValue(currentData.value, key)
+      const saved = getNestedValue(snapshot, key)
+      if (current !== saved) stillModified.add(key)
+    }
+    modifiedFields.value = stillModified
+    if (stillModified.size === 0) {
+      undoStack.value = []
+      redoStack.value = []
+    }
     ElMessage.success(t('configuration.save_success'))
   } catch (err) {
     console.error('Save failed:', err)
@@ -566,6 +577,8 @@ function handleKeydown(e: KeyboardEvent) {
   // Ctrl/Cmd+S should always work, even in input fields
   if ((e.ctrlKey || e.metaKey) && key === 's') {
     e.preventDefault()
+    // Blur active element to commit any pending input values (e.g., el-input-number)
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     handleSave()
     return
   }

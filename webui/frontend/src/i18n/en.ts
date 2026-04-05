@@ -485,5 +485,6 @@ export default {
     placeholder: 'Enter access token',
     submit: 'Login',
     error: 'Login failed. Please check your access token.',
+    token_required: 'Please enter an access token.',
   },
 }
