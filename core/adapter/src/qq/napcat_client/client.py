@@ -130,6 +130,7 @@ class NapCatWebSocketClient:
             resp = await self.connect()
             if resp.get("status") == "ok":
                 logger.info("✅ WebSocket 重连成功")
+                self.login_success_event.set()
                 return True
             elif resp.get("status") == "failed":
                 logger.warning(f"WebSocket 重连失败: {resp.get('message')}")

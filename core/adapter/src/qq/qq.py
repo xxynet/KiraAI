@@ -674,11 +674,11 @@ class QQAdapter(IMAdapter):
 
     async def _process_reply_message(self, message_data):
         if not message_data:
-            return MessageChain([])
+            return MessageChain()
 
         data = message_data.get("data") or {}
         if not data:
-            return MessageChain([])
+            return MessageChain()
 
         msg = data
         sender = msg.get("sender", {}).get("nickname", str(msg.get("user_id")))
@@ -695,7 +695,12 @@ class QQAdapter(IMAdapter):
         if not message_data:
             self.logger.warning("处理转发消息时获取到了空消息")
             return
-        messages = message_data.get("data", {}).get("messages", [])
+        messages = message_data.get("data", {})
+        if messages is None:
+            self.logger.warning(f"处理转发消息时出现异常：{message_data}")
+            return
+
+        messages = messages.get("messages", [])
 
         chains = []
         for msg in messages:
