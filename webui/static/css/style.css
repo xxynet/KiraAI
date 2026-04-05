@@ -3,8 +3,8 @@
  * Complements TailwindCSS with additional customizations
  */
 
-/* Smooth transitions for all interactive elements */
-* {
+/* Smooth transitions for border-color on elements not covered by the interactive rule below */
+.provider-item {
     transition-property: border-color;
     transition-duration: 150ms;
     transition-timing-function: ease-in-out;
