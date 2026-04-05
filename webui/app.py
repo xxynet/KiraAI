@@ -119,7 +119,6 @@ class KiraWebUI:
 
 
 if __name__ == '__main__':
-    from core.lifecycle import KiraLifecycle
     from core.statistics import Statistics
     stats = Statistics()
     lifecycle = KiraLifecycle(stats)

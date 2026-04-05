@@ -10,15 +10,15 @@ export function createPersona(data: PersonaBase) {
 }
 
 export function getPersona(id: string) {
-  return apiClient.get<PersonaResponse>(`/personas/${id}`)
+  return apiClient.get<PersonaResponse>(`/personas/${encodeURIComponent(id)}`)
 }
 
 export function updatePersona(id: string, data: Partial<PersonaBase>) {
-  return apiClient.put<PersonaResponse>(`/personas/${id}`, data)
+  return apiClient.put<PersonaResponse>(`/personas/${encodeURIComponent(id)}`, data)
 }
 
 export function deletePersona(id: string) {
-  return apiClient.delete(`/personas/${id}`)
+  return apiClient.delete(`/personas/${encodeURIComponent(id)}`)
 }
 
 export function getCurrentPersonaContent() {

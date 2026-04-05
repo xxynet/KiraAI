@@ -95,7 +95,11 @@ const formattedUptime = computed(() => {
 
 const statusType = computed(() => {
   if (!overview.value) return 'info'
-  return overview.value.system_status === 'running' ? 'success' : 'danger'
+  const s = overview.value.system_status
+  if (s === 'running') return 'success'
+  if (s === 'starting' || s === 'degraded') return 'warning'
+  if (s === 'error' || s === 'failed') return 'danger'
+  return 'info'
 })
 
 const statusText = computed(() => {

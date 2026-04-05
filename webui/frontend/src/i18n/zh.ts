@@ -6,6 +6,8 @@ export default {
   header: {
     logout: '退出登录',
     theme_toggle: '切换主题',
+    switch_to_light: '切换到浅色主题',
+    switch_to_dark: '切换到深色主题',
   },
   nav: {
     overview: '概览',
@@ -40,6 +42,9 @@ export default {
     status_unknown: '未知',
     status_running: '运行中',
     status_stopped: '已停止',
+    status_degraded: '降级运行',
+    status_starting: '启动中',
+    status_error: '错误',
     provider_stats: '提供商：',
   },
   provider: {

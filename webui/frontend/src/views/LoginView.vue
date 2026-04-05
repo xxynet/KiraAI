@@ -40,7 +40,7 @@
 
       <!-- Theme toggle -->
       <div class="mt-6 text-center">
-        <el-button circle @click="toggleTheme">
+        <el-button circle :aria-label="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')" @click="toggleTheme">
           <el-icon>
             <Moon v-if="!appStore.isDark" />
             <Sunny v-else />

@@ -36,7 +36,7 @@
     </div>
 
     <!-- Add Sticker Dialog -->
-    <el-dialog v-model="addDialogVisible" :title="$t('sticker.add')" width="500">
+    <el-dialog v-model="addDialogVisible" :title="$t('sticker.add')" width="500" :destroy-on-close="true">
       <el-form label-position="top">
         <el-form-item :label="$t('sticker.description')">
           <el-input v-model="addForm.desc" />

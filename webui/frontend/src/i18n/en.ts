@@ -6,6 +6,8 @@ export default {
   header: {
     logout: 'Logout',
     theme_toggle: 'Toggle theme',
+    switch_to_light: 'Switch to light theme',
+    switch_to_dark: 'Switch to dark theme',
   },
   nav: {
     overview: 'Overview',
@@ -40,6 +42,9 @@ export default {
     status_unknown: 'Unknown',
     status_running: 'Running',
     status_stopped: 'Stopped',
+    status_degraded: 'Degraded',
+    status_starting: 'Starting',
+    status_error: 'Error',
     provider_stats: 'Providers:',
   },
   provider: {

@@ -11,19 +11,19 @@ export function getPlugins() {
 }
 
 export function getPluginConfig(pluginId: string) {
-  return apiClient.get<{ config: Record<string, any>; schema: Record<string, any> }>(`/plugins/${pluginId}/config`)
+  return apiClient.get<{ config: Record<string, any>; schema: Record<string, any> }>(`/plugins/${encodeURIComponent(pluginId)}/config`)
 }
 
 export function updatePluginConfig(pluginId: string, data: PluginConfigUpdateRequest) {
-  return apiClient.put(`/plugins/${pluginId}/config`, data)
+  return apiClient.put(`/plugins/${encodeURIComponent(pluginId)}/config`, data)
 }
 
 export function togglePlugin(pluginId: string, enabled: boolean) {
-  return apiClient.post(`/plugins/${pluginId}/enabled`, { enabled })
+  return apiClient.post(`/plugins/${encodeURIComponent(pluginId)}/enabled`, { enabled })
 }
 
 export function deletePlugin(pluginId: string) {
-  return apiClient.delete(`/plugins/${pluginId}`)
+  return apiClient.delete(`/plugins/${encodeURIComponent(pluginId)}`)
 }
 
 export function installFromGithub(data: PluginInstallGithubRequest) {
@@ -33,7 +33,5 @@ export function installFromGithub(data: PluginInstallGithubRequest) {
 export function installFromUpload(file: File) {
   const formData = new FormData()
   formData.append('file', file)
-  return apiClient.post<PluginInstallResult>('/plugins/install/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  return apiClient.post<PluginInstallResult>('/plugins/install/upload', formData)
 }

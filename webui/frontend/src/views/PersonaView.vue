@@ -49,6 +49,7 @@ const draftContent = ref('')
 const draftFormat = ref('text')
 const editorVisible = ref(false)
 const saving = ref(false)
+const contentLoaded = ref(false)
 
 const preview = computed(() => {
   if (!content.value) return t('persona.no_content')
@@ -66,6 +67,7 @@ const monacoLanguage = computed(() => {
 })
 
 function openEditor() {
+  if (!contentLoaded.value) return
   draftContent.value = content.value
   draftFormat.value = format.value
   editorVisible.value = true
@@ -76,8 +78,10 @@ async function loadContent() {
     const res = await getCurrentPersonaContent()
     content.value = res.data.content || ''
     format.value = res.data.format || 'text'
+    contentLoaded.value = true
   } catch (err) {
     console.error('loadContent failed:', err)
+    contentLoaded.value = true
   }
 }
 

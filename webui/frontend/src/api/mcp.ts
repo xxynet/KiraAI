@@ -10,21 +10,21 @@ export function createMcpServer(data: McpServerCreateRequest) {
 }
 
 export function getMcpServerConfig(serverName: string) {
-  return apiClient.get<any>(`/mcp-servers/${serverName}/config`)
+  return apiClient.get<any>(`/mcp-servers/${encodeURIComponent(serverName)}/config`)
 }
 
 export function updateMcpServerConfig(serverName: string, data: McpServerConfigUpdateRequest) {
-  return apiClient.put(`/mcp-servers/${serverName}/config`, data)
+  return apiClient.put(`/mcp-servers/${encodeURIComponent(serverName)}/config`, data)
 }
 
 export function updateMcpServer(serverName: string, data: McpServerConfigUpdateRequest) {
-  return apiClient.put(`/mcp-servers/${serverName}`, data)
+  return apiClient.put(`/mcp-servers/${encodeURIComponent(serverName)}`, data)
 }
 
 export function toggleMcpServer(serverName: string, enabled: boolean) {
-  return apiClient.post(`/mcp-servers/${serverName}/enabled`, { enabled })
+  return apiClient.post(`/mcp-servers/${encodeURIComponent(serverName)}/enabled`, { enabled })
 }
 
 export function deleteMcpServer(serverName: string) {
-  return apiClient.delete(`/mcp-servers/${serverName}`)
+  return apiClient.delete(`/mcp-servers/${encodeURIComponent(serverName)}`)
 }

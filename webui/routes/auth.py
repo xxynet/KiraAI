@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from core.config.default import VERSION
 from webui.models import LoginResponse, TokenLoginRequest, VersionResponse
@@ -95,13 +95,11 @@ class AuthRoutes(Routes):
             raise HTTPException(status_code=404)
         spa_index = self.dist_dir / "index.html"
         if spa_index.exists():
-            with open(spa_index, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
+            return FileResponse(spa_index, media_type="text/html")
         # Fallback to legacy templates
         template_path = self.templates_dir / "index.html"
         if template_path.exists():
-            with open(template_path, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
+            return FileResponse(template_path, media_type="text/html")
         return HTMLResponse(content="<h1>Frontend not found. Run npm run build in webui/frontend/</h1>", status_code=404)
 
     async def health(self):

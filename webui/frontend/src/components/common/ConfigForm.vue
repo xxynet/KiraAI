@@ -46,6 +46,18 @@
         />
       </el-select>
 
+      <!-- Object / Array: use local draft to allow intermediate invalid JSON -->
+      <div v-else-if="field.type === 'object' || field.type === 'array'">
+        <el-input
+          :model-value="drafts[key as string]"
+          :placeholder="field.description"
+          :class="{ 'is-error': draftErrors[key as string] }"
+          @input="(val: string) => onDraftInput(key as string, val, field)"
+          @blur="() => onDraftBlur(key as string, field)"
+        />
+        <p v-if="draftErrors[key as string]" class="text-xs text-red-500 mt-1">{{ draftErrors[key as string] }}</p>
+      </div>
+
       <!-- Fallback: text input -->
       <el-input
         v-else
@@ -58,6 +70,8 @@
 </template>
 
 <script setup lang="ts">
+import { reactive, watch } from 'vue'
+
 const props = defineProps<{
   modelValue: Record<string, any>
   schema: Record<string, any>
@@ -67,23 +81,72 @@ const emit = defineEmits<{
   'update:modelValue': [value: Record<string, any>]
 }>()
 
-function updateField(key: string, value: any) {
-  const field = props.schema[key]
-  if (field && (field.type === 'object' || field.type === 'array') && typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value)
-      if ((field.type === 'object' && typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) ||
-          (field.type === 'array' && Array.isArray(parsed))) {
-        emit('update:modelValue', { ...props.modelValue, [key]: parsed })
-        return
-      }
-      // Parsed successfully but type doesn't match — do not write back
-      return
-    } catch {
-      // Invalid JSON — do not write back the raw string
-      return
+const drafts = reactive<Record<string, string>>({})
+const draftErrors = reactive<Record<string, string>>({})
+
+function initDrafts() {
+  for (const key in props.schema) {
+    const field = props.schema[key]
+    if (field.type === 'object' || field.type === 'array') {
+      const val = props.modelValue[key]
+      drafts[key] = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
+      delete draftErrors[key]
     }
   }
+}
+initDrafts()
+
+watch(() => props.modelValue, () => {
+  for (const key in props.schema) {
+    const field = props.schema[key]
+    if (field.type === 'object' || field.type === 'array') {
+      const val = props.modelValue[key]
+      const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
+      try {
+        if (JSON.stringify(JSON.parse(drafts[key])) === JSON.stringify(val)) continue
+      } catch { /* draft is invalid JSON, sync from prop */ }
+      drafts[key] = serialized
+      delete draftErrors[key]
+    }
+  }
+}, { deep: true })
+
+function onDraftInput(key: string, val: string, field: any) {
+  drafts[key] = val
+  delete draftErrors[key]
+  try {
+    const parsed = JSON.parse(val)
+    if (isValidType(parsed, field.type)) {
+      emit('update:modelValue', { ...props.modelValue, [key]: parsed })
+    }
+  } catch {
+    // Allow typing — don't emit until valid
+  }
+}
+
+function onDraftBlur(key: string, field: any) {
+  try {
+    const parsed = JSON.parse(drafts[key])
+    if (!isValidType(parsed, field.type)) {
+      draftErrors[key] = `Expected ${field.type}`
+    } else {
+      delete draftErrors[key]
+      emit('update:modelValue', { ...props.modelValue, [key]: parsed })
+    }
+  } catch {
+    if (drafts[key].trim()) {
+      draftErrors[key] = 'Invalid JSON'
+    }
+  }
+}
+
+function isValidType(parsed: any, type: string): boolean {
+  if (type === 'object') return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+  if (type === 'array') return Array.isArray(parsed)
+  return true
+}
+
+function updateField(key: string, value: any) {
   emit('update:modelValue', { ...props.modelValue, [key]: value })
 }
 </script>

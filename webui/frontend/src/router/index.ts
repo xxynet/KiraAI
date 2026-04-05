@@ -24,6 +24,7 @@ const router = createRouter({
         { path: 'sessions', name: 'Sessions', component: () => import('@/views/SessionView.vue') },
         { path: 'logs', name: 'Logs', component: () => import('@/views/LogsView.vue') },
         { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue') },
+        { path: ':pathMatch(.*)*', redirect: '/overview' },
       ],
     },
   ],

@@ -86,8 +86,11 @@ const saving = ref(false)
 async function loadSessions() {
   try {
     const res = await getSessions()
-    sessions.value = res.data.sessions || res.data || []
-  } catch { /* silent */ }
+    const data = res.data
+    sessions.value = Array.isArray(data.sessions) ? data.sessions : Array.isArray(data) ? data : []
+  } catch (e) {
+    console.error('Failed to load sessions:', e)
+  }
 }
 
 async function editSession(session: SessionItem) {

@@ -493,7 +493,8 @@ function fieldMatchesSearch(field: ConfigField): boolean {
     field.labelFallback.toLowerCase().includes(term) ||
     field.hintFallback.toLowerCase().includes(term) ||
     field.key.toLowerCase().includes(term) ||
-    t(field.labelKey, '').toLowerCase().includes(term)
+    t(field.labelKey, '').toLowerCase().includes(term) ||
+    t(field.hintKey, '').toLowerCase().includes(term)
   )
 }
 

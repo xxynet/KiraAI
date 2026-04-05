@@ -294,9 +294,7 @@ async function handleInstall() {
       const formData = new FormData()
       formData.append('file', uploadFile.value)
       const { default: apiClient } = await import('@/api/client')
-      await apiClient.post('/plugins/install/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      await apiClient.post('/plugins/install/upload', formData)
     }
     installDialogVisible.value = false
     ElMessage.success(t('plugin.install_success'))
@@ -326,11 +324,17 @@ function openMcpCreate() {
   mcpDialogVisible.value = true
 }
 
-function openMcpEdit(server: McpServerItem) {
+async function openMcpEdit(server: McpServerItem) {
   mcpEditMode.value = true
   mcpEditId.value = server.id
   mcpForm.value = { name: server.name, description: server.description || '' }
-  mcpConfigJson.value = JSON.stringify({ type: server.type, url: server.url }, null, 2)
+  try {
+    const { getMcpServerConfig } = await import('@/api/mcp')
+    const res = await getMcpServerConfig(server.id)
+    mcpConfigJson.value = JSON.stringify(res.data, null, 2)
+  } catch {
+    mcpConfigJson.value = JSON.stringify({ type: server.type, url: server.url }, null, 2)
+  }
   mcpDialogVisible.value = true
 }
 
