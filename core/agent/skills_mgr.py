@@ -81,10 +81,12 @@ class SkillsManager:
 
         p.content += "".join((
             "You have **Skills**,reusable instruction bundles stored\n",
-            "Use a skill when the user names it explicitly or the situation clearly ",
-            "matches the skill description\nBefore executing a skill, you MUST read its ",
-            "`SKILL.md` file first via `read_file` tool\ne.g. if the path is ",
-            "`data/skills/skill_name`, read `data/skills/skill_name/SKILL.md`\n",
+            "Before replying: scan description entries of the skills below.\n",
+            "- If exactly one skill clearly applies: read its SKILL.md with `read_file` tool, then follow it.\n",
+            "  e.g. if the path is `data/skills/skill_name`, read `data/skills/skill_name/SKILL.md`\n",
+            "- If multiple could apply: choose the most specific one, then read/follow it.\n",
+            "- If none clearly apply: do not read any SKILL.md.\n",
+            "Constraints: never read more than one skill up front; only read after selecting."
             "DO NOT read a specific skill file if the user just asked what skills you have",
             "Available skills are listed below:\n"
         ))

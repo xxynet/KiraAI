@@ -194,7 +194,6 @@ def build_file_tag():
         files = os.listdir(file_dir)
         return files
 
-
     class FileTag(BaseTag):
         name = "file"
         description = f"<file type=\"image/record/video/file\">file_string</file> # send a file (do not put any other tags in the msg tag which the file tag is in), file_string could be a file url, absolute file path or relative file path. Use `type=` to specify the file type for platforms to parse, e.g. for audios, set `type` as `record` to send as voice message, `file` to send as audio file. defaults to `file`. Files specifically listed below could be sent with `data/files/` prefix: {_get_relative_file_paths()}"
