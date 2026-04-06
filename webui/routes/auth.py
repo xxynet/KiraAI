@@ -24,11 +24,11 @@ async def require_auth(authorization: Optional[str] = Header(None)) -> str:
 
 
 class AuthRoutes(Routes):
-    def __init__(self, app, lifecycle, access_token: str, templates_dir: Path):
+    def __init__(self, app, lifecycle, access_token: str, templates_dir: Path, dist_dir: Path):
         super().__init__(app, lifecycle)
         self.access_token = access_token
         self.templates_dir = templates_dir
-        self.dist_dir = Path(__file__).parent.parent / "static" / "dist"
+        self.dist_dir = dist_dir
 
     def get_routes(self):
         return [
@@ -89,7 +89,14 @@ class AuthRoutes(Routes):
         )
 
     async def serve_spa(self, request: Request = None, full_path: str = ""):
-        """Serve Vue SPA index.html for all non-API, non-static routes"""
+        """Serve Vue SPA index.html for all non-API, non-static routes.
+
+        The SPA is always served from a single index.html entry point (not
+        per-route templates like login.html).  When a production build exists
+        under dist_dir (webui/static/dist), that build is served.  Otherwise,
+        templates_dir/index.html is served as a legacy fallback for
+        environments where the Vue frontend has not been built yet.
+        """
         # Only serve the SPA for GET requests that accept HTML (browser navigations)
         if request and (request.method != "GET" or "text/html" not in request.headers.get("accept", "")):
             raise HTTPException(status_code=404)
@@ -99,7 +106,7 @@ class AuthRoutes(Routes):
         spa_index = self.dist_dir / "index.html"
         if spa_index.exists():
             return FileResponse(spa_index, media_type="text/html")
-        # Fallback to legacy templates
+        # Fallback to legacy templates (templates_dir/index.html)
         template_path = self.templates_dir / "index.html"
         if template_path.exists():
             return FileResponse(template_path, media_type="text/html")

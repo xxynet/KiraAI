@@ -85,7 +85,7 @@ class KiraWebUI:
         self._register_routes()
 
     def _register_routes(self):
-        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.templates_dir)
+        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.templates_dir, self.dist_dir)
         auth_routes.register()
         OverviewRoutes(self.app, self.lifecycle).register()
         LogsRoutes(self.app, self.lifecycle).register()
