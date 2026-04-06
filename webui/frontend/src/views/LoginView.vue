@@ -69,14 +69,15 @@ const errorMsg = ref('')
 
 async function handleLogin() {
   if (loading.value) return
-  if (!accessToken.value.trim()) {
+  const trimmedToken = accessToken.value.trim()
+  if (!trimmedToken) {
     errorMsg.value = t('login.token_required')
     return
   }
   loading.value = true
   errorMsg.value = ''
   try {
-    await authStore.login(accessToken.value.trim())
+    await authStore.login(trimmedToken)
     await router.push('/overview')
   } catch {
     errorMsg.value = t('login.error')
