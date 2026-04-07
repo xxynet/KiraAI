@@ -89,6 +89,7 @@ class KiraMessageEvent:
         )
 
     def get_log_info(self):
+        self.message_repr = " ".join(ele.repr for ele in self.message.chain)
         if self.is_group_message():
             return f"[{self.adapter.name} | {self.message.message_id}] [{self.message.group.group_name} | {self.message.sender.nickname}]: {self.message_repr}"
         else:
@@ -273,6 +274,9 @@ class MessageChain:
             self.message_list.extend(other)
             return self
         return NotImplemented
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.message_list})"
 
     def append(self, item):
         self.message_list.append(item)

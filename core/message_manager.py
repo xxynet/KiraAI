@@ -352,7 +352,6 @@ class MessageProcessor:
 
     async def handle_im_message(self, event: KiraMessageEvent):
         """process im message"""
-        logger.info(event.get_log_info())
 
         # decorating event info
 
@@ -365,7 +364,12 @@ class MessageProcessor:
         for handler in im_handlers:
             await handler.exec_handler(event)
             if event.is_stopped:
+                # Print event
+                logger.info(event.get_log_info())
                 return
+
+        # Print event
+        logger.info(event.get_log_info())
 
         # Check if message chain is valid, filter out unprocessed notice messages
         if event.message.chain.is_empty():

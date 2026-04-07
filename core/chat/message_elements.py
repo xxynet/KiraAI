@@ -68,6 +68,9 @@ class BaseMessageElement(ABC):
         """Returns a string to display in logs"""
         pass
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.repr})"
+
 
 class Text(BaseMessageElement):
     type = ElementType.Text
