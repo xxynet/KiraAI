@@ -47,5 +47,17 @@
     "type": "list",
     "default": [],
     "hint": "私聊黑名单，当 permission mode 为 deny list 时起作用"
+  },
+  "debug_mode": {
+    "name": "调试模式",
+    "type": "switch",
+    "default": false,
+    "hint": "开启时，会以 DEBUG 等级打印收到的原始消息"
+  },
+  "debug_mode_list": {
+    "name": "调试模式会话",
+    "type": "list",
+    "default": [],
+    "hint": "要开启调试模式的会话，默认为所有接收消息的会话，例：\n私聊：dm:xxxx\n群聊：gm:xxxx"
   }
 }

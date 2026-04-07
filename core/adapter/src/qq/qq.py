@@ -18,7 +18,6 @@ from core.chat.message_elements import (
     Emoji,
     Sticker,
     Record,
-    Notice,
     Poke,
     File,
     Video
@@ -54,6 +53,8 @@ class QQAdapter(IMAdapter):
         self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file", "video", "forward"]
         self.bot: NapCatWebSocketClient = NapCatWebSocketClient()
         self.logger = get_logger(info.name, "blue")
+        self.debug_mode = self.config.get("debug_mode", False)
+        self.debug_mode_list = self.config.get("debug_mode_list", [])
 
     @staticmethod
     def _load_dict(path: str) -> Dict[str, Any]:
@@ -394,7 +395,7 @@ class QQAdapter(IMAdapter):
             msg_res.err = str(e)
         return msg_res
 
-    async def process_incoming_message(self, msg):
+    async def process_incoming_message(self, msg) -> MessageChain:
         """把QQ平台消息转换为项目通用消息格式"""
         message_type = msg.get("message_type")
         group_id = msg.get("group_id")
@@ -489,84 +490,74 @@ class QQAdapter(IMAdapter):
         target_id = msg.get("target_id")
         group_id = msg.get("group_id")
 
+        if group_id and str(group_id) not in self.group_list:
+            return
+
+        if self.debug_mode:
+            if self.debug_mode_list:
+                if f"gm:{group_id}" in self.debug_mode_list:
+                    self.logger.debug(msg)
+                elif not group_id and f"dm:{user_id}" in self.debug_mode_list:
+                    self.logger.debug(msg)
+            else:
+                self.logger.debug(msg)
+
         group_obj = None
+        is_mentioned = False
 
-        if notice_type == "notify" and sub_type == "poke" and self_id == target_id:
-            notice_str = f"[Poke 用户{user_id}{msg['raw_info'][2]['txt']}你{msg['raw_info'][4]['txt']}]"
-            message_list = [Notice(notice_str)]
-
-            if group_id:
-                if str(group_id) not in self.group_list:
-                    return
-
-                group_info = await self.bot.get_group_info(group_id)
-                group_name = group_info.get("data").get("group_name")
-
-                group_obj = Group(
-                    group_id=str(group_id),
-                    group_name=group_name
-                )
-            else:
-                if str(user_id) not in self.user_list:
-                    return
-
-        elif notice_type == "group_ban" and self_id == user_id:
-            ban_duration = msg["duration"]
-            ban_operator_id = msg["operator_id"]
-            ban_group_id = msg["group_id"]
-            if sub_type == "ban":
-                notice_str = f"[System 用户{ban_operator_id}禁言了你{ban_duration}秒]"
-                message_list = [Notice(notice_str)]
-                group_info = await self.bot.get_group_info(group_id)
-                group_name = group_info.get("data").get("group_name")
-
-                group_obj = Group(
-                    group_id=str(group_id),
-                    group_name=group_name
-                )
-
-                if str(group_id) not in self.group_list:
-                    return
-
-            elif sub_type == "lift_ban":  # 人为解除禁言
-                # ban_duration 永远是0，invalid
-                notice_str = f"[System 你之前被禁言了，用户{ban_operator_id}解除了你的禁言]"
-                message_list = [Notice(notice_str)]
-                group_info = await self.bot.get_group_info(group_id)
-                group_name = group_info.get("data").get("group_name")
-
-                group_obj = Group(
-                    group_id=str(group_id),
-                    group_name=group_name
-                )
-
-                if str(group_id) not in self.group_list:
-                    return
-
-            else:
-                return
-            # print(ban_duration)
-            # print(ban_operator_id)
-            # print(ban_group_id)
-        elif notice_type == "group_increase":
-            # and msg["sub_type"] == "approve"
-            if not group_id:
-                return
-
-            notice_str = f"[System 用户{user_id}加入了群聊]"
-            message_list = [Notice(notice_str)]
+        if group_id:
             group_info = await self.bot.get_group_info(group_id)
             group_name = group_info.get("data").get("group_name")
-
             group_obj = Group(
                 group_id=str(group_id),
                 group_name=group_name
             )
 
-            if str(group_id) not in self.group_list:
+        message_chain = MessageChain()
+
+        # ---------- 戳一戳 ----------
+
+        if notice_type == "notify" and sub_type == "poke" and self_id == target_id:
+            # TODO 需要处理 deny_list
+            if not group_id and str(user_id) not in self.user_list:
                 return
+
+            is_mentioned = True
+
+            notice_str = f"[Poke 用户{user_id}{msg['raw_info'][2]['txt']}你{msg['raw_info'][4]['txt']}]"
+            message_chain.text(notice_str)
+
+        # ---------- 群禁言 ---------
+
+        elif notice_type == "group_ban" and self_id == user_id:
+            is_mentioned = True
+
+            ban_duration = msg.get("duration")
+            ban_operator_id = msg.get("operator_id")
+            ban_group_id = msg.get("group_id")
+            if sub_type == "ban":
+                message_chain.text(f"[System 用户{ban_operator_id}禁言了你{ban_duration}秒]")
+
+            elif sub_type == "lift_ban":  # 人为解除禁言
+                # ban_duration 永远是0，invalid
+                message_chain.text(f"[System 你之前被禁言了，用户{ban_operator_id}解除了你的禁言]")
+            else:
+                return
+
+        # --------- 新成员进群 ---------
+
+        elif notice_type == "group_increase":
+            # and msg["sub_type"] == "approve"
+            if not group_id:
+                return
+
+            is_mentioned = True
+
+            message_chain.text(f"[System 用户{user_id}加入了群聊]")
         else:
-            return
+            pass
+
+        # ---------- 构造消息事件 ---------
 
         message_obj = KiraMessageEvent(
             adapter=self.info,
@@ -580,9 +571,10 @@ class QQAdapter(IMAdapter):
                     nickname="None"
                 ),
                 is_notice=True,
-                is_mentioned=True,
+                is_mentioned=is_mentioned,
                 self_id=str(self_id),
-                chain=message_list,
+                chain=message_chain,
+                raw_message=msg
             ),
             timestamp=int(msg.get("time") or time.time())
         )
@@ -591,13 +583,23 @@ class QQAdapter(IMAdapter):
     async def _on_group_message(self, msg):
         should_process = False
 
-        if self.permission_mode == "allow_list" and str(msg.get("group_id")) in self.group_list:
+        group_id = str(msg.get("group_id"))
+        user_id = str(msg.get("user_id"))
+
+        if self.permission_mode == "allow_list" and group_id in self.group_list:
             should_process = True
-        elif self.permission_mode == "deny_list" and str(msg.get("group_id")) not in self.group_list:
+        elif self.permission_mode == "deny_list" and group_id not in self.group_list:
             should_process = True
 
         if not should_process:
             return
+
+        if self.debug_mode:
+            if self.debug_mode_list:
+                if f"gm:{group_id}" in self.debug_mode_list:
+                    self.logger.debug(msg)
+            else:
+                self.logger.debug(msg)
 
         is_mentioned = False
 
@@ -623,18 +625,18 @@ class QQAdapter(IMAdapter):
             message=KiraIMMessage(
                 timestamp=int(msg.get("time") or time.time()),
                 group=Group(
-                    group_id=str(msg.get("group_id")),
+                    group_id=group_id,
                     group_name=group_name
                 ),
                 sender=User(
-                    user_id=str(msg.get("user_id")),
+                    user_id=user_id,
                     nickname=msg.get("sender").get("nickname")
                 ),
                 is_mentioned=is_mentioned,
                 message_id=str(msg.get("message_id")),
                 self_id=str(msg.get("self_id")),
                 chain=message_chain,
-                extra=msg
+                raw_message=msg
             ),
             timestamp=int(msg.get("time") or time.time())
         )
@@ -643,13 +645,22 @@ class QQAdapter(IMAdapter):
     async def _on_private_message(self, msg: dict):
         should_process = False
 
-        if self.permission_mode == "allow_list" and str(msg.get("user_id")) in self.user_list:
+        user_id = str(msg.get("user_id"))
+
+        if self.permission_mode == "allow_list" and user_id in self.user_list:
             should_process = True
-        elif self.permission_mode == "deny_list" and str(msg.get("user_id")) not in self.user_list:
+        elif self.permission_mode == "deny_list" and user_id not in self.user_list:
             should_process = True
 
         if not should_process:
             return
+
+        if self.debug_mode:
+            if self.debug_mode_list:
+                if f"dm:{user_id}" in self.debug_mode_list:
+                    self.logger.debug(msg)
+            else:
+                self.logger.debug(msg)
 
         message_chain = await self.process_incoming_message(msg)
 
@@ -659,14 +670,14 @@ class QQAdapter(IMAdapter):
             message=KiraIMMessage(
                 timestamp=int(msg.get("time") or time.time()),
                 sender=User(
-                    user_id=str(msg.get("user_id")),
+                    user_id=user_id,
                     nickname=msg.get("sender").get("nickname")
                 ),
                 message_id=str(msg.get("message_id")),
                 is_mentioned=True,
                 self_id=str(msg.get("self_id")),
                 chain=message_chain,
-                extra=msg
+                raw_message=msg
             ),
             timestamp=int(msg.get("time") or time.time())
         )
@@ -687,9 +698,9 @@ class QQAdapter(IMAdapter):
         time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
 
         inner_elements_chain = await self.process_incoming_message(msg)
-        elements = [Text(f"[{time_str}] {sender}: ")]
-        elements.extend(inner_elements_chain.message_list)
-        return MessageChain(elements)
+        elements_chain = MessageChain().text(f"[{time_str}] {sender}: ")
+        elements_chain.extend(inner_elements_chain)
+        return elements_chain
 
     async def _process_forward_message(self, message_data):
         if not message_data:
@@ -709,37 +720,12 @@ class QQAdapter(IMAdapter):
             dt = datetime.fromtimestamp(ts)  # 转换成可读时间
             time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
 
-            elements = [Text(f"[{time_str}] {sender}: ")]
+            elements_chain = MessageChain().text(f"[{time_str}] {sender}: ")
             inner_elements_chain = await self.process_incoming_message(msg)
-            elements.extend(inner_elements_chain.message_list)
-            chains.append(MessageChain(elements))
+            elements_chain.extend(inner_elements_chain)
+            chains.append(elements_chain)
 
         return chains
-        # 组合消息内容
-        # result = []
-        # for msg in messages:
-        #     parts = []
-        #     for seg in msg.get("message", []):
-        #         t = seg.get("type")
-        #         d = seg.get("data", {})
-        #         if t == "text":
-        #             parts.append(d.get("text", ""))
-        #         elif t == "at":
-        #             parts.append(f"[At {d.get('qq')}]")
-        #         elif t == "image":
-        #             img_desc = await self.llm_api.desc_img(d.get('url', ''))
-        #             parts.append(f"[Image {img_desc}]")
-        #         elif t == "face":
-        #             parts.append(f"[Emoji {d.get('id')}]")
-        #         elif t == "reply":
-        #             parts.append(f"[Reply {d.get('id')}]")
-        #         else:
-        #             parts.append(f"[{t}]")
-        #
-        #     content = " ".join(parts).strip()
-        #     result.append(f"{sender}  [{time_str}]\n{content}\n")
-        #
-        # return "\n".join(result)
 
     async def _process_outgoing_message(self, message: MessageChain):
         """将通用消息格式转换为QQ消息格式"""
@@ -770,9 +756,6 @@ class QQAdapter(IMAdapter):
             elif isinstance(ele, Record):
                 record_base64 = await ele.to_base64()
                 message_chain_elements.append(QQMessageType.Record(f"base64://{record_base64}"))
-            elif isinstance(ele, Notice):
-                # 可以实现定时主动消息等
-                pass
             elif isinstance(ele, Poke):
                 message_chain_elements.append(ele)
             elif isinstance(ele, File):

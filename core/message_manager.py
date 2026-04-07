@@ -366,6 +366,11 @@ class MessageProcessor:
             await handler.exec_handler(event)
             if event.is_stopped:
                 return
+
+        # Check if message chain is valid, filter out unprocessed notice messages
+        if event.message.chain.is_empty():
+            return
+
         if event.process_strategy == "discard":
             return
 

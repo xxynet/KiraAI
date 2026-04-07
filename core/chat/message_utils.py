@@ -36,8 +36,7 @@ class KiraIMMessage:
     message_id: str
     self_id: str
 
-    # TODO unify to MessageChain
-    chain: Union[list[BaseMessageElement], MessageChain]
+    chain: MessageChain
 
     timestamp: int
     sender: User = None
@@ -45,6 +44,7 @@ class KiraIMMessage:
     group: Group = None
     is_notice: bool = False
     is_mentioned: Optional[bool] = None
+    raw_message: Optional[dict] = None
     extra: Optional[dict] = None
     message_str: Optional[str] = field(default=None, init=False)
     message_repr: Optional[str] = field(default=None, init=False)
@@ -74,7 +74,6 @@ class KiraMessageEvent:
     message: KiraIMMessage
     _process_strategy: Literal["trigger", "buffer", "discard", "flush"] = "discard"
     adapter: AdapterInfo = None
-    extra: Optional[dict] = None
     message_str: Optional[str] = field(default=None, init=False)
     message_repr: Optional[str] = field(default=None, init=False)
     _is_stopped: bool = False
@@ -98,6 +97,14 @@ class KiraMessageEvent:
     def is_group_message(self) -> bool:
         """judge whether it's a group message"""
         return self.message.group is not None
+
+    @property
+    def extra(self):
+        return self.message.extra
+
+    @property
+    def raw_message(self):
+        return self.message.raw_message
 
     @property
     def is_mentioned(self):
@@ -231,8 +238,47 @@ class MessageChain:
     def __getitem__(self, index):
         return self.message_list[index]
 
+    def __setitem__(self, index, value):
+        self.message_list[index] = value
+
     def __delitem__(self, index):
         del self.message_list[index]
+
+    def __bool__(self):
+        return bool(self.message_list)
+
+    def __contains__(self, item):
+        return item in self.message_list
+
+    def __copy__(self):
+        return MessageChain(self.message_list.copy())
+
+    def __add__(self, other):
+        if isinstance(other, MessageChain):
+            return MessageChain(self.message_list + other.message_list)
+        if isinstance(other, BaseMessageElement):
+            return MessageChain(self.message_list + [other])
+        if isinstance(other, list):
+            return MessageChain(self.message_list + other)
+        return NotImplemented
+
+    def __iadd__(self, other):
+        if isinstance(other, MessageChain):
+            self.message_list.extend(other.message_list)
+            return self
+        if isinstance(other, BaseMessageElement):
+            self.message_list.append(other)
+            return self
+        if isinstance(other, list):
+            self.message_list.extend(other)
+            return self
+        return NotImplemented
+
+    def append(self, item):
+        self.message_list.append(item)
+
+    def extend(self, iterable):
+        self.message_list.extend(iterable)
 
     def is_empty(self) -> bool:
         return len(self.message_list) == 0

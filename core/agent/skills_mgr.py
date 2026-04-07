@@ -86,7 +86,9 @@ class SkillsManager:
             "  e.g. if the path is `data/skills/skill_name`, read `data/skills/skill_name/SKILL.md`\n",
             "- If multiple could apply: choose the most specific one, then read/follow it.\n",
             "- If none clearly apply: do not read any SKILL.md.\n",
-            "Constraints: never read more than one skill up front; only read after selecting."
+            "Constraints: never read more than one skill up front; only read after selecting.\n",
+            "If you need to store files while executing skills, store to `data/files` for persistent ",
+            "storage, `data/temp` for temporary storage, DO NOT directly store to current working directory\n",
             "DO NOT read a specific skill file if the user just asked what skills you have",
             "Available skills are listed below:\n"
         ))
