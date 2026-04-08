@@ -2,6 +2,10 @@ import asyncio
 import json
 import os
 import uuid
+import inspect
+
+from typing import Optional, Union, Any, Callable
+from copy import deepcopy
 
 from core.logging_manager import get_logger
 from core.utils.common_utils import desc_img
@@ -9,22 +13,41 @@ from core.utils.path_utils import get_data_path
 
 logger = get_logger("sticker", "orange")
 
-_sticker_path: str = f"{get_data_path()}/config/sticker.json"
-_sticker_folder: str = f"{get_data_path()}/sticker"
-
 
 class StickerManager:
     def __init__(self, provider_mgr):
         self.provider_mgr = provider_mgr
-        self.sticker_path = _sticker_path
-        self.sticker_folder = _sticker_folder
+        self.sticker_path = f"{get_data_path()}/config/sticker.json"
+        self.sticker_folder = f"{get_data_path()}/sticker"
         self.sticker_dict = {}
         self.sticker_paths: list = []
         self.sticker_index: int = 0
 
-        self.init_sticker_dict()
+        # Callbacks
+        self._on_registered_callbacks: list[Callable] = []
 
-    def init_sticker_dict(self):
+        self._init_sticker_dict()
+
+    def on_sticker_registered(self, callback: Callable):
+        """注册回调，支持同步和 async 函数。
+
+        Callback signature: callback(sticker_id: str, sticker_info: dict)
+        sticker_info contains desc / path
+        """
+        self._on_registered_callbacks.append(callback)
+        return callback
+
+    async def _fire_registered(self, sid: str, info: dict):
+        for cb in self._on_registered_callbacks:
+            try:
+                if inspect.iscoroutinefunction(cb):
+                    await cb(sid, info)
+                else:
+                    cb(sid, info)
+            except Exception as e:
+                logger.error(f"Sticker registered callback error: {e}")
+
+    def _init_sticker_dict(self):
         try:
             if not os.path.exists(self.sticker_folder):
                 os.makedirs(self.sticker_folder)
@@ -56,15 +79,19 @@ class StickerManager:
             logger.error(f"Error loading emoji dict from {self.sticker_path}: {e}")
             self.sticker_dict = {}
 
-    def register_sticker(self, filename, desc):
+    def register_sticker(self, filename: str, desc: str):
         """save sticker info to self.sticker_dict"""
         self.sticker_index += 1
-        self.sticker_dict[str(self.sticker_index)] = {
+        sid = str(self.sticker_index)
+        self.sticker_dict[sid] = {
             "desc": desc,
-            "path": filename
+            "path": filename,
+            "extra": {}
         }
         self.sticker_paths.append(filename)
         self.save_sticker_dict()
+
+        asyncio.create_task(self._fire_registered(sid, {"desc": desc, "path": filename}))
 
     def save_sticker_dict(self):
         try:
@@ -103,8 +130,26 @@ class StickerManager:
                     logger.error(f"Error deleting sticker file {file_path}: {e}")
         self.save_sticker_dict()
 
-    def add_sticker_extra(self, **kwargs):
-        ...
+    def set_sticker_extra(self, sticker_id: str, key: Union[int, str], value: Any):
+        sticker_info_dict = self.sticker_dict.get(sticker_id)
+        if sticker_info_dict:
+            if key is None:
+                return False
+            sticker_info_dict.setdefault("extra", {})[key] = value
+            return True
+        return False
+
+    def get_sticker_extra(self, sticker_id: str, key: Optional[Union[int, str]] = None):
+        """Get extra info of a sticker, return all extra info if key is not given"""
+        sticker_info_dict = self.sticker_dict.get(sticker_id)
+        if sticker_info_dict is None:
+            raise KeyError(sticker_id)
+
+        if key is None:
+            return deepcopy(sticker_info_dict.get("extra", {}))
+
+        value = sticker_info_dict.get("extra", {}).get(key)
+        return deepcopy(value)
 
     async def add_sticker(self, file_bytes: bytes, original_filename: str, sticker_id: str | None = None, desc: str | None = None):
         if not original_filename:
@@ -175,17 +220,14 @@ class StickerManager:
                     logger.info(f"Registered sticker: {sticker_description}")
                     self.register_sticker(sticker_file, sticker_description)
 
-            if is_found:
-                with open(self.sticker_path, "w", encoding="utf-8") as f:
-                    f.write(json.dumps(self.sticker_dict, indent=4, ensure_ascii=False))
-            else:
+            if not is_found:
                 logger.info("All stickers are already registered")
 
             # TODO customize interval in config file
             await asyncio.sleep(120 * 60)
 
     async def get_sticker_description(self, sticker_file):
-        sticker_path = os.path.join(_sticker_folder, sticker_file)
+        sticker_path = os.path.join(self.sticker_folder, sticker_file)
 
         # img_b64 = await image_to_base64(sticker_path)
         from core.chat.message_elements import Image

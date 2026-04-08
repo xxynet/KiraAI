@@ -92,11 +92,15 @@ class AgentExecutor:
         request = ctx.request
         llm_model = ctx.llm_model
 
+        # Session Info
+        sid = ctx.event.sid
+
         provider_name = llm_model.model.provider_name
         model_id = llm_model.model.model_id
-        llm_logger.info(f"Running agent using {model_id} ({provider_name})")
+        llm_logger.info(f"[{sid}] Running agent using {model_id} ({provider_name})")
 
-        for step_index in range(max_steps):
+        for step in range(max_steps):
+            step_index = step + 1
             llm_resp = await llm_model.chat(request)
 
             if not llm_resp:
@@ -117,7 +121,7 @@ class AgentExecutor:
             llm_resp.agent_step_index = step_index
             llm_logger.debug(llm_resp)
             llm_logger.info(
-                f"Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}"
+                f"[{sid}] Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}, step: {step_index}/{max_steps}"
             )
 
             llm_resp_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_RESPONSE)
@@ -176,7 +180,7 @@ class AgentExecutor:
             request.messages.extend(llm_resp.tool_results)
             ctx.new_memory.tool(llm_resp.tool_results)
 
-            is_final = step_index == max_steps - 1
+            is_final = step_index == max_steps
             yield AgentStepResult(
                 state="success",
                 step_index=step_index,
