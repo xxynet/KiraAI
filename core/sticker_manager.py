@@ -5,11 +5,12 @@ import uuid
 
 from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
+from core.utils.path_utils import get_data_path
 
 logger = get_logger("sticker", "orange")
 
-_sticker_path: str = "data/config/sticker.json"
-_sticker_folder: str = "data/sticker"
+_sticker_path: str = f"{get_data_path()}/config/sticker.json"
+_sticker_folder: str = f"{get_data_path()}/sticker"
 
 
 class StickerManager:

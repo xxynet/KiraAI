@@ -44,43 +44,23 @@ class IMAdapter(ABC):
         self.permission_mode = _permission_mode
 
         if _permission_mode == "allow_list":
-            group_allow_list_str = self.config.get("group_allow_list", "")
-            user_allow_list_str = self.config.get("user_allow_list", "")
+            group_allow_list = self.config.get("group_allow_list", "")
+            user_allow_list = self.config.get("user_allow_list", "")
 
-            if group_allow_list_str:
-                if isinstance(group_allow_list_str, list):
-                    self.group_list = group_allow_list_str
-                else:
-                    self.group_list = self._parse_id_list(group_allow_list_str)
-            if user_allow_list_str:
-                if isinstance(user_allow_list_str, list):
-                    self.user_list = user_allow_list_str
-                else:
-                    self.user_list = self._parse_id_list(user_allow_list_str)
+            if group_allow_list and isinstance(group_allow_list, list):
+                self.group_list = group_allow_list
+            if user_allow_list and isinstance(user_allow_list, list):
+                self.user_list = user_allow_list
         elif _permission_mode == "deny_list":
-            group_deny_list_str = self.config.get("group_deny_list", "")
-            user_deny_list_str = self.config.get("user_deny_list", "")
+            group_deny_list = self.config.get("group_deny_list", "")
+            user_deny_list = self.config.get("user_deny_list", "")
 
-            if group_deny_list_str:
-                if isinstance(group_deny_list_str, list):
-                    self.group_list = group_deny_list_str
-                else:
-                    self.group_list = self._parse_id_list(group_deny_list_str)
-            if user_deny_list_str:
-                if isinstance(user_deny_list_str, list):
-                    self.user_list = user_deny_list_str
-                else:
-                    self.user_list = self._parse_id_list(user_deny_list_str)
+            if group_deny_list and isinstance(group_deny_list, list):
+                self.group_list = group_deny_list
+            if user_deny_list and isinstance(user_deny_list, list):
+                self.user_list = user_deny_list
         else:
             self.permission_mode = "allow_list"
-
-    @staticmethod
-    def _parse_id_list(csv: str) -> List[Union[int, str]]:
-        try:
-            return [item.strip() for item in csv.split(",") if item.strip()]
-        except Exception as e:
-            print(f"error occurred while parsing id list: {str(e)}")
-            return []
 
     @abstractmethod
     async def start(self):

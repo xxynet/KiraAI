@@ -490,8 +490,12 @@ class QQAdapter(IMAdapter):
         target_id = msg.get("target_id")
         group_id = msg.get("group_id")
 
-        if group_id and str(group_id) not in self.group_list:
-            return
+        if group_id:
+            if (self.permission_mode == "allow_list"
+                    and str(group_id) not in self.group_list
+                    or self.permission_mode == "deny_list"
+                    and str(group_id) in self.group_list):
+                return
 
         timestamp = int(msg.get("time") or time.time())
 
@@ -508,56 +512,40 @@ class QQAdapter(IMAdapter):
         is_mentioned = False
 
         if group_id:
-            group_info = await self.bot.get_group_info(group_id)
+            group_info = await self.bot.get_group_info(group_id=group_id)
             group_name = group_info.get("data").get("group_name")
             group_obj = Group(
                 group_id=str(group_id),
                 group_name=group_name
             )
 
+        user_nickname = "None"
+        if user_id:
+            try:
+                user_info = await self.bot.get_user_info(user_id=user_id)
+                user_nickname = user_info.get("data", {}).get("nickname")
+            except Exception as _:
+                pass
+
         message_chain = MessageChain()
 
         # ---------- 戳一戳 ----------
 
-        if notice_type == "notify" and sub_type == "poke" and self_id == target_id:
-            # TODO 需要处理 deny_list
-            if not group_id and str(user_id) not in self.user_list:
-                return
+        if notice_type == "notify" and sub_type == "poke":
+            if not group_id:
+                if (self.permission_mode == "allow_list"
+                        and str(user_id) not in self.user_list
+                        or self.permission_mode == "deny_list"
+                        and str(user_id) in self.user_list):
+                    return
 
-            is_mentioned = True
+            if self_id == target_id:
+                is_mentioned = True
+                motion_text = msg['raw_info'][2]['txt']
+                object_text = msg['raw_info'][4]['txt']
 
-            notice_str = f"[Poke 用户{user_id}{msg['raw_info'][2]['txt']}你{msg['raw_info'][4]['txt']}]"
-            message_chain.text(notice_str)
-
-        # # ---------- 群禁言 ---------
-        #
-        # elif notice_type == "group_ban" and self_id == user_id:
-        #     is_mentioned = True
-        #
-        #     ban_duration = msg.get("duration")
-        #     ban_operator_id = msg.get("operator_id")
-        #     ban_group_id = msg.get("group_id")
-        #     if sub_type == "ban":
-        #         message_chain.text(f"[System 用户{ban_operator_id}禁言了你{ban_duration}秒]")
-        #
-        #     elif sub_type == "lift_ban":  # 人为解除禁言
-        #         # ban_duration 永远是0，invalid
-        #         message_chain.text(f"[System 你之前被禁言了，用户{ban_operator_id}解除了你的禁言]")
-        #     else:
-        #         return
-        #
-        # # --------- 新成员进群 ---------
-        #
-        # elif notice_type == "group_increase":
-        #     # and msg["sub_type"] == "approve"
-        #     if not group_id:
-        #         return
-        #
-        #     is_mentioned = True
-        #
-        #     message_chain.text(f"[System 用户{user_id}加入了群聊]")
-        # else:
-        #     pass
+                notice_str = f"[Poke 用户{user_id}({user_nickname}){motion_text}你{object_text}]"
+                message_chain.text(notice_str)
 
         # ---------- 构造消息事件 ---------
 
@@ -570,7 +558,7 @@ class QQAdapter(IMAdapter):
                 group=group_obj,
                 sender=User(
                     user_id=str(user_id),
-                    nickname="None"
+                    nickname=user_nickname
                 ),
                 is_notice=True,
                 is_mentioned=is_mentioned,
@@ -595,6 +583,8 @@ class QQAdapter(IMAdapter):
 
         if not should_process:
             return
+
+        timestamp = int(msg.get("time") or time.time())
 
         if self.debug_mode:
             if self.debug_mode_list:
@@ -625,7 +615,7 @@ class QQAdapter(IMAdapter):
             adapter=self.info,
             message_types=self.message_types,
             message=KiraIMMessage(
-                timestamp=int(msg.get("time") or time.time()),
+                timestamp=timestamp,
                 group=Group(
                     group_id=group_id,
                     group_name=group_name
@@ -640,7 +630,7 @@ class QQAdapter(IMAdapter):
                 chain=message_chain,
                 raw_message=msg
             ),
-            timestamp=int(msg.get("time") or time.time())
+            timestamp=timestamp
         )
         self.publish(message_obj)
 
@@ -657,6 +647,8 @@ class QQAdapter(IMAdapter):
         if not should_process:
             return
 
+        timestamp = int(msg.get("time") or time.time())
+
         if self.debug_mode:
             if self.debug_mode_list:
                 if f"dm:{user_id}" in self.debug_mode_list:
@@ -670,7 +662,7 @@ class QQAdapter(IMAdapter):
             adapter=self.info,
             message_types=self.message_types,
             message=KiraIMMessage(
-                timestamp=int(msg.get("time") or time.time()),
+                timestamp=timestamp,
                 sender=User(
                     user_id=user_id,
                     nickname=msg.get("sender").get("nickname")
@@ -681,7 +673,7 @@ class QQAdapter(IMAdapter):
                 chain=message_chain,
                 raw_message=msg
             ),
-            timestamp=int(msg.get("time") or time.time())
+            timestamp=timestamp
         )
         self.publish(message_obj)
 

@@ -456,8 +456,12 @@ class MessageProcessor:
                     break
 
         # Get default LLM model client
-        llm_model = self.provider_mgr.get_default_llm()
-        if not llm_model:
+        try:
+            llm_model = self.provider_mgr.get_default_llm()
+            if not llm_model:
+                llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+                return
+        except Exception as _:
             llm_logger.error(f"Default LLM model not set, please set it in Configuration")
             return
 

@@ -220,7 +220,18 @@ class KiraExceptionEvent:
     name: str
     message: str
     traceback: str = None
+    stage: str = None
+
+    # plugin | provider | adapter
     source: str = None
+
+    # plugin_id | provider_id | adapter_name
+    comp_id: Optional[str] = None
+
+    # Raw exception object
+    e: Exception = None
+
+    extra: dict = field(default_factory=dict)
 
     def __post_init__(self):
         pass
