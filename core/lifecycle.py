@@ -97,7 +97,7 @@ class KiraLifecycle:
         await self.adapter_manager.initialize()
 
         # ====== init sticker manager ======
-        self.sticker_manager = StickerManager(self.llm_api)
+        self.sticker_manager = StickerManager(provider_mgr=self.provider_manager)
 
         # ====== init memory manager ======
         self.memory_manager = SessionManager(self.kira_config)

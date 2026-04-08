@@ -4,7 +4,7 @@ import os
 import uuid
 
 from core.logging_manager import get_logger
-from core.utils.common_utils import image_to_base64
+from core.utils.common_utils import desc_img
 from core.utils.path_utils import get_data_path
 
 logger = get_logger("sticker", "orange")
@@ -14,8 +14,8 @@ _sticker_folder: str = f"{get_data_path()}/sticker"
 
 
 class StickerManager:
-    def __init__(self, llm_api):
-        self.llm_api = llm_api
+    def __init__(self, provider_mgr):
+        self.provider_mgr = provider_mgr
         self.sticker_path = _sticker_path
         self.sticker_folder = _sticker_folder
         self.sticker_dict = {}
@@ -190,7 +190,8 @@ class StickerManager:
         # img_b64 = await image_to_base64(sticker_path)
         from core.chat.message_elements import Image
 
-        sticker_desc = await self.llm_api.desc_img(image=Image(image=sticker_path), prompt="这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出", is_base64=True)
+        vlm_model = self.provider_mgr.get_default_vlm()
+        sticker_desc = await desc_img(client=vlm_model, image=Image(image=sticker_path), prompt="这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出")
 
         return sticker_desc
 

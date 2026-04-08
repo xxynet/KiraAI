@@ -11,7 +11,7 @@ import random
 import os
 
 from core.logging_manager import get_logger
-from core.utils.common_utils import image_to_base64
+from core.utils.common_utils import desc_img
 from core.utils.path_utils import get_data_path
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent, MessageChain
 from core.chat.message_utils import KiraIMSentResult, KiraStepResult
@@ -253,7 +253,8 @@ class MessageProcessor:
                 if cached_desc:
                     img_desc = cached_desc
                 else:
-                    img_desc = await self.llm_api.desc_img(ele)
+                    vlm_model = self.provider_mgr.get_default_vlm()
+                    img_desc = await desc_img(client=vlm_model, image=ele)
                     if md5:
                         self.image_desc_cache.set(md5, img_desc)
                 ele.caption = img_desc
@@ -269,7 +270,8 @@ class MessageProcessor:
                 if cached_desc:
                     sticker_desc = cached_desc
                 else:
-                    sticker_desc = await self.llm_api.desc_img(ele)
+                    vlm_model = self.provider_mgr.get_default_vlm()
+                    sticker_desc = await desc_img(client=vlm_model, image=ele)
                     if md5:
                         self.image_desc_cache.set(md5, sticker_desc)
                 ele.caption = sticker_desc

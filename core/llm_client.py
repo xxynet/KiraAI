@@ -7,7 +7,6 @@ import json
 import time
 
 from core.logging_manager import get_logger
-from core.utils.common_utils import image_to_base64
 from core.chat.message_elements import Record, Image, Sticker
 from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse
@@ -130,45 +129,6 @@ class LLMClient:
         text = await stt_model.speech_to_text(record)
         logger.info(f"Recognized text: {text}")
         return text
-
-    async def desc_img(self, image: Union[Image, Sticker], prompt="描述这张图片的内容，如果有文字请将其输出") -> str:
-        """
-        describe an image
-        :param image: url or base64
-        :param prompt: prompt of VLM
-        :return: image description
-        """
-        try:
-
-            image_url = await image.to_data_url()
-
-            messages = [{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": image_url,
-                            "detail": "high"
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
-                ]
-            }]
-
-            request = LLMRequest(messages=messages)
-            vlm_model = self.provider_mgr.get_default_vlm()
-            provider_name = vlm_model.model.provider_name
-            model_id = vlm_model.model.model_id
-            logger.info(f"Describing image using {model_id} ({provider_name})")
-            resp = await vlm_model.chat(request)
-            return resp.text_response
-        except Exception as e:
-            logger.error(f"error occurred when describing image: {str(e)}")
-            return ""
 
     async def generate_img(self, prompt) -> Image:
         image_model = self.provider_mgr.get_default_image()
