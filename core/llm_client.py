@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from asyncio import Semaphore
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Union, TYPE_CHECKING
 import copy
 import json
 import time
 
 from core.logging_manager import get_logger
 from core.utils.common_utils import image_to_base64
-from core.chat.message_elements import Record, Image
+from core.chat.message_elements import Record, Image, Sticker
 from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse
 from .agent.tool import ToolResult, ToolSet
@@ -131,19 +131,16 @@ class LLMClient:
         logger.info(f"Recognized text: {text}")
         return text
 
-    async def desc_img(self, image, prompt="描述这张图片的内容，如果有文字请将其输出", is_base64=False):
+    async def desc_img(self, image: Union[Image, Sticker], prompt="描述这张图片的内容，如果有文字请将其输出") -> str:
         """
         describe an image
         :param image: url or base64
         :param prompt: prompt of VLM
-        :param is_base64: defaults to False
         :return: image description
         """
         try:
-            if is_base64:
-                b64_data = image
-            else:
-                b64_data = await image_to_base64(image)
+
+            image_url = await image.to_data_url()
 
             messages = [{
                 "role": "user",
@@ -151,7 +148,7 @@ class LLMClient:
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/TYPE;base64,{b64_data}",
+                            "url": image_url,
                             "detail": "high"
                         }
                     },

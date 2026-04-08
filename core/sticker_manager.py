@@ -187,9 +187,10 @@ class StickerManager:
     async def get_sticker_description(self, sticker_file):
         sticker_path = os.path.join(_sticker_folder, sticker_file)
 
-        img_b64 = await image_to_base64(sticker_path)
+        # img_b64 = await image_to_base64(sticker_path)
+        from core.chat.message_elements import Image
 
-        sticker_desc = await self.llm_api.desc_img(image=img_b64, prompt="这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出", is_base64=True)
+        sticker_desc = await self.llm_api.desc_img(image=Image(image=sticker_path), prompt="这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出", is_base64=True)
 
         return sticker_desc
 

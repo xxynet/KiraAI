@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from copy import deepcopy
 from asyncio import Lock
 import xml.etree.ElementTree as ET
 from typing import Union, Any, List, Optional
@@ -252,8 +253,7 @@ class MessageProcessor:
                 if cached_desc:
                     img_desc = cached_desc
                 else:
-                    image_base64 = await ele.to_base64()
-                    img_desc = await self.llm_api.desc_img(image_base64, is_base64=True)
+                    img_desc = await self.llm_api.desc_img(ele)
                     if md5:
                         self.image_desc_cache.set(md5, img_desc)
                 ele.caption = img_desc
@@ -269,8 +269,7 @@ class MessageProcessor:
                 if cached_desc:
                     sticker_desc = cached_desc
                 else:
-                    sticker_base64 = await ele.to_base64()
-                    sticker_desc = await self.llm_api.desc_img(sticker_base64, is_base64=True)
+                    sticker_desc = await self.llm_api.desc_img(ele)
                     if md5:
                         self.image_desc_cache.set(md5, sticker_desc)
                 ele.caption = sticker_desc
@@ -465,7 +464,7 @@ class MessageProcessor:
             llm_logger.error(f"Default LLM model not set, please set it in Configuration")
             return
 
-        request = LLMRequest(messages=session_memory[:], tools=self.llm_api.tools_definitions, tool_funcs=self.llm_api.tools_functions, tool_set=ToolSet())
+        request = LLMRequest(messages=session_memory[:], tools=deepcopy(self.llm_api.tools_definitions), tool_funcs=self.llm_api.tools_functions, tool_set=ToolSet())
         request.system_prompt.extend(agent_prompt_list)
 
         # Add received im messages
