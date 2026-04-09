@@ -3,7 +3,7 @@ from typing import Literal
 
 from tavily import TavilyClient
 
-from core.plugin import BasePlugin, logger, register_tool as tool
+from core.plugin import BasePlugin, logger, register
 
 
 class SearchPlugin(BasePlugin):
@@ -39,7 +39,7 @@ class SearchPlugin(BasePlugin):
     # def get_tools(self) -> list[BaseTool]:
     #     return []
 
-    @tool(
+    @register.tool(
         "search",
         "A web search tool that uses Tavily to search the web for relevant content.",
         {
@@ -65,7 +65,7 @@ class SearchPlugin(BasePlugin):
         results = res.get("results") or []
         return "".join(json.dumps(ele, ensure_ascii=False) for ele in results)
 
-    @tool(
+    @register.tool(
         "extract_webpage",
         "Extract web page content from one specified URL using Tavily Extract.",
         {

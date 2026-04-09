@@ -1,6 +1,6 @@
 import asyncio
 
-from core.plugin import BasePlugin, logger, on, Priority, register_tool
+from core.plugin import BasePlugin, logger, on, Priority, register
 from core.chat.message_utils import KiraMessageBatchEvent
 from core.provider import LLMRequest
 
@@ -58,7 +58,7 @@ class SessionPlugin(BasePlugin):
         """
         pass
 
-    @register_tool(
+    @register.tool(
         name="session_send",
         description="向指定会话发送跨会话消息（私聊消息和群聊消息），仅当目标会话和当前会话不同时使用。 target 形如 qq:dm:123456 或 qq:gm:123456",
         params={

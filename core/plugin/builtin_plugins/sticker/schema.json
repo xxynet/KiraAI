@@ -1,0 +1,7 @@
+{
+  "scan_interval": {
+    "type": "integer",
+    "default": 120,
+    "hint": "Interval of scanning unregistered stickers (Unit: minutes)"
+  }
+}

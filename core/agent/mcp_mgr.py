@@ -1,4 +1,5 @@
 import json
+import asyncio
 from typing import Optional, Literal
 from dataclasses import dataclass, field
 from fastmcp import Client
@@ -380,7 +381,7 @@ class MCPManager:
         self.mcp_config = self.load_config()
         self.load_servers()
 
-        for server in self.servers:
+        async def init_server(server):
             await self.list_tools(server)
 
             if server.enabled:
@@ -397,6 +398,9 @@ class MCPManager:
                     )
                 logger.info(f"Registered {len(tool_names)} MCP tools from {server.name}: {tool_names}")
 
+        for server in self.servers:
+            asyncio.create_task(init_server(server))
+
     @staticmethod
     async def _make_mcp_func(server: MCPServer, tool_name: str):
         async def _wrapped(*_, **kwargs):
@@ -408,7 +412,8 @@ class MCPManager:
 
         return _wrapped
 
-    async def list_tools(self, server: MCPServer):
+    @staticmethod
+    async def list_tools(server: MCPServer):
         server.tools.clear()
         client = Client(server.to_dict())
         try:

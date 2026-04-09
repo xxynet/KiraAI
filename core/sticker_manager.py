@@ -8,7 +8,6 @@ from typing import Optional, Union, Any, Callable
 from copy import deepcopy
 
 from core.logging_manager import get_logger
-from core.utils.common_utils import desc_img
 from core.utils.path_utils import get_data_path
 
 logger = get_logger("sticker", "orange")
@@ -35,7 +34,12 @@ class StickerManager:
         sticker_info contains desc / path
         """
         self._on_registered_callbacks.append(callback)
-        return callback
+
+    def off_sticker_registered(self, callback: Callable):
+        try:
+            self._on_registered_callbacks.remove(callback)
+        except ValueError:
+            pass
 
     async def _fire_registered(self, sid: str, info: dict):
         for cb in self._on_registered_callbacks:
@@ -79,10 +83,13 @@ class StickerManager:
             logger.error(f"Error loading emoji dict from {self.sticker_path}: {e}")
             self.sticker_dict = {}
 
-    def register_sticker(self, filename: str, desc: str):
+    def register_sticker(self, filename: str, desc: str, sticker_id: Optional[str] = None):
         """save sticker info to self.sticker_dict"""
-        self.sticker_index += 1
-        sid = str(self.sticker_index)
+        if sticker_id:
+            sid = str(sticker_id)
+        else:
+            self.sticker_index += 1
+            sid = str(self.sticker_index)
         self.sticker_dict[sid] = {
             "desc": desc,
             "path": filename,
@@ -182,71 +189,9 @@ class StickerManager:
         else:
             self.sticker_index += 1
             sid = str(self.sticker_index)
-        self.sticker_dict[sid] = {
-            "desc": final_desc,
-            "path": filename,
-        }
-        self.sticker_paths.append(filename)
-        self.save_sticker_dict()
-        # If description is not given, call VLM to get description in background, do not block upload response
-        if not final_desc:
-            asyncio.create_task(self._update_desc_in_background(sid, filename))
+        self.register_sticker(filename, final_desc, sid)
         return {
             "id": sid,
             "desc": final_desc,
             "path": filename,
         }
-
-    async def _update_desc_in_background(self, sid: str, filename: str):
-        try:
-            desc = await self.get_sticker_description(filename)
-            if desc and sid in self.sticker_dict:
-                self.sticker_dict[sid]["desc"] = desc
-                self.save_sticker_dict()
-                logger.info(f"Sticker {sid} description updated by VLM: {desc}")
-        except Exception as e:
-            logger.error(f"Failed to get VLM description for sticker {sid}: {e}")
-
-    async def scan_and_register_sticker(self):
-        while True:
-            logger.info("Scanning unregistered stickers")
-            sticker_files = os.listdir(self.sticker_folder)
-            is_found = False
-            for sticker_file in sticker_files:
-                if sticker_file not in self.sticker_paths:
-                    is_found = True
-                    logger.info(f"found sticker {sticker_file}")
-                    sticker_description = await self.get_sticker_description(sticker_file)
-                    logger.info(f"Registered sticker: {sticker_description}")
-                    self.register_sticker(sticker_file, sticker_description)
-
-            if not is_found:
-                logger.info("All stickers are already registered")
-
-            # TODO customize interval in config file
-            await asyncio.sleep(120 * 60)
-
-    async def get_sticker_description(self, sticker_file):
-        sticker_path = os.path.join(self.sticker_folder, sticker_file)
-
-        # img_b64 = await image_to_base64(sticker_path)
-        from core.chat.message_elements import Image
-
-        vlm_model = self.provider_mgr.get_default_vlm()
-        sticker_desc = await desc_img(client=vlm_model, image=Image(image=sticker_path), prompt="这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出")
-
-        return sticker_desc
-
-
-if __name__ == '__main__':
-    from pathlib import Path
-    # set script dir as working dir
-    working_dir = Path(__file__).parent.parent
-    os.chdir(working_dir)
-
-    # to tests, comment out the following line & comment the same statement above
-    # from core.llm_manager import llm_api
-
-    # test_mgr = StickerManager()
-
-    # asyncio.run(test_mgr.scan_and_register_sticker())

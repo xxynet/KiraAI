@@ -11,7 +11,6 @@ from core.chat.message_elements import (
     Reply,
     Forward,
     Emoji,
-    Sticker,
     Record,
     Poke,
     File,
@@ -44,42 +43,6 @@ def build_emoji_tag(emoji_json: dict) -> Type[BaseTag]:
         async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
             return [Emoji(value)]
     return EmojiTag
-
-
-def build_sticker_tag(sticker_dict: dict) -> Type[BaseTag]:
-    def load_sticker_prompt() -> str:
-        """加载表情包（贴纸）提示词"""
-        sticker_prompt = ""
-        try:
-            for sticker_id in sticker_dict:
-                sticker_prompt += f"[{sticker_id}] {sticker_dict[sticker_id].get('desc')}\n"
-            return sticker_prompt
-        except Exception as e:
-            message_logger.warning(f"Failed to load sticker prompt: {e}")
-            return ""
-
-    class StickerTag(BaseTag):
-        name = "sticker"
-        description = f"<sticker>sticker_id</sticker> # 发送一个sticker（中文一般叫做表情包）消息，通常单独在一条消息里，你需要在聊天中主动自然使用这些sticker，可以使用的sticker id和描述如下：{load_sticker_prompt()}"
-
-        async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
-            from core.message_manager import ImageDescCache
-            sticker_id = value
-            try:
-                sticker_path = sticker_dict[sticker_id].get("path")
-                sticker_desc = sticker_dict[sticker_id].get("desc")
-                sticker_bs64 = await image_to_base64(f"{get_data_path()}/sticker/{sticker_path}")
-                sticker_obj = Sticker(sticker_id, sticker=sticker_bs64, caption=sticker_desc)
-                if sticker_desc:
-                    md5 = await sticker_obj.hash_image()
-                    cache = ImageDescCache()
-                    if not cache.get(md5):
-                        cache.set(md5, sticker_desc)
-                return [sticker_obj]
-            except Exception as e:
-                message_logger.error(f"error while parsing sticker: {str(e)}")
-
-    return StickerTag
 
 
 class AtTag(BaseTag):

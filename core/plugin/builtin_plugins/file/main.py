@@ -2,7 +2,7 @@ import os
 
 from pathlib import Path
 
-from core.plugin import BasePlugin, logger, register_tool as tool
+from core.plugin import BasePlugin, logger, register
 from core.chat import KiraMessageBatchEvent
 
 from core.utils.path_utils import get_data_path
@@ -37,7 +37,7 @@ class FilePlugin(BasePlugin):
     async def terminate(self):
         pass
 
-    @tool(
+    @register.tool(
         "read_file",
         "Read a plain text file (txt, html, py, etc..) in `data/files` `data/temp` or `data/skills`",
         {
@@ -89,7 +89,7 @@ class FilePlugin(BasePlugin):
         except Exception as e:
             return f"[Failed to read file: {e}]"
 
-    @tool(
+    @register.tool(
         "write_file",
         "Write content to a plain text file in `data/files` or `data/temp`. Creates the file if it doesn't exist, overwrites if it does.",
         {
@@ -127,7 +127,7 @@ class FilePlugin(BasePlugin):
         except Exception as e:
             return f"Failed to write file: {e}"
 
-    @tool(
+    @register.tool(
         "edit_file",
         "Edit a plain text file by replacing exact text. The oldText must match exactly (including whitespace). Better use this tool when you only want to modify or add a part of content to a file instead of using `write_file` to re-write the entire file",
         {
@@ -182,7 +182,7 @@ class FilePlugin(BasePlugin):
         except Exception as e:
             return f"Failed to edit file: {str(e)}"
 
-    @tool(
+    @register.tool(
         "list_files",
         "List files in a specified directory, could be `data/files` `data/temp` `data/skills` or their sub directories",
         {
@@ -231,7 +231,7 @@ class FilePlugin(BasePlugin):
         except Exception as e:
             return f"[Failed to list files: {e}]"
 
-    @tool(
+    @register.tool(
         "exec",
         "Execute a shell command, DO NOT execute any harmful commands",
         {
@@ -281,7 +281,7 @@ class FilePlugin(BasePlugin):
             result = subprocess.run(
                 shell_command, shell=True, capture_output=True,
                 stdin=subprocess.DEVNULL,
-                timeout=120, env=env, encoding='utf-8', errors='replace'
+                timeout=30, env=env, encoding='utf-8', errors='replace'
             )
             output = (result.stdout or '') + (result.stderr or '')
             if result.returncode == 0:

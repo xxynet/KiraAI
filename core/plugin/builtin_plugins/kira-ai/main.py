@@ -70,9 +70,6 @@ class DefaultPlugin(BasePlugin):
         if "emoji" in message_types:
             emoji_dict = getattr(self.ctx.adapter_mgr.get_adapter(event.adapter.name), "emoji_dict", {})
             tag_set.register(build_emoji_tag(emoji_json=emoji_dict)())
-        if "sticker" in message_types:
-            sticker_dict = self.ctx.sticker_manager.sticker_dict
-            tag_set.register(build_sticker_tag(sticker_dict=sticker_dict))
         if "poke" in message_types:
             tag_set.register(PokeTag)
         if "selfie" in message_types:

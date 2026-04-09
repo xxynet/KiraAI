@@ -66,7 +66,7 @@ class KiraLifecycle:
 
     async def schedule_tasks(self):
         self.tasks = [
-            asyncio.create_task(self.sticker_manager.scan_and_register_sticker(), name="sticker_scan")
+            # asyncio.create_task(self.sticker_manager.scan_and_register_sticker(), name="sticker_scan")
         ]
         results = await asyncio.gather(*self.tasks, return_exceptions=True)
         for i, result in enumerate(results):
@@ -96,18 +96,17 @@ class KiraLifecycle:
         self.adapter_manager = AdapterManager(self.kira_config, loop, event_queue, self.llm_api)
         await self.adapter_manager.initialize()
 
-        # ====== init sticker manager ======
-        self.sticker_manager = StickerManager(provider_mgr=self.provider_manager)
-
         # ====== init memory manager ======
         self.memory_manager = SessionManager(self.kira_config)
 
         # ====== init persona manager ======
         self.persona_manager = PersonaManager()
 
+        # ====== init sticker manager ======
+        self.sticker_manager = StickerManager(provider_mgr=self.provider_manager)
+
         # ====== init prompt manager ======
         self.prompt_manager = PromptManager(self.kira_config,
-                                            self.sticker_manager,
                                             self.persona_manager)
 
         # ====== init MCP manager ======
@@ -172,7 +171,7 @@ class KiraLifecycle:
         )
 
         # ====== schedule tasks ======
-        asyncio.create_task(self.schedule_tasks())
+        # asyncio.create_task(self.schedule_tasks())
 
         self.stats.set_stats("started_ts", int(time.time()))
 
