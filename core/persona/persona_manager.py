@@ -1,5 +1,7 @@
 from core.utils.path_utils import get_data_path
 
+from .default import default_persona_template
+
 
 class PersonaManager:
     def __init__(self):
@@ -23,7 +25,7 @@ class PersonaManager:
 
     def reload_persona(self):
         if not self.persona_path.exists():
-            self.persona_path.write_text("")
+            self.persona_path.write_text(default_persona_template, encoding="utf-8")
         with open(self.persona_path, 'r', encoding="utf-8") as f:
             persona = f.read()
         self.persona_str = persona

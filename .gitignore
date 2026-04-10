@@ -1,6 +1,3 @@
-# docs
-.docs/
-
 # IDE
 .vscode/
 .idea/
@@ -27,13 +24,4 @@ main.spec
 *.log
 
 # Runtime data
-data/webui.json
-data/plugin_data/
-data/files/
-data/sticker/
-data/plugins/
-data/config/
-data/temp/
-data/memory/*
-!data/memory/.gitkeep
-!data/memory/*.example.json
+/data/
