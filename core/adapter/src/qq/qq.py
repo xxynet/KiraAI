@@ -243,7 +243,7 @@ class QQAdapter(IMAdapter):
                 else:
                     msg_res.err = f"未知错误，消息发送失败，错误码：{retcode}"
                 return msg_res
-            message_id = str(result.get("data", {}).get("message_id"))
+            message_id = str((result.get("data", {}) or {}).get("message_id"))
             msg_res.message_id = message_id
             return msg_res
         except Exception as e:
@@ -388,7 +388,7 @@ class QQAdapter(IMAdapter):
                 msg_res.ok = False
                 msg_res.err = f"未知错误，消息发送失败，错误码：{retcode}"
                 return msg_res
-            message_id = str(result.get("data", {}).get("message_id"))
+            message_id = str((result.get("data", {}) or {}).get("message_id"))
             msg_res.message_id = message_id
         except Exception as e:
             msg_res.ok = False
@@ -450,12 +450,12 @@ class QQAdapter(IMAdapter):
                     file_info = await self.bot.send_action("get_group_file_url", {"group_id": group_id, "file_id": file_id})
                     if not file_info:
                         continue
-                    file_url = file_info.get("data", {}).get("url")
+                    file_url = (file_info.get("data", {}) or {}).get("url")
                 elif message_type == "private":
                     file_info = await self.bot.send_action("get_private_file_url", {"file_id": file_id})
                     if not file_info:
                         continue
-                    file_url = file_info.get("data", {}).get("url")
+                    file_url = (file_info.get("data", {}) or {}).get("url")
                 else:
                     continue
 
@@ -601,8 +601,8 @@ class QQAdapter(IMAdapter):
                 is_mentioned = True
                 break
             elif m.get("type") == "reply":
-                reply_msg_info = await self.bot.get_msg(m.get("data", {}).get("id", ""))
-                if reply_msg_info.get("data", {}).get("user_id") == msg.get("self_id"):  # int int
+                reply_msg_info = await self.bot.get_msg((m.get("data", {}) or {}).get("id", ""))
+                if (reply_msg_info.get("data", {}) or {}).get("user_id") == msg.get("self_id"):  # int int
                     is_mentioned = True
                     break
 
