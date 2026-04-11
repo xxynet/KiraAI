@@ -65,17 +65,13 @@ class ModelScopeLLMClient(LLMModelClient):
                 llm_resp.output_tokens = response.usage.completion_tokens
             return llm_resp
         except APIStatusError as e:
-            logger.error(f"APIStatusError: {e}")
-            return LLMResponse(text_response=f"[Error] APIStatusError: {e}")
+            raise
         except APITimeoutError as e:
-            logger.error(f"APITimeoutError: {e}")
-            return LLMResponse(text_response=f"[Error] APITimeoutError: {e}")
+            raise
         except APIConnectionError as e:
-            logger.error(f"APIConnectionError: {e}")
-            return LLMResponse(text_response=f"[Error] APIConnectionError: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Error: {e}")
-            return LLMResponse(text_response=f"[Error] {e}")
+            raise
 
 
 class ModelScopeImageClient(ImageModelClient):

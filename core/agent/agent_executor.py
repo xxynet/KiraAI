@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional, TYPE_CHECKING, Union, Literal
 
+from openai import APIStatusError, APITimeoutError, APIConnectionError
+
 from core.logging_manager import get_logger
 from core.llm_client import LLMClient
 from core.provider import LLMRequest, LLMResponse, LLMModelClient
@@ -70,7 +72,7 @@ class NewMemory:
 
     def tool(self, tool_results: list[dict]):
         self.memory_list.extend(tool_results)
-         # self.memory_list.append({
+        # self.memory_list.append({
         #     "role": "tool",
         #     "tool_call_id": tool_call_id,
         #     "name": name,
@@ -101,22 +103,22 @@ class AgentExecutor:
 
         for step in range(max_steps):
             step_index = step + 1
-            llm_resp = await llm_model.chat(request)
 
-            if not llm_resp:
-                # Add reasoning_content
-                request.messages.append({"role": "assistant", "content": "", "reasoning_content": ""})
-                ctx.new_memory.assistant("", reasoning_content="")
-                yield AgentStepResult(
-                    state="error",
-                    err="Failed to call LLM",
-                    step_index=step_index,
-                    llm_response=None,
-                    new_memory=ctx.new_memory,
-                    is_final=True,
-                    has_tool_calls=False,
-                )
-                return
+            state: Literal["success", "stopped", "error"] = "success"
+            err = ""
+            is_final = step_index == max_steps
+
+            try:
+                llm_resp = await llm_model.chat(request)
+            except Exception as e:
+                logger.error(f"{type(e).__name__}: {e}")
+                llm_resp = LLMResponse(f"[{type(e).__name__}] {e}")
+
+                state = "error"
+                err = f"{type(e).__name__}: {e}"
+                is_final = True
+
+            has_tool_calls = bool(llm_resp.tool_calls)
 
             llm_resp.agent_step_index = step_index
             llm_logger.debug(llm_resp)
@@ -128,20 +130,20 @@ class AgentExecutor:
             for handler in llm_resp_handlers:
                 await handler.exec_handler(event, llm_resp)
                 if event.is_stopped:
+                    is_final = True
                     logger.info("Event stopped")
                     yield AgentStepResult(
                         state="stopped",
                         step_index=step_index,
                         llm_response=llm_resp,
                         new_memory=ctx.new_memory,
-                        is_final=True,
-                        has_tool_calls=bool(llm_resp.tool_calls),
+                        is_final=is_final,
+                        has_tool_calls=has_tool_calls,
                     )
                     return
 
-            has_tool_calls = bool(llm_resp.tool_calls)
-
             if not has_tool_calls:
+                is_final = True
                 assistant_content = llm_resp.text_response or ""
                 reasoning = llm_resp.reasoning_content or ""
                 # Add reasoning_content
@@ -154,12 +156,13 @@ class AgentExecutor:
                 )
                 ctx.new_memory.assistant(assistant_content, reasoning_content=reasoning)
                 yield AgentStepResult(
-                    state="success",
+                    state=state,
+                    err=err,
                     step_index=step_index,
                     llm_response=llm_resp,
                     new_memory=ctx.new_memory,
-                    is_final=True,
-                    has_tool_calls=False,
+                    is_final=is_final,
+                    has_tool_calls=has_tool_calls,
                 )
                 return
 
@@ -180,14 +183,14 @@ class AgentExecutor:
             request.messages.extend(llm_resp.tool_results)
             ctx.new_memory.tool(llm_resp.tool_results)
 
-            is_final = step_index == max_steps
             yield AgentStepResult(
-                state="success",
+                state=state,
+                err=err,
                 step_index=step_index,
                 llm_response=llm_resp,
                 new_memory=ctx.new_memory,
                 is_final=is_final,
-                has_tool_calls=True,
+                has_tool_calls=has_tool_calls,
             )
             if is_final:
                 return

@@ -64,18 +64,14 @@ class OpenAILLMClient(LLMModelClient):
         except APIStatusError as e:
             # the model does not support function calling etc.
             # 403 Authorization failed (api key error)
-            logger.error(f"APIStatusError: {e}")
-            return LLMResponse(text_response=f"[Error] APIStatusError: {e}")
+            raise
         except APITimeoutError as e:
-            logger.error(f"APITimeoutError: {e}")
-            return LLMResponse(text_response=f"[Error] APITimeoutError: {e}")
+            raise
         except APIConnectionError as e:
             # APIConnectionError: Connection error. (base_url error)
-            logger.error(f"APIConnectionError: {e}")
-            return LLMResponse(text_response=f"[Error] APIConnectionError: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Error: {e}")
-            return LLMResponse(text_response=f"[Error] {e}")
+            raise
 
 
 class OpenAIImageClient(ImageModelClient):
