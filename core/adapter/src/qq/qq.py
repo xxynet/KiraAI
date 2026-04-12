@@ -412,9 +412,13 @@ class QQAdapter(IMAdapter):
                     at_obj.nickname = at_nickname
                 message_content.append(at_obj)
             elif ele.get("type") == "reply":
-                reply_content = await self.bot.get_msg(ele.get("data").get("id"))
-                reply_chain = await self._process_reply_message(reply_content)
-                message_content.append(Reply(ele.get("data").get("id"), chain=reply_chain))
+                try:
+                    reply_content = await self.bot.get_msg(ele.get("data").get("id"))
+                    reply_chain = await self._process_reply_message(reply_content)
+                    message_content.append(Reply(ele.get("data").get("id"), chain=reply_chain))
+                except Exception as e:
+                    import traceback
+                    self.logger.error(traceback.format_exc())
             elif ele.get("type") == "face":
                 emoji_id = str(ele.get("data").get("id"))
                 emoji_desc = self.emoji_dict.get(emoji_id)
@@ -432,54 +436,70 @@ class QQAdapter(IMAdapter):
                 else:
                     message_content.append(Image(image=img_url))
             elif ele.get("type") == "video":
-                video_file_name = ele.get("data", {}).get("file", "")  # e.g. xxx.mp4
-                video_file_url = ele.get("data", {}).get("url", "")
-                video_file_size = ele.get("data", {}).get("file_size", "")  # Bytes, str
-                video_obj = Video(file=video_file_url, name=video_file_name, size=video_file_size)
-                message_content.append(video_obj)
+                try:
+                    video_file_name = ele.get("data", {}).get("file", "")  # e.g. xxx.mp4
+                    video_file_url = ele.get("data", {}).get("url", "")
+                    video_file_size = ele.get("data", {}).get("file_size", "")  # Bytes, str
+                    video_obj = Video(file=video_file_url, name=video_file_name, size=video_file_size)
+                    message_content.append(video_obj)
+                except Exception as e:
+                    import traceback
+                    self.logger.error(traceback.format_exc())
             elif ele.get("type") == "json":
                 json_card_info = ele.get("data", "").get("data", "")
                 cleaned_card_info = extract_card_info(json_card_info)
                 message_content.append(Text(f"[Json {cleaned_card_info}]"))
             elif ele.get("type") == "file":
-                file_name = ele.get("data").get("file")
-                file_id = ele.get("data").get("file_id")
-                file_size = ele.get("data").get("file_size")  # Bytes, str
+                try:
+                    file_name = ele.get("data").get("file")
+                    file_id = ele.get("data").get("file_id")
+                    file_size = ele.get("data").get("file_size")  # Bytes, str
 
-                if message_type == "group":
-                    file_info = await self.bot.send_action("get_group_file_url", {"group_id": group_id, "file_id": file_id})
-                    if not file_info:
+                    if message_type == "group":
+                        file_info = await self.bot.send_action("get_group_file_url", {"group_id": group_id, "file_id": file_id})
+                        if not file_info:
+                            continue
+                        file_url = (file_info.get("data", {}) or {}).get("url")
+                    elif message_type == "private":
+                        file_info = await self.bot.send_action("get_private_file_url", {"file_id": file_id})
+                        if not file_info:
+                            continue
+                        file_url = (file_info.get("data", {}) or {}).get("url")
+                    else:
                         continue
-                    file_url = (file_info.get("data", {}) or {}).get("url")
-                elif message_type == "private":
-                    file_info = await self.bot.send_action("get_private_file_url", {"file_id": file_id})
-                    if not file_info:
+
+                    if not file_url:
+                        message_content.append(Text(f"[File {file_name}]"))
                         continue
-                    file_url = (file_info.get("data", {}) or {}).get("url")
-                else:
-                    continue
 
-                if not file_url:
-                    message_content.append(Text(f"[File {file_name}]"))
-                    continue
+                    file_obj = File(file=file_url, name=file_name, size=file_size)
+                    message_content.append(file_obj)
 
-                file_obj = File(file=file_url, name=file_name, size=file_size)
-                message_content.append(file_obj)
-
-                # file_info = await self.bot.send_action("get_file", {"file_id": file_id})
-                # file_b64 = file_info.get("data", {}).get("base64")
+                    # file_info = await self.bot.send_action("get_file", {"file_id": file_id})
+                    # file_b64 = file_info.get("data", {}).get("base64")
+                except Exception as e:
+                    import traceback
+                    self.logger.error(traceback.format_exc())
 
             elif ele.get("type") == "forward":
-                forward_message_id = msg.get("message_id")
-                forward_message = await self.bot.get_forward_msg(forward_message_id)
-                forward_chains = await self._process_forward_message(forward_message)
-                message_content.append(Forward(chains=forward_chains))
+                try:
+                    forward_message_id = msg.get("message_id")
+                    forward_message = await self.bot.get_forward_msg(forward_message_id)
+                    forward_chains = await self._process_forward_message(forward_message)
+                    message_content.append(Forward(chains=forward_chains))
+                except Exception as e:
+                    import traceback
+                    self.logger.error(traceback.format_exc())
             elif ele.get("type") == "record":
-                file_id = ele.get("data").get("file")
+                try:
+                    file_id = ele.get("data").get("file")
 
-                record_info = await self.bot.get_record(file_id, output_format="mp3")
-                audio_base64 = record_info.get("data").get("base64")
-                message_content.append(Record(record=audio_base64))
+                    record_info = await self.bot.get_record(file_id, output_format="mp3")
+                    audio_base64 = record_info.get("data").get("base64")
+                    message_content.append(Record(record=audio_base64))
+                except Exception as e:
+                    import traceback
+                    self.logger.error(traceback.format_exc())
         return MessageChain(message_content)
 
     async def _on_notice_message(self, msg: Dict):

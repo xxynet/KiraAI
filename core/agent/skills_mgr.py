@@ -12,9 +12,6 @@ from core.prompt_manager import Prompt
 
 logger = get_logger("skills", "green")
 
-SKILLS_DIR = get_data_path() / "skills"
-SKILLS_CONFIG = get_config_path() / "skills.json"
-
 
 @dataclass
 class SkillInfo:
@@ -26,18 +23,56 @@ class SkillInfo:
 
 class SkillsManager:
     def __init__(self):
+        self.skills_dir = get_data_path() / "skills"
+        self.skills_config = get_config_path() / "skills.json"
+        self.skills_config_dict = self.get_skill_config_dict()
         self.skills_info = self.scan_skill_dir()
         logger.info(f"Loaded skills: {[info.name for info in self.skills_info]}")
 
     def scan_skill_dir(self) -> list[SkillInfo]:
         skills_info = []
-        for s in os.listdir(SKILLS_DIR):
-            skill_path = SKILLS_DIR / s
+        self.skills_config_dict = self.get_skill_config_dict()
+        skills_config_dict = self.skills_config_dict
+
+
+        for s in os.listdir(self.skills_dir):
+            skill_path = self.skills_dir / s
             if skill_path.is_dir() and not s.startswith("_"):
                 skill_info = self.parse_skill_info(skill_path)
-                if skill_info:
-                    skills_info.append(skill_info)
+                if not skill_info:
+                    continue
+                if skill_info.name in skills_config_dict:
+                    enabled = skills_config_dict.get(skill_info.name, True)
+                    if isinstance(enabled, bool):
+                        skill_info.enabled = enabled
+
+                skills_info.append(skill_info)
+
         return skills_info
+
+    def get_skill_config_dict(self):
+        skills_config_dict = {}
+        if not self.skills_config.exists():
+            self.skills_config.write_text("{}", encoding="utf-8")
+        with open(self.skills_config, 'r', encoding="utf-8") as f:
+            skills_config = f.read()
+        try:
+            skills_config_dict = json.loads(skills_config)
+        except json.JSONDecodeError:
+            logger.error("Error loading data/config/skills.json")
+        return skills_config_dict
+
+    def set_skill_enabled(self, skill_name: str, enabled: bool):
+        for skill in self.skills_info:
+            if skill.name == skill_name:
+                if skill.enabled != enabled:
+                    skill.enabled = enabled
+                    self.skills_config_dict[skill_name] = enabled
+                    with open(self.skills_config, 'w', encoding="utf-8") as f:
+                        f.write(json.dumps(self.skills_config_dict, indent=4, ensure_ascii=False))
+                    return True
+                return False
+        return False
 
     @staticmethod
     def parse_skill_info(skill_path: Path) -> Optional[SkillInfo]:

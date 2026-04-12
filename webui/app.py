@@ -24,6 +24,7 @@ from webui.routes.sessions import SessionsRoutes
 from webui.routes.config import ConfigRoutes
 from webui.routes.stickers import StickersRoutes
 from webui.routes.settings import SettingsRoutes
+from webui.routes.skills import SkillsRoutes
 
 
 class KiraWebUI:
@@ -87,6 +88,7 @@ class KiraWebUI:
         SessionsRoutes(self.app, self.lifecycle).register()
         ConfigRoutes(self.app, self.lifecycle).register()
         StickersRoutes(self.app, self.lifecycle).register()
+        SkillsRoutes(self.app, self.lifecycle).register()
         SettingsRoutes(self.app, self.lifecycle).register()
 
     async def run(self, host: str, port: int):

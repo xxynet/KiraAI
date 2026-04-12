@@ -394,6 +394,7 @@
                     <div class="flex space-x-4 mb-4 border-b border-gray-200 dark:border-gray-700">
                         <button id="plugin-tab-plugins" class="px-3 py-2 text-sm font-medium border-b-2 border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 focus:outline-none" data-i18n="plugin.tab_plugins">Plugins</button>
                         <button id="plugin-tab-mcp" class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 focus:outline-none" data-i18n="plugin.tab_mcp">MCP</button>
+                        <button id="plugin-tab-skills" class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 focus:outline-none" data-i18n="plugin.tab_skills">Skills</button>
                     </div>
                     <div id="plugin-list" class="space-y-4">
                         <div class="flex justify-center items-center py-12">
@@ -406,6 +407,7 @@
                         </div>
                     </div>
                     <div id="plugin-mcp" class="space-y-4 hidden"></div>
+                    <div id="plugin-skills" class="space-y-4 hidden"></div>
                 </div>
                 
                 <!-- Sticker Page -->
@@ -899,6 +901,29 @@
             <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end items-center space-x-3">
                 <button onclick="closeMcpConfigModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-i18n="plugin.mcp_modal_cancel">Cancel</button>
                 <button onclick="saveMcpConfig()" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" data-i18n="plugin.mcp_modal_save">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Skills Upload Modal -->
+    <div id="skills-upload-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md mx-4 flex flex-col" style="max-height: 90vh;">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100" data-i18n="plugin.skills_upload_modal_title">Upload Skill</h3>
+                <button onclick="closeSkillsUploadModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="px-6 py-5 flex-1 overflow-y-auto">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="plugin.skills_upload_label">Skill Archive (.zip)</label>
+                <div id="skills-upload-dropzone"></div>
+                <input id="skills-upload-input" type="file" accept=".zip" class="hidden">
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+                <button onclick="closeSkillsUploadModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-i18n="plugin.skills_upload_cancel">Cancel</button>
+                <button id="skills-upload-submit-btn" onclick="uploadSkill()" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" data-i18n="plugin.skills_upload_btn">Upload</button>
             </div>
         </div>
     </div>

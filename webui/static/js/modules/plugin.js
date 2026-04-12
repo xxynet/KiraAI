@@ -51,6 +51,17 @@ async function loadMcpServers() {
     }
 }
 
+async function loadSkills() {
+    try {
+        const response = await apiCall('/api/skills');
+        const data = await response.json();
+        AppState.data.skills = Array.isArray(data) ? data : [];
+        renderSkills();
+    } catch (error) {
+        console.error('Error loading skills data:', error);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Plugin list rendering
 // ---------------------------------------------------------------------------
@@ -316,6 +327,132 @@ function renderMcpServers() {
 }
 
 // ---------------------------------------------------------------------------
+// Skills list rendering
+// ---------------------------------------------------------------------------
+
+function renderSkills() {
+    const container = document.getElementById('plugin-skills');
+    if (!container) {
+        return;
+    }
+    const skills = AppState.data.skills || [];
+    if (!skills.length) {
+        const emptyText = window.i18n ? window.i18n.t('plugin.no_skills') : 'No skills configured';
+        container.innerHTML = `
+            <div class="flex items-center justify-start mb-4">
+                <button
+                    type="button"
+                    id="skills-upload-button"
+                    class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors mr-2"
+                >
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    <span data-i18n="plugin.skills_upload">Upload Skill</span>
+                </button>
+                <button
+                    type="button"
+                    id="skills-refresh-button"
+                    class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    <span data-i18n="plugin.skills_refresh">Refresh</span>
+                </button>
+            </div>
+            <div class="flex justify-center items-center py-12">
+                <div class="text-center">
+                    <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                    </svg>
+                    <p class="text-gray-500">${escapeHtml(emptyText)}</p>
+                </div>
+            </div>
+        `;
+        attachSkillsHandlers();
+        if (window.i18n) {
+            updateTranslations();
+        }
+        return;
+    }
+    const cards = skills.map((skill) => {
+        const id = skill.id || '';
+        const name = skill.name || id || '';
+        const description = skill.description || '';
+        const enabled = skill.enabled !== false;
+        const path = skill.path || '';
+        const toggleOnClasses = 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500';
+        const toggleOffClasses = 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600';
+        const knobOnClasses = 'translate-x-4';
+        const knobOffClasses = 'translate-x-0';
+        const toggleClasses = enabled ? toggleOnClasses : toggleOffClasses;
+        const knobClasses = enabled ? knobOnClasses : knobOffClasses;
+        return `
+            <div class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <div class="text-base font-semibold text-gray-900 dark:text-gray-100">${escapeHtml(name)}</div>
+                    </div>
+                    <div class="flex items-start space-x-2">
+                        <button
+                            type="button"
+                            class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none ${toggleClasses}"
+                            aria-pressed="${enabled ? 'true' : 'false'}"
+                            data-skill-id="${escapeHtml(String(id))}"
+                            aria-label="${window.i18n ? window.i18n.t('plugin.skills_toggle_label') : 'Enable skill'}"
+                        >
+                            <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${knobClasses}"></span>
+                        </button>
+                    </div>
+                </div>
+                ${description ? `
+                    <p class="text-sm text-gray-600 dark:text-gray-300 line-clamp-3 mb-3" title="${escapeHtml(String(description))}">
+                        ${escapeHtml(String(description))}
+                    </p>
+                ` : ''}
+                <div class="mt-auto">
+                    <div class="text-xs font-mono text-gray-400 dark:text-gray-500 break-all">
+                        ${escapeHtml(String(path))}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    container.innerHTML = `
+        <div class="flex items-center justify-start mb-4">
+            <button
+                type="button"
+                id="skills-upload-button"
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors mr-2"
+            >
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                </svg>
+                <span data-i18n="plugin.skills_upload">Upload Skill</span>
+            </button>
+            <button
+                type="button"
+                id="skills-refresh-button"
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                <span data-i18n="plugin.skills_refresh">Refresh</span>
+            </button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4">
+            ${cards}
+        </div>
+    `;
+    attachSkillsHandlers();
+    if (window.i18n) {
+        updateTranslations();
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Toggle handlers
 // ---------------------------------------------------------------------------
 
@@ -514,6 +651,178 @@ function attachMcpHandlers() {
             });
         });
     });
+}
+
+// ---------------------------------------------------------------------------
+// Skills handlers
+// ---------------------------------------------------------------------------
+
+function attachSkillsHandlers() {
+    const container = document.getElementById('plugin-skills');
+    if (!container) {
+        return;
+    }
+    const uploadButton = container.querySelector('#skills-upload-button');
+    if (uploadButton) {
+        uploadButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            openSkillsUploadModal();
+        });
+    }
+    const refreshButton = container.querySelector('#skills-refresh-button');
+    if (refreshButton) {
+        refreshButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            refreshSkills();
+        });
+    }
+    container.querySelectorAll('button[data-skill-id]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            toggleSkillEnabled(btn);
+        });
+    });
+}
+
+async function toggleSkillEnabled(button) {
+    const skillId = button.getAttribute('data-skill-id') || '';
+    if (!skillId) {
+        return;
+    }
+    const isOn = button.getAttribute('aria-pressed') === 'true';
+    const nextState = !isOn;
+
+    // Save original UI state for rollback
+    const origAriaPressed = button.getAttribute('aria-pressed');
+    const origButtonClass = button.className;
+    const knob = button.querySelector('span');
+    const origKnobClass = knob ? knob.className : null;
+    const origDisabled = button.disabled;
+    const origAriaDisabled = button.getAttribute('aria-disabled');
+
+    // Optimistically update UI
+    button.setAttribute('aria-pressed', nextState ? 'true' : 'false');
+    button.className = button.className.replace(
+        isOn ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600',
+        nextState ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'
+    );
+    if (knob) {
+        knob.className = knob.className.replace(
+            isOn ? 'translate-x-4' : 'translate-x-0',
+            nextState ? 'translate-x-4' : 'translate-x-0'
+        );
+    }
+    button.disabled = true;
+    button.setAttribute('aria-disabled', 'true');
+
+    try {
+        const response = await apiCall(`/api/skills/${encodeURIComponent(skillId)}/enabled`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enabled: nextState })
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to update skill state: ${response.status}`);
+        }
+        const result = await response.json();
+        // Update the data in AppState
+        const skills = AppState.data.skills || [];
+        const skillIndex = skills.findIndex(s => s.id === skillId);
+        if (skillIndex !== -1) {
+            skills[skillIndex].enabled = result.enabled;
+        }
+        showNotification(window.i18n ? window.i18n.t('plugin.skills_toggle_success') : 'Skill state updated', 'success');
+    } catch (error) {
+        console.error('Error updating skill state:', error);
+        // Rollback UI changes
+        button.setAttribute('aria-pressed', origAriaPressed);
+        button.className = origButtonClass;
+        if (knob && origKnobClass) {
+            knob.className = origKnobClass;
+        }
+        button.disabled = origDisabled;
+        button.setAttribute('aria-disabled', origAriaDisabled);
+        showNotification(window.i18n ? window.i18n.t('plugin.skills_toggle_error') : 'Failed to update skill state', 'error');
+    } finally {
+        button.disabled = false;
+        button.setAttribute('aria-disabled', 'false');
+    }
+}
+
+async function refreshSkills() {
+    try {
+        const response = await apiCall('/api/skills/refresh', {
+            method: 'POST'
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to refresh skills: ${response.status}`);
+        }
+        await loadSkills();
+        showNotification(window.i18n ? window.i18n.t('plugin.skills_refresh_success') : 'Skills refreshed', 'success');
+    } catch (error) {
+        console.error('Error refreshing skills:', error);
+        showNotification(window.i18n ? window.i18n.t('plugin.skills_refresh_error') : 'Failed to refresh skills', 'error');
+    }
+}
+
+function openSkillsUploadModal() {
+    if (!_skillsDropzone) {
+        _skillsDropzone = new FileDropzone('skills-upload-dropzone', {
+            inputId: 'skills-upload-input',
+            titleKey: 'plugin.skills_upload_hint',
+            titleFallback: 'Drop a .zip file here or click to select',
+            reselectKey: 'plugin.skills_upload_reselect',
+            reselectFallback: 'Click or drag to reselect',
+        });
+    } else {
+        _skillsDropzone.reset();
+    }
+    Modal.show('skills-upload-modal', closeSkillsUploadModal);
+}
+
+function closeSkillsUploadModal() {
+    Modal.hide('skills-upload-modal', () => {
+        if (_skillsDropzone) {
+            _skillsDropzone.reset();
+        }
+    });
+}
+
+async function uploadSkill() {
+    const skillFile = _skillsDropzone?.getFile();
+    if (!skillFile) {
+        showNotification(window.i18n ? window.i18n.t('plugin.skills_upload_no_file') : 'Please select a .zip file', 'error');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', skillFile);
+
+    try {
+        const response = await apiCall('/api/skills/upload', {
+            method: 'POST',
+            body: formData
+        });
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            const msg = data.detail || `HTTP ${response.status}`;
+            showNotification(`${window.i18n ? window.i18n.t('plugin.skills_upload_failed') : 'Upload failed'}: ${msg}`, 'error');
+            return;
+        }
+        const result = await response.json();
+        closeSkillsUploadModal();
+        await loadSkills();
+        if (result.warnings && result.warnings.length) {
+            showNotification(`${window.i18n ? window.i18n.t('plugin.skills_upload_warning') : 'Uploaded with warnings'}: ${result.warnings.join('; ')}`, 'warning');
+        } else {
+            showNotification(window.i18n ? window.i18n.t('plugin.skills_upload_success') : 'Skill uploaded successfully', 'success');
+        }
+    } catch (error) {
+        console.error('Error uploading skill:', error);
+        showNotification(window.i18n ? window.i18n.t('plugin.skills_upload_error') : 'Failed to upload skill', 'error');
+    }
 }
 
 /** Attach click handlers to plugin toggle and configure buttons after list render */
@@ -718,6 +1027,7 @@ function switchPluginInstallTab(tab) {
 }
 
 let _zipDropzone = null;
+let _skillsDropzone = null;
 
 async function installPlugin() {
     if (PluginInstallModalState.installing) return;
@@ -954,32 +1264,43 @@ function setupPluginTabs() {
     }
     const tabPlugins = document.getElementById('plugin-tab-plugins');
     const tabMcp = document.getElementById('plugin-tab-mcp');
+    const tabSkills = document.getElementById('plugin-tab-skills');
     const pluginList = document.getElementById('plugin-list');
     const mcpContainer = document.getElementById('plugin-mcp');
-    if (!tabPlugins || !tabMcp || !pluginList || !mcpContainer) {
+    const skillsContainer = document.getElementById('plugin-skills');
+    if (!tabPlugins || !tabMcp || !tabSkills || !pluginList || !mcpContainer || !skillsContainer) {
         return;
     }
     const activateTab = (tab) => {
         AppState.pluginTab = tab;
         const isPlugins = tab === 'plugins';
+        const isMcp = tab === 'mcp';
+        const isSkills = tab === 'skills';
         if (isPlugins) {
             tabPlugins.classList.add('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
             tabPlugins.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
             tabMcp.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
             tabMcp.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
-        } else {
+            tabSkills.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabSkills.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        } else if (isMcp) {
             tabMcp.classList.add('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
             tabMcp.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
             tabPlugins.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
             tabPlugins.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+            tabSkills.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabSkills.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        } else if (isSkills) {
+            tabSkills.classList.add('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabSkills.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+            tabPlugins.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabPlugins.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+            tabMcp.classList.remove('border-blue-600', 'dark:border-blue-500', 'text-blue-600', 'dark:text-blue-500');
+            tabMcp.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
         }
-        if (isPlugins) {
-            pluginList.classList.remove('hidden');
-            mcpContainer.classList.add('hidden');
-        } else {
-            pluginList.classList.add('hidden');
-            mcpContainer.classList.remove('hidden');
-        }
+        pluginList.classList.toggle('hidden', !isPlugins);
+        mcpContainer.classList.toggle('hidden', !isMcp);
+        skillsContainer.classList.toggle('hidden', !isSkills);
     };
     tabPlugins.addEventListener('click', (e) => {
         e.preventDefault();
@@ -991,12 +1312,19 @@ function setupPluginTabs() {
         activateTab('mcp');
         loadMcpServers();
     });
+    tabSkills.addEventListener('click', (e) => {
+        e.preventDefault();
+        activateTab('skills');
+        loadSkills();
+    });
     const initialTab = AppState.pluginTab || 'plugins';
     activateTab(initialTab);
     if (initialTab === 'plugins') {
         loadPluginData();
-    } else {
+    } else if (initialTab === 'mcp') {
         loadMcpServers();
+    } else if (initialTab === 'skills') {
+        loadSkills();
     }
     AppState.pluginTabsInitialized = true;
 }
