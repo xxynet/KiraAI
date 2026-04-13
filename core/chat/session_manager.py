@@ -3,7 +3,7 @@ import json
 import os
 import time
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, overload
 from threading import Lock
 
 from core.logging_manager import get_logger
@@ -98,10 +98,32 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error saving memory to {path}: {e}")
 
-    def get_session_info(self, session: str):
+    @overload
+    def get_session_info(self, session: None = None) -> List[Session]:
+        ...
+
+    @overload
+    def get_session_info(self, session: str) -> Session:
+        ...
+
+    def get_session_info(self, session: Optional[str] = None):
+        if session is None:
+            session_info_list = []
+            for s, si in self.chat_memory.items():
+                parts = s.split(":", maxsplit=2)
+                session_data = self.chat_memory[s]
+                session_info_list.append(Session(
+                    adapter_name=parts[0],
+                    session_type=parts[1],
+                    session_id=parts[2],
+                    session_title=session_data["title"],
+                    session_description=session_data["description"],
+                    timestamp=session_data["timestamp"]
+                ))
+            return session_info_list
+
         parts = session.split(":", maxsplit=2)
-        if len(parts) != 3:
-            raise ValueError("Invalid session ID")
+
         self._ensure_session_data(session)
         session_data = self.chat_memory[session]
         return Session(

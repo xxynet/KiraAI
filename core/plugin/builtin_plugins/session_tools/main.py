@@ -84,8 +84,17 @@ class SessionPlugin(BasePlugin):
         except Exception as e:
             return f"failed to send: {e}"
 
+    def get_session_list_prompt(self) -> str:
+        session_info_list = self.ctx.session_mgr.get_session_info()
+        return "\n".join(
+            f"{session_info.sid}(title: {session_info.session_title})"
+            for session_info in session_info_list
+        )
+
     @on.llm_request()
-    async def inject_few_shot(self, _event, req: LLMRequest, *_):
+    async def inject_session_prompt(self, _event, req: LLMRequest, *_):
         for p in req.system_prompt:
             if p.name == "tools":
                 p.content += SESSION_TOOL_FEW_SHOT
+            if p.name == "sessions":
+                p.content += self.get_session_list_prompt()

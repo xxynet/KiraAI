@@ -7,11 +7,14 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 *.egg
-dist/
 build/
 venv/
 .venv/
 .env
+
+# Frontend
+node_modules/
+dist/
 
 # OS
 Thumbs.db

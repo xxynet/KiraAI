@@ -1,6 +1,9 @@
 # --- Python build artifacts ---
 **/__pycache__/
 build/
+
+# --- Frontend ---
+node_modules/
 dist/
 
 # --- Virtual environments ---

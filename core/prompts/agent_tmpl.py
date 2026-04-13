@@ -12,7 +12,6 @@ accounts_tmpl = """\
 
 sessions_tmpl = """\
 ## 当前存在的会话（Sessions）
-{chat_env[session_list]}
 
 """
 

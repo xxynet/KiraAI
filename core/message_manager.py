@@ -192,13 +192,6 @@ class MessageProcessor:
             self.session_locks[sid] = asyncio.Lock()
         return self.session_locks[sid]
 
-    def get_session_list_prompt(self) -> str:
-        session_list_prompt = ""
-        _chat_memory = self.memory_manager.chat_memory
-        for session_id in _chat_memory:
-            session_list_prompt += f"{session_id}\n"
-        return session_list_prompt
-
     def get_session_buffer_length(self, sid: str) -> int:
         buffer = self.session_buffer.get_buffer(sid)
         return buffer.get_length()
@@ -424,9 +417,6 @@ class MessageProcessor:
                 logger.info("Event stopped")
                 return
 
-        # Get existing session
-        session_list = self.get_session_list_prompt()
-
         # Set session title
         if not self.memory_manager.get_session_info(sid).session_title:
             self.memory_manager.update_session_info(sid, event.session.session_title)
@@ -439,8 +429,7 @@ class MessageProcessor:
             "chat_type": 'GroupMessage' if event.is_group_message() else 'DirectMessage',
             "self_id": event.self_id,
             "session_title": session_title,
-            "session_description": event.session.session_description,
-            "session_list": session_list
+            "session_description": event.session.session_description
         }
 
         # Get chat history memory
