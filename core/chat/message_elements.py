@@ -338,7 +338,7 @@ class BaseMediaElement(BaseMessageElement, ABC):
 class Image(BaseMediaElement):
     type = ElementType.Image
 
-    def __init__(self, image: str, mime: Optional[str] = None, name: Optional[str] = None, caption: Optional[str] = ""):
+    def __init__(self, image: str, mime: Optional[str] = None, name: Optional[str] = None, caption: Optional[str] = None):
         """
         :param image: image data in "url", "path", "base64", "data_url"
         """
@@ -405,7 +405,7 @@ class Sticker(BaseMediaElement):
         sticker_id: Optional[Union[str, int]] = None,
         sticker: Optional[str] = None,
         mime: Optional[str] = None,
-        caption: Optional[str] = ""
+        caption: Optional[str] = None
     ):
         super().__init__(file=sticker, mime=mime)
         self.sticker_id = str(sticker_id) if sticker_id is not None else None
@@ -473,9 +473,9 @@ class Sticker(BaseMediaElement):
 class Record(BaseMediaElement):
     type = ElementType.Record
 
-    def __init__(self, record: Optional[str], mime: Optional[str] = None, name: Optional[str] = None):
+    def __init__(self, record: Optional[str], mime: Optional[str] = None, name: Optional[str] = None, transcript: Optional[str] = None):
         super().__init__(file=record, name=name, mime=mime)
-        self.transcript: Optional[str] = ""
+        self.transcript: Optional[str] = transcript
 
     @property
     def record(self):

@@ -236,39 +236,41 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, Image):
-                try:
-                    md5 = await ele.hash_image()
-                    cached_desc = self.image_desc_cache.get(md5)
-                except (ValueError, Exception) as e:
-                    logger.warning(f"Failed to hash image: {e}")
-                    md5 = None
-                    cached_desc = None
-                if cached_desc:
-                    img_desc = cached_desc
-                else:
-                    vlm_model = self.provider_mgr.get_default_vlm()
-                    img_desc = await desc_img(client=vlm_model, image=ele)
-                    if md5:
-                        self.image_desc_cache.set(md5, img_desc)
-                ele.caption = img_desc
-                message_str += f"[Image {img_desc}]"
+                if ele.caption is None:
+                    try:
+                        md5 = await ele.hash_image()
+                        cached_desc = self.image_desc_cache.get(md5)
+                    except (ValueError, Exception) as e:
+                        logger.warning(f"Failed to hash image: {e}")
+                        md5 = None
+                        cached_desc = None
+                    if cached_desc:
+                        img_desc = cached_desc
+                    else:
+                        vlm_model = self.provider_mgr.get_default_vlm()
+                        img_desc = await desc_img(client=vlm_model, image=ele)
+                        if md5:
+                            self.image_desc_cache.set(md5, img_desc)
+                    ele.caption = img_desc
+                message_str += f"[Image {str(ele.caption)}]"
             elif isinstance(ele, Sticker):
-                try:
-                    md5 = await ele.hash_image()
-                    cached_desc = self.image_desc_cache.get(md5)
-                except (ValueError, Exception) as e:
-                    logger.warning(f"Failed to hash sticker: {e}")
-                    md5 = None
-                    cached_desc = None
-                if cached_desc:
-                    sticker_desc = cached_desc
-                else:
-                    vlm_model = self.provider_mgr.get_default_vlm()
-                    sticker_desc = await desc_img(client=vlm_model, image=ele)
-                    if md5:
-                        self.image_desc_cache.set(md5, sticker_desc)
-                ele.caption = sticker_desc
-                message_str += f"[Sticker {sticker_desc}]"
+                if ele.caption is None:
+                    try:
+                        md5 = await ele.hash_image()
+                        cached_desc = self.image_desc_cache.get(md5)
+                    except (ValueError, Exception) as e:
+                        logger.warning(f"Failed to hash sticker: {e}")
+                        md5 = None
+                        cached_desc = None
+                    if cached_desc:
+                        sticker_desc = cached_desc
+                    else:
+                        vlm_model = self.provider_mgr.get_default_vlm()
+                        sticker_desc = await desc_img(client=vlm_model, image=ele)
+                        if md5:
+                            self.image_desc_cache.set(md5, sticker_desc)
+                    ele.caption = sticker_desc
+                message_str += f"[Sticker {str(ele.caption)}]"
             elif isinstance(ele, Reply):
                 if ele.chain:
                     ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]

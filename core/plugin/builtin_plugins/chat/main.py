@@ -1,4 +1,5 @@
 import asyncio
+import random
 
 from core.plugin import BasePlugin, logger, on, Priority
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent
@@ -17,6 +18,8 @@ class DebouncePlugin(BasePlugin):
         self.max_unmentioned_messages = int(self.plugin_cfg.get("max_unmentioned_messages", 5))
         self.receive_unmentioned = self.plugin_cfg.get("receive_unmentioned", True)
         self.group_chat_prompt = self.plugin_cfg.get("group_chat_prompt", "")
+        self.group_proactive_chat = self.plugin_cfg.get("group_proactive_chat", False)
+        self.group_proactive_chat_probability = self.plugin_cfg.get("group_proactive_chat_probability", 0.1)
 
         self.waking_words = cfg.get("waking_words", [])
     
@@ -43,10 +46,14 @@ class DebouncePlugin(BasePlugin):
             if self.receive_unmentioned:
                 buffer = self.ctx.get_buffer(str(event.session))
                 if buffer.get_length() >= self.max_unmentioned_messages:
-                    buffer.pop()
+                    buffer.pop(count=buffer.get_length()-self.max_unmentioned_messages+1)
                 event.buffer()
+                if self.group_proactive_chat:
+                    if random.random() < self.group_proactive_chat_probability:
+                        logger.info("[Chat] Triggered proactive chat")
+                        event.flush()
             else:
-                event.stop()
+                event.discard()
             return
 
         sid = event.session.sid
