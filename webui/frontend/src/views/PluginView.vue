@@ -10,7 +10,11 @@
           </el-button>
         </div>
 
-        <div v-if="plugins.length === 0" class="text-center py-12 text-gray-400">
+        <div v-if="pluginsError" class="text-center py-12 text-red-500">
+          <el-icon :size="48"><SetUp /></el-icon>
+          <p class="mt-2 text-sm">{{ pluginsError }}</p>
+        </div>
+        <div v-else-if="plugins.length === 0" class="text-center py-12 text-gray-400">
           <el-icon :size="48"><SetUp /></el-icon>
           <p class="mt-2 text-sm">{{ $t('plugin.no_plugins') }}</p>
         </div>
@@ -62,7 +66,11 @@
           </el-button>
         </div>
 
-        <div v-if="mcpServers.length === 0" class="text-center py-12 text-gray-400">
+        <div v-if="mcpServersError" class="text-center py-12 text-red-500">
+          <el-icon :size="48"><Platform /></el-icon>
+          <p class="mt-2 text-sm">{{ mcpServersError }}</p>
+        </div>
+        <div v-else-if="mcpServers.length === 0" class="text-center py-12 text-gray-400">
           <el-icon :size="48"><Platform /></el-icon>
           <p class="mt-2 text-sm">{{ $t('plugin.no_mcp_servers') }}</p>
         </div>
@@ -210,18 +218,32 @@ const mcpForm = ref({ name: '', description: '' })
 const mcpConfigJson = ref('{}')
 const savingMcp = ref(false)
 
+// Error flags so the UI can distinguish "no data" from "fetch failed"
+const pluginsError = ref<string | null>(null)
+const mcpServersError = ref<string | null>(null)
+
 async function loadPlugins() {
   try {
     const res = await getPlugins()
     plugins.value = Array.isArray(res.data) ? res.data : []
-  } catch { /* silent */ }
+    pluginsError.value = null
+  } catch (e: any) {
+    plugins.value = []
+    pluginsError.value = e?.message || 'Failed to load plugins'
+    ElMessage.error(pluginsError.value!)
+  }
 }
 
 async function loadMcpServers() {
   try {
     const res = await getMcpServers()
     mcpServers.value = Array.isArray(res.data) ? res.data : []
-  } catch { /* silent */ }
+    mcpServersError.value = null
+  } catch (e: any) {
+    mcpServers.value = []
+    mcpServersError.value = e?.message || 'Failed to load MCP servers'
+    ElMessage.error(mcpServersError.value!)
+  }
 }
 
 async function togglePlugin(plugin: PluginItem) {
@@ -325,17 +347,19 @@ function openMcpCreate() {
 }
 
 async function openMcpEdit(server: McpServerItem) {
-  mcpEditMode.value = true
-  mcpEditId.value = server.id
-  mcpForm.value = { name: server.name, description: server.description || '' }
   try {
     const { getMcpServerConfig } = await import('@/api/mcp')
     const res = await getMcpServerConfig(server.id)
+    mcpEditMode.value = true
+    mcpEditId.value = server.id
+    mcpForm.value = { name: server.name, description: server.description || '' }
     mcpConfigJson.value = JSON.stringify(res.data, null, 2)
+    mcpDialogVisible.value = true
   } catch {
-    mcpConfigJson.value = JSON.stringify({ type: server.type, url: server.url }, null, 2)
+    // Abort opening the editor — a lossy fallback built from list fields
+    // would silently overwrite the real config if the user hits Save.
+    ElMessage.error(t('plugin.mcp_save_failed'))
   }
-  mcpDialogVisible.value = true
 }
 
 async function saveMcpForm() {

@@ -180,6 +180,10 @@ class McpRoutes(Routes):
                 )
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid MCP config JSON")
+            # Mirror create_mcp_server: the editor config must be a JSON object,
+            # otherwise manager.update_server_from_editor raises ValueError.
+            if not isinstance(editor_config, dict):
+                raise HTTPException(status_code=400, detail="Invalid MCP config JSON")
             manager = self.lifecycle.mcp_manager
             manager.update_server_from_editor(
                 name=server_name,
@@ -189,6 +193,9 @@ class McpRoutes(Routes):
             return {"ok": True}
         except HTTPException:
             raise
+        except ValueError as e:
+            logger.error(f"Failed to update MCP config file for {server_name}: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"Failed to update MCP config file for {server_name}: {e}")
             raise HTTPException(status_code=500, detail="Failed to save MCP config file")

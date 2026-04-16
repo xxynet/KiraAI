@@ -42,6 +42,21 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const saving = ref(false)
 
+const allowedLanguages = ['en', 'zh'] as const
+const allowedThemes = ['light', 'dark'] as const
+
+function normalizeLanguage(value: unknown): string {
+  return (allowedLanguages as readonly string[]).includes(value as string)
+    ? (value as string)
+    : appStore.language
+}
+
+function normalizeTheme(value: unknown): string {
+  return (allowedThemes as readonly string[]).includes(value as string)
+    ? (value as string)
+    : appStore.theme
+}
+
 const form = ref({
   language: appStore.language,
   theme: appStore.theme,
@@ -50,8 +65,8 @@ const form = ref({
 onMounted(async () => {
   try {
     const res = await getSettings()
-    form.value.language = res.data.language || appStore.language
-    form.value.theme = res.data.theme || appStore.theme
+    form.value.language = normalizeLanguage(res.data.language)
+    form.value.theme = normalizeTheme(res.data.theme)
   } catch {
     // use local defaults
   }
@@ -60,10 +75,17 @@ onMounted(async () => {
 async function handleSave() {
   saving.value = true
   try {
-    await updateSettings(form.value)
-    appStore.setLanguage(form.value.language)
-    appStore.setTheme(form.value.theme)
-    monaco.editor.setTheme(form.value.theme === 'dark' ? 'vs-dark' : 'vs')
+    // Normalize again right before persisting, so only whitelisted values
+    // are sent to the backend or written to the app store.
+    const normalized = {
+      language: normalizeLanguage(form.value.language),
+      theme: normalizeTheme(form.value.theme),
+    }
+    form.value = normalized
+    await updateSettings(normalized)
+    appStore.setLanguage(normalized.language)
+    appStore.setTheme(normalized.theme)
+    monaco.editor.setTheme(normalized.theme === 'dark' ? 'vs-dark' : 'vs')
     ElMessage.success(t('settings.saved'))
   } catch {
     ElMessage.error(t('settings.save_failed'))

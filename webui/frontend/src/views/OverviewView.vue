@@ -84,6 +84,7 @@ const runtimeSeconds = ref(0)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let runtimeTimer: ReturnType<typeof setInterval> | null = null
 let inFlight = false
+let disposed = false
 
 const formattedUptime = computed(() => {
   const s = runtimeSeconds.value
@@ -111,10 +112,13 @@ const statusText = computed(() => {
 })
 
 async function fetchOverview() {
-  if (inFlight) return
+  if (inFlight || disposed) return
   inFlight = true
   try {
     const res = await getOverview()
+    // If the component unmounted while awaiting, bail without touching state
+    // or resurrecting the runtime timer.
+    if (disposed) return
     overview.value = res.data
     runtimeSeconds.value = res.data.runtime_duration
     // Start or restart the 1s runtime tick after a successful fetch
@@ -135,7 +139,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  disposed = true
   if (refreshTimer) clearInterval(refreshTimer)
   if (runtimeTimer) clearInterval(runtimeTimer)
+  refreshTimer = null
+  runtimeTimer = null
 })
 </script>

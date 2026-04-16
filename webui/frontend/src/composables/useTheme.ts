@@ -1,17 +1,19 @@
 import { computed } from 'vue'
 import { useAppStore } from '@/stores/app'
-import * as monaco from 'monaco-editor'
 
 export function useTheme() {
   const appStore = useAppStore()
 
-  function syncMonacoTheme() {
+  async function syncMonacoTheme() {
+    // Lazy-load Monaco so it stays out of the initial bundle for users who
+    // never toggle the theme while an editor is on screen.
+    const monaco = await import('monaco-editor')
     monaco.editor.setTheme(appStore.isDark ? 'vs-dark' : 'vs')
   }
 
-  function toggleTheme() {
+  async function toggleTheme() {
     appStore.toggleTheme()
-    syncMonacoTheme()
+    await syncMonacoTheme()
   }
 
   return {
