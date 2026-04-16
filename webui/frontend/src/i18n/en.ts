@@ -260,6 +260,9 @@ export default {
     toggle_failed: 'Failed to update plugin status',
     uninstall_confirm: 'Are you sure you want to uninstall this plugin?',
     uninstall_success: 'Plugin uninstalled successfully',
+    uninstall_failed: 'Failed to uninstall plugin',
+    file_required: 'Plugin file is required',
+    config_load_failed: 'Failed to load plugin configuration',
     mcp_toggle_success: 'MCP server status updated',
     mcp_toggle_failed: 'Failed to update MCP server status',
     mcp_invalid_json: 'Invalid JSON configuration',
@@ -490,5 +493,9 @@ export default {
     submit: 'Login',
     error: 'Login failed. Please check your access token.',
     token_required: 'Please enter an access token.',
+  },
+  configform: {
+    invalid_json: 'Invalid JSON',
+    expected_type: 'Expected {type}',
   },
 }

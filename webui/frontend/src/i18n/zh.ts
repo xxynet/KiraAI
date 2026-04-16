@@ -260,6 +260,9 @@ export default {
     toggle_failed: '更新插件状态失败',
     uninstall_confirm: '确定要卸载此插件吗？',
     uninstall_success: '插件卸载成功',
+    uninstall_failed: '卸载插件失败',
+    file_required: '请上传插件文件',
+    config_load_failed: '加载插件配置失败',
     mcp_toggle_success: 'MCP 服务器状态已更新',
     mcp_toggle_failed: '更新 MCP 服务器状态失败',
     mcp_invalid_json: 'JSON 配置无效',
@@ -490,5 +493,9 @@ export default {
     submit: '登录',
     error: '登录失败，请检查您的访问令牌。',
     token_required: '请输入访问令牌。',
+  },
+  configform: {
+    invalid_json: 'JSON 格式无效',
+    expected_type: '期望类型：{type}',
   },
 }

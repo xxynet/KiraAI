@@ -4,24 +4,29 @@ import { EventSourcePolyfill } from 'event-source-polyfill'
 export function useSSE() {
   const messages = ref<string[]>([])
   const connected = ref(false)
+  const lastError = ref<string | null>(null)
   let eventSource: EventSource | EventSourcePolyfill | null = null
 
   function connect(url: string, token?: string) {
     disconnect()
+    lastError.value = null
 
     const authToken = token || localStorage.getItem('jwt_token')
 
     try {
-      // Try polyfill with custom headers first
+      // Always send the JWT via an Authorization header so it doesn't land in
+      // URL history, proxy access logs, or server-side request logs. If the
+      // polyfill cannot be constructed we fail closed instead of downgrading
+      // to a query-parameter token.
       eventSource = new EventSourcePolyfill(url, {
         headers: { Authorization: `Bearer ${authToken}` },
         heartbeatTimeout: 300000,
         withCredentials: true,
       })
-    } catch {
-      // Fallback to native EventSource with query param
-      const separator = url.includes('?') ? '&' : '?'
-      eventSource = new EventSource(`${url}${separator}token=${encodeURIComponent(authToken || '')}`)
+    } catch (err) {
+      lastError.value = err instanceof Error ? err.message : 'SSE connection failed'
+      connected.value = false
+      return
     }
 
     eventSource.onopen = () => {
@@ -54,6 +59,7 @@ export function useSSE() {
   return {
     messages,
     connected,
+    lastError,
     connect,
     disconnect,
     clear,

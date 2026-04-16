@@ -1,6 +1,6 @@
 <template>
   <header class="app-header px-6 py-4 flex items-center justify-between">
-    <h2 class="text-xl font-semibold text-gray-900">
+    <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">
       {{ title }}
     </h2>
     <div class="flex items-center gap-3">

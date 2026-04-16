@@ -293,8 +293,12 @@ async function openPluginConfig(plugin: PluginItem) {
     pluginConfigSchema.value = res.data.schema || null
     pluginConfigValues.value = res.data.config || {}
   } catch {
+    // A failed fetch must not surface as "no config" — that would let the
+    // user save {} back and wipe real config on the server.
+    ElMessage.error(t('plugin.config_load_failed'))
     pluginConfigSchema.value = null
     pluginConfigValues.value = {}
+    return
   }
   pluginConfigVisible.value = true
 }
