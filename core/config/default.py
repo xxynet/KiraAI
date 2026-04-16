@@ -32,5 +32,10 @@ DEFAULT_CONFIG = {
         "default_rerank": None,
         "default_video": None
     },
-    "adapters": {}  # ID: Adapter config dict
+    "adapters": {},  # ID: Adapter config dict
+    "telemetry": {
+        "enabled": True,
+        "client_uuid": None,
+        "secret_key": None
+    }
 }

@@ -21,6 +21,7 @@ from core.agent.skills_mgr import SkillsManager
 from core.config import VERSION
 from core.utils.path_utils import get_data_path
 from core.temp_monitor import AsyncTempMonitor
+from core.telemetry import TelemetryClient
 
 
 logger = get_logger("lifecycle", "blue")
@@ -62,6 +63,8 @@ class KiraLifecycle:
 
         self.skills_manager: Optional[SkillsManager] = None
 
+        self.telemetry_client: Optional[TelemetryClient] = None
+
         self.tasks: list[asyncio.Task] = []
 
     async def schedule_tasks(self):
@@ -84,6 +87,11 @@ class KiraLifecycle:
 
         # ====== init KiraAI config ======
         self.kira_config = KiraConfig()
+
+        # ====== record startup time and init telemetry ======
+        self.stats.set_stats("started_ts", int(time.time()))
+        # self.telemetry_client = TelemetryClient(self.kira_config, self.stats)
+        # await self.telemetry_client.initialize()
 
         # ====== init ProviderManager config ======
         self.provider_manager = ProviderManager(self.kira_config)
@@ -173,13 +181,15 @@ class KiraLifecycle:
         # ====== schedule tasks ======
         # asyncio.create_task(self.schedule_tasks())
 
-        self.stats.set_stats("started_ts", int(time.time()))
-
         logger.info("All modules initialized, starting message processing loop...")
 
         await self.event_bus.dispatch()
 
     async def stop(self):
+        # shutdown telemetry client
+        if self.telemetry_client:
+            await self.telemetry_client.shutdown()
+
         # terminate all running adapters
         await self.adapter_manager.stop_adapters()
         await self.event_bus.stop()
