@@ -45,6 +45,7 @@ export default {
     status_degraded: '降级运行',
     status_starting: '启动中',
     status_error: '错误',
+    status_failed: '失败',
     provider_stats: '提供商：',
   },
   provider: {
@@ -152,6 +153,7 @@ export default {
     delete_confirm: '确定要删除此适配器吗？',
     active: '启用',
     inactive: '禁用',
+    unknown: '未知',
     form_incomplete: '请填写适配器名称和平台',
     toggle_status: '切换 {name} 状态',
   },

@@ -150,28 +150,30 @@ export interface McpServerConfigUpdateRequest {
   config: any
 }
 
-// Configuration types
-export interface ConfigurationData {
-  configuration: Record<string, any>
-  config: Record<string, any>
-  schema: Record<string, any>
-  providers: Array<{ id: string; name: string; type: string }>
-  provider_models: Record<string, Record<string, any>>
-  models: Record<string, Record<string, string[]>>
+// Configuration types — mirrors the shape returned by webui/routes/config.py
+export interface ConfigurationProvider {
+  id: string
+  name: string
 }
 
-// Session types
+export interface ConfigurationData {
+  configuration: Record<string, any>
+  providers: ConfigurationProvider[]
+  provider_models: Record<string, Record<string, any>>
+}
+
+// Session types — mirrors webui/routes/sessions.py
 export interface SessionItem {
   id: string
   adapter_name: string
   session_type: string
+  session_id: string
+  title?: string
+  description?: string
   message_count: number
-  metadata: Record<string, any>
 }
 
 export interface SessionDetail extends SessionItem {
-  title?: string
-  description?: string
   messages: any[]
 }
 

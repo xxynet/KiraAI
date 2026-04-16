@@ -45,6 +45,7 @@ export default {
     status_degraded: 'Degraded',
     status_starting: 'Starting',
     status_error: 'Error',
+    status_failed: 'Failed',
     provider_stats: 'Providers:',
   },
   provider: {
@@ -152,6 +153,7 @@ export default {
     delete_confirm: 'Are you sure you want to delete this adapter?',
     active: 'Active',
     inactive: 'Inactive',
+    unknown: 'Unknown',
     form_incomplete: 'Please fill in adapter name and platform',
     toggle_status: 'Toggle {name} status',
   },

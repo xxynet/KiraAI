@@ -351,3 +351,14 @@ textarea:focus {
     height: 400px;
   }
 }
+
+/* ==================== Reduced Motion ==================== */
+@media (prefers-reduced-motion: reduce) {
+  .page-content,
+  .loading-spinner {
+    animation: none;
+  }
+  .session-card {
+    transition: none;
+  }
+}

@@ -97,11 +97,23 @@ class AuthRoutes(Routes):
         templates_dir/index.html is served as a legacy fallback for
         environments where the Vue frontend has not been built yet.
         """
-        # Only serve the SPA for GET requests that accept HTML (browser navigations)
-        if request and (request.method != "GET" or "text/html" not in request.headers.get("accept", "")):
-            raise HTTPException(status_code=404)
         # Don't serve SPA for static asset paths — let mounts handle them
         if full_path.startswith(("api/", "static/", "sticker/", "assets/", "monacoeditorwork/")):
+            raise HTTPException(status_code=404)
+        # Serve root-level files from the SPA dist (e.g., favicon.ico) so that
+        # they are not hijacked by the HTML SPA fallback below.  Restrict to
+        # single-segment paths to avoid any traversal surface.
+        if full_path and "/" not in full_path and ".." not in full_path:
+            candidate = self.dist_dir / full_path
+            try:
+                resolved = candidate.resolve()
+                dist_resolved = self.dist_dir.resolve()
+                if candidate.is_file() and str(resolved).startswith(str(dist_resolved)):
+                    return FileResponse(candidate)
+            except (OSError, ValueError):
+                pass
+        # Only serve the SPA for GET requests that accept HTML (browser navigations)
+        if request and (request.method != "GET" or "text/html" not in request.headers.get("accept", "")):
             raise HTTPException(status_code=404)
         spa_index = self.dist_dir / "index.html"
         if spa_index.exists():

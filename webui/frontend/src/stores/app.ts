@@ -2,17 +2,33 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import i18n from '@/i18n'
 
+const ALLOWED_THEMES = ['light', 'dark'] as const
+const ALLOWED_LANGUAGES = ['en', 'zh'] as const
+type Theme = (typeof ALLOWED_THEMES)[number]
+type Language = (typeof ALLOWED_LANGUAGES)[number]
+
+function sanitizeTheme(value: string | null): Theme {
+  return (ALLOWED_THEMES as readonly string[]).includes(value ?? '') ? (value as Theme) : 'light'
+}
+
+function sanitizeLanguage(value: string | null): Language {
+  return (ALLOWED_LANGUAGES as readonly string[]).includes(value ?? '')
+    ? (value as Language)
+    : 'en'
+}
+
 export const useAppStore = defineStore('app', () => {
-  const theme = ref<string>(localStorage.getItem('theme') || 'light')
-  const language = ref<string>(localStorage.getItem('language') || 'en')
+  const theme = ref<Theme>(sanitizeTheme(localStorage.getItem('theme')))
+  const language = ref<Language>(sanitizeLanguage(localStorage.getItem('language')))
 
   const isDark = ref(theme.value === 'dark')
 
   function setTheme(newTheme: string) {
-    theme.value = newTheme
-    isDark.value = newTheme === 'dark'
-    localStorage.setItem('theme', newTheme)
-    if (newTheme === 'dark') {
+    const validated = sanitizeTheme(newTheme)
+    theme.value = validated
+    isDark.value = validated === 'dark'
+    localStorage.setItem('theme', validated)
+    if (validated === 'dark') {
       document.documentElement.classList.add('dark')
     } else {
       document.documentElement.classList.remove('dark')
@@ -24,9 +40,10 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function setLanguage(lang: string) {
-    language.value = lang
-    localStorage.setItem('language', lang)
-    i18n.global.locale.value = lang as 'en' | 'zh'
+    const validated = sanitizeLanguage(lang)
+    language.value = validated
+    localStorage.setItem('language', validated)
+    i18n.global.locale.value = validated
   }
 
   // Initialize theme on store creation

@@ -1409,7 +1409,9 @@ kbd {
     .config-field-wrapper .text-amber-500,
     #config-change-count,
     .config-field-wrapper input.border-red-400,
-    .config-field-wrapper input.border-red-500 {
+    .config-field-wrapper input.border-red-500,
+    .page-content,
+    .fixed.top-4.right-4 {
         animation: none;
     }
     .config-group-body,

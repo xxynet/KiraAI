@@ -125,6 +125,15 @@ function onDraftInput(key: string, val: string, field: any) {
 }
 
 function onDraftBlur(key: string, field: any) {
+  // Empty/whitespace draft is an explicit clear — sync the parent model to
+  // the empty value appropriate for the field type so the form isn't left
+  // showing an empty input while the old value still lives on the model.
+  if (!drafts[key] || !drafts[key].trim()) {
+    delete draftErrors[key]
+    const cleared = field.type === 'array' ? [] : field.type === 'object' ? {} : null
+    emit('update:modelValue', { ...props.modelValue, [key]: cleared })
+    return
+  }
   try {
     const parsed = JSON.parse(drafts[key])
     if (!isValidType(parsed, field.type)) {
@@ -134,9 +143,7 @@ function onDraftBlur(key: string, field: any) {
       emit('update:modelValue', { ...props.modelValue, [key]: parsed })
     }
   } catch {
-    if (drafts[key].trim()) {
-      draftErrors[key] = 'Invalid JSON'
-    }
+    draftErrors[key] = 'Invalid JSON'
   }
 }
 
