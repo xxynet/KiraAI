@@ -219,8 +219,8 @@ class KiraExceptionEvent:
 
 
 class MessageChain:
-    def __init__(self, message_list: list[BaseMessageElement]):
-        self.message_list: list = message_list
+    def __init__(self, message_list: list[BaseMessageElement] = None):
+        self.message_list: list = message_list or []
 
     def __iter__(self):
         return iter(self.message_list)

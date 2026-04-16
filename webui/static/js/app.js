@@ -23,7 +23,8 @@
  *                             saveAdapter, AdapterModalState
  *   modules/provider.js    — loadProviderData, openProviderModal, closeProviderModal,
  *                             saveProvider, selectProvider, closeModelModal, saveModel
- *   modules/settings.js    — loadSettingsData, saveSettings, applyTheme,
+ *   modules/settings.js    — loadSettingsData, saveSettings, disposeSettingsEditors,
+ *                             applyCustomCSS, applyCustomJS, applyTheme,
  *                             getTranslation, applyTranslations,
  *                             loadConfigurationData, setupConfigurationTabs
  */
@@ -42,11 +43,16 @@ function initializeApp() {
 
     setupThemeToggle();
     setupNavigation();
+    setupMobileSidebar();
     loadAppVersion();
     loadInitialData();
     setupEventListeners();
     startAutoRefresh();
     initializeDropzones();
+
+    // Apply user custom CSS & JS from localStorage
+    applyCustomCSS();
+    applyCustomJS();
 }
 
 function setupThemeToggle() {
@@ -83,6 +89,31 @@ function setupThemeToggle() {
 /**
  * Set up navigation between pages.
  */
+function setupMobileSidebar() {
+    const menuBtn = document.getElementById('sidebar-menu-btn');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+
+    function openSidebar() {
+        sidebar.classList.add('sidebar-open');
+        overlay.classList.add('sidebar-open');
+    }
+
+    function closeSidebar() {
+        sidebar.classList.remove('sidebar-open');
+        overlay.classList.remove('sidebar-open');
+    }
+
+    menuBtn.addEventListener('click', openSidebar);
+    overlay.addEventListener('click', closeSidebar);
+
+    sidebar.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            if (window.innerWidth <= 768) closeSidebar();
+        });
+    });
+}
+
 function setupNavigation() {
     const navItems = document.querySelectorAll('.nav-item');
     navItems.forEach(item => {
@@ -107,6 +138,11 @@ function switchPage(pageName) {
             AppState.sseEventSource.close();
             AppState.sseEventSource = null;
         }
+    }
+
+    // Dispose Monaco editors when leaving settings page
+    if (AppState.currentPage === 'settings' && pageName !== 'settings') {
+        disposeSettingsEditors();
     }
 
     // Update navigation active state
@@ -211,26 +247,6 @@ function setupEventListeners() {
         saveSettingsBtn.addEventListener('click', saveSettings);
     }
 
-    // Settings language change
-    const settingsLanguage = document.getElementById('settings-language');
-    if (settingsLanguage) {
-        settingsLanguage.addEventListener('change', (e) => {
-            if (window.i18n) {
-                window.i18n.changeLanguage(e.target.value);
-            }
-        });
-    }
-
-    // Settings theme change
-    const settingsTheme = document.getElementById('settings-theme');
-    if (settingsTheme) {
-        settingsTheme.addEventListener('change', (e) => {
-            const theme = e.target.value;
-            applyTheme(theme);
-            localStorage.setItem('theme', theme);
-            Monaco.syncTheme();
-        });
-    }
 
     // Initialize log level selector
     initLogLevelSelector();

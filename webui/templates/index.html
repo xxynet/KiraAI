@@ -191,13 +191,21 @@
                 </select>
             </div>
         </aside>
-        
+        <div id="sidebar-overlay"></div>
+
         <!-- Main Content -->
         <main class="flex-1 overflow-y-auto">
             <!-- Header -->
             <header class="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 px-6 py-4 sticky top-0 z-30">
                 <div class="flex items-center justify-between">
-                    <h2 id="page-title" class="text-2xl font-semibold text-gray-800 dark:text-gray-100" data-i18n="pages.overview.title">Overview</h2>
+                    <div class="flex items-center">
+                        <button id="sidebar-menu-btn" class="p-1.5 mr-3 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors" aria-label="Toggle menu">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                            </svg>
+                        </button>
+                        <h2 id="page-title" class="text-2xl font-semibold text-gray-800 dark:text-gray-100" data-i18n="pages.overview.title">Overview</h2>
+                    </div>
                     <div class="flex items-center space-x-2">
                         <a href="https://github.com/xxynet/KiraAI" target="_blank" rel="noopener noreferrer" class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors" aria-label="GitHub">
                             <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -547,7 +555,7 @@
                         </div>
                         <div class="mb-4 flex space-x-4">
                             <select id="log-level-selector" multiple data-custom-select data-multiple="true" data-placeholder="Select Level" data-placeholder-i18n="logs.level_all">
-                                <option value="debug" selected data-i18n="logs.level_debug">Debug</option>
+                                <option value="debug" data-i18n="logs.level_debug">Debug</option>
                                 <option value="info" selected data-i18n="logs.level_info">Info</option>
                                 <option value="warning" selected data-i18n="logs.level_warning">Warning</option>
                                 <option value="error" selected data-i18n="logs.level_error">Error</option>
@@ -559,7 +567,7 @@
                                 <span data-i18n="logs.download">Download</span>
                             </button>
                         </div>
-                        <div id="log-container" class="bg-gray-50 rounded-lg p-4 h-96 overflow-y-auto font-mono text-base">
+                        <div id="log-container" class="bg-gray-50 rounded-lg p-4 min-h-64 overflow-y-auto font-mono text-base" style="height: calc(100vh - 18rem);">
                             <div class="flex justify-center items-center h-full">
                                 <p class="text-gray-500" data-i18n="logs.no_logs">No logs available</p>
                             </div>
@@ -569,22 +577,16 @@
                 
                 <!-- Settings Page -->
                 <div id="page-settings" class="page-content hidden">
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h3 class="text-lg font-semibold text-gray-800 mb-6" data-i18n="settings.title">System Settings</h3>
+                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-6" data-i18n="settings.title">System Settings</h3>
                         <div class="space-y-6">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.language">Language</label>
-                                <select id="settings-language" data-custom-select data-placeholder="Select Language">
-                                    <option value="en">English</option>
-                                    <option value="zh">中文</option>
-                                </select>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="settings.custom_css">Custom CSS</label>
+                                <div id="settings-css-editor" class="border dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;"></div>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.theme">Theme</label>
-                                <select id="settings-theme" data-custom-select data-placeholder="Select Theme">
-                                    <option value="light" data-i18n="settings.theme_light">Light</option>
-                                    <option value="dark" data-i18n="settings.theme_dark">Dark</option>
-                                </select>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="settings.custom_js">Custom JavaScript</label>
+                                <div id="settings-js-editor" class="border dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;"></div>
                             </div>
                             <div class="flex justify-end">
                                 <button id="save-settings" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors" data-i18n="settings.save">Save Settings</button>
@@ -717,7 +719,7 @@
     
     <!-- Provider Modal -->
     <div id="provider-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 flex flex-col" style="max-height: 90vh;">
             <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-semibold text-gray-800" data-i18n="provider.modal_title">Add Provider</h3>
                 <button onclick="closeProviderModal()" class="text-gray-400 hover:text-gray-600">
@@ -726,7 +728,7 @@
                     </svg>
                 </button>
             </div>
-            <div class="px-6 py-4">
+            <div class="px-6 py-4 flex-1 overflow-y-auto">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="provider.modal_name_label">Provider Name</label>
                     <input type="text" id="provider-name" class="w-full border rounded-lg px-3 py-2 focus:outline-none" placeholder="Enter provider name...">

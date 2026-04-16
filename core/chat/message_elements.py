@@ -335,13 +335,13 @@ class BaseMediaElement(BaseMessageElement, ABC):
 class Image(BaseMediaElement):
     type = ElementType.Image
 
-    def __init__(self, image: str, mime: Optional[str] = None, name: Optional[str] = None):
+    def __init__(self, image: str, mime: Optional[str] = None, name: Optional[str] = None, caption: Optional[str] = ""):
         """
         :param image: image data in "url", "path", "base64", "data_url"
         """
         super().__init__(file=image, name=name, mime=mime)
         self.image: str = self.file
-        self.caption: Optional[str] = ""
+        self.caption: Optional[str] = caption
         self.md5: Optional[str] = None
         self.image_type: Literal["url", "path", "base64", "data_url", "unknown"] = self.file_type
         self.mime = self.mime or "image/jpeg"
@@ -353,9 +353,9 @@ class Image(BaseMediaElement):
             md5 = await self._hash_image_from_base64()
             self.md5 = md5
             return md5
-        if self.image and self.type == "url":
+        if self.image and self.image_type == "url":
             return await self._hash_image_from_url()
-        if self.image and os.path.exists(self.image):
+        if self.image and self.image_type == "path" and os.path.exists(self.image):
             with open(self.image, "rb") as f:
                 data = f.read()
             h = hashlib.new("md5")
@@ -402,10 +402,55 @@ class Sticker(BaseMediaElement):
         sticker_id: Optional[Union[str, int]] = None,
         sticker: Optional[str] = None,
         mime: Optional[str] = None,
+        caption: Optional[str] = ""
     ):
         super().__init__(file=sticker, mime=mime)
         self.sticker_id = str(sticker_id) if sticker_id is not None else None
-        self.caption: str = ""
+        self.md5: Optional[str] = None
+        self.caption: str = caption
+
+    async def hash_image(self):
+        if self.md5:
+            return self.md5
+        if self.file and self.file_type == "base64":
+            md5 = await self._hash_image_from_base64()
+            self.md5 = md5
+            return md5
+        if self.file and self.file_type == "url":
+            return await self._hash_image_from_url()
+        if self.file and self.file_type == "path" and os.path.exists(self.file):
+            with open(self.file, "rb") as f:
+                data = f.read()
+            h = hashlib.new("md5")
+            h.update(data)
+            md5 = h.hexdigest()
+            self.md5 = md5
+            return md5
+        raise ValueError("No image data available to hash")
+
+    async def _hash_image_from_url(self):
+        image_data = await get_file_content(self.file)
+        h = hashlib.new("md5")
+        h.update(image_data)
+        md5 = h.hexdigest()
+        self.md5 = md5
+        return md5
+
+    async def _hash_image_from_base64(self):
+        if not self.file:
+            raise ValueError("No base64 data for image")
+        b64_str = self.file
+        if b64_str.startswith("base64://"):
+            b64_str = b64_str[9:]
+        if "," in b64_str:
+            b64_str = b64_str.split(",")[1]
+        self.file = b64_str
+        image_bytes = base64.b64decode(b64_str)
+        h = hashlib.new("md5")
+        h.update(image_bytes)
+        md5 = h.hexdigest()
+        self.md5 = md5
+        return md5
 
     @property
     def sticker(self):

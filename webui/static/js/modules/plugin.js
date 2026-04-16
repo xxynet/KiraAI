@@ -96,6 +96,7 @@ function renderPluginList() {
         const description = plugin.description || '';
         const repo = plugin.repo || '';
         const enabled = plugin.enabled !== false;
+        const uninstallable = plugin.uninstallable === true;
         const showMeta = version || author;
         const toggleOnClasses = 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500';
         const toggleOffClasses = 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600';
@@ -155,9 +156,9 @@ function renderPluginList() {
                         </button>
                         <button
                             type="button"
-                            class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30"
+                            class="px-3 py-1.5 text-xs font-medium rounded-md border ${uninstallable ? 'border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30' : 'border-gray-200 text-gray-300 cursor-not-allowed dark:border-gray-700 dark:text-gray-600'}"
                             data-i18n="plugin.uninstall"
-                            onclick="deletePlugin('${escapeHtml(String(id))}')"
+                            ${uninstallable ? `onclick="deletePlugin('${escapeHtml(String(id))}')"` : 'disabled'}
                         >
                             Uninstall
                         </button>

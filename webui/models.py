@@ -108,6 +108,8 @@ class PluginItem(BaseModel):
     description: str = ""
     repo: Optional[str] = None
     enabled: bool = True
+    builtin: bool = False
+    uninstallable: bool = False
 
 
 class PluginConfigUpdateRequest(BaseModel):

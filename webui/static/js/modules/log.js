@@ -61,8 +61,8 @@ function initLogLevelSelector() {
     const selector = document.getElementById('log-level-selector');
     if (!selector) return;
 
-    // Load persisted levels from localStorage, fall back to all levels
-    let savedLevels = ['debug', 'info', 'warning', 'error'];
+    // Load persisted levels from localStorage, fall back to all levels except debug
+    let savedLevels = ['info', 'warning', 'error'];
     try {
         const raw = localStorage.getItem('log_filter_levels');
         const parsed = JSON.parse(raw);
@@ -94,7 +94,7 @@ function initLogLevelSelector() {
     }
     selector._logLevelChangeHandler = () => {
         const selected = Array.from(selector.selectedOptions).map(o => o.value);
-        AppState.data.logFilter.levels = selected.length > 0 ? selected : ['debug', 'info', 'warning', 'error'];
+        AppState.data.logFilter.levels = selected.length > 0 ? selected : ['info', 'warning', 'error'];
         localStorage.setItem('log_filter_levels', JSON.stringify(AppState.data.logFilter.levels));
         applyLogFilter();
     };
