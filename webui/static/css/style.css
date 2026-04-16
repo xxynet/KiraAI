@@ -217,7 +217,7 @@ select.transition-colors {
     transition: all 0.2s ease-in-out;
 }
 
-input:not([type="checkbox"], [type="radio"]):hover,
+input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"]):hover,
 select:hover,
 .dark select:hover,
 textarea:hover,
@@ -225,7 +225,7 @@ textarea:hover,
     border-color: #3b82f6 !important;
 }
 
-input:not([type="checkbox"], [type="radio"]):focus,
+input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"]):focus,
 select:focus,
 .dark select:focus,
 textarea:focus,
@@ -236,7 +236,7 @@ textarea:focus,
 }
 
 /* Ensure focus styles persist on hover */
-input:not([type="checkbox"], [type="radio"]):focus:hover,
+input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"]):focus:hover,
 select:focus:hover,
 .dark select:focus:hover,
 textarea:focus:hover,

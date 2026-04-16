@@ -253,6 +253,7 @@ export default {
     no_config: '无需配置',
     save: '保存',
     mcp_name: '服务器名称',
+    mcp_name_required: '请输入服务器名称',
     mcp_description: '描述',
     mcp_config: 'MCP 配置（JSON）',
     toggle_success: '插件状态已更新',

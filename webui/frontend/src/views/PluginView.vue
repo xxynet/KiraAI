@@ -181,10 +181,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import {
   getPlugins, getPluginConfig, updatePluginConfig,
-  togglePlugin as apiTogglePlugin, deletePlugin, installFromGithub,
+  togglePlugin as apiTogglePlugin, deletePlugin,
+  installFromGithub, installFromUpload,
 } from '@/api/plugin'
 import {
-  getMcpServers, createMcpServer, updateMcpServerConfig,
+  getMcpServers, getMcpServerConfig, createMcpServer, updateMcpServerConfig,
   deleteMcpServer, toggleMcpServer,
 } from '@/api/mcp'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
@@ -332,10 +333,7 @@ async function handleInstall() {
         installing.value = false
         return
       }
-      const formData = new FormData()
-      formData.append('file', uploadFile.value)
-      const { default: apiClient } = await import('@/api/client')
-      await apiClient.post('/plugins/install/upload', formData)
+      await installFromUpload(uploadFile.value)
     }
     installDialogVisible.value = false
     ElMessage.success(t('plugin.install_success'))
@@ -367,7 +365,6 @@ function openMcpCreate() {
 
 async function openMcpEdit(server: McpServerItem) {
   try {
-    const { getMcpServerConfig } = await import('@/api/mcp')
     const res = await getMcpServerConfig(server.id)
     mcpEditMode.value = true
     mcpEditId.value = server.id
@@ -382,7 +379,10 @@ async function openMcpEdit(server: McpServerItem) {
 }
 
 async function saveMcpForm() {
-  if (!mcpForm.value.name) return
+  if (!mcpForm.value.name?.trim()) {
+    ElMessage.error(t('plugin.mcp_name_required'))
+    return
+  }
   savingMcp.value = true
   let config: any
   try {

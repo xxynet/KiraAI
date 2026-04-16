@@ -96,11 +96,11 @@ function initDrafts() {
 }
 initDrafts()
 
-watch(() => props.modelValue, () => {
+watch(() => props.modelValue, (next, prev) => {
   for (const key in props.schema) {
     const field = props.schema[key]
     if (field.type !== 'object' && field.type !== 'array') continue
-    const val = props.modelValue[key]
+    const val = next[key]
     const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
     const existing = drafts[key]
     if (existing === undefined || existing === null) {
@@ -119,7 +119,13 @@ watch(() => props.modelValue, () => {
         delete draftErrors[key]
       }
     } catch {
-      /* invalid draft — preserve the user's in-progress input */
+      // Invalid in-progress draft: keep it while the parent's value for this
+      // key is stable, but let a real external change (record swap, server
+      // reload) win over a stale broken draft so the UI doesn't desync.
+      if (prev === undefined || next[key] !== prev[key]) {
+        drafts[key] = serialized
+        delete draftErrors[key]
+      }
     }
   }
 }, { deep: true })

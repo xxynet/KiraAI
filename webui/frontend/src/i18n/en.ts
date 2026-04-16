@@ -253,6 +253,7 @@ export default {
     no_config: 'No configuration required',
     save: 'Save',
     mcp_name: 'Server Name',
+    mcp_name_required: 'Server name is required',
     mcp_description: 'Description',
     mcp_config: 'MCP Config (JSON)',
     toggle_success: 'Plugin status updated',
