@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 from core.logging_manager import get_logger
-from core.sticker_manager import StickerManager
 from core.persona import PersonaManager
 from core.config import KiraConfig
 import core.prompts.agent_tmpl as prompt_tmpl
@@ -44,15 +43,9 @@ class PromptManager:
     
     def __init__(self,
                  kira_config: KiraConfig,
-                 sticker_manager: StickerManager,
-                 persona_manager: PersonaManager,
-                 format_path: str = "core/prompts/format.txt"):
+                 persona_manager: PersonaManager):
         self.kira_config = kira_config
-        self.format_path = format_path
-
-        self.sticker_manager = sticker_manager
         self.persona_manager = persona_manager
-        self.sticker_dict = sticker_manager.sticker_dict
         self.ada_config_prompt = self.load_ada_config_prompt()
 
         logger.info("PromptManager initialized")
@@ -103,10 +96,10 @@ class PromptManager:
 
         agent_prompt: list[Prompt] = [
             Prompt(prompt_tmpl.role_tmpl, name="role", source="system"),
-            Prompt(prompt_tmpl.accounts_tmpl, name="accounts", source="system", accounts=self.ada_config_prompt),
-            Prompt(prompt_tmpl.sessions_tmpl, name="sessions", source="system", chat_env=chat_env),
             Prompt(prompt_tmpl.persona_tmpl, name="persona", source="system", persona=persona_prompt),
             Prompt(prompt_tmpl.attention_tmpl, name="attention", source="system"),
+            Prompt(prompt_tmpl.accounts_tmpl, name="accounts", source="system", accounts=self.ada_config_prompt),
+            Prompt(prompt_tmpl.sessions_tmpl, name="sessions", source="system"),
             Prompt(prompt_tmpl.time_tmpl, name="time", source="system", time_str=formatted_time),
             Prompt(prompt_tmpl.chat_env_tmpl, name="chat_env", source="system", chat_env=chat_env),
             Prompt(prompt_tmpl.memory_tmpl, name="memory", source="system"),

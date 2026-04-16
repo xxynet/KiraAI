@@ -189,7 +189,7 @@ class TelegramAdapter(IMAdapter):
             # if not triggered:
             #     return
 
-            message_list = await self._process_incoming_message(msg)
+            message_chain = await self._process_incoming_message(msg)
 
             message_obj = KiraMessageEvent(
                 adapter=self.info,
@@ -207,7 +207,7 @@ class TelegramAdapter(IMAdapter):
                     is_mentioned=is_mentioned,
                     message_id=str(msg.id),
                     self_id=self.config["bot_pid"],
-                    chain=message_list,
+                    chain=message_chain,
                 ),
                 timestamp=int(msg.date.timestamp() or time.time())
             )
@@ -224,7 +224,7 @@ class TelegramAdapter(IMAdapter):
 
             if not should_process:
                 return
-            message_list = await self._process_incoming_message(msg)
+            message_chain = await self._process_incoming_message(msg)
 
             message_obj = KiraMessageEvent(
                 adapter=self.info,
@@ -238,13 +238,13 @@ class TelegramAdapter(IMAdapter):
                     is_mentioned=True,
                     message_id=str(msg.id),
                     self_id=self.config["bot_pid"],
-                    chain=message_list,
+                    chain=message_chain,
                 ),
                 timestamp=int(msg.date.timestamp() or time.time())
             )
             self.publish(message_obj)
 
-    async def _process_incoming_message(self, tg_message) -> List:
+    async def _process_incoming_message(self, tg_message) -> MessageChain:
         elements: List = []
 
         # Reply
@@ -307,7 +307,7 @@ class TelegramAdapter(IMAdapter):
         if tg_message.sticker:
             elements.append(Text(str(tg_message.sticker.emoji or 'sticker')))
 
-        return elements or [Text("[Unsupported message]")]
+        return MessageChain(elements or [Text("[Unsupported message]")])
 
     # ===== Send messages (called by core) =====
     async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain):

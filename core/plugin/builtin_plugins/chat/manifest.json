@@ -1,0 +1,8 @@
+{
+    "display_name": "Default Chat",
+    "plugin_id": "default-chat",
+    "version": "1.2.0",
+    "author": "KiraAI",
+    "description": "Default IM Chat processing implementation, merge messages received in a certain duration & add unmentioned messages as context",
+    "repo": null
+}

@@ -1,6 +1,6 @@
 import asyncio
 
-from core.plugin import BasePlugin, logger, on, Priority, register_tool
+from core.plugin import BasePlugin, logger, on, Priority, register
 from core.chat.message_utils import KiraMessageBatchEvent
 from core.provider import LLMRequest
 
@@ -58,7 +58,7 @@ class SessionPlugin(BasePlugin):
         """
         pass
 
-    @register_tool(
+    @register.tool(
         name="session_send",
         description="向指定会话发送跨会话消息（私聊消息和群聊消息），仅当目标会话和当前会话不同时使用。 target 形如 qq:dm:123456 或 qq:gm:123456",
         params={
@@ -84,8 +84,17 @@ class SessionPlugin(BasePlugin):
         except Exception as e:
             return f"failed to send: {e}"
 
+    def get_session_list_prompt(self) -> str:
+        session_info_list = self.ctx.session_mgr.get_session_info()
+        return "\n".join(
+            f"{session_info.sid}(title: {session_info.session_title})"
+            for session_info in session_info_list
+        )
+
     @on.llm_request()
-    async def inject_few_shot(self, _event, req: LLMRequest, *_):
+    async def inject_session_prompt(self, _event, req: LLMRequest, *_):
         for p in req.system_prompt:
             if p.name == "tools":
                 p.content += SESSION_TOOL_FEW_SHOT
+            if p.name == "sessions":
+                p.content += self.get_session_list_prompt()

@@ -35,6 +35,10 @@ _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
 _plugin_components: Dict[str, dict] = {}
 
 
+"""plugin_ids whose API routes have already been added to FastAPI."""
+_plugin_api_registered: set[str] = set()
+
+
 def get_obj_plugin_id(obj: Any):
     module = inspect.getmodule(obj)
     module_name = module.__name__ if module else ""
@@ -95,12 +99,75 @@ class RegisterDeco:
         return decorator
 
     @staticmethod
-    def page(route: str):
-        ...
+    def page(route: str, auth: bool = True, menu: Optional[dict] = None):
+        """Register a plugin page endpoint.
+
+        route: URL path relative to plugin prefix, e.g., "/dashboard"
+               Final route: /page/plugin/{plugin_id}{route}
+        auth:  Require JWT auth (default True)
+        menu:  Optional menu configuration for sidebar integration
+        """
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            plugin_entry = _plugin_components.setdefault(plugin_id, {})
+            pages = plugin_entry.setdefault("pages", [])
+            page_funcs = plugin_entry.setdefault("page_funcs", {})
+            pages.append({
+                "route": route,
+                "func": func,
+                "auth": auth,
+                "menu": menu,
+            })
+            page_funcs[func.__name__] = func
+            return func
+        return decorator
 
     @staticmethod
-    def api(route: str):
-        ...
+    def static(path: str, directory: str, html: bool = False):
+        """Register a static file directory.
+
+        path:      URL path prefix relative to plugin, e.g., "/static"
+                   Final URL: /page/plugin/{plugin_id}{path}
+        directory: Local directory path relative to plugin root
+        html:      Try to serve index.html for directory requests
+        """
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            plugin_entry = _plugin_components.setdefault(plugin_id, {})
+            static_dirs = plugin_entry.setdefault("static_dirs", [])
+            static_dirs.append({
+                "path": path,
+                "directory": directory,
+                "html": html,
+            })
+            return func
+        return decorator
+
+    @staticmethod
+    def api(method: str, path: str, auth: bool = True, **kwargs):
+        """Register a plugin API endpoint.
+
+        method: HTTP method, e.g. "GET", "POST"
+        path:   Path relative to the plugin prefix, e.g. "/status"
+                Final route: /api/plugin/{plugin_id}{path}
+        auth:   Require JWT auth (default True)
+        kwargs: Forwarded to FastAPI add_api_route (response_model, summary, …)
+        """
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            plugin_entry = _plugin_components.setdefault(plugin_id, {})
+            api_routes = plugin_entry.setdefault("api_routes", [])
+            api_funcs = plugin_entry.setdefault("api_route_funcs", {})
+            api_routes.append({
+                "method": method.upper(),
+                "path":   path,
+                "func":   func,
+                "auth":   auth,
+                "kwargs": kwargs,
+            })
+            api_funcs[func.__name__] = func
+            return func
+        return decorator
 
 
 class OnEventDeco:
@@ -211,8 +278,19 @@ class PluginManager:
         self.plugin_instances: Dict[str, BasePlugin] = {}
         self.plugin_configs: Dict[str, Dict[str, Any]] = {}
         self.plugin_enabled: Dict[str, bool] = {}
+        self._web_app = None
 
         self._load_plugin_state()
+
+    def set_web_app(self, app) -> None:
+        """Provide the FastAPI app instance so plugin API routes can be registered.
+        Also registers routes for any plugins that were already initialized before this call.
+        """
+        self._web_app = app
+        for plugin_id in list(self.plugin_instances.keys()):
+            self._register_plugin_apis_for(plugin_id)
+            self._register_plugin_pages_for(plugin_id)
+            self._register_plugin_static_for(plugin_id)
 
     def get_plugin_inst(self, plugin_id: str):
         return self.plugin_instances.get(plugin_id)
@@ -415,6 +493,227 @@ class PluginManager:
         if tag_names:
             logger.info(f"Registered {len(tag_names)} tags from {plugin_id}: {tag_names}")
 
+    def _register_plugin_apis_for(self, plugin_id: str) -> None:
+        if self._web_app is None:
+            return
+        comp = _plugin_components.get(plugin_id, {})
+        api_routes = comp.get("api_routes", [])
+        if not api_routes:
+            return
+
+        # Routes already in FastAPI: the dynamic_endpoint always looks up the
+        # current instance at call time, so re-init requires no action here.
+        if plugin_id in _plugin_api_registered:
+            return
+
+        import typing
+        from fastapi import Depends, HTTPException
+        from webui.routes.auth import require_auth
+
+        _plugin_api_registered.add(plugin_id)
+        mgr = self
+
+        def _make_plugin_check(pid: str):
+            async def check():
+                if not mgr.is_plugin_enabled(pid):
+                    raise HTTPException(status_code=404, detail="Plugin disabled")
+            return check
+
+        registered: List[str] = []
+
+        for route in api_routes:
+            func = route["func"]
+            func_name = func.__name__
+            full_path = f"/api/plugin/{plugin_id}/{route['path'].lstrip('/')}"
+
+            # Resolve annotations eagerly using the plugin module's own globals,
+            # so `from __future__ import annotations` in plugins is handled correctly.
+            try:
+                resolved_hints = typing.get_type_hints(func, globalns=func.__globals__)
+            except Exception:
+                resolved_hints = {}
+
+            params = [
+                p.replace(annotation=resolved_hints.get(name, p.annotation))
+                for name, p in inspect.signature(func).parameters.items()
+                if name != "self"
+            ]
+
+            # Capture loop variables via default args to avoid closure issues.
+            async def dynamic_endpoint(
+                _pid=plugin_id, _fname=func_name, _mgr=mgr, **kwargs
+            ):
+                inst = _mgr.plugin_instances.get(_pid)
+                if inst is None:
+                    raise HTTPException(status_code=503, detail="Plugin not available")
+                return await getattr(inst, _fname)(**kwargs)
+
+            dynamic_endpoint.__signature__ = inspect.Signature(params)
+
+            dependencies = [Depends(_make_plugin_check(plugin_id))]
+            if route["auth"]:
+                dependencies.append(Depends(require_auth))
+
+            self._web_app.add_api_route(
+                path=full_path,
+                endpoint=dynamic_endpoint,
+                methods=[route["method"]],
+                dependencies=dependencies,
+                tags=[f"plugin:{plugin_id}"],
+                **route["kwargs"],
+            )
+            registered.append(full_path)
+
+        if registered:
+            logger.info(f"Registered {len(registered)} API routes from {plugin_id}: {registered}")
+
+    def _register_plugin_pages_for(self, plugin_id: str) -> None:
+        """Register plugin page routes for URL access."""
+        if self._web_app is None:
+            return
+
+        comp = _plugin_components.get(plugin_id, {})
+        pages = comp.get("pages", [])
+        if not pages:
+            return
+
+        # Track registered pages to avoid duplicates
+        if plugin_id in getattr(self, '_plugin_pages_registered', set()):
+            return
+
+        if not hasattr(self, '_plugin_pages_registered'):
+            self._plugin_pages_registered = set()
+        self._plugin_pages_registered.add(plugin_id)
+
+        import typing
+        from fastapi import Depends, HTTPException
+        from webui.routes.auth import require_auth
+
+        mgr = self
+        registered: List[str] = []
+
+        for page in pages:
+            func = page["func"]
+            func_name = func.__name__
+            route_path = page["route"].lstrip('/')
+            full_path = f"/page/plugin/{plugin_id}/{route_path}"
+
+            # Handle catch-all routes (e.g., /{path:path})
+            if '{' in route_path and ':path}' in route_path:
+                full_path = f"/page/plugin/{plugin_id}/" + "{path:path}"
+
+            # Resolve annotations eagerly using the plugin module's own globals
+            try:
+                resolved_hints = typing.get_type_hints(func, globalns=func.__globals__)
+            except Exception:
+                resolved_hints = {}
+
+            params = [
+                p.replace(annotation=resolved_hints.get(name, p.annotation))
+                for name, p in inspect.signature(func).parameters.items()
+                if name != "self"
+            ]
+
+            # Capture loop variables via default args to avoid closure issues
+            async def dynamic_page_endpoint(
+                _pid=plugin_id, _fname=func_name, _mgr=mgr, **kwargs
+            ):
+                inst = _mgr.plugin_instances.get(_pid)
+                if inst is None:
+                    raise HTTPException(status_code=503, detail="Plugin not available")
+                return await getattr(inst, _fname)(**kwargs)
+
+            dynamic_page_endpoint.__signature__ = inspect.Signature(params)
+
+            dependencies = []
+            if page["auth"]:
+                dependencies.append(Depends(require_auth))
+
+            self._web_app.add_api_route(
+                path=full_path,
+                endpoint=dynamic_page_endpoint,
+                methods=["GET"],
+                dependencies=dependencies,
+                tags=[f"plugin:{plugin_id}"],
+            )
+            registered.append(full_path)
+
+        if registered:
+            logger.info(f"Registered {len(registered)} page routes from {plugin_id}: {registered}")
+    
+    def _register_plugin_static_for(self, plugin_id: str) -> None:
+        """Register static file routes for a plugin with plugin state check."""
+        if self._web_app is None:
+            return
+
+        comp = _plugin_components.get(plugin_id, {})
+        static_dirs = comp.get("static_dirs", [])
+        if not static_dirs:
+            return
+
+        # Track registered static dirs to avoid duplicates
+        if plugin_id in getattr(self, '_plugin_static_registered', set()):
+            return
+
+        if not hasattr(self, '_plugin_static_registered'):
+            self._plugin_static_registered = set()
+        self._plugin_static_registered.add(plugin_id)
+
+        from fastapi import Depends, HTTPException
+        from fastapi.responses import FileResponse
+        from fastapi.staticfiles import StaticFiles
+        from starlette.routing import Route
+        import mimetypes
+
+        mgr = self
+        plugin_root = _plugin_module_paths.get(plugin_id)
+        if not plugin_root:
+            return
+
+        def _make_plugin_check(pid: str):
+            async def check():
+                if not mgr.is_plugin_enabled(pid):
+                    raise HTTPException(status_code=404, detail="Plugin disabled")
+            return check
+
+        registered: List[str] = []
+
+        for static in static_dirs:
+            path_prefix = static["path"].lstrip('/')
+            full_path = f"/page/plugin/{plugin_id}/{path_prefix}"
+            dir_path = plugin_root / static["directory"]
+
+            if not dir_path.exists() or not dir_path.is_dir():
+                continue
+
+            # Create a custom StaticFiles class that checks plugin state
+            class PluginStaticFiles(StaticFiles):
+                def __init__(self, directory: str, check_func, html: bool = False):
+                    super().__init__(directory=directory, html=html)
+                    self._check_func = check_func
+
+                async def __call__(self, scope, receive, send):
+                    # Check plugin state before serving files
+                    await self._check_func()
+                    await super().__call__(scope, receive, send)
+
+            try:
+                self._web_app.mount(
+                    full_path,
+                    PluginStaticFiles(
+                        directory=str(dir_path),
+                        check_func=_make_plugin_check(plugin_id),
+                        html=static.get("html", False)
+                    ),
+                    name=f"plugin_{plugin_id}_static_{path_prefix}"
+                )
+                registered.append(full_path)
+            except Exception as e:
+                logger.error(f"Failed to mount static dir {dir_path} for plugin {plugin_id}: {e}")
+
+        if registered:
+            logger.info(f"Registered {len(registered)} static directories from {plugin_id}: {registered}")
+
     def register_plugin_tools(self) -> None:
         for plugin_id in _plugin_components.keys():
             self._register_plugin_tools_for(plugin_id)
@@ -442,6 +741,9 @@ class PluginManager:
         tags = comp.get("tags", [])
         for tag in tags:
             tag_registry.unregister(tag.get("name"))
+
+        # API routes: disable is handled at request time via the plugin_check Depends,
+        # which calls is_plugin_enabled(). No additional cleanup needed here.
 
     def _load_plugin_config_from_file(self, plugin_id: str) -> Dict[str, Any]:
         PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -538,6 +840,9 @@ class PluginManager:
             self._register_plugin_tools_for(plugin_id)
             self._register_plugin_hooks_for(plugin_id)
             self._register_plugin_tags_for(plugin_id)
+            self._register_plugin_apis_for(plugin_id)
+            self._register_plugin_pages_for(plugin_id)
+            self._register_plugin_static_for(plugin_id)
 
     async def terminate(self, plugin_id: Optional[str] = None):
         """Terminate a specific plugin if plugin_id is given, terminate all if not given"""

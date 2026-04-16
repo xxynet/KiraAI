@@ -1,4 +1,4 @@
-VERSION = "v2.5.0"
+VERSION = "v2.9.1"
 
 DEFAULT_CONFIG = {
     "bot_config": {
@@ -15,6 +15,10 @@ DEFAULT_CONFIG = {
         "selfie": {
             "path": None
         }
+    },
+    "locale": {
+        "lang": None,
+        "TZ": None
     },
     "providers": {},  # ID: Provider config dict
     "models": {

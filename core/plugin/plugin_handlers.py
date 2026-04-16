@@ -55,11 +55,15 @@ class EventHandler:
             logger.error(tb.format_exc())
             if self.event_type != EventType.ON_EXCEPTION:
                 from core.chat.message_utils import KiraExceptionEvent
+                from core.plugin.plugin_registry import get_obj_plugin_id
                 exc_event = KiraExceptionEvent(
                     name=type(e).__name__,
                     message=str(e),
                     traceback=tb.format_exc(),
-                    source=self.event_type.value,
+                    stage=self.event_type.value,
+                    source="plugin",
+                    comp_id=get_obj_plugin_id(self.handler),
+                    e=e
                 )
                 for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
                     try:

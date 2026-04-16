@@ -1,7 +1,9 @@
 import asyncio
+import random
 
 from core.plugin import BasePlugin, logger, on, Priority
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraIMMessage
+from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent
+from core.provider import LLMRequest
 from core.chat.message_elements import Text
 
 
@@ -13,6 +15,11 @@ class DebouncePlugin(BasePlugin):
         bot_cfg = ctx.config["bot_config"].get("bot", {})
         self.debounce_interval = float(bot_cfg.get("max_message_interval", 1.5))
         self.max_buffer_messages = int(bot_cfg.get("max_buffer_messages", 3))
+        self.max_unmentioned_messages = int(self.plugin_cfg.get("max_unmentioned_messages", 5))
+        self.receive_unmentioned = self.plugin_cfg.get("receive_unmentioned", True)
+        self.group_chat_prompt = self.plugin_cfg.get("group_chat_prompt", "")
+        self.group_proactive_chat = self.plugin_cfg.get("group_proactive_chat", False)
+        self.group_proactive_chat_probability = self.plugin_cfg.get("group_proactive_chat_probability", 0.1)
 
         self.waking_words = cfg.get("waking_words", [])
     
@@ -36,7 +43,17 @@ class DebouncePlugin(BasePlugin):
 
         # Ignore unmentioned messages
         if not event.is_mentioned:
-            event.stop()
+            if self.receive_unmentioned:
+                buffer = self.ctx.get_buffer(str(event.session))
+                if buffer.get_length() >= self.max_unmentioned_messages:
+                    buffer.pop(count=buffer.get_length()-self.max_unmentioned_messages+1)
+                event.buffer()
+                if self.group_proactive_chat:
+                    if random.random() < self.group_proactive_chat_probability:
+                        logger.info("[Chat] Triggered proactive chat")
+                        event.flush()
+            else:
+                event.discard()
             return
 
         sid = event.session.sid
@@ -62,7 +79,7 @@ class DebouncePlugin(BasePlugin):
                 await asyncio.sleep(self.debounce_interval)
             except asyncio.CancelledError:
                 break
-            if event.is_set():
+            if event.is_set() and not self.receive_unmentioned:
                 continue
             buffer_len = self.ctx.message_processor.get_session_buffer_length(sid)
             if buffer_len == 0:
@@ -72,6 +89,12 @@ class DebouncePlugin(BasePlugin):
             except Exception:
                 logger.exception(f"[Debounce] Error flushing session {sid}")
 
-    @on.im_batch_message(priority=Priority.MEDIUM)
-    async def handle_batch_event(self, event: KiraMessageBatchEvent):
-        pass
+    @on.llm_request(priority=Priority.MEDIUM)
+    async def inject_group_prompt(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
+        if not event.is_group_message():
+            return
+        if self.group_chat_prompt:
+            for p in req.system_prompt:
+                if p.name == "chat_env":
+                    p.content += self.group_chat_prompt
+                    break

@@ -12,7 +12,7 @@ English | [简体中文](docs/README.zh.md)
 
 </div>
 
-KiraAI, a modular, multi-platform AI virtual being that connects Large Language Models (LLMs), and various chat platforms (QQ, Telegram) with a virtual being centered architecture.
+KiraAI, a modular, multi-platform AI virtual being that connects Large Language Models (LLMs), and various chat platforms (QQ, Telegram, WeChat) with a virtual being centered architecture.
 
 ## 🚀 Features
 - Optimized for anthropomorphic scenarios

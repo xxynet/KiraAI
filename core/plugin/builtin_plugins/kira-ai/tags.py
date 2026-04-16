@@ -11,7 +11,6 @@ from core.chat.message_elements import (
     Reply,
     Forward,
     Emoji,
-    Sticker,
     Record,
     Poke,
     File,
@@ -44,42 +43,6 @@ def build_emoji_tag(emoji_json: dict) -> Type[BaseTag]:
         async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
             return [Emoji(value)]
     return EmojiTag
-
-
-def build_sticker_tag(sticker_dict: dict) -> Type[BaseTag]:
-    def load_sticker_prompt() -> str:
-        """加载表情包（贴纸）提示词"""
-        sticker_prompt = ""
-        try:
-            for sticker_id in sticker_dict:
-                sticker_prompt += f"[{sticker_id}] {sticker_dict[sticker_id].get('desc')}\n"
-            return sticker_prompt
-        except Exception as e:
-            message_logger.warning(f"Failed to load sticker prompt: {e}")
-            return ""
-
-    class StickerTag(BaseTag):
-        name = "sticker"
-        description = f"<sticker>sticker_id</sticker> # 发送一个sticker（中文一般叫做表情包）消息，通常单独在一条消息里，你需要在聊天中主动自然使用这些sticker，可以使用的sticker id和描述如下：{load_sticker_prompt()}"
-
-        async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
-            from core.message_manager import ImageDescCache
-            sticker_id = value
-            try:
-                sticker_path = sticker_dict[sticker_id].get("path")
-                sticker_desc = sticker_dict[sticker_id].get("desc")
-                sticker_bs64 = await image_to_base64(f"{get_data_path()}/sticker/{sticker_path}")
-                sticker_obj = Sticker(sticker_id, sticker=sticker_bs64, caption=sticker_desc)
-                if sticker_desc:
-                    md5 = await sticker_obj.hash_image()
-                    cache = ImageDescCache()
-                    if not cache.get(md5):
-                        cache.set(md5, sticker_desc)
-                return [sticker_obj]
-            except Exception as e:
-                message_logger.error(f"error while parsing sticker: {str(e)}")
-
-    return StickerTag
 
 
 class AtTag(BaseTag):
@@ -175,7 +138,6 @@ class SelfieTag(BaseTag):
             if os.path.exists(f"{get_data_path()}/{ref_img_path}"):
                 img_extension = ref_img_path.split(".")[-1]
                 bs64 = await image_to_base64(f"{get_data_path()}/{ref_img_path}")
-                # img_res = await self.ctx.llm_api.image_to_image(value, bs64=f"data:image/{img_extension};base64,{bs64}")
                 img_res = await self.ctx.llm_api.image_to_image(value, image=Image(image=bs64, name=ref_img_path, mime=f"image/{img_extension}"))
                 if img_res:
                     return [img_res]
@@ -187,50 +149,52 @@ class SelfieTag(BaseTag):
         return []
 
 
-def _get_relative_file_paths():
-    file_dir = get_data_path() / "files"
-    os.makedirs(file_dir, exist_ok=True)
-    files = os.listdir(file_dir)
-    return files
+def build_file_tag():
+    def _get_relative_file_paths():
+        file_dir = get_data_path() / "files"
+        os.makedirs(file_dir, exist_ok=True)
+        files = os.listdir(file_dir)
+        return files
 
+    class FileTag(BaseTag):
+        name = "file"
+        description = f"<file type=\"image/record/video/file\">file_string</file> # send a file (do not put any other tags in the msg tag which the file tag is in), file_string could be a file url, absolute file path or relative file path. Use `type=` to specify the file type for platforms to parse, e.g. for audios, set `type` as `record` to send as voice message, `file` to send as audio file. defaults to `file`. Files specifically listed below could be sent with `data/files/` prefix: {_get_relative_file_paths()}"
 
-class FileTag(BaseTag):
-    name = "file"
-    description = f"<file type=\"image/record/video/file\">file_string</file> # send a file (do not put any other tags in the msg tag which the file tag is in), file_string could be a file url, absolute file path or relative file path. Use `type=` to specify the file type for platforms to parse, e.g. for audios, set `type` as `record` to send as voice message, `file` to send as audio file. defaults to `file`. Files specifically listed below could be sent with `data/files/` prefix: {_get_relative_file_paths()}"
+        def __init__(self):
+            super().__init__()
 
-    def __init__(self, ctx):
-        super().__init__(ctx=ctx)
+        async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
+            file_type = kwargs.get("type")  # image, record, file, video
+            if not file_type or file_type not in ("image", "record", "video"):
+                file_type = "file"
 
-    async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
-        file_type = kwargs.get("type")  # image, record, file, video
-        if not file_type or file_type not in ("image", "record", "video"):
-            file_type = "file"
+            # Absolute path
+            if os.path.exists(value):
+                file_string = value
+                name = Path(value).name
+            elif value.startswith(("data/files/", "data/temp/")):
+                abs_path = str(get_data_path() / value.removeprefix("data/"))
+                file_string = abs_path
+                name = Path(abs_path).name
+            # File URL
+            elif value.startswith(("http://", "https://")):
+                file_string = value
+                name = None
+            else:
+                return []
 
-        # Absolute path
-        if os.path.exists(value):
-            file_string = value
-            name = Path(value).name
-        elif value.startswith(("data/files/", "data/temp/")):
-            abs_path = str(get_data_path() / value.removeprefix("data/"))
-            file_string = abs_path
-            name = Path(abs_path).name
-        # File URL
-        elif value.startswith(("http://", "https://")):
-            file_string = value
-            name = None
-        else:
-            return []
+            if file_type == "file":
+                return [File(file=file_string, name=name)]
+            elif file_type == "image":
+                return [Image(image=file_string, name=name)]
+            elif file_type == "record":
+                return [Record(record=file_string, name=name)]
+            elif file_type == "video":
+                return [Video(file=file_string, name=name)]
+            else:
+                return []
 
-        if file_type == "file":
-            return [File(file=file_string, name=name)]
-        elif file_type == "image":
-            return [Image(image=file_string, name=name)]
-        elif file_type == "record":
-            return [Record(record=file_string, name=name)]
-        elif file_type == "video":
-            return [Video(file=file_string, name=name)]
-        else:
-            return []
+    return FileTag
 
 
 class ForwardTag(BaseTag):

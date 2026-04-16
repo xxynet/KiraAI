@@ -36,6 +36,13 @@ def _discover_tool_classes(module) -> List[Type[BaseTool]]:
 
 async def register_all_tools(llm_api) -> None:
     """Discover all subclasses of BaseTool under core.tools and register them."""
+    package_path_obj = Path("data/tools")
+    package_path_obj.mkdir(parents=True, exist_ok=True)
+
+    init_file = package_path_obj / "__init__.py"
+    if not init_file.exists():
+        init_file.touch()
+
     package_name = "data.tools"
     try:
         package = importlib.import_module(package_name)

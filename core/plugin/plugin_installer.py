@@ -66,6 +66,8 @@ async def install_from_github(
 
     temp_zip = _temp_dir() / f"{repo}_{uuid.uuid4().hex[:8]}.zip"
     logger.info(f"Downloading plugin {owner}/{repo} → {temp_zip.name}")
+    if gh_proxy:
+        logger.info(f"Proxy: {gh_proxy}")
 
     try:
         await download_file(url, str(temp_zip), proxy=proxy)

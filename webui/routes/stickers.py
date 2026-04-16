@@ -58,18 +58,8 @@ class StickersRoutes(Routes):
         ]
 
     async def list_stickers(self):
-        sticker_config_path = get_data_path() / "config" / "sticker.json"
-        if not sticker_config_path.exists():
-            return []
-        try:
-            with open(sticker_config_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if not content.strip():
-                return []
-            data = json.loads(content)
-        except Exception as e:
-            logger.error(f"Failed to load stickers from {sticker_config_path}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to load stickers")
+        data = self.lifecycle.sticker_manager.sticker_dict
+
         stickers: List[StickerItem] = []
         if not isinstance(data, dict):
             return stickers

@@ -1,3 +1,4 @@
+default_persona_template = """\
 character：
   ChineseName：
   NickName(s): []
@@ -25,3 +26,4 @@ character：
   dialogue_style_imitation:
     - user: some text... - assistant: msg1: response text 1
     - user: some text... - assistant: msg1: response text 1, msg2: response text 2
+"""

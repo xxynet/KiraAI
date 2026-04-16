@@ -1,0 +1,9 @@
+{
+    "display_name": "Default Sticker",
+    "plugin_id": "default-sticker",
+    "uninstallable": false,
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "Default implementation of sticker functionality, manually disable it before using third-party sticker plugins",
+    "repo": null
+}

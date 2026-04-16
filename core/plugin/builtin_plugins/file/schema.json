@@ -3,5 +3,15 @@
     "type": "list",
     "default": [],
     "hint": "Allowed sessions in the format of `<adapter_name>:<gm/dm>:<session_id>`"
+  },
+  "allowed_exec_sessions": {
+    "type": "list",
+    "default": [],
+    "hint": "Allowed sessions to use `exec` tool in the format of `<adapter_name>:<gm/dm>:<session_id>`"
+  },
+  "exec_deny_list": {
+    "type": "list",
+    "default": ["shutdown", "poweroff", "sudo"],
+    "hint": "Denied commands"
   }
 }

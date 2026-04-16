@@ -148,3 +148,11 @@ class McpServerCreateRequest(BaseModel):
     name: str
     description: Optional[str] = None
     config: Any
+
+
+class SkillItem(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    enabled: bool = True
+    path: str = ""

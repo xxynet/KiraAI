@@ -1,7 +1,7 @@
 import asyncio
 import os
 
-from core.plugin import BasePlugin, logger, on, Priority, register_tool
+from core.plugin import BasePlugin, logger, on, Priority, register
 from core.provider import LLMRequest
 from core.utils.path_utils import get_data_path
 
@@ -71,7 +71,7 @@ class MemoryPlugin(BasePlugin):
             with open(self.core_memory_path, "w", encoding="utf-8") as f:
                 f.write("")
 
-    @register_tool(
+    @register.tool(
         name="memory_add",
         description="Add a memory to long term memory",
         params={
@@ -90,7 +90,7 @@ class MemoryPlugin(BasePlugin):
                     mem.write(text + "\n")
             return "Core memory added"
 
-    @register_tool(
+    @register.tool(
         name="memory_update",
         description="修改特定核心记忆",
         params={
@@ -114,7 +114,7 @@ class MemoryPlugin(BasePlugin):
                 mem.writelines(lines)
         return "Core memory updated"
 
-    @register_tool(
+    @register.tool(
         name="memory_remove",
         description="删除一条核心记忆",
         params={

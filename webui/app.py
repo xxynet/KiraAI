@@ -24,6 +24,7 @@ from webui.routes.sessions import SessionsRoutes
 from webui.routes.config import ConfigRoutes
 from webui.routes.stickers import StickersRoutes
 from webui.routes.settings import SettingsRoutes
+from webui.routes.skills import SkillsRoutes
 
 
 class KiraWebUI:
@@ -84,6 +85,10 @@ class KiraWebUI:
         # Register routes
         self._register_routes()
 
+        # Store app reference on lifecycle so plugin_manager can pick it up
+        # after it is initialized in init_and_run_system()
+        self.lifecycle.webui_app = self.app
+
     def _register_routes(self):
         auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.templates_dir, self.dist_dir)
         auth_routes.register()
@@ -97,6 +102,7 @@ class KiraWebUI:
         SessionsRoutes(self.app, self.lifecycle).register()
         ConfigRoutes(self.app, self.lifecycle).register()
         StickersRoutes(self.app, self.lifecycle).register()
+        SkillsRoutes(self.app, self.lifecycle).register()
         SettingsRoutes(self.app, self.lifecycle).register()
 
         # SPA catch-all must be registered last

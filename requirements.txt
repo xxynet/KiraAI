@@ -14,3 +14,6 @@ psutil>=5.9.0
 fastmcp==2.14.4
 httpx>=0.28.1
 watchfiles>=1.1.1
+pycryptodome>=3.20.0
+qrcode>=7.4.2
+PyYAML>=6.0.2

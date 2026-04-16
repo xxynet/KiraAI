@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from copy import deepcopy
 from asyncio import Lock
 import xml.etree.ElementTree as ET
 from typing import Union, Any, List, Optional
@@ -10,7 +11,7 @@ import random
 import os
 
 from core.logging_manager import get_logger
-from core.utils.common_utils import image_to_base64
+from core.utils.common_utils import desc_img
 from core.utils.path_utils import get_data_path
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent, MessageChain
 from core.chat.message_utils import KiraIMSentResult, KiraStepResult
@@ -36,6 +37,7 @@ from core.llm_client import LLMClient
 from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager
+from .agent.skills_mgr import SkillsManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
@@ -151,6 +153,7 @@ class MessageProcessor:
                  kira_config,
                  llm_api: LLMClient,
                  provider_manager: ProviderManager,
+                 skills_manager: SkillsManager,
                  adapter_manager: AdapterManager,
                  memory_manager: SessionManager,
                  prompt_manager: PromptManager,
@@ -171,6 +174,7 @@ class MessageProcessor:
         self.prompt_manager = prompt_manager
         self.provider_mgr = provider_manager
         self.adapter_mgr = adapter_manager
+        self.skills_manager = skills_manager
 
         # message buffer
         self.session_locks: dict[str, asyncio.Lock] = {}
@@ -187,13 +191,6 @@ class MessageProcessor:
         if sid not in self.session_locks:
             self.session_locks[sid] = asyncio.Lock()
         return self.session_locks[sid]
-
-    def get_session_list_prompt(self) -> str:
-        session_list_prompt = ""
-        _chat_memory = self.memory_manager.chat_memory
-        for session_id in _chat_memory:
-            session_list_prompt += f"{session_id}\n"
-        return session_list_prompt
 
     def get_session_buffer_length(self, sid: str) -> int:
         buffer = self.session_buffer.get_buffer(sid)
@@ -239,39 +236,41 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, Image):
-                try:
-                    md5 = await ele.hash_image()
-                    cached_desc = self.image_desc_cache.get(md5)
-                except (ValueError, Exception) as e:
-                    logger.warning(f"Failed to hash image: {e}")
-                    md5 = None
-                    cached_desc = None
-                if cached_desc:
-                    img_desc = cached_desc
-                else:
-                    image_base64 = await ele.to_base64()
-                    img_desc = await self.llm_api.desc_img(image_base64, is_base64=True)
-                    if md5:
-                        self.image_desc_cache.set(md5, img_desc)
-                ele.caption = img_desc
-                message_str += f"[Image {img_desc}]"
+                if ele.caption is None:
+                    try:
+                        md5 = await ele.hash_image()
+                        cached_desc = self.image_desc_cache.get(md5)
+                    except (ValueError, Exception) as e:
+                        logger.warning(f"Failed to hash image: {e}")
+                        md5 = None
+                        cached_desc = None
+                    if cached_desc:
+                        img_desc = cached_desc
+                    else:
+                        vlm_model = self.provider_mgr.get_default_vlm()
+                        img_desc = await desc_img(client=vlm_model, image=ele)
+                        if md5:
+                            self.image_desc_cache.set(md5, img_desc)
+                    ele.caption = img_desc
+                message_str += f"[Image {str(ele.caption)}]"
             elif isinstance(ele, Sticker):
-                try:
-                    md5 = await ele.hash_image()
-                    cached_desc = self.image_desc_cache.get(md5)
-                except (ValueError, Exception) as e:
-                    logger.warning(f"Failed to hash sticker: {e}")
-                    md5 = None
-                    cached_desc = None
-                if cached_desc:
-                    sticker_desc = cached_desc
-                else:
-                    sticker_base64 = await ele.to_base64()
-                    sticker_desc = await self.llm_api.desc_img(sticker_base64, is_base64=True)
-                    if md5:
-                        self.image_desc_cache.set(md5, sticker_desc)
-                ele.caption = sticker_desc
-                message_str += f"[Sticker {sticker_desc}]"
+                if ele.caption is None:
+                    try:
+                        md5 = await ele.hash_image()
+                        cached_desc = self.image_desc_cache.get(md5)
+                    except (ValueError, Exception) as e:
+                        logger.warning(f"Failed to hash sticker: {e}")
+                        md5 = None
+                        cached_desc = None
+                    if cached_desc:
+                        sticker_desc = cached_desc
+                    else:
+                        vlm_model = self.provider_mgr.get_default_vlm()
+                        sticker_desc = await desc_img(client=vlm_model, image=ele)
+                        if md5:
+                            self.image_desc_cache.set(md5, sticker_desc)
+                    ele.caption = sticker_desc
+                message_str += f"[Sticker {str(ele.caption)}]"
             elif isinstance(ele, Reply):
                 if ele.chain:
                     ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
@@ -349,7 +348,6 @@ class MessageProcessor:
 
     async def handle_im_message(self, event: KiraMessageEvent):
         """process im message"""
-        logger.info(event.get_log_info())
 
         # decorating event info
 
@@ -362,7 +360,17 @@ class MessageProcessor:
         for handler in im_handlers:
             await handler.exec_handler(event)
             if event.is_stopped:
+                # Print event
+                logger.info(event.get_log_info())
                 return
+
+        # Print event
+        logger.info(event.get_log_info())
+
+        # Check if message chain is valid, filter out unprocessed notice messages
+        if event.message.chain.is_empty():
+            return
+
         if event.process_strategy == "discard":
             return
 
@@ -411,9 +419,6 @@ class MessageProcessor:
                 logger.info("Event stopped")
                 return
 
-        # Get existing session
-        session_list = self.get_session_list_prompt()
-
         # Set session title
         if not self.memory_manager.get_session_info(sid).session_title:
             self.memory_manager.update_session_info(sid, event.session.session_title)
@@ -426,8 +431,7 @@ class MessageProcessor:
             "chat_type": 'GroupMessage' if event.is_group_message() else 'DirectMessage',
             "self_id": event.self_id,
             "session_title": session_title,
-            "session_description": event.session.session_description,
-            "session_list": session_list
+            "session_description": event.session.session_description
         }
 
         # Get chat history memory
@@ -436,13 +440,24 @@ class MessageProcessor:
         # Generate agent prompt
         agent_prompt_list = self.prompt_manager.get_agent_prompt(chat_env)
 
+        # Inject skills prompt
+        if len(self.skills_manager.skills_info) > 0:
+            for i, p in enumerate(agent_prompt_list):
+                if p.name == "tools":
+                    agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt())
+                    break
+
         # Get default LLM model client
-        llm_model = self.provider_mgr.get_default_llm()
-        if not llm_model:
+        try:
+            llm_model = self.provider_mgr.get_default_llm()
+            if not llm_model:
+                llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+                return
+        except Exception as _:
             llm_logger.error(f"Default LLM model not set, please set it in Configuration")
             return
 
-        request = LLMRequest(messages=session_memory[:], tools=self.llm_api.tools_definitions, tool_funcs=self.llm_api.tools_functions, tool_set=ToolSet())
+        request = LLMRequest(messages=session_memory[:], tools=deepcopy(self.llm_api.tools_definitions), tool_funcs=self.llm_api.tools_functions, tool_set=ToolSet())
         request.system_prompt.extend(agent_prompt_list)
 
         # Add received im messages

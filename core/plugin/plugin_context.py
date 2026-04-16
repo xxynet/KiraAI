@@ -157,7 +157,7 @@ class PluginContext:
                 self_id=ada.config.get("self_id"),
                 is_notice=True,
                 is_mentioned=is_mentioned,
-                chain=chain.message_list,
+                chain=chain,
             ),
             timestamp=cur_time,
         )
