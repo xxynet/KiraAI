@@ -244,6 +244,7 @@ export default {
     plugins: '插件',
     mcp_servers: 'MCP 服务器',
     repo_url: '仓库链接',
+    repo_url_required: '请输入仓库链接',
     repo_link: '仓库 ↗',
     upload_hint: '拖拽 .zip 文件至此，或点击选择',
     upload_zip: '上传 ZIP',

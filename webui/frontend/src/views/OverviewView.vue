@@ -87,7 +87,10 @@ let inFlight = false
 let disposed = false
 
 const formattedUptime = computed(() => {
-  const s = runtimeSeconds.value
+  // Normalize against malformed / non-integer API values so the formatter
+  // can never produce `NaN:NaN:NaN` or fractional seconds.
+  const raw = Number(runtimeSeconds.value)
+  const s = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
   const sec = s % 60
@@ -120,7 +123,8 @@ async function fetchOverview() {
     // or resurrecting the runtime timer.
     if (disposed) return
     overview.value = res.data
-    runtimeSeconds.value = res.data.runtime_duration
+    const rawRuntime = Number(res.data.runtime_duration)
+    runtimeSeconds.value = Number.isFinite(rawRuntime) ? Math.max(0, Math.floor(rawRuntime)) : 0
     // Start or restart the 1s runtime tick after a successful fetch
     if (runtimeTimer) clearInterval(runtimeTimer)
     runtimeTimer = setInterval(() => {

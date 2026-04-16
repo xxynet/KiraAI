@@ -218,8 +218,6 @@ select.transition-colors {
 }
 
 input:not([type="checkbox"], [type="radio"]):hover,
-input[type="text"]:hover,
-input[type="password"]:hover,
 select:hover,
 .dark select:hover,
 textarea:hover,
@@ -228,8 +226,6 @@ textarea:hover,
 }
 
 input:not([type="checkbox"], [type="radio"]):focus,
-input[type="text"]:focus,
-input[type="password"]:focus,
 select:focus,
 .dark select:focus,
 textarea:focus,
@@ -241,8 +237,6 @@ textarea:focus,
 
 /* Ensure focus styles persist on hover */
 input:not([type="checkbox"], [type="radio"]):focus:hover,
-input[type="text"]:focus:hover,
-input[type="password"]:focus:hover,
 select:focus:hover,
 .dark select:focus:hover,
 textarea:focus:hover,
@@ -1411,11 +1405,13 @@ kbd {
     .config-field-wrapper input.border-red-400,
     .config-field-wrapper input.border-red-500,
     .page-content,
-    .fixed.top-4.right-4 {
+    .fixed.top-4.right-4,
+    .custom-select-options.show {
         animation: none;
     }
     .config-group-body,
-    .config-group {
+    .config-group,
+    .custom-select-options {
         transition: none;
     }
 }

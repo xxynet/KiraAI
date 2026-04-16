@@ -195,10 +195,10 @@ class McpRoutes(Routes):
             raise
         except ValueError as e:
             logger.error(f"Failed to update MCP config file for {server_name}: {e}")
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
             logger.error(f"Failed to update MCP config file for {server_name}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to save MCP config file")
+            raise HTTPException(status_code=500, detail="Failed to save MCP config file") from e
 
     async def delete_mcp_server(self, server_name: str):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):

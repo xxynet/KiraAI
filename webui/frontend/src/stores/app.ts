@@ -46,8 +46,9 @@ export const useAppStore = defineStore('app', () => {
     i18n.global.locale.value = validated
   }
 
-  // Initialize theme on store creation
-  setTheme(theme.value)
+  // Theme side effects are applied by App.vue on mount via
+  // appStore.setTheme(appStore.theme); the store only holds validated state
+  // so we don't double-write to the DOM and localStorage on creation.
 
   return {
     theme,

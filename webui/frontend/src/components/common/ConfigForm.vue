@@ -99,14 +99,27 @@ initDrafts()
 watch(() => props.modelValue, () => {
   for (const key in props.schema) {
     const field = props.schema[key]
-    if (field.type === 'object' || field.type === 'array') {
-      const val = props.modelValue[key]
-      const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
-      try {
-        if (JSON.stringify(JSON.parse(drafts[key])) === JSON.stringify(val)) continue
-      } catch { /* draft is invalid JSON, sync from prop */ }
+    if (field.type !== 'object' && field.type !== 'array') continue
+    const val = props.modelValue[key]
+    const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
+    const existing = drafts[key]
+    if (existing === undefined || existing === null) {
       drafts[key] = serialized
       delete draftErrors[key]
+      continue
+    }
+    // Only overwrite the draft when it parses successfully and no longer
+    // reflects the new prop value. If the draft is mid-edit invalid JSON,
+    // leave it alone — otherwise typing a broken state (e.g. `{"a":`) would
+    // be silently replaced on every parent update.
+    try {
+      const parsed = JSON.parse(existing)
+      if (JSON.stringify(parsed) !== JSON.stringify(val)) {
+        drafts[key] = serialized
+        delete draftErrors[key]
+      }
+    } catch {
+      /* invalid draft — preserve the user's in-progress input */
     }
   }
 }, { deep: true })

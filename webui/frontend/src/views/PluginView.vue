@@ -33,7 +33,7 @@
                 </div>
               </div>
               <div class="flex items-center gap-2">
-                <a v-if="plugin.repo" :href="plugin.repo" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:text-blue-700">
+                <a v-if="safeRepoUrl(plugin.repo)" :href="safeRepoUrl(plugin.repo)!" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:text-blue-700">
                   {{ $t('plugin.repo_link') }}
                 </a>
                 <el-switch
@@ -222,6 +222,20 @@ const savingMcp = ref(false)
 const pluginsError = ref<string | null>(null)
 const mcpServersError = ref<string | null>(null)
 
+// Only render plugin.repo as a link if it is a well-formed http(s) URL.
+// Prevents javascript:/data: URLs embedded in plugin metadata from running
+// when the user clicks the "Repo" link.
+function safeRepoUrl(url: unknown): string | null {
+  if (typeof url !== 'string' || !url) return null
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.toString()
+    }
+  } catch { /* invalid URL */ }
+  return null
+}
+
 async function loadPlugins() {
   try {
     const res = await getPlugins()
@@ -305,8 +319,13 @@ async function handleInstall() {
   installing.value = true
   try {
     if (installTab.value === 'github') {
-      if (!installForm.value.repo_url) return
-      await installFromGithub({ repo_url: installForm.value.repo_url })
+      const repoUrl = installForm.value.repo_url?.trim()
+      if (!repoUrl) {
+        ElMessage.error(t('plugin.repo_url_required'))
+        installing.value = false
+        return
+      }
+      await installFromGithub({ repo_url: repoUrl })
     } else {
       if (!uploadFile.value) {
         ElMessage.error(t('plugin.file_required'))
@@ -369,6 +388,14 @@ async function saveMcpForm() {
   try {
     config = JSON.parse(mcpConfigJson.value)
   } catch {
+    ElMessage.error(t('plugin.mcp_invalid_json'))
+    savingMcp.value = false
+    return
+  }
+  // Backend expects a JSON object; reject arrays, null, and primitives up
+  // front so the user sees the same error as the catch branch instead of a
+  // 400 from the server.
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
     ElMessage.error(t('plugin.mcp_invalid_json'))
     savingMcp.value = false
     return

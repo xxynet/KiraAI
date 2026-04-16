@@ -244,6 +244,7 @@ export default {
     plugins: 'Plugins',
     mcp_servers: 'MCP Servers',
     repo_url: 'Repository URL',
+    repo_url_required: 'Repository URL is required',
     repo_link: 'Repo ↗',
     upload_hint: 'Drop a .zip file here or click to select',
     upload_zip: 'Upload ZIP',
