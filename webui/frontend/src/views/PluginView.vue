@@ -184,7 +184,7 @@ import {
   togglePlugin as apiTogglePlugin, deletePlugin, installFromGithub,
 } from '@/api/plugin'
 import {
-  getMcpServers, createMcpServer, updateMcpServer,
+  getMcpServers, createMcpServer, updateMcpServerConfig,
   deleteMcpServer, toggleMcpServer,
 } from '@/api/mcp'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
@@ -353,7 +353,7 @@ async function openMcpEdit(server: McpServerItem) {
     mcpEditMode.value = true
     mcpEditId.value = server.id
     mcpForm.value = { name: server.name, description: server.description || '' }
-    mcpConfigJson.value = JSON.stringify(res.data, null, 2)
+    mcpConfigJson.value = JSON.stringify(res.data?.config ?? {}, null, 2)
     mcpDialogVisible.value = true
   } catch {
     // Abort opening the editor — a lossy fallback built from list fields
@@ -375,7 +375,7 @@ async function saveMcpForm() {
   }
   try {
     if (mcpEditMode.value && mcpEditId.value) {
-      await updateMcpServer(mcpEditId.value, { name: mcpForm.value.name, description: mcpForm.value.description, config })
+      await updateMcpServerConfig(mcpEditId.value, { name: mcpForm.value.name, description: mcpForm.value.description, config })
     } else {
       await createMcpServer({ name: mcpForm.value.name, description: mcpForm.value.description, config })
     }
