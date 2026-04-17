@@ -255,7 +255,7 @@ function safeRepoUrl(url: unknown): string | null {
 // Enrich each plugin with a pre-validated `safeRepo` so the template doesn't
 // call safeRepoUrl twice per card (v-if + :href) and re-parse the URL.
 const displayedPlugins = computed(() =>
-  plugins.value.map(p => ({ ...p, safeRepo: safeRepoUrl((p as any).repo) })),
+  plugins.value.map(p => ({ ...p, safeRepo: safeRepoUrl(p.repo) })),
 )
 
 async function loadPlugins() {
