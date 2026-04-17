@@ -268,6 +268,7 @@ export default {
     mcp_invalid_json: 'JSON 配置无效',
     mcp_save_success: 'MCP 服务器保存成功',
     mcp_save_failed: '保存 MCP 服务器失败',
+    mcp_config_load_failed: '加载 MCP 服务器配置失败',
     mcp_delete_confirm: '确定要删除此 MCP 服务器吗？',
   },
   sticker: {

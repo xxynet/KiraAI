@@ -268,6 +268,7 @@ export default {
     mcp_invalid_json: 'Invalid JSON configuration',
     mcp_save_success: 'MCP server saved successfully',
     mcp_save_failed: 'Failed to save MCP server',
+    mcp_config_load_failed: 'Failed to load MCP server configuration',
     mcp_delete_confirm: 'Are you sure you want to delete this MCP server?',
   },
   sticker: {

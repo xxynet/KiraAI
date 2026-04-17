@@ -109,7 +109,13 @@
     </el-tabs>
 
     <!-- Install Plugin Dialog -->
-    <el-dialog v-model="installDialogVisible" :title="$t('plugin.install_add')" width="500">
+    <el-dialog
+      v-model="installDialogVisible"
+      :title="$t('plugin.install_add')"
+      width="500"
+      :destroy-on-close="true"
+      @closed="resetInstallForm"
+    >
       <el-tabs v-model="installTab">
         <el-tab-pane label="GitHub" name="github">
           <el-form label-position="top">
@@ -265,9 +271,13 @@ async function togglePlugin(plugin: PluginItem) {
   try {
     await apiTogglePlugin(plugin.id, !plugin.enabled)
     ElMessage.success(t('plugin.toggle_success'))
-    await loadPlugins()
   } catch {
     ElMessage.error(t('plugin.toggle_failed'))
+  } finally {
+    // Always resync so the switch reflects the backend's view, even if the
+    // call failed half-way and we can't be sure which side of the toggle
+    // actually took effect.
+    await loadPlugins()
   }
 }
 
@@ -320,6 +330,15 @@ function onUploadChange(file: UploadFile) {
   uploadFile.value = file.raw || null
 }
 
+// el-dialog preserves its child state across closes; reset the form here so
+// reopening doesn't show the previous repo URL or leave the 1-slot upload
+// occupied by the last file.
+function resetInstallForm() {
+  installForm.value = { repo_url: '' }
+  uploadFile.value = null
+  installTab.value = 'github'
+}
+
 async function handleInstall() {
   installing.value = true
   try {
@@ -353,9 +372,10 @@ async function toggleMcp(server: McpServerItem) {
   try {
     await toggleMcpServer(server.id, !server.enabled)
     ElMessage.success(t('plugin.mcp_toggle_success'))
-    await loadMcpServers()
   } catch {
     ElMessage.error(t('plugin.mcp_toggle_failed'))
+  } finally {
+    await loadMcpServers()
   }
 }
 
@@ -377,8 +397,10 @@ async function openMcpEdit(server: McpServerItem) {
     mcpDialogVisible.value = true
   } catch {
     // Abort opening the editor — a lossy fallback built from list fields
-    // would silently overwrite the real config if the user hits Save.
-    ElMessage.error(t('plugin.mcp_save_failed'))
+    // would silently overwrite the real config if the user hits Save. Use
+    // the load-specific key so the toast isn't misleading (the user never
+    // tried to save anything).
+    ElMessage.error(t('plugin.mcp_config_load_failed'))
   }
 }
 

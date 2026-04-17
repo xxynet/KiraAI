@@ -12,6 +12,14 @@ export function useSSE() {
     lastError.value = null
 
     const authToken = token || localStorage.getItem('jwt_token')
+    if (!authToken) {
+      // Fail closed — sending `Authorization: Bearer null` is worse than
+      // not connecting at all: it still leaks a JWT-shaped request to the
+      // server without actually authenticating and obscures the real cause.
+      lastError.value = 'Missing auth token'
+      connected.value = false
+      return
+    }
 
     try {
       // Always send the JWT via an Authorization header so it doesn't land in
@@ -37,8 +45,14 @@ export function useSSE() {
       messages.value.push(event.data)
     }
 
-    eventSource.onerror = () => {
+    eventSource.onerror = (event: Event) => {
       connected.value = false
+      // Surface a runtime failure so consumers can distinguish it from a
+      // deliberate disconnect. Preserve a more specific message set earlier
+      // (e.g. by the connect-time catch) instead of clobbering it.
+      if (!lastError.value) {
+        lastError.value = (event && (event as any).type) || 'SSE connection error'
+      }
     }
   }
 
