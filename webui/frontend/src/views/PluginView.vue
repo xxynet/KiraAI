@@ -167,7 +167,11 @@
     <el-dialog v-model="mcpDialogVisible" :title="mcpEditMode ? $t('plugin.mcp_edit') : $t('plugin.mcp_add')" width="700" :destroy-on-close="true">
       <el-form label-position="top">
         <el-form-item :label="$t('plugin.mcp_name')">
-          <el-input v-model="mcpForm.name" />
+          <!-- Name doubles as the server's primary key on the backend; the
+               PUT /config endpoint silently ignores any rename in the body,
+               so disable the field in edit mode to make that contract
+               visible instead of letting the user think they renamed it. -->
+          <el-input v-model="mcpForm.name" :disabled="mcpEditMode" />
         </el-form-item>
         <el-form-item :label="$t('plugin.mcp_description')">
           <el-input v-model="mcpForm.description" type="textarea" :rows="2" />
@@ -445,7 +449,10 @@ async function saveMcpForm() {
   }
   try {
     if (mcpEditMode.value && mcpEditId.value) {
-      await updateMcpServerConfig(mcpEditId.value, { name: mcpForm.value.name, description: mcpForm.value.description, config })
+      // Don't send `name` on edit — the backend uses the path param as the
+      // canonical key and silently drops any rename in the body. Submitting
+      // it would falsely advertise a feature that isn't wired up.
+      await updateMcpServerConfig(mcpEditId.value, { description: mcpForm.value.description, config })
     } else {
       await createMcpServer({ name: mcpForm.value.name, description: mcpForm.value.description, config })
     }
