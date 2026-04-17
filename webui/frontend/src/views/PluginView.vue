@@ -21,7 +21,7 @@
 
         <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div
-            v-for="plugin in plugins"
+            v-for="plugin in displayedPlugins"
             :key="plugin.id"
             class="glass-card rounded-lg p-4 flex flex-col"
           >
@@ -33,7 +33,7 @@
                 </div>
               </div>
               <div class="flex items-center gap-2">
-                <a v-if="safeRepoUrl(plugin.repo)" :href="safeRepoUrl(plugin.repo)!" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:text-blue-700">
+                <a v-if="plugin.safeRepo" :href="plugin.safeRepo" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:text-blue-700">
                   {{ $t('plugin.repo_link') }}
                 </a>
                 <el-switch
@@ -154,7 +154,12 @@
       </div>
       <template #footer>
         <el-button @click="pluginConfigVisible = false">{{ $t('plugin.cancel') }}</el-button>
-        <el-button type="primary" :loading="savingConfig" @click="savePluginConfig">{{ $t('plugin.save') }}</el-button>
+        <el-button
+          type="primary"
+          :loading="savingConfig"
+          :disabled="!pluginConfigSchema"
+          @click="savePluginConfig"
+        >{{ $t('plugin.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -180,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { SetUp, Platform, UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -243,6 +248,12 @@ function safeRepoUrl(url: unknown): string | null {
   return null
 }
 
+// Enrich each plugin with a pre-validated `safeRepo` so the template doesn't
+// call safeRepoUrl twice per card (v-if + :href) and re-parse the URL.
+const displayedPlugins = computed(() =>
+  plugins.value.map(p => ({ ...p, safeRepo: safeRepoUrl((p as any).repo) })),
+)
+
 async function loadPlugins() {
   try {
     const res = await getPlugins()
@@ -250,7 +261,9 @@ async function loadPlugins() {
     pluginsError.value = null
   } catch (e: any) {
     plugins.value = []
-    pluginsError.value = e?.message || 'Failed to load plugins'
+    // Prefer backend detail when useful; always default to the localized
+    // message so Chinese users don't see an English fallback.
+    pluginsError.value = e?.message || t('plugin.load_failed')
     ElMessage.error(pluginsError.value!)
   }
 }
@@ -262,7 +275,7 @@ async function loadMcpServers() {
     mcpServersError.value = null
   } catch (e: any) {
     mcpServers.value = []
-    mcpServersError.value = e?.message || 'Failed to load MCP servers'
+    mcpServersError.value = e?.message || t('plugin.mcp_load_failed')
     ElMessage.error(mcpServersError.value!)
   }
 }
@@ -314,6 +327,10 @@ async function openPluginConfig(plugin: PluginItem) {
 }
 
 async function savePluginConfig() {
+  // Guard: the "no_config" placeholder leaves pluginConfigValues empty.
+  // Posting {} back would wipe any legitimately-managed config for a plugin
+  // that has no schema, so refuse to save instead of overwriting.
+  if (!pluginConfigSchema.value) return
   savingConfig.value = true
   try {
     await updatePluginConfig(configPluginId.value, { config: pluginConfigValues.value })

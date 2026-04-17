@@ -49,9 +49,20 @@ export function useSSE() {
       connected.value = false
       // Surface a runtime failure so consumers can distinguish it from a
       // deliberate disconnect. Preserve a more specific message set earlier
-      // (e.g. by the connect-time catch) instead of clobbering it.
+      // (e.g. by the connect-time catch) instead of clobbering it. When the
+      // polyfill exposes a status code (e.g. 401 on an expired JWT) include
+      // it so the UI can react differently than for a generic disconnect.
       if (!lastError.value) {
-        lastError.value = (event && (event as any).type) || 'SSE connection error'
+        const errEvent = event as { status?: number; statusCode?: number; message?: string } | null
+        const status = errEvent?.status ?? errEvent?.statusCode
+        const detail = errEvent?.message
+        if (status) {
+          lastError.value = `SSE connection error (status ${status})`
+        } else if (detail) {
+          lastError.value = `SSE connection error: ${detail}`
+        } else {
+          lastError.value = 'SSE connection error'
+        }
       }
     }
   }
