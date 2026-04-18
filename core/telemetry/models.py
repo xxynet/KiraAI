@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 import uuid
 
@@ -20,7 +20,7 @@ class TelemetryEvent:
     event_type: str
     data: dict[str, Any]
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = field(default_factory=lambda: datetime.now().astimezone().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     client_uuid: Optional[str] = None
     signature: Optional[str] = None
 

@@ -69,12 +69,13 @@ class AdapterResponse(AdapterBase):
 
 class PersonaBase(BaseModel):
     name: str
-    description: str = ""
-    traits: Dict = Field(default_factory=dict)
+    format: str = "text"
+    content: str = ""
 
 
 class PersonaResponse(PersonaBase):
     id: str
+    created_at: int = 0
 
 
 class SettingsRequest(BaseModel):

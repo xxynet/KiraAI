@@ -12,6 +12,7 @@ from core.config import KiraConfig, VERSION
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
 from core.statistics import Statistics
+from core.db.service import DatabaseService
 
 from .models import TelemetryEvent, TelemetryEventType
 
@@ -27,7 +28,8 @@ class TelemetryClient:
     All network errors are caught and logged to avoid blocking the main application.
     """
 
-    def __init__(self, config: KiraConfig, stats: Optional[Statistics] = None):
+    def __init__(self, db: DatabaseService, config: KiraConfig, stats: Optional[Statistics] = None):
+        self.db = db
         self.config = config
         self.stats = stats
         self.telemetry_config = config.get_config("telemetry", default={})
@@ -55,6 +57,7 @@ class TelemetryClient:
             return
 
         self._http_client = httpx.AsyncClient(timeout=30.0)
+        self._shutdown_event = asyncio.Event()
 
         if not self.client_uuid or not self.secret_key:
             await self._request_uuid()
@@ -162,6 +165,9 @@ class TelemetryClient:
         if not self.client_uuid or not self.secret_key:
             logger.error("Cannot reopen telemetry: failed to acquire UUID.")
             return False
+
+        # Reset shutdown event so background workers can actually run
+        self._shutdown_event = asyncio.Event()
 
         # Start background workers if they are not running
         if not self._worker_task or self._worker_task.done():

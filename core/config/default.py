@@ -1,4 +1,4 @@
-VERSION = "v2.9.1"
+VERSION = "v2.10.0"
 
 DEFAULT_CONFIG = {
     "bot_config": {
@@ -37,5 +37,9 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "client_uuid": None,
         "secret_key": None
+    },
+    "database": {
+        "url": None,
+        "echo": False
     }
 }

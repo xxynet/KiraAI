@@ -15,6 +15,7 @@ async function loadPersonaData() {
         // Store persona content
         AppState.data.personaContent = data.content || '';
         AppState.data.personaFormat = data.format || 'text';
+        AppState.data.personaName = data.name || 'default';
 
         // Render default persona card
         renderDefaultPersonaCard();
@@ -27,6 +28,12 @@ async function loadPersonaData() {
         const formatSelector = document.getElementById('persona-format');
         if (formatSelector) {
             formatSelector.value = AppState.data.personaFormat || 'text';
+        }
+
+        // Update name input
+        const nameInput = document.getElementById('persona-name');
+        if (nameInput) {
+            nameInput.value = AppState.data.personaName || 'default';
         }
     } catch (error) {
         console.error('Error loading persona data:', error);
@@ -41,11 +48,13 @@ function renderDefaultPersonaCard() {
         ? AppState.data.personaContent.substring(0, 150) + (AppState.data.personaContent.length > 150 ? '...' : '')
         : 'No persona content';
 
+    const displayName = AppState.data.personaName || 'default';
+
     const card = `
         <div class="bg-white border border-gray-200 rounded-lg p-6 glass-card cursor-pointer hover:shadow-lg transition-shadow" onclick="editPersona('default')">
             <div class="flex justify-between items-start mb-4">
                 <div>
-                    <h4 class="text-lg font-semibold text-gray-900">default</h4>
+                    <h4 class="text-lg font-semibold text-gray-900">${escapeHtml(displayName)}</h4>
                     <p class="text-sm text-gray-500 mt-1">${escapeHtml(description)}</p>
                 </div>
                 <div class="flex space-x-2">
@@ -113,7 +122,12 @@ function deletePersona(id) {
 
 function openPersonaModal() {
     Modal.show('persona-modal', closePersonaModal);
-    document.getElementById('persona-format').value = AppState.data.personaFormat || 'text';
+    const formatValue = AppState.data.personaFormat || 'text';
+    document.getElementById('persona-format').value = formatValue;
+    const customSelect = window._customSelectInstances?.find(i => i.element.id === 'persona-format');
+    if (customSelect) {
+        customSelect.setValue(formatValue);
+    }
     Monaco.load().then(() => createPersonaEditor());
 }
 
@@ -165,18 +179,28 @@ async function savePersona() {
         return;
     }
 
+    const formatSelector = document.getElementById('persona-format');
+    const format = formatSelector ? formatSelector.value : (AppState.data.personaFormat || 'text');
+
+    const nameInput = document.getElementById('persona-name');
+    const name = nameInput ? nameInput.value.trim() : (AppState.data.personaName || 'default');
+
     try {
         // Save persona content to backend
         const response = await apiCall('/api/personas/current/content', {
             method: 'PUT',
             body: JSON.stringify({
-                content: content
+                content: content,
+                format: format,
+                name: name
             })
         });
 
         if (response.ok) {
             // Update local state
             AppState.data.personaContent = content;
+            AppState.data.personaFormat = format;
+            AppState.data.personaName = name;
 
             // Show success notification and close modal
             showNotification('Persona saved successfully', 'success');

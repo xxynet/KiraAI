@@ -1,7 +1,5 @@
 import asyncio
-import json
 import os
-import uuid
 import inspect
 
 from typing import Optional, Union, Any, Callable
@@ -9,30 +7,26 @@ from copy import deepcopy
 
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
+from core.db.service import DatabaseService
 
 logger = get_logger("sticker", "orange")
 
 
 class StickerManager:
-    def __init__(self, provider_mgr):
-        self.provider_mgr = provider_mgr
-        self.sticker_path = f"{get_data_path()}/config/sticker.json"
+    def __init__(self, db: DatabaseService):
+        self.db = db
         self.sticker_folder = f"{get_data_path()}/sticker"
-        self.sticker_dict = {}
-        self.sticker_paths: list = []
-        self.sticker_index: int = 0
-
-        # Callbacks
+        self._sticker_cache: dict = {}
+        self._sticker_paths: list = []
+        self._sticker_index: int = 0
         self._on_registered_callbacks: list[Callable] = []
 
-        self._init_sticker_dict()
+    async def init(self):
+        """Load stickers from database into memory cache."""
+        os.makedirs(self.sticker_folder, exist_ok=True)
+        await self._load_from_db()
 
     def on_sticker_registered(self, callback: Callable):
-        """注册回调，支持同步和 async 函数。
-
-        Callback signature: callback(sticker_id: str, sticker_info: dict)
-        sticker_info contains desc / path
-        """
         self._on_registered_callbacks.append(callback)
 
     def off_sticker_registered(self, callback: Callable):
@@ -51,94 +45,90 @@ class StickerManager:
             except Exception as e:
                 logger.error(f"Sticker registered callback error: {e}")
 
-    def _init_sticker_dict(self):
+    async def _load_from_db(self):
         try:
-            if not os.path.exists(self.sticker_folder):
-                os.makedirs(self.sticker_folder)
+            rows = await self.db.list_stickers()
+            # Sort by numeric id so stickers display in creation order
+            def _sort_key(row):
+                sid = row["id"]
+                try:
+                    return (0, int(sid))
+                except ValueError:
+                    return (1, sid)
+            rows.sort(key=_sort_key)
 
-            if not os.path.exists(self.sticker_path):
-                logger.info(f"{self.sticker_path} not found. Creating an empty sticker.json")
-                os.makedirs(os.path.dirname(self.sticker_path), exist_ok=True)
-                with open(self.sticker_path, "w", encoding="utf-8") as f:
-                    f.write("{}")
-
-            with open(self.sticker_path, 'r', encoding="utf-8") as f:
-                sticker_json = f.read()
-
-            sticker_dict = json.loads(sticker_json)
-
+            self._sticker_cache = {}
+            self._sticker_paths = []
             numeric_ids = []
-            for key in sticker_dict:
-                if isinstance(key, str) and key.isdigit():
-                    try:
-                        numeric_ids.append(int(key))
-                    except Exception:
-                        pass
-            self.sticker_index = max(numeric_ids) if numeric_ids else 0
-
-            self.sticker_paths = [sticker_dict[sticker_id].get("path") for sticker_id in sticker_dict]
-
-            self.sticker_dict = sticker_dict
+            for row in rows:
+                sid = row["id"]
+                self._sticker_cache[sid] = {
+                    "desc": row["desc"],
+                    "path": row["path"],
+                    "extra": row.get("extra") or {},
+                }
+                self._sticker_paths.append(row["path"])
+                if sid.isdigit():
+                    numeric_ids.append(int(sid))
+            self._sticker_index = max(numeric_ids) if numeric_ids else 0
         except Exception as e:
-            logger.error(f"Error loading emoji dict from {self.sticker_path}: {e}")
-            self.sticker_dict = {}
+            logger.error(f"Error loading stickers from database: {e}")
+            self._sticker_cache = {}
+            self._sticker_paths = []
 
-    def register_sticker(self, filename: str, desc: str, sticker_id: Optional[str] = None):
-        """save sticker info to self.sticker_dict"""
+    @property
+    def sticker_dict(self) -> dict:
+        return self._sticker_cache
+
+    @property
+    def sticker_paths(self) -> list:
+        return self._sticker_paths
+
+    async def register_sticker(self, filename: str, desc: str, sticker_id: Optional[str] = None):
         if sticker_id:
             sid = str(sticker_id)
         else:
-            self.sticker_index += 1
-            sid = str(self.sticker_index)
-        self.sticker_dict[sid] = {
-            "desc": desc,
-            "path": filename,
-            "extra": {}
-        }
-        self.sticker_paths.append(filename)
-        self.save_sticker_dict()
+            self._sticker_index += 1
+            sid = str(self._sticker_index)
+
+        await self.db.add_sticker(sid, desc, filename, extra={})
+
+        self._sticker_cache[sid] = {"desc": desc, "path": filename, "extra": {}}
+        self._sticker_paths.append(filename)
 
         asyncio.create_task(self._fire_registered(sid, {"desc": desc, "path": filename}))
 
-    def save_sticker_dict(self):
-        try:
-            os.makedirs(os.path.dirname(self.sticker_path), exist_ok=True)
-            with open(self.sticker_path, "w", encoding="utf-8") as f:
-                f.write(json.dumps(self.sticker_dict, indent=4, ensure_ascii=False))
-        except Exception as e:
-            logger.error(f"Error saving sticker dict to {self.sticker_path}: {e}")
-
-    def update_sticker_desc(self, sticker_id: str, desc: str):
+    async def update_sticker_desc(self, sticker_id: str, desc: str):
         sid = str(sticker_id)
-        sticker = self.sticker_dict.get(sid)
+        sticker = self._sticker_cache.get(sid)
         if not sticker:
             raise KeyError(sid)
+        await self.db.update_sticker(sid, desc=desc)
         sticker["desc"] = desc
-        self.save_sticker_dict()
         return {
             "id": sid,
             "desc": sticker.get("desc") or "",
             "path": sticker.get("path") or "",
         }
 
-    def delete_sticker(self, sticker_id: str, delete_file: bool = False):
+    async def delete_sticker(self, sticker_id: str, delete_file: bool = False):
         sid = str(sticker_id)
-        sticker = self.sticker_dict.pop(sid, None)
+        sticker = self._sticker_cache.pop(sid, None)
         if not sticker:
             raise KeyError(sid)
         path = sticker.get("path")
         if path:
-            self.sticker_paths = [p for p in self.sticker_paths if p != path]
+            self._sticker_paths = [p for p in self._sticker_paths if p != path]
             file_path = os.path.join(self.sticker_folder, path)
             if delete_file and os.path.exists(file_path):
                 try:
                     os.remove(file_path)
                 except Exception as e:
                     logger.error(f"Error deleting sticker file {file_path}: {e}")
-        self.save_sticker_dict()
+        await self.db.delete_sticker(sid)
 
     def set_sticker_extra(self, sticker_id: str, key: Union[int, str], value: Any):
-        sticker_info_dict = self.sticker_dict.get(sticker_id)
+        sticker_info_dict = self._sticker_cache.get(sticker_id)
         if sticker_info_dict:
             if key is None:
                 return False
@@ -147,8 +137,7 @@ class StickerManager:
         return False
 
     def get_sticker_extra(self, sticker_id: str, key: Optional[Union[int, str]] = None):
-        """Get extra info of a sticker, return all extra info if key is not given"""
-        sticker_info_dict = self.sticker_dict.get(sticker_id)
+        sticker_info_dict = self._sticker_cache.get(sticker_id)
         if sticker_info_dict is None:
             raise KeyError(sticker_id)
 
@@ -177,19 +166,19 @@ class StickerManager:
         final_desc = desc or ""
         if sticker_id and str(sticker_id).strip():
             sid = str(sticker_id).strip()
-            if sid in self.sticker_dict:
+            if sid in self._sticker_cache:
                 raise ValueError(f"Sticker id {sid} already exists")
             if sid.isdigit():
                 try:
                     numeric_id = int(sid)
-                    if numeric_id > self.sticker_index:
-                        self.sticker_index = numeric_id
+                    if numeric_id > self._sticker_index:
+                        self._sticker_index = numeric_id
                 except Exception:
                     pass
         else:
-            self.sticker_index += 1
-            sid = str(self.sticker_index)
-        self.register_sticker(filename, final_desc, sid)
+            self._sticker_index += 1
+            sid = str(self._sticker_index)
+        await self.register_sticker(filename, final_desc, sid)
         return {
             "id": sid,
             "desc": final_desc,
