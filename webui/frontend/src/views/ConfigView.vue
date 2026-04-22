@@ -394,6 +394,15 @@ function setFieldValue(key: string, value: any) {
 }
 
 // Model reference helpers
+//
+// A `model_select` field stores its value as `"<provider>:<model>"` in config,
+// and we never persist a bare `"<provider>:"` — that would be a half-configured
+// entry that slips past save. But the UI needs to support the transient state
+// where the user has picked a provider and is about to pick a model. We keep
+// that state in `pendingProviders` (not persisted) so the provider dropdown
+// stays selected and the model dropdown has options to show.
+const pendingProviders = ref<Record<string, string>>({})
+
 function parseModelReference(ref: string): { providerId: string; modelId: string } {
   if (!ref || typeof ref !== 'string') return { providerId: '', modelId: '' }
   const parts = ref.split(':')
@@ -402,33 +411,36 @@ function parseModelReference(ref: string): { providerId: string; modelId: string
 }
 
 function getModelProvider(key: string): string {
-  const val = getFieldValue(key) || ''
-  return parseModelReference(val).providerId
+  const persisted = parseModelReference(getFieldValue(key) || '').providerId
+  return persisted || pendingProviders.value[key] || ''
 }
 
 function getModelId(key: string): string {
-  const val = getFieldValue(key) || ''
-  return parseModelReference(val).modelId
+  return parseModelReference(getFieldValue(key) || '').modelId
 }
 
 function setModelProvider(key: string, providerId: string, _modelType?: string) {
-  // Only persist a full `provider:model` reference. Clearing or changing the
-  // provider wipes any stale model id — a bare `provider:` is never committed
-  // to config so half-configured entries can't slip past validation.
   if (!providerId) {
+    delete pendingProviders.value[key]
     setFieldValue(key, '')
     return
   }
-  const existingModelId = getModelId(key)
-  setFieldValue(key, existingModelId ? `${providerId}:${existingModelId}` : '')
+  // Switching provider invalidates any previously chosen model, so we clear
+  // the persisted value and park the provider in pending state until the user
+  // picks a model. `validateField` will flag this as required-but-missing.
+  pendingProviders.value[key] = providerId
+  setFieldValue(key, '')
+  validateField(key)
 }
 
 function setModelId(key: string, modelId: string) {
   const providerId = getModelProvider(key)
   if (!providerId || !modelId) {
+    delete pendingProviders.value[key]
     setFieldValue(key, '')
     return
   }
+  delete pendingProviders.value[key]
   setFieldValue(key, `${providerId}:${modelId}`)
 }
 
@@ -475,10 +487,13 @@ function validateField(key: string) {
   const allFields = allGroups.flatMap(g => g.fields)
   const field = allFields.find(f => f.key === key)
   // A model_select with a provider but no model is incomplete — flag it even
-  // though there's no explicit `validation` block on the schema.
+  // though there's no explicit `validation` block on the schema. Also catches
+  // the transient pending state where the user picked a provider but hasn't
+  // picked a model yet.
   if (field?.type === 'model_select') {
-    const { providerId, modelId } = parseModelReference(getFieldValue(key) || '')
-    if (providerId && !modelId) {
+    const { providerId: persistedProvider, modelId } = parseModelReference(getFieldValue(key) || '')
+    const effectiveProvider = persistedProvider || pendingProviders.value[key] || ''
+    if (effectiveProvider && !modelId) {
       validationErrors.value[key] = t('configuration.validation.required')
       return
     }
