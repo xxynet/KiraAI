@@ -119,14 +119,9 @@ class KiraWebUI:
         return self.app
 
 
-if __name__ == '__main__':
-    from core.statistics import Statistics
-    stats = Statistics()
-    lifecycle = KiraLifecycle(stats)
-    webui = KiraWebUI(lifecycle)
-    app = webui.get_app()
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=5267,
-    )
+# Note: this module is intentionally not a standalone entrypoint.
+# `main.py` is the canonical launcher — it runs `KiraLauncher.start()` which
+# awaits `KiraLifecycle.init_and_run_system()` before serving. Instantiating
+# `KiraLifecycle` directly here and passing it to `uvicorn.run()` leaves
+# `db_manager`, `provider_manager`, `plugin_manager`, etc. as `None` and
+# most API routes will return 500.

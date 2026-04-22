@@ -412,12 +412,24 @@ function getModelId(key: string): string {
 }
 
 function setModelProvider(key: string, providerId: string, _modelType?: string) {
-  setFieldValue(key, providerId ? `${providerId}:` : '')
+  // Only persist a full `provider:model` reference. Clearing or changing the
+  // provider wipes any stale model id — a bare `provider:` is never committed
+  // to config so half-configured entries can't slip past validation.
+  if (!providerId) {
+    setFieldValue(key, '')
+    return
+  }
+  const existingModelId = getModelId(key)
+  setFieldValue(key, existingModelId ? `${providerId}:${existingModelId}` : '')
 }
 
 function setModelId(key: string, modelId: string) {
   const providerId = getModelProvider(key)
-  setFieldValue(key, providerId && modelId ? `${providerId}:${modelId}` : providerId ? `${providerId}:` : '')
+  if (!providerId || !modelId) {
+    setFieldValue(key, '')
+    return
+  }
+  setFieldValue(key, `${providerId}:${modelId}`)
 }
 
 function getAvailableModels(key: string, modelType?: string): string[] {
@@ -462,6 +474,15 @@ function redo() {
 function validateField(key: string) {
   const allFields = allGroups.flatMap(g => g.fields)
   const field = allFields.find(f => f.key === key)
+  // A model_select with a provider but no model is incomplete — flag it even
+  // though there's no explicit `validation` block on the schema.
+  if (field?.type === 'model_select') {
+    const { providerId, modelId } = parseModelReference(getFieldValue(key) || '')
+    if (providerId && !modelId) {
+      validationErrors.value[key] = t('configuration.validation.required')
+      return
+    }
+  }
   if (!field?.validation) {
     delete validationErrors.value[key]
     return
