@@ -15,6 +15,7 @@ from core.utils.path_utils import get_config_path
 from core.logging_manager import get_logger
 from core.config import KiraConfig
 from core.config.config_field import BaseConfigField, build_fields
+from core.db.service import DatabaseService
 
 logger = get_logger("provider_manager", "cyan")
 
@@ -31,12 +32,12 @@ class ProviderManager:
     _manifests: Dict[str, dict] = {}
     _schemas: Dict[str, dict] = {}
     
-    def __new__(cls, kira_config: KiraConfig):
+    def __new__(cls, db: DatabaseService, kira_config: KiraConfig):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self, kira_config: KiraConfig):
+    def __init__(self, db: DatabaseService, kira_config: KiraConfig):
         if not hasattr(self, '_initialized'):
             self._initialized = True
             
@@ -44,6 +45,7 @@ class ProviderManager:
             src_dir = os.path.join(os.path.dirname(__file__), "src")
             self.scan_providers(src_dir)
 
+            self.db = db
             self.kira_config = kira_config
             
             self.providers_config = kira_config.get("providers", {})

@@ -43,6 +43,7 @@ from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
 from core.agent.tool import ToolSet
 from core.tag import tag_registry, TagSet
+from core.db.service import DatabaseService
 
 logger = get_logger("message", "cyan")
 llm_logger = get_logger("llm", "purple")
@@ -95,69 +96,54 @@ class SessionBufferManager:
 
 
 class ImageDescCache:
-    """Cache image/sticker VLM descriptions using MD5 hash to avoid duplicate requests"""
+    """Cache image/sticker VLM descriptions using MD5 hash backed by database."""
 
-    _instance: Optional["ImageDescCache"] = None
+    def __init__(self, db_service: DatabaseService):
+        self.db = db_service
 
-    def __new__(cls, cache_file: str = None):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self, cache_file: str = None):
-        if self._initialized:
-            return
-        self._initialized = True
-        if cache_file is None:
-            cache_file = str(get_data_path() / "image_desc_cache.json")
-        self.cache_file = cache_file
-        self._cache: dict = {}
-        self._load()
-
-    def _load(self):
-        if os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, "r", encoding="utf-8") as f:
-                    self._cache = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                self._cache = {}
-
-    def _save(self):
-        os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
-        with open(self.cache_file, "w", encoding="utf-8") as f:
-            json.dump(self._cache, f, ensure_ascii=False, indent=2)
-
-    def get(self, md5: str) -> Optional[str]:
-        entry = self._cache.get(md5)
+    async def get(self, md5: str) -> Optional[str]:
+        entry = await self.db.get_image_desc_cache(md5)
         if entry:
-            entry["count"] += 1
-            entry["last_seen"] = int(time.time())
-            self._save()
+            await self.db.update_image_desc_cache(
+                md5,
+                count=entry["count"] + 1,
+                last_seen=int(time.time()),
+            )
             return entry["description"]
         return None
 
-    def set(self, md5: str, description: str):
-        self._cache[md5] = {
-            "description": description,
-            "count": 1,
-            "last_seen": int(time.time())
-        }
-        self._save()
+    async def set(self, md5: str, description: str):
+        existing = await self.db.get_image_desc_cache(md5)
+        if existing:
+            await self.db.update_image_desc_cache(
+                md5,
+                description=description,
+                count=1,
+                last_seen=int(time.time()),
+            )
+        else:
+            await self.db.add_image_desc_cache(
+                md5,
+                description,
+                count=1,
+                last_seen=int(time.time()),
+            )
 
 
 class MessageProcessor:
     """Core message processor, responsible for handling all message sending and receiving logic"""
 
     def __init__(self,
+                 db: DatabaseService,
                  kira_config,
                  llm_api: LLMClient,
                  provider_manager: ProviderManager,
                  skills_manager: SkillsManager,
                  adapter_manager: AdapterManager,
-                 memory_manager: SessionManager,
+                 session_manager: SessionManager,
                  prompt_manager: PromptManager,
                  max_concurrent_messages: int = 3):
+        self.db = db
         self.kira_config = kira_config
         self.bot_config = kira_config["bot_config"].get("bot")
         self.max_message_interval = float(self.bot_config.get("max_message_interval"))
@@ -170,7 +156,7 @@ class MessageProcessor:
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
 
         # managers
-        self.memory_manager = memory_manager
+        self.session_manager = session_manager
         self.prompt_manager = prompt_manager
         self.provider_mgr = provider_manager
         self.adapter_mgr = adapter_manager
@@ -182,7 +168,7 @@ class MessageProcessor:
         self.session_buffer = SessionBufferManager(max_count=self.max_buffer_messages)
 
         # image description cache
-        self.image_desc_cache = ImageDescCache()
+        self.image_desc_cache = ImageDescCache(db)
 
         logger.info("MessageProcessor initialized")
 
@@ -239,7 +225,7 @@ class MessageProcessor:
                 if ele.caption is None:
                     try:
                         md5 = await ele.hash_image()
-                        cached_desc = self.image_desc_cache.get(md5)
+                        cached_desc = await self.image_desc_cache.get(md5)
                     except (ValueError, Exception) as e:
                         logger.warning(f"Failed to hash image: {e}")
                         md5 = None
@@ -250,14 +236,22 @@ class MessageProcessor:
                         vlm_model = self.provider_mgr.get_default_vlm()
                         img_desc = await desc_img(client=vlm_model, image=ele)
                         if md5:
-                            self.image_desc_cache.set(md5, img_desc)
+                            await self.image_desc_cache.set(md5, img_desc)
                     ele.caption = img_desc
+                else:
+                    try:
+                        md5 = await ele.hash_image()
+                        cached = await self.image_desc_cache.get(md5)
+                        if not cached:
+                            await self.image_desc_cache.set(md5, ele.caption)
+                    except Exception as e:
+                        logger.warning(f"Failed to cache image desc: {e}")
                 message_str += f"[Image {str(ele.caption)}]"
             elif isinstance(ele, Sticker):
                 if ele.caption is None:
                     try:
                         md5 = await ele.hash_image()
-                        cached_desc = self.image_desc_cache.get(md5)
+                        cached_desc = await self.image_desc_cache.get(md5)
                     except (ValueError, Exception) as e:
                         logger.warning(f"Failed to hash sticker: {e}")
                         md5 = None
@@ -268,8 +262,16 @@ class MessageProcessor:
                         vlm_model = self.provider_mgr.get_default_vlm()
                         sticker_desc = await desc_img(client=vlm_model, image=ele)
                         if md5:
-                            self.image_desc_cache.set(md5, sticker_desc)
+                            await self.image_desc_cache.set(md5, sticker_desc)
                     ele.caption = sticker_desc
+                else:
+                    try:
+                        md5 = await ele.hash_image()
+                        cached = await self.image_desc_cache.get(md5)
+                        if not cached:
+                            await self.image_desc_cache.set(md5, ele.caption)
+                    except Exception as e:
+                        logger.warning(f"Failed to cache sticker desc: {e}")
                 message_str += f"[Sticker {str(ele.caption)}]"
             elif isinstance(ele, Reply):
                 if ele.chain:
@@ -353,7 +355,7 @@ class MessageProcessor:
 
         sid = event.session.sid
 
-        event.session.session_description = self.memory_manager.get_session_info(sid).session_description
+        event.session.session_description = self.session_manager.get_session_info(sid).session_description
 
         # EventType.ON_IM_MESSAGE
         im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_MESSAGE)
@@ -420,9 +422,9 @@ class MessageProcessor:
                 return
 
         # Set session title
-        if not self.memory_manager.get_session_info(sid).session_title:
-            self.memory_manager.update_session_info(sid, event.session.session_title)
-        session_title = self.memory_manager.get_session_info(sid).session_title
+        if not self.session_manager.get_session_info(sid).session_title:
+            self.session_manager.update_session_info(sid, event.session.session_title)
+        session_title = self.session_manager.get_session_info(sid).session_title
 
         # Build chat environment
         chat_env = {
@@ -435,10 +437,10 @@ class MessageProcessor:
         }
 
         # Get chat history memory
-        session_memory = self.memory_manager.fetch_memory(sid)
+        session_memory = self.session_manager.fetch_memory(sid)
 
         # Generate agent prompt
-        agent_prompt_list = self.prompt_manager.get_agent_prompt(chat_env)
+        agent_prompt_list = await self.prompt_manager.get_agent_prompt(chat_env)
 
         # Inject skills prompt
         if len(self.skills_manager.skills_info) > 0:
@@ -554,7 +556,7 @@ class MessageProcessor:
             # Process tool calls if existed
 
         # Save new memory
-        self.memory_manager.update_memory(sid, new_memory.memory_list)
+        self.session_manager.update_memory(sid, new_memory.memory_list)
 
     async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
@@ -568,7 +570,7 @@ class MessageProcessor:
             logger.info(f"[{msg.adapter_name} | {msg.cmt_id}] [{msg.commenter_nickname}]: {msg.cmt_content[0].text}")
             cmt_content = f"""{msg.commenter_nickname}: {msg.cmt_content[0].text}"""
 
-        cmt_prompt = self.prompt_manager.get_comment_prompt(cmt_content)
+        cmt_prompt = await self.prompt_manager.get_comment_prompt(cmt_content)
 
         client = self.provider_mgr.get_default_llm()
         if not client:
@@ -704,3 +706,17 @@ class MessageProcessor:
         except Exception as e:
             logger.error(f"Error adding message IDs: {str(e)}")
             return xml_data
+
+    async def cleanup_image_desc_cache_task(self):
+        """Background task: clean up expired image desc cache every 24 hours."""
+        while True:
+            try:
+                deleted = await self.db.cleanup_expired_image_desc_cache()
+                if deleted:
+                    logger.info(f"Cleaned up {deleted} expired image desc cache entries")
+                await asyncio.sleep(24 * 60 * 60)
+            except asyncio.CancelledError:
+                logger.info("Image desc cache cleanup task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in image desc cache cleanup: {e}")

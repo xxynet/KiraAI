@@ -9,6 +9,7 @@ from threading import Lock
 from core.logging_manager import get_logger
 from core.config import KiraConfig
 from core.utils.path_utils import get_data_path
+from core.db.service import DatabaseService
 
 from .session import Session
 
@@ -20,7 +21,8 @@ CORE_MEMORY_PATH: str = f"{get_data_path()}/memory/core.txt"
 
 class SessionManager:
 
-    def __init__(self, kira_config: KiraConfig):
+    def __init__(self, db: DatabaseService, kira_config: KiraConfig):
+        self.db = db
         self.kira_config = kira_config
         self.max_memory_length = int(kira_config["bot_config"].get("bot").get("max_memory_length"))
         self.chat_memory_path = CHAT_MEMORY_PATH
@@ -116,9 +118,9 @@ class SessionManager:
                     adapter_name=parts[0],
                     session_type=parts[1],
                     session_id=parts[2],
-                    session_title=session_data["title"],
-                    session_description=session_data["description"],
-                    timestamp=session_data["timestamp"]
+                    session_title=session_data.get("title"),
+                    session_description=session_data.get("description"),
+                    timestamp=session_data.get("timestamp")
                 ))
             return session_info_list
 
@@ -130,9 +132,9 @@ class SessionManager:
             adapter_name=parts[0],
             session_type=parts[1],
             session_id=parts[2],
-            session_title=session_data["title"],
-            session_description=session_data["description"],
-            timestamp=session_data["timestamp"]
+            session_title=session_data.get("title"),
+            session_description=session_data.get("description"),
+            timestamp=session_data.get("timestamp")
         )
 
     def update_session_info(self, session: str, title: str = None, description: str = None):

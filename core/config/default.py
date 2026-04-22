@@ -1,4 +1,4 @@
-VERSION = "v2.9.1"
+VERSION = "v2.10.0"
 
 DEFAULT_CONFIG = {
     "bot_config": {
@@ -32,5 +32,14 @@ DEFAULT_CONFIG = {
         "default_rerank": None,
         "default_video": None
     },
-    "adapters": {}  # ID: Adapter config dict
+    "adapters": {},  # ID: Adapter config dict
+    "telemetry": {
+        "enabled": True,
+        "client_uuid": None,
+        "secret_key": None
+    },
+    "database": {
+        "url": None,
+        "echo": False
+    }
 }

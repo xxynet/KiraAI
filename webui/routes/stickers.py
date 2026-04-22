@@ -171,8 +171,6 @@ class StickersRoutes(Routes):
 
     async def get_sticker(self, sticker_id: str):
         sid = str(sticker_id)
-        path = ""
-        desc = ""
         if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
             sticker = self.lifecycle.sticker_manager.sticker_dict.get(sid)
             if not isinstance(sticker, dict):
@@ -180,21 +178,7 @@ class StickersRoutes(Routes):
             path = sticker.get("path") or ""
             desc = sticker.get("desc") or ""
         else:
-            sticker_config_path = get_data_path() / "config" / "sticker.json"
-            if not sticker_config_path.exists():
-                raise HTTPException(status_code=404, detail="Sticker not found")
-            try:
-                with open(sticker_config_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                data = json.loads(content) if content.strip() else {}
-            except Exception as e:
-                logger.error(f"Failed to load stickers from {sticker_config_path}: {e}")
-                raise HTTPException(status_code=500, detail="Failed to load stickers")
-            sticker = data.get(sid)
-            if not isinstance(sticker, dict):
-                raise HTTPException(status_code=404, detail="Sticker not found")
-            path = sticker.get("path") or ""
-            desc = sticker.get("desc") or ""
+            raise HTTPException(status_code=404, detail="Sticker manager not available")
         if not path:
             raise HTTPException(status_code=404, detail="Sticker not found")
         file_path = get_data_path() / "sticker" / path
@@ -206,71 +190,23 @@ class StickersRoutes(Routes):
         desc = payload.desc or ""
         if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
             try:
-                result = self.lifecycle.sticker_manager.update_sticker_desc(sticker_id, desc)
+                result = await self.lifecycle.sticker_manager.update_sticker_desc(sticker_id, desc)
             except KeyError:
                 raise HTTPException(status_code=404, detail="Sticker not found")
             except Exception as e:
                 logger.error(f"Error updating sticker {sticker_id}: {e}")
                 raise HTTPException(status_code=500, detail="Failed to update sticker")
             return StickerItem(id=result["id"], desc=result["desc"], path=result["path"])
-        sticker_config_path = get_data_path() / "config" / "sticker.json"
-        if not sticker_config_path.exists():
-            raise HTTPException(status_code=404, detail="Sticker not found")
-        try:
-            with open(sticker_config_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            data = json.loads(content) if content.strip() else {}
-        except Exception as e:
-            logger.error(f"Failed to load stickers from {sticker_config_path}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to load stickers")
-        sticker = data.get(str(sticker_id))
-        if not isinstance(sticker, dict):
-            raise HTTPException(status_code=404, detail="Sticker not found")
-        sticker["desc"] = desc
-        try:
-            with open(sticker_config_path, "w", encoding="utf-8") as f:
-                f.write(json.dumps(data, indent=4, ensure_ascii=False))
-        except Exception as e:
-            logger.error(f"Failed to save stickers to {sticker_config_path}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to save stickers")
-        path = sticker.get("path") or ""
-        return StickerItem(id=str(sticker_id), desc=desc, path=path)
+        raise HTTPException(status_code=404, detail="Sticker manager not available")
 
     async def delete_sticker(self, sticker_id: str, delete_file: bool = False):
         if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
             try:
-                self.lifecycle.sticker_manager.delete_sticker(sticker_id, delete_file=delete_file)
+                await self.lifecycle.sticker_manager.delete_sticker(sticker_id, delete_file=delete_file)
             except KeyError:
                 raise HTTPException(status_code=404, detail="Sticker not found")
             except Exception as e:
                 logger.error(f"Error deleting sticker {sticker_id}: {e}")
                 raise HTTPException(status_code=500, detail="Failed to delete sticker")
             return None
-        sticker_config_path = get_data_path() / "config" / "sticker.json"
-        if not sticker_config_path.exists():
-            raise HTTPException(status_code=404, detail="Sticker not found")
-        try:
-            with open(sticker_config_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            data = json.loads(content) if content.strip() else {}
-        except Exception as e:
-            logger.error(f"Failed to load stickers from {sticker_config_path}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to load stickers")
-        sticker = data.pop(str(sticker_id), None)
-        if not isinstance(sticker, dict):
-            raise HTTPException(status_code=404, detail="Sticker not found")
-        path = sticker.get("path")
-        if path:
-            file_path = get_data_path() / "sticker" / path
-            if delete_file and file_path.exists():
-                try:
-                    file_path.unlink()
-                except Exception as e:
-                    logger.error(f"Error deleting sticker file {file_path}: {e}")
-        try:
-            with open(sticker_config_path, "w", encoding="utf-8") as f:
-                f.write(json.dumps(data, indent=4, ensure_ascii=False))
-        except Exception as e:
-            logger.error(f"Failed to save stickers to {sticker_config_path}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to save stickers")
-        return None
+        raise HTTPException(status_code=404, detail="Sticker manager not available")

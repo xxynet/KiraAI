@@ -20,10 +20,13 @@ from core.chat.message_elements import Text
 if TYPE_CHECKING:
     from .plugin_registry import PluginManager
     from core.message_manager import MessageProcessor
+    from core.db.service import DatabaseService
 
 
 @dataclass
 class PluginContext:
+    db: DatabaseService
+
     config: KiraConfig
 
     event_bus: EventBus

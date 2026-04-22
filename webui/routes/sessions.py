@@ -42,17 +42,17 @@ class SessionsRoutes(Routes):
         ]
 
     async def list_sessions(self):
-        if not self.lifecycle or not self.lifecycle.memory_manager:
+        if not self.lifecycle or not self.lifecycle.session_manager:
             return {"sessions": []}
 
-        session_keys = list(self.lifecycle.memory_manager.chat_memory.keys())
+        session_keys = list(self.lifecycle.session_manager.chat_memory.keys())
         sessions = []
         for session_key in session_keys:
             parts = session_key.split(":")
             if len(parts) < 3:
                 continue
             adapter_name, session_type, session_id = parts[0], parts[1], ":".join(parts[2:])
-            session_meta = self.lifecycle.memory_manager.chat_memory.get(session_key, {})
+            session_meta = self.lifecycle.session_manager.chat_memory.get(session_key, {})
             title = session_meta.get("title", "")
             description = session_meta.get("description", "")
             sessions.append({
@@ -62,22 +62,22 @@ class SessionsRoutes(Routes):
                 "session_id": session_id,
                 "title": title,
                 "description": description,
-                "message_count": self.lifecycle.memory_manager.get_memory_count(session_key),
+                "message_count": self.lifecycle.session_manager.get_memory_count(session_key),
             })
         return {"sessions": sessions}
 
     async def get_session(self, session_id: str):
-        if not self.lifecycle or not self.lifecycle.memory_manager:
+        if not self.lifecycle or not self.lifecycle.session_manager:
             raise HTTPException(status_code=404, detail="Memory manager not available")
 
-        memory = self.lifecycle.memory_manager.read_memory(session_id)
+        memory = self.lifecycle.session_manager.read_memory(session_id)
 
         parts = session_id.split(":")
         if len(parts) < 3:
             raise HTTPException(status_code=400, detail="Invalid session id format")
 
         adapter_name, session_type, session_key = parts[0], parts[1], ":".join(parts[2:])
-        session_meta = self.lifecycle.memory_manager.chat_memory.get(session_id, {})
+        session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})
         title = session_meta.get("title", "")
         description = session_meta.get("description", "")
 
@@ -92,7 +92,7 @@ class SessionsRoutes(Routes):
         }
 
     async def update_session(self, session_id: str, payload: dict):
-        if not self.lifecycle or not self.lifecycle.memory_manager:
+        if not self.lifecycle or not self.lifecycle.session_manager:
             raise HTTPException(status_code=404, detail="Memory manager not available")
 
         messages = payload.get("messages")
@@ -100,10 +100,10 @@ class SessionsRoutes(Routes):
         description = payload.get("description")
 
         if messages is not None:
-            self.lifecycle.memory_manager.write_memory(session_id, messages)
+            self.lifecycle.session_manager.write_memory(session_id, messages)
 
         if title is not None or description is not None:
-            self.lifecycle.memory_manager.update_session_info(
+            self.lifecycle.session_manager.update_session_info(
                 session_id, title=title, description=description
             )
 
@@ -128,7 +128,7 @@ class SessionsRoutes(Routes):
         }
 
     async def delete_session(self, session_id: str):
-        if not self.lifecycle or not self.lifecycle.memory_manager:
+        if not self.lifecycle or not self.lifecycle.session_manager:
             raise HTTPException(status_code=404, detail="Memory manager not available")
-        self.lifecycle.memory_manager.delete_session(session_id)
+        self.lifecycle.session_manager.delete_session(session_id)
         return None

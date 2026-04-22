@@ -21,6 +21,10 @@ from core.agent.skills_mgr import SkillsManager
 from core.config import VERSION
 from core.utils.path_utils import get_data_path
 from core.temp_monitor import AsyncTempMonitor
+from core.telemetry import TelemetryClient
+from core.db.db_mgr import DatabaseManager
+from core.db.service import DatabaseService
+from core.db.migrate_to_db import run_migrations
 
 
 logger = get_logger("lifecycle", "blue")
@@ -34,13 +38,17 @@ class KiraLifecycle:
 
         self.kira_config: Optional[KiraConfig] = None
 
+        self.db_manager: Optional[DatabaseManager] = None
+
+        self.db_service: Optional[DatabaseService] = None
+
         self.provider_manager: Optional[ProviderManager] = None
 
         self.llm_api: Optional[LLMClient] = None
 
         self.adapter_manager: Optional[AdapterManager] = None
 
-        self.memory_manager: Optional[SessionManager] = None
+        self.session_manager: Optional[SessionManager] = None
 
         self.persona_manager: Optional[PersonaManager] = None
 
@@ -61,6 +69,8 @@ class KiraLifecycle:
         self.mcp_manager: Optional[MCPManager] = None
 
         self.skills_manager: Optional[SkillsManager] = None
+
+        self.telemetry_client: Optional[TelemetryClient] = None
 
         self.tasks: list[asyncio.Task] = []
 
@@ -85,25 +95,48 @@ class KiraLifecycle:
         # ====== init KiraAI config ======
         self.kira_config = KiraConfig()
 
+        # ====== init database manager ======
+        db_url = self.kira_config.get_config("database.url")
+        if not db_url:
+            db_path = get_data_path() / "data.db"
+            db_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
+        db_echo = self.kira_config.get_config("database.echo", False)
+        self.db_manager = DatabaseManager(db_url, echo=db_echo)
+        await self.db_manager.init()
+        logger.info(f"DatabaseManager initialized with URL: {db_url}")
+
+        self.db_service = DatabaseService(self.db_manager)
+        await self.db_service.init_tables()
+        logger.info("Database tables initialized")
+
+        await run_migrations(self.db_service)
+
+        # ====== record startup time and init telemetry ======
+        self.stats.set_stats("started_ts", int(time.time()))
+        # self.telemetry_client = TelemetryClient(self.db_service, self.kira_config, self.stats)
+        # await self.telemetry_client.initialize()
+
         # ====== init ProviderManager config ======
-        self.provider_manager = ProviderManager(self.kira_config)
+        self.provider_manager = ProviderManager(self.db_service, self.kira_config)
 
         # ====== init LLMClient ======
         self.llm_api = LLMClient(self.kira_config, self.provider_manager)
-        await register_all_tools(self.llm_api)
+        await register_all_tools(self.llm_api)  # Legacy tools
 
         # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(self.kira_config, loop, event_queue, self.llm_api)
         await self.adapter_manager.initialize()
 
-        # ====== init memory manager ======
-        self.memory_manager = SessionManager(self.kira_config)
+        # ====== init session manager ======
+        self.session_manager = SessionManager(self.db_service, self.kira_config)
 
         # ====== init persona manager ======
-        self.persona_manager = PersonaManager()
+        self.persona_manager = PersonaManager(db=self.db_service)
+        await self.persona_manager.init_persona()
 
         # ====== init sticker manager ======
-        self.sticker_manager = StickerManager(provider_mgr=self.provider_manager)
+        self.sticker_manager = StickerManager(db=self.db_service)
+        await self.sticker_manager.init()
 
         # ====== init prompt manager ======
         self.prompt_manager = PromptManager(self.kira_config,
@@ -121,18 +154,28 @@ class KiraLifecycle:
         self.skills_manager = SkillsManager()
 
         # ====== init message processor ======
-        self.message_processor = MessageProcessor(self.kira_config,
-                                                  self.llm_api,
-                                                  self.provider_manager,
-                                                  self.skills_manager,
-                                                  self.adapter_manager,
-                                                  self.memory_manager,
-                                                  self.prompt_manager)
+        self.message_processor = MessageProcessor(
+            db=self.db_service,
+            kira_config=self.kira_config,
+            llm_api=self.llm_api,
+            provider_manager=self.provider_manager,
+            skills_manager=self.skills_manager,
+            adapter_manager=self.adapter_manager,
+            session_manager=self.session_manager,
+            prompt_manager=self.prompt_manager)
+
+        self.tasks.append(
+            asyncio.create_task(
+                self.message_processor.cleanup_image_desc_cache_task(),
+                name="image_desc_cache_cleanup"
+            )
+        )
 
         self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
 
         # ====== init plugin system ======
         self.plugin_context = PluginContext(
+            db=self.db_service,
             config=self.kira_config,
             event_bus=self.event_bus,
             provider_mgr=self.provider_manager,
@@ -140,7 +183,7 @@ class KiraLifecycle:
             adapter_mgr=self.adapter_manager,
             persona_mgr=self.persona_manager,
             sticker_manager=self.sticker_manager,
-            session_mgr=self.memory_manager,
+            session_mgr=self.session_manager,
             message_processor=self.message_processor
         )
 
@@ -171,18 +214,24 @@ class KiraLifecycle:
         )
 
         # ====== schedule tasks ======
-        # asyncio.create_task(self.schedule_tasks())
-
-        self.stats.set_stats("started_ts", int(time.time()))
+        asyncio.create_task(self.schedule_tasks())
 
         logger.info("All modules initialized, starting message processing loop...")
 
         await self.event_bus.dispatch()
 
     async def stop(self):
+        # shutdown telemetry client
+        if self.telemetry_client:
+            await self.telemetry_client.shutdown()
+
         # terminate all running adapters
         await self.adapter_manager.stop_adapters()
         await self.event_bus.stop()
+
+        # dispose database manager
+        if self.db_manager:
+            await self.db_manager.dispose()
 
         # cancel all tasks
         for task in self.tasks:
