@@ -57,11 +57,27 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 
 ## 📦 Requirements
 - Python 3.10+
+- Node.js 18+ and npm (required to build the WebUI admin panel)
 - Windows, macOS, or Linux
 
 ## 🛠️ Setup
 1. Clone this repository.
 2. Enter KiraAI folder
+
+## 🎨 Build the WebUI
+The admin panel is a Vue 3 + Vite single-page app. Build it once before first run:
+
+```bash
+cd webui/frontend
+npm install
+npm run build
+```
+
+The production bundle is emitted to `webui/static/dist/` and served automatically at `/` by the Python backend. The backend returns HTTP 503 at `/` if the bundle is missing — this step is required.
+
+For frontend development with hot-reload, run `npm run dev` in the same directory (Vite dev server on `:3000`, proxies `/api` and `/sticker` to the Python backend on `:5267`).
+
+Re-run `npm run build` after pulling frontend changes.
 
 ## ▶️ Run
 You can start KiraAI via (venv):

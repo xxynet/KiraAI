@@ -1,7 +1,7 @@
 <template>
-  <div class="flex flex-col h-full">
-    <!-- Toolbar -->
-    <div class="flex items-center justify-between mb-4">
+  <div class="flex flex-col h-full gap-2">
+    <!-- Toolbar (sticky) -->
+    <div class="logs-toolbar sticky top-0 z-20 glass-card rounded-lg px-3 py-2 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <el-select
           v-model="filterLevels"
@@ -9,7 +9,7 @@
           collapse-tags
           size="small"
           :placeholder="$t('logs.filter_level')"
-          style="width: 280px;"
+          style="width: 240px;"
           @change="applyFilter"
         >
           <el-option label="DEBUG" value="debug" />
@@ -19,7 +19,7 @@
         </el-select>
         <el-switch v-model="autoScroll" :active-text="$t('logs.auto_scroll')" size="small" />
       </div>
-      <div class="flex gap-2">
+      <div class="flex items-center gap-2">
         <el-button size="small" @click="clearLogs">{{ $t('logs.clear') }}</el-button>
         <el-tag :type="connected ? 'success' : 'danger'" size="small">
           {{ connected ? $t('logs.connected') : $t('logs.disconnected') }}
@@ -30,7 +30,7 @@
     <!-- Log Container -->
     <div
       ref="logContainerRef"
-      class="log-container flex-1 glass-card rounded-lg p-4 overflow-auto font-mono text-sm"
+      class="log-container flex-1 glass-card rounded-lg px-3 py-2 overflow-auto font-mono text-xs leading-tight"
       style="min-height: 400px;"
     >
       <div v-if="filteredLogs.length === 0" class="flex items-center justify-center h-full text-gray-400">
@@ -39,13 +39,13 @@
       <div
         v-for="(log, idx) in filteredLogs"
         :key="idx"
-        class="log-entry py-0.5 border-b border-gray-100 dark:border-gray-800"
+        class="log-entry flex items-start gap-2 hover:bg-black/5 dark:hover:bg-white/5"
         :class="logLevelClass(log.level)"
       >
-        <span class="text-gray-400 mr-2">{{ log.timestamp }}</span>
-        <span class="font-semibold mr-2 uppercase" :class="logLevelColor(log.level)">[{{ log.level }}]</span>
-        <span v-if="log.logger" class="text-gray-500 mr-2">[{{ log.logger }}]</span>
-        <span class="text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ log.message }}</span>
+        <span class="text-gray-500 dark:text-gray-400 shrink-0 tabular-nums">{{ log.timestamp }}</span>
+        <span class="font-semibold shrink-0 uppercase w-16" :class="logLevelColor(log.level)">{{ log.level }}</span>
+        <span v-if="log.logger" class="text-gray-500 dark:text-gray-400 shrink-0">[{{ log.logger }}]</span>
+        <span class="text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words flex-1 min-w-0">{{ log.message }}</span>
       </div>
     </div>
   </div>
@@ -98,12 +98,26 @@ function logLevelColor(level: string) {
   return 'text-gray-500'
 }
 
+function getScrollContainer(): HTMLElement | null {
+  // Find the nearest scrolling ancestor — depending on layout, it may be
+  // log-container itself (when parent has a resolved height) or the outer
+  // <main>/page-content wrapper. Walk up until we find one that actually
+  // overflows.
+  let el: HTMLElement | null = logContainerRef.value
+  while (el) {
+    const style = getComputedStyle(el)
+    const overflows = style.overflowY === 'auto' || style.overflowY === 'scroll'
+    if (overflows && el.scrollHeight > el.clientHeight) return el
+    el = el.parentElement
+  }
+  return logContainerRef.value
+}
+
 function scrollToBottom() {
-  if (!autoScroll.value || !logContainerRef.value) return
+  if (!autoScroll.value) return
   nextTick(() => {
-    const container = logContainerRef.value
-    if (!container) return
-    container.scrollTop = container.scrollHeight
+    const el = getScrollContainer()
+    if (el) el.scrollTop = el.scrollHeight
   })
 }
 

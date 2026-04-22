@@ -44,16 +44,18 @@ const saving = ref(false)
 
 const allowedLanguages = ['en', 'zh'] as const
 const allowedThemes = ['light', 'dark'] as const
+type Language = (typeof allowedLanguages)[number]
+type Theme = (typeof allowedThemes)[number]
 
-function normalizeLanguage(value: unknown): string {
+function normalizeLanguage(value: unknown): Language {
   return (allowedLanguages as readonly string[]).includes(value as string)
-    ? (value as string)
+    ? (value as Language)
     : appStore.language
 }
 
-function normalizeTheme(value: unknown): string {
+function normalizeTheme(value: unknown): Theme {
   return (allowedThemes as readonly string[]).includes(value as string)
-    ? (value as string)
+    ? (value as Theme)
     : appStore.theme
 }
 

@@ -6,7 +6,11 @@
       <AppHeader :title="pageTitle" />
       <main class="flex-1 overflow-auto">
         <PageContainer>
-          <router-view />
+          <router-view v-slot="{ Component, route: r }">
+            <transition name="page-glass" mode="out-in">
+              <component :is="Component" :key="r.fullPath" />
+            </transition>
+          </router-view>
         </PageContainer>
       </main>
     </div>

@@ -1,248 +1,259 @@
 <template>
-  <div>
+  <div class="flex flex-col gap-5 pb-8">
     <!-- Toolbar -->
-    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-      <div class="flex items-center gap-2">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div class="text-lg font-semibold text-gray-800 dark:text-gray-100">
+        {{ $t('pages.configuration.title') }}
+      </div>
+
+      <div class="flex items-center gap-1.5 flex-wrap">
         <el-input
+          ref="searchInputRef"
           v-model="searchTerm"
           :placeholder="$t('configuration.search_placeholder')"
+          :aria-label="$t('configuration.search_aria_label')"
           size="small"
           clearable
           :prefix-icon="Search"
           style="width: 260px;"
         />
-        <el-button size="small" :disabled="undoStack.length === 0" @click="undo" title="Ctrl+Z">
-          ↩ {{ $t('configuration.undo') }}
+        <el-button size="small" text bg :disabled="undoStack.length === 0" @click="undo" :aria-label="$t('configuration.undo_aria')" :title="$t('configuration.undo_aria')">
+          <el-icon><RefreshLeft /></el-icon>
         </el-button>
-        <el-button size="small" :disabled="redoStack.length === 0" @click="redo" title="Ctrl+Y">
-          ↪ {{ $t('configuration.redo') }}
+        <el-button size="small" text bg :disabled="redoStack.length === 0" @click="redo" :aria-label="$t('configuration.redo_aria')" :title="$t('configuration.redo_aria')">
+          <el-icon><RefreshRight /></el-icon>
         </el-button>
-      </div>
-      <div class="flex items-center gap-2">
-        <el-tag v-if="modifiedFields.size > 0" type="warning" size="small">
-          {{ modifiedFields.size }} {{ $t('configuration.changes') }}
-        </el-tag>
+        <el-button size="small" text bg :loading="loading" :disabled="modifiedFields.size > 0" @click="loadConfig" :aria-label="$t('configuration.reset_aria')" :title="$t('configuration.reset_aria')">
+          <el-icon><Refresh /></el-icon>
+        </el-button>
+        <el-button size="small" text bg @click="expandAll" :aria-label="$t('configuration.expand_all_aria')" :title="$t('configuration.expand_all_aria')">
+          <el-icon><FullScreen /></el-icon>
+        </el-button>
+        <el-button size="small" text bg @click="collapseAll" :aria-label="$t('configuration.collapse_all_aria')" :title="$t('configuration.collapse_all_aria')">
+          <el-icon><Minus /></el-icon>
+        </el-button>
         <el-button type="primary" size="small" :loading="saving" :disabled="modifiedFields.size === 0" @click="handleSave">
+          <el-icon class="mr-1"><Check /></el-icon>
           {{ $t('configuration.save') }}
-        </el-button>
-        <el-button size="small" :disabled="modifiedFields.size === 0" @click="resetAll">
-          {{ $t('configuration.reset') }}
+          <el-tag v-if="modifiedFields.size > 0" size="small" round effect="dark" type="warning" class="ml-2">
+            {{ modifiedFields.size }}
+          </el-tag>
         </el-button>
       </div>
     </div>
 
-    <!-- Tabs for Message Config and Model Config -->
-    <el-tabs v-model="activeTab">
-      <!-- Message Configuration Tab -->
-      <el-tab-pane :label="$t('configuration.message_tab')" name="message">
-        <div class="space-y-4">
-          <div
-            v-for="group in filteredGroups"
-            :key="group.id"
-            class="glass-card rounded-lg overflow-hidden"
-          >
-            <!-- Group Header -->
-            <div
-              class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 cursor-pointer select-none"
-              role="button"
-              tabindex="0"
-              :aria-expanded="!collapsedGroups.has(group.id)"
-              @click="toggleGroup(group.id)"
-              @keydown.enter.prevent="toggleGroup(group.id)"
-              @keydown.space.prevent="toggleGroup(group.id)"
-            >
-              <div class="flex items-center gap-3">
-                <span class="text-gray-500 dark:text-gray-400">{{ group.icon }}</span>
-                <div>
-                  <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                    {{ $t(group.labelKey, group.labelFallback) }}
-                    <span v-if="groupHasModified(group)" class="inline-block w-2 h-2 bg-amber-400 rounded-full ml-2"></span>
-                  </h4>
-                  <p class="text-xs text-gray-500">{{ $t(group.descKey, group.descFallback) }}</p>
-                </div>
-              </div>
-              <el-icon :class="{ 'rotate-180': !collapsedGroups.has(group.id) }" class="transition-transform">
-                <ArrowDown />
-              </el-icon>
-            </div>
-
-            <!-- Group Fields -->
-            <div v-show="!collapsedGroups.has(group.id)" class="p-4 space-y-4">
-              <div
-                v-for="field in getVisibleFields(group)"
-                :key="field.key"
-                class="flex flex-col gap-1"
-              >
-                <div class="flex items-center justify-between">
-                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ $t(field.labelKey, field.labelFallback) }}
-                    <span v-if="modifiedFields.has(field.key)" class="text-amber-500 ml-1">●</span>
-                  </label>
-                  <span v-if="field.hintKey" class="text-xs text-gray-400">
-                    {{ $t(field.hintKey, field.hintFallback) }}
-                  </span>
-                </div>
-
-                <!-- Model select type -->
-                <div v-if="field.type === 'model_select'" class="flex gap-2">
-                  <el-select
-                    :model-value="getModelProvider(field.key)"
-                    class="flex-1"
-                    size="small"
-                    :placeholder="$t('configuration.select_provider')"
-                    @change="(v: string) => setModelProvider(field.key, v, field.modelType)"
-                  >
-                    <el-option value="" :label="$t('configuration.none')" />
-                    <el-option
-                      v-for="p in providers"
-                      :key="p.id"
-                      :label="p.name || p.id"
-                      :value="p.id"
-                    />
-                  </el-select>
-                  <el-select
-                    :model-value="getModelId(field.key)"
-                    class="flex-1"
-                    size="small"
-                    :placeholder="$t('configuration.select_model')"
-                    @change="(v: string) => setModelId(field.key, v)"
-                  >
-                    <el-option value="" :label="$t('configuration.none')" />
-                    <el-option
-                      v-for="modelId in getAvailableModels(field.key, field.modelType)"
-                      :key="modelId"
-                      :label="modelId"
-                      :value="modelId"
-                    />
-                  </el-select>
-                </div>
-
-                <!-- Validation error for model_select -->
-                <p v-if="field.type === 'model_select' && validationErrors[field.key]" class="text-xs text-red-500">
-                  {{ validationErrors[field.key] }}
-                </p>
-
-                <!-- Integer type -->
-                <el-input-number
-                  v-else-if="field.type === 'integer'"
-                  :model-value="getFieldValue(field.key)"
-                  size="small"
-                  :min="field.validation?.min"
-                  :max="field.validation?.max"
-                  :step="1"
-                  @change="(v: number | undefined) => setFieldValue(field.key, v ?? field.default)"
-                />
-
-                <!-- Float type -->
-                <el-input-number
-                  v-else-if="field.type === 'float'"
-                  :model-value="getFieldValue(field.key)"
-                  size="small"
-                  :min="field.validation?.min"
-                  :max="field.validation?.max"
-                  :step="0.1"
-                  :precision="2"
-                  @change="(v: number | undefined) => setFieldValue(field.key, v ?? field.default)"
-                />
-
-                <!-- Boolean type -->
-                <el-switch
-                  v-else-if="field.type === 'boolean'"
-                  :model-value="getFieldValue(field.key)"
-                  @change="(v: boolean | string | number) => setFieldValue(field.key, v)"
-                />
-
-                <!-- String type (default) -->
-                <el-input
-                  v-else
-                  :model-value="getFieldValue(field.key)"
-                  size="small"
-                  @change="(v: string) => setFieldValue(field.key, v)"
-                />
-
-                <!-- Validation error -->
-                <p v-if="field.type !== 'model_select' && validationErrors[field.key]" class="text-xs text-red-500">
-                  {{ validationErrors[field.key] }}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </el-tab-pane>
-
-      <!-- Model Configuration Tab -->
-      <el-tab-pane :label="$t('configuration.model_tab')" name="model">
-        <div class="space-y-4">
-          <div v-for="group in filteredModelGroups" :key="group.id" class="glass-card rounded-lg p-4">
-            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">
+    <!-- Groups -->
+    <div
+      v-for="group in filteredAllGroups"
+      :key="group.id"
+      class="glass-card rounded-xl overflow-hidden"
+      :class="{ 'config-group-modified': groupHasModified(group) }"
+    >
+      <!-- Group Header -->
+      <div
+        class="config-group-header flex items-center justify-between px-5 py-3.5 cursor-pointer select-none"
+        role="button"
+        tabindex="0"
+        :aria-expanded="!collapsedGroups.has(group.id)"
+        @click="toggleGroup(group.id)"
+        @keydown.enter.prevent="toggleGroup(group.id)"
+        @keydown.space.prevent="toggleGroup(group.id)"
+      >
+        <div class="flex items-center gap-3 min-w-0">
+          <el-icon :size="18" class="config-group-icon shrink-0">
+            <component :is="group.icon" />
+          </el-icon>
+          <div class="min-w-0">
+            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center">
               {{ $t(group.labelKey, group.labelFallback) }}
+              <span
+                v-if="groupHasModified(group)"
+                class="inline-block w-2 h-2 bg-amber-500 rounded-full ml-2"
+                aria-hidden="true"
+              ></span>
             </h4>
-            <p class="text-xs text-gray-500 mb-4">{{ $t(group.descKey, group.descFallback) }}</p>
-            <div class="space-y-4">
-              <div v-for="field in getVisibleFields(group)" :key="field.key" class="flex flex-col gap-1">
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {{ $t(field.labelKey, field.labelFallback) }}
-                  <span v-if="modifiedFields.has(field.key)" class="text-amber-500 ml-1">●</span>
-                </label>
-                <span class="text-xs text-gray-400 mb-1">{{ $t(field.hintKey, field.hintFallback) }}</span>
-                <div class="flex gap-2">
-                  <el-select
-                    :model-value="getModelProvider(field.key)"
-                    class="flex-1"
-                    size="small"
-                    :placeholder="$t('configuration.select_provider')"
-                    @change="(v: string) => setModelProvider(field.key, v, field.modelType)"
-                  >
-                    <el-option value="" :label="$t('configuration.none')" />
-                    <el-option
-                      v-for="p in providers"
-                      :key="p.id"
-                      :label="p.name || p.id"
-                      :value="p.id"
-                    />
-                  </el-select>
-                  <el-select
-                    :model-value="getModelId(field.key)"
-                    class="flex-1"
-                    size="small"
-                    :placeholder="$t('configuration.select_model')"
-                    @change="(v: string) => setModelId(field.key, v)"
-                  >
-                    <el-option value="" :label="$t('configuration.none')" />
-                    <el-option
-                      v-for="modelId in getAvailableModels(field.key, field.modelType)"
-                      :key="modelId"
-                      :label="modelId"
-                      :value="modelId"
-                    />
-                  </el-select>
-                </div>
-              </div>
-            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+              {{ $t(group.descKey, group.descFallback) }}
+            </p>
           </div>
         </div>
-      </el-tab-pane>
-    </el-tabs>
+        <el-icon
+          :class="{ 'rotate-180': !collapsedGroups.has(group.id) }"
+          class="transition-transform text-gray-500 dark:text-gray-400 shrink-0 ml-2"
+        >
+          <ArrowDown />
+        </el-icon>
+      </div>
+
+      <!-- Horizontal layout (model selects: label+desc left, selects right) -->
+      <div
+        v-if="group.layout === 'horizontal'"
+        v-show="!collapsedGroups.has(group.id)"
+        class="config-group-body px-5 py-3 divide-y divide-[rgba(148,163,184,0.14)]"
+      >
+        <div
+          v-for="field in getVisibleFields(group)"
+          :key="field.key"
+          class="config-row flex items-center gap-4 py-3 flex-wrap"
+          :class="{ 'config-field-modified': modifiedFields.has(field.key) }"
+        >
+          <div class="flex-1 min-w-0 min-w-[180px]">
+            <label class="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1" :title="field.key">
+              <span class="truncate">{{ $t(field.labelKey, field.labelFallback) }}</span>
+              <span v-if="modifiedFields.has(field.key)" class="text-amber-500" aria-hidden="true">●</span>
+            </label>
+            <p v-if="field.hintKey" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {{ $t(field.hintKey, field.hintFallback) }}
+            </p>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <el-select
+              :model-value="getModelProvider(field.key)"
+              size="small"
+              style="width: 160px;"
+              :placeholder="$t('configuration.select_provider')"
+              @change="(v: string) => setModelProvider(field.key, v, field.modelType)"
+            >
+              <el-option value="" :label="$t('configuration.none')" />
+              <el-option
+                v-for="p in providers"
+                :key="p.id"
+                :label="p.name || p.id"
+                :value="p.id"
+              />
+            </el-select>
+            <el-select
+              :model-value="getModelId(field.key)"
+              size="small"
+              style="width: 220px;"
+              :placeholder="$t('configuration.select_model')"
+              @change="(v: string) => setModelId(field.key, v)"
+            >
+              <el-option value="" :label="$t('configuration.none')" />
+              <el-option
+                v-for="modelId in getAvailableModels(field.key, field.modelType)"
+                :key="modelId"
+                :label="modelId"
+                :value="modelId"
+              />
+            </el-select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid layout (regular fields: 2-col, hint below input) -->
+      <div
+        v-else
+        v-show="!collapsedGroups.has(group.id)"
+        class="config-group-body px-5 py-5 grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-5"
+      >
+        <div
+          v-for="field in getVisibleFields(group)"
+          :key="field.key"
+          class="config-field flex flex-col gap-1.5"
+          :class="{ 'config-field-modified': modifiedFields.has(field.key) }"
+        >
+          <label class="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1" :title="field.key">
+            <span class="truncate">{{ $t(field.labelKey, field.labelFallback) }}</span>
+            <span v-if="modifiedFields.has(field.key)" class="text-amber-500" aria-hidden="true">●</span>
+          </label>
+
+          <!-- Integer -->
+          <el-input-number
+            v-if="field.type === 'integer'"
+            :model-value="getFieldValue(field.key)"
+            size="small"
+            class="w-full"
+            controls-position="right"
+            :min="field.validation?.min"
+            :max="field.validation?.max"
+            :step="1"
+            @change="(v: number | undefined) => setFieldValue(field.key, v ?? field.default)"
+          />
+
+          <!-- Float -->
+          <el-input-number
+            v-else-if="field.type === 'float'"
+            :model-value="getFieldValue(field.key)"
+            size="small"
+            class="w-full"
+            controls-position="right"
+            :min="field.validation?.min"
+            :max="field.validation?.max"
+            :step="0.1"
+            :precision="2"
+            @change="(v: number | undefined) => setFieldValue(field.key, v ?? field.default)"
+          />
+
+          <!-- Boolean -->
+          <el-switch
+            v-else-if="field.type === 'boolean'"
+            :model-value="getFieldValue(field.key)"
+            class="self-start"
+            @change="(v: boolean | string | number) => setFieldValue(field.key, v)"
+          />
+
+          <!-- String -->
+          <el-input
+            v-else
+            :model-value="getFieldValue(field.key)"
+            size="small"
+            :placeholder="$t(field.hintKey, field.hintFallback)"
+            @change="(v: string) => setFieldValue(field.key, v)"
+          />
+
+          <p v-if="field.hintKey" class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+            {{ $t(field.hintKey, field.hintFallback) }}
+          </p>
+
+          <p v-if="validationErrors[field.key]" class="text-xs text-red-500 dark:text-red-400">
+            {{ validationErrors[field.key] }}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom keyboard hints -->
+    <div class="flex items-center justify-center gap-5 pt-2 text-xs text-gray-500 dark:text-gray-400">
+      <span><kbd class="kbd-hint">Ctrl+Z</kbd> {{ $t('configuration.shortcut_undo') }}</span>
+      <span><kbd class="kbd-hint">Ctrl+Shift+Z</kbd> {{ $t('configuration.shortcut_redo') }}</span>
+      <span><kbd class="kbd-hint">Ctrl+S</kbd> {{ $t('configuration.shortcut_save') }}</span>
+      <span><kbd class="kbd-hint">/</kbd> {{ $t('configuration.shortcut_search') }}</span>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowDown, Search } from '@element-plus/icons-vue'
+import {
+  ArrowDown,
+  Search,
+  Setting,
+  Tools,
+  Picture,
+  MagicStick,
+  RefreshLeft,
+  RefreshRight,
+  Refresh,
+  FullScreen,
+  Minus,
+  Check,
+} from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 
 const { t } = useI18n()
 
-const activeTab = ref('message')
 const searchTerm = ref('')
 const saving = ref(false)
+const loading = ref(false)
+const searchInputRef = ref<any>(null)
 
 // Data
 const originalData = ref<Record<string, any>>({})
 const currentData = ref<Record<string, any>>({})
-const providers = ref<Array<{ id: string; name: string; type: string }>>([])
+const providers = ref<Array<{ id: string; name: string }>>([])
 const providerModels = ref<Record<string, Record<string, any>>>({})
 
 // Undo/Redo
@@ -274,18 +285,19 @@ interface ConfigGroup {
   labelFallback: string
   descKey: string
   descFallback: string
-  icon: string
+  icon: Component
+  layout?: 'grid' | 'horizontal'
   fields: ConfigField[]
 }
 
-const messageGroups: ConfigGroup[] = [
+const allGroups: ConfigGroup[] = [
   {
     id: 'bot',
     labelKey: 'configuration.groups.bot',
     labelFallback: 'Bot Settings',
     descKey: 'configuration.groups.bot_desc',
     descFallback: 'Core bot behavior parameters',
-    icon: '⚙️',
+    icon: Setting,
     fields: [
       { key: 'bot_config.bot.max_memory_length', labelKey: 'configuration.message.max_memory_length', labelFallback: 'Max Memory Length', hintKey: 'configuration.hints.max_memory_length', hintFallback: 'Maximum number of messages retained in context window', type: 'integer', default: 50, validation: { min: 1, max: 9999, required: true } },
       { key: 'bot_config.bot.max_message_interval', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum seconds to wait before processing buffered messages', type: 'float', default: 5, validation: { min: 0.1, max: 300, required: true } },
@@ -300,7 +312,7 @@ const messageGroups: ConfigGroup[] = [
     labelFallback: 'Agent Settings',
     descKey: 'configuration.groups.agent_desc',
     descFallback: 'Agent and tool execution parameters',
-    icon: '🔧',
+    icon: Tools,
     fields: [
       { key: 'bot_config.agent.max_tool_loop', labelKey: 'configuration.message.max_tool_loop', labelFallback: 'Max Tool Loop', hintKey: 'configuration.hints.max_tool_loop', hintFallback: 'Maximum number of tool call iterations per response', type: 'integer', default: 5, validation: { min: 1, max: 50, required: true } },
     ],
@@ -311,21 +323,19 @@ const messageGroups: ConfigGroup[] = [
     labelFallback: 'Appearance',
     descKey: 'configuration.groups.selfie_desc',
     descFallback: 'Bot appearance reference settings',
-    icon: '🖼️',
+    icon: Picture,
     fields: [
       { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the bot appearance reference image', type: 'string', default: '', validation: { required: false } },
     ],
   },
-]
-
-const modelGroups: ConfigGroup[] = [
   {
     id: 'models',
     labelKey: 'configuration.groups.models',
     labelFallback: 'Default Models',
     descKey: 'configuration.groups.models_desc',
     descFallback: 'Select default provider and model for each capability',
-    icon: '🧪',
+    icon: MagicStick,
+    layout: 'horizontal',
     fields: [
       { key: 'models.default_llm', labelKey: 'configuration.model.default_llm', labelFallback: 'Default LLM', hintKey: 'configuration.model.default_llm_desc', hintFallback: 'Main chat model.', type: 'model_select', modelType: 'llm' },
       { key: 'models.default_fast_llm', labelKey: 'configuration.model.default_fast_llm', labelFallback: 'Default Fast LLM', hintKey: 'configuration.model.default_fast_llm_desc', hintFallback: 'Fast reply model.', type: 'model_select', modelType: 'llm' },
@@ -368,13 +378,11 @@ function setFieldValue(key: string, value: any) {
   const oldValue = getNestedValue(currentData.value, key)
   if (oldValue === value) return
 
-  // Push to undo stack
   undoStack.value.push({ key, oldValue, newValue: value })
   redoStack.value = []
 
   setNestedValue(currentData.value, key, value)
 
-  // Track modifications
   const originalValue = getNestedValue(originalData.value, key)
   if (value === originalValue) {
     modifiedFields.value.delete(key)
@@ -382,7 +390,6 @@ function setFieldValue(key: string, value: any) {
     modifiedFields.value.add(key)
   }
 
-  // Validate
   validateField(key)
 }
 
@@ -404,8 +411,7 @@ function getModelId(key: string): string {
   return parseModelReference(val).modelId
 }
 
-function setModelProvider(key: string, providerId: string, modelType?: string) {
-  // When provider changes, reset model
+function setModelProvider(key: string, providerId: string, _modelType?: string) {
   setFieldValue(key, providerId ? `${providerId}:` : '')
 }
 
@@ -452,17 +458,9 @@ function redo() {
   validateField(entry.key)
 }
 
-function resetAll() {
-  currentData.value = deepClone(originalData.value)
-  modifiedFields.value.clear()
-  undoStack.value = []
-  redoStack.value = []
-  validationErrors.value = {}
-}
-
 // Validation
 function validateField(key: string) {
-  const allFields = [...messageGroups, ...modelGroups].flatMap(g => g.fields)
+  const allFields = allGroups.flatMap(g => g.fields)
   const field = allFields.find(f => f.key === key)
   if (!field?.validation) {
     delete validationErrors.value[key]
@@ -498,16 +496,9 @@ function fieldMatchesSearch(field: ConfigField): boolean {
   )
 }
 
-const filteredGroups = computed(() => {
-  if (!searchTerm.value) return messageGroups
-  return messageGroups.filter(group =>
-    group.fields.some(f => fieldMatchesSearch(f))
-  )
-})
-
-const filteredModelGroups = computed(() => {
-  if (!searchTerm.value) return modelGroups
-  return modelGroups.filter(group =>
+const filteredAllGroups = computed(() => {
+  if (!searchTerm.value) return allGroups
+  return allGroups.filter(group =>
     group.fields.some(f => fieldMatchesSearch(f))
   )
 })
@@ -529,6 +520,14 @@ function toggleGroup(id: string) {
   }
 }
 
+function expandAll() {
+  collapsedGroups.value.clear()
+}
+
+function collapseAll() {
+  collapsedGroups.value = new Set(allGroups.map(g => g.id))
+}
+
 // Save
 async function handleSave() {
   if (saving.value) return
@@ -536,12 +535,10 @@ async function handleSave() {
     ElMessage.info(t('configuration.no_changes'))
     return
   }
-  // Run full validation pass
-  const allFields = [...messageGroups, ...modelGroups].flatMap(g => g.fields)
+  const allFields = allGroups.flatMap(g => g.fields)
   allFields.forEach(f => validateField(f.key))
-  // Check for validation errors
   if (Object.keys(validationErrors.value).length > 0) {
-    ElMessage.error(t('configuration.validation.has_errors'))
+    ElMessage.error(t('configuration.validation_failed'))
     return
   }
   saving.value = true
@@ -549,8 +546,7 @@ async function handleSave() {
   try {
     await saveConfiguration(snapshot)
     originalData.value = snapshot
-    // Re-check which fields are still modified against the saved snapshot
-    const allFieldKeys = [...messageGroups, ...modelGroups].flatMap(g => g.fields).map(f => f.key)
+    const allFieldKeys = allFields.map(f => f.key)
     const stillModified = new Set<string>()
     for (const key of allFieldKeys) {
       const current = getNestedValue(currentData.value, key)
@@ -571,21 +567,70 @@ async function handleSave() {
   }
 }
 
+async function loadConfig() {
+  loading.value = true
+  try {
+    const res = await getConfiguration()
+    const data = res.data
+    originalData.value = deepClone(data.configuration || {})
+    currentData.value = deepClone(originalData.value)
+    providers.value = data.providers || []
+    providerModels.value = data.provider_models || {}
+
+    // Ensure defaults
+    const allFields = allGroups.flatMap(g => g.fields)
+    allFields.forEach(field => {
+      if (field.default !== undefined) {
+        const current = getNestedValue(currentData.value, field.key)
+        if (current === undefined || current === null) {
+          setNestedValue(currentData.value, field.key, field.default)
+          setNestedValue(originalData.value, field.key, field.default)
+        }
+      }
+    })
+    // Reset dirty state since we just re-synced
+    modifiedFields.value.clear()
+    undoStack.value = []
+    redoStack.value = []
+    validationErrors.value = {}
+  } catch (e) {
+    console.error('Failed to load configuration:', e)
+    ElMessage.error(t('configuration.load_failed'))
+  } finally {
+    loading.value = false
+  }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable
+}
+
+function focusSearch() {
+  // Element Plus el-input exposes .focus() on the ref
+  nextTick(() => {
+    searchInputRef.value?.focus?.()
+  })
+}
+
 // Keyboard shortcuts
 function handleKeydown(e: KeyboardEvent) {
   const key = e.key.toLowerCase()
-  // Ctrl/Cmd+S should always work, even in input fields
+  // Ctrl/Cmd+S saves even from inputs
   if ((e.ctrlKey || e.metaKey) && key === 's') {
     e.preventDefault()
-    // Blur active element to commit any pending input values (e.g., el-input-number)
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     handleSave()
     return
   }
-  const target = e.target as HTMLElement
-  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+  // "/" focuses search — skip when already in an input
+  if (key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && !isEditableTarget(e.target)) {
+    e.preventDefault()
+    focusSearch()
     return
   }
+  if (isEditableTarget(e.target)) return
   if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
     e.preventDefault()
     undo()
@@ -597,32 +642,85 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
-  try {
-    const res = await getConfiguration()
-    const data = res.data
-    originalData.value = deepClone(data.configuration || data.config || {})
-    currentData.value = deepClone(originalData.value)
-    providers.value = data.providers || []
-    providerModels.value = data.provider_models || {}
-
-    // Ensure defaults
-    const allFields = [...messageGroups, ...modelGroups].flatMap(g => g.fields)
-    allFields.forEach(field => {
-      if (field.default !== undefined) {
-        const current = getNestedValue(currentData.value, field.key)
-        if (current === undefined || current === null) {
-          setNestedValue(currentData.value, field.key, field.default)
-          setNestedValue(originalData.value, field.key, field.default)
-        }
-      }
-    })
-  } catch (e) {
-    console.error('Failed to load configuration:', e)
-    ElMessage.error(t('configuration.load_failed'))
-  }
+  await loadConfig()
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
 })
 </script>
+
+<style scoped>
+.config-group-header {
+  transition: background-color 0.18s ease;
+}
+
+.config-group-header:hover {
+  background-color: rgba(0, 0, 0, 0.025);
+}
+
+:global(.dark) .config-group-header:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.config-group-icon {
+  color: #3b5fd5;
+}
+
+:global(.dark) .config-group-icon {
+  color: #7cb4ff;
+}
+
+.config-group-body {
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.config-group-modified {
+  position: relative;
+}
+
+.config-group-modified::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, #f59e0b, #ef4444);
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+  pointer-events: none;
+}
+
+.config-field,
+.config-row {
+  position: relative;
+  transition: padding-left 0.18s ease;
+}
+
+.config-field-modified {
+  padding-left: 10px;
+  border-left: 2px solid rgba(245, 158, 11, 0.55);
+}
+
+/* Keyboard hint badges */
+.kbd-hint {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #475569;
+  background: rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+:global(.dark) .kbd-hint {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+</style>

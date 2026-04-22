@@ -24,10 +24,9 @@ async def require_auth(authorization: Optional[str] = Header(None)) -> str:
 
 
 class AuthRoutes(Routes):
-    def __init__(self, app, lifecycle, access_token: str, templates_dir: Path, dist_dir: Path):
+    def __init__(self, app, lifecycle, access_token: str, dist_dir: Path):
         super().__init__(app, lifecycle)
         self.access_token = access_token
-        self.templates_dir = templates_dir
         self.dist_dir = dist_dir
 
     def get_routes(self):
@@ -89,20 +88,19 @@ class AuthRoutes(Routes):
         )
 
     async def serve_spa(self, request: Request = None, full_path: str = ""):
-        """Serve Vue SPA index.html for all non-API, non-static routes.
+        """Serve the Vue SPA.
 
-        The SPA is always served from a single index.html entry point (not
-        per-route templates like login.html).  When a production build exists
-        under dist_dir (webui/static/dist), that build is served.  Otherwise,
-        templates_dir/index.html is served as a legacy fallback for
-        environments where the Vue frontend has not been built yet.
+        index.html is served for every browser navigation; vue-router then takes
+        over client-side. Root-level files present in the dist (favicon.ico,
+        robots.txt, etc.) are served directly so they are not hijacked by the
+        HTML fallback. If the build is missing, returns a 404 hint pointing at
+        the build command.
         """
-        # Don't serve SPA for static asset paths — let mounts handle them
-        if full_path.startswith(("api/", "static/", "sticker/", "assets/", "monacoeditorwork/")):
+        # Don't serve SPA for paths handled by dedicated mounts.
+        if full_path.startswith(("api/", "sticker/", "assets/", "monacoeditorwork/")):
             raise HTTPException(status_code=404)
-        # Serve root-level files from the SPA dist (e.g., favicon.ico) so that
-        # they are not hijacked by the HTML SPA fallback below.  Restrict to
-        # single-segment paths to avoid any traversal surface.
+        # Serve single-segment root files from dist (favicon.ico, etc.).
+        # Restrict to one path segment to avoid traversal.
         if full_path and "/" not in full_path and ".." not in full_path:
             candidate = self.dist_dir / full_path
             try:
@@ -115,14 +113,22 @@ class AuthRoutes(Routes):
         # Only serve the SPA for GET requests that accept HTML (browser navigations)
         if request and (request.method != "GET" or "text/html" not in request.headers.get("accept", "")):
             raise HTTPException(status_code=404)
+        # SPA index.html must not be cached — asset filenames are content-hashed
+        # in /assets, but index.html is the stable URL that points at the
+        # current hash. If browsers cache it, users load the page with stale
+        # asset references after a rebuild.
+        no_cache_headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
         spa_index = self.dist_dir / "index.html"
         if spa_index.exists():
-            return FileResponse(spa_index, media_type="text/html")
-        # Fallback to legacy templates (templates_dir/index.html)
-        template_path = self.templates_dir / "index.html"
-        if template_path.exists():
-            return FileResponse(template_path, media_type="text/html")
-        return HTMLResponse(content="<h1>Frontend not found. Run npm run build in webui/frontend/</h1>", status_code=404)
+            return FileResponse(spa_index, media_type="text/html", headers=no_cache_headers)
+        return HTMLResponse(
+            content="<h1>Frontend not built. Run <code>npm install &amp;&amp; npm run build</code> inside <code>webui/frontend/</code>.</h1>",
+            status_code=503,
+        )
 
     async def health(self):
         return {"status": "ok", "lifecycle_available": self.lifecycle is not None}

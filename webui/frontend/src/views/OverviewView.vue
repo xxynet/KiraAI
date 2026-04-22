@@ -1,73 +1,75 @@
 <template>
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-    <!-- Uptime -->
-    <div class="glass-card rounded-lg p-6">
-      <div class="flex items-center gap-4">
-        <div class="bg-blue-100 p-3 rounded-lg">
-          <el-icon :size="24" class="text-blue-600"><Timer /></el-icon>
+  <div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <!-- Uptime -->
+      <div class="glass-card rounded-lg p-6">
+        <div class="flex items-center gap-4">
+          <div class="bg-blue-100 p-3 rounded-lg">
+            <el-icon :size="24" class="text-blue-600"><Timer /></el-icon>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">{{ $t('overview.runtime_duration') }}</p>
+            <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ formattedUptime }}</p>
+          </div>
         </div>
-        <div>
-          <p class="text-sm text-gray-500">{{ $t('overview.runtime_duration') }}</p>
-          <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ formattedUptime }}</p>
+      </div>
+
+      <!-- Total Messages -->
+      <div class="glass-card rounded-lg p-6">
+        <div class="flex items-center gap-4">
+          <div class="bg-green-100 p-3 rounded-lg">
+            <el-icon :size="24" class="text-green-600"><ChatDotRound /></el-icon>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">{{ $t('overview.total_messages') }}</p>
+            <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ overview?.total_messages ?? 0 }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Adapter Count -->
+      <div class="glass-card rounded-lg p-6">
+        <div class="flex items-center gap-4">
+          <div class="bg-purple-100 p-3 rounded-lg">
+            <el-icon :size="24" class="text-purple-600"><Link /></el-icon>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">{{ $t('overview.adapter_count') }}</p>
+            <p class="text-2xl font-bold text-gray-900 dark:text-white">
+              {{ overview?.active_adapters ?? 0 }} / {{ overview?.total_adapters ?? 0 }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Memory Usage -->
+      <div class="glass-card rounded-lg p-6">
+        <div class="flex items-center gap-4">
+          <div class="bg-yellow-100 p-3 rounded-lg">
+            <el-icon :size="24" class="text-yellow-600"><Cpu /></el-icon>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">{{ $t('overview.memory_usage') }}</p>
+            <p class="text-2xl font-bold text-gray-900 dark:text-white">
+              {{ overview?.memory_usage ?? 0 }} MB
+            </p>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Total Messages -->
+    <!-- System Status -->
     <div class="glass-card rounded-lg p-6">
-      <div class="flex items-center gap-4">
-        <div class="bg-green-100 p-3 rounded-lg">
-          <el-icon :size="24" class="text-green-600"><ChatDotRound /></el-icon>
-        </div>
-        <div>
-          <p class="text-sm text-gray-500">{{ $t('overview.total_messages') }}</p>
-          <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ overview?.total_messages ?? 0 }}</p>
-        </div>
-      </div>
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ $t('overview.system_status') }}</h3>
+      <el-tag :type="statusType" size="large">
+        {{ statusText }}
+      </el-tag>
+      <p class="text-sm text-gray-500 mt-2">
+        {{ $t('overview.adapter_count') }}: {{ overview?.active_adapters ?? 0 }} / {{ overview?.total_adapters ?? 0 }}
+        &nbsp;|&nbsp;
+        {{ $t('overview.provider_stats') }} {{ overview?.active_providers ?? 0 }} / {{ overview?.total_providers ?? 0 }}
+      </p>
     </div>
-
-    <!-- Adapter Count -->
-    <div class="glass-card rounded-lg p-6">
-      <div class="flex items-center gap-4">
-        <div class="bg-purple-100 p-3 rounded-lg">
-          <el-icon :size="24" class="text-purple-600"><Link /></el-icon>
-        </div>
-        <div>
-          <p class="text-sm text-gray-500">{{ $t('overview.adapter_count') }}</p>
-          <p class="text-2xl font-bold text-gray-900 dark:text-white">
-            {{ overview?.active_adapters ?? 0 }} / {{ overview?.total_adapters ?? 0 }}
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Memory Usage -->
-    <div class="glass-card rounded-lg p-6">
-      <div class="flex items-center gap-4">
-        <div class="bg-yellow-100 p-3 rounded-lg">
-          <el-icon :size="24" class="text-yellow-600"><Cpu /></el-icon>
-        </div>
-        <div>
-          <p class="text-sm text-gray-500">{{ $t('overview.memory_usage') }}</p>
-          <p class="text-2xl font-bold text-gray-900 dark:text-white">
-            {{ overview?.memory_usage ?? 0 }} MB
-          </p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- System Status -->
-  <div class="glass-card rounded-lg p-6">
-    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ $t('overview.system_status') }}</h3>
-    <el-tag :type="statusType" size="large">
-      {{ statusText }}
-    </el-tag>
-    <p class="text-sm text-gray-500 mt-2">
-      {{ $t('overview.adapter_count') }}: {{ overview?.active_adapters ?? 0 }} / {{ overview?.total_adapters ?? 0 }}
-      &nbsp;|&nbsp;
-      {{ $t('overview.provider_stats') }} {{ overview?.active_providers ?? 0 }} / {{ overview?.total_providers ?? 0 }}
-    </p>
   </div>
 </template>
 

@@ -46,8 +46,7 @@ class KiraWebUI:
 
         # Paths
         self.webui_dir = Path(__file__).parent
-        self.static_dir = self.webui_dir / "static"
-        self.templates_dir = self.webui_dir / "templates"
+        self.dist_dir = self.webui_dir / "static" / "dist"
         self.sticker_dir = get_data_path() / "sticker"
 
         # Setup CORS
@@ -59,18 +58,14 @@ class KiraWebUI:
             allow_headers=["*"],
         )
 
-        # Mount static files
-        if self.static_dir.exists():
-            self.app.mount(
-                "/static", StaticFiles(directory=str(self.static_dir)), name="static"
-            )
+        # Mount user sticker library
         if self.sticker_dir.exists():
             self.app.mount(
                 "/sticker", StaticFiles(directory=str(self.sticker_dir)), name="sticker"
             )
 
-        # Mount Vue SPA dist assets at root level
-        self.dist_dir = self.static_dir / "dist"
+        # Mount Vue SPA build output. /assets holds content-hashed JS/CSS chunks,
+        # /monacoeditorwork holds Monaco Editor web-worker bundles.
         dist_assets = self.dist_dir / "assets"
         dist_monaco = self.dist_dir / "monacoeditorwork"
         if dist_assets.exists():
@@ -90,7 +85,7 @@ class KiraWebUI:
         self.lifecycle.webui_app = self.app
 
     def _register_routes(self):
-        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.templates_dir, self.dist_dir)
+        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.dist_dir)
         auth_routes.register()
         OverviewRoutes(self.app, self.lifecycle).register()
         LogsRoutes(self.app, self.lifecycle).register()

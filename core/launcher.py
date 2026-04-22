@@ -23,6 +23,24 @@ class KiraLauncher:
         self.logger = get_logger("launcher", "blue")
 
     async def start(self):
+        # Silence harmless "ConnectionResetError [WinError 10054]" noise from the
+        # Windows ProactorEventLoop when clients drop the TCP connection before
+        # the server finishes draining the socket. The transport is already
+        # being torn down, so the error is informational only.
+        loop = asyncio.get_running_loop()
+        default_handler = loop.get_exception_handler()
+
+        def _suppress_proactor_reset(lp, context):
+            exc = context.get("exception")
+            if isinstance(exc, ConnectionResetError):
+                return
+            if default_handler is not None:
+                default_handler(lp, context)
+            else:
+                lp.default_exception_handler(context)
+
+        loop.set_exception_handler(_suppress_proactor_reset)
+
         self.stats = Statistics()
 
         self.lifecycle = KiraLifecycle(stats=self.stats)
