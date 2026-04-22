@@ -138,6 +138,12 @@
               />
             </el-select>
           </div>
+          <p
+            v-if="validationErrors[field.key]"
+            class="w-full text-xs text-red-500 dark:text-red-400"
+          >
+            {{ validationErrors[field.key] }}
+          </p>
         </div>
       </div>
 
@@ -423,6 +429,9 @@ function setModelProvider(key: string, providerId: string, _modelType?: string) 
   if (!providerId) {
     delete pendingProviders.value[key]
     setFieldValue(key, '')
+    // If the persisted value was already '', setFieldValue is a no-op and
+    // won't run validation — call it explicitly so any stale error clears.
+    validateField(key)
     return
   }
   // Switching provider invalidates any previously chosen model, so we clear
@@ -438,6 +447,7 @@ function setModelId(key: string, modelId: string) {
   if (!providerId || !modelId) {
     delete pendingProviders.value[key]
     setFieldValue(key, '')
+    validateField(key)
     return
   }
   delete pendingProviders.value[key]
@@ -628,6 +638,7 @@ async function loadConfig() {
     modifiedFields.value.clear()
     undoStack.value = []
     redoStack.value = []
+    pendingProviders.value = {}
     validationErrors.value = {}
   } catch (e) {
     console.error('Failed to load configuration:', e)
