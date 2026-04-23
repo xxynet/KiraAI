@@ -69,6 +69,7 @@ const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()
 const optionsRef = ref<HTMLElement>()
 const dropdownStyle = ref<Record<string, string>>({})
+let openTimerId: ReturnType<typeof setTimeout> | null = null
 
 const selectedLabel = computed(() => {
   const option = props.options.find(opt => opt.value === props.modelValue)
@@ -115,8 +116,15 @@ function openDropdown() {
 
   isOpen.value = true
 
+  // Cancel any previous pending timer first
+  if (openTimerId !== null) {
+    clearTimeout(openTimerId)
+  }
+
   // Wait for DOM update then adjust position before showing
-  setTimeout(() => {
+  openTimerId = setTimeout(() => {
+    openTimerId = null
+    if (!isOpen.value) return
     adjustPosition()
     // Add scroll/resize listeners
     window.addEventListener('scroll', adjustPosition, true)
@@ -129,6 +137,12 @@ function closeDropdown() {
   if (!isOpen.value) return
 
   isOpen.value = false
+
+  // Cancel pending open timer to prevent leaked listeners
+  if (openTimerId !== null) {
+    clearTimeout(openTimerId)
+    openTimerId = null
+  }
 
   // Remove listeners
   document.removeEventListener('click', handleClickOutside)
@@ -152,6 +166,11 @@ function handleClickOutside(event: MouseEvent) {
 }
 
 onUnmounted(() => {
+  // Cancel any pending open timer to prevent leaked listeners after unmount
+  if (openTimerId !== null) {
+    clearTimeout(openTimerId)
+    openTimerId = null
+  }
   closeDropdown()
 })
 </script>

@@ -45,7 +45,7 @@ textarea {
 
 .dark .sidebar-gradient {
   background: rgba(0, 0, 0, 0.15);
-  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .dark .sidebar-gradient h1 {
@@ -150,7 +150,7 @@ textarea {
 
 .dark .glass-card {
   background-color: rgba(31, 41, 55, 0.78) !important;
-  border: 1px solid rgba(148, 163, 184, 0.28);
+  border: 1px solid rgba(75, 85, 99, 0.2);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
 }
 
@@ -168,7 +168,7 @@ textarea {
 
 .dark .app-header {
   background-color: rgba(0, 0, 0, 0.2) !important;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 /* ==================== Page Transitions (Glassmorphic) ==================== */
