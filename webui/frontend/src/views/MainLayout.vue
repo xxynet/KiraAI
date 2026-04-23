@@ -7,7 +7,7 @@
       <main class="flex-1 overflow-auto">
         <PageContainer>
           <router-view v-slot="{ Component, route: r }">
-            <transition name="page-glass" mode="out-in">
+            <transition name="page-fade" mode="out-in">
               <component :is="Component" :key="r.fullPath" />
             </transition>
           </router-view>
