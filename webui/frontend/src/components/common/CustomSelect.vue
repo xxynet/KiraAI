@@ -22,7 +22,7 @@
       </div>
     </div>
 
-    <!-- Options Dropdown (teleport to body to avoid clipping) -->
+    <!-- Options Dropdown (teleport to body to escape overflow clipping, always fixed) -->
     <Teleport to="body">
       <div
         class="custom-select-options"
@@ -85,16 +85,15 @@ function toggleDropdown() {
 
 function adjustPosition() {
   if (!containerRef.value || !optionsRef.value) return
-  
+
   const triggerRect = containerRef.value.getBoundingClientRect()
   const optionsHeight = optionsRef.value.offsetHeight
   const windowHeight = window.innerHeight
   const spaceBelow = windowHeight - triggerRect.bottom
   const spaceAbove = triggerRect.top
-  
-  // Position fixed relative to viewport, matching trigger width
+
   let top: number
-  
+
   if (spaceBelow < optionsHeight && spaceAbove > spaceBelow) {
     // Not enough space below, show above
     top = triggerRect.top - optionsHeight - 4
@@ -102,7 +101,7 @@ function adjustPosition() {
     // Show below (default)
     top = triggerRect.bottom + 4
   }
-  
+
   dropdownStyle.value = {
     position: 'fixed',
     left: triggerRect.left + 'px',
@@ -113,9 +112,9 @@ function adjustPosition() {
 
 function openDropdown() {
   if (isOpen.value) return
-  
+
   isOpen.value = true
-  
+
   // Wait for DOM update then adjust position before showing
   setTimeout(() => {
     adjustPosition()
@@ -128,20 +127,16 @@ function openDropdown() {
 
 function closeDropdown() {
   if (!isOpen.value) return
-  
+
   isOpen.value = false
-  
-  // Remove listeners - but don't clear position yet to avoid visual jump
+
+  // Remove listeners
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('scroll', adjustPosition, true)
   window.removeEventListener('resize', adjustPosition)
-  
-  // Clear position after animation completes (to avoid next open flash)
-  setTimeout(() => {
-    if (!isOpen.value) {
-      dropdownStyle.value = {}
-    }
-  }, 200)
+
+  // Keep position fixed at last known location so the close animation plays
+  // and the element never re-enters the document flow.
 }
 
 function selectOption(option: Option) {
@@ -223,6 +218,7 @@ onUnmounted(() => {
 }
 
 .custom-select-options {
+  position: fixed;
   background-color: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -231,7 +227,7 @@ onUnmounted(() => {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   max-height: 300px;
   overflow-y: auto;
-  z-index: 1000;
+  z-index: 9999;
   opacity: 0;
   visibility: hidden;
   transform: translateY(-8px);
