@@ -2,6 +2,7 @@
 KiraAI WebUI Application
 Provides a web-based admin panel for managing KiraAI system
 """
+import mimetypes
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -34,6 +35,13 @@ class KiraWebUI:
     """
 
     def __init__(self, lifecycle: KiraLifecycle):
+        # Ensure proper MIME types on Windows (fixes .js served as text/plain)
+        mimetypes.add_type("application/javascript", ".js")
+        mimetypes.add_type("text/javascript", ".js")
+        mimetypes.add_type("text/css", ".css")
+        mimetypes.add_type("application/json", ".json")
+        mimetypes.add_type("image/svg+xml", ".svg")
+
         self.lifecycle = lifecycle
         self.access_token = _get_or_generate_access_token()
         self.app = FastAPI(
