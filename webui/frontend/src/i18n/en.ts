@@ -2,6 +2,7 @@ export default {
   app: {
     title: 'KiraAI',
     subtitle: 'Admin Panel',
+    select_language: 'Select Language',
   },
   header: {
     logout: 'Logout',

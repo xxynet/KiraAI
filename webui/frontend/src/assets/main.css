@@ -56,6 +56,11 @@ textarea {
   color: #d1d5db;
 }
 
+/* Sidebar borders in dark mode - use subtle gray instead of blue */
+.dark .sidebar-gradient .border-blue-200\/30 {
+  border-color: rgb(191 219 254 / 0.3);
+}
+
 /* ==================== Navigation ==================== */
 .nav-item {
   color: #24141d;
