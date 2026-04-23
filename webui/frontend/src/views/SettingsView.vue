@@ -34,12 +34,13 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useTheme } from '@/composables/useTheme'
 import { getSettings, updateSettings } from '@/api/settings'
 import { ElMessage } from 'element-plus'
-import * as monaco from 'monaco-editor'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const { syncMonacoTheme } = useTheme()
 const saving = ref(false)
 
 const allowedLanguages = ['en', 'zh'] as const
@@ -87,7 +88,9 @@ async function handleSave() {
     await updateSettings(normalized)
     appStore.setLanguage(normalized.language)
     appStore.setTheme(normalized.theme)
-    monaco.editor.setTheme(normalized.theme === 'dark' ? 'vs-dark' : 'vs')
+    // Keep live Monaco editors in sync with the new theme. The helper is
+    // a single global call — do not duplicate it per-editor.
+    await syncMonacoTheme()
     ElMessage.success(t('settings.saved'))
   } catch {
     ElMessage.error(t('settings.save_failed'))

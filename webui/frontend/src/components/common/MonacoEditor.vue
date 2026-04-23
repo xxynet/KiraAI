@@ -77,12 +77,11 @@ watch(
   },
 )
 
-watch(
-  () => appStore.isDark,
-  (isDark) => {
-    monaco.editor.setTheme(isDark ? 'vs-dark' : 'vs')
-  },
-)
+// Intentionally no per-instance theme watcher. `monaco.editor.setTheme` is a
+// global API — mounting it in each MonacoEditor duplicates work and would
+// collide if two instances ever disagreed on theme. Theme changes are
+// centralised in `useTheme().syncMonacoTheme()` (invoked from the app's
+// theme toggle), which applies the new theme once to every live editor.
 
 watch(
   () => props.readOnly,
