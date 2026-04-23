@@ -17,10 +17,6 @@ export function updateMcpServerConfig(serverName: string, data: McpServerConfigU
   return apiClient.put(`/mcp-servers/${encodeURIComponent(serverName)}/config`, data)
 }
 
-export function updateMcpServer(serverName: string, data: McpServerConfigUpdateRequest) {
-  return apiClient.put(`/mcp-servers/${encodeURIComponent(serverName)}`, data)
-}
-
 export function toggleMcpServer(serverName: string, enabled: boolean) {
   return apiClient.post(`/mcp-servers/${encodeURIComponent(serverName)}/enabled`, { enabled })
 }

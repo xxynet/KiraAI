@@ -101,6 +101,11 @@ const { t } = useI18n()
 
 const drafts = reactive<Record<string, string>>({})
 const draftErrors = reactive<Record<string, string>>({})
+// Per-key serialized snapshot of the last prop value we synced from. Used by
+// the deep watcher to detect real external changes even when the parent
+// mutates `modelValue` in place (in which case `next[key] === prev[key]`
+// would otherwise compare identical references).
+const lastSynced = reactive<Record<string, string>>({})
 
 // Backend (core/config/config_field.py) emits `name` / `hint` / `options` and
 // types like `integer`, `float`, `switch`, `enum`, `json`, `list`, `textarea`,
@@ -152,14 +157,16 @@ function initDrafts() {
     const field = props.schema[key]
     if (isJsonLike(field?.type)) {
       const val = props.modelValue[key]
-      drafts[key] = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
+      const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
+      drafts[key] = serialized
+      lastSynced[key] = serialized
       delete draftErrors[key]
     }
   }
 }
 initDrafts()
 
-watch(() => props.modelValue, (next, prev) => {
+watch(() => props.modelValue, (next) => {
   for (const key in props.schema) {
     const field = props.schema[key]
     if (!isJsonLike(field?.type)) continue
@@ -168,6 +175,7 @@ watch(() => props.modelValue, (next, prev) => {
     const existing = drafts[key]
     if (existing === undefined || existing === null) {
       drafts[key] = serialized
+      lastSynced[key] = serialized
       delete draftErrors[key]
       continue
     }
@@ -179,14 +187,19 @@ watch(() => props.modelValue, (next, prev) => {
       const parsed = JSON.parse(existing)
       if (JSON.stringify(parsed) !== JSON.stringify(val)) {
         drafts[key] = serialized
+        lastSynced[key] = serialized
         delete draftErrors[key]
       }
     } catch {
-      // Invalid in-progress draft: keep it while the parent's value for this
-      // key is stable, but let a real external change (record swap, server
-      // reload) win over a stale broken draft so the UI doesn't desync.
-      if (prev === undefined || next[key] !== prev[key]) {
+      // Invalid in-progress draft: keep it while the parent's value is
+      // stable, but let a real external change (record swap, server reload)
+      // win. Compare against our own last-synced snapshot instead of the
+      // watcher's `prev` — Vue 3 deep watchers pass the same reference for
+      // `prev` and `next` when the parent mutates the object in place, so
+      // `next[key] !== prev[key]` would always be false in that case.
+      if (serialized !== lastSynced[key]) {
         drafts[key] = serialized
+        lastSynced[key] = serialized
         delete draftErrors[key]
       }
     }
