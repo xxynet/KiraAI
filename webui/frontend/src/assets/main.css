@@ -20,6 +20,12 @@ textarea {
   transition-timing-function: ease-in-out;
 }
 
+input.transition-colors,
+select.transition-colors,
+textarea.transition-colors {
+  transition: all 0.2s ease-in-out;
+}
+
 /* ==================== Page Background ==================== */
 .page-background {
   position: fixed;
@@ -136,7 +142,8 @@ textarea {
 }
 
 /* ==================== Glass Cards ==================== */
-.glass-card {
+.glass-card,
+.bg-white.rounded-lg.shadow {
   background-color: rgba(255, 255, 255, 0.7) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -144,17 +151,20 @@ textarea {
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
 }
 
-.glass-card:hover {
+.glass-card:hover,
+.bg-white.rounded-lg.shadow:hover {
   background-color: rgba(255, 255, 255, 0.85) !important;
 }
 
-.dark .glass-card {
+.dark .glass-card,
+.dark .bg-white.rounded-lg.shadow {
   background-color: rgba(31, 41, 55, 0.78) !important;
   border: 1px solid rgba(75, 85, 99, 0.2);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
 }
 
-.dark .glass-card:hover {
+.dark .glass-card:hover,
+.dark .bg-white.rounded-lg.shadow:hover {
   background-color: rgba(31, 41, 55, 0.88) !important;
 }
 
@@ -230,6 +240,32 @@ textarea {
 }
 
 /* ==================== Form Inputs ==================== */
+input:not([type="checkbox"], [type="radio"]),
+select,
+textarea {
+  background-color: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.dark input:not([type="checkbox"], [type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+  border-color: rgba(75, 85, 99, 0.3) !important;
+  color: #f9fafb;
+}
+
+.dark input::placeholder,
+.dark select::placeholder,
+.dark textarea::placeholder {
+  color: #9ca3af;
+}
+
+.dark .border-gray-300 {
+  border-color: rgba(75, 85, 99, 0.4) !important;
+}
+
 input:not([type="checkbox"], [type="radio"]):hover,
 select:hover,
 textarea:hover {
@@ -241,7 +277,7 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: #3b82f6 !important;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.45) !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
 }
 
 /* Visible keyboard focus outline for all interactive elements (WCAG 2.4.11) */
