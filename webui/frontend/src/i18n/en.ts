@@ -310,6 +310,8 @@ export default {
     save_success: 'Sticker saved successfully',
     save_failed: 'Failed to save sticker',
     delete_confirm: 'Are you sure you want to delete this sticker?',
+    load_failed: 'Failed to load stickers',
+    retry: 'Retry',
   },
   configuration: {
     title: 'Configuration',

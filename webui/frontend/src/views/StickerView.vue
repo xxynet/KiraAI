@@ -7,7 +7,13 @@
       </el-button>
     </div>
 
-    <div v-if="stickers.length === 0" class="text-center py-12 text-gray-400">
+    <div v-if="loadError" class="text-center py-12 text-gray-400">
+      <el-icon :size="48"><Warning /></el-icon>
+      <p class="mt-2 text-sm">{{ $t('sticker.load_failed') }}</p>
+      <el-button size="small" class="mt-3" @click="loadStickers">{{ $t('sticker.retry') }}</el-button>
+    </div>
+
+    <div v-else-if="stickers.length === 0" class="text-center py-12 text-gray-400">
       <el-icon :size="48"><Picture /></el-icon>
       <p class="mt-2 text-sm">{{ $t('sticker.no_stickers') }}</p>
     </div>
@@ -85,7 +91,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Picture, UploadFilled } from '@element-plus/icons-vue'
+import { Picture, UploadFilled, Warning } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import { getStickers, updateSticker, deleteSticker as apiDeleteSticker, uploadSticker } from '@/api/sticker'
@@ -93,6 +99,7 @@ import type { StickerItem } from '@/types'
 
 const { t } = useI18n()
 const stickers = ref<StickerItem[]>([])
+const loadError = ref(false)
 
 // Add
 const addDialogVisible = ref(false)
@@ -109,7 +116,12 @@ async function loadStickers() {
   try {
     const res = await getStickers()
     stickers.value = Array.isArray(res.data) ? res.data : []
-  } catch (e) { console.error('Failed to load stickers:', e) }
+    loadError.value = false
+  } catch (e) {
+    console.error('Failed to load stickers:', e)
+    stickers.value = []
+    loadError.value = true
+  }
 }
 
 function openAddDialog() {

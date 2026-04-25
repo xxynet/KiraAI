@@ -310,6 +310,8 @@ export default {
     save_success: '表情包保存成功',
     save_failed: '保存表情包失败',
     delete_confirm: '确定要删除此表情包吗？',
+    load_failed: '加载表情包失败',
+    retry: '重试',
   },
   configuration: {
     title: '配置项',

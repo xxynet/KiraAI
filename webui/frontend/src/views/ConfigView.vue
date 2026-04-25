@@ -174,7 +174,7 @@
             :min="field.validation?.min"
             :max="field.validation?.max"
             :step="1"
-            @change="(v: number | undefined) => setFieldValue(field.key, v ?? field.default)"
+            @update:model-value="(v: number | undefined) => setFieldValue(field.key, v ?? field.default)"
           />
 
           <!-- Float -->
@@ -188,7 +188,7 @@
             :max="field.validation?.max"
             :step="0.1"
             :precision="2"
-            @change="(v: number | undefined) => setFieldValue(field.key, v ?? field.default)"
+            @update:model-value="(v: number | undefined) => setFieldValue(field.key, v ?? field.default)"
           />
 
           <!-- Boolean -->
@@ -205,7 +205,7 @@
             :model-value="getFieldValue(field.key)"
             size="small"
             :placeholder="$t(field.hintKey, field.hintFallback)"
-            @change="(v: string) => setFieldValue(field.key, v)"
+            @update:model-value="(v: string) => setFieldValue(field.key, v)"
           />
 
           <p v-if="field.hintKey" class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
