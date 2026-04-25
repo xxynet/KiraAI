@@ -67,12 +67,13 @@ export interface AdapterResponse extends AdapterBase {
 
 export interface PersonaBase {
   name: string
-  description: string
-  traits: Record<string, any>
+  format: string
+  content: string
 }
 
 export interface PersonaResponse extends PersonaBase {
   id: string
+  created_at?: number
 }
 
 export interface PersonaContentResponse {

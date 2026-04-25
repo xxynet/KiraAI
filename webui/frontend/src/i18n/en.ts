@@ -2,6 +2,7 @@ export default {
   common: {
     on: 'On',
     off: 'Off',
+    delete: 'Delete',
   },
   app: {
     title: 'KiraAI',
@@ -190,12 +191,19 @@ export default {
     format_markdown: 'Markdown',
     format_text: 'Plain Text',
     edit: 'Edit',
+    edit_title: 'Edit Persona',
     format: 'Format',
     cancel: 'Cancel',
     save: 'Save',
     no_content: 'No persona content',
     save_success: 'Persona saved successfully',
     save_failed: 'Failed to save persona',
+    delete_confirm_title: 'Confirm Delete',
+    delete_confirm_message: 'Are you sure you want to delete this persona? This action cannot be undone.',
+    delete_success: 'Persona deleted successfully',
+    delete_failed: 'Failed to delete persona',
+    load_failed: 'Failed to load personas',
+    form_incomplete: 'Please fill in persona name',
   },
   plugin: {
     title: 'Add-ons',

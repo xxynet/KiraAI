@@ -2,6 +2,7 @@ export default {
   common: {
     on: '启用',
     off: '禁用',
+    delete: '删除',
   },
   app: {
     title: 'KiraAI',
@@ -190,12 +191,19 @@ export default {
     format_markdown: 'Markdown',
     format_text: '纯文本',
     edit: '编辑',
+    edit_title: '编辑人设',
     format: '格式',
     cancel: '取消',
     save: '保存',
     no_content: '无人设内容',
     save_success: '人设保存成功',
     save_failed: '保存人设失败',
+    delete_confirm_title: '确认删除',
+    delete_confirm_message: '确定要删除这个人设吗？此操作不可撤销。',
+    delete_success: '人设删除成功',
+    delete_failed: '删除人设失败',
+    load_failed: '加载人设列表失败',
+    form_incomplete: '请填写人设名称',
   },
   plugin: {
     title: '附加功能',
