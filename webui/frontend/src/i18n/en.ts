@@ -70,6 +70,9 @@ export default {
     modal_cancel: 'Cancel',
     modal_save: 'Save',
     select_provider: 'Select a provider to configure',
+    schema_error: 'Error loading configuration schema',
+    schema_loading: 'Loading configuration...',
+    schema_none: 'No configuration required',
     delete_confirm_title: 'Delete Provider',
     delete_confirm_message: 'Are you sure you want to delete this provider? This action cannot be undone.',
     delete_success: 'Provider deleted successfully',
@@ -316,6 +319,8 @@ export default {
     save_success: 'Sticker saved successfully',
     save_failed: 'Failed to save sticker',
     delete_confirm: 'Are you sure you want to delete this sticker?',
+    load_failed: 'Failed to load stickers',
+    retry: 'Retry',
   },
   configuration: {
     title: 'Configuration',

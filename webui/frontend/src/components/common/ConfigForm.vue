@@ -45,7 +45,7 @@
           :step="field.type === 'integer' ? '1' : 'any'"
           class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
           :placeholder="hintFor(field)"
-          @input="updateField(key as string, field.type === 'integer' ? parseInt(($event.target as HTMLInputElement).value, 10) : parseFloat(($event.target as HTMLInputElement).value))"
+          @input="updateField(key as string, parseNumberInput(($event.target as HTMLInputElement).value, field))"
         >
 
         <!-- Sensitive: password with reveal -->
@@ -301,8 +301,20 @@ function updateField(key: string, value: any) {
   emit('update:modelValue', { ...props.modelValue, [key]: value })
 }
 
+function parseNumberInput(raw: string, field: any): any {
+  if (raw === '' || raw === null || raw === undefined) {
+    return field?.default ?? undefined
+  }
+  const parsed = field?.type === 'integer' ? parseInt(raw, 10) : parseFloat(raw)
+  if (Number.isNaN(parsed)) {
+    return field?.default ?? undefined
+  }
+  return parsed
+}
+
 function updateMonacoDraft(key: string, val: string, type: string) {
   drafts[key] = val
+  lastSynced[key] = val
   if (type === 'json') {
     try {
       const parsed = JSON.parse(val)
@@ -319,12 +331,14 @@ function updateMonacoDraft(key: string, val: string, type: string) {
 
 function updateListDraft(key: string, val: string) {
   drafts[key] = val
+  lastSynced[key] = val
   const arr = val.split('\n').map(s => s.trim()).filter(s => s.length > 0)
   emit('update:modelValue', { ...props.modelValue, [key]: arr })
 }
 
 function onDraftInput(key: string, val: string, field: any) {
   drafts[key] = val
+  lastSynced[key] = val
   delete draftErrors[key]
   try {
     const parsed = JSON.parse(val)

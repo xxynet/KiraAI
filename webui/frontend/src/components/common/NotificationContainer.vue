@@ -1,9 +1,14 @@
 <template>
-  <div class="fixed top-4 right-4 z-[200] space-y-2 pointer-events-none">
+  <div
+    class="fixed top-4 right-4 z-[200] space-y-2 pointer-events-none"
+    aria-live="polite"
+    aria-atomic="true"
+  >
     <TransitionGroup name="notify">
       <div
         v-for="n in notifications"
         :key="n.id"
+        :role="n.type === 'error' ? 'alert' : 'status'"
         class="px-6 py-4 rounded-lg shadow-lg text-white pointer-events-auto"
         :class="typeClass(n.type)"
       >

@@ -70,6 +70,9 @@ export default {
     modal_cancel: '取消',
     modal_save: '保存',
     select_provider: '选择一个提供商进行配置',
+    schema_error: '加载配置架构出错',
+    schema_loading: '加载配置中...',
+    schema_none: '无需配置',
     delete_confirm_title: '删除提供商',
     delete_confirm_message: '确定要删除此提供商吗？此操作无法撤销。',
     delete_success: '提供商已删除',
@@ -316,6 +319,8 @@ export default {
     save_success: '表情包保存成功',
     save_failed: '保存表情包失败',
     delete_confirm: '确定要删除此表情包吗？',
+    load_failed: '加载表情包失败',
+    retry: '重试',
   },
   configuration: {
     title: '配置项',
