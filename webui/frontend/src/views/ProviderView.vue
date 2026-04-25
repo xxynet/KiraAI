@@ -154,7 +154,7 @@
 
     <!-- Create Provider Dialog -->
     <Modal v-model="createDialogVisible" content-class="max-w-md">
-      <div class="bg-white rounded-lg shadow-xl w-full mx-4 flex flex-col modal-card" style="max-height: 90vh;">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full mx-4 flex flex-col modal-card" style="max-height: 90vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('provider.add') }}</h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="createDialogVisible = false">
@@ -190,7 +190,7 @@
 
     <!-- Add/Edit Model Dialog -->
     <Modal v-model="modelDialogVisible" content-class="max-w-md">
-      <div class="bg-white rounded-lg shadow-xl w-full mx-4 modal-card">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full mx-4 modal-card">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ modelEditMode ? $t('provider.edit_model') : $t('provider.add_model') }}</h3>
           <button class="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300" @click="modelDialogVisible = false">
@@ -586,8 +586,4 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
-.dark .modal-card {
-  background-color: rgba(31, 41, 55, 0.95) !important;
-}
-</style>
+

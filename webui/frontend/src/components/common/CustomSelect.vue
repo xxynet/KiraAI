@@ -3,11 +3,11 @@
     <!-- Trigger -->
     <div
       class="custom-select-trigger"
-      :class="{ active: isOpen, 'has-value': !!modelValue, placeholder: !modelValue }"
+      :class="{ active: isOpen, 'has-value': !!modelValue, placeholder: !modelValue, disabled: props.disabled }"
       @click.stop="toggleDropdown"
       @keydown.enter.prevent="toggleDropdown"
       @keydown.esc="closeDropdown"
-      tabindex="0"
+      :tabindex="props.disabled ? -1 : 0"
       role="combobox"
       :aria-expanded="isOpen"
       aria-haspopup="listbox"
@@ -59,6 +59,7 @@ const props = defineProps<{
   modelValue: string
   options: Option[]
   placeholder?: string
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -70,6 +71,19 @@ const containerRef = ref<HTMLElement>()
 const optionsRef = ref<HTMLElement>()
 const dropdownStyle = ref<Record<string, string>>({})
 let openTimerId: ReturnType<typeof setTimeout> | null = null
+let scrollAncestor: HTMLElement | null = null
+
+function findScrollAncestor(el: HTMLElement | null): HTMLElement | null {
+  while (el) {
+    const style = window.getComputedStyle(el)
+    const overflow = style.overflow + style.overflowY + style.overflowX
+    if (/(auto|scroll)/.test(overflow) && el.scrollHeight > el.clientHeight) {
+      return el
+    }
+    el = el.parentElement
+  }
+  return null
+}
 
 const selectedLabel = computed(() => {
   const option = props.options.find(opt => opt.value === props.modelValue)
@@ -77,6 +91,7 @@ const selectedLabel = computed(() => {
 })
 
 function toggleDropdown() {
+  if (props.disabled) return
   if (isOpen.value) {
     closeDropdown()
   } else {
@@ -126,8 +141,12 @@ function openDropdown() {
     openTimerId = null
     if (!isOpen.value) return
     adjustPosition()
-    // Add scroll/resize listeners
-    window.addEventListener('scroll', adjustPosition, true)
+    // Add scroll/resize listeners — close dropdown on any scroll
+    scrollAncestor = containerRef.value ? findScrollAncestor(containerRef.value) : null
+    if (scrollAncestor) {
+      scrollAncestor.addEventListener('scroll', closeDropdown, { passive: true })
+    }
+    window.addEventListener('scroll', closeDropdown, true)
     window.addEventListener('resize', adjustPosition)
     document.addEventListener('click', handleClickOutside)
   }, 0)
@@ -146,7 +165,11 @@ function closeDropdown() {
 
   // Remove listeners
   document.removeEventListener('click', handleClickOutside)
-  window.removeEventListener('scroll', adjustPosition, true)
+  if (scrollAncestor) {
+    scrollAncestor.removeEventListener('scroll', closeDropdown)
+    scrollAncestor = null
+  }
+  window.removeEventListener('scroll', closeDropdown, true)
   window.removeEventListener('resize', adjustPosition)
 
   // Keep position fixed at last known location so the close animation plays
@@ -216,6 +239,11 @@ onUnmounted(() => {
 
 .custom-select-trigger.placeholder {
   color: #9ca3af;
+}
+
+.custom-select-trigger.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .custom-select-content {

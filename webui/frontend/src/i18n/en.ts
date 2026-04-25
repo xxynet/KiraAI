@@ -1,4 +1,8 @@
 export default {
+  common: {
+    on: 'On',
+    off: 'Off',
+  },
   app: {
     title: 'KiraAI',
     subtitle: 'Admin Panel',
@@ -129,11 +133,13 @@ export default {
     actions: 'Actions',
     edit: 'Edit',
     delete: 'Delete',
+    edit_title: 'Edit Adapter',
     platform_placeholder: 'Select adapter platform...',
     modal_title: 'Adapter',
     modal_name_label: 'Adapter Name',
     modal_platform_label: 'Platform',
     modal_desc_label: 'Description',
+    modal_desc_placeholder: 'Enter adapter description',
     modal_status_label: 'Status',
     modal_cancel: 'Cancel',
     modal_save: 'Save',

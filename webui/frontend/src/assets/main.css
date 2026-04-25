@@ -141,6 +141,35 @@ textarea.transition-colors {
   box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
 }
 
+/* ==================== Modal Cards ==================== */
+.modal-card {
+  background-color: #fff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.dark .modal-card {
+  background-color: #111827 !important; /* solid gray-900, no glass */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Inputs inside modal cards should have solid backgrounds, not glass */
+.modal-card input:not([type="checkbox"], [type="radio"]),
+.modal-card select,
+.modal-card textarea {
+  background-color: #fff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.dark .modal-card input:not([type="checkbox"], [type="radio"]),
+.dark .modal-card select,
+.dark .modal-card textarea {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* ==================== Glass Cards ==================== */
 .glass-card,
 .bg-white.rounded-lg.shadow {
@@ -246,13 +275,14 @@ textarea {
   background-color: rgba(255, 255, 255, 0.7) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(209, 213, 219, 0.8);
 }
 
 .dark input:not([type="checkbox"], [type="radio"]),
 .dark select,
 .dark textarea {
   background-color: rgba(31, 41, 55, 0.7) !important;
-  border-color: rgba(75, 85, 99, 0.3) !important;
+  border: 1px solid rgba(75, 85, 99, 0.3);
   color: #f9fafb;
 }
 
@@ -268,16 +298,42 @@ textarea {
 
 input:not([type="checkbox"], [type="radio"]):hover,
 select:hover,
-textarea:hover {
+textarea:hover,
+.dark input:not([type="checkbox"], [type="radio"]):hover,
+.dark select:hover,
+.dark textarea:hover {
   border-color: #3b82f6 !important;
 }
 
 input:not([type="checkbox"], [type="radio"]):focus,
 select:focus,
-textarea:focus {
+textarea:focus,
+.dark input:not([type="checkbox"], [type="radio"]):focus,
+.dark select:focus,
+.dark textarea:focus {
   outline: none;
   border-color: #3b82f6 !important;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+input:not([type="checkbox"], [type="radio"]):focus:hover,
+select:focus:hover,
+textarea:focus:hover,
+.dark input:not([type="checkbox"], [type="radio"]):focus:hover,
+.dark select:focus:hover,
+.dark textarea:focus:hover {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+/* Protect Monaco Editor internal textarea from global textarea styles */
+.monaco-editor textarea,
+.monaco-editor .inputarea {
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 /* Visible keyboard focus outline for all interactive elements (WCAG 2.4.11) */

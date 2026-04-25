@@ -7,15 +7,13 @@
         </label>
 
         <!-- Select with options -->
-        <select
+        <CustomSelect
           v-if="hasOptions(field)"
-          :value="fieldValue(key, field) ?? ''"
-          class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-          @change="updateField(key as string, ($event.target as HTMLSelectElement).value)"
-        >
-          <option value=""></option>
-          <option v-for="opt in optionsFor(field)" :key="String(opt)" :value="opt">{{ opt }}</option>
-        </select>
+          :model-value="fieldValue(key, field) ?? ''"
+          :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
+          :placeholder="hintFor(field) || 'Select...'"
+          @update:model-value="updateField(key as string, $event)"
+        />
 
         <!-- Boolean / switch -->
         <div v-else-if="isBoolLike(field.type)" class="flex items-center">
@@ -129,6 +127,7 @@
 <script setup lang="ts">
 import { reactive, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import CustomSelect from '@/components/common/CustomSelect.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 
 const props = defineProps<{

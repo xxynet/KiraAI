@@ -1,4 +1,8 @@
 export default {
+  common: {
+    on: '启用',
+    off: '禁用',
+  },
   app: {
     title: 'KiraAI',
     subtitle: '管理面板',
@@ -129,11 +133,13 @@ export default {
     actions: '操作',
     edit: '编辑',
     delete: '删除',
+    edit_title: '编辑适配器',
     platform_placeholder: '选择适配器平台...',
     modal_title: '适配器',
     modal_name_label: '适配器名称',
     modal_platform_label: '平台',
     modal_desc_label: '描述',
+    modal_desc_placeholder: '填写适配器描述',
     modal_status_label: '状态',
     modal_cancel: '取消',
     modal_save: '保存',

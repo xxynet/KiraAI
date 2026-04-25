@@ -35,5 +35,6 @@ declare module 'vue' {
     PageContainer: typeof import('./src/components/layout/PageContainer.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    ToggleSwitch: typeof import('./src/components/common/ToggleSwitch.vue')['default']
   }
 }
