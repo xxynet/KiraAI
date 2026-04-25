@@ -4,7 +4,8 @@
       <div
         v-show="modelValue"
         class="fixed inset-0 z-[100] flex items-center justify-center"
-        @click.self="onBackdropClick"
+        @mousedown.self="onMouseDown"
+        @mouseup.self="onMouseUp"
       >
         <div class="modal-overlay absolute inset-0 bg-black bg-opacity-50" />
         <div class="modal-panel relative w-full mx-4" :class="contentClass" :style="contentStyle">
@@ -16,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 
 /* ------------------------------------------------------------------ */
 /*  Global ESC stack — only the top-most modal receives Escape          */
@@ -55,8 +56,17 @@ function close() {
   emit('close')
 }
 
-function onBackdropClick() {
-  if (!props.persistent) close()
+const mouseDownTarget = ref<EventTarget | null>(null)
+
+function onMouseDown(e: MouseEvent) {
+  mouseDownTarget.value = e.target
+}
+
+function onMouseUp(e: MouseEvent) {
+  if (!props.persistent && e.target === mouseDownTarget.value) {
+    close()
+  }
+  mouseDownTarget.value = null
 }
 
 const stackEntry = { close }

@@ -331,20 +331,11 @@ textarea:focus {
   @apply p-3 rounded-lg cursor-pointer transition-colors;
 }
 
-.provider-item:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-}
-
-.provider-item.active {
-  background-color: rgba(219, 234, 254, 0.7);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-}
-
 .dark .provider-item:hover {
   background-color: rgba(75, 85, 99, 0.3);
 }
 
-.dark .provider-item.active {
+.dark .provider-item.bg-blue-50 {
   background-color: rgba(59, 130, 246, 0.15) !important;
   border-color: rgba(59, 130, 246, 0.3);
 }

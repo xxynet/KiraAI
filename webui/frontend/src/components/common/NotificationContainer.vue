@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed top-4 right-4 z-[100] space-y-2 pointer-events-none">
+  <div class="fixed top-4 right-4 z-[200] space-y-2 pointer-events-none">
     <TransitionGroup name="notify">
       <div
         v-for="n in notifications"

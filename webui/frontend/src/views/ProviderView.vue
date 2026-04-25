@@ -1,7 +1,7 @@
 <template>
-  <div class="flex gap-6 min-h-[calc(100vh-8rem)]">
+  <div class="flex gap-6 h-[calc(100vh-8rem)]">
     <!-- Left: Provider List -->
-    <div class="w-1/3 bg-white rounded-lg shadow p-6 flex flex-col">
+    <div class="w-1/3 bg-white rounded-lg shadow p-6 flex flex-col overflow-hidden">
       <div class="flex justify-between items-center mb-6 flex-shrink-0">
         <h3 class="text-lg font-semibold text-gray-800">
           {{ $t('pages.provider.title') }}
@@ -27,8 +27,8 @@
           <div
             v-for="provider in providers"
             :key="provider.id"
-            class="provider-item flex items-center p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-            :class="{ 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700': selectedId === provider.id, 'border border-transparent': selectedId !== provider.id }"
+            class="provider-item flex items-center p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-100"
+            :class="{ 'bg-blue-50 border border-blue-200': selectedId === provider.id, 'border border-transparent': selectedId !== provider.id }"
             @click="selectProvider(provider.id)"
           >
             <div class="mr-3">
@@ -58,7 +58,7 @@
         </div>
       </div>
 
-      <div v-else class="flex flex-col flex-1">
+      <div v-else class="flex flex-col flex-1 overflow-y-auto">
         <div class="border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
           <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100">{{ selectedProvider?.name }}</h3>
           <p class="text-sm text-gray-500 mt-1">{{ selectedProvider?.type }}</p>
@@ -92,7 +92,7 @@
 
         <!-- Model Groups -->
         <div v-if="selectedProvider?.supported_model_types?.length" class="space-y-3">
-          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('provider.models') }}</h4>
+          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('provider.model_groups') }}</h4>
           <div
             v-for="modelType in selectedProvider.supported_model_types"
             :key="modelType"
@@ -110,7 +110,7 @@
                 >
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                 </svg>
-                <span class="font-medium text-gray-700 dark:text-gray-200">{{ modelType.toUpperCase() }}</span>
+                <span class="font-medium text-gray-700 dark:text-gray-200">{{ $t(`provider.model_group_${modelType}`) }}</span>
               </div>
               <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors" @click.stop="openAddModelDialog(modelType)">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -123,15 +123,19 @@
                 <div
                   v-for="(modelConfig, modelId) in providerModels[modelType]"
                   :key="modelId"
-                  class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                  class="flex items-center justify-between py-1 border-b border-gray-100 dark:border-gray-800 last:border-b-0"
                 >
-                  <span class="text-sm font-mono text-gray-700 dark:text-gray-300">{{ modelId }}</span>
-                  <div class="flex gap-2">
-                    <button class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="editModel(modelType, String(modelId), modelConfig)">
-                      {{ $t('provider.edit') }}
+                  <span class="flex-1 text-sm text-gray-800 dark:text-gray-100">{{ modelId }}</span>
+                  <div class="flex items-center space-x-2">
+                    <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="editModel(modelType, String(modelId), modelConfig)">
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+                      </svg>
                     </button>
-                    <button class="px-2 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="removeModel(modelType, String(modelId))">
-                      {{ $t('provider.delete') }}
+                    <button class="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="removeModel(modelType, String(modelId))">
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -196,9 +200,26 @@
           </button>
         </div>
         <div class="px-6 py-4">
+          <!-- Model type label -->
+          <div class="mb-2">
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ $t(`provider.model_group_${modelForm.model_type}`) }}</p>
+          </div>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ $t('provider.model_id') }}</label>
-            <input v-model="modelForm.model_id" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" :disabled="modelEditMode" />
+            <div class="flex items-center mb-2">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ $t('provider.model_id') }}</label>
+              <div class="relative ml-1 group">
+                <button type="button" class="p-0.5" :aria-label="$t('provider.model_id_tooltip')">
+                  <svg class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                </button>
+                <div role="tooltip" class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+                  {{ $t('provider.model_id_tooltip') }}
+                </div>
+              </div>
+            </div>
+            <input v-model="modelForm.model_id" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" :placeholder="$t('provider.model_id_placeholder')" :disabled="modelEditMode" />
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ $t('provider.model_id_hint') }}</p>
           </div>
           <div v-if="modelSchema">
             <ConfigForm ref="modelConfigFormRef" v-model="modelForm.config" :schema="modelSchema" />
@@ -217,7 +238,6 @@
       :message="confirmMessage"
       :cancel-text="t('provider.cancel')"
       :confirm-text="t('provider.delete')"
-      confirm-class="bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600"
       @confirm="onConfirmAction"
     />
   </div>
