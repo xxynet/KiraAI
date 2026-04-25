@@ -67,7 +67,7 @@
         <!-- Provider Config Fields -->
         <div class="space-y-4 mb-6">
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Name</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('provider.name') }}</label>
             <input v-model="providerName" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" />
           </div>
           <div v-if="providerSchema && Object.keys(providerSchema.provider_config || providerSchema).length > 0">
@@ -77,9 +77,9 @@
               :schema="providerSchema"
             />
           </div>
-          <div v-else-if="schemaError" class="text-red-500 dark:text-red-400 py-2">Error loading configuration schema</div>
-          <div v-else-if="schemaLoading" class="text-center text-gray-500 py-4">Loading configuration...</div>
-          <div v-else class="text-gray-500 dark:text-gray-400 py-2">No configuration required</div>
+          <div v-else-if="schemaError" class="text-red-500 dark:text-red-400 py-2">{{ $t('provider.schema_error') }}</div>
+          <div v-else-if="schemaLoading" class="text-center text-gray-500 py-4">{{ $t('provider.schema_loading') }}</div>
+          <div v-else class="text-gray-500 dark:text-gray-400 py-2">{{ $t('provider.schema_none') }}</div>
           <div class="flex justify-end space-x-3 pt-2">
             <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50" :disabled="saving" @click="saveProviderConfig">
               {{ $t('provider.save') }}

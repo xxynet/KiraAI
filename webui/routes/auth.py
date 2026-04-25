@@ -93,7 +93,7 @@ class AuthRoutes(Routes):
         index.html is served for every browser navigation; vue-router then takes
         over client-side. Root-level files present in the dist (favicon.ico,
         robots.txt, etc.) are served directly so they are not hijacked by the
-        HTML fallback. If the build is missing, returns a 404 hint pointing at
+        HTML fallback. If the build is missing, returns a 503 hint pointing at
         the build command.
         """
         # Don't serve SPA for paths handled by dedicated mounts.

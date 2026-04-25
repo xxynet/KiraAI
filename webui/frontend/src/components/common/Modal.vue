@@ -4,11 +4,11 @@
       <div
         v-show="modelValue"
         class="fixed inset-0 z-[100] flex items-center justify-center"
-        @mousedown.self="onMouseDown"
-        @mouseup.self="onMouseUp"
+        @mousedown="onMouseDown"
+        @mouseup="onMouseUp"
       >
         <div class="modal-overlay absolute inset-0 bg-black bg-opacity-50" />
-        <div class="modal-panel relative w-full mx-4" :class="contentClass" :style="contentStyle">
+        <div ref="panelRef" class="modal-panel relative w-full mx-4" :class="contentClass" :style="contentStyle">
           <slot />
         </div>
       </div>
@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 
 /* ------------------------------------------------------------------ */
 /*  Global ESC stack — only the top-most modal receives Escape          */
@@ -57,13 +57,24 @@ function close() {
 }
 
 const mouseDownTarget = ref<EventTarget | null>(null)
+const panelRef = ref<HTMLElement | null>(null)
+
+function isOutsidePanel(target: EventTarget | null): boolean {
+  const panel = panelRef.value
+  if (!panel || !(target instanceof Node)) return false
+  return !panel.contains(target)
+}
 
 function onMouseDown(e: MouseEvent) {
-  mouseDownTarget.value = e.target
+  mouseDownTarget.value = isOutsidePanel(e.target) ? e.target : null
 }
 
 function onMouseUp(e: MouseEvent) {
-  if (!props.persistent && e.target === mouseDownTarget.value) {
+  if (
+    !props.persistent &&
+    mouseDownTarget.value !== null &&
+    isOutsidePanel(e.target)
+  ) {
     close()
   }
   mouseDownTarget.value = null
@@ -71,15 +82,21 @@ function onMouseUp(e: MouseEvent) {
 
 const stackEntry = { close }
 
+function removeFromStack() {
+  const idx = _stack.indexOf(stackEntry)
+  if (idx !== -1) _stack.splice(idx, 1)
+}
+
 watch(() => props.modelValue, (open) => {
   if (open) {
     _stack.push(stackEntry)
     _ensureGlobalListener()
   } else {
-    const idx = _stack.indexOf(stackEntry)
-    if (idx !== -1) _stack.splice(idx, 1)
+    removeFromStack()
   }
 })
+
+onUnmounted(removeFromStack)
 </script>
 
 <style scoped>
