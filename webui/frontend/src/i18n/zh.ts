@@ -270,7 +270,7 @@ export default {
     repo_url_required: '请输入仓库链接',
     repo_link: '仓库 ↗',
     upload_hint: '拖拽 .zip 文件至此，或点击选择',
-    upload_zip: '上传 ZIP',
+    upload_zip: '上传',
     cancel: '取消',
     install: '安装',
     no_config: '无需配置',
@@ -307,6 +307,8 @@ export default {
     skills_upload_no_file: '请选择 .zip 文件',
     skills_upload_success: '技能上传成功',
     skills_upload_error: '上传技能失败',
+    skills_upload_label: '技能压缩包（.zip）',
+    skills_upload_btn: '上传',
     skills_load_failed: '加载技能列表失败',
   },
   sticker: {

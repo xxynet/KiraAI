@@ -176,25 +176,15 @@ textarea.transition-colors {
   background-color: rgba(255, 255, 255, 0.7) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(209, 213, 219, 0.5);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-}
-
-.glass-card:hover,
-.bg-white.rounded-lg.shadow:hover {
-  background-color: rgba(255, 255, 255, 0.85) !important;
 }
 
 .dark .glass-card,
 .dark .bg-white.rounded-lg.shadow {
-  background-color: rgba(31, 41, 55, 0.78) !important;
+  background-color: rgba(31, 41, 55, 0.7) !important;
   border: 1px solid rgba(75, 85, 99, 0.2);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
-}
-
-.dark .glass-card:hover,
-.dark .bg-white.rounded-lg.shadow:hover {
-  background-color: rgba(31, 41, 55, 0.88) !important;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 /* ==================== Header ==================== */
@@ -428,7 +418,7 @@ textarea:focus:hover,
 .dark .text-gray-700 { color: #e5e7eb !important; } /* 13:1 */
 .dark .text-gray-600 { color: #cbd5e1 !important; } /*  9:1 */
 .dark .text-gray-500 { color: #b4bcc8 !important; } /*  6.1:1 — AA */
-.dark .text-gray-400 { color: #a1a9b5 !important; } /*  4.7:1 — AA */
+.dark .text-gray-400 { color: #6b7280 !important; } /*  old webui match  */
 .dark .text-gray-300 { color: #8b93a1 !important; } /* for decorative only */
 
 /* Stat / badge colors — brightened so icons & tag text remain legible */
@@ -437,7 +427,7 @@ textarea:focus:hover,
 .dark .bg-purple-100 { background-color: rgba(168, 85, 247, 0.22) !important; }
 .dark .bg-yellow-100 { background-color: rgba(251, 191, 36, 0.22) !important; }
 .dark .bg-red-100 { background-color: rgba(239, 68, 68, 0.22) !important; }
-.dark .text-blue-600 { color: #7cb4ff !important; }   /* 7.0:1 */
+.dark .text-blue-600 { color: #60a5fa !important; }   /* old webui match */
 .dark .text-green-600 { color: #4ade80 !important; }  /* 7.5:1 */
 .dark .text-purple-600 { color: #c4a0ff !important; } /* 6.2:1 */
 .dark .text-yellow-600 { color: #fcd34d !important; } /* 10.5:1 */

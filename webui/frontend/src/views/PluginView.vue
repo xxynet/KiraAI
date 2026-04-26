@@ -39,7 +39,7 @@
         <button
           type="button"
           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          @click="installDialogVisible = true"
+          @click="openInstallDialog"
         >
           <span class="mr-1">+</span>
           <span>{{ $t('plugin.install_add') }}</span>
@@ -160,7 +160,7 @@
       <div v-else-if="mcpServers.length === 0" class="flex justify-center items-center py-12">
         <div class="text-center">
           <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 6a9 9 0 11-9 9 9 9 0 019-9z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
           </svg>
           <p class="text-gray-500">{{ $t('plugin.no_mcp_servers') }}</p>
         </div>
@@ -181,7 +181,6 @@
               >
                 {{ server.type }}
               </div>
-              <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ server.id }}</div>
             </div>
             <button
               type="button"
@@ -228,7 +227,7 @@
         <button
           type="button"
           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors mr-2"
-          @click="skillsUploadVisible = true"
+          @click="openSkillsUploadDialog"
         >
           <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -299,111 +298,200 @@
     </div>
 
     <!-- Install Plugin Dialog -->
-    <el-dialog
-      v-model="installDialogVisible"
-      :title="$t('plugin.install_add')"
-      width="500"
-      :destroy-on-close="true"
-      @closed="resetInstallForm"
-    >
-      <el-tabs v-model="installTab">
-        <el-tab-pane label="GitHub" name="github">
-          <el-form label-position="top">
-            <el-form-item :label="$t('plugin.repo_url')">
-              <el-input v-model="installForm.repo_url" placeholder="https://github.com/user/repo" />
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-        <el-tab-pane :label="$t('plugin.upload_zip')" name="upload">
-          <el-upload
-            drag
-            action=""
-            :auto-upload="false"
-            :limit="1"
-            accept=".zip"
-            :on-change="onUploadChange"
+    <Modal v-model="installDialogVisible" content-class="max-w-md">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.install_add') }}</h3>
+          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="installDialogVisible = false">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="flex border-b border-gray-200 dark:border-gray-700 px-6">
+          <button
+            type="button"
+            class="px-4 py-3 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
+            :class="installTab === 'github' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'"
+            @click="installTab = 'github'"
           >
-            <el-icon :size="48"><UploadFilled /></el-icon>
-            <div class="el-upload__text">{{ $t('plugin.upload_hint') }}</div>
-          </el-upload>
-        </el-tab-pane>
-      </el-tabs>
-      <template #footer>
-        <el-button @click="installDialogVisible = false">{{ $t('plugin.cancel') }}</el-button>
-        <el-button type="primary" :loading="installing" @click="handleInstall">{{ $t('plugin.install') }}</el-button>
-      </template>
-    </el-dialog>
+            GitHub
+          </button>
+          <button
+            type="button"
+            class="px-4 py-3 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
+            :class="installTab === 'upload' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'"
+            @click="installTab = 'upload'"
+          >
+            {{ $t('plugin.upload_zip') }}
+          </button>
+        </div>
+        <div class="px-6 py-5 flex-1 overflow-y-auto">
+          <div v-show="installTab === 'github'">
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('plugin.repo_url') }}</label>
+              <input
+                v-model="installForm.repo_url"
+                type="text"
+                placeholder="https://github.com/owner/repo"
+                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              >
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <span>{{ $t('plugin.install_gh_proxy_label') }}</span>
+                <span class="text-xs font-normal text-gray-400 dark:text-gray-500 ml-1">{{ $t('plugin.install_optional') }}</span>
+              </label>
+              <input
+                v-model="installForm.gh_proxy"
+                type="text"
+                placeholder="https://ghproxy.com/"
+                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              >
+            </div>
+          </div>
+          <div v-show="installTab === 'upload'">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('plugin.install_upload_label') }}</label>
+            <FileDropzone
+              ref="installDropzoneRef"
+              v-model="uploadFile"
+              accept=".zip"
+              :title-fallback="$t('plugin.upload_hint')"
+              :reselect-fallback="$t('plugin.upload_hint')"
+            />
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="installDialogVisible = false">{{ $t('plugin.cancel') }}</button>
+          <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="installing" @click="handleInstall">{{ $t('plugin.install') }}</button>
+        </div>
+      </div>
+    </Modal>
 
     <!-- Plugin Config Dialog -->
-    <el-dialog v-model="pluginConfigVisible" :title="$t('plugin.configure')" width="600" :destroy-on-close="true">
-      <div v-if="pluginConfigSchema">
-        <ConfigForm v-model="pluginConfigValues" :schema="pluginConfigSchema" />
+    <Modal v-model="pluginConfigVisible" content-class="max-w-md">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div>
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.config_modal_title') }}</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ configPluginName }}</p>
+          </div>
+          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="pluginConfigVisible = false">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="px-6 py-4 flex-1 overflow-y-auto">
+          <div v-if="configLoading" class="flex justify-center items-center py-12">
+            <svg class="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+          <div v-else-if="pluginConfigSchema">
+            <ConfigForm v-model="pluginConfigValues" :schema="pluginConfigSchema" />
+          </div>
+          <div v-else class="text-center py-8 text-gray-400">
+            {{ $t('plugin.no_config') }}
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="pluginConfigVisible = false">{{ $t('plugin.cancel') }}</button>
+          <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="!pluginConfigSchema || savingConfig" @click="savePluginConfig">{{ $t('plugin.save') }}</button>
+        </div>
       </div>
-      <div v-else class="text-center py-8 text-gray-400">
-        {{ $t('plugin.no_config') }}
-      </div>
-      <template #footer>
-        <el-button @click="pluginConfigVisible = false">{{ $t('plugin.cancel') }}</el-button>
-        <el-button
-          type="primary"
-          :loading="savingConfig"
-          :disabled="!pluginConfigSchema"
-          @click="savePluginConfig"
-        >{{ $t('plugin.save') }}</el-button>
-      </template>
-    </el-dialog>
+    </Modal>
 
     <!-- Skills Upload Dialog -->
-    <el-dialog v-model="skillsUploadVisible" :title="$t('plugin.skills_upload')" width="500" :destroy-on-close="true">
-      <el-upload
-        ref="skillsUploadRef"
-        drag
-        action=""
-        :auto-upload="false"
-        :limit="1"
-        accept=".zip"
-        :on-change="onSkillUploadChange"
-      >
-        <el-icon :size="48"><UploadFilled /></el-icon>
-        <div class="el-upload__text">{{ $t('plugin.upload_hint') }}</div>
-      </el-upload>
-      <template #footer>
-        <el-button @click="skillsUploadVisible = false">{{ $t('plugin.cancel') }}</el-button>
-        <el-button type="primary" :loading="uploadingSkill" @click="handleSkillUpload">{{ $t('plugin.save') }}</el-button>
-      </template>
-    </el-dialog>
+    <Modal v-model="skillsUploadVisible" content-class="max-w-md">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.skills_upload') }}</h3>
+          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="skillsUploadVisible = false">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="px-6 py-5 flex-1 overflow-y-auto">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('plugin.skills_upload_label') }}</label>
+          <FileDropzone
+            ref="skillsDropzoneRef"
+            v-model="skillUploadFile"
+            accept=".zip"
+            :title-fallback="$t('plugin.upload_hint')"
+            :reselect-fallback="$t('plugin.upload_hint')"
+          />
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="skillsUploadVisible = false">{{ $t('plugin.cancel') }}</button>
+          <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="uploadingSkill" @click="handleSkillUpload">{{ $t('plugin.skills_upload_btn') }}</button>
+        </div>
+      </div>
+    </Modal>
 
     <!-- MCP Config Dialog -->
-    <el-dialog v-model="mcpDialogVisible" :title="mcpEditMode ? $t('plugin.mcp_edit') : $t('plugin.mcp_add')" width="700" :destroy-on-close="true">
-      <el-form label-position="top">
-        <el-form-item :label="$t('plugin.mcp_name')">
-          <!-- Name doubles as the server's primary key on the backend; the
-               PUT /config endpoint silently ignores any rename in the body,
-               so disable the field in edit mode to make that contract
-               visible instead of letting the user think they renamed it. -->
-          <el-input v-model="mcpForm.name" :disabled="mcpEditMode" />
-        </el-form-item>
-        <el-form-item :label="$t('plugin.mcp_description')">
-          <el-input v-model="mcpForm.description" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item :label="$t('plugin.mcp_config')">
-          <MonacoEditor v-model="mcpConfigJson" language="json" height="300px" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="mcpDialogVisible = false">{{ $t('plugin.cancel') }}</el-button>
-        <el-button type="primary" :loading="savingMcp" @click="saveMcpForm">{{ $t('plugin.save') }}</el-button>
-      </template>
-    </el-dialog>
+    <Modal v-model="mcpDialogVisible" content-class="max-w-4xl">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 95vh;">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ mcpEditMode ? $t('plugin.mcp_edit') : $t('plugin.mcp_add') }}</h3>
+          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="mcpDialogVisible = false">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="px-6 py-4 flex-1 overflow-y-auto space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('plugin.mcp_name') }}</label>
+            <input
+              v-model="mcpForm.name"
+              type="text"
+              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            >
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('plugin.mcp_description') }}</label>
+            <textarea
+              v-model="mcpForm.description"
+              rows="2"
+              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors resize-none"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('plugin.mcp_config') }}</label>
+            <MonacoEditor v-model="mcpConfigJson" language="json" height="300px" />
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="mcpDialogVisible = false">{{ $t('plugin.cancel') }}</button>
+          <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="savingMcp" @click="saveMcpForm">{{ $t('plugin.save') }}</button>
+        </div>
+      </div>
+    </Modal>
+
+    <!-- Confirm Modal -->
+    <ConfirmModal
+      ref="confirmModalRef"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      :cancel-text="t('plugin.cancel')"
+      :confirm-text="confirmButtonText"
+      @confirm="onConfirmAction"
+      @cancel="onCancelAction"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { UploadFilled } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import type { UploadFile } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import Modal from '@/components/common/Modal.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import FileDropzone from '@/components/common/FileDropzone.vue'
+
 import {
   getPlugins, getPluginConfig, updatePluginConfig,
   togglePlugin as apiTogglePlugin, deletePlugin,
@@ -427,8 +515,9 @@ const activeTab = ref('plugins')
 const plugins = ref<PluginItem[]>([])
 const installDialogVisible = ref(false)
 const installTab = ref('github')
-const installForm = ref({ repo_url: '' })
+const installForm = ref({ repo_url: '', gh_proxy: '' })
 const uploadFile = ref<File | null>(null)
+const installDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
 const installing = ref(false)
 
 // Plugin Config
@@ -436,6 +525,8 @@ const pluginConfigVisible = ref(false)
 const pluginConfigSchema = ref<any>(null)
 const pluginConfigValues = ref<Record<string, any>>({})
 const configPluginId = ref('')
+const configPluginName = ref('')
+const configLoading = ref(false)
 const savingConfig = ref(false)
 
 // MCP
@@ -453,7 +544,31 @@ const skillsError = ref<string | null>(null)
 const skillsUploadVisible = ref(false)
 const skillUploadFile = ref<File | null>(null)
 const uploadingSkill = ref(false)
-const skillsUploadRef = ref<any>(null)
+const skillsDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
+
+// Confirm modal state
+const confirmModalRef = ref<InstanceType<typeof ConfirmModal> | null>(null)
+const confirmTitle = ref('')
+const confirmMessage = ref('')
+const confirmButtonText = ref('')
+let pendingConfirmAction: (() => void) | null = null
+
+function openConfirm(title: string, message: string, buttonText: string, action: () => void) {
+  confirmTitle.value = title
+  confirmMessage.value = message
+  confirmButtonText.value = buttonText
+  pendingConfirmAction = action
+  confirmModalRef.value?.open()
+}
+
+function onConfirmAction() {
+  pendingConfirmAction?.()
+  pendingConfirmAction = null
+}
+
+function onCancelAction() {
+  pendingConfirmAction = null
+}
 
 // Error flags so the UI can distinguish "no data" from "fetch failed"
 const pluginsError = ref<string | null>(null)
@@ -519,36 +634,42 @@ async function togglePlugin(plugin: PluginItem) {
   }
 }
 
-async function handleDeletePlugin(id: string) {
-  try {
-    await ElMessageBox.confirm(t('plugin.uninstall_confirm'), t('plugin.uninstall'), { type: 'warning' })
-  } catch {
-    return
-  }
-  try {
-    await deletePlugin(id)
-    ElMessage.success(t('plugin.uninstall_success'))
-    await loadPlugins()
-  } catch {
-    ElMessage.error(t('plugin.uninstall_failed'))
-  }
+function handleDeletePlugin(id: string) {
+  openConfirm(
+    t('plugin.uninstall'),
+    t('plugin.uninstall_confirm'),
+    t('plugin.uninstall'),
+    async () => {
+      try {
+        await deletePlugin(id)
+        ElMessage.success(t('plugin.uninstall_success'))
+        await loadPlugins()
+      } catch {
+        ElMessage.error(t('plugin.uninstall_failed'))
+      }
+    }
+  )
 }
 
 async function openPluginConfig(plugin: PluginItem) {
   configPluginId.value = plugin.id
+  configPluginName.value = plugin.name || plugin.id
+  pluginConfigSchema.value = null
+  pluginConfigValues.value = {}
+  configLoading.value = true
+  pluginConfigVisible.value = true
   try {
     const res = await getPluginConfig(plugin.id)
     pluginConfigSchema.value = res.data.schema || null
     pluginConfigValues.value = res.data.config || {}
   } catch {
-    // A failed fetch must not surface as "no config" — that would let the
-    // user save {} back and wipe real config on the server.
     ElMessage.error(t('plugin.config_load_failed'))
+    pluginConfigVisible.value = false
     pluginConfigSchema.value = null
     pluginConfigValues.value = {}
-    return
+  } finally {
+    configLoading.value = false
   }
-  pluginConfigVisible.value = true
 }
 
 async function savePluginConfig() {
@@ -568,17 +689,26 @@ async function savePluginConfig() {
   }
 }
 
-function onUploadChange(file: UploadFile) {
-  uploadFile.value = file.raw || null
+// Upload file is now bound directly via v-model on FileDropzone
+
+// Modal preserves its child state across closes; reset the form before
+// opening so the user never sees stale data.
+function resetInstallForm() {
+  installForm.value = { repo_url: '', gh_proxy: '' }
+  uploadFile.value = null
+  installDropzoneRef.value?.reset()
+  installTab.value = 'github'
 }
 
-// el-dialog preserves its child state across closes; reset the form here so
-// reopening doesn't show the previous repo URL or leave the 1-slot upload
-// occupied by the last file.
-function resetInstallForm() {
-  installForm.value = { repo_url: '' }
-  uploadFile.value = null
-  installTab.value = 'github'
+function openInstallDialog() {
+  resetInstallForm()
+  installDialogVisible.value = true
+}
+
+function openSkillsUploadDialog() {
+  skillUploadFile.value = null
+  skillsDropzoneRef.value?.reset()
+  skillsUploadVisible.value = true
 }
 
 async function handleInstall() {
@@ -591,7 +721,8 @@ async function handleInstall() {
         installing.value = false
         return
       }
-      await installFromGithub({ repo_url: repoUrl })
+      const ghProxy = installForm.value.gh_proxy?.trim() || undefined
+      await installFromGithub({ repo_url: repoUrl, gh_proxy: ghProxy })
     } else {
       if (!uploadFile.value) {
         ElMessage.error(t('plugin.file_required'))
@@ -599,6 +730,7 @@ async function handleInstall() {
         return
       }
       await installFromUpload(uploadFile.value)
+      uploadFile.value = null
     }
     installDialogVisible.value = false
     ElMessage.success(t('plugin.install_success'))
@@ -687,19 +819,21 @@ async function saveMcpForm() {
   }
 }
 
-async function handleDeleteMcp(id: string) {
-  try {
-    await ElMessageBox.confirm(t('plugin.mcp_delete_confirm'), t('plugin.mcp_delete'), { type: 'warning' })
-  } catch {
-    return
-  }
-  try {
-    await deleteMcpServer(id)
-    ElMessage.success(t('plugin.mcp_delete_success'))
-    await loadMcpServers()
-  } catch {
-    ElMessage.error(t('plugin.mcp_delete_failed'))
-  }
+function handleDeleteMcp(id: string) {
+  openConfirm(
+    t('plugin.mcp_delete'),
+    t('plugin.mcp_delete_confirm'),
+    t('plugin.mcp_delete'),
+    async () => {
+      try {
+        await deleteMcpServer(id)
+        ElMessage.success(t('plugin.mcp_delete_success'))
+        await loadMcpServers()
+      } catch {
+        ElMessage.error(t('plugin.mcp_delete_failed'))
+      }
+    }
+  )
 }
 
 async function loadSkills() {
@@ -735,9 +869,7 @@ async function refreshSkillList() {
   }
 }
 
-function onSkillUploadChange(file: UploadFile) {
-  skillUploadFile.value = file.raw || null
-}
+// Skill upload file is now bound directly via v-model on FileDropzone
 
 async function handleSkillUpload() {
   if (!skillUploadFile.value) {
@@ -756,9 +888,7 @@ async function handleSkillUpload() {
   } finally {
     uploadingSkill.value = false
     skillUploadFile.value = null
-    if (skillsUploadRef.value) {
-      skillsUploadRef.value.clearFiles()
-    }
+    skillsDropzoneRef.value?.reset()
   }
 }
 

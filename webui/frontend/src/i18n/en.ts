@@ -270,7 +270,7 @@ export default {
     repo_url_required: 'Repository URL is required',
     repo_link: 'Repo ↗',
     upload_hint: 'Drop a .zip file here or click to select',
-    upload_zip: 'Upload ZIP',
+    upload_zip: 'Upload',
     cancel: 'Cancel',
     install: 'Install',
     no_config: 'No configuration required',
@@ -307,6 +307,8 @@ export default {
     skills_upload_no_file: 'Please select a .zip file',
     skills_upload_success: 'Skill uploaded successfully',
     skills_upload_error: 'Failed to upload skill',
+    skills_upload_label: 'Skill Archive (.zip)',
+    skills_upload_btn: 'Upload',
     skills_load_failed: 'Failed to load skills',
   },
   sticker: {
