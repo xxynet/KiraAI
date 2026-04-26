@@ -22,5 +22,5 @@ export function updateSticker(id: string, data: StickerUpdateRequest) {
 }
 
 export function deleteSticker(id: string) {
-  return apiClient.delete(`/stickers/${encodeURIComponent(id)}`)
+  return apiClient.delete(`/stickers/${encodeURIComponent(id)}?delete_file=true`)
 }

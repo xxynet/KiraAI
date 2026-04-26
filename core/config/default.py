@@ -3,14 +3,14 @@ VERSION = "v2.10.0"
 DEFAULT_CONFIG = {
     "bot_config": {
         "bot": {
-            "max_memory_length": "10",
-            "max_message_interval": "2",
-            "max_buffer_messages": "5",
-            "min_message_delay": "2",
-            "max_message_delay": "5"
+            "max_memory_length": 10,
+            "max_message_interval": 2,
+            "max_buffer_messages": 5,
+            "min_message_delay": 2,
+            "max_message_delay": 5
         },
         "agent": {
-            "max_tool_loop": "2"
+            "max_tool_loop": 2
         },
         "selfie": {
             "path": None
