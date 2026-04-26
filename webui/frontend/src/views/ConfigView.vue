@@ -4,12 +4,14 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
       <div class="flex items-center space-x-3">
         <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('configuration.title') }}</h3>
-        <span
-          v-if="modifiedFields.size > 0"
-          class="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full"
-        >
-          {{ modifiedFields.size }} {{ $t('configuration.changes') }}
-        </span>
+        <Transition name="modified-badge">
+          <span
+            v-if="modifiedFields.size > 0"
+            class="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full"
+          >
+            {{ modifiedFields.size }} {{ $t('configuration.changes') }}
+          </span>
+        </Transition>
       </div>
 
       <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -126,11 +128,13 @@
           <div class="min-w-0">
             <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center">
               <span v-html="highlightSearch($t(group.labelKey, group.labelFallback))" />
-              <span
-                v-if="groupHasModified(group)"
-                class="inline-block w-2 h-2 bg-amber-500 rounded-full ml-2"
-                aria-hidden="true"
-              ></span>
+              <Transition name="modified-badge">
+                <span
+                  v-if="groupHasModified(group)"
+                  class="inline-block w-2 h-2 bg-amber-500 rounded-full ml-2"
+                  aria-hidden="true"
+                ></span>
+              </Transition>
             </h4>
             <p class="text-xs text-gray-500 dark:text-gray-400 truncate" v-html="highlightSearch($t(group.descKey, group.descFallback))" />
           </div>
@@ -162,7 +166,9 @@
             <div class="flex-shrink-0">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-100 flex items-center">
                 <span v-html="highlightSearch($t(field.labelKey, field.labelFallback))" />
-                <span v-if="modifiedFields.has(field.key)" class="ml-2 text-xs text-amber-500 font-normal">{{ $t('configuration.modified') }}</span>
+                <Transition name="modified-badge">
+                  <span v-if="modifiedFields.has(field.key)" class="ml-2 text-xs text-amber-500 font-normal">{{ $t('configuration.modified') }}</span>
+                </Transition>
               </div>
               <div class="text-xs text-gray-500 dark:text-gray-400" v-html="highlightSearch($t(field.hintKey, field.hintFallback))" />
             </div>
@@ -225,7 +231,9 @@
               :title="field.key"
             >
               <span v-html="highlightSearch($t(field.labelKey, field.labelFallback))" />
-              <span v-if="modifiedFields.has(field.key)" class="ml-2 text-xs text-amber-500 font-normal">{{ $t('configuration.modified') }}</span>
+              <Transition name="modified-badge">
+                <span v-if="modifiedFields.has(field.key)" class="ml-2 text-xs text-amber-500 font-normal">{{ $t('configuration.modified') }}</span>
+              </Transition>
             </label>
 
             <!-- Integer -->
@@ -827,5 +835,15 @@ onUnmounted(() => {
   color: #cbd5e1;
   background: rgba(148, 163, 184, 0.15);
   border-color: rgba(148, 163, 184, 0.25);
+}
+.modified-badge-enter-active,
+.modified-badge-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.modified-badge-enter-from,
+.modified-badge-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
 }
 </style>
