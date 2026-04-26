@@ -215,7 +215,7 @@ onUnmounted(() => {
   background-color: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(156, 163, 175, 0.5);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease-in-out;
