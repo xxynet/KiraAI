@@ -32,7 +32,7 @@ export default defineConfig({
         target: 'http://localhost:5267',
         changeOrigin: true,
       },
-      '/sticker': {
+      '/sticker/': {
         target: 'http://localhost:5267',
         changeOrigin: true,
       },

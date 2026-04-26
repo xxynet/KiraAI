@@ -29,6 +29,7 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElUpload: typeof import('element-plus/es')['ElUpload']
+    ImageDropzone: typeof import('./src/components/common/ImageDropzone.vue')['default']
     Modal: typeof import('./src/components/common/Modal.vue')['default']
     MonacoEditor: typeof import('./src/components/common/MonacoEditor.vue')['default']
     NotificationContainer: typeof import('./src/components/common/NotificationContainer.vue')['default']
