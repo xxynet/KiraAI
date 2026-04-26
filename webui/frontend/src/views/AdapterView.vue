@@ -34,11 +34,11 @@
         class="bg-white dark:bg-gray-900 rounded-lg shadow p-5 flex flex-col justify-between"
       >
         <div class="flex items-start justify-between mb-4">
-          <div>
-            <div class="flex items-center">
-              <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100 mr-2">{{ adapter.name }}</h4>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center min-w-0">
+              <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100 mr-2 truncate">{{ adapter.name }}</h4>
               <span
-                class="px-2 py-0.5 text-xs rounded-full"
+                class="px-2 py-0.5 text-xs rounded-full flex-shrink-0"
                 :class="adapter.status === 'active'
                   ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                   : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'"
@@ -46,14 +46,14 @@
                 {{ adapter.status }}
               </span>
             </div>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ adapter.platform }}</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">{{ adapter.platform }}</p>
           </div>
           <ToggleSwitch
             :model-value="adapter.status === 'active'"
             @update:model-value="toggleStatus(adapter)"
           />
         </div>
-        <p v-if="adapter.description" class="text-sm text-gray-600 dark:text-gray-300 mb-4">
+        <p v-if="adapter.description" class="text-sm text-gray-600 dark:text-gray-300 mb-4 break-words line-clamp-3">
           {{ adapter.description }}
         </p>
         <div class="flex justify-end space-x-3 mt-4">

@@ -34,11 +34,11 @@
         class="bg-white dark:bg-gray-900 rounded-lg shadow p-5 flex flex-col justify-between"
       >
         <div>
-          <div class="flex items-start justify-between mb-3">
-            <div class="flex items-center">
-              <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100 mr-2">{{ persona.name }}</h4>
+          <div class="flex items-start justify-between mb-3 min-w-0">
+            <div class="flex items-center min-w-0">
+              <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100 mr-2 truncate">{{ persona.name }}</h4>
               <span
-                class="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                class="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 flex-shrink-0"
               >
                 {{ formatLabel(persona.format) }}
               </span>
