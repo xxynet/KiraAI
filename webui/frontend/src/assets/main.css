@@ -374,21 +374,6 @@ textarea:focus:hover,
   min-height: 0;
 }
 
-#log-container .log-entry {
-  padding: 4px 8px;
-  border-bottom: 1px solid #6b7280;
-  line-height: 1.6;
-  font-size: 16px;
-}
-
-#log-container .log-entry:last-child {
-  border-bottom: none;
-}
-
-#log-container .log-entry:hover {
-  background-color: #f3f4f6;
-}
-
 #log-container p {
   color: #9ca3af;
 }
@@ -397,15 +382,6 @@ textarea:focus:hover,
   background-color: rgba(31, 41, 55, 0.8) !important;
   color: #e5e7eb;
   border-color: #4b5563;
-}
-
-.dark #log-container .log-entry {
-  border-bottom-color: #4b5563;
-  font-size: 16px;
-}
-
-.dark #log-container .log-entry:hover {
-  background-color: rgba(75, 85, 99, 0.3);
 }
 
 .dark #log-container p {

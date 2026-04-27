@@ -57,9 +57,10 @@
       <div
         v-for="(log, idx) in filteredLogs"
         :key="idx"
-        class="log-entry font-mono break-words"
+        data-log-entry
+        class="font-mono text-base whitespace-normal break-words"
       >
-        <span class="text-gray-500 dark:text-gray-400">[{{ log.timestamp }}]</span>&nbsp;<span :class="logLevelColor(log.level)" class="font-semibold whitespace-pre-wrap">{{ padLevel(log.level) }}</span>&nbsp;<span v-if="log.logger" :style="{ color: log.color || '#3b82f6' }" class="font-semibold">[{{ log.logger }}]</span>&nbsp;<span class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ log.message }}</span>
+        <span class="text-gray-500 dark:text-gray-400">[{{ log.timestamp }}]</span> <span :class="logLevelColor(log.level)" class="font-semibold whitespace-pre-wrap">{{ padLevel(log.level) }}</span> <span v-if="log.logger" :style="{ color: log.color || '#3b82f6' }" class="font-semibold">[{{ log.logger }}]</span> <span class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ log.message }}</span>
       </div>
     </div>
   </div>
@@ -154,7 +155,8 @@ function downloadLogs() {
   const container = logContainerRef.value
   if (!container) return
 
-  const lines = Array.from(container.querySelectorAll('.log-entry'))
+  const lines = Array.from(container.children)
+    .filter(el => el.hasAttribute('data-log-entry'))
     .map(el => el.textContent?.trim() || '')
     .join('\n')
 
