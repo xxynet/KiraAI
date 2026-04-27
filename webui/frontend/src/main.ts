@@ -11,6 +11,23 @@ import router from './router'
 import i18n from './i18n'
 import './assets/main.css'
 
+// Apply custom CSS / JS from localStorage on app startup
+const customCSS = localStorage.getItem('custom_css') || ''
+if (customCSS) {
+  const tag = document.createElement('style')
+  tag.id = 'custom-user-css'
+  tag.textContent = customCSS
+  document.head.appendChild(tag)
+}
+
+const customJS = localStorage.getItem('custom_js') || ''
+if (customJS) {
+  const tag = document.createElement('script')
+  tag.id = 'custom-user-js'
+  tag.textContent = customJS
+  document.body.appendChild(tag)
+}
+
 const app = createApp(App)
 
 app.use(createPinia())

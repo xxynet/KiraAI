@@ -497,6 +497,8 @@ export default {
     theme: 'Theme',
     theme_light: 'Light',
     theme_dark: 'Dark',
+    custom_css: 'Custom CSS',
+    custom_js: 'Custom JavaScript',
     save: 'Save Settings',
     saved: 'Settings saved successfully',
     save_failed: 'Failed to save settings',

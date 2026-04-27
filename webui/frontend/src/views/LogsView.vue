@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-white rounded-lg shadow p-6 h-full flex flex-col dark:bg-gray-800 dark:shadow-gray-900/50">
+  <div class="bg-white rounded-lg shadow p-6 dark:bg-gray-800 dark:shadow-gray-900/50">
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
       <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('logs.title') }}</h3>
@@ -49,7 +49,8 @@
     <div
       ref="logContainerRef"
       id="log-container"
-      class="rounded-lg p-4 overflow-y-auto flex-1"
+      class="rounded-lg p-4 overflow-y-auto min-h-64"
+      style="height: calc(100vh - 18rem);"
     >
       <div v-if="filteredLogs.length === 0" class="flex justify-center items-center h-full">
         <p class="text-gray-500 dark:text-gray-400">{{ $t('logs.no_logs') }}</p>

@@ -497,6 +497,8 @@ export default {
     theme: '主题',
     theme_light: '浅色',
     theme_dark: '深色',
+    custom_css: '自定义 CSS',
+    custom_js: '自定义 JavaScript',
     save: '保存设置',
     saved: '设置保存成功',
     save_failed: '保存设置失败',

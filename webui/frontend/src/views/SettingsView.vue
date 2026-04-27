@@ -1,31 +1,49 @@
 <template>
-  <div class="max-w-lg">
-    <div class="glass-card rounded-lg p-6 space-y-6">
-      <!-- Language -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          {{ $t('settings.language') }}
-        </label>
-        <el-select v-model="form.language" class="w-full">
-          <el-option label="English" value="en" />
-          <el-option label="中文" value="zh" />
-        </el-select>
-      </div>
+  <div>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-6">
+        {{ $t('settings.title') }}
+      </h3>
+      <div class="space-y-6">
+        <!-- Custom CSS -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            {{ $t('settings.custom_css') }}
+          </label>
+          <div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;">
+            <MonacoEditor
+              v-model="customCSS"
+              language="css"
+              :height="300"
+            />
+          </div>
+        </div>
 
-      <!-- Theme -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          {{ $t('settings.theme') }}
-        </label>
-        <el-select v-model="form.theme" class="w-full">
-          <el-option :label="$t('settings.theme_light')" value="light" />
-          <el-option :label="$t('settings.theme_dark')" value="dark" />
-        </el-select>
-      </div>
+        <!-- Custom JS -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            {{ $t('settings.custom_js') }}
+          </label>
+          <div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;">
+            <MonacoEditor
+              v-model="customJS"
+              language="javascript"
+              :height="300"
+            />
+          </div>
+        </div>
 
-      <el-button type="primary" :loading="saving" @click="handleSave">
-        {{ $t('settings.save') }}
-      </el-button>
+        <div class="flex justify-end">
+          <button
+            type="button"
+            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="saving"
+            @click="handleSave"
+          >
+            {{ saving ? '...' : $t('settings.save') }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -33,64 +51,50 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAppStore } from '@/stores/app'
-import { useTheme } from '@/composables/useTheme'
-import { getSettings, updateSettings } from '@/api/settings'
 import { ElMessage } from 'element-plus'
+import MonacoEditor from '@/components/common/MonacoEditor.vue'
 
 const { t } = useI18n()
-const appStore = useAppStore()
-const { syncMonacoTheme } = useTheme()
 const saving = ref(false)
 
-const allowedLanguages = ['en', 'zh'] as const
-const allowedThemes = ['light', 'dark'] as const
-type Language = (typeof allowedLanguages)[number]
-type Theme = (typeof allowedThemes)[number]
+const customCSS = ref('')
+const customJS = ref('')
 
-function normalizeLanguage(value: unknown): Language {
-  return (allowedLanguages as readonly string[]).includes(value as string)
-    ? (value as Language)
-    : appStore.language
-}
-
-function normalizeTheme(value: unknown): Theme {
-  return (allowedThemes as readonly string[]).includes(value as string)
-    ? (value as Theme)
-    : appStore.theme
-}
-
-const form = ref({
-  language: appStore.language,
-  theme: appStore.theme,
+onMounted(() => {
+  customCSS.value = localStorage.getItem('custom_css') || ''
+  customJS.value = localStorage.getItem('custom_js') || ''
 })
 
-onMounted(async () => {
-  try {
-    const res = await getSettings()
-    form.value.language = normalizeLanguage(res.data.language)
-    form.value.theme = normalizeTheme(res.data.theme)
-  } catch {
-    // use local defaults
+function applyCustomCSS() {
+  const css = customCSS.value
+  let tag = document.getElementById('custom-user-css')
+  if (!tag) {
+    tag = document.createElement('style')
+    tag.id = 'custom-user-css'
+    document.head.appendChild(tag)
   }
-})
+  tag.textContent = css
+}
+
+function applyCustomJS() {
+  const js = customJS.value
+  const oldTag = document.getElementById('custom-user-js')
+  if (oldTag) oldTag.remove()
+  if (!js) return
+  const tag = document.createElement('script')
+  tag.id = 'custom-user-js'
+  tag.textContent = js
+  document.body.appendChild(tag)
+}
 
 async function handleSave() {
   saving.value = true
   try {
-    // Normalize again right before persisting, so only whitelisted values
-    // are sent to the backend or written to the app store.
-    const normalized = {
-      language: normalizeLanguage(form.value.language),
-      theme: normalizeTheme(form.value.theme),
-    }
-    form.value = normalized
-    await updateSettings(normalized)
-    appStore.setLanguage(normalized.language)
-    appStore.setTheme(normalized.theme)
-    // Keep live Monaco editors in sync with the new theme. The helper is
-    // a single global call — do not duplicate it per-editor.
-    await syncMonacoTheme()
+    localStorage.setItem('custom_css', customCSS.value)
+    localStorage.setItem('custom_js', customJS.value)
+    applyCustomCSS()
+    applyCustomJS()
+
     ElMessage.success(t('settings.saved'))
   } catch {
     ElMessage.error(t('settings.save_failed'))

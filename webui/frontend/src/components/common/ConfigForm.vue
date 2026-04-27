@@ -15,6 +15,15 @@
           @update:model-value="updateField(key as string, $event)"
         />
 
+        <!-- Model select -->
+        <CustomSelect
+          v-else-if="isModelSelectLike(field.type)"
+          :model-value="fieldValue(key, field) ?? ''"
+          :options="modelSelectOptions[field.model_type || 'llm'] || []"
+          :placeholder="t('configuration.select_model')"
+          @update:model-value="updateField(key as string, $event)"
+        />
+
         <!-- Boolean / switch -->
         <div v-else-if="isBoolLike(field.type)" class="flex items-center">
           <input
@@ -129,6 +138,7 @@ import { reactive, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
+import { getProviders, getModels } from '@/api/provider'
 
 const props = defineProps<{
   modelValue: Record<string, any>
@@ -144,6 +154,7 @@ const { t } = useI18n()
 const drafts = reactive<Record<string, string>>({})
 const draftErrors = reactive<Record<string, string>>({})
 const sensitiveVisible = reactive<Record<string, boolean>>({})
+const modelSelectOptions = reactive<Record<string, { value: string; label: string }[]>>({})
 
 const effectiveSchema = computed<Record<string, any>>(() => {
   const s = props.schema
@@ -198,6 +209,53 @@ function isBoolLike(type: string): boolean {
 
 function isJsonLike(type: string): boolean {
   return JSON_TYPES.has(type)
+}
+
+function isModelSelectLike(type: string): boolean {
+  return type === 'model_select'
+}
+
+async function loadModelSelectOptions() {
+  const schema = effectiveSchema.value
+  const modelTypes = new Set<string>()
+  for (const key in schema) {
+    const field = schema[key]
+    if (field && isModelSelectLike(field.type)) {
+      modelTypes.add(field.model_type || 'llm')
+    }
+  }
+  if (modelTypes.size === 0) return
+
+  try {
+    const res = await getProviders()
+    const providers = res.data || []
+    for (const modelType of modelTypes) {
+      if (modelSelectOptions[modelType]?.length) continue
+      const options: { value: string; label: string }[] = []
+      for (const provider of providers) {
+        try {
+          const mRes = await getModels(provider.id)
+          const modelConfig = mRes.data || {}
+          const typeModels = modelConfig[modelType] || {}
+          Object.keys(typeModels).forEach(modelId => {
+            options.push({
+              value: `${provider.id}:${modelId}`,
+              label: `${modelId} (${provider.name || provider.id})`,
+            })
+          })
+        } catch {
+          // ignore provider model fetch errors
+        }
+      }
+      options.unshift({
+        value: '',
+        label: t('configuration.select_model'),
+      })
+      modelSelectOptions[modelType] = options
+    }
+  } catch (e) {
+    console.warn('Failed to load model options:', e)
+  }
 }
 
 function monacoLang(field: any): string {
@@ -265,6 +323,7 @@ function initDrafts() {
 watch(() => effectiveSchema.value, () => {
   initDrafts()
   applyDefaults()
+  loadModelSelectOptions()
 }, { immediate: true, deep: true })
 
 watch(() => props.modelValue, (next) => {

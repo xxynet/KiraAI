@@ -371,7 +371,6 @@ textarea:focus:hover,
   background-color: #f9fafb !important;
   color: #1f2937;
   border: 1px solid #6b7280;
-  min-height: 0;
 }
 
 #log-container p {
@@ -386,6 +385,192 @@ textarea:focus:hover,
 
 .dark #log-container p {
   color: #6b7280;
+}
+
+/* ==================== Custom Select (shared by CustomSelect & CustomMultiSelect) ==================== */
+.custom-select {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  user-select: none;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(156, 163, 175, 0.5);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  font-size: 14px;
+  color: #374151;
+  min-height: 40px;
+}
+
+.custom-select-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.85);
+  border-color: #3b82f6;
+}
+
+.custom-select-trigger.active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+.custom-select-trigger.has-value {
+  color: #111827;
+}
+
+.custom-select-trigger.placeholder {
+  color: #9ca3af;
+}
+
+.custom-select-trigger.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.custom-select-arrow {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.2s ease-in-out;
+  flex-shrink: 0;
+}
+
+.custom-select-arrow.active,
+.custom-select-trigger.active .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-options {
+  position: fixed;
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+.custom-select-options.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.custom-select-option {
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  font-size: 14px;
+  color: #374151;
+  border-radius: 12px;
+  margin: 6px 8px;
+  display: flex;
+  align-items: center;
+}
+
+.custom-select-option:hover {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+}
+
+.custom-select-option.selected {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
+.custom-select-options::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-select-options::-webkit-scrollbar-track {
+  background: rgba(229, 231, 235, 0.3);
+  border-radius: 3px;
+}
+
+.custom-select-options::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 3px;
+}
+
+.custom-select-options::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.7);
+}
+
+.custom-select-trigger:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+.dark .custom-select-trigger {
+  background-color: rgba(31, 41, 55, 0.7);
+  border-color: rgba(75, 85, 99, 0.3);
+  color: #e5e7eb;
+}
+
+.dark .custom-select-trigger:hover {
+  background-color: rgba(31, 41, 55, 0.85);
+  border-color: #3b82f6;
+}
+
+.dark .custom-select-trigger.active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+.dark .custom-select-trigger.has-value {
+  color: #f9fafb;
+}
+
+.dark .custom-select-trigger.placeholder {
+  color: #9ca3af;
+}
+
+.dark .custom-select-options {
+  background-color: rgba(31, 41, 55, 0.95);
+  border-color: rgba(75, 85, 99, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.dark .custom-select-option {
+  color: #e5e7eb;
+}
+
+.dark .custom-select-option:hover {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+.dark .custom-select-option.selected {
+  background-color: rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+}
+
+.dark .custom-select-options::-webkit-scrollbar-track {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .custom-select-options::-webkit-scrollbar-thumb {
+  background: rgba(107, 114, 128, 0.5);
+}
+
+.dark .custom-select-options::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
 }
 
 /* ==================== Session Card ==================== */

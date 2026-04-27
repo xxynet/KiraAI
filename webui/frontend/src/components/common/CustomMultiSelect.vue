@@ -225,48 +225,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.custom-select {
-  position: relative;
-  display: inline-block;
-  width: 100%;
-  user-select: none;
-}
-
-.custom-select-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background-color: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(209, 213, 219, 0.8);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
-  font-size: 14px;
-  color: #374151;
-  min-height: 40px;
-}
-
-.custom-select-trigger:hover {
-  background-color: rgba(255, 255, 255, 0.85);
-  border-color: #3b82f6;
-}
-
-.custom-select-trigger.active {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
-}
-
-.custom-select-trigger.has-value {
-  color: #111827;
-}
-
-.custom-select-trigger.placeholder {
-  color: #9ca3af;
-}
-
+/* CustomMultiSelect-specific overrides only; shared styles are in main.css */
 .custom-select-content {
   display: flex;
   flex-wrap: wrap;
@@ -299,74 +258,15 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-.custom-select-arrow {
-  width: 20px;
-  height: 20px;
-  transition: transform 0.2s ease-in-out;
-  flex-shrink: 0;
-}
-
-.custom-select-trigger.active .custom-select-arrow {
-  transform: rotate(180deg);
-}
-
-.custom-select-options {
-  position: fixed;
-  background-color: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-  max-height: 300px;
-  overflow-y: auto;
-  z-index: 1000;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-8px);
-  transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out, transform 0.2s ease-in-out;
-}
-
-.custom-select-options.show {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
-}
-
-.custom-select-option {
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: all 0.15s ease-in-out;
-  font-size: 14px;
-  color: #374151;
-  border-radius: 12px;
-  margin: 6px 8px;
-  display: flex;
-  align-items: center;
-}
-
-.custom-select-option:hover {
-  background-color: rgba(59, 130, 246, 0.1);
-  color: #1d4ed8;
-}
-
-.custom-select-option.selected {
-  background-color: rgba(59, 130, 246, 0.15);
-  color: #1d4ed8;
-  font-weight: 500;
-}
-
 .select-check {
   display: inline-block;
   width: 16px;
   text-align: center;
 }
-
-/* Dark mode */
 </style>
 
 <style>
-html.dark .custom-select-tag {
+.dark .custom-select-tag {
   background-color: rgba(30, 58, 138, 0.3);
   color: #93c5fd;
 }
