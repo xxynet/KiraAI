@@ -184,6 +184,7 @@ export interface LogEntry {
   level: string
   message: string
   logger?: string
+  color?: string
 }
 
 export interface LogConfig {

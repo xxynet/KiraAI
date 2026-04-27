@@ -1,0 +1,373 @@
+<template>
+  <div class="custom-select" ref="containerRef">
+    <!-- Trigger -->
+    <div
+      class="custom-select-trigger"
+      :class="{ active: isOpen, 'has-value': hasValue, placeholder: !hasValue }"
+      @click.stop="toggleDropdown"
+      @keydown.enter.prevent="toggleDropdown"
+      @keydown.esc="closeDropdown"
+      :tabindex="props.disabled ? -1 : 0"
+      role="combobox"
+      :aria-expanded="isOpen"
+      aria-haspopup="listbox"
+    >
+      <div class="custom-select-content">
+        <template v-if="selectedOptions.length > 0">
+          <span
+            v-for="opt in selectedOptions"
+            :key="opt.value"
+            class="custom-select-tag"
+          >
+            {{ opt.label }}
+            <span class="custom-select-tag-remove" @click.stop="removeOption(opt.value)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </span>
+          </span>
+        </template>
+        <template v-else>
+          {{ props.placeholder || '' }}
+        </template>
+      </div>
+      <div class="custom-select-arrow" :class="{ active: isOpen }">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Options Dropdown (teleport to body to escape overflow clipping, always fixed) -->
+    <Teleport to="body">
+      <div
+        class="custom-select-options"
+        :class="{ show: isOpen }"
+        ref="optionsRef"
+        role="listbox"
+        :style="dropdownStyle"
+      >
+        <div
+          v-for="option in options"
+          :key="option.value"
+          class="custom-select-option"
+          :class="{ selected: isSelected(option.value) }"
+          @click.stop="toggleOption(option.value)"
+          role="option"
+          :aria-selected="isSelected(option.value)"
+        >
+          <span class="select-check mr-2">{{ isSelected(option.value) ? '✓' : '' }}</span>
+          {{ option.label }}
+        </div>
+      </div>
+    </Teleport>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onUnmounted } from 'vue'
+
+interface Option {
+  value: string
+  label: string
+}
+
+const props = defineProps<{
+  modelValue: string[]
+  options: Option[]
+  placeholder?: string
+  disabled?: boolean
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [value: string[]]
+}>()
+
+const isOpen = ref(false)
+const containerRef = ref<HTMLElement>()
+const optionsRef = ref<HTMLElement>()
+const dropdownStyle = ref<Record<string, string>>({})
+let openTimerId: ReturnType<typeof setTimeout> | null = null
+let scrollAncestor: HTMLElement | null = null
+
+function findScrollAncestor(el: HTMLElement | null): HTMLElement | null {
+  while (el) {
+    const style = window.getComputedStyle(el)
+    const overflow = style.overflow + style.overflowY + style.overflowX
+    if (/(auto|scroll)/.test(overflow) && el.scrollHeight > el.clientHeight) {
+      return el
+    }
+    el = el.parentElement
+  }
+  return null
+}
+
+const hasValue = computed(() => props.modelValue.length > 0)
+
+const selectedOptions = computed(() => {
+  return props.options.filter(opt => props.modelValue.includes(opt.value))
+})
+
+function isSelected(value: string): boolean {
+  return props.modelValue.includes(value)
+}
+
+function toggleDropdown() {
+  if (props.disabled) return
+  if (isOpen.value) {
+    closeDropdown()
+  } else {
+    openDropdown()
+  }
+}
+
+function adjustPosition() {
+  if (!containerRef.value || !optionsRef.value) return
+
+  const triggerRect = containerRef.value.getBoundingClientRect()
+  const optionsHeight = optionsRef.value.offsetHeight
+  const windowHeight = window.innerHeight
+  const spaceBelow = windowHeight - triggerRect.bottom
+  const spaceAbove = triggerRect.top
+
+  let top: number
+
+  if (spaceBelow < optionsHeight && spaceAbove > spaceBelow) {
+    top = triggerRect.top - optionsHeight - 4
+  } else {
+    top = triggerRect.bottom + 4
+  }
+
+  dropdownStyle.value = {
+    position: 'fixed',
+    left: triggerRect.left + 'px',
+    top: top + 'px',
+    width: triggerRect.width + 'px',
+  }
+}
+
+function openDropdown() {
+  if (isOpen.value) return
+
+  isOpen.value = true
+
+  if (openTimerId !== null) {
+    clearTimeout(openTimerId)
+  }
+
+  openTimerId = setTimeout(() => {
+    openTimerId = null
+    if (!isOpen.value) return
+    adjustPosition()
+    scrollAncestor = containerRef.value ? findScrollAncestor(containerRef.value) : null
+    if (scrollAncestor) {
+      scrollAncestor.addEventListener('scroll', closeDropdown, { passive: true })
+    }
+    window.addEventListener('scroll', closeDropdown, true)
+    window.addEventListener('resize', adjustPosition)
+    document.addEventListener('click', handleClickOutside)
+  }, 0)
+}
+
+function closeDropdown() {
+  if (!isOpen.value) return
+
+  isOpen.value = false
+
+  if (openTimerId !== null) {
+    clearTimeout(openTimerId)
+    openTimerId = null
+  }
+
+  document.removeEventListener('click', handleClickOutside)
+  if (scrollAncestor) {
+    scrollAncestor.removeEventListener('scroll', closeDropdown)
+    scrollAncestor = null
+  }
+  window.removeEventListener('scroll', closeDropdown, true)
+  window.removeEventListener('resize', adjustPosition)
+}
+
+function toggleOption(value: string) {
+  const current = [...props.modelValue]
+  const index = current.indexOf(value)
+  if (index > -1) {
+    current.splice(index, 1)
+  } else {
+    current.push(value)
+  }
+  emit('update:modelValue', current)
+}
+
+function removeOption(value: string) {
+  const current = [...props.modelValue]
+  const index = current.indexOf(value)
+  if (index > -1) {
+    current.splice(index, 1)
+    emit('update:modelValue', current)
+  }
+}
+
+function handleClickOutside(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  if (!containerRef.value?.contains(target)) {
+    closeDropdown()
+  }
+}
+
+onUnmounted(() => {
+  if (openTimerId !== null) {
+    clearTimeout(openTimerId)
+    openTimerId = null
+  }
+  closeDropdown()
+})
+</script>
+
+<style scoped>
+.custom-select {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  user-select: none;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(209, 213, 219, 0.8);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  font-size: 14px;
+  color: #374151;
+  min-height: 40px;
+}
+
+.custom-select-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.85);
+  border-color: #3b82f6;
+}
+
+.custom-select-trigger.active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+.custom-select-trigger.has-value {
+  color: #111827;
+}
+
+.custom-select-trigger.placeholder {
+  color: #9ca3af;
+}
+
+.custom-select-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-right: 8px;
+  overflow: hidden;
+}
+
+.custom-select-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #1d4ed8;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.custom-select-tag-remove {
+  margin-left: 4px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+}
+
+.custom-select-tag-remove:hover {
+  opacity: 1;
+}
+
+.custom-select-arrow {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.2s ease-in-out;
+  flex-shrink: 0;
+}
+
+.custom-select-trigger.active .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-options {
+  position: fixed;
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+.custom-select-options.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.custom-select-option {
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  font-size: 14px;
+  color: #374151;
+  border-radius: 12px;
+  margin: 6px 8px;
+  display: flex;
+  align-items: center;
+}
+
+.custom-select-option:hover {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+}
+
+.custom-select-option.selected {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
+.select-check {
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+}
+
+/* Dark mode */
+</style>
+
+<style>
+html.dark .custom-select-tag {
+  background-color: rgba(30, 58, 138, 0.3);
+  color: #93c5fd;
+}
+</style>

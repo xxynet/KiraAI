@@ -23,6 +23,7 @@ export async function getLogHistory(limit?: number) {
         level: l.level || 'info',
         message: l.message || '',
         logger: l.name || '',
+        color: l.color || '',
       })),
     },
   }
