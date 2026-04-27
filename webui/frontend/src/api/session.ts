@@ -9,7 +9,7 @@ export function getSession(id: string) {
   return apiClient.get<SessionDetail>(`/sessions/${encodeURIComponent(id)}`)
 }
 
-export function updateSession(id: string, data: { title?: string; messages?: any[]; metadata?: Record<string, any> }) {
+export function updateSession(id: string, data: { title?: string; description?: string; messages?: any[]; metadata?: Record<string, any> }) {
   return apiClient.put(`/sessions/${encodeURIComponent(id)}`, data)
 }
 
