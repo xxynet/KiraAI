@@ -3,8 +3,13 @@ import en from './en'
 import zh from './zh'
 
 const supportedLocales = ['en', 'zh'] as const
-const storedLocale = localStorage.getItem('language')
-const locale = storedLocale && supportedLocales.includes(storedLocale as any) ? storedLocale : 'en'
+let locale = localStorage.getItem('language')
+
+if (!locale || !(supportedLocales as readonly string[]).includes(locale)) {
+  const browserLang = navigator.language?.toLowerCase() || ''
+  locale = browserLang.startsWith('zh') ? 'zh' : 'en'
+  localStorage.setItem('language', locale)
+}
 
 const i18n = createI18n({
   legacy: false,
