@@ -51,7 +51,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { notify } from '@/composables/useNotification'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 
 const { t } = useI18n()
@@ -95,9 +95,9 @@ async function handleSave() {
     applyCustomCSS()
     applyCustomJS()
 
-    ElMessage.success(t('settings.saved'))
+    notify(t('settings.saved'), 'success')
   } catch {
-    ElMessage.error(t('settings.save_failed'))
+    notify(t('settings.save_failed'), 'error')
   } finally {
     saving.value = false
   }

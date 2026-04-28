@@ -223,6 +223,9 @@ textarea.transition-colors {
 
 /* ==================== Header ==================== */
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   background-color: rgba(255, 255, 255, 0.2) !important;

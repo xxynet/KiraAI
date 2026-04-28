@@ -8,11 +8,11 @@
     ></div>
     <AppSidebar :open="sidebarOpen" />
     <div class="flex-1 flex flex-col overflow-hidden">
-      <AppHeader
-        :title="pageTitle"
-        @toggle-sidebar="toggleSidebar"
-      />
       <main class="flex-1 overflow-auto">
+        <AppHeader
+          :title="pageTitle"
+          @toggle-sidebar="toggleSidebar"
+        />
         <PageContainer>
           <router-view v-slot="{ Component, route: r }">
             <transition name="page-fade">

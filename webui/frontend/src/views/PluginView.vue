@@ -487,7 +487,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { notify } from '@/composables/useNotification'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
@@ -604,7 +604,7 @@ async function loadPlugins() {
     // Prefer backend detail when useful; always default to the localized
     // message so Chinese users don't see an English fallback.
     pluginsError.value = e?.message || t('plugin.load_failed')
-    ElMessage.error(pluginsError.value!)
+    notify(pluginsError.value!, 'error')
   }
 }
 
@@ -616,16 +616,16 @@ async function loadMcpServers() {
   } catch (e: any) {
     mcpServers.value = []
     mcpServersError.value = e?.message || t('plugin.mcp_load_failed')
-    ElMessage.error(mcpServersError.value!)
+    notify(mcpServersError.value!, 'error')
   }
 }
 
 async function togglePlugin(plugin: PluginItem) {
   try {
     await apiTogglePlugin(plugin.id, !plugin.enabled)
-    ElMessage.success(t('plugin.toggle_success'))
+    notify(t('plugin.toggle_success'), 'success')
   } catch {
-    ElMessage.error(t('plugin.toggle_failed'))
+    notify(t('plugin.toggle_failed'), 'error')
   } finally {
     // Always resync so the switch reflects the backend's view, even if the
     // call failed half-way and we can't be sure which side of the toggle
@@ -642,10 +642,10 @@ function handleDeletePlugin(id: string) {
     async () => {
       try {
         await deletePlugin(id)
-        ElMessage.success(t('plugin.uninstall_success'))
+        notify(t('plugin.uninstall_success'), 'success')
         await loadPlugins()
       } catch {
-        ElMessage.error(t('plugin.uninstall_failed'))
+        notify(t('plugin.uninstall_failed'), 'error')
       }
     }
   )
@@ -663,7 +663,7 @@ async function openPluginConfig(plugin: PluginItem) {
     pluginConfigSchema.value = res.data.schema || null
     pluginConfigValues.value = res.data.config || {}
   } catch {
-    ElMessage.error(t('plugin.config_load_failed'))
+    notify(t('plugin.config_load_failed'), 'error')
     pluginConfigVisible.value = false
     pluginConfigSchema.value = null
     pluginConfigValues.value = {}
@@ -680,10 +680,10 @@ async function savePluginConfig() {
   savingConfig.value = true
   try {
     await updatePluginConfig(configPluginId.value, { config: pluginConfigValues.value })
-    ElMessage.success(t('plugin.config_saved'))
+    notify(t('plugin.config_saved'), 'success')
     pluginConfigVisible.value = false
   } catch {
-    ElMessage.error(t('plugin.config_save_failed'))
+    notify(t('plugin.config_save_failed'), 'error')
   } finally {
     savingConfig.value = false
   }
@@ -717,7 +717,7 @@ async function handleInstall() {
     if (installTab.value === 'github') {
       const repoUrl = installForm.value.repo_url?.trim()
       if (!repoUrl) {
-        ElMessage.error(t('plugin.repo_url_required'))
+        notify(t('plugin.repo_url_required'), 'error')
         installing.value = false
         return
       }
@@ -725,7 +725,7 @@ async function handleInstall() {
       await installFromGithub({ repo_url: repoUrl, gh_proxy: ghProxy })
     } else {
       if (!uploadFile.value) {
-        ElMessage.error(t('plugin.file_required'))
+        notify(t('plugin.file_required'), 'error')
         installing.value = false
         return
       }
@@ -733,10 +733,10 @@ async function handleInstall() {
       uploadFile.value = null
     }
     installDialogVisible.value = false
-    ElMessage.success(t('plugin.install_success'))
+    notify(t('plugin.install_success'), 'success')
     await loadPlugins()
   } catch {
-    ElMessage.error(t('plugin.install_failed'))
+    notify(t('plugin.install_failed'), 'error')
   } finally {
     installing.value = false
   }
@@ -745,9 +745,9 @@ async function handleInstall() {
 async function toggleMcp(server: McpServerItem) {
   try {
     await toggleMcpServer(server.id, !server.enabled)
-    ElMessage.success(t('plugin.mcp_toggle_success'))
+    notify(t('plugin.mcp_toggle_success'), 'success')
   } catch {
-    ElMessage.error(t('plugin.mcp_toggle_failed'))
+    notify(t('plugin.mcp_toggle_failed'), 'error')
   } finally {
     await loadMcpServers()
   }
@@ -774,13 +774,13 @@ async function openMcpEdit(server: McpServerItem) {
     // would silently overwrite the real config if the user hits Save. Use
     // the load-specific key so the toast isn't misleading (the user never
     // tried to save anything).
-    ElMessage.error(t('plugin.mcp_config_load_failed'))
+    notify(t('plugin.mcp_config_load_failed'), 'error')
   }
 }
 
 async function saveMcpForm() {
   if (!mcpForm.value.name?.trim()) {
-    ElMessage.error(t('plugin.mcp_name_required'))
+    notify(t('plugin.mcp_name_required'), 'error')
     return
   }
   savingMcp.value = true
@@ -788,7 +788,7 @@ async function saveMcpForm() {
   try {
     config = JSON.parse(mcpConfigJson.value)
   } catch {
-    ElMessage.error(t('plugin.mcp_invalid_json'))
+    notify(t('plugin.mcp_invalid_json'), 'error')
     savingMcp.value = false
     return
   }
@@ -796,7 +796,7 @@ async function saveMcpForm() {
   // front so the user sees the same error as the catch branch instead of a
   // 400 from the server.
   if (config === null || typeof config !== 'object' || Array.isArray(config)) {
-    ElMessage.error(t('plugin.mcp_invalid_json'))
+    notify(t('plugin.mcp_invalid_json'), 'error')
     savingMcp.value = false
     return
   }
@@ -810,10 +810,10 @@ async function saveMcpForm() {
       await createMcpServer({ name: mcpForm.value.name, description: mcpForm.value.description, config })
     }
     mcpDialogVisible.value = false
-    ElMessage.success(t('plugin.mcp_save_success'))
+    notify(t('plugin.mcp_save_success'), 'success')
     await loadMcpServers()
   } catch {
-    ElMessage.error(t('plugin.mcp_save_failed'))
+    notify(t('plugin.mcp_save_failed'), 'error')
   } finally {
     savingMcp.value = false
   }
@@ -827,10 +827,10 @@ function handleDeleteMcp(id: string) {
     async () => {
       try {
         await deleteMcpServer(id)
-        ElMessage.success(t('plugin.mcp_delete_success'))
+        notify(t('plugin.mcp_delete_success'), 'success')
         await loadMcpServers()
       } catch {
-        ElMessage.error(t('plugin.mcp_delete_failed'))
+        notify(t('plugin.mcp_delete_failed'), 'error')
       }
     }
   )
@@ -844,16 +844,16 @@ async function loadSkills() {
   } catch (e: any) {
     skills.value = []
     skillsError.value = e?.message || t('plugin.skills_load_failed')
-    ElMessage.error(skillsError.value!)
+    notify(skillsError.value!, 'error')
   }
 }
 
 async function toggleSkillItem(skill: any) {
   try {
     await apiToggleSkill(skill.id, !skill.enabled)
-    ElMessage.success(t('plugin.skills_toggle_success'))
+    notify(t('plugin.skills_toggle_success'), 'success')
   } catch {
-    ElMessage.error(t('plugin.skills_toggle_error'))
+    notify(t('plugin.skills_toggle_error'), 'error')
   } finally {
     await loadSkills()
   }
@@ -862,10 +862,10 @@ async function toggleSkillItem(skill: any) {
 async function refreshSkillList() {
   try {
     await apiRefreshSkills()
-    ElMessage.success(t('plugin.skills_refresh_success'))
+    notify(t('plugin.skills_refresh_success'), 'success')
     await loadSkills()
   } catch {
-    ElMessage.error(t('plugin.skills_refresh_error'))
+    notify(t('plugin.skills_refresh_error'), 'error')
   }
 }
 
@@ -873,18 +873,18 @@ async function refreshSkillList() {
 
 async function handleSkillUpload() {
   if (!skillUploadFile.value) {
-    ElMessage.error(t('plugin.skills_upload_no_file'))
+    notify(t('plugin.skills_upload_no_file'), 'error')
     return
   }
   uploadingSkill.value = true
   try {
     await apiUploadSkill(skillUploadFile.value)
     skillsUploadVisible.value = false
-    ElMessage.success(t('plugin.skills_upload_success'))
+    notify(t('plugin.skills_upload_success'), 'success')
     await loadSkills()
   } catch (e: any) {
     const msg = e?.response?.data?.detail || e?.message || ''
-    ElMessage.error(`${t('plugin.skills_upload_error')}${msg ? ': ' + msg : ''}`)
+    notify(`${t('plugin.skills_upload_error')}${msg ? ': ' + msg : ''}`, 'error')
   } finally {
     uploadingSkill.value = false
     skillUploadFile.value = null
