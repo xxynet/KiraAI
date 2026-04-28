@@ -41,6 +41,11 @@ textarea.transition-colors {
   background-color: #16161a;
 }
 
+#app {
+  position: relative;
+  z-index: 1;
+}
+
 /* ==================== Sidebar ==================== */
 .sidebar-gradient {
   background: rgba(255, 255, 255, 0.15);

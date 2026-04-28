@@ -535,6 +535,7 @@ export default {
     subtitle: 'Admin Panel',
     access_token: 'Access Token',
     placeholder: 'Enter access token',
+    token_hint: 'Access token is stored in data/webui.json',
     submit: 'Login',
     error: 'Login failed. Please check your access token.',
     token_required: 'Please enter an access token.',

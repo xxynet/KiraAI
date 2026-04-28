@@ -535,6 +535,7 @@ export default {
     subtitle: '管理面板',
     access_token: '访问令牌',
     placeholder: '请输入访问令牌',
+    token_hint: '在 data/webui.json 中获取您的令牌',
     submit: '登录',
     error: '登录失败，请检查您的访问令牌。',
     token_required: '请输入访问令牌。',
