@@ -5,12 +5,15 @@
       class="custom-select-trigger"
       :class="{ active: isOpen, 'has-value': !!modelValue, placeholder: !modelValue, disabled: props.disabled }"
       @click.stop="toggleDropdown"
-      @keydown.enter.prevent="toggleDropdown"
+      @keydown.enter.prevent="handleEnterKey"
       @keydown.esc="closeDropdown"
+      @keydown.down.prevent="handleArrowDown"
+      @keydown.up.prevent="handleArrowUp"
       :tabindex="props.disabled ? -1 : 0"
       role="combobox"
       :aria-expanded="isOpen"
       aria-haspopup="listbox"
+      :aria-activedescendant="isOpen && activeIndex >= 0 ? `option-${activeIndex}` : undefined"
     >
       <div class="custom-select-content">
         {{ selectedLabel || placeholder }}
@@ -32,11 +35,13 @@
         :style="dropdownStyle"
       >
         <div
-          v-for="option in options"
+          v-for="(option, index) in options"
           :key="option.value"
+          :id="`option-${index}`"
           class="custom-select-option"
-          :class="{ selected: modelValue === option.value }"
+          :class="{ selected: modelValue === option.value, highlighted: activeIndex === index }"
           @click.stop="selectOption(option)"
+          @mouseenter="activeIndex = index"
           role="option"
           :aria-selected="modelValue === option.value"
         >
@@ -70,6 +75,7 @@ const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()
 const optionsRef = ref<HTMLElement>()
 const dropdownStyle = ref<Record<string, string>>({})
+const activeIndex = ref(-1)
 let openTimerId: ReturnType<typeof setTimeout> | null = null
 let scrollAncestor: HTMLElement | null = null
 
@@ -131,6 +137,10 @@ function openDropdown() {
 
   isOpen.value = true
 
+  // Initialize activeIndex to currently selected option or first option
+  const selectedIndex = props.options.findIndex(opt => opt.value === props.modelValue)
+  activeIndex.value = selectedIndex >= 0 ? selectedIndex : 0
+
   // Cancel any previous pending timer first
   if (openTimerId !== null) {
     clearTimeout(openTimerId)
@@ -141,6 +151,7 @@ function openDropdown() {
     openTimerId = null
     if (!isOpen.value) return
     adjustPosition()
+    scrollToActive()
     // Add scroll/resize listeners — close dropdown on any scroll
     scrollAncestor = containerRef.value ? findScrollAncestor(containerRef.value) : null
     if (scrollAncestor) {
@@ -156,6 +167,7 @@ function closeDropdown() {
   if (!isOpen.value) return
 
   isOpen.value = false
+  activeIndex.value = -1
 
   // Cancel pending open timer to prevent leaked listeners
   if (openTimerId !== null) {
@@ -188,6 +200,42 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
+function handleEnterKey() {
+  if (!isOpen.value) {
+    toggleDropdown()
+  } else if (activeIndex.value >= 0 && activeIndex.value < props.options.length) {
+    selectOption(props.options[activeIndex.value])
+  }
+}
+
+function handleArrowDown() {
+  if (!isOpen.value) {
+    openDropdown()
+  } else if (props.options.length > 0) {
+    activeIndex.value = (activeIndex.value + 1) % props.options.length
+    scrollToActive()
+  }
+}
+
+function handleArrowUp() {
+  if (!isOpen.value) {
+    openDropdown()
+  } else if (props.options.length > 0) {
+    activeIndex.value = activeIndex.value <= 0
+      ? props.options.length - 1
+      : activeIndex.value - 1
+    scrollToActive()
+  }
+}
+
+function scrollToActive() {
+  if (!optionsRef.value || activeIndex.value < 0) return
+  const activeElement = optionsRef.value.querySelector(`#option-${activeIndex.value}`)
+  if (activeElement) {
+    activeElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }
+}
+
 onUnmounted(() => {
   // Cancel any pending open timer to prevent leaked listeners after unmount
   if (openTimerId !== null) {
@@ -205,5 +253,15 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.custom-select-option.highlighted {
+  background-color: rgba(59, 130, 246, 0.1);
+}
+</style>
+
+<style>
+.dark .custom-select-option.highlighted {
+  background-color: rgba(59, 130, 246, 0.2);
 }
 </style>

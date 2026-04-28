@@ -5,12 +5,16 @@
       class="custom-select-trigger"
       :class="{ active: isOpen, 'has-value': hasValue, placeholder: !hasValue }"
       @click.stop="toggleDropdown"
-      @keydown.enter.prevent="toggleDropdown"
+      @keydown.enter.prevent="handleTriggerEnter"
+      @keydown.space.prevent="handleTriggerSpace"
       @keydown.esc="closeDropdown"
+      @keydown.down.prevent="handleTriggerArrowDown"
+      @keydown.up.prevent="handleTriggerArrowUp"
       :tabindex="props.disabled ? -1 : 0"
       role="combobox"
       :aria-expanded="isOpen"
       aria-haspopup="listbox"
+      :aria-activedescendant="isOpen && highlightedIndex >= 0 ? `option-${highlightedIndex}` : undefined"
     >
       <div class="custom-select-content">
         <template v-if="selectedOptions.length > 0">
@@ -46,13 +50,20 @@
         ref="optionsRef"
         role="listbox"
         :style="dropdownStyle"
+        @keydown.down.prevent="handleArrowDown"
+        @keydown.up.prevent="handleArrowUp"
+        @keydown.enter.prevent="handleEnterKey"
+        @keydown.space.prevent="handleSpaceKey"
+        @keydown.esc="closeDropdown"
       >
         <div
-          v-for="option in options"
+          v-for="(option, index) in options"
           :key="option.value"
+          :id="`option-${index}`"
           class="custom-select-option"
-          :class="{ selected: isSelected(option.value) }"
+          :class="{ selected: isSelected(option.value), highlighted: highlightedIndex === index }"
           @click.stop="toggleOption(option.value)"
+          @mouseenter="highlightedIndex = index"
           role="option"
           :aria-selected="isSelected(option.value)"
         >
@@ -87,6 +98,7 @@ const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()
 const optionsRef = ref<HTMLElement>()
 const dropdownStyle = ref<Record<string, string>>({})
+const highlightedIndex = ref(-1)
 let openTimerId: ReturnType<typeof setTimeout> | null = null
 let scrollAncestor: HTMLElement | null = null
 
@@ -150,6 +162,7 @@ function openDropdown() {
   if (isOpen.value) return
 
   isOpen.value = true
+  highlightedIndex.value = 0
 
   if (openTimerId !== null) {
     clearTimeout(openTimerId)
@@ -173,6 +186,7 @@ function closeDropdown() {
   if (!isOpen.value) return
 
   isOpen.value = false
+  highlightedIndex.value = -1
 
   if (openTimerId !== null) {
     clearTimeout(openTimerId)
@@ -212,6 +226,72 @@ function handleClickOutside(event: MouseEvent) {
   const target = event.target as HTMLElement
   if (!containerRef.value?.contains(target)) {
     closeDropdown()
+  }
+}
+
+function handleTriggerEnter() {
+  if (!isOpen.value) {
+    toggleDropdown()
+  } else if (highlightedIndex.value >= 0 && highlightedIndex.value < props.options.length) {
+    toggleOption(props.options[highlightedIndex.value].value)
+  }
+}
+
+function handleTriggerSpace() {
+  if (!isOpen.value) {
+    toggleDropdown()
+  } else if (highlightedIndex.value >= 0 && highlightedIndex.value < props.options.length) {
+    toggleOption(props.options[highlightedIndex.value].value)
+  }
+}
+
+function handleTriggerArrowDown() {
+  if (!isOpen.value) {
+    openDropdown()
+  } else {
+    handleArrowDown()
+  }
+}
+
+function handleTriggerArrowUp() {
+  if (!isOpen.value) {
+    openDropdown()
+  } else {
+    handleArrowUp()
+  }
+}
+
+function handleArrowDown() {
+  if (props.options.length === 0) return
+  highlightedIndex.value = (highlightedIndex.value + 1) % props.options.length
+  scrollToHighlighted()
+}
+
+function handleArrowUp() {
+  if (props.options.length === 0) return
+  highlightedIndex.value = highlightedIndex.value <= 0
+    ? props.options.length - 1
+    : highlightedIndex.value - 1
+  scrollToHighlighted()
+}
+
+function handleEnterKey() {
+  if (highlightedIndex.value >= 0 && highlightedIndex.value < props.options.length) {
+    toggleOption(props.options[highlightedIndex.value].value)
+  }
+}
+
+function handleSpaceKey() {
+  if (highlightedIndex.value >= 0 && highlightedIndex.value < props.options.length) {
+    toggleOption(props.options[highlightedIndex.value].value)
+  }
+}
+
+function scrollToHighlighted() {
+  if (!optionsRef.value || highlightedIndex.value < 0) return
+  const highlightedElement = optionsRef.value.querySelector(`#option-${highlightedIndex.value}`)
+  if (highlightedElement) {
+    highlightedElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }
 }
 
@@ -263,11 +343,19 @@ onUnmounted(() => {
   width: 16px;
   text-align: center;
 }
+
+.custom-select-option.highlighted {
+  background-color: rgba(59, 130, 246, 0.1);
+}
 </style>
 
 <style>
 .dark .custom-select-tag {
   background-color: rgba(30, 58, 138, 0.3);
   color: #93c5fd;
+}
+
+.dark .custom-select-option.highlighted {
+  background-color: rgba(59, 130, 246, 0.2);
 }
 </style>
