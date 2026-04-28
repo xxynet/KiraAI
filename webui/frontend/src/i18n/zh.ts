@@ -478,7 +478,10 @@ export default {
   logs: {
     title: '系统日志',
     clear: '清除日志',
+    clear_confirm: '确定要清除所有日志吗？',
+    cleared: '日志已清除',
     refresh: '刷新',
+    refreshed: '日志已刷新',
     level_all: '所有级别',
     level_debug: '调试',
     level_info: '信息',

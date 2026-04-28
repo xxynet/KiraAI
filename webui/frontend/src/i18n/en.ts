@@ -478,7 +478,10 @@ export default {
   logs: {
     title: 'System Logs',
     clear: 'Clear Logs',
+    clear_confirm: 'Are you sure you want to clear all logs?',
+    cleared: 'Logs cleared',
     refresh: 'Refresh',
+    refreshed: 'Logs refreshed',
     level_all: 'All Levels',
     level_debug: 'Debug',
     level_info: 'Info',

@@ -71,14 +71,16 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSSE } from '@/composables/useSSE'
-import { getLogHistory } from '@/api/logs'
+import { getLogHistory, getLogConfig } from '@/api/logs'
 import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
+import { notify } from '@/composables/useNotification'
 import type { LogEntry } from '@/types'
 
 const { t } = useI18n()
 const logContainerRef = ref<HTMLElement | null>(null)
 const filterLevels = ref<string[]>(['info', 'warning', 'error'])
 const allLogs = ref<LogEntry[]>([])
+const maxQueueSize = ref(100)
 
 const { messages, connected, connect, disconnect, clear: clearSSE } = useSSE()
 let lastProcessedIndex = 0
@@ -91,27 +93,42 @@ const levelOptions = [
 ]
 
 const filteredLogs = computed(() => {
-  return allLogs.value.filter(log =>
-    filterLevels.value.includes(log.level?.toLowerCase())
-  )
+  return allLogs.value.filter(log => {
+    const level = log.level?.toLowerCase()
+    // CRITICAL is treated the same as ERROR
+    const normalized = level === 'critical' ? 'error' : level
+    return filterLevels.value.includes(normalized)
+  })
 })
 
 function applyFilter() {
   localStorage.setItem('log_filter_levels', JSON.stringify(filterLevels.value))
+  scrollToBottom()
 }
 
 function clearLogs() {
+  if (!confirm(t('logs.clear_confirm'))) return
   allLogs.value = []
   clearSSE()
   lastProcessedIndex = 0
+  notify(t('logs.cleared'), 'success')
 }
 
-function refreshLogs() {
+async function refreshLogs() {
   disconnect()
   clearSSE()
   lastProcessedIndex = 0
-  allLogs.value = []
+  let logs: LogEntry[] = []
+  try {
+    const res = await getLogHistory(100)
+    logs = res.data.logs || []
+  } catch (e) {
+    console.error('Failed to load log history:', e)
+  }
+  allLogs.value = logs
+  scrollToBottom()
   loadLogs()
+  notify(t('logs.refreshed'), 'success')
 }
 
 function loadLogs() {
@@ -144,7 +161,14 @@ function scrollToBottom() {
   nextTick(() => {
     const el = getScrollContainer()
     if (!el) return
-    // Smart auto-scroll: only scroll if user is already near the bottom (ratio > 0.95)
+    el.scrollTop = el.scrollHeight
+  })
+}
+
+function smartScrollToBottom() {
+  nextTick(() => {
+    const el = getScrollContainer()
+    if (!el) return
     const scrollRatio = (el.scrollTop + el.clientHeight) / el.scrollHeight
     if (scrollRatio > 0.95) {
       el.scrollTop = el.scrollHeight
@@ -201,11 +225,11 @@ watch(messages, (msgs) => {
   // Clear SSE buffer to prevent memory leak
   clearSSE()
   lastProcessedIndex = 0
-  // Cap at 1000 entries
-  if (allLogs.value.length > 1000) {
-    allLogs.value = allLogs.value.slice(-1000)
+  // Cap at maxQueueSize to prevent memory issues
+  if (allLogs.value.length > maxQueueSize.value) {
+    allLogs.value = allLogs.value.slice(-maxQueueSize.value)
   }
-  if (added) scrollToBottom()
+  if (added) smartScrollToBottom()
 }, { deep: true })
 
 onMounted(async () => {
@@ -216,6 +240,12 @@ onMounted(async () => {
       const saved = JSON.parse(raw)
       if (Array.isArray(saved)) filterLevels.value = saved
     }
+  } catch { /* ignore */ }
+
+  // Fetch log config (maxQueueSize)
+  try {
+    const configRes = await getLogConfig()
+    maxQueueSize.value = configRes.data.maxQueueSize || 100
   } catch { /* ignore */ }
 
   // Load history
