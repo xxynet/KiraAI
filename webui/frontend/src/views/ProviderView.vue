@@ -556,7 +556,7 @@ function editModel(modelType: string, modelId: string, config: any) {
   if (!providerSchema.value) return
   modelEditMode.value = true
   originalModelId.value = modelId
-  modelForm.value = { model_id: modelId, model_type: modelType, config: deepClone(config) }
+  modelForm.value = { model_id: modelId, model_type: modelType, config: deepClone(config ?? {}) }
   const modelConfigs = providerSchema.value?.model_config || {}
   modelSchema.value = modelConfigs[modelType] || null
   modelDialogVisible.value = true

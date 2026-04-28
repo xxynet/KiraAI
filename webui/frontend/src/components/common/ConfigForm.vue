@@ -373,17 +373,21 @@ function parseNumberInput(raw: string, field: any): any {
 
 function updateMonacoDraft(key: string, val: string, type: string) {
   drafts[key] = val
-  lastSynced[key] = val
   if (type === 'json') {
     try {
       const parsed = JSON.parse(val)
       delete draftErrors[key]
+      // Only advance lastSynced after a successful parse + emit, otherwise
+      // an external watcher would treat the persisted value as a divergent
+      // update and clobber the in-progress edit.
+      lastSynced[key] = val
       emit('update:modelValue', { ...props.modelValue, [key]: parsed })
     } catch (e: any) {
       draftErrors[key] = t('configform.invalid_json')
     }
   } else {
     delete draftErrors[key]
+    lastSynced[key] = val
     emit('update:modelValue', { ...props.modelValue, [key]: val })
   }
 }
@@ -397,11 +401,14 @@ function updateListDraft(key: string, val: string) {
 
 function onDraftInput(key: string, val: string, field: any) {
   drafts[key] = val
-  lastSynced[key] = val
   delete draftErrors[key]
   try {
     const parsed = JSON.parse(val)
     if (isValidType(parsed, field.type)) {
+      // Same rationale as updateMonacoDraft: only sync after a successful
+      // emit so an invalid intermediate draft doesn't get treated as the
+      // canonical value.
+      lastSynced[key] = val
       emit('update:modelValue', { ...props.modelValue, [key]: parsed })
     }
   } catch {

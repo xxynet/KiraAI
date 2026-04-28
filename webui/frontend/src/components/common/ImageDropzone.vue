@@ -80,8 +80,13 @@ const dropzoneClasses = computed(() => {
 function onFileInputChange(e: Event) {
   const target = e.target as HTMLInputElement
   const file = target.files?.[0] || null
-  if (file) {
+  // Reset so picking the same file twice still fires `change`.
+  target.value = ''
+  if (!file) return
+  if (file.type.startsWith('image/')) {
     emit('update:modelValue', file)
+  } else {
+    emit('update:modelValue', null)
   }
 }
 

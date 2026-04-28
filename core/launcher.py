@@ -2,6 +2,7 @@ import asyncio
 import json
 import psutil
 import socket
+import sys
 from pathlib import Path
 from typing import Any, Dict, Union, Optional
 import uvicorn
@@ -26,13 +27,22 @@ class KiraLauncher:
         # Silence harmless "ConnectionResetError [WinError 10054]" noise from the
         # Windows ProactorEventLoop when clients drop the TCP connection before
         # the server finishes draining the socket. The transport is already
-        # being torn down, so the error is informational only.
+        # being torn down, so the error is informational only. Gate strictly on
+        # win32 + ProactorEventLoop so real ConnectionResetErrors on other
+        # platforms still surface in logs.
         loop = asyncio.get_running_loop()
         default_handler = loop.get_exception_handler()
+        proactor_cls = getattr(asyncio, "ProactorEventLoop", None)
+        is_proactor = (
+            sys.platform == "win32"
+            and proactor_cls is not None
+            and isinstance(loop, proactor_cls)
+        )
 
         def _suppress_proactor_reset(lp, context):
             exc = context.get("exception")
-            if isinstance(exc, ConnectionResetError):
+            if is_proactor and isinstance(exc, ConnectionResetError):
+                self.logger.debug("Suppressed Proactor ConnectionResetError: %s", exc)
                 return
             if default_handler is not None:
                 default_handler(lp, context)

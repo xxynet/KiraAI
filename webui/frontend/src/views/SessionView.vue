@@ -30,7 +30,7 @@
           </tr>
         </thead>
         <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
-          <tr v-for="session in sessions" :key="resolveSessionId(session) || session.session_id" class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+          <tr v-for="session in sessions" :key="resolveSessionId(session)" class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
             <td class="px-6 py-4 whitespace-nowrap">
               <div class="text-sm font-medium text-gray-900 dark:text-gray-100" :title="getDisplayTitleSource(session)">{{ getDisplayTitle(session) }}</div>
             </td>

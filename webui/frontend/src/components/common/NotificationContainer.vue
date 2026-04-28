@@ -2,7 +2,7 @@
   <div
     class="fixed top-4 right-4 z-[200] space-y-2 pointer-events-none"
     aria-live="polite"
-    aria-atomic="true"
+    aria-atomic="false"
   >
     <TransitionGroup name="notify">
       <div

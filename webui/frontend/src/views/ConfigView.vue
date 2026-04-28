@@ -605,13 +605,6 @@ function redo() {
 function validateField(key: string) {
   const allFields = allGroups.flatMap(g => g.fields)
   const field = allFields.find(f => f.key === key)
-  // model_select fields are invalid whenever a provider is parked in
-  // pendingProviders without a corresponding model — Save would otherwise
-  // persist null while the UI still shows the half-selected row.
-  if (field?.type === 'model_select' && pendingProviders.value[key]) {
-    validationErrors.value[key] = t('configuration.validation.required')
-    return
-  }
   if (!field?.validation) {
     delete validationErrors.value[key]
     return

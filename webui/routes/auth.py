@@ -106,8 +106,10 @@ class AuthRoutes(Routes):
             try:
                 resolved = candidate.resolve()
                 dist_resolved = self.dist_dir.resolve()
-                if candidate.is_file() and str(resolved).startswith(str(dist_resolved)):
-                    return FileResponse(candidate)
+                # Use is_relative_to so a sibling like /app/dist_evil/file
+                # doesn't slip past a string-prefix check on /app/dist.
+                if resolved.is_file() and resolved.is_relative_to(dist_resolved):
+                    return FileResponse(resolved)
             except (OSError, ValueError):
                 pass
         # Only serve the SPA for GET requests that accept HTML (browser navigations)
