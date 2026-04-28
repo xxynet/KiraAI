@@ -72,6 +72,35 @@ textarea.transition-colors {
   border-color: rgb(191 219 254 / 0.3);
 }
 
+/* ==================== Sidebar Overlay ==================== */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 40;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.sidebar-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (min-width: 769px) {
+  .sidebar-overlay {
+    display: none;
+  }
+}
+
+/* ==================== Sidebar Menu Button ==================== */
+@media (min-width: 769px) {
+  .sidebar-menu-btn {
+    display: none !important;
+  }
+}
+
 /* ==================== Navigation ==================== */
 .nav-item {
   color: #24141d;

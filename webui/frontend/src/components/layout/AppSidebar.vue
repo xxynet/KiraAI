@@ -1,5 +1,5 @@
 <template>
-  <aside class="sidebar-gradient w-64 min-h-screen flex flex-col text-gray-800">
+  <aside class="sidebar-gradient min-h-screen flex flex-col text-gray-800" :class="{ 'sidebar-open': open }">
     <!-- Logo -->
     <div class="p-6 border-b border-blue-200/30">
       <h1 class="text-2xl font-bold text-gray-800">{{ $t('app.title') }}</h1>
@@ -54,6 +54,8 @@ import {
   Tools,
 } from '@element-plus/icons-vue'
 
+defineProps<{ open: boolean }>()
+
 const appVersion = ref('-')
 
 onMounted(async () => {
@@ -95,3 +97,24 @@ function isActive(path: string): boolean {
   return route.path === path
 }
 </script>
+
+<style scoped>
+.sidebar-gradient {
+  width: 16rem;
+}
+
+@media (max-width: 768px) {
+  .sidebar-gradient {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+  .sidebar-gradient.sidebar-open {
+    transform: translateX(0);
+  }
+}
+</style>

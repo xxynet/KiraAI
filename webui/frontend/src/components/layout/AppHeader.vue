@@ -1,8 +1,19 @@
 <template>
   <header class="app-header px-6 py-4 flex items-center justify-between shadow-sm">
-    <h2 class="text-2xl font-semibold text-gray-800 dark:text-white">
-      {{ title }}
-    </h2>
+    <div class="flex items-center">
+      <button
+        class="sidebar-menu-btn p-1.5 mr-3 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        aria-label="Toggle menu"
+        @click="$emit('toggle-sidebar')"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+      <h2 class="text-2xl font-semibold text-gray-800 dark:text-white">
+        {{ title }}
+      </h2>
+    </div>
     <div class="flex items-center gap-2">
       <!-- GitHub -->
       <a
@@ -53,6 +64,7 @@ import { useTheme } from '@/composables/useTheme'
 import { useI18n } from 'vue-i18n'
 
 defineProps<{ title: string }>()
+defineEmits<{ 'toggle-sidebar': [] }>()
 
 const { t } = useI18n()
 const appStore = useAppStore()
