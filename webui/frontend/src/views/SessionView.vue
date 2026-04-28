@@ -30,7 +30,7 @@
           </tr>
         </thead>
         <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
-          <tr v-for="session in sessions" :key="session.id" class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+          <tr v-for="session in sessions" :key="resolveSessionId(session) || session.session_id" class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
             <td class="px-6 py-4 whitespace-nowrap">
               <div class="text-sm font-medium text-gray-900 dark:text-gray-100" :title="getDisplayTitleSource(session)">{{ getDisplayTitle(session) }}</div>
             </td>
@@ -149,8 +149,14 @@ async function loadSessions() {
     const data = res.data
     sessions.value = Array.isArray(data.sessions) ? data.sessions : Array.isArray(data) ? data : []
   } catch (e) {
+    sessions.value = []
     console.error('Failed to load sessions:', e)
+    notify(t('sessions.load_failed'), 'error')
   }
+}
+
+function resolveSessionId(session: SessionItem): string {
+  return session.id || session.session_id || ''
 }
 
 function getDisplayTitleSource(session: SessionItem): string {
@@ -183,9 +189,14 @@ function handleNewSession() {
 }
 
 async function editSession(session: SessionItem) {
-  currentSessionId.value = session.id
+  const id = resolveSessionId(session)
+  if (!id) {
+    notify(t('sessions.load_failed'), 'error')
+    return
+  }
+  currentSessionId.value = id
   try {
-    const res = await getSession(session.id)
+    const res = await getSession(id)
     const data = res.data
     sessionTitle.value = data.title || ''
     sessionDescription.value = data.description || ''
@@ -235,8 +246,14 @@ function handleDelete(session: SessionItem) {
 
 async function onDeleteConfirmed() {
   if (!sessionToDelete.value) return
+  const id = resolveSessionId(sessionToDelete.value)
+  if (!id) {
+    notify(t('sessions.delete_failed'), 'error')
+    sessionToDelete.value = null
+    return
+  }
   try {
-    await deleteSession(sessionToDelete.value.id)
+    await deleteSession(id)
     notify(t('sessions.delete_success'), 'success')
     await loadSessions()
   } catch {

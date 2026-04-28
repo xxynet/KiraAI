@@ -5,12 +5,16 @@
       class="custom-select-trigger"
       :class="{ active: isOpen, 'has-value': hasValue, placeholder: !hasValue }"
       @click.stop="toggleDropdown"
-      @keydown.enter.prevent="toggleDropdown"
+      @keydown.enter.prevent="onEnter"
+      @keydown.space.prevent="onEnter"
       @keydown.esc="closeDropdown"
+      @keydown.down.prevent="onArrowDown"
+      @keydown.up.prevent="onArrowUp"
       :tabindex="props.disabled ? -1 : 0"
       role="combobox"
       :aria-expanded="isOpen"
       aria-haspopup="listbox"
+      :aria-activedescendant="isOpen && activeIndex >= 0 ? `${selectId}-opt-${activeIndex}` : undefined"
     >
       <div class="custom-select-content">
         <template v-if="selectedOptions.length > 0">
@@ -48,11 +52,13 @@
         :style="dropdownStyle"
       >
         <div
-          v-for="option in options"
+          v-for="(option, idx) in options"
           :key="option.value"
+          :id="`${selectId}-opt-${idx}`"
           class="custom-select-option"
-          :class="{ selected: isSelected(option.value) }"
+          :class="{ selected: isSelected(option.value), active: activeIndex === idx }"
           @click.stop="toggleOption(option.value)"
+          @mouseenter="activeIndex = idx"
           role="option"
           :aria-selected="isSelected(option.value)"
         >
@@ -87,6 +93,8 @@ const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()
 const optionsRef = ref<HTMLElement>()
 const dropdownStyle = ref<Record<string, string>>({})
+const activeIndex = ref(-1)
+const selectId = `cms-${Math.random().toString(36).slice(2, 9)}`
 let openTimerId: ReturnType<typeof setTimeout> | null = null
 let scrollAncestor: HTMLElement | null = null
 
@@ -150,6 +158,7 @@ function openDropdown() {
   if (isOpen.value) return
 
   isOpen.value = true
+  activeIndex.value = -1
 
   if (openTimerId !== null) {
     clearTimeout(openTimerId)
@@ -197,6 +206,46 @@ function toggleOption(value: string) {
     current.push(value)
   }
   emit('update:modelValue', current)
+}
+
+function onEnter() {
+  if (props.disabled) return
+  if (!isOpen.value) {
+    openDropdown()
+    return
+  }
+  const option = props.options[activeIndex.value]
+  if (option) toggleOption(option.value)
+}
+
+function onArrowDown() {
+  if (props.disabled) return
+  if (!isOpen.value) {
+    openDropdown()
+    activeIndex.value = 0
+    return
+  }
+  if (props.options.length === 0) return
+  activeIndex.value = (activeIndex.value + 1) % props.options.length
+  scrollActiveIntoView()
+}
+
+function onArrowUp() {
+  if (props.disabled) return
+  if (!isOpen.value) {
+    openDropdown()
+    activeIndex.value = props.options.length - 1
+    return
+  }
+  if (props.options.length === 0) return
+  activeIndex.value = (activeIndex.value - 1 + props.options.length) % props.options.length
+  scrollActiveIntoView()
+}
+
+function scrollActiveIntoView() {
+  if (!optionsRef.value) return
+  const el = optionsRef.value.querySelector<HTMLElement>(`#${selectId}-opt-${activeIndex.value}`)
+  el?.scrollIntoView({ block: 'nearest' })
 }
 
 function removeOption(value: string) {

@@ -5,12 +5,16 @@
       class="custom-select-trigger"
       :class="{ active: isOpen, 'has-value': !!modelValue, placeholder: !modelValue, disabled: props.disabled }"
       @click.stop="toggleDropdown"
-      @keydown.enter.prevent="toggleDropdown"
+      @keydown.enter.prevent="onEnter"
+      @keydown.space.prevent="onEnter"
       @keydown.esc="closeDropdown"
+      @keydown.down.prevent="onArrowDown"
+      @keydown.up.prevent="onArrowUp"
       :tabindex="props.disabled ? -1 : 0"
       role="combobox"
       :aria-expanded="isOpen"
       aria-haspopup="listbox"
+      :aria-activedescendant="isOpen && activeIndex >= 0 ? `${selectId}-opt-${activeIndex}` : undefined"
     >
       <div class="custom-select-content">
         {{ selectedLabel || placeholder }}
@@ -32,11 +36,13 @@
         :style="dropdownStyle"
       >
         <div
-          v-for="option in options"
+          v-for="(option, idx) in options"
           :key="option.value"
+          :id="`${selectId}-opt-${idx}`"
           class="custom-select-option"
-          :class="{ selected: modelValue === option.value }"
+          :class="{ selected: modelValue === option.value, active: activeIndex === idx }"
           @click.stop="selectOption(option)"
+          @mouseenter="activeIndex = idx"
           role="option"
           :aria-selected="modelValue === option.value"
         >
@@ -70,6 +76,8 @@ const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()
 const optionsRef = ref<HTMLElement>()
 const dropdownStyle = ref<Record<string, string>>({})
+const activeIndex = ref(-1)
+const selectId = `cs-${Math.random().toString(36).slice(2, 9)}`
 let openTimerId: ReturnType<typeof setTimeout> | null = null
 let scrollAncestor: HTMLElement | null = null
 
@@ -130,6 +138,8 @@ function openDropdown() {
   if (isOpen.value) return
 
   isOpen.value = true
+  const matched = props.options.findIndex(o => o.value === props.modelValue)
+  activeIndex.value = matched >= 0 ? matched : -1
 
   // Cancel any previous pending timer first
   if (openTimerId !== null) {
@@ -179,6 +189,48 @@ function closeDropdown() {
 function selectOption(option: Option) {
   emit('update:modelValue', option.value)
   closeDropdown()
+}
+
+function onEnter() {
+  if (props.disabled) return
+  if (!isOpen.value) {
+    openDropdown()
+    return
+  }
+  const option = props.options[activeIndex.value]
+  if (option) selectOption(option)
+}
+
+function onArrowDown() {
+  if (props.disabled) return
+  if (!isOpen.value) {
+    openDropdown()
+    activeIndex.value = props.options.findIndex(o => o.value === props.modelValue)
+    if (activeIndex.value < 0) activeIndex.value = 0
+    return
+  }
+  if (props.options.length === 0) return
+  activeIndex.value = (activeIndex.value + 1) % props.options.length
+  scrollActiveIntoView()
+}
+
+function onArrowUp() {
+  if (props.disabled) return
+  if (!isOpen.value) {
+    openDropdown()
+    activeIndex.value = props.options.findIndex(o => o.value === props.modelValue)
+    if (activeIndex.value < 0) activeIndex.value = props.options.length - 1
+    return
+  }
+  if (props.options.length === 0) return
+  activeIndex.value = (activeIndex.value - 1 + props.options.length) % props.options.length
+  scrollActiveIntoView()
+}
+
+function scrollActiveIntoView() {
+  if (!optionsRef.value) return
+  const el = optionsRef.value.querySelector<HTMLElement>(`#${selectId}-opt-${activeIndex.value}`)
+  el?.scrollIntoView({ block: 'nearest' })
 }
 
 function handleClickOutside(event: MouseEvent) {

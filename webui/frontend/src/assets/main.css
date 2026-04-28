@@ -239,10 +239,10 @@ textarea.transition-colors {
 
 /* ==================== Page Transitions ==================== */
 .page-fade-enter-active {
-  animation: fadeIn 0.3s ease-in-out both;
+  animation: fade-in 0.3s ease-in-out both;
 }
 
-@keyframes fadeIn {
+@keyframes fade-in {
   from {
     opacity: 0;
     transform: translateY(10px);
@@ -519,7 +519,8 @@ textarea:focus:hover,
   align-items: center;
 }
 
-.custom-select-option:hover {
+.custom-select-option:hover,
+.custom-select-option.active {
   background-color: rgba(59, 130, 246, 0.1);
   color: #1d4ed8;
 }
@@ -588,7 +589,8 @@ textarea:focus:hover,
   color: #e5e7eb;
 }
 
-.dark .custom-select-option:hover {
+.dark .custom-select-option:hover,
+.dark .custom-select-option.active {
   background-color: rgba(59, 130, 246, 0.2);
   color: #93c5fd;
 }
@@ -712,9 +714,15 @@ textarea:focus:hover,
   .page-glass-leave-active {
     transition: none;
   }
+  .session-card:hover {
+    transform: none;
+  }
   .page-glass-enter-from,
   .page-glass-leave-to {
     transform: none;
     filter: none;
+  }
+  .login-light-spot {
+    animation: none;
   }
 }
