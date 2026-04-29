@@ -474,6 +474,7 @@ export default {
     save_success: '会话保存成功',
     delete_confirm: '确定要删除此会话吗？',
     delete_success: '会话删除成功',
+    new_coming_soon: '新建会话——即将推出',
   },
   logs: {
     title: '系统日志',
@@ -482,6 +483,7 @@ export default {
     cleared: '日志已清除',
     refresh: '刷新',
     refreshed: '日志已刷新',
+    refresh_failed: '刷新日志失败',
     level_all: '所有级别',
     level_debug: '调试',
     level_info: '信息',

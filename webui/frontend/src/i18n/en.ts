@@ -474,6 +474,7 @@ export default {
     save_success: 'Session saved successfully',
     delete_confirm: 'Are you sure you want to delete this session?',
     delete_success: 'Session deleted successfully',
+    new_coming_soon: 'New Session — coming soon',
   },
   logs: {
     title: 'System Logs',
@@ -482,6 +483,7 @@ export default {
     cleared: 'Logs cleared',
     refresh: 'Refresh',
     refreshed: 'Logs refreshed',
+    refresh_failed: 'Failed to refresh logs',
     level_all: 'All Levels',
     level_debug: 'Debug',
     level_info: 'Info',

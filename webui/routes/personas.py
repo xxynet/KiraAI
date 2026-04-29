@@ -112,7 +112,7 @@ class PersonasRoutes(Routes):
         )
         success = await self.lifecycle.persona_manager.update_persona(persona)
         if not success:
-            raise HTTPException(status_code=500, detail="Failed to update persona")
+            raise HTTPException(status_code=404, detail="Persona not found")
         return {"content": content, "format": persona_format, "name": name, "id": persona_id}
 
     async def list_personas(self):

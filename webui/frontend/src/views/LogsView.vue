@@ -118,17 +118,16 @@ async function refreshLogs() {
   disconnect()
   clearSSE()
   lastProcessedIndex = 0
-  let logs: LogEntry[] = []
   try {
     const res = await getLogHistory(100)
-    logs = res.data.logs || []
+    allLogs.value = res.data.logs || []
+    scrollToBottom()
+    notify(t('logs.refreshed'), 'success')
   } catch (e) {
     console.error('Failed to load log history:', e)
+    notify(t('logs.refresh_failed'), 'error')
   }
-  allLogs.value = logs
-  scrollToBottom()
   loadLogs()
-  notify(t('logs.refreshed'), 'success')
 }
 
 function loadLogs() {

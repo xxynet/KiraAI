@@ -189,6 +189,7 @@ const dialogVisible = ref(false)
 const editMode = ref(false)
 const editId = ref<string | null>(null)
 const adapterSchema = ref<any>(null)
+const schemaLoadError = ref(false)
 const saving = ref(false)
 const formActive = ref(false)
 let platformChangeId = 0
@@ -234,6 +235,7 @@ function openCreateDialog() {
   form.value = { name: '', platform: '', description: '', config: {} }
   formActive.value = false
   adapterSchema.value = null
+  schemaLoadError.value = false
   ++platformChangeId
   dialogVisible.value = true
   if (platforms.value.length === 0) loadPlatforms()
@@ -250,6 +252,7 @@ async function openEditDialog(adapter: AdapterResponse) {
   }
   formActive.value = adapter.status === 'active'
   adapterSchema.value = null
+  schemaLoadError.value = false
   ++platformChangeId
   if (platforms.value.length === 0) {
     await loadPlatforms()
@@ -267,8 +270,9 @@ function deepClone<T>(obj: T): T {
 }
 
 async function onPlatformChange(platform: string, preserveConfig = false) {
-  if (!platform) { ++platformChangeId; adapterSchema.value = null; return }
+  if (!platform) { ++platformChangeId; adapterSchema.value = null; schemaLoadError.value = false; return }
   adapterSchema.value = null
+  schemaLoadError.value = false
   if (!preserveConfig) {
     form.value.config = {}
   }
@@ -277,10 +281,12 @@ async function onPlatformChange(platform: string, preserveConfig = false) {
     const res = await getAdapterSchema(platform)
     if (requestId === platformChangeId) {
       adapterSchema.value = res.data
+      schemaLoadError.value = false
     }
   } catch {
     if (requestId === platformChangeId) {
       adapterSchema.value = null
+      schemaLoadError.value = true
     }
   }
 }
@@ -292,8 +298,16 @@ async function handleSave() {
     notify(t('adapter.form_incomplete'), 'warning')
     return
   }
-  const validateRes = configFormRef.value?.validate()
-  if (validateRes && !validateRes.valid) {
+  if (adapterSchema.value === null || schemaLoadError.value) {
+    notify(t('adapter.schema_load_failed'), 'error')
+    return
+  }
+  if (!configFormRef.value) {
+    notify(t('adapter.form_incomplete'), 'warning')
+    return
+  }
+  const validateRes = configFormRef.value.validate()
+  if (!validateRes.valid) {
     notify(validateRes.message || t('configform.invalid_json'), 'error')
     return
   }

@@ -81,7 +81,7 @@
           <div v-else-if="schemaLoading" class="text-center text-gray-500 py-4">{{ $t('provider.schema_loading') }}</div>
           <div v-else class="text-gray-500 dark:text-gray-400 py-2">{{ $t('provider.schema_none') }}</div>
           <div class="flex justify-end space-x-3 pt-2">
-            <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50" :disabled="saving" @click="saveProviderConfig">
+            <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50" :disabled="saving || schemaError" @click="saveProviderConfig">
               {{ $t('provider.save') }}
             </button>
             <button class="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center" @click="handleDelete">
@@ -365,12 +365,15 @@ async function selectProvider(id: string) {
     return
   }
 
+  // Seed from existing provider data immediately so saveProviderConfig()
+  // has valid values even if the schema request fails.
+  providerConfigValues.value = deepClone(provider.config || {})
+  providerName.value = provider.name || ''
+
   try {
     const schemaRes = await getProviderSchema(provider.type)
     if (selectProviderRequestId === currentRequestId) {
       providerSchema.value = schemaRes.data
-      providerConfigValues.value = deepClone(provider.config || {})
-      providerName.value = provider.name || ''
     }
   } catch (e: any) {
     console.error('Error loading provider schema:', e)
@@ -459,6 +462,10 @@ async function saveProviderConfig() {
   if (!selectedId.value) return
   const provider = selectedProvider.value
   if (!provider) return
+  if (schemaError.value) {
+    notify(t('provider.schema_error'), 'error')
+    return
+  }
   const validateRes = configFormRef.value?.validate()
   if (validateRes && !validateRes.valid) {
     notify(validateRes.message || t('configform.invalid_json'), 'error')

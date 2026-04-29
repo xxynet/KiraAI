@@ -185,7 +185,7 @@ function getSessionTypeColor(type: string): string {
 }
 
 function handleNewSession() {
-  notify(t('sessions.new') + ' functionality coming soon', 'info')
+  notify(t('sessions.new_coming_soon'), 'info')
 }
 
 async function editSession(session: SessionItem) {
