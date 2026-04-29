@@ -22,9 +22,16 @@ Thumbs.db
 
 # Build
 main.spec
+*.tsbuildinfo
 
 # Logs
 *.log
+
+# Vue frontend
+webui/frontend/node_modules/
+webui/frontend/.vite/
+webui/frontend/vite.config.js
+webui/frontend/vite.config.d.ts
 
 # Runtime data
 /data/

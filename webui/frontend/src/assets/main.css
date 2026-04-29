@@ -1,0 +1,727 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==================== Global Transitions ==================== */
+.provider-item,
+.custom-select-trigger {
+  transition-property: border-color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-in-out;
+}
+
+button,
+.nav-item,
+input,
+select,
+textarea {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease-in-out;
+}
+
+input.transition-colors,
+select.transition-colors,
+textarea.transition-colors {
+  transition: all 0.2s ease-in-out;
+}
+
+/* ==================== Page Background ==================== */
+.page-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -10;
+  background-color: #f2f2f3;
+}
+
+.dark .page-background {
+  background-color: #16161a;
+}
+
+#app {
+  position: relative;
+}
+
+/* ==================== Sidebar ==================== */
+.sidebar-gradient {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .sidebar-gradient {
+  background: rgba(0, 0, 0, 0.15);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.dark .sidebar-gradient h1 {
+  color: #f9fafb;
+}
+
+.dark .sidebar-gradient p {
+  color: #d1d5db;
+}
+
+/* Sidebar borders in dark mode - use subtle gray instead of blue */
+.dark .sidebar-gradient .border-blue-200\/30 {
+  border-color: rgb(191 219 254 / 0.3);
+}
+
+/* ==================== Sidebar Overlay ==================== */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 40;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.sidebar-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (min-width: 769px) {
+  .sidebar-overlay {
+    display: none;
+  }
+}
+
+/* ==================== Sidebar Menu Button ==================== */
+@media (min-width: 769px) {
+  .sidebar-menu-btn {
+    display: none !important;
+  }
+}
+
+/* ==================== Navigation ==================== */
+.nav-item {
+  color: #24141d;
+  position: relative;
+  background-color: transparent;
+}
+
+.nav-item svg {
+  color: #24141d;
+  transition: color 0.2s ease-in-out;
+}
+
+.nav-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.nav-item.active {
+  background-color: rgba(197, 213, 246, 0.7);
+  color: #3864d5;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.nav-item.active svg {
+  color: #3864d5;
+}
+
+.nav-item.active:hover {
+  background-color: rgba(197, 213, 246, 0.8);
+}
+
+.dark .nav-item {
+  color: #f9fafb;
+}
+
+.dark .nav-item svg {
+  color: #f9fafb;
+}
+
+.dark .nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .nav-item.active {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+
+.dark .nav-item.active svg {
+  color: #93c5fd;
+}
+
+.dark .nav-item.active:hover {
+  background-color: rgba(59, 130, 246, 0.4);
+}
+
+/* Navigation dot indicator */
+.nav-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: rgba(59, 130, 246, 0.4);
+  display: block;
+  transition: all 0.2s ease-in-out;
+}
+
+.nav-item.active .nav-dot {
+  background-color: rgb(59, 130, 246);
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+}
+
+/* ==================== Modal Cards ==================== */
+.modal-card {
+  background-color: #fff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.dark .modal-card {
+  background-color: #111827 !important; /* solid gray-900, no glass */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Inputs inside modal cards should have solid backgrounds, not glass */
+.modal-card input:not([type="checkbox"], [type="radio"]),
+.modal-card select,
+.modal-card textarea {
+  background-color: #fff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.dark .modal-card input:not([type="checkbox"], [type="radio"]),
+.dark .modal-card select,
+.dark .modal-card textarea {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ==================== Glass Cards ==================== */
+.glass-card,
+.bg-white.rounded-lg.shadow {
+  background-color: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(209, 213, 219, 0.5);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.dark .glass-card,
+.dark .bg-white.rounded-lg.shadow {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+  border: 1px solid rgba(75, 85, 99, 0.2);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* ==================== Header ==================== */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .app-header {
+  background-color: rgba(0, 0, 0, 0.2) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ==================== Page Transitions ==================== */
+.page-fade-enter-active {
+  animation: fade-in 0.3s ease-in-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ==================== Custom Scrollbar ==================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #374151;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #6b7280;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* ==================== Form Inputs ==================== */
+input:not([type="checkbox"], [type="radio"]),
+select,
+textarea {
+  background-color: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(209, 213, 219, 0.8);
+}
+
+.dark input:not([type="checkbox"], [type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+  border: 1px solid rgba(75, 85, 99, 0.3);
+  color: #f9fafb;
+}
+
+.dark input::placeholder,
+.dark select::placeholder,
+.dark textarea::placeholder {
+  color: #9ca3af;
+}
+
+.dark .border-gray-300 {
+  border-color: rgba(75, 85, 99, 0.4) !important;
+}
+
+input:not([type="checkbox"], [type="radio"]):hover,
+select:hover,
+textarea:hover,
+.dark input:not([type="checkbox"], [type="radio"]):hover,
+.dark select:hover,
+.dark textarea:hover {
+  border-color: #3b82f6 !important;
+}
+
+input:not([type="checkbox"], [type="radio"]):focus,
+select:focus,
+textarea:focus,
+.dark input:not([type="checkbox"], [type="radio"]):focus,
+.dark select:focus,
+.dark textarea:focus {
+  outline: none;
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+input:not([type="checkbox"], [type="radio"]):focus:hover,
+select:focus:hover,
+textarea:focus:hover,
+.dark input:not([type="checkbox"], [type="radio"]):focus:hover,
+.dark select:focus:hover,
+.dark textarea:focus:hover {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+/* Protect Monaco Editor internal textarea from global textarea styles */
+.monaco-editor textarea,
+.monaco-editor .inputarea {
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Visible keyboard focus outline for all interactive elements (WCAG 2.4.11) */
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+.dark :focus-visible {
+  outline-color: #93c5fd;
+}
+
+/* ==================== Log Container ==================== */
+.log-container {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-entry {
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(107, 114, 128, 0.2);
+  line-height: 1.6;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-entry:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.dark .log-entry:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Old webui log container parity */
+#log-container {
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background-color: #f9fafb !important;
+  color: #1f2937;
+  border: 1px solid #6b7280;
+}
+
+#log-container p {
+  color: #9ca3af;
+}
+
+.dark #log-container {
+  background-color: rgba(31, 41, 55, 0.8) !important;
+  color: #e5e7eb;
+  border-color: #4b5563;
+}
+
+.dark #log-container p {
+  color: #6b7280;
+}
+
+/* ==================== Custom Select (shared by CustomSelect & CustomMultiSelect) ==================== */
+.custom-select {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  user-select: none;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(156, 163, 175, 0.5);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  font-size: 14px;
+  color: #374151;
+  min-height: 40px;
+}
+
+.custom-select-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.85);
+  border-color: #3b82f6;
+}
+
+.custom-select-trigger.active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+.custom-select-trigger.has-value {
+  color: #111827;
+}
+
+.custom-select-trigger.placeholder {
+  color: #9ca3af;
+}
+
+.custom-select-trigger.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.custom-select-arrow {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.2s ease-in-out;
+  flex-shrink: 0;
+}
+
+.custom-select-arrow.active,
+.custom-select-trigger.active .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-options {
+  position: fixed;
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+.custom-select-options.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.custom-select-option {
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  font-size: 14px;
+  color: #374151;
+  border-radius: 12px;
+  margin: 6px 8px;
+  display: flex;
+  align-items: center;
+}
+
+.custom-select-option:hover,
+.custom-select-option.active {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+}
+
+.custom-select-option.selected {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
+.custom-select-options::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-select-options::-webkit-scrollbar-track {
+  background: rgba(229, 231, 235, 0.3);
+  border-radius: 3px;
+}
+
+.custom-select-options::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 3px;
+}
+
+.custom-select-options::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.7);
+}
+
+.custom-select-trigger:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+.dark .custom-select-trigger {
+  background-color: rgba(31, 41, 55, 0.7);
+  border-color: rgba(75, 85, 99, 0.3);
+  color: #e5e7eb;
+}
+
+.dark .custom-select-trigger:hover {
+  background-color: rgba(31, 41, 55, 0.85);
+  border-color: #3b82f6;
+}
+
+.dark .custom-select-trigger.active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+.dark .custom-select-trigger.has-value {
+  color: #f9fafb;
+}
+
+.dark .custom-select-trigger.placeholder {
+  color: #9ca3af;
+}
+
+.dark .custom-select-options {
+  background-color: rgba(31, 41, 55, 0.95);
+  border-color: rgba(75, 85, 99, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.dark .custom-select-option {
+  color: #e5e7eb;
+}
+
+.dark .custom-select-option:hover,
+.dark .custom-select-option.active {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+.dark .custom-select-option.selected {
+  background-color: rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+}
+
+.dark .custom-select-options::-webkit-scrollbar-track {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .custom-select-options::-webkit-scrollbar-thumb {
+  background: rgba(107, 114, 128, 0.5);
+}
+
+.dark .custom-select-options::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
+}
+
+/* ==================== Session Card ==================== */
+.session-card {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.session-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* ==================== Provider Item ==================== */
+.provider-item {
+  @apply p-3 rounded-lg cursor-pointer transition-colors;
+}
+
+.dark .provider-item:hover {
+  background-color: rgba(75, 85, 99, 0.3);
+}
+
+.dark .provider-item.bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* ==================== Monaco Editor ==================== */
+.monaco-container {
+  height: 500px;
+  border: 1px solid rgba(107, 114, 128, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* ==================== Loading Spinner ==================== */
+.loading-spinner {
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 20px auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ==================== Dark Mode Overrides ====================
+   Colors chosen to meet WCAG 2.1 AA contrast (4.5:1 body, 3:1 large/UI)
+   against .glass-card effective background (~ #22303f @ 78% over #16161a). */
+.dark .text-gray-900 { color: #f9fafb !important; } /* 18:1 */
+.dark .text-gray-800 { color: #f3f4f6 !important; } /* 16:1 */
+.dark .text-gray-700 { color: #e5e7eb !important; } /* 13:1 */
+.dark .text-gray-600 { color: #cbd5e1 !important; } /*  9:1 */
+.dark .text-gray-500 { color: #b4bcc8 !important; } /*  6.1:1 — AA */
+.dark .text-gray-400 { color: #6b7280 !important; } /*  old webui match  */
+.dark .text-gray-300 { color: #8b93a1 !important; } /* for decorative only */
+
+/* Stat / badge colors — brightened so icons & tag text remain legible */
+.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.2) !important; }
+.dark .bg-green-100 { background-color: rgba(34, 197, 94, 0.2) !important; }
+.dark .bg-purple-100 { background-color: rgba(168, 85, 247, 0.2) !important; }
+.dark .bg-yellow-100 { background-color: rgba(251, 191, 36, 0.2) !important; }
+.dark .text-blue-600 { color: #60a5fa !important; }
+.dark .text-green-600 { color: #34d399 !important; }
+.dark .text-purple-600 { color: #a78bfa !important; }
+.dark .text-yellow-600 { color: #fbbf24 !important; }
+.dark .text-red-600 { color: #f87171 !important; }
+
+/* Borders / dividers — must hit 3:1 non-text contrast (WCAG 1.4.11) */
+.dark .border-gray-100,
+.dark .border-gray-200 { border-color: rgba(148, 163, 184, 0.24) !important; }
+.dark .border-gray-700,
+.dark .border-gray-800 { border-color: rgba(148, 163, 184, 0.22) !important; }
+
+/* ==================== Element Plus Overrides ==================== */
+.el-dialog {
+  backdrop-filter: blur(16px);
+}
+
+.dark .el-dialog {
+  background-color: rgba(31, 41, 55, 0.95) !important;
+}
+
+/* ==================== Responsive ==================== */
+@media (max-width: 768px) {
+  .monaco-container {
+    height: 400px;
+  }
+}
+
+/* ==================== Reduced Motion ==================== */
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
+  }
+  .session-card,
+  .page-glass-enter-active,
+  .page-glass-leave-active {
+    transition: none;
+  }
+  .session-card:hover {
+    transform: none;
+  }
+  .page-glass-enter-from,
+  .page-glass-leave-to {
+    transform: none;
+    filter: none;
+  }
+  .login-light-spot {
+    animation: none;
+  }
+}

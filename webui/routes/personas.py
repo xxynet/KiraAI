@@ -85,17 +85,34 @@ class PersonasRoutes(Routes):
     async def update_current_persona_content(self, payload: dict):
         if not self.lifecycle or not self.lifecycle.persona_manager:
             raise HTTPException(status_code=404, detail="Persona manager not available")
-        content = payload.get("content", "")
-        name = payload.get("name", "")
-        persona_format = payload.get("format", "text")
+        if "content" not in payload:
+            raise HTTPException(status_code=422, detail="Missing content field")
+        content = payload["content"]
+        if not isinstance(content, str):
+            raise HTTPException(status_code=422, detail="Invalid content value")
         persona_id = "default"
+        # Preserve existing name/format when the caller only supplies content,
+        # so partial updates from clients that don't know about `name` don't
+        # wipe unrelated fields. Missing default persona is treated as 404 so
+        # clients don't silently persist against a non-existent row.
+        existing = await self.lifecycle.persona_manager.get_persona(persona_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Persona not found")
+        name = payload["name"] if "name" in payload else existing.name
+        persona_format = payload["format"] if "format" in payload else existing.format
+        if not isinstance(name, str):
+            raise HTTPException(status_code=422, detail="Invalid name value")
+        if not isinstance(persona_format, str):
+            raise HTTPException(status_code=422, detail="Invalid format value")
         persona = PersonaInfo(
             id=persona_id,
             name=name,
             format=persona_format,
-            content=content
+            content=content,
         )
-        await self.lifecycle.persona_manager.update_persona(persona)
+        success = await self.lifecycle.persona_manager.update_persona(persona)
+        if not success:
+            raise HTTPException(status_code=404, detail="Persona not found")
         return {"content": content, "format": persona_format, "name": name, "id": persona_id}
 
     async def list_personas(self):
