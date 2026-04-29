@@ -151,6 +151,7 @@ function openDropdown() {
     openTimerId = null
     if (!isOpen.value) return
     adjustPosition()
+    scrollToActive()
     // Add scroll/resize listeners — close dropdown on any scroll
     scrollAncestor = containerRef.value ? findScrollAncestor(containerRef.value) : null
     if (scrollAncestor) {
@@ -166,6 +167,7 @@ function closeDropdown() {
   if (!isOpen.value) return
 
   isOpen.value = false
+  activeIndex.value = -1
 
   // Cancel pending open timer to prevent leaked listeners
   if (openTimerId !== null) {
@@ -240,6 +242,42 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
+function handleEnterKey() {
+  if (!isOpen.value) {
+    toggleDropdown()
+  } else if (activeIndex.value >= 0 && activeIndex.value < props.options.length) {
+    selectOption(props.options[activeIndex.value])
+  }
+}
+
+function handleArrowDown() {
+  if (!isOpen.value) {
+    openDropdown()
+  } else if (props.options.length > 0) {
+    activeIndex.value = (activeIndex.value + 1) % props.options.length
+    scrollToActive()
+  }
+}
+
+function handleArrowUp() {
+  if (!isOpen.value) {
+    openDropdown()
+  } else if (props.options.length > 0) {
+    activeIndex.value = activeIndex.value <= 0
+      ? props.options.length - 1
+      : activeIndex.value - 1
+    scrollToActive()
+  }
+}
+
+function scrollToActive() {
+  if (!optionsRef.value || activeIndex.value < 0) return
+  const activeElement = optionsRef.value.querySelector(`#option-${activeIndex.value}`)
+  if (activeElement) {
+    activeElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }
+}
+
 onUnmounted(() => {
   // Cancel any pending open timer to prevent leaked listeners after unmount
   if (openTimerId !== null) {
@@ -257,5 +295,15 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.custom-select-option.highlighted {
+  background-color: rgba(59, 130, 246, 0.1);
+}
+</style>
+
+<style>
+.dark .custom-select-option.highlighted {
+  background-color: rgba(59, 130, 246, 0.2);
 }
 </style>
