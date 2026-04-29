@@ -43,7 +43,6 @@ textarea.transition-colors {
 
 #app {
   position: relative;
-  z-index: 1;
 }
 
 /* ==================== Sidebar ==================== */

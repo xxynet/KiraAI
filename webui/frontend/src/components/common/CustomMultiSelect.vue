@@ -187,7 +187,7 @@ function closeDropdown() {
   if (!isOpen.value) return
 
   isOpen.value = false
-  highlightedIndex.value = -1
+  activeIndex.value = -1
 
   if (openTimerId !== null) {
     clearTimeout(openTimerId)
@@ -270,69 +270,29 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
-function handleTriggerEnter() {
-  if (!isOpen.value) {
-    toggleDropdown()
-  } else if (highlightedIndex.value >= 0 && highlightedIndex.value < props.options.length) {
-    toggleOption(props.options[highlightedIndex.value].value)
-  }
-}
-
-function handleTriggerSpace() {
-  if (!isOpen.value) {
-    toggleDropdown()
-  } else if (highlightedIndex.value >= 0 && highlightedIndex.value < props.options.length) {
-    toggleOption(props.options[highlightedIndex.value].value)
-  }
-}
-
-function handleTriggerArrowDown() {
-  if (!isOpen.value) {
-    openDropdown()
-  } else {
-    handleArrowDown()
-  }
-}
-
-function handleTriggerArrowUp() {
-  if (!isOpen.value) {
-    openDropdown()
-  } else {
-    handleArrowUp()
-  }
-}
-
 function handleArrowDown() {
   if (props.options.length === 0) return
-  highlightedIndex.value = (highlightedIndex.value + 1) % props.options.length
-  scrollToHighlighted()
+  activeIndex.value = (activeIndex.value + 1) % props.options.length
+  scrollActiveIntoView()
 }
 
 function handleArrowUp() {
   if (props.options.length === 0) return
-  highlightedIndex.value = highlightedIndex.value <= 0
+  activeIndex.value = activeIndex.value <= 0
     ? props.options.length - 1
-    : highlightedIndex.value - 1
-  scrollToHighlighted()
+    : activeIndex.value - 1
+  scrollActiveIntoView()
 }
 
 function handleEnterKey() {
-  if (highlightedIndex.value >= 0 && highlightedIndex.value < props.options.length) {
-    toggleOption(props.options[highlightedIndex.value].value)
+  if (activeIndex.value >= 0 && activeIndex.value < props.options.length) {
+    toggleOption(props.options[activeIndex.value].value)
   }
 }
 
 function handleSpaceKey() {
-  if (highlightedIndex.value >= 0 && highlightedIndex.value < props.options.length) {
-    toggleOption(props.options[highlightedIndex.value].value)
-  }
-}
-
-function scrollToHighlighted() {
-  if (!optionsRef.value || highlightedIndex.value < 0) return
-  const highlightedElement = optionsRef.value.querySelector(`#option-${highlightedIndex.value}`)
-  if (highlightedElement) {
-    highlightedElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  if (activeIndex.value >= 0 && activeIndex.value < props.options.length) {
+    toggleOption(props.options[activeIndex.value].value)
   }
 }
 
