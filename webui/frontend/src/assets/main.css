@@ -47,10 +47,10 @@ textarea.transition-colors {
 
 /* ==================== Sidebar ==================== */
 .sidebar-gradient {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .dark .sidebar-gradient {
@@ -551,7 +551,14 @@ textarea:focus:hover,
 .custom-select-trigger:focus {
   outline: none;
   border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+/* Ensure focus/active shadow persists on hover (light mode) */
+.custom-select-trigger.active:hover,
+.custom-select-trigger:focus:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
 }
 
 .dark .custom-select-trigger {
@@ -565,9 +572,22 @@ textarea:focus:hover,
   border-color: #3b82f6;
 }
 
+.dark .custom-select-trigger:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
 .dark .custom-select-trigger.active {
   border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+
+/* Ensure focus/active shadow persists on hover (dark mode) */
+.dark .custom-select-trigger.active:hover,
+.dark .custom-select-trigger:focus:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
 }
 
 .dark .custom-select-trigger.has-value {

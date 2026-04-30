@@ -58,6 +58,10 @@ class KiraLauncher:
         # ====== init WebUI ======
         webui_config = self._load_webui_config()
 
+        # ====== ensure frontend dist ======
+        from core.utils.dist_checker import ensure_dist
+        await ensure_dist()
+
         self.webui = KiraWebUI(lifecycle=self.lifecycle)
 
         self.logger.info(f"WebUI server started at http://{webui_config['host']}:{webui_config['port']}")

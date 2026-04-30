@@ -12,6 +12,7 @@ import uvicorn
 
 from core.lifecycle import KiraLifecycle
 from core.utils.path_utils import get_data_path
+from core.utils.dist_checker import get_dist_dir
 from webui.utils import _get_or_generate_access_token
 from webui.routes.auth import AuthRoutes
 from webui.routes.overview import OverviewRoutes
@@ -54,7 +55,7 @@ class KiraWebUI:
 
         # Paths
         self.webui_dir = Path(__file__).parent
-        self.dist_dir = self.webui_dir / "static" / "dist"
+        self.dist_dir = get_dist_dir()
         self.sticker_dir = get_data_path() / "sticker"
 
         # Setup CORS

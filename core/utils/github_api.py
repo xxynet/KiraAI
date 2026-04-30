@@ -1,4 +1,5 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
+import hashlib
 import httpx
 import asyncio
 
@@ -26,6 +27,12 @@ def parse_github_url(url: str) -> Tuple[str, str]:
 
 
 async def get_latest_release(owner: str, repo: str, proxy: Optional[str] = None):
+    """
+    dict_keys(['url', 'assets_url', 'upload_url', 'html_url', 'id', 'author', 
+    'node_id', 'tag_name', 'target_commitish', 'name', 'draft', 'immutable', 
+    'prerelease', 'created_at', 'updated_at', 'published_at', 'assets', 
+    'tarball_url', 'zipball_url', 'body'])
+    """
     url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
     client_kwargs: dict = {"timeout": 10.0}
     if proxy:
@@ -45,8 +52,190 @@ async def get_latest_release(owner: str, repo: str, proxy: Optional[str] = None)
         "name": data.get("name"),
         "body": data.get("body"),
         "html_url": data.get("html_url"),
-        "published_at": data.get("published_at")
+        "published_at": data.get("published_at"),
+        "prerelease": data.get("prerelease"),
+        "draft": data.get("draft"),
     }
+
+
+async def get_all_releases(
+    owner: str,
+    repo: str,
+    proxy: Optional[str] = None,
+    per_page: int = 30,
+    max_pages: int = 10,
+) -> List[dict]:
+    """
+    Fetch all releases of a GitHub repository (paginated).
+
+    Returns a list of release dicts, each containing:
+      tag_name, name, body, html_url, published_at, prerelease, draft
+    Returns an empty list on failure.
+
+    per_page  — results per page (max 100, default 30)
+    max_pages — safety cap to avoid excessive pagination
+    """
+    releases: List[dict] = []
+    client_kwargs: dict = {"timeout": 10.0}
+    if proxy:
+        client_kwargs["proxy"] = proxy
+
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        for page in range(1, max_pages + 1):
+            url = (
+                f"https://api.github.com/repos/{owner}/{repo}/releases"
+                f"?per_page={per_page}&page={page}"
+            )
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+            except httpx.HTTPError as e:
+                print(f"Failed to get releases (page {page}): {e}")
+                break
+
+            data = resp.json()
+            if not data:
+                break
+
+            for item in data:
+                releases.append({
+                    "tag_name": item.get("tag_name"),
+                    "name": item.get("name"),
+                    "body": item.get("body"),
+                    "html_url": item.get("html_url"),
+                    "published_at": item.get("published_at"),
+                    "prerelease": item.get("prerelease"),
+                    "draft": item.get("draft"),
+                })
+
+            # If fewer results than per_page, no more pages
+            if len(data) < per_page:
+                break
+
+    return releases
+
+
+async def get_release_assets(
+    owner: str,
+    repo: str,
+    tag: str,
+    proxy: Optional[str] = None,
+) -> List[dict]:
+    """
+    Fetch the assets list for a specific release (by tag name).
+
+    Returns a list of asset dicts, each containing:
+      name, size, download_url (browser_download_url), content_type, state
+    Returns an empty list on failure.
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+    client_kwargs: dict = {"timeout": 10.0}
+    if proxy:
+        client_kwargs["proxy"] = proxy
+
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            print(f"Failed to get release '{tag}': {e}")
+            return []
+
+    data = resp.json()
+    assets: List[dict] = []
+    for item in data.get("assets", []):
+        assets.append({
+            "name": item.get("name"),
+            "size": item.get("size"),
+            "download_url": item.get("browser_download_url"),
+            "content_type": item.get("content_type"),
+            "state": item.get("state"),
+        })
+    return assets
+
+
+async def download_asset(
+    download_url: str,
+    proxy: Optional[str] = None,
+) -> bytes:
+    """
+    Download a release asset by its browser_download_url.
+
+    Raises ValueError on HTTP errors, ConnectionError on network failures.
+    """
+    client_kwargs: dict = {"timeout": 120.0, "follow_redirects": True}
+    if proxy:
+        client_kwargs["proxy"] = proxy
+
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        try:
+            resp = await client.get(download_url)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            raise ValueError(f"Failed to download asset (HTTP {status})") from e
+        except httpx.HTTPError as e:
+            raise ConnectionError(f"Network error while downloading asset: {e}") from e
+
+    return resp.content
+
+
+def verify_sha256(data: bytes, expected_sha: str) -> bool:
+    """
+    Verify that the SHA-256 hash of *data* matches *expected_sha*.
+
+    *expected_sha* may or may not be prefixed with "sha256:" — both formats
+    (``<hex>`` and ``sha256:<hex>``) are accepted.
+
+    Returns True on match, False otherwise.
+    """
+    digest = hashlib.sha256(data).hexdigest()
+    expected = expected_sha.strip().removeprefix("sha256:").lower()
+    return digest == expected
+
+
+async def download_and_verify_asset(
+    owner: str,
+    repo: str,
+    tag: str,
+    expected_sha: str,
+    asset_name: str = "dist.zip",
+    proxy: Optional[str] = None,
+) -> bytes:
+    """
+    Download a specific release asset and verify its SHA-256 hash.
+
+    1. Looks up assets of the given release tag.
+    2. Finds the first asset whose name matches *asset_name*.
+    3. Downloads the asset content.
+    4. Verifies SHA-256 against *expected_sha*.
+
+    Raises:
+      ValueError      — asset not found / HTTP error / SHA mismatch
+      ConnectionError — network failure
+
+    Returns the verified file content as bytes on success.
+    """
+    assets = await get_release_assets(owner, repo, tag, proxy)
+    if not assets:
+        raise ValueError(f"No assets found for release '{tag}'")
+
+    target = next((a for a in assets if a["name"] == asset_name), None)
+    if not target:
+        available = [a["name"] for a in assets]
+        raise ValueError(
+            f"Asset '{asset_name}' not found in release '{tag}'. "
+            f"Available: {available}"
+        )
+
+    content = await download_asset(target["download_url"], proxy)
+
+    if not verify_sha256(content, expected_sha):
+        raise ValueError(
+            f"SHA-256 verification failed for '{asset_name}' in release '{tag}'"
+        )
+
+    return content
 
 
 async def download_zipball(
@@ -95,3 +284,5 @@ async def download_zipball(
 
 if __name__ == '__main__':
     print(asyncio.run(get_latest_release("xxynet", "KiraAI")))
+
+    # print(asyncio.run(get_all_releases("xxynet", "KiraAI")))
