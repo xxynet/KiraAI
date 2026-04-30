@@ -4,6 +4,7 @@ Provides a web-based admin panel for managing KiraAI system
 """
 import mimetypes
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,7 +36,7 @@ class KiraWebUI:
     Holds lifecycle instance for accessing system components
     """
 
-    def __init__(self, lifecycle: KiraLifecycle):
+    def __init__(self, lifecycle: KiraLifecycle, dist_dir: Optional[Path] = None):
         # Ensure proper MIME types on Windows (fixes .js served as text/plain)
         mimetypes.add_type("application/javascript", ".js")
         mimetypes.add_type("text/javascript", ".js")
@@ -55,7 +56,7 @@ class KiraWebUI:
 
         # Paths
         self.webui_dir = Path(__file__).parent
-        self.dist_dir = get_dist_dir()
+        self.dist_dir = dist_dir or get_dist_dir()
         self.sticker_dir = get_data_path() / "sticker"
 
         # Setup CORS
