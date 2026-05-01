@@ -12,8 +12,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from core.lifecycle import KiraLifecycle
-from core.utils.path_utils import get_data_path
-from core.utils.dist_checker import get_dist_dir
+from core.utils.path_utils import get_data_path, get_webui_dist_path
 from webui.utils import _get_or_generate_access_token
 from webui.routes.auth import AuthRoutes
 from webui.routes.overview import OverviewRoutes
@@ -56,7 +55,7 @@ class KiraWebUI:
 
         # Paths
         self.webui_dir = Path(__file__).parent
-        self.dist_dir = dist_dir or get_dist_dir()
+        self.dist_dir = dist_dir or get_webui_dist_path()
         self.sticker_dir = get_data_path() / "sticker"
 
         # Setup CORS

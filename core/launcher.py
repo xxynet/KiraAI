@@ -17,10 +17,11 @@ from webui.app import KiraWebUI
 
 class KiraLauncher:
     """KiraAI Launcher"""
-    def __init__(self):
+    def __init__(self, ignore_webui_version_check: bool = False):
         self.lifecycle: Optional[KiraLifecycle] = None
         self.stats: Optional[Statistics] = None
         self.webui = None
+        self.ignore_webui_version_check = ignore_webui_version_check
         self.logger = get_logger("launcher", "blue")
 
     async def start(self):
@@ -60,7 +61,7 @@ class KiraLauncher:
 
         # ====== ensure frontend dist ======
         from core.utils.dist_checker import ensure_dist
-        await ensure_dist()
+        await ensure_dist(ignore_webui_version_check=self.ignore_webui_version_check)
 
         self.webui = KiraWebUI(lifecycle=self.lifecycle)
 

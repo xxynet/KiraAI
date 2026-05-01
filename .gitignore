@@ -15,6 +15,7 @@ venv/
 # Frontend
 node_modules/
 dist/
+dist.zip
 auto-imports.d.ts
 components.d.ts
 

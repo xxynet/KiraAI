@@ -87,7 +87,7 @@ def _generate_strong_password(length: int = 16) -> str:
 
 def _load_webui_config() -> Dict:
     """Load webui.json"""
-    config_path = Path(__file__).parent.parent / "data" / "webui.json"
+    config_path = get_data_path() / "webui.json"
     if config_path.exists():
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -96,7 +96,7 @@ def _load_webui_config() -> Dict:
 
 def _save_webui_config(config: Dict):
     """Save webui.json file"""
-    config_path = Path(__file__).parent.parent / "data" / "webui.json"
+    config_path = get_data_path() / "webui.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=2, ensure_ascii=False)

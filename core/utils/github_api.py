@@ -150,6 +150,7 @@ async def get_release_assets(
             "download_url": item.get("browser_download_url"),
             "content_type": item.get("content_type"),
             "state": item.get("state"),
+            "digest": item.get("digest"),
         })
     return assets
 

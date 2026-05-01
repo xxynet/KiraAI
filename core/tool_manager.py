@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Type, List, Any, Dict
 
 from core.utils.tool_utils import BaseTool
+from core.utils.path_utils import get_data_path
 from core.logging_manager import get_logger
 
 tool_logger = get_logger("tool_manager", "orange")
@@ -36,7 +37,7 @@ def _discover_tool_classes(module) -> List[Type[BaseTool]]:
 
 async def register_all_tools(llm_api) -> None:
     """Discover all subclasses of BaseTool under core.tools and register them."""
-    package_path_obj = Path("data/tools")
+    package_path_obj = get_data_path() / "tools"
     package_path_obj.mkdir(parents=True, exist_ok=True)
 
     init_file = package_path_obj / "__init__.py"
