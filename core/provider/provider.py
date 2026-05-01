@@ -170,7 +170,7 @@ class RerankModelClient(BaseModelClient):
 
 
 class BaseProvider(ABC):
-    models: dict[ModelType, type(BaseModelClient)]
+    models: dict[ModelType, type[BaseModelClient]]
 
     def __init__(self, provider_id, provider_name, provider_config):
         self.provider_id: str = provider_id
@@ -181,3 +181,14 @@ class BaseProvider(ABC):
         if model_type not in self.models:
             raise ValueError(f"Model type {model_type.value} not implemented")
         return self.models[model_type]
+    
+    async def get_llm_list(self) -> list[dict]:
+        """
+        Fetch available models from the provider's remote API.
+        Override in subclasses to implement remote model listing.
+
+        Returns a list of model info dicts with at least 'id'.
+        Example:
+            [{"id": "gpt-4o", "name": "GPT-4o", "description": "..."}, ...]
+        """
+        return []

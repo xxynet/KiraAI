@@ -44,3 +44,23 @@ export function updateModel(providerId: string, modelType: string, modelId: stri
 export function deleteModel(providerId: string, modelType: string, modelId: string) {
   return apiClient.delete(`/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelType)}/${encodeURIComponent(modelId)}`)
 }
+
+export function fetchRemoteModels(providerId: string, modelType: string = 'llm') {
+  return apiClient.get<{ models: Array<{ id: string; name?: string; description?: string }> }>(
+    `/providers/${encodeURIComponent(providerId)}/remote-models`,
+    { params: { model_type: modelType } }
+  )
+}
+
+export function syncModels(providerId: string, modelType: string, data: { add_ids: string[]; delete_ids: string[] }) {
+  return apiClient.post<{ added: number; removed: number; errors: string[] }>(
+    `/providers/${encodeURIComponent(providerId)}/models/sync/${encodeURIComponent(modelType)}`,
+    data
+  )
+}
+
+export function healthCheck(providerId: string, modelType: string, modelId: string) {
+  return apiClient.post<{ success: boolean; latency?: number; error?: string }>(
+    `/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelType)}/${encodeURIComponent(modelId)}/health-check`
+  )
+}

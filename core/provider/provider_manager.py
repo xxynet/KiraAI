@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import uuid
 import importlib.util
 import inspect
@@ -10,6 +11,7 @@ from .provider import (
     LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient,
     VideoModelClient, EmbeddingModelClient, RerankModelClient
 )
+from .llm_model import LLMRequest
 
 from core.utils.path_utils import get_config_path
 from core.logging_manager import get_logger
@@ -381,6 +383,121 @@ class ProviderManager:
         logger.info(f"Deleted model {model_id} ({model_type}) for provider {provider_id}")
         return True
 
+    def sync_models(
+        self,
+        provider_id: str,
+        model_type: str,
+        add_ids: list[str],
+        delete_ids: list[str],
+        config: Optional[dict] = None,
+    ) -> dict:
+        """
+        Batch sync models: add new ones and delete removed ones in a single
+        save + re-instantiate cycle.
+        :param provider_id: provider instance ID
+        :param model_type: e.g. llm, tts, image
+        :param add_ids: model IDs to add
+        :param delete_ids: model IDs to delete
+        :param config: optional config template for newly added models
+        :return: {"added": int, "removed": int, "errors": list[str]}
+        """
+        providers_config = self.kira_config.get("providers", {})
+        provider_config = providers_config.get(provider_id)
+        if not provider_config:
+            return {"added": 0, "removed": 0, "errors": [f"Provider {provider_id} not found"]}
+
+        model_config_root = provider_config.setdefault("model_config", {})
+        model_type_config = model_config_root.setdefault(model_type, {})
+
+        # Build default config from schema
+        model_defaults = {}
+        provider_format = provider_config.get("format")
+        if provider_format:
+            schema = self.get_schema(provider_format)
+            if schema:
+                model_fields_root = schema.get("model_config") or {}
+                type_fields = model_fields_root.get(model_type) or []
+                for field in type_fields:
+                    if isinstance(field, BaseConfigField):
+                        model_defaults[field.key] = field.default
+
+        added = 0
+        removed = 0
+        errors: list[str] = []
+
+        # Add new models
+        for model_id in add_ids:
+            if model_id in model_type_config:
+                continue  # already exists, skip
+            model_cfg = dict(model_defaults)
+            if config:
+                model_cfg.update(config)
+            model_type_config[model_id] = model_cfg
+            added += 1
+
+        # Delete removed models
+        for model_id in delete_ids:
+            if model_id not in model_type_config:
+                continue  # doesn't exist, skip
+            del model_type_config[model_id]
+            removed += 1
+
+        # Single save + re-instantiate
+        self.kira_config["providers"][provider_id] = provider_config
+        self.kira_config.save_config()
+
+        try:
+            self.set_provider(provider_id, provider_config)
+        except Exception as e:
+            errors.append(f"Failed to re-instantiate provider: {e}")
+            logger.error(f"Failed to re-instantiate provider {provider_id} after sync: {e}")
+
+        logger.info(
+            f"Synced models for provider {provider_id} ({model_type}): "
+            f"+{added} -{removed}"
+        )
+        return {"added": added, "removed": removed, "errors": errors}
+
+    async def health_check(self, provider_id: str, model_type: str, model_id: str) -> dict:
+        """
+        Test model availability by sending a simple prompt.
+        :return: {"success": bool, "latency": int (ms), "error": str | None}
+        """
+        try:
+            model_client = self.get_model_client(provider_id, model_id)
+        except Exception as e:
+            return {"success": False, "latency": None, "error": str(e)}
+        if not model_client:
+            return {"success": False, "latency": None, "error": "Model client not found"}
+
+        try:
+            start = time.time()
+
+            if isinstance(model_client, LLMModelClient):
+                request = LLMRequest(
+                    messages=[{"role": "user", "content": "Say 'pong'"}],
+                    tools=None,
+                    tool_choice="none",
+                )
+                await model_client.chat(request)
+            elif isinstance(model_client, TTSModelClient):
+                await model_client.text_to_speech("ping")
+            elif isinstance(model_client, EmbeddingModelClient):
+                await model_client.embed(["ping"])
+            elif isinstance(model_client, RerankModelClient):
+                await model_client.rerank("ping", ["ping"])
+            else:
+                return {
+                    "success": False,
+                    "latency": None,
+                    "error": f"Health check not supported for {model_type} models",
+                }
+
+            latency = round((time.time() - start) * 1000)
+            return {"success": True, "latency": latency, "error": None}
+        except Exception as e:
+            return {"success": False, "latency": None, "error": str(e)}
+
     @classmethod
     def scan_providers(cls, src_dir: str):
         """
@@ -543,3 +660,18 @@ class ProviderManager:
     def get_all_providers(self) -> Dict[str, BaseProvider]:
         """获取所有 providers"""
         return self._providers.copy()
+
+    async def fetch_remote_models(self, provider_id: str, model_type: str = "llm") -> list[dict]:
+        """
+        Fetch available models from a provider's remote API.
+        Returns a list of model info dicts.
+        """
+        provider = self.get_provider(provider_id)
+        if not provider:
+            raise ValueError(f"Provider {provider_id} not found")
+        try:
+            models = await provider.get_llm_list()
+            return models
+        except Exception as e:
+            logger.error(f"Failed to fetch remote models for provider {provider_id}: {e}")
+            raise

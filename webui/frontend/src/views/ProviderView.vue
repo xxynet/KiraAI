@@ -112,11 +112,18 @@
                 </svg>
                 <span class="font-medium text-gray-700 dark:text-gray-200">{{ $t(`provider.model_group_${modelType}`) }}</span>
               </div>
-              <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors" @click.stop="openAddModelDialog(modelType)">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                </svg>
-              </button>
+              <div class="flex items-center gap-1">
+                <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors" @click.stop="openAddModelDialog(modelType)">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                  </svg>
+                </button>
+                <button class="p-1 text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors" :title="$t('provider.fetch_remote_models')" @click.stop="openFetchRemoteModels(modelType)">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                  </svg>
+                </button>
+              </div>
             </div>
             <div v-show="activeModelGroups.includes(modelType)" class="px-4 py-3 bg-white dark:bg-gray-900">
               <div v-if="providerModels[modelType] && Object.keys(providerModels[modelType]).length" class="space-y-2">
@@ -127,6 +134,20 @@
                 >
                   <span class="flex-1 text-sm text-gray-800 dark:text-gray-100">{{ modelId }}</span>
                   <div class="flex items-center space-x-2">
+                    <button
+                      class="p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors disabled:opacity-50"
+                      :disabled="healthCheckingKey === `${modelType}:${String(modelId)}`"
+                      :title="$t('provider.health_check')"
+                      @click="handleHealthCheck(modelType, String(modelId))"
+                    >
+                      <svg v-if="healthCheckingKey === `${modelType}:${String(modelId)}`" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                      <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h4l3-9 4 18 3-9h4"></path>
+                      </svg>
+                    </button>
                     <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="editModel(modelType, String(modelId), modelConfig)">
                       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
@@ -143,9 +164,17 @@
               <div v-else class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
                 {{ $t('provider.no_models') }}
               </div>
-              <button class="mt-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="openAddModelDialog(modelType)">
-                + {{ $t('provider.add_model') }}
-              </button>
+              <div class="mt-2 flex items-center gap-2">
+                <button class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="openAddModelDialog(modelType)">
+                  + {{ $t('provider.add_model') }}
+                </button>
+                <button class="px-3 py-1.5 text-sm border border-green-300 dark:border-green-600 rounded-lg text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors flex items-center" @click="openFetchRemoteModels(modelType)">
+                  <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                  </svg>
+                  {{ $t('provider.fetch_remote_models') }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -240,6 +269,105 @@
       :confirm-text="t('provider.delete')"
       @confirm="onConfirmAction"
     />
+
+    <ConfirmModal
+      ref="healthCheckModalRef"
+      variant="info"
+      :title="t('provider.health_check')"
+      :message="t('provider.health_check_confirm')"
+      :cancel-text="t('provider.cancel')"
+      :confirm-text="t('provider.health_check_start')"
+      @confirm="onHealthCheckConfirm"
+    />
+
+    <!-- Remote Model Selection Modal -->
+    <Modal v-model="remoteModelDialogVisible" content-class="max-w-2xl">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full mx-4 flex flex-col modal-card" style="max-height: 80vh;">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('provider.fetch_remote_models') }}</h3>
+          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="remoteModelDialogVisible = false">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="px-6 py-4 flex-1 overflow-hidden flex flex-col">
+          <!-- Loading -->
+          <div v-if="remoteModelsLoading" class="flex justify-center items-center py-12">
+            <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="ml-3 text-gray-600 dark:text-gray-400">{{ $t('provider.fetch_remote_loading') }}</span>
+          </div>
+          <!-- Empty -->
+          <div v-else-if="remoteModels.length === 0" class="flex justify-center items-center py-12">
+            <p class="text-gray-500 dark:text-gray-400">{{ $t('provider.fetch_remote_empty') }}</p>
+          </div>
+          <!-- Model list -->
+          <template v-else>
+            <!-- Search + Select all -->
+            <div class="flex items-center gap-3 mb-3 flex-shrink-0">
+              <input
+                v-model="remoteModelSearch"
+                type="text"
+                :placeholder="$t('provider.search_model')"
+                class="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              />
+              <button
+                class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors whitespace-nowrap"
+                @click="toggleAllRemoteModels"
+              >
+                {{ filteredRemoteModels.every(m => m.selected) ? $t('provider.deselect_all') : $t('provider.select_all') }}
+              </button>
+            </div>
+            <!-- Model list (scrollable) -->
+            <div class="flex-1 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+              <div
+                v-for="model in filteredRemoteModels"
+                :key="model.id"
+                class="flex items-start px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors"
+                @click="model.selected = !model.selected"
+              >
+                <input
+                  type="checkbox"
+                  :checked="model.selected"
+                  class="mt-0.5 mr-3 h-4 w-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 cursor-pointer"
+                  @click.stop
+                  @change="model.selected = !model.selected"
+                />
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ model.name || model.id }}</div>
+                  <div v-if="model.name && model.name !== model.id" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{{ model.id }}</div>
+                  <div v-if="model.description" class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{{ model.description }}</div>
+                </div>
+              </div>
+              <div v-if="filteredRemoteModels.length === 0" class="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                {{ $t('provider.fetch_remote_no_match') }}
+              </div>
+            </div>
+            <!-- Selected count -->
+            <div class="mt-3 text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">
+              {{ $t('provider.selected_count', { count: selectedRemoteModelCount }) }}
+              <span v-if="remoteModelExistingIds.size > 0" class="ml-2">
+                · {{ $t('provider.existing_count', { count: remoteModelExistingIds.size }) }}
+              </span>
+            </div>
+          </template>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3 flex-shrink-0">
+          <button
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            @click="remoteModelDialogVisible = false"
+          >{{ $t('provider.cancel') }}</button>
+          <button
+            class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
+            :disabled="remoteModelsLoading || !hasRemoteModelChanges"
+            @click="handleSyncRemoteModels"
+          >{{ $t('provider.sync_models') }}</button>
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>
 
@@ -251,6 +379,7 @@ import {
   getProviders, getProviderTypes, getProviderSchema,
   createProvider, updateProvider, deleteProvider,
   addModel, updateModel, getModels, deleteModel,
+  fetchRemoteModels, syncModels, healthCheck,
 } from '@/api/provider'
 import ConfigForm from '@/components/common/ConfigForm.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -264,6 +393,8 @@ const configFormRef = ref<InstanceType<typeof ConfigForm>>()
 const createConfigFormRef = ref<InstanceType<typeof ConfigForm>>()
 const modelConfigFormRef = ref<InstanceType<typeof ConfigForm>>()
 const confirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
+const healthCheckModalRef = ref<InstanceType<typeof ConfirmModal>>()
+let pendingHealthCheck: { modelType: string; modelId: string } | null = null
 
 const confirmTitle = ref('')
 const confirmMessage = ref('')
@@ -310,6 +441,35 @@ const modelSchema = ref<any>(null)
 const addingModel = ref(false)
 const modelEditMode = ref(false)
 const originalModelId = ref('')
+
+// Health check
+const healthCheckingKey = ref<string | null>(null)
+
+// Fetch remote models
+const remoteModelDialogVisible = ref(false)
+const remoteModels = ref<Array<{ id: string; name?: string; description?: string; selected: boolean }>>([])
+const remoteModelsLoading = ref(false)
+const remoteModelSearch = ref('')
+const remoteModelType = ref('llm')
+const remoteModelExistingIds = ref<Set<string>>(new Set())
+
+const filteredRemoteModels = computed(() => {
+  const q = remoteModelSearch.value.trim().toLowerCase()
+  if (!q) return remoteModels.value
+  return remoteModels.value.filter(m =>
+    m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q)
+  )
+})
+
+const selectedRemoteModelCount = computed(() => remoteModels.value.filter(m => m.selected).length)
+
+const hasRemoteModelChanges = computed(() => {
+  const existing = remoteModelExistingIds.value
+  return remoteModels.value.some(m => {
+    const wasExisting = existing.has(m.id)
+    return (wasExisting && !m.selected) || (!wasExisting && m.selected)
+  })
+})
 
 const selectedProvider = computed(() => providers.value.find(p => p.id === selectedId.value))
 
@@ -586,6 +746,108 @@ async function removeModel(modelType: string, modelId: string) {
       notify(t('provider.model_delete_failed') + (error?.message ? ': ' + error.message : ''), 'error')
     }
   })
+}
+
+function handleHealthCheck(modelType: string, modelId: string) {
+  if (!selectedId.value || healthCheckingKey.value) return
+  pendingHealthCheck = { modelType, modelId }
+  healthCheckModalRef.value?.open()
+}
+
+async function onHealthCheckConfirm() {
+  if (!pendingHealthCheck || !selectedId.value) return
+  const { modelType, modelId } = pendingHealthCheck
+  pendingHealthCheck = null
+  const key = `${modelType}:${modelId}`
+  healthCheckingKey.value = key
+  try {
+    const res = await healthCheck(selectedId.value, modelType, modelId)
+    const data = res.data
+    if (data.success) {
+      notify(t('provider.health_check_success', { latency: data.latency }), 'success')
+    } else {
+      notify(t('provider.health_check_failed') + (data.error ? ': ' + data.error : ''), 'error')
+    }
+  } catch (error: any) {
+    notify(t('provider.health_check_failed') + (error?.message ? ': ' + error.message : ''), 'error')
+  } finally {
+    healthCheckingKey.value = null
+  }
+}
+
+async function openFetchRemoteModels(modelType: string) {
+  if (!selectedId.value) return
+  remoteModelType.value = modelType
+  remoteModelSearch.value = ''
+  remoteModels.value = []
+  remoteModelDialogVisible.value = true
+  remoteModelsLoading.value = true
+  try {
+    const res = await fetchRemoteModels(selectedId.value, modelType)
+    const data = res.data?.models || []
+    // Snapshot which remote models already exist locally
+    const existingModels = providerModels.value[modelType] || {}
+    const existingIds = new Set(Object.keys(existingModels))
+    remoteModelExistingIds.value = new Set(
+      data.map(m => m.id).filter(id => existingIds.has(id))
+    )
+    // Pre-select models that are already added
+    remoteModels.value = data.map(m => ({
+      ...m,
+      selected: existingIds.has(m.id),
+    }))
+  } catch (error: any) {
+    notify(t('provider.fetch_remote_failed') + (error?.message ? ': ' + error.message : ''), 'error')
+    remoteModels.value = []
+  } finally {
+    remoteModelsLoading.value = false
+  }
+}
+
+function toggleAllRemoteModels() {
+  const allSelected = filteredRemoteModels.value.every(m => m.selected)
+  filteredRemoteModels.value.forEach(m => { m.selected = !allSelected })
+}
+
+async function handleSyncRemoteModels() {
+  if (!selectedId.value) return
+  const providerId = selectedId.value
+  const existing = remoteModelExistingIds.value
+
+  const addIds = remoteModels.value
+    .filter(m => m.selected && !existing.has(m.id))
+    .map(m => m.id)
+  const deleteIds = remoteModels.value
+    .filter(m => !m.selected && existing.has(m.id))
+    .map(m => m.id)
+
+  if (addIds.length === 0 && deleteIds.length === 0) return
+
+  try {
+    const res = await syncModels(providerId, remoteModelType.value, {
+      add_ids: addIds,
+      delete_ids: deleteIds,
+    })
+    const { added, removed, errors } = res.data
+    if (added > 0 || removed > 0) {
+      const parts: string[] = []
+      if (added > 0) parts.push(t('provider.sync_added', { count: added }))
+      if (removed > 0) parts.push(t('provider.sync_removed', { count: removed }))
+      notify(parts.join(', '), 'success')
+    }
+    if (errors?.length) {
+      notify(t('provider.sync_failed', { count: errors.length }), 'error')
+    }
+  } catch (error: any) {
+    notify(t('provider.sync_failed', { count: addIds.length + deleteIds.length }) + (error?.message ? ': ' + error.message : ''), 'error')
+  }
+  remoteModelDialogVisible.value = false
+  try {
+    const modelsRes = await getModels(providerId)
+    if (selectedId.value === providerId) {
+      providerModels.value = modelsRes.data || {}
+    }
+  } catch { /* refresh failure is non-critical */ }
 }
 
 onMounted(() => {

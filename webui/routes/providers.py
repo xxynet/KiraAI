@@ -4,7 +4,9 @@ from fastapi import Depends, HTTPException, status
 
 from core.logging_manager import get_logger
 from webui.models import (
+    HealthCheckResponse,
     ModelCreateRequest,
+    ModelSyncRequest,
     ModelUpdateRequest,
     ProviderBase,
     ProviderResponse,
@@ -87,6 +89,13 @@ class ProvidersRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
+                path="/api/providers/{provider_id}/models/sync/{model_type}",
+                methods=["POST"],
+                endpoint=self.sync_models,
+                tags=["providers"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/providers/{provider_id}/models/{model_type}/{model_id:path}",
                 methods=["PUT"],
                 endpoint=self.update_model,
@@ -97,6 +106,21 @@ class ProvidersRoutes(Routes):
                 path="/api/providers/{provider_id}/models/{model_type}/{model_id:path}",
                 methods=["DELETE"],
                 endpoint=self.delete_model,
+                tags=["providers"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/providers/{provider_id}/models/{model_type}/{model_id:path}/health-check",
+                methods=["POST"],
+                endpoint=self.health_check,
+                response_model=HealthCheckResponse,
+                tags=["providers"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/providers/{provider_id}/remote-models",
+                methods=["GET"],
+                endpoint=self.fetch_remote_models,
                 tags=["providers"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -363,3 +387,42 @@ class ProvidersRoutes(Routes):
             raise HTTPException(status_code=404, detail="Provider not found")
         self._providers.pop(provider_id, None)
         return None
+
+    async def sync_models(self, provider_id: str, model_type: str, payload: ModelSyncRequest):
+        """Batch sync models: add new IDs and delete removed IDs in one request."""
+        if not self.lifecycle or not self.lifecycle.provider_manager:
+            raise HTTPException(status_code=500, detail="Provider manager not available")
+        result = self.lifecycle.provider_manager.sync_models(
+            provider_id=provider_id,
+            model_type=model_type,
+            add_ids=payload.add_ids,
+            delete_ids=payload.delete_ids,
+            config=payload.config or {},
+        )
+        if result["errors"]:
+            logger.warning(f"Sync models for {provider_id} had errors: {result['errors']}")
+        return result
+
+    async def health_check(self, provider_id: str, model_type: str, model_id: str):
+        """Test model availability by sending a simple prompt."""
+        if not self.lifecycle or not self.lifecycle.provider_manager:
+            raise HTTPException(status_code=500, detail="Provider manager not available")
+        result = await self.lifecycle.provider_manager.health_check(
+            provider_id=provider_id,
+            model_type=model_type,
+            model_id=model_id,
+        )
+        return HealthCheckResponse(**result)
+
+    async def fetch_remote_models(self, provider_id: str, model_type: str = "llm"):
+        """Fetch available models from a provider's remote API."""
+        if not self.lifecycle or not self.lifecycle.provider_manager:
+            raise HTTPException(status_code=500, detail="Provider manager not available")
+        try:
+            models = await self.lifecycle.provider_manager.fetch_remote_models(provider_id, model_type)
+            return {"models": models}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            logger.error(f"Error fetching remote models for provider {provider_id}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))

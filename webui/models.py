@@ -55,6 +55,26 @@ class ModelUpdateRequest(BaseModel):
     config: Dict = Field(default_factory=dict)
 
 
+class ModelSyncRequest(BaseModel):
+    """Batch sync: add new model IDs and delete removed ones."""
+    add_ids: List[str] = Field(default_factory=list)
+    delete_ids: List[str] = Field(default_factory=list)
+    config: Dict = Field(default_factory=dict)
+
+
+class HealthCheckRequest(BaseModel):
+    """Health check request for a specific model."""
+    model_type: str
+    model_id: str
+
+
+class HealthCheckResponse(BaseModel):
+    """Health check result."""
+    success: bool
+    latency: Optional[int] = None
+    error: Optional[str] = None
+
+
 class AdapterBase(BaseModel):
     name: str
     platform: str
