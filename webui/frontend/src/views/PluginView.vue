@@ -18,6 +18,14 @@
       <button
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
+        :class="activeTab === 'pluginStore' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'"
+        @click="activeTab = 'pluginStore'"
+      >
+        {{ $t('pluginStore.title') }}
+      </button>
+      <button
+        type="button"
+        class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
         :class="activeTab === 'mcp' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = 'mcp'"
       >
@@ -65,73 +73,22 @@
       </div>
 
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        <div
-          v-for="plugin in displayedPlugins"
+        <PluginCard
+          v-for="plugin in plugins"
           :key="plugin.id"
-          class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col"
-        >
-          <div class="flex items-start justify-between mb-3">
-            <div>
-              <div class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ plugin.name || plugin.id }}</div>
-              <div v-if="plugin.version || plugin.author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ plugin.version ? `v${plugin.version}` : '' }}{{ plugin.version && plugin.author ? ' · ' : '' }}{{ plugin.author || '' }}
-              </div>
-            </div>
-            <div class="flex items-start space-x-2">
-              <a
-                v-if="plugin.safeRepo"
-                :href="plugin.safeRepo"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-flex items-center text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 mt-1"
-              >
-                <span class="mr-1">{{ $t('plugin.repo_link') }}</span>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 3h7m0 0v7m0-7L10 14" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10v11h11" />
-                </svg>
-              </a>
-              <button
-                type="button"
-                class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
-                :class="plugin.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
-                :aria-pressed="plugin.enabled ? 'true' : 'false'"
-                @click="togglePlugin(plugin)"
-              >
-                <span
-                  class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                  :class="plugin.enabled ? 'translate-x-4' : 'translate-x-0'"
-                />
-              </button>
-            </div>
-          </div>
-          <p v-if="plugin.description" class="text-sm text-gray-600 dark:text-gray-300 line-clamp-3 mb-3">
-            {{ plugin.description }}
-          </p>
-          <div class="mt-auto">
-            <div class="text-xs font-mono text-gray-400 dark:text-gray-500 break-all mb-3">{{ plugin.id }}</div>
-            <div class="flex items-center justify-end space-x-3">
-              <button
-                type="button"
-                class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
-                @click="openPluginConfig(plugin)"
-              >
-                {{ $t('plugin.configure') }}
-              </button>
-              <button
-                type="button"
-                class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
-                :class="(plugin as any).uninstallable
-                  ? 'border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30'
-                  : 'border-gray-200 text-gray-300 cursor-not-allowed dark:border-gray-700 dark:text-gray-600'"
-                :disabled="!(plugin as any).uninstallable"
-                @click="(plugin as any).uninstallable && handleDeletePlugin(plugin.id)"
-              >
-                {{ $t('plugin.uninstall') }}
-              </button>
-            </div>
-          </div>
-        </div>
+          mode="installed"
+          :id="plugin.id"
+          :name="plugin.name"
+          :version="plugin.version"
+          :author="plugin.author"
+          :description="plugin.description"
+          :repo="plugin.repo"
+          :enabled="plugin.enabled"
+          :uninstallable="(plugin as any).uninstallable"
+          @toggle="togglePlugin(plugin)"
+          @configure="openPluginConfig(plugin)"
+          @uninstall="handleDeletePlugin(plugin.id)"
+        />
       </div>
     </div>
 
@@ -295,6 +252,195 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Plugin Store Tab Content -->
+    <div v-show="activeTab === 'pluginStore'">
+      <!-- Plugin Sources Button -->
+      <div class="flex items-center justify-start mb-4">
+        <button
+          type="button"
+          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          @click="openSourceManage"
+        >
+          <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span>{{ $t('pluginStore.sources') }}</span>
+        </button>
+        <span v-if="currentStoreSource" class="ml-3 text-sm text-gray-500 dark:text-gray-400">
+          {{ $t('pluginStore.current_source') }}: <span class="font-medium text-gray-700 dark:text-gray-300">{{ currentStoreSource.name }}</span>
+        </span>
+      </div>
+
+      <!-- Plugin Store Error -->
+      <div v-if="storeError" class="flex justify-center items-center py-12">
+        <div class="text-center">
+          <svg class="w-16 h-16 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p class="text-red-500">{{ storeError }}</p>
+          <button
+            type="button"
+            class="mt-3 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            @click="fetchStorePlugins"
+          >
+            {{ $t('plugin.skills_refresh') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- No Source Configured -->
+      <div v-else-if="!currentStoreSource" class="flex justify-center items-center py-12">
+        <div class="text-center">
+          <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+          <p class="text-gray-500 mb-3">{{ $t('pluginStore.no_sources') }}</p>
+          <button
+            type="button"
+            class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
+            @click="openSourceManage"
+          >
+            {{ $t('pluginStore.add_source') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <div v-else-if="storeLoading" class="flex justify-center items-center py-12">
+        <svg class="animate-spin h-8 w-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+      </div>
+
+      <!-- No Plugins Available -->
+      <div v-else-if="storePlugins.length === 0" class="flex justify-center items-center py-12">
+        <div class="text-center">
+          <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+          </svg>
+          <p class="text-gray-500">{{ $t('pluginStore.no_plugins') }}</p>
+        </div>
+      </div>
+
+      <!-- Plugin Cards Grid -->
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        <PluginCard
+          v-for="item in storePlugins"
+          :key="item.id"
+          mode="store"
+          :id="item.id"
+          :name="item.name"
+          :version="item.version"
+          :author="item.author"
+          :description="item.description"
+          :repo="item.repo"
+          :installed="item.installed"
+          @install="handleStoreInstall(item)"
+        />
+      </div>
+
+      <!-- Plugin Sources Management Modal -->
+      <Modal v-model="sourceManageVisible" content-class="max-w-lg">
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
+          <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('pluginStore.source_manage') }}</h3>
+            <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="sourceManageVisible = false">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="px-6 py-5 flex-1 overflow-y-auto space-y-4">
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ $t('pluginStore.source_manage_desc') }}</p>
+
+            <!-- Existing Sources List -->
+            <div v-if="pluginSources.length > 0" class="space-y-2">
+              <div
+                v-for="src in pluginSources"
+                :key="src.url"
+                class="flex items-center justify-between p-3 rounded-lg border transition-colors"
+                :class="currentStoreSource && currentStoreSource.url === src.url
+                  ? 'border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-900/20'
+                  : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800'"
+              >
+                <div class="flex-1 min-w-0 mr-3">
+                  <div class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ src.name }}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ src.url }}</div>
+                </div>
+                <div class="flex items-center space-x-2">
+                  <button
+                    v-if="!currentStoreSource || currentStoreSource.url !== src.url"
+                    type="button"
+                    class="px-2.5 py-1 text-xs font-medium rounded-md border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+                    @click="switchToSource(src)"
+                  >
+                    {{ $t('pluginStore.switch_source') }}
+                  </button>
+                  <span
+                    v-else
+                    class="px-2.5 py-1 text-xs font-medium rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                  >
+                    {{ $t('pluginStore.current_source') }}
+                  </span>
+                  <button
+                    type="button"
+                    class="px-2.5 py-1 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+                    @click="removeSource(pluginSources.indexOf(src))"
+                  >
+                    {{ $t('pluginStore.remove_source') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-center py-4 text-sm text-gray-400 dark:text-gray-500">
+              {{ $t('pluginStore.no_sources') }}
+            </div>
+
+            <!-- Add New Source Form -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+              <div class="mb-3">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('pluginStore.source_name') }}</label>
+                <input
+                  v-model="newSourceName"
+                  type="text"
+                  :placeholder="$t('pluginStore.source_name_placeholder')"
+                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                >
+              </div>
+              <div class="mb-3">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('pluginStore.source_url') }}</label>
+                <input
+                  v-model="newSourceUrl"
+                  type="text"
+                  :placeholder="$t('pluginStore.source_url_placeholder')"
+                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                >
+              </div>
+            </div>
+          </div>
+          <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+            <button
+              type="button"
+              class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              @click="sourceManageVisible = false"
+            >
+              {{ $t('pluginStore.cancel') }}
+            </button>
+            <button
+              type="button"
+              class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="!newSourceName.trim() || !newSourceUrl.trim()"
+              @click="addNewSource"
+            >
+              {{ $t('pluginStore.add_source') }}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
 
     <!-- Install Plugin Dialog -->
@@ -485,7 +631,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import Modal from '@/components/common/Modal.vue'
@@ -506,7 +652,9 @@ import {
 } from '@/api/skills'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfigForm from '@/components/common/ConfigForm.vue'
-import type { PluginItem, McpServerItem } from '@/types'
+import PluginCard from '@/components/common/PluginCard.vue'
+import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem } from '@/types'
+import { getSources, saveSources, getCurrentSource, setCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
 const activeTab = ref('plugins')
@@ -573,26 +721,6 @@ function onCancelAction() {
 // Error flags so the UI can distinguish "no data" from "fetch failed"
 const pluginsError = ref<string | null>(null)
 const mcpServersError = ref<string | null>(null)
-
-// Only render plugin.repo as a link if it is a well-formed http(s) URL.
-// Prevents javascript:/data: URLs embedded in plugin metadata from running
-// when the user clicks the "Repo" link.
-function safeRepoUrl(url: unknown): string | null {
-  if (typeof url !== 'string' || !url) return null
-  try {
-    const parsed = new URL(url)
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      return parsed.toString()
-    }
-  } catch { /* invalid URL */ }
-  return null
-}
-
-// Enrich each plugin with a pre-validated `safeRepo` so the template doesn't
-// call safeRepoUrl twice per card (v-if + :href) and re-parse the URL.
-const displayedPlugins = computed(() =>
-  plugins.value.map(p => ({ ...p, safeRepo: safeRepoUrl(p.repo) })),
-)
 
 async function loadPlugins() {
   try {
@@ -892,9 +1020,106 @@ async function handleSkillUpload() {
   }
 }
 
+// Plugin Store
+const pluginSources = ref<PluginStoreSource[]>([])
+const currentStoreSource = ref<PluginStoreSource | null>(null)
+const storePlugins = ref<PluginStoreItem[]>([])
+const storeLoading = ref(false)
+const storeError = ref<string | null>(null)
+const sourceManageVisible = ref(false)
+const newSourceName = ref('')
+const newSourceUrl = ref('')
+
+function isCurrentSource(src: PluginStoreSource): boolean {
+  return currentStoreSource.value?.url === src.url
+}
+
+function openSourceManage() {
+  pluginSources.value = getSources()
+  newSourceName.value = ''
+  newSourceUrl.value = ''
+  sourceManageVisible.value = true
+}
+
+function addNewSource() {
+  const name = newSourceName.value.trim()
+  const url = newSourceUrl.value.trim()
+  if (!name || !url) return
+  const newSrc: PluginStoreSource = { name, url }
+  pluginSources.value.push(newSrc)
+  saveSources(pluginSources.value)
+  // If this is the first source, auto-select it
+  if (!currentStoreSource.value) {
+    switchToSource(newSrc)
+  }
+  newSourceName.value = ''
+  newSourceUrl.value = ''
+  notify(t('pluginStore.source_added'), 'success')
+}
+
+function removeSource(idx: number) {
+  const removed = pluginSources.value[idx]
+  pluginSources.value.splice(idx, 1)
+  saveSources(pluginSources.value)
+  if (removed && isCurrentSource(removed)) {
+    const next = pluginSources.value.length > 0 ? pluginSources.value[0] : null
+    setCurrentSource(next)
+    currentStoreSource.value = next
+    if (next) {
+      fetchStorePlugins()
+    } else {
+      storePlugins.value = []
+    }
+  }
+  notify(t('pluginStore.source_removed'), 'success')
+}
+
+function switchToSource(src: PluginStoreSource) {
+  setCurrentSource(src)
+  currentStoreSource.value = src
+  sourceManageVisible.value = false
+  notify(`${t('pluginStore.source_switched')}: ${src.name}`, 'success')
+  fetchStorePlugins()
+}
+
+async function fetchStorePlugins() {
+  if (!currentStoreSource.value) return
+  storeLoading.value = true
+  storeError.value = null
+  try {
+    const items = await fetchPluginsFromSource(currentStoreSource.value.url)
+    // Mark already-installed plugins
+    const installedIds = new Set(plugins.value.map(p => p.id))
+    storePlugins.value = items.map(item => ({
+      ...item,
+      installed: installedIds.has(item.id),
+    }))
+  } catch (e: any) {
+    storePlugins.value = []
+    storeError.value = e?.message || t('pluginStore.fetch_failed')
+  } finally {
+    storeLoading.value = false
+  }
+}
+
+function handleStoreInstall(item: PluginStoreItem) {
+  if (item.installed) return
+  // Open the install modal with the plugin's repo URL pre-filled
+  resetInstallForm()
+  installTab.value = 'github'
+  installForm.value.repo_url = item.repo || ''
+  installDialogVisible.value = true
+}
+
 onMounted(() => {
   loadPlugins()
   loadMcpServers()
   loadSkills()
+  // Plugin Store: load saved sources and current source
+  pluginSources.value = getSources()
+  currentStoreSource.value = getCurrentSource()
+  if (currentStoreSource.value) {
+    fetchStorePlugins()
+  }
 })
 </script>

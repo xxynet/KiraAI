@@ -147,6 +147,20 @@ class PluginInstallResult(PluginItem):
     warnings: List[str] = Field(default_factory=list)
 
 
+class PluginStoreItemResponse(BaseModel):
+    id: str
+    name: str
+    version: str = ""
+    author: str = ""
+    description: str = ""
+    category: Optional[str] = None
+    repo: Optional[str] = None
+
+
+class PluginStoreFetchRequest(BaseModel):
+    url: str
+
+
 class McpServerItem(BaseModel):
     id: str
     type: str = ""

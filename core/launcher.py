@@ -70,6 +70,7 @@ class KiraLauncher:
         try:
             host = webui_config["host"]
             port = webui_config["port"]
+            access_token = self.webui.access_token
 
             if host not in ("localhost", "127.0.0.1"):
                 try:
@@ -77,6 +78,7 @@ class KiraLauncher:
                     self.logger.info(f"KiraAI WebUI started at:")
                     for address in addresses:
                         self.logger.info(f"{address[0]}: http://{address[1]}:{port}")
+                    self.logger.info(f"Access Token: {access_token}")
                 except Exception as e:
                     self.logger.warning(f"Failed to get ip addresses: {e}")
 

@@ -3,9 +3,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, File, HTTPException, UploadFile
 
+from core.plugin.plugin_registry import PluginManager
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_from_github, install_from_zip, install_requirements
-from webui.models import PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem
+from webui.models import PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem, PluginStoreItemResponse, PluginStoreFetchRequest
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 from webui.utils import schema_to_dict
@@ -66,6 +67,14 @@ class PluginsRoutes(Routes):
                 endpoint=self.install_from_upload,
                 response_model=PluginInstallResult,
                 tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugin-store/fetch",
+                methods=["POST"],
+                endpoint=self.fetch_plugin_store,
+                response_model=List[PluginStoreItemResponse],
+                tags=["plugin-store"],
                 dependencies=[Depends(require_auth)],
             ),
         ]
@@ -257,3 +266,21 @@ class PluginsRoutes(Routes):
             enabled=plugin_manager.is_plugin_enabled(plugin_id),
             warnings=warnings,
         )
+
+    async def fetch_plugin_store(self, payload: PluginStoreFetchRequest) -> List[PluginStoreItemResponse]:
+        try:
+            raw_items = await PluginManager.fetch_plugin_store_data(payload.url)
+            result: List[PluginStoreItemResponse] = []
+            for item in raw_items:
+                result.append(PluginStoreItemResponse(
+                    id=str(item.get("plugin_id", "")),
+                    name=str(item.get("display_name", "")),
+                    version=str(item.get("version") or ""),
+                    author=str(item.get("author", "")),
+                    description=str(item.get("description", "")),
+                    category=item.get("category"),
+                    repo=item.get("repo"),
+                ))
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Failed to fetch plugin store data: {e}")
