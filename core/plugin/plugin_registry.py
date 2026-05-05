@@ -1098,89 +1098,14 @@ class PluginManager:
             await self.load_plugin_from_dir(plugin_root)
 
     @staticmethod
-    async def fetch_plugin_store_data(url: str) -> List[Dict[str, Any]]:
+    async def fetch_plugin_store_data(url: str) -> Any:
         """
-        Fetch and parse plugin data from a plugin store source URL.
+        Fetch the raw JSON data from a plugin store source URL.
 
-        The source JSON should have the structure:
-        {
-            "meta": { ... },
-            "plugins": {
-                "<id>": {
-                    "plugin_id": "...",
-                    "display_name": "...",
-                    "version": "...",
-                    "author": "...",
-                    "description": "...",
-                    ...
-                },
-                ...
-            }
-        }
-
-        Or a plain array of plugin objects.
-
-        Standard schema fields prioritized:
-          plugin_id, display_name, version, author, description
-
-        Extra useful fields (if present): category, repo, name, id
-
-        NOTE: github_data is intentionally NOT parsed.
+        Returns the complete original JSON (including ``meta``, ``plugins``, etc.).
+        Callers should extract the ``plugins`` collection themselves.
         """
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(url)
             resp.raise_for_status()
-            data = resp.json()
-
-        # Determine the plugins collection from various possible formats
-        raw_plugins: Any = None
-        if isinstance(data, dict):
-            raw_plugins = data.get("plugins", data.get("items", []))
-        elif isinstance(data, list):
-            raw_plugins = data
-
-        if not isinstance(raw_plugins, (dict, list)):
-            logger.warning(f"Unexpected plugin store data format from {url}")
-            return []
-
-        # Normalize to a list of plugin dicts
-        if isinstance(raw_plugins, dict):
-            plugin_list = list(raw_plugins.values())
-        else:
-            plugin_list = list(raw_plugins)
-
-        result: List[Dict[str, Any]] = []
-        for raw in plugin_list:
-            if not isinstance(raw, dict):
-                continue
-
-            # Prioritize standard schema fields
-            plugin_id = raw.get("plugin_id") or raw.get("id") or raw.get("name", "")
-            display_name = raw.get("display_name") or raw.get("name") or str(plugin_id)
-            version = raw.get("version")
-            author = raw.get("author", "")
-            description = raw.get("description", "")
-
-            # Extra useful fields (optional)
-            category = raw.get("category")
-            repo = raw.get("repo") or raw.get("repo_url")
-
-            item: Dict[str, Any] = {
-                "plugin_id": str(plugin_id),
-                "display_name": str(display_name),
-                "version": str(version) if version else None,
-                "author": str(author),
-                "description": str(description),
-                "category": str(category) if category else None,
-                "repo": str(repo) if repo else None,
-            }
-
-            # Preserve numeric id if available (for API install references)
-            if "id" in raw and raw["id"] is not None:
-                item["id"] = raw["id"]
-
-            # Explicitly skip github_data — do not parse it
-
-            result.append(item)
-
-        return result
+            return resp.json()

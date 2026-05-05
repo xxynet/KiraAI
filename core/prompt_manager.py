@@ -101,13 +101,13 @@ class PromptManager:
             Prompt(prompt_tmpl.role_tmpl, name="role", source="system"),
             Prompt(prompt_tmpl.persona_tmpl, name="persona", source="system", persona=persona_prompt),
             Prompt(prompt_tmpl.attention_tmpl, name="attention", source="system"),
+            Prompt(prompt_tmpl.output_tmpl, name="output", source="system", max_tool_loop=max_tool_loop),
+            Prompt(prompt_tmpl.format_tmpl, name="format", source="system"),
             Prompt(prompt_tmpl.accounts_tmpl, name="accounts", source="system", accounts=self.ada_config_prompt),
             Prompt(prompt_tmpl.sessions_tmpl, name="sessions", source="system"),
-            Prompt(prompt_tmpl.time_tmpl, name="time", source="system", time_str=formatted_time),
             Prompt(prompt_tmpl.chat_env_tmpl, name="chat_env", source="system", chat_env=chat_env),
             Prompt(prompt_tmpl.memory_tmpl, name="memory", source="system"),
             Prompt(prompt_tmpl.tools_tmpl, name="tools", source="system"),
-            Prompt(prompt_tmpl.output_tmpl, name="output", source="system", max_tool_loop=max_tool_loop),
-            Prompt(prompt_tmpl.format_tmpl, name="format", source="system")
+            Prompt(prompt_tmpl.time_tmpl, name="time", source="system", time_str=formatted_time)
         ]
         return agent_prompt

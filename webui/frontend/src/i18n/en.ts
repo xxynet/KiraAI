@@ -352,6 +352,9 @@ export default {
     source_added: 'Plugin source added',
     source_removed: 'Plugin source removed',
     source_switched: 'Switched to source',
+    source_add_error: 'Failed to add plugin source',
+    source_remove_error: 'Failed to remove plugin source',
+    source_switch_error: 'Failed to switch source',
     no_plugins: 'No plugins available in this source',
     load_failed: 'Failed to load plugin store',
     fetch_failed: 'Failed to fetch plugins from source',
@@ -367,6 +370,8 @@ export default {
     description: 'Description',
     source_manage: 'Manage Plugin Sources',
     source_manage_desc: 'Add, remove, or switch between plugin sources',
+    refresh: 'Refresh',
+    refresh_success: 'Plugins refreshed',
   },
   sticker: {
     title: 'Stickers',

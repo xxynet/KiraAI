@@ -1,12 +1,20 @@
 import shutil
+import time
+import json
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 from fastapi import Depends, File, HTTPException, UploadFile
 
 from core.plugin.plugin_registry import PluginManager
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_from_github, install_from_zip, install_requirements
-from webui.models import PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem, PluginStoreItemResponse, PluginStoreFetchRequest
+from core.utils.path_utils import get_data_path
+from webui.models import (
+    PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem,
+    PluginStoreItemResponse, PluginStoreFetchRequest,
+    PluginStoreSourceItem, PluginStoreSourceCreateRequest, PluginStoreSourceUpdateRequest,
+)
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 from webui.utils import schema_to_dict
@@ -74,6 +82,36 @@ class PluginsRoutes(Routes):
                 methods=["POST"],
                 endpoint=self.fetch_plugin_store,
                 response_model=List[PluginStoreItemResponse],
+                tags=["plugin-store"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugin-store/sources",
+                methods=["GET"],
+                endpoint=self.list_plugin_sources,
+                response_model=List[PluginStoreSourceItem],
+                tags=["plugin-store"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugin-store/sources",
+                methods=["POST"],
+                endpoint=self.create_plugin_source,
+                response_model=PluginStoreSourceItem,
+                tags=["plugin-store"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugin-store/sources/{source_id}/current",
+                methods=["POST"],
+                endpoint=self.set_current_source,
+                tags=["plugin-store"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugin-store/sources/{source_id}",
+                methods=["DELETE"],
+                endpoint=self.delete_plugin_source,
                 tags=["plugin-store"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -268,10 +306,36 @@ class PluginsRoutes(Routes):
         )
 
     async def fetch_plugin_store(self, payload: PluginStoreFetchRequest) -> List[PluginStoreItemResponse]:
+        url: Optional[str] = payload.url
+        source_id: Optional[str] = None
+
+        # If source_id is provided, look up URL from DB
+        if payload.source_id and self.lifecycle and self.lifecycle.db_service:
+            source = await self.lifecycle.db_service.get_plugin_store_source(payload.source_id)
+            if not source:
+                raise HTTPException(status_code=404, detail="Plugin store source not found")
+            url = source["url"]
+            source_id = payload.source_id
+
+        if not url:
+            raise HTTPException(status_code=400, detail="Either url or source_id is required")
+
         try:
-            raw_items = await PluginManager.fetch_plugin_store_data(payload.url)
+            raw_data = await PluginManager.fetch_plugin_store_data(url)
+            items = self._extract_plugins(raw_data)
+
+            # Update cache on force refresh
+            if payload.force_refresh and source_id and self.lifecycle and self.lifecycle.db_service:
+                now = int(time.time())
+                cache_file = await self._fetch_and_cache(
+                    source_id, url, existing_filename=source.get("cache_file") if source_id else None,
+                )
+                if cache_file:
+                    await self.lifecycle.db_service.update_plugin_store_source(
+                        source_id, cache_file=cache_file, updated_at=now,
+                    )
             result: List[PluginStoreItemResponse] = []
-            for item in raw_items:
+            for item in items:
                 result.append(PluginStoreItemResponse(
                     id=str(item.get("plugin_id", "")),
                     name=str(item.get("display_name", "")),
@@ -284,3 +348,185 @@ class PluginsRoutes(Routes):
             return result
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"Failed to fetch plugin store data: {e}")
+
+    @staticmethod
+    def _extract_plugins(raw_data: Any) -> List[Dict[str, Any]]:
+        """Extract and normalize plugin entries from raw store JSON.
+
+        Supports the standard format ``{\"plugins\": {\"<id>\": {...}, ...}}``
+        as well as a plain array of plugin objects.
+
+        Standard schema fields prioritized:
+          plugin_id, display_name, version, author, description
+
+        Extra useful fields (if present): category, repo, name, id
+
+        NOTE: github_data is intentionally NOT parsed.
+        """
+        raw_plugins: Any = None
+        if isinstance(raw_data, dict):
+            raw_plugins = raw_data.get("plugins", [])
+        elif isinstance(raw_data, list):
+            raw_plugins = raw_data
+
+        if not isinstance(raw_plugins, (dict, list)):
+            return []
+
+        if isinstance(raw_plugins, dict):
+            plugin_list = list(raw_plugins.values())
+        else:
+            plugin_list = list(raw_plugins)
+
+        result: List[Dict[str, Any]] = []
+        for raw in plugin_list:
+            if not isinstance(raw, dict):
+                continue
+
+            plugin_id = raw.get("plugin_id") or raw.get("id") or raw.get("name", "")
+            display_name = raw.get("display_name") or raw.get("name") or str(plugin_id)
+            version = raw.get("version")
+            author = raw.get("author", "")
+            description = raw.get("description", "")
+            category = raw.get("category")
+            repo = raw.get("repo") or raw.get("repo_url")
+
+            item: Dict[str, Any] = {
+                "plugin_id": str(plugin_id),
+                "display_name": str(display_name),
+                "version": str(version) if version else None,
+                "author": str(author),
+                "description": str(description),
+                "category": str(category) if category else None,
+                "repo": str(repo) if repo else None,
+            }
+
+            if "id" in raw and raw["id"] is not None:
+                item["id"] = raw["id"]
+
+            result.append(item)
+
+        return result
+
+    # ---- Plugin Store Source CRUD ----
+
+    async def list_plugin_sources(self) -> List[PluginStoreSourceItem]:
+        if not self.lifecycle or not self.lifecycle.db_service:
+            raise HTTPException(status_code=503, detail="Database service not available")
+        sources = await self.lifecycle.db_service.list_plugin_store_sources()
+        return [
+            PluginStoreSourceItem(
+                id=s["id"],
+                name=s["name"],
+                url=s["url"],
+                cache_file=s.get("cache_file"),
+                updated_at=s.get("updated_at", 0),
+                is_current=s.get("is_current", False),
+                created_at=s.get("created_at", 0),
+            )
+            for s in sources
+        ]
+
+    async def create_plugin_source(self, payload: PluginStoreSourceCreateRequest) -> PluginStoreSourceItem:
+        if not self.lifecycle or not self.lifecycle.db_service:
+            raise HTTPException(status_code=503, detail="Database service not available")
+
+        db = self.lifecycle.db_service
+        source_id = uuid4().hex
+        now = int(time.time())
+
+        # Save to DB
+        await db.add_plugin_store_source(
+            source_id=source_id,
+            name=payload.name,
+            url=payload.url,
+            updated_at=now,
+            is_current=False,
+            created_at=now,
+        )
+
+        # Fetch and cache plugins
+        cache_file = await self._fetch_and_cache(source_id, payload.url)
+        if cache_file:
+            await db.update_plugin_store_source(source_id, cache_file=cache_file, updated_at=now)
+
+        created = await db.get_plugin_store_source(source_id)
+        return PluginStoreSourceItem(
+            id=created["id"],
+            name=created["name"],
+            url=created["url"],
+            cache_file=created.get("cache_file"),
+            updated_at=created.get("updated_at", 0),
+            is_current=created.get("is_current", False),
+            created_at=created.get("created_at", 0),
+        )
+
+    async def set_current_source(self, source_id: str):
+        if not self.lifecycle or not self.lifecycle.db_service:
+            raise HTTPException(status_code=503, detail="Database service not available")
+
+        db = self.lifecycle.db_service
+        source = await db.get_plugin_store_source(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Plugin store source not found")
+
+        # Set this source as current
+        await db.update_plugin_store_source(source_id, is_current=True)
+
+        # Refresh cache if stale
+        now = int(time.time())
+        updated_at = source.get("updated_at", 0)
+        if now - updated_at > 600:  # 10 minutes
+            cache_file = await self._fetch_and_cache(
+                source_id, source["url"], existing_filename=source.get("cache_file"),
+            )
+            if cache_file:
+                await db.update_plugin_store_source(source_id, cache_file=cache_file, updated_at=now)
+
+        return {"success": True}
+
+    async def delete_plugin_source(self, source_id: str):
+        if not self.lifecycle or not self.lifecycle.db_service:
+            raise HTTPException(status_code=503, detail="Database service not available")
+
+        db = self.lifecycle.db_service
+        source = await db.get_plugin_store_source(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Plugin store source not found")
+
+        # Delete cache file if exists
+        cache_file = source.get("cache_file")
+        if cache_file:
+            plugin_src_dir = get_data_path() / "plugin_src"
+            cache_path = plugin_src_dir / cache_file
+            try:
+                if cache_path.exists():
+                    cache_path.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete cache file {cache_path}: {e}")
+
+        await db.delete_plugin_store_source(source_id)
+        return {"success": True}
+
+    @staticmethod
+    async def _fetch_and_cache(source_id: str, url: str, existing_filename: Optional[str] = None) -> Optional[str]:
+        """Fetch plugin store data, save complete raw JSON to disk. Return cache filename or None.
+
+        If *existing_filename* is provided and its file exists on disk, the fetched
+        data will **overwrite** that file instead of creating a new one, so no
+        orphaned cache files are left behind.
+        """
+        try:
+            raw_data = await PluginManager.fetch_plugin_store_data(url)
+            plugin_src_dir = get_data_path() / "plugin_src"
+            plugin_src_dir.mkdir(parents=True, exist_ok=True)
+            # Reuse the existing file when it is already on disk
+            if existing_filename and (plugin_src_dir / existing_filename).exists():
+                filename = existing_filename
+            else:
+                filename = f"plugins_{uuid4().hex}.json"
+            cache_path = plugin_src_dir / filename
+            cache_path.write_text(json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8")
+            return filename
+        except Exception as e:
+            logger.warning(f"Failed to fetch/cache plugin store data from {url}: {e}")
+            return None

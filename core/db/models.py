@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, Text, JSON
+from sqlalchemy import Column, Integer, String, BigInteger, Text, JSON, Boolean
 
 from .db_mgr import Base
 
@@ -32,3 +32,16 @@ class Persona(Base):
     format = Column(String, nullable=False, default="text")
     content = Column(Text, nullable=False)
     created_at = Column(BigInteger, nullable=False)
+
+
+class PluginStoreSource(Base):
+    """Plugin store source metadata table."""
+    __tablename__ = "plugin_store_sources"
+
+    id = Column(String, primary_key=True, nullable=False)
+    name = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    cache_file = Column(String, nullable=True)  # filename under plugin_src/
+    updated_at = Column(BigInteger, nullable=False, default=0)
+    is_current = Column(Boolean, nullable=False, default=False)
+    created_at = Column(BigInteger, nullable=False, default=0)

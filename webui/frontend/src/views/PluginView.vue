@@ -269,6 +269,22 @@
           </svg>
           <span>{{ $t('pluginStore.sources') }}</span>
         </button>
+        <button
+          v-if="currentStoreSource"
+          type="button"
+          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ml-2"
+          :disabled="storeLoading"
+          @click="() => fetchStorePlugins(true)"
+        >
+          <svg
+            class="w-4 h-4 mr-1"
+            :class="{ 'animate-spin': storeLoading }"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span>{{ $t('pluginStore.refresh') }}</span>
+        </button>
         <span v-if="currentStoreSource" class="ml-3 text-sm text-gray-500 dark:text-gray-400">
           {{ $t('pluginStore.current_source') }}: <span class="font-medium text-gray-700 dark:text-gray-300">{{ currentStoreSource.name }}</span>
         </span>
@@ -284,7 +300,7 @@
           <button
             type="button"
             class="mt-3 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            @click="fetchStorePlugins"
+            @click="() => fetchStorePlugins()"
           >
             {{ $t('plugin.skills_refresh') }}
           </button>
@@ -361,9 +377,9 @@
             <div v-if="pluginSources.length > 0" class="space-y-2">
               <div
                 v-for="src in pluginSources"
-                :key="src.url"
+                :key="src.id"
                 class="flex items-center justify-between p-3 rounded-lg border transition-colors"
-                :class="currentStoreSource && currentStoreSource.url === src.url
+                :class="currentStoreSource && currentStoreSource.id === src.id
                   ? 'border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-900/20'
                   : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800'"
               >
@@ -373,7 +389,7 @@
                 </div>
                 <div class="flex items-center space-x-2">
                   <button
-                    v-if="!currentStoreSource || currentStoreSource.url !== src.url"
+                    v-if="!currentStoreSource || currentStoreSource.id !== src.id"
                     type="button"
                     class="px-2.5 py-1 text-xs font-medium rounded-md border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
                     @click="switchToSource(src)"
@@ -654,7 +670,7 @@ import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfigForm from '@/components/common/ConfigForm.vue'
 import PluginCard from '@/components/common/PluginCard.vue'
 import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem } from '@/types'
-import { getSources, saveSources, getCurrentSource, setCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
+import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
 const activeTab = ref('plugins')
@@ -1031,69 +1047,101 @@ const newSourceName = ref('')
 const newSourceUrl = ref('')
 
 function isCurrentSource(src: PluginStoreSource): boolean {
-  return currentStoreSource.value?.url === src.url
+  return currentStoreSource.value?.id === src.id
 }
 
-function openSourceManage() {
-  pluginSources.value = getSources()
+async function loadSourcesFromBackend() {
+  try {
+    const sources = await getSources()
+    pluginSources.value = sources
+    const current = sources.find(s => s.is_current) || null
+    currentStoreSource.value = current
+  } catch {
+    pluginSources.value = []
+    currentStoreSource.value = null
+  }
+}
+
+async function openSourceManage() {
+  await loadSourcesFromBackend()
   newSourceName.value = ''
   newSourceUrl.value = ''
   sourceManageVisible.value = true
 }
 
-function addNewSource() {
+async function addNewSource() {
   const name = newSourceName.value.trim()
   const url = newSourceUrl.value.trim()
   if (!name || !url) return
-  const newSrc: PluginStoreSource = { name, url }
-  pluginSources.value.push(newSrc)
-  saveSources(pluginSources.value)
-  // If this is the first source, auto-select it
-  if (!currentStoreSource.value) {
-    switchToSource(newSrc)
-  }
-  newSourceName.value = ''
-  newSourceUrl.value = ''
-  notify(t('pluginStore.source_added'), 'success')
-}
-
-function removeSource(idx: number) {
-  const removed = pluginSources.value[idx]
-  pluginSources.value.splice(idx, 1)
-  saveSources(pluginSources.value)
-  if (removed && isCurrentSource(removed)) {
-    const next = pluginSources.value.length > 0 ? pluginSources.value[0] : null
-    setCurrentSource(next)
-    currentStoreSource.value = next
-    if (next) {
-      fetchStorePlugins()
-    } else {
-      storePlugins.value = []
+  try {
+    const created = await apiAddSource(name, url)
+    pluginSources.value.push(created)
+    // If this is the first source, auto-select it
+    if (!currentStoreSource.value) {
+      await switchToSource(created)
     }
+    newSourceName.value = ''
+    newSourceUrl.value = ''
+    notify(t('pluginStore.source_added'), 'success')
+  } catch (e: any) {
+    const msg = e?.response?.data?.detail || e?.message || ''
+    notify(`${t('pluginStore.source_add_error')}${msg ? ': ' + msg : ''}`, 'error')
   }
-  notify(t('pluginStore.source_removed'), 'success')
 }
 
-function switchToSource(src: PluginStoreSource) {
-  setCurrentSource(src)
-  currentStoreSource.value = src
-  sourceManageVisible.value = false
-  notify(`${t('pluginStore.source_switched')}: ${src.name}`, 'success')
-  fetchStorePlugins()
+async function removeSource(idx: number) {
+  const removed = pluginSources.value[idx]
+  try {
+    await apiDeleteSource(removed.id)
+    pluginSources.value.splice(idx, 1)
+    if (removed && isCurrentSource(removed)) {
+      const next = pluginSources.value.length > 0 ? pluginSources.value[0] : null
+      if (next) {
+        await apiSetCurrentSource(next.id)
+        currentStoreSource.value = next
+        await fetchStorePlugins()
+      } else {
+        currentStoreSource.value = null
+        storePlugins.value = []
+      }
+    }
+    notify(t('pluginStore.source_removed'), 'success')
+  } catch (e: any) {
+    const msg = e?.response?.data?.detail || e?.message || ''
+    notify(`${t('pluginStore.source_remove_error')}${msg ? ': ' + msg : ''}`, 'error')
+  }
 }
 
-async function fetchStorePlugins() {
+async function switchToSource(src: PluginStoreSource) {
+  try {
+    await apiSetCurrentSource(src.id)
+    currentStoreSource.value = src
+    // Mark the is_current flag locally
+    pluginSources.value.forEach(s => { s.is_current = s.id === src.id })
+    sourceManageVisible.value = false
+    notify(`${t('pluginStore.source_switched')}: ${src.name}`, 'success')
+    await fetchStorePlugins()
+  } catch (e: any) {
+    const msg = e?.response?.data?.detail || e?.message || ''
+    notify(`${t('pluginStore.source_switch_error')}${msg ? ': ' + msg : ''}`, 'error')
+  }
+}
+
+async function fetchStorePlugins(forceRefresh: boolean = false) {
   if (!currentStoreSource.value) return
   storeLoading.value = true
   storeError.value = null
   try {
-    const items = await fetchPluginsFromSource(currentStoreSource.value.url)
+    const items = await fetchPluginsFromSource(currentStoreSource.value.id, forceRefresh)
     // Mark already-installed plugins
     const installedIds = new Set(plugins.value.map(p => p.id))
     storePlugins.value = items.map(item => ({
       ...item,
       installed: installedIds.has(item.id),
     }))
+    if (forceRefresh) {
+      notify(t('pluginStore.refresh_success'), 'success')
+    }
   } catch (e: any) {
     storePlugins.value = []
     storeError.value = e?.message || t('pluginStore.fetch_failed')
@@ -1115,11 +1163,11 @@ onMounted(() => {
   loadPlugins()
   loadMcpServers()
   loadSkills()
-  // Plugin Store: load saved sources and current source
-  pluginSources.value = getSources()
-  currentStoreSource.value = getCurrentSource()
-  if (currentStoreSource.value) {
-    fetchStorePlugins()
-  }
+  // Plugin Store: load saved sources and current source from backend
+  loadSourcesFromBackend().then(() => {
+    if (currentStoreSource.value) {
+      fetchStorePlugins()
+    }
+  })
 })
 </script>

@@ -153,8 +153,13 @@ export interface McpServerConfigUpdateRequest {
 
 // Plugin Store types
 export interface PluginStoreSource {
+  id: string
   name: string
   url: string
+  cache_file?: string | null
+  updated_at: number
+  is_current: boolean
+  created_at: number
 }
 
 export interface PluginStoreItem {

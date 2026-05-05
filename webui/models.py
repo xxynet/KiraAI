@@ -158,7 +158,29 @@ class PluginStoreItemResponse(BaseModel):
 
 
 class PluginStoreFetchRequest(BaseModel):
+    url: Optional[str] = None
+    source_id: Optional[str] = None
+    force_refresh: bool = False
+
+
+class PluginStoreSourceItem(BaseModel):
+    id: str
+    name: str
     url: str
+    cache_file: Optional[str] = None
+    updated_at: int = 0
+    is_current: bool = False
+    created_at: int = 0
+
+
+class PluginStoreSourceCreateRequest(BaseModel):
+    name: str
+    url: str
+
+
+class PluginStoreSourceUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
 
 
 class McpServerItem(BaseModel):

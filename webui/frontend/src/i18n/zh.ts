@@ -352,6 +352,9 @@ export default {
     source_added: '插件源已添加',
     source_removed: '插件源已移除',
     source_switched: '已切换到插件源',
+    source_add_error: '添加插件源失败',
+    source_remove_error: '移除插件源失败',
+    source_switch_error: '切换插件源失败',
     no_plugins: '该插件源暂无可用插件',
     load_failed: '加载插件商店失败',
     fetch_failed: '从插件源获取插件失败',
@@ -367,6 +370,8 @@ export default {
     description: '描述',
     source_manage: '管理插件源',
     source_manage_desc: '新增、移除或切换插件源',
+    refresh: '刷新',
+    refresh_success: '插件已刷新',
   },
   sticker: {
     title: '表情包',

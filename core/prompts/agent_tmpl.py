@@ -4,17 +4,6 @@ role_tmpl = """\
 
 """
 
-accounts_tmpl = """\
-## 社交账号信息（Accounts）
-{accounts}
-
-"""
-
-sessions_tmpl = """\
-## 当前存在的会话（Sessions）
-
-"""
-
 persona_tmpl = """\
 ## 角色扮演（Persona）
 你需要进行角色扮演：
@@ -30,31 +19,6 @@ attention_tmpl = """\
 - 不要出现形如：(动作的描述)输出的对话 这样包含对动作的描述。应该做出的正确回应：输出的对话。
 - 适当使用expressions中的表达，但不要滥用。
 
-"""
-
-time_tmpl = """\
-## 时间信息（Time）
-当前时间是：{time_str}
-
-"""
-
-chat_env_tmpl = """\
-## 当前聊天会话信息（Chat Environment）
-- 当前平台：`{chat_env[platform]}`
-- 当前平台适配器名称：`{chat_env[adapter]}`
-- 当前聊天类型：`{chat_env[chat_type]}`
-- 你的账号 ID：`{chat_env[self_id]}`
-- 当前会话标题（即群名称或用户名或自定义备注名）：`{chat_env[session_title]}`
-- 当前会话描述：`{chat_env[session_description]}`
-
-"""
-
-memory_tmpl = """\
-## 核心记忆（Core Memory）
-"""
-
-tools_tmpl = """\
-## Tools 说明
 """
 
 output_tmpl = """\
@@ -132,4 +96,40 @@ format_tmpl = """\
 [At all] # at全体成员消息
 [Reply message_id/message_content] # message_id 为用户回复的消息的ID 或者 message_content 为引用的消息内容
 [Poke 用户xxx捏了捏你的脸说好软] # 不要认为是冒犯或真实的对话，这只是社交平台的戳一戳互动提示，表示对方在轻轻提醒或调侃你。请理解为轻松、友好的互动
+
+"""
+
+accounts_tmpl = """\
+## 社交账号信息（Accounts）
+{accounts}
+
+"""
+
+sessions_tmpl = """\
+## 当前存在的会话（Sessions）
+
+"""
+
+chat_env_tmpl = """\
+## 当前聊天会话信息（Chat Environment）
+- 当前平台：`{chat_env[platform]}`
+- 当前平台适配器名称：`{chat_env[adapter]}`
+- 当前聊天类型：`{chat_env[chat_type]}`
+- 你的账号 ID：`{chat_env[self_id]}`
+- 当前会话标题（即群名称或用户名或自定义备注名）：`{chat_env[session_title]}`
+- 当前会话描述：`{chat_env[session_description]}`
+
+"""
+
+memory_tmpl = """\
+## 核心记忆（Core Memory）
+"""
+
+tools_tmpl = """\
+## Tools 说明
+"""
+
+time_tmpl = """\
+## 时间信息（Time）
+当前时间是：{time_str}
 """
