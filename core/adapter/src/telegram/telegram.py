@@ -257,17 +257,14 @@ class TelegramAdapter(IMAdapter):
                 for ent in entities:
                     if ent.type == "mention":
                         username = tg_message.text[ent.offset: ent.offset + ent.length].lstrip("@")
-                        # Try to resolve display name: bot self → full_name directly,
-                        # others → get_chat API to fetch user profile
+                        # Resolve display name: bot self → full_name directly,
+                        # others → use @username (avoid per-mention get_chat to prevent rate-limit issues)
                         display = username
                         try:
                             if self.app.bot.username and username.lower() == self.app.bot.username.lower():
                                 display = self.app.bot.full_name or username
-                            else:
-                                chat_info = await self.app.bot.get_chat(f"@{username}")
-                                display = getattr(chat_info, "full_name", None) or username
                         except Exception:
-                            pass
+                            logger.debug(f"Failed to resolve display name for @{username}", exc_info=True)
                         mentions.append((ent.offset, ent.length, At(pid=username, nickname=display)))
                     elif ent.type == "text_mention" and getattr(ent, "user", None):
                         user_obj = ent.user
@@ -468,18 +465,20 @@ class TelegramAdapter(IMAdapter):
             elif isinstance(ele, File):
                 file_path = await ele.to_path()
                 with open(file_path, "rb") as f:
-                    sent = await self.message_sender.send_with_retry(
-                        self.app.bot.send_document, chat_id=chat_id, document=f, filename=ele.name or "file", **reply_kw
-                    )
+                    file_bytes = f.read()
+                sent = await self.message_sender.send_with_retry(
+                    self.app.bot.send_document, chat_id=chat_id, document=file_bytes, filename=ele.name or "file", **reply_kw
+                )
                 message_id = str(sent.message_id)
 
             # ── Video ──
             elif isinstance(ele, Video):
                 video_path = await ele.to_path()
                 with open(video_path, "rb") as f:
-                    sent = await self.message_sender.send_with_retry(
-                        self.app.bot.send_video, chat_id=chat_id, video=f, filename=ele.name or "video", **reply_kw
-                    )
+                    video_bytes = f.read()
+                sent = await self.message_sender.send_with_retry(
+                    self.app.bot.send_video, chat_id=chat_id, video=video_bytes, filename=ele.name or "video", **reply_kw
+                )
                 message_id = str(sent.message_id)
 
             # ── Fallback ──
