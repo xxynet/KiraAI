@@ -380,6 +380,11 @@ class TelegramAdapter(IMAdapter):
 
     # ===== Send messages (called by core) =====
 
+    @staticmethod
+    def _escape_html(text: str) -> str:
+        """Escape special characters for Telegram HTML parse mode."""
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
     async def _send_message_to_chat(self, chat_id: int, send_message_obj: MessageChain) -> Optional[str]:
         """Core send logic shared by group and direct messages.
 
@@ -410,54 +415,61 @@ class TelegramAdapter(IMAdapter):
                 while idx < len(send_message_obj) and isinstance(send_message_obj[idx], (Text, At, Emoji)):
                     part = send_message_obj[idx]
                     if isinstance(part, Text):
-                        html_text += part.text
+                        html_text += self._escape_html(part.text)
                     elif isinstance(part, At):
                         if part.pid.lower() == "all":
                             html_text += "@all"
                         elif part.pid.isdigit():
                             # Numeric user ID from text_mention: show display name as clickable link
                             display = part.nickname if part.nickname else part.pid
-                            html_text += f"<a href=\"tg://user?id={part.pid}\">@{display}</a>"
+                            html_text += f"<a href=\"tg://user?id={self._escape_html(part.pid)}\">@{self._escape_html(display)}</a>"
                         else:
                             # String username from mention: use @username
-                            html_text += f"@{part.pid}"
+                            html_text += f"@{self._escape_html(part.pid)}"
                     else:  # Emoji
                         html_text += self.emoji_dict.get(part.emoji_id, "")
                     idx += 1
-                sent = await self.app.bot.send_message(chat_id=chat_id, text=html_text, parse_mode="HTML", **reply_kw)
+                sent = await self.message_sender.send_with_retry(
+                    self.app.bot.send_message, chat_id=chat_id, text=html_text, parse_mode="HTML", **reply_kw
+                )
                 message_id = str(sent.message_id)
                 continue
 
             # ── Image ──
             elif isinstance(ele, Image):
                 if ele.image_type == "url":
-                    sent = await self.app.bot.send_photo(chat_id=chat_id, photo=ele.image, **reply_kw)
+                    sent = await self.message_sender.send_with_retry(
+                        self.app.bot.send_photo, chat_id=chat_id, photo=ele.image, **reply_kw
+                    )
                 else:
                     image_base64 = await ele.to_base64()
-                    sent = await self.app.bot.send_photo(chat_id=chat_id, photo=base64.b64decode(image_base64), **reply_kw)
+                    sent = await self.message_sender.send_with_retry(
+                        self.app.bot.send_photo, chat_id=chat_id, photo=base64.b64decode(image_base64), **reply_kw
+                    )
                 message_id = str(sent.message_id)
 
             # ── Record (voice) ──
             elif isinstance(ele, Record):
                 record_base64 = await ele.to_base64()
-                sent = await self.app.bot.send_voice(chat_id=chat_id, voice=base64.b64decode(record_base64), **reply_kw)
+                sent = await self.message_sender.send_with_retry(
+                    self.app.bot.send_voice, chat_id=chat_id, voice=base64.b64decode(record_base64), **reply_kw
+                )
                 message_id = str(sent.message_id)
 
             # ── Sticker ──
             elif isinstance(ele, Sticker):
                 sticker_base64 = await ele.to_base64()
-                sent = await self.app.bot.send_sticker(chat_id=chat_id, sticker=base64.b64decode(sticker_base64), **reply_kw)
+                sent = await self.message_sender.send_with_retry(
+                    self.app.bot.send_sticker, chat_id=chat_id, sticker=base64.b64decode(sticker_base64), **reply_kw
+                )
                 message_id = str(sent.message_id)
 
             # ── File (document) ──
             elif isinstance(ele, File):
                 file_path = await ele.to_path()
                 with open(file_path, "rb") as f:
-                    sent = await self.app.bot.send_document(
-                        chat_id=chat_id,
-                        document=f,
-                        filename=ele.name or "file",
-                        **reply_kw,
+                    sent = await self.message_sender.send_with_retry(
+                        self.app.bot.send_document, chat_id=chat_id, document=f, filename=ele.name or "file", **reply_kw
                     )
                 message_id = str(sent.message_id)
 
@@ -465,17 +477,16 @@ class TelegramAdapter(IMAdapter):
             elif isinstance(ele, Video):
                 video_path = await ele.to_path()
                 with open(video_path, "rb") as f:
-                    sent = await self.app.bot.send_video(
-                        chat_id=chat_id,
-                        video=f,
-                        filename=ele.name or "video",
-                        **reply_kw,
+                    sent = await self.message_sender.send_with_retry(
+                        self.app.bot.send_video, chat_id=chat_id, video=f, filename=ele.name or "video", **reply_kw
                     )
                 message_id = str(sent.message_id)
 
             # ── Fallback ──
             else:
-                sent = await self.app.bot.send_message(chat_id=chat_id, text=str(getattr(ele, 'text', '[Message]')), **reply_kw)
+                sent = await self.message_sender.send_with_retry(
+                    self.app.bot.send_message, chat_id=chat_id, text=str(getattr(ele, 'text', '[Message]')), **reply_kw
+                )
                 message_id = str(sent.message_id)
 
             idx += 1
@@ -486,9 +497,7 @@ class TelegramAdapter(IMAdapter):
         if not self.app:
             return KiraIMSentResult(ok=False, err="Telegram bot not started")
         try:
-            msg_id = await self.message_sender.send_with_retry(
-                self._send_message_to_chat, int(group_id), send_message_obj
-            )
+            msg_id = await self._send_message_to_chat(int(group_id), send_message_obj)
             return KiraIMSentResult(msg_id)
         except Exception as e:
             return KiraIMSentResult(ok=False, err=f"Failed to send group message: {e}")
@@ -497,9 +506,7 @@ class TelegramAdapter(IMAdapter):
         if not self.app:
             return KiraIMSentResult(ok=False, err="Telegram bot not started")
         try:
-            msg_id = await self.message_sender.send_with_retry(
-                self._send_message_to_chat, int(user_id), send_message_obj
-            )
+            msg_id = await self._send_message_to_chat(int(user_id), send_message_obj)
             return KiraIMSentResult(msg_id)
         except Exception as e:
             return KiraIMSentResult(ok=False, err=f"Failed to send direct message: {e}")
