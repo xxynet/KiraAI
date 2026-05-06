@@ -58,7 +58,7 @@ class TelegramAdapter(IMAdapter):
 
         # config
         self.bot_token: str = self.config.get("bot_token", "")
-        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "selfie", "file"]
+        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "selfie", "file", "video"]
 
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
 
@@ -103,8 +103,11 @@ class TelegramAdapter(IMAdapter):
         try:
             await self.app.initialize()
             await self.app.start()
-            # Start polling for updates asynchronously
-            await self.app.updater.start_polling(error_callback=lambda e: logger.error(f"[{self.info.name}] Error occurred : {e}"))
+            # Start polling, drop any pending updates that accumulated while the bot was offline
+            await self.app.updater.start_polling(
+                drop_pending_updates=True,
+                error_callback=lambda e: logger.error(f"[{self.info.name}] Error occurred : {e}")
+            )
 
             logger.info(f"start listening incoming messages for {self.config.get('bot_pid', 'your bot account')}")
         except Exception as e:
@@ -245,22 +248,49 @@ class TelegramAdapter(IMAdapter):
             replied_text = tg_message.reply_to_message.text or ""
             elements.append(Reply(str(tg_message.reply_to_message.id), replied_text))
 
-        # Text
+        # Text + inline mentions
         if tg_message.text:
-            elements.append(Text(tg_message.text))
-            # Parse @ mentions in group text messages
             try:
-                if getattr(tg_message, "entities", None):
-                    for ent in tg_message.entities:
-                        if ent.type == "mention":
-                            # Handle @username mentions
-                            username = tg_message.text[ent.offset: ent.offset + ent.length]
-                            elements.append(At(username.lstrip("@")))
-                        elif ent.type == "text_mention" and getattr(ent, "user", None):
-                            # Direct user mention without username
-                            elements.append(At(str(ent.user.id), ent.user.full_name))
+                entities = getattr(tg_message, "entities", None) or []
+                # Collect mention entities with their positions
+                mentions = []
+                for ent in entities:
+                    if ent.type == "mention":
+                        username = tg_message.text[ent.offset: ent.offset + ent.length].lstrip("@")
+                        # Try to resolve display name: bot self → full_name directly,
+                        # others → get_chat API to fetch user profile
+                        display = username
+                        try:
+                            if self.app.bot.username and username.lower() == self.app.bot.username.lower():
+                                display = self.app.bot.full_name or username
+                            else:
+                                chat_info = await self.app.bot.get_chat(f"@{username}")
+                                display = getattr(chat_info, "full_name", None) or username
+                        except Exception:
+                            pass
+                        mentions.append((ent.offset, ent.length, At(pid=username, nickname=display)))
+                    elif ent.type == "text_mention" and getattr(ent, "user", None):
+                        user_obj = ent.user
+                        display = getattr(user_obj, "full_name", None) or getattr(user_obj, "username", None) or str(user_obj.id)
+                        mentions.append((ent.offset, ent.length, At(pid=str(user_obj.id), nickname=display)))
+                # Sort by position to interleave text and At in order
+                mentions.sort(key=lambda m: m[0])
+                # Build elements by splitting text around mention ranges
+                pos = 0
+                for offset, length, at_elem in mentions:
+                    if offset > pos:
+                        plain = tg_message.text[pos:offset]
+                        if plain:
+                            elements.append(Text(plain))
+                    elements.append(at_elem)
+                    pos = offset + length
+                # Remaining text after last mention
+                if pos < len(tg_message.text):
+                    trailing = tg_message.text[pos:]
+                    if trailing:
+                        elements.append(Text(trailing))
             except Exception:
-                pass
+                elements.append(Text(tg_message.text))
 
         # Photo
         if tg_message.photo:
@@ -330,12 +360,18 @@ class TelegramAdapter(IMAdapter):
         if tg_message.sticker:
             try:
                 stk = tg_message.sticker
+                if stk.is_animated:
+                    sticker_mime = "application/x-tgsticker"
+                elif stk.is_video:
+                    sticker_mime = "video/webm"
+                else:
+                    sticker_mime = "image/webp"
                 tg_file = await self.app.bot.get_file(stk.file_id)
                 sticker_content = await get_file_content(tg_file.file_path)
                 sticker_b64 = base64.b64encode(sticker_content).decode('utf-8')
                 elements.append(Sticker(
                     sticker=sticker_b64,
-                    mime="image/webp",
+                    mime=sticker_mime,
                 ))
             except Exception:
                 elements.append(Text(str(tg_message.sticker.emoji or 'sticker')))
@@ -353,64 +389,64 @@ class TelegramAdapter(IMAdapter):
         """
         message_id = None
         idx = 0
-
-        # Handle Reply + Text prefix (skip those two elements after sending)
-        if len(send_message_obj) >= 2:
-            if isinstance(send_message_obj[0], Reply) and isinstance(send_message_obj[1], Text):
-                sent = await self.app.bot.send_message(
-                    chat_id=chat_id,
-                    text=send_message_obj[1].text,
-                    reply_to_message_id=int(send_message_obj[0].message_id),
-                )
-                message_id = str(sent.message_id)
-                idx = 2
+        reply_to_id = None
 
         while idx < len(send_message_obj):
             ele = send_message_obj[idx]
 
-            # ── Text / At (merge contiguous run into one HTML message) ──
-            if isinstance(ele, (Text, At)):
+            # Reply element: capture target message id and advance
+            if isinstance(ele, Reply):
+                reply_to_id = int(ele.message_id)
+                idx += 1
+                continue
+
+            # Build reply kwargs (consumed by the first send_* call after a Reply)
+            reply_kw = {"reply_to_message_id": reply_to_id} if reply_to_id is not None else {}
+            reply_to_id = None
+
+            # ── Text / At / Emoji (merge contiguous run into one HTML message) ──
+            if isinstance(ele, (Text, At, Emoji)):
                 html_text = ""
-                while idx < len(send_message_obj) and isinstance(send_message_obj[idx], (Text, At)):
+                while idx < len(send_message_obj) and isinstance(send_message_obj[idx], (Text, At, Emoji)):
                     part = send_message_obj[idx]
                     if isinstance(part, Text):
                         html_text += part.text
-                    else:
+                    elif isinstance(part, At):
                         if part.pid.lower() == "all":
                             html_text += "@all"
-                        else:
+                        elif part.pid.isdigit():
+                            # Numeric user ID from text_mention: show display name as clickable link
                             display = part.nickname if part.nickname else part.pid
-                            html_text += f"<a href=\"tg://user?id={part.pid}\">{display}</a>"
+                            html_text += f"<a href=\"tg://user?id={part.pid}\">@{display}</a>"
+                        else:
+                            # String username from mention: use @username
+                            html_text += f"@{part.pid}"
+                    else:  # Emoji
+                        html_text += self.emoji_dict.get(part.emoji_id, "")
                     idx += 1
-                sent = await self.app.bot.send_message(chat_id=chat_id, text=html_text, parse_mode="HTML")
+                sent = await self.app.bot.send_message(chat_id=chat_id, text=html_text, parse_mode="HTML", **reply_kw)
                 message_id = str(sent.message_id)
                 continue
 
             # ── Image ──
             elif isinstance(ele, Image):
                 if ele.image_type == "url":
-                    sent = await self.app.bot.send_photo(chat_id=chat_id, photo=ele.image)
+                    sent = await self.app.bot.send_photo(chat_id=chat_id, photo=ele.image, **reply_kw)
                 else:
                     image_base64 = await ele.to_base64()
-                    sent = await self.app.bot.send_photo(chat_id=chat_id, photo=base64.b64decode(image_base64))
-                message_id = str(sent.message_id)
-
-            # ── Emoji ──
-            elif isinstance(ele, Emoji):
-                emoji_content = self.emoji_dict.get(ele.emoji_id)
-                sent = await self.app.bot.send_message(chat_id=chat_id, text=emoji_content)
+                    sent = await self.app.bot.send_photo(chat_id=chat_id, photo=base64.b64decode(image_base64), **reply_kw)
                 message_id = str(sent.message_id)
 
             # ── Record (voice) ──
             elif isinstance(ele, Record):
                 record_base64 = await ele.to_base64()
-                sent = await self.app.bot.send_voice(chat_id=chat_id, voice=base64.b64decode(record_base64))
+                sent = await self.app.bot.send_voice(chat_id=chat_id, voice=base64.b64decode(record_base64), **reply_kw)
                 message_id = str(sent.message_id)
 
             # ── Sticker ──
             elif isinstance(ele, Sticker):
                 sticker_base64 = await ele.to_base64()
-                sent = await self.app.bot.send_sticker(chat_id=chat_id, sticker=base64.b64decode(sticker_base64))
+                sent = await self.app.bot.send_sticker(chat_id=chat_id, sticker=base64.b64decode(sticker_base64), **reply_kw)
                 message_id = str(sent.message_id)
 
             # ── File (document) ──
@@ -421,6 +457,7 @@ class TelegramAdapter(IMAdapter):
                         chat_id=chat_id,
                         document=f,
                         filename=ele.name or "file",
+                        **reply_kw,
                     )
                 message_id = str(sent.message_id)
 
@@ -432,12 +469,13 @@ class TelegramAdapter(IMAdapter):
                         chat_id=chat_id,
                         video=f,
                         filename=ele.name or "video",
+                        **reply_kw,
                     )
                 message_id = str(sent.message_id)
 
             # ── Fallback ──
             else:
-                sent = await self.app.bot.send_message(chat_id=chat_id, text=str(getattr(ele, 'text', '[Message]')))
+                sent = await self.app.bot.send_message(chat_id=chat_id, text=str(getattr(ele, 'text', '[Message]')), **reply_kw)
                 message_id = str(sent.message_id)
 
             idx += 1
