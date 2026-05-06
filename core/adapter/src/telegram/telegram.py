@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Any, Dict, Union, List
+from typing import Any, Dict, Optional, Union, List
 import base64
 import time
 import json
@@ -58,7 +58,7 @@ class TelegramAdapter(IMAdapter):
 
         # config
         self.bot_token: str = self.config.get("bot_token", "")
-        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "selfie"]
+        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "selfie", "file"]
 
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
 
@@ -108,7 +108,7 @@ class TelegramAdapter(IMAdapter):
 
             logger.info(f"start listening incoming messages for {self.config.get('bot_pid', 'your bot account')}")
         except Exception as e:
-            logger.info(f"Failed to start listening for {self.config.get('bot_pid', 'your bot account')}: {e}")
+            logger.error(f"Failed to start listening for {self.config.get('bot_pid', 'your bot account')}: {e}")
 
     async def stop(self):
         """Stop the Telegram adapter asynchronously"""
@@ -157,37 +157,30 @@ class TelegramAdapter(IMAdapter):
                 bot_username = None
                 logger.error(e)
 
-            triggered = False
             is_mentioned = False
             # 1) Check if message is a reply to bot
             try:
                 if msg.reply_to_message and getattr(msg.reply_to_message, "from_user", None):
                     if bot_id is not None and msg.reply_to_message.from_user.id == bot_id:
-                        triggered = True
                         is_mentioned = True
             except Exception as e:
                 logger.error(e)
             # 2) Check if bot is mentioned by username or text_mention
-            if not triggered:
+            if not is_mentioned:
                 try:
                     if getattr(msg, "entities", None):
                         for ent in msg.entities:
                             if ent.type == "mention" and bot_username:
                                 mention_text = msg.text[ent.offset: ent.offset + ent.length]
                                 if mention_text.lower() == f"@{bot_username.lower()}":
-                                    triggered = True
                                     is_mentioned = True
                                     break
                             elif ent.type == "text_mention" and getattr(ent, "user", None) and bot_id is not None:
                                 if ent.user.id == bot_id:
                                     is_mentioned = True
-                                    triggered = True
                                     break
                 except Exception as e:
                     logger.error(e)
-
-            # if not triggered:
-            #     return
 
             message_chain = await self._process_incoming_message(msg)
 
@@ -303,140 +296,172 @@ class TelegramAdapter(IMAdapter):
             base64_data = base64.b64encode(audio_content)
             elements.append(Record(record=base64_data.decode('utf-8')))
 
+        # Document (File)
+        if tg_message.document:
+            try:
+                doc = tg_message.document
+                tg_file = await self.app.bot.get_file(doc.file_id)
+                # tg_file.file_path is already a full URL resolved by the library
+                elements.append(File(
+                    file=tg_file.file_path,
+                    name=getattr(doc, 'file_name', None),
+                    size=str(doc.file_size) if doc.file_size else None,
+                    mime=doc.mime_type,
+                ))
+            except Exception:
+                elements.append(Text("[File]"))
+
+        # Video
+        if tg_message.video:
+            try:
+                vid = tg_message.video
+                tg_file = await self.app.bot.get_file(vid.file_id)
+                # tg_file.file_path is already a full URL resolved by the library
+                elements.append(Video(
+                    file=tg_file.file_path,
+                    name=getattr(vid, 'file_name', None),
+                    size=str(vid.file_size) if vid.file_size else None,
+                    mime=vid.mime_type,
+                ))
+            except Exception:
+                elements.append(Text("[Video]"))
+
         # Sticker
         if tg_message.sticker:
-            elements.append(Text(str(tg_message.sticker.emoji or 'sticker')))
+            try:
+                stk = tg_message.sticker
+                tg_file = await self.app.bot.get_file(stk.file_id)
+                sticker_content = await get_file_content(tg_file.file_path)
+                sticker_b64 = base64.b64encode(sticker_content).decode('utf-8')
+                elements.append(Sticker(
+                    sticker=sticker_b64,
+                    mime="image/webp",
+                ))
+            except Exception:
+                elements.append(Text(str(tg_message.sticker.emoji or 'sticker')))
 
         return MessageChain(elements or [Text("[Unsupported message]")])
 
     # ===== Send messages (called by core) =====
-    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain):
-        async def _send():
-            message_id = None
-            if len(send_message_obj) >= 2:
-                if isinstance(send_message_obj[0], Reply):
-                    # Only effective when followed by text, send as reply with text
-                    if isinstance(send_message_obj[1], Text):
-                        sent = await self.app.bot.send_message(chat_id=int(group_id), text=send_message_obj[1].text, reply_to_message_id=int(send_message_obj[0].message_id))
-                        message_id = str(sent.message_id)
-                del send_message_obj[2:]
-            # merge At + Text into HTML-formatted message chunks
-            idx = 0
-            while idx < len(send_message_obj):
-                ele = send_message_obj[idx]
-                if isinstance(ele, Text) or isinstance(ele, At):
-                    html_text = ""
-                    # Accumulate contiguous At/Text messages
-                    while idx < len(send_message_obj) and (
-                            isinstance(send_message_obj[idx], Text) or isinstance(send_message_obj[idx], At)
-                    ):
-                        part = send_message_obj[idx]
-                        if isinstance(part, Text):
-                            html_text += part.text
-                        else:
-                            if part.pid.lower() == "all":
-                                html_text += "@all"
-                            else:
-                                display = part.nickname if part.nickname else part.pid
-                                html_text += f"<a href=\"tg://user?id={part.pid}\">{display}</a>"
-                        idx += 1
-                    sent = await self.app.bot.send_message(chat_id=int(group_id), text=html_text, parse_mode="HTML")
-                    message_id = str(sent.message_id)
-                    continue
-                elif isinstance(ele, Image):
-                    if ele.image_type == "url":
-                        sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=ele.image)
-                        message_id = str(sent.message_id)
-                    else:
-                        image_base64 = await ele.to_base64()
-                        sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=base64.b64decode(image_base64))
-                        message_id = str(sent.message_id)
-                elif isinstance(ele, Emoji):
-                    emoji_content = self.emoji_dict.get(ele.emoji_id)
-                    sent = await self.app.bot.send_message(chat_id=int(group_id), text=emoji_content)
-                    message_id = str(sent.message_id)
-                elif isinstance(ele, Record):
-                    sent = await self.app.bot.send_voice(chat_id=int(group_id), voice=base64.b64decode(ele.to_base64()))
-                    message_id = str(sent.message_id)
-                elif isinstance(ele, Sticker):
-                    sent = await self.app.bot.send_photo(chat_id=int(group_id), photo=base64.b64decode(ele.to_base64()))
-                    message_id = str(sent.message_id)
-                else:
-                    sent = await self.app.bot.send_message(chat_id=int(group_id), text=str(getattr(ele, 'text', '[Message]')))
-                    message_id = str(sent.message_id)
-                idx += 1
-            return message_id
 
+    async def _send_message_to_chat(self, chat_id: int, send_message_obj: MessageChain) -> Optional[str]:
+        """Core send logic shared by group and direct messages.
+
+        Iterates over message elements in ``send_message_obj`` and sends them
+        to ``chat_id`` via the Telegram Bot API.  Returns the id of the last
+        sent Telegram message, or ``None`` if nothing was sent.
+        """
+        message_id = None
+        idx = 0
+
+        # Handle Reply + Text prefix (skip those two elements after sending)
+        if len(send_message_obj) >= 2:
+            if isinstance(send_message_obj[0], Reply) and isinstance(send_message_obj[1], Text):
+                sent = await self.app.bot.send_message(
+                    chat_id=chat_id,
+                    text=send_message_obj[1].text,
+                    reply_to_message_id=int(send_message_obj[0].message_id),
+                )
+                message_id = str(sent.message_id)
+                idx = 2
+
+        while idx < len(send_message_obj):
+            ele = send_message_obj[idx]
+
+            # ── Text / At (merge contiguous run into one HTML message) ──
+            if isinstance(ele, (Text, At)):
+                html_text = ""
+                while idx < len(send_message_obj) and isinstance(send_message_obj[idx], (Text, At)):
+                    part = send_message_obj[idx]
+                    if isinstance(part, Text):
+                        html_text += part.text
+                    else:
+                        if part.pid.lower() == "all":
+                            html_text += "@all"
+                        else:
+                            display = part.nickname if part.nickname else part.pid
+                            html_text += f"<a href=\"tg://user?id={part.pid}\">{display}</a>"
+                    idx += 1
+                sent = await self.app.bot.send_message(chat_id=chat_id, text=html_text, parse_mode="HTML")
+                message_id = str(sent.message_id)
+                continue
+
+            # ── Image ──
+            elif isinstance(ele, Image):
+                if ele.image_type == "url":
+                    sent = await self.app.bot.send_photo(chat_id=chat_id, photo=ele.image)
+                else:
+                    image_base64 = await ele.to_base64()
+                    sent = await self.app.bot.send_photo(chat_id=chat_id, photo=base64.b64decode(image_base64))
+                message_id = str(sent.message_id)
+
+            # ── Emoji ──
+            elif isinstance(ele, Emoji):
+                emoji_content = self.emoji_dict.get(ele.emoji_id)
+                sent = await self.app.bot.send_message(chat_id=chat_id, text=emoji_content)
+                message_id = str(sent.message_id)
+
+            # ── Record (voice) ──
+            elif isinstance(ele, Record):
+                record_base64 = await ele.to_base64()
+                sent = await self.app.bot.send_voice(chat_id=chat_id, voice=base64.b64decode(record_base64))
+                message_id = str(sent.message_id)
+
+            # ── Sticker ──
+            elif isinstance(ele, Sticker):
+                sticker_base64 = await ele.to_base64()
+                sent = await self.app.bot.send_sticker(chat_id=chat_id, sticker=base64.b64decode(sticker_base64))
+                message_id = str(sent.message_id)
+
+            # ── File (document) ──
+            elif isinstance(ele, File):
+                file_path = await ele.to_path()
+                with open(file_path, "rb") as f:
+                    sent = await self.app.bot.send_document(
+                        chat_id=chat_id,
+                        document=f,
+                        filename=ele.name or "file",
+                    )
+                message_id = str(sent.message_id)
+
+            # ── Video ──
+            elif isinstance(ele, Video):
+                video_path = await ele.to_path()
+                with open(video_path, "rb") as f:
+                    sent = await self.app.bot.send_video(
+                        chat_id=chat_id,
+                        video=f,
+                        filename=ele.name or "video",
+                    )
+                message_id = str(sent.message_id)
+
+            # ── Fallback ──
+            else:
+                sent = await self.app.bot.send_message(chat_id=chat_id, text=str(getattr(ele, 'text', '[Message]')))
+                message_id = str(sent.message_id)
+
+            idx += 1
+
+        return message_id
+
+    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain):
         if not self.app:
             return KiraIMSentResult(ok=False, err="Telegram bot not started")
         try:
-            msg_id = await self.message_sender.send_with_retry(_send)
+            msg_id = await self.message_sender.send_with_retry(
+                self._send_message_to_chat, int(group_id), send_message_obj
+            )
             return KiraIMSentResult(msg_id)
         except Exception as e:
             return KiraIMSentResult(ok=False, err=f"Failed to send group message: {e}")
 
     async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageChain):
-        async def _send():
-            message_id = None
-            if len(send_message_obj) >= 2:
-                if isinstance(send_message_obj[0], Reply):
-                    # Only effective when followed by text, send as reply with text
-                    if isinstance(send_message_obj[1], Text):
-                        sent = await self.app.bot.send_message(chat_id=int(user_id), text=send_message_obj[1].text, reply_to_message_id=int(send_message_obj[0].message_id))
-                        message_id = str(sent.message_id)
-                del send_message_obj[2:]
-            # merge At + Text into HTML-formatted message chunks
-            idx = 0
-            while idx < len(send_message_obj):
-                ele = send_message_obj[idx]
-                if isinstance(ele, Text) or isinstance(ele, At):
-                    html_text = ""
-                    while idx < len(send_message_obj) and (
-                            isinstance(send_message_obj[idx], Text) or isinstance(send_message_obj[idx], At)
-                    ):
-                        part = send_message_obj[idx]
-                        if isinstance(part, Text):
-                            html_text += part.text
-                        else:
-                            if part.pid.lower() == "all":
-                                html_text += "@all"
-                            else:
-                                display = part.nickname if part.nickname else part.pid
-                                html_text += f"<a href=\"tg://user?id={part.pid}\">{display}</a>"
-                        idx += 1
-                    sent = await self.app.bot.send_message(chat_id=int(user_id), text=html_text, parse_mode="HTML")
-                    message_id = str(sent.message_id)
-                    continue
-                elif isinstance(ele, Image):
-                    if ele.image_type == "url":
-                        sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=ele.image)
-                        message_id = str(sent.message_id)
-                    else:
-                        image_base64 = await ele.to_base64()
-                        sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=base64.b64decode(image_base64))
-                        message_id = str(sent.message_id)
-                elif isinstance(ele, Emoji):
-                    emoji_content = self.emoji_dict.get(ele.emoji_id)
-                    sent = await self.app.bot.send_message(chat_id=int(user_id), text=emoji_content)
-                    message_id = str(sent.message_id)
-                elif isinstance(ele, Record):
-                    record_base64 = await ele.to_base64()
-                    sent = await self.app.bot.send_voice(chat_id=int(user_id), voice=base64.b64decode(record_base64))
-                    message_id = str(sent.message_id)
-                elif isinstance(ele, Sticker):
-                    sticker_base64 = await ele.to_base64()
-                    sent = await self.app.bot.send_photo(chat_id=int(user_id), photo=base64.b64decode(sticker_base64))
-                    message_id = str(sent.message_id)
-                else:
-                    sent = await self.app.bot.send_message(chat_id=int(user_id), text=str(getattr(ele, 'text', '[Message]')))
-                    message_id = str(sent.message_id)
-                idx += 1
-            return message_id
-
         if not self.app:
-            return KiraIMSentResult(ok=False, err=f"Telegram bot not started")
+            return KiraIMSentResult(ok=False, err="Telegram bot not started")
         try:
-            msg_id = await self.message_sender.send_with_retry(_send)
+            msg_id = await self.message_sender.send_with_retry(
+                self._send_message_to_chat, int(user_id), send_message_obj
+            )
             return KiraIMSentResult(msg_id)
         except Exception as e:
             return KiraIMSentResult(ok=False, err=f"Failed to send direct message: {e}")
