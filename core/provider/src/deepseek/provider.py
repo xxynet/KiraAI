@@ -2,15 +2,12 @@ import httpx
 
 from core.provider import ModelType, BaseProvider
 
-from .model_clients import OpenAIImageClient, OpenAIEmbeddingClient
-from core.utils.model_clients import OpenAICompatibleLLMClient
+from .model_clients import DeepSeekLLMClient
 
 
-class OpenAIProvider(BaseProvider):
+class DeepSeekProvider(BaseProvider):
     models = {
-        ModelType.LLM: OpenAICompatibleLLMClient,
-        ModelType.IMAGE: OpenAIImageClient,
-        ModelType.EMBEDDING: OpenAIEmbeddingClient
+        ModelType.LLM: DeepSeekLLMClient,
     }
 
     def __init__(self, provider_id, provider_name, provider_config):
@@ -18,9 +15,9 @@ class OpenAIProvider(BaseProvider):
 
     async def get_llm_list(self) -> list[dict]:
         """
-        Fetch available models from OpenAI-compatible API (GET /v1/models).
+        Fetch available models from DeepSeek API (GET /v1/models).
         """
-        base_url = self.provider_config.get("base_url", "https://api.openai.com/v1").rstrip("/")
+        base_url = self.provider_config.get("base_url", "https://api.deepseek.com").rstrip("/")
         api_key = self.provider_config.get("api_key", "")
         headers = {"Authorization": f"Bearer {api_key}"}
         async with httpx.AsyncClient(timeout=10) as client:
