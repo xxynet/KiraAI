@@ -39,7 +39,13 @@ class LLMRequest:
             else:
                 self.tool_choice = "none"
 
+    _assembled: bool = field(default=False, init=False, repr=False)
+
     def assemble_prompt(self):
+        if self._assembled:
+            return
+        self._assembled = True
+
         if self.system_prompt:
             if self.messages and self.messages[0].get("role") == "system":
                 self.messages.pop(0)
@@ -74,6 +80,9 @@ class LLMResponse:
     input_tokens: Optional[int] = None
 
     output_tokens: Optional[int] = None
+
+    """cached tokens hit count"""
+    cached_tokens: Optional[int] = None
 
     """Units: seconds"""
     time_consumed: Optional[float] = None

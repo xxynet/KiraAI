@@ -1,5 +1,11 @@
 {
   "provider_config": {
+    "base_url": {
+      "name": "Base URL",
+      "type": "string",
+      "default": "https://api.siliconflow.cn/v1",
+      "hint": "硅基流动 Base URL"
+    },
     "api_key": {
       "name": "API 密钥",
       "type": "sensitive",

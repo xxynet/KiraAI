@@ -27,18 +27,6 @@ class EventType(Enum):
     MsgSent = auto()
 
 
-# @dataclass
-# class Event:
-#     """统一事件对象"""
-#     event_type: EventType
-#     payload: Any
-#     source: str
-#     timestamp: datetime = field(default_factory=datetime.now)
-#     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-#     priority: int = 0  # 0 = normal, 1 = high, 2 = critical
-#     metadata: Dict[str, Any] = field(default_factory=dict)
-
-
 class EventBus:
     """事件总线"""
 
@@ -104,20 +92,6 @@ class EventBus:
     async def publish(self, event):
         """publish an event"""
         await self.event_queue.put(event)
-        # try:
-        #     # 通过中间件处理
-        #     for middleware in self.middlewares:
-        #         event = await middleware(event)
-        #         if event is None:  # 中间件可以过滤事件
-        #             return
-        #
-        #     try:
-        #         self.event_queue.put_nowait(event)
-        #     except asyncio.QueueFull:
-        #         pass
-        #
-        # except Exception as e:
-        #     raise
 
     async def _consumer_loop(self):
         """消费者循环"""
@@ -159,7 +133,10 @@ class EventBus:
         self._running_event.set()
 
         while self._running_event.is_set():
-            event: Union[KiraMessageEvent, KiraCommentEvent] = await self.event_queue.get()
+            event = await self.event_queue.get()
+            # None sentinel injected by stop() to unblock the consumer
+            if event is None:
+                break
             if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
                 self.total_messages_stats["total_messages"] += 1
                 self.stats.set_stats("messages", self.total_messages_stats)
@@ -180,9 +157,7 @@ class EventBus:
     async def stop(self):
         """stop event bus"""
         self._running_event.clear()
-        # for task in self._running_tasks:
-        #     task.cancel()
-        # await asyncio.gather(*self._running_tasks, return_exceptions=True)
+        await self.event_queue.put(None)
 
     def get_stats(self) -> Dict[str, int]:
         """get statistics of event bus"""

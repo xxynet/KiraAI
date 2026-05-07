@@ -42,8 +42,6 @@ class BaseConfigField:
             "hint": self.hint,
         }
         if isinstance(self, EnumField):
-            data["options"] = list(self.options)
-        if isinstance(self, EnumField):
             if getattr(self, "options", None):
                 data["options"] = list(self.options)
         if isinstance(self, EditorField) and getattr(self, "language", None):

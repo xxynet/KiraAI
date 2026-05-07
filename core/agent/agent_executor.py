@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional, TYPE_CHECKING, Union, Literal
 
@@ -110,6 +111,8 @@ class AgentExecutor:
 
             try:
                 llm_resp = await llm_model.chat(request)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.error(f"{type(e).__name__}: {e}")
                 llm_resp = LLMResponse(f"[{type(e).__name__}] {e}")
@@ -122,8 +125,11 @@ class AgentExecutor:
 
             llm_resp.agent_step_index = step_index
             llm_logger.debug(llm_resp)
+
+            cached_tokens_info = f", Cached tokens: {llm_resp.cached_tokens}" if llm_resp.cached_tokens is not None else ""
+
             llm_logger.info(
-                f"[{sid}] Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}, step: {step_index}/{max_steps}"
+                f"[{sid}] Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}{cached_tokens_info}, step: {step_index}/{max_steps}"
             )
 
             llm_resp_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_RESPONSE)

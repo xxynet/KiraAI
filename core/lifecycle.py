@@ -75,9 +75,7 @@ class KiraLifecycle:
         self.tasks: list[asyncio.Task] = []
 
     async def schedule_tasks(self):
-        self.tasks = [
-            # asyncio.create_task(self.sticker_manager.scan_and_register_sticker(), name="sticker_scan")
-        ]
+        self.tasks = []
         results = await asyncio.gather(*self.tasks, return_exceptions=True)
         for i, result in enumerate(results):
             if isinstance(result, Exception):
@@ -113,8 +111,6 @@ class KiraLifecycle:
 
         # ====== record startup time and init telemetry ======
         self.stats.set_stats("started_ts", int(time.time()))
-        # self.telemetry_client = TelemetryClient(self.db_service, self.kira_config, self.stats)
-        # await self.telemetry_client.initialize()
 
         # ====== init ProviderManager config ======
         self.provider_manager = ProviderManager(self.db_service, self.kira_config)

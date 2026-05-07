@@ -1,0 +1,54 @@
+{
+  "provider_config": {
+    "base_url": {
+      "name": "Base URL",
+      "type": "string",
+      "default": "https://api.deepseek.com",
+      "hint": "DeepSeek API base URL"
+    },
+    "api_key": {
+      "name": "API Key",
+      "type": "sensitive",
+      "default": null,
+      "hint": "Your DeepSeek API Key, get it from https://platform.deepseek.com/"
+    },
+    "headers": {
+      "name": "Custom Headers",
+      "type": "json",
+      "default": {},
+      "hint": "Custom headers passed to OpenAI Client"
+    }
+  },
+  "model_config": {
+    "llm": {
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "超时秒数"
+      },
+      "temperature": {
+        "name": "温度",
+        "type": "float",
+        "default": null,
+        "min": 0,
+        "max": 2,
+        "hint": "模型温度（注意：思考模式下此参数不生效）"
+      },
+      "thinking_enabled": {
+        "name": "思考模式",
+        "type": "switch",
+        "default": true,
+        "hint": "开启 DeepSeek 思考模式，模型将先输出思维链再给出最终回答"
+      },
+      "reasoning_effort": {
+        "name": "思考深度",
+        "type": "enum",
+        "default": "high",
+        "options": ["high", "max"],
+        "hint": "思考强度：high（默认）或 max（复杂 Agent 任务推荐）"
+      }
+    }
+  }
+}
