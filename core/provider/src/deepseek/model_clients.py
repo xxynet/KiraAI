@@ -41,6 +41,8 @@ class DeepSeekLLMClient(LLMModelClient):
         extra_body = {}
         if thinking_enabled:
             extra_body["thinking"] = {"type": "enabled"}
+        else:
+            extra_body["thinking"] = {"type": "disabled"}
 
         # Build request kwargs
         request_kwargs = dict(
@@ -94,6 +96,8 @@ class DeepSeekLLMClient(LLMModelClient):
                 if response.usage:
                     llm_resp.input_tokens = response.usage.prompt_tokens
                     llm_resp.output_tokens = response.usage.completion_tokens
+                    # DeepSeek cache hit tokens
+                    llm_resp.cached_tokens = getattr(response.usage, "prompt_cache_hit_tokens", None)
 
             return llm_resp
 

@@ -4,6 +4,7 @@ import time
 import uuid
 import importlib.util
 import inspect
+import copy
 from typing import Dict, Optional, Type
 
 from .provider import (
@@ -601,7 +602,10 @@ class ProviderManager:
         changed = False
         for key, default_value in defaults.items():
             if key not in target:
-                target[key] = default_value
+                if isinstance(default_value, (dict, list)):
+                    target[key] = copy.deepcopy(default_value)
+                else:
+                    target[key] = default_value
                 changed = True
             elif isinstance(default_value, dict) and isinstance(target[key], dict):
                 if ProviderManager._deep_fill_defaults(target[key], default_value):
@@ -625,11 +629,17 @@ class ProviderManager:
 
         # 1. Backfill provider_config
         provider_fields = schema.get("provider_config") or []
-        instance_config = provider_config.setdefault("provider_config", {})
+        provider_config_value = provider_config.get("provider_config")
+        if not isinstance(provider_config_value, dict):
+            provider_config["provider_config"] = {}
+        instance_config = provider_config["provider_config"]
         for field in provider_fields:
             if isinstance(field, BaseConfigField):
                 if field.key not in instance_config:
-                    instance_config[field.key] = field.default
+                    if isinstance(field.default, (dict, list)):
+                        instance_config[field.key] = copy.deepcopy(field.default)
+                    else:
+                        instance_config[field.key] = field.default
                     changed = True
                 elif isinstance(field.default, dict) and isinstance(instance_config.get(field.key), dict):
                     if self._deep_fill_defaults(instance_config[field.key], field.default):
@@ -651,7 +661,10 @@ class ProviderManager:
                     if not isinstance(field, BaseConfigField):
                         continue
                     if field.key not in model_cfg:
-                        model_cfg[field.key] = field.default
+                        if isinstance(field.default, (dict, list)):
+                            model_cfg[field.key] = copy.deepcopy(field.default)
+                        else:
+                            model_cfg[field.key] = field.default
                         changed = True
                     elif isinstance(field.default, dict) and isinstance(model_cfg.get(field.key), dict):
                         if self._deep_fill_defaults(model_cfg[field.key], field.default):

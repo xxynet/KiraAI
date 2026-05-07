@@ -53,8 +53,14 @@ class OpenAICompatibleLLMClient(LLMModelClient):
                 reasoning_content = getattr(message, "reasoning_content", "")
                 llm_resp.text_response = content
                 llm_resp.reasoning_content = reasoning_content
-                llm_resp.input_tokens = response.usage.prompt_tokens
-                llm_resp.output_tokens = response.usage.completion_tokens
+
+                if response.usage:
+                    llm_resp.input_tokens = response.usage.prompt_tokens
+                    llm_resp.output_tokens = response.usage.completion_tokens
+                    # cached tokens (prompt_tokens_details.cached_tokens)
+                    prompt_details = getattr(response.usage, "prompt_tokens_details", None)
+                    if prompt_details:
+                        llm_resp.cached_tokens = getattr(prompt_details, "cached_tokens", None)
             return llm_resp
         except APIStatusError as e:
             # the model does not support function calling etc.
