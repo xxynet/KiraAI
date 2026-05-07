@@ -138,9 +138,10 @@ class SelfieTag(BaseTag):
             if not ref_img_path:
                 message_logger.warning("Selfie reference image not set, skipped generation")
                 return []
-            if os.path.exists(f"{get_data_path()}/{ref_img_path}"):
-                img_extension = ref_img_path.split(".")[-1]
-                bs64 = await image_to_base64(f"{get_data_path()}/{ref_img_path}")
+            ref_file = Path(get_data_path()) / ref_img_path
+            if ref_file.is_file():
+                img_extension = ref_file.suffix.lstrip(".")
+                bs64 = await image_to_base64(str(ref_file))
                 img_res = await self.ctx.llm_api.image_to_image(value, image=Image(image=bs64, name=ref_img_path, mime=f"image/{img_extension}"))
                 if img_res:
                     return [img_res]
