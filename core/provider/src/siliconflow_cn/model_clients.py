@@ -6,72 +6,19 @@ import base64
 import time
 
 from core.provider import ModelInfo
-from core.provider import (LLMModelClient, ImageModelClient, TTSModelClient,
+from core.provider import (ImageModelClient, TTSModelClient,
                            STTModelClient, EmbeddingModelClient, RerankModelClient)
 from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse, RerankResult
 
 from core.chat.message_elements import Record, Image
+from core.utils.model_clients import OpenAICompatibleLLMClient
 
 logger = get_logger("provider", "purple")
 
 
-class SiliconflowLLMClient(LLMModelClient):
-    def __init__(self, model: ModelInfo):
-        super().__init__(model)
-
-    async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
-        timeout_sec = self.model.model_config.get("timeout", 120) if self.model.model_config else 120
-        client = AsyncOpenAI(
-            api_key=self.model.provider_config.get("api_key", ""),
-            base_url="https://api.siliconflow.cn/v1",
-            timeout=timeout_sec
-        )
-        try:
-            start_time = time.perf_counter()
-            temperature = self.model.model_config.get("temperature") if self.model.model_config else None
-            response = await client.chat.completions.create(
-                model=self.model.model_id,
-                messages=request.messages,
-                tools=request.tools if request.tools else None,
-                tool_choice=request.tool_choice if request.tool_choice != "none" else None,
-                temperature=temperature if temperature is not None else 1
-            )
-            end_time = time.perf_counter()
-            llm_resp = LLMResponse("")
-            llm_resp.time_consumed = round(end_time - start_time, 2)
-            if response.choices:
-                message = response.choices[0].message
-
-                if message.tool_calls:
-
-                    for tool_call in message.tool_calls:
-                        name = tool_call.function.name
-
-                        llm_resp.tool_calls.append({
-                            "id": tool_call.id,
-                            "type": "function",
-                            "function": {
-                                "name": name,
-                                "arguments": tool_call.function.arguments
-                            }
-                        })
-
-                content = message.content if message.content else ""
-                reasoning_content = getattr(message, "reasoning_content", "")
-                llm_resp.text_response = content
-                llm_resp.reasoning_content = reasoning_content
-                llm_resp.input_tokens = response.usage.prompt_tokens
-                llm_resp.output_tokens = response.usage.completion_tokens
-            return llm_resp
-        except APIStatusError as e:
-            raise
-        except APITimeoutError as e:
-            raise
-        except APIConnectionError as e:
-            raise
-        except Exception as e:
-            raise
+class SiliconflowLLMClient(OpenAICompatibleLLMClient):
+    pass
 
 
 class SiliconflowImageClient(ImageModelClient):
@@ -107,7 +54,7 @@ class SiliconflowTTSClient(TTSModelClient):
     async def text_to_speech(self, text: str, **kwargs) -> Record:
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
-            base_url="https://api.siliconflow.cn/v1"
+            base_url=self.model.provider_config.get("base_url", "https://api.siliconflow.cn/v1")
         )
 
         async with client.audio.speech.with_streaming_response.create(

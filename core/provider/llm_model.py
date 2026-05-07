@@ -75,6 +75,9 @@ class LLMResponse:
 
     output_tokens: Optional[int] = None
 
+    """cached tokens hit count"""
+    cached_tokens: Optional[int] = None
+
     """Units: seconds"""
     time_consumed: Optional[float] = None
 
