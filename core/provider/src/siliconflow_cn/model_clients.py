@@ -26,7 +26,8 @@ class SiliconflowImageClient(ImageModelClient):
         super().__init__(model)
 
     async def text_to_image(self, prompt) -> Image:
-        url = "https://api.siliconflow.cn/v1/images/generations"
+        base_url = self.model.provider_config.get("base_url", "https://api.siliconflow.cn/v1")
+        url = f"{base_url}/images/generations"
         payload = {
             "model": self.model.model_id,
             "prompt": prompt,
@@ -79,7 +80,8 @@ class SiliconflowSTTClient(STTModelClient):
         super().__init__(model)
 
     async def speech_to_text(self, record: Record, **kwargs):
-        url = "https://api.siliconflow.cn/v1/audio/transcriptions"
+        base_url = self.model.provider_config.get("base_url", "https://api.siliconflow.cn/v1")
+        url = f"{base_url}/audio/transcriptions"
 
         audio_base64 = await record.to_base64()
 
@@ -116,7 +118,7 @@ class SiliconflowEmbeddingClient(EmbeddingModelClient):
 
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
-            base_url="https://api.siliconflow.cn/v1",
+            base_url=self.model.provider_config.get("base_url", "https://api.siliconflow.cn/v1"),
             timeout=timeout_sec
         )
         try:
@@ -149,7 +151,8 @@ class SiliconflowRerankClient(RerankModelClient):
         **kwargs
     ) -> list[RerankResult]:
 
-        url = "https://api.siliconflow.cn/v1/rerank"
+        base_url = self.model.provider_config.get("base_url", "https://api.siliconflow.cn/v1")
+        url = f"{base_url}/rerank"
 
         payload = {
             "model": self.model.model_id,

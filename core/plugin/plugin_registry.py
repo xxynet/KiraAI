@@ -58,7 +58,7 @@ def get_obj_plugin_id(obj: Any):
                 _plugin_module_dirs.setdefault(plugin_id, plugin_root.name)
                 _plugin_module_paths.setdefault(plugin_id, plugin_root)
                 _module_to_plugin[module_name] = plugin_id
-            except (json.JSONDecodeError, OSError, KeyError):
+            except (json.JSONDecodeError, OSError, KeyError, AttributeError):
                 plugin_id = plugin_root.name
     return plugin_id
 

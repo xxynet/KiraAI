@@ -65,6 +65,7 @@ class EventBus:
         self.stats.set_stats("messages", self.total_messages_stats)
 
         self._running_event = asyncio.Event()
+        self._pending_dispatches: set[asyncio.Task] = set()
         self.logger = get_logger("event_bus", "blue")
 
     async def _dispatch_event(self, event):
@@ -93,41 +94,6 @@ class EventBus:
         """publish an event"""
         await self.event_queue.put(event)
 
-    async def _consumer_loop(self):
-        """消费者循环"""
-        while self._running_event.is_set():
-            try:
-                try:
-                    event = self.event_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    await asyncio.sleep(0.1)
-                    continue
-
-                if event:
-                    if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
-                        self.total_messages_stats["total_messages"] += 1
-                        self.stats.set_stats("messages", self.total_messages_stats)
-                    await self._process_event(event)
-                    self.event_bus_stats["processed"] += 1
-                    self.stats.set_stats("event_bus", self.event_bus_stats)
-
-            except Exception as e:
-                self.event_bus_stats["errors"] += 1
-                self.stats.set_stats("event_bus", self.event_bus_stats)
-
-    async def _process_event(self, event):
-        """处理单个事件"""
-        event_type = event.event_type
-
-        # 处理所有订阅者
-        if event_type in self.subscribers:
-            for handler in self.subscribers[event_type]:
-                try:
-                    await handler(event)
-                except Exception as e:
-                    self.event_bus_stats["errors"] += 1
-                    self.stats.set_stats("event_bus", self.event_bus_stats)
-
     async def dispatch(self):
         """start event bus"""
         self._running_event.set()
@@ -141,23 +107,30 @@ class EventBus:
                 self.total_messages_stats["total_messages"] += 1
                 self.stats.set_stats("messages", self.total_messages_stats)
             task = asyncio.create_task(self._dispatch_event(event))
+            self._pending_dispatches.add(task)
 
-            def _log_task_error(t: asyncio.Task):
+            def _on_task_done(t: asyncio.Task):
+                self._pending_dispatches.discard(t)
                 try:
                     exc = t.exception()
                     if exc:
                         self.event_bus_stats["errors"] += 1
                         self.stats.set_stats("event_bus", self.event_bus_stats)
                         self.logger.error(f"Error in event dispatch task: {exc}")
+                    else:
+                        self.event_bus_stats["processed"] += 1
+                        self.stats.set_stats("event_bus", self.event_bus_stats)
                 except asyncio.CancelledError:
                     return
 
-            task.add_done_callback(_log_task_error)
+            task.add_done_callback(_on_task_done)
 
     async def stop(self):
         """stop event bus"""
         self._running_event.clear()
         await self.event_queue.put(None)
+        if self._pending_dispatches:
+            await asyncio.wait(self._pending_dispatches, timeout=10.0)
 
     def get_stats(self) -> Dict[str, int]:
         """get statistics of event bus"""

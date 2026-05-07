@@ -75,11 +75,14 @@ class KiraLifecycle:
         self.tasks: list[asyncio.Task] = []
 
     async def schedule_tasks(self):
+        if not self.tasks:
+            return
+        tasks_to_run = self.tasks
         self.tasks = []
-        results = await asyncio.gather(*self.tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks_to_run, return_exceptions=True)
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                task = self.tasks[i]
+                task = tasks_to_run[i]
                 logger.error(f"Scheduled task '{task.get_name()}' failed: {result}")
 
     async def init_and_run_system(self):

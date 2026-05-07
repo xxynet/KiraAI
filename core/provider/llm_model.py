@@ -32,14 +32,14 @@ class LLMRequest:
     """controls llm behavior of tool calling"""
     tool_choice: Optional[Literal["auto", "none", "required"]] = None
 
+    _assembled: bool = field(default=False, init=False, repr=False)
+
     def __post_init__(self):
         if not self.tool_choice:
             if self.tools:
                 self.tool_choice = "auto"
             else:
                 self.tool_choice = "none"
-
-    _assembled: bool = field(default=False, init=False, repr=False)
 
     def assemble_prompt(self):
         if self._assembled:

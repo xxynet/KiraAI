@@ -317,7 +317,7 @@ class ProviderManager:
         for model_type_key, type_models in model_config_root.items():
             if not isinstance(type_models, dict):
                 continue
-            for model_id, model_cfg in type_models.items():
+            for _model_id, model_cfg in type_models.items():
                 if not isinstance(model_cfg, dict):
                     continue
                 model_infos.append(
@@ -654,7 +654,7 @@ class ProviderManager:
             type_models = model_config_root.get(model_type)
             if not isinstance(type_models, dict):
                 continue
-            for model_id, model_cfg in type_models.items():
+            for _model_id, model_cfg in type_models.items():
                 if not isinstance(model_cfg, dict):
                     continue
                 for field in type_fields:
