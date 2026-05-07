@@ -1,10 +1,12 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
+import base64
 import time
 from typing import Optional
 
 from core.provider import ModelInfo
-from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
+from core.provider import LLMModelClient, TTSModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse
+from core.chat.message_elements import Record
 
 class OpenAICompatibleLLMClient(LLMModelClient):
     def __init__(self, model: ModelInfo):
@@ -73,3 +75,31 @@ class OpenAICompatibleLLMClient(LLMModelClient):
             raise
         except Exception as e:
             raise
+
+
+class OpenAICompatibleTTSClient(TTSModelClient):
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    async def text_to_speech(self, text: str, **kwargs) -> Record:
+        default_headers = self.model.provider_config.get("headers", {})
+        if not isinstance(default_headers, dict) or not default_headers:
+            default_headers = None
+        client = AsyncOpenAI(
+            api_key=self.model.provider_config.get("api_key", ""),
+            base_url=self.model.provider_config.get("base_url", ""),
+            default_headers=default_headers
+        )
+
+        async with client.audio.speech.with_streaming_response.create(
+                model=self.model.model_id,
+                voice=self.model.model_config.get("voice_name", ""),
+                input=text,
+                response_format="mp3"
+        ) as response:
+            audio_bytes = b""
+            async for chunk in response.iter_bytes():
+                audio_bytes += chunk
+
+        b64_str = base64.b64encode(audio_bytes).decode("utf-8")
+        return Record(record=b64_str)
