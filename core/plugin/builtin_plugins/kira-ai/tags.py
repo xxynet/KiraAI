@@ -47,7 +47,7 @@ def build_emoji_tag(emoji_json: dict) -> Type[BaseTag]:
 
 class AtTag(BaseTag):
     name = "at"
-    description = "<at>user_id</at> # 通过用户id使用@功能，通常出现在消息的开头，有时也会在消息中间（如果聊天中需要提及其他人），特殊的，传入字符串all代表@全体成员。at功能仅在群聊中使用，系统会将at消息解析为‘@用户昵称’显示"
+    description = "<at>user_id</at> # 通过用户id使用@功能，通常出现在消息的开头，有时也会在消息中间（如果聊天中需要提及其他人），特殊的，传入字符串all代表@全体成员。at功能仅在群聊中使用，系统会将at消息解析为'@用户昵称'显示"
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         return [At(value)]
@@ -135,6 +135,9 @@ class SelfieTag(BaseTag):
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         try:
             ref_img_path = self.ctx.config.get('bot_config', {}).get('selfie', {}).get('path', '')
+            if not ref_img_path:
+                message_logger.warning("Selfie reference image not set, skipped generation")
+                return []
             if os.path.exists(f"{get_data_path()}/{ref_img_path}"):
                 img_extension = ref_img_path.split(".")[-1]
                 bs64 = await image_to_base64(f"{get_data_path()}/{ref_img_path}")
