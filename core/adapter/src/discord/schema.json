@@ -1,0 +1,75 @@
+{
+  "bot_token": {
+    "name": "Bot Token",
+    "type": "string",
+    "default": "",
+    "hint": "Discord Bot Token (from Discord Developer Portal)"
+  },
+  "proxy": {
+    "name": "Proxy",
+    "type": "string",
+    "default": "",
+    "hint": "HTTP proxy URL for connecting to Discord, e.g. http://127.0.0.1:7890"
+  },
+  "intents": {
+    "name": "Gateway Intents",
+    "type": "list",
+    "default": ["guilds", "guild_messages", "message_content", "direct_messages"],
+    "hint": "Discord Gateway Intents to enable"
+  },
+  "permission_mode": {
+    "name": "Permission Mode",
+    "type": "string",
+    "options": ["allow_list", "deny_list"],
+    "default": "allow_list",
+    "hint": "Allow list or deny list"
+  },
+  "group_allow_list": {
+    "name": "Channel Allow List",
+    "type": "list",
+    "default": [],
+    "hint": "Channel IDs allow list (when permission mode is allow_list)"
+  },
+  "user_allow_list": {
+    "name": "User Allow List",
+    "type": "list",
+    "default": [],
+    "hint": "User IDs allow list (when permission mode is allow_list)"
+  },
+  "group_deny_list": {
+    "name": "Channel Deny List",
+    "type": "list",
+    "default": [],
+    "hint": "Channel IDs deny list (when permission mode is deny_list)"
+  },
+  "user_deny_list": {
+    "name": "User Deny List",
+    "type": "list",
+    "default": [],
+    "hint": "User IDs deny list (when permission mode is deny_list)"
+  },
+  "debug_mode": {
+    "name": "Debug Mode",
+    "type": "switch",
+    "default": false,
+    "hint": "Print received raw messages at DEBUG level"
+  },
+  "debug_mode_list": {
+    "name": "Debug Mode Channels",
+    "type": "list",
+    "default": [],
+    "hint": "Channels to enable debug mode for, e.g.:\ngm:<channel_id>\ndm:<user_id>"
+  },
+  "slash_guild_ids": {
+    "name": "Slash Guild IDs",
+    "type": "list",
+    "default": [],
+    "hint": "Guild IDs to scope slash commands to (global commands if empty)"
+  },
+  "auto_sync_commands": {
+    "name": "Auto Sync Commands",
+    "type": "switch",
+    "default": true,
+    "hint": "Automatically sync slash commands with Discord on startup"
+  }
+}
