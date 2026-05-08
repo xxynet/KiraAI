@@ -2,6 +2,7 @@ import os
 import json
 import time
 import io
+import re
 import base64
 import asyncio
 from datetime import datetime
@@ -103,6 +104,8 @@ class DiscordAdapter(IMAdapter):
         # runtime
         self.message_sender = MessageSender()
         self.logger = get_logger(info.name, "blue")
+        self._bot_task: Optional[asyncio.Task] = None
+        self._last_error: Optional[Exception] = None
         self.debug_mode = self.config.get("debug_mode", False)
         self.debug_mode_list = self.config.get("debug_mode_list", [])
 
@@ -166,17 +169,28 @@ class DiscordAdapter(IMAdapter):
             self.logger.error("Discord bot_token is not set")
             return
         self.logger.info(f"Starting Discord adapter, proxy={self.proxy or 'None'} ...")
-        asyncio.create_task(self._run_bot())
+        self._bot_task = asyncio.create_task(self._run_bot())
 
     async def _run_bot(self):
         """Run the bot in a background task."""
         try:
             await self.bot.start(self.bot_token)
+        except asyncio.CancelledError:
+            self.logger.info("Discord bot task cancelled")
+            raise
         except Exception as e:
+            self._last_error = e
             self.logger.error(f"Discord bot error: {e}")
+            raise
 
     async def stop(self):
         """Stop the Discord adapter."""
+        if self._bot_task and not self._bot_task.done():
+            self._bot_task.cancel()
+            try:
+                await self._bot_task
+            except asyncio.CancelledError:
+                pass
         if self.bot and not self.bot.is_closed():
             await self.bot.close()
             self.logger.info(f"Stopped Discord adapter for {self.config.get('bot_pid', 'bot')}")
@@ -337,44 +351,27 @@ class DiscordAdapter(IMAdapter):
         if message.content:
             # Parse mentions within text
             text = message.content
-            # py-cord provides message.mentions but not positional info easily.
-            # We'll replace mention patterns with At elements.
-            remaining = text
-            mention_positions = []
+            # Single regex pass to find every mention occurrence accurately,
+            # handling <@id>, <@!id> (user) and <@&id> (role) including duplicates.
+            _mention_re = re.compile(r"<@&(\d+)>|<@!?(\d+)>")
+            mention_matches = list(_mention_re.finditer(text))
 
-            # Use raw mentions from the message to find positions
-            # User mentions: <@user_id> or <@!user_id>
-            if hasattr(message, 'raw_mentions') and message.raw_mentions:
-                for mention_id in message.raw_mentions:
-                    mention_str = f"<@{mention_id}>"
-                    alt_mention_str = f"<@!{mention_id}>"
-                    pos = remaining.find(mention_str)
-                    if pos == -1:
-                        pos = remaining.find(alt_mention_str)
-                        if pos != -1:
-                            mention_positions.append((pos, len(alt_mention_str), str(mention_id), "user"))
-                    else:
-                        mention_positions.append((pos, len(mention_str), str(mention_id), "user"))
-
-            # Role mentions: <@&role_id>
-            if hasattr(message, 'raw_role_mentions') and message.raw_role_mentions:
-                for role_id in message.raw_role_mentions:
-                    role_mention_str = f"<@&{role_id}>"
-                    pos = remaining.find(role_mention_str)
-                    if pos != -1:
-                        mention_positions.append((pos, len(role_mention_str), str(role_id), "role"))
-
-            # Sort by position
-            mention_positions.sort(key=lambda x: x[0])
-
-            if mention_positions:
+            if mention_matches:
                 pos = 0
-                for mpos, mlen, mid, mention_type in mention_positions:
-                    if mpos > pos:
-                        plain = remaining[pos:mpos]
+                for m in mention_matches:
+                    # Emit any plain text before this mention
+                    if m.start() > pos:
+                        plain = text[pos:m.start()]
                         if plain:
                             elements.append(Text(plain))
-                    # Resolve nickname based on mention type
+                    # Determine mention type and extract the id
+                    if m.group(1) is not None:
+                        mid = m.group(1)
+                        mention_type = "role"
+                    else:
+                        mid = m.group(2)
+                        mention_type = "user"
+                    # Resolve nickname
                     nick = mid
                     try:
                         if mention_type == "role" and message.guild:
@@ -388,13 +385,14 @@ class DiscordAdapter(IMAdapter):
                     except Exception:
                         pass
                     elements.append(At(pid=mid, nickname=nick))
-                    pos = mpos + mlen
-                if pos < len(remaining):
-                    trailing = remaining[pos:]
+                    pos = m.end()
+                # Trailing text after last mention
+                if pos < len(text):
+                    trailing = text[pos:]
                     if trailing:
                         elements.append(Text(trailing))
             else:
-                elements.append(Text(remaining))
+                elements.append(Text(text))
 
         # Images (attachments)
         for att in message.attachments:
@@ -531,9 +529,7 @@ class DiscordAdapter(IMAdapter):
                 try:
                     image_path = await ele.to_path()
                     filename = ele.name or "image.png"
-                    with open(image_path, "rb") as f:
-                        file_bytes = f.read()
-                    discord_file = discord.File(io.BytesIO(file_bytes), filename=filename)
+                    discord_file = discord.File(image_path, filename=filename)
                     sent = await self.message_sender.send_with_retry(
                         channel.send, file=discord_file, **reply_kw
                     )
@@ -546,9 +542,7 @@ class DiscordAdapter(IMAdapter):
             elif isinstance(ele, Record):
                 try:
                     record_path = await ele.to_path()
-                    with open(record_path, "rb") as f:
-                        voice_bytes = f.read()
-                    discord_file = discord.File(io.BytesIO(voice_bytes), filename="voice.mp3")
+                    discord_file = discord.File(record_path, filename="voice.mp3")
                     sent = await self.message_sender.send_with_retry(
                         channel.send, file=discord_file, **reply_kw
                     )
@@ -582,9 +576,7 @@ class DiscordAdapter(IMAdapter):
                 try:
                     file_path = await ele.to_path()
                     filename = ele.name or "file"
-                    with open(file_path, "rb") as f:
-                        file_bytes = f.read()
-                    discord_file = discord.File(io.BytesIO(file_bytes), filename=filename)
+                    discord_file = discord.File(file_path, filename=filename)
                     sent = await self.message_sender.send_with_retry(
                         channel.send, file=discord_file, **reply_kw
                     )
@@ -598,9 +590,7 @@ class DiscordAdapter(IMAdapter):
                 try:
                     video_path = await ele.to_path()
                     filename = ele.name or "video.mp4"
-                    with open(video_path, "rb") as f:
-                        video_bytes = f.read()
-                    discord_file = discord.File(io.BytesIO(video_bytes), filename=filename)
+                    discord_file = discord.File(video_path, filename=filename)
                     sent = await self.message_sender.send_with_retry(
                         channel.send, file=discord_file, **reply_kw
                     )

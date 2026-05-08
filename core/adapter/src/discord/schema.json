@@ -59,5 +59,17 @@
     "type": "list",
     "default": [],
     "hint": "Channels to enable debug mode for, e.g.:\ngm:<channel_id>\ndm:<user_id>"
+  },
+  "slash_guild_ids": {
+    "name": "Slash Guild IDs",
+    "type": "list",
+    "default": [],
+    "hint": "Guild IDs to scope slash commands to (global commands if empty)"
+  },
+  "auto_sync_commands": {
+    "name": "Auto Sync Commands",
+    "type": "switch",
+    "default": true,
+    "hint": "Automatically sync slash commands with Discord on startup"
   }
 }
