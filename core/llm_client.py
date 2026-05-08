@@ -137,8 +137,11 @@ class LLMClient:
         logger.info(f"Generating image using {model_id} ({provider_name})")
         try:
             img_res = await image_model.text_to_image(prompt)
-            if not img_res:
-                logger.error(f"Failed to generate image with text")
+            if img_res:
+                logger.info(f"Image generated with prompt: {prompt}")
+                logger.debug(f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}")
+            else:
+                logger.error("Failed to generate image with text: result is None")
             return img_res
         except Exception as e:
             logger.error(f"Failed to generate image with text: {e}")
@@ -150,8 +153,11 @@ class LLMClient:
         logger.info(f"Generating image using {model_id} ({provider_name}) with a reference image")
         try:
             img_res = await image_model.image_to_image(prompt=prompt, image=image)
-            if not img_res:
-                logger.error(f"Failed to generate image with a reference image")
+            if img_res:
+                logger.info(f"Image generated (img2img): prompt: {prompt}")
+                logger.debug(f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}")
+            else:
+                logger.error("Failed to generate image with a reference image: result is None")
             return img_res
         except Exception as e:
             logger.error(f"Failed to generate image with a reference image: {e}")

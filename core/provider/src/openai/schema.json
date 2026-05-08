@@ -38,12 +38,26 @@
       }
     },
     "image": {
+      "timeout": {
+        "name": "Timeout",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "Timeout seconds"
+      },
+      "endpoint": {
+        "name": "Endpoint",
+        "type": "enum",
+        "default": "v1/image",
+        "options": ["v1/image", "v1/chat"],
+        "hint": "Endpoint to send image generation requests. Use v1/chat for multimodal chat models that return images via chat completions."
+      },
       "size": {
         "name": "Image Size",
         "type": "string",
         "default": null,
         "enum": ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"],
-        "hint": "Image size (e.g., 1024x1024)"
+        "hint": "Image size (e.g., 1024x1024). Only applies to v1/image endpoint."
       }
     },
     "embedding": {
