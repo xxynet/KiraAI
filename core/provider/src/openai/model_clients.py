@@ -248,10 +248,9 @@ class OpenAIImageClient(ImageModelClient):
             images_response = await client.images.generate(
                 model=self.model.model_id,
                 prompt=prompt,
-                image=[image_data_url],
                 size=image_size if image_size else None,
                 response_format="url",
-                extra_body={"watermark": False},
+                extra_body={"watermark": False, "image": [image_data_url]},
             )
             return Image(image=images_response.data[0].url)
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
