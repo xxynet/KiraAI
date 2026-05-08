@@ -40,13 +40,18 @@ class OpenAIImageClient(ImageModelClient):
 
     def _build_client(self) -> AsyncOpenAI:
         """Build the AsyncOpenAI client (shared by both modes)."""
+        from httpx import Timeout
+
         default_headers = self.model.provider_config.get("headers", {})
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
+        timeout_val = self.model.model_config.get("timeout", 120)
+        timeout = Timeout(timeout_val, connect=10)
         return AsyncOpenAI(
             base_url=self.model.provider_config.get("base_url", ""),
             api_key=self.model.provider_config.get("api_key", ""),
             default_headers=default_headers,
+            timeout=timeout,
         )
 
     async def text_to_image(self, prompt) -> Image:
@@ -329,57 +334,3 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
             logger.error(f"Embedding error: {e}")
             return []
 
-
-# class OpenAIEmbeddingClient(EmbeddingModelClient):
-#     def __init__(self, model: ModelInfo):
-#         super().__init__(model)
-#         self._client: Optional[AsyncOpenAI] = None
-
-#     async def generate(self, text: str) -> list[float]:
-#         if self._client is None:
-#             self._client = AsyncOpenAI(
-#                 api_key=self.model.provider_config.get("api_key", ""),
-#                 base_url=self.model.provider_config.get("base_url", "")
-#             )
-#         try:
-#             response = await self._client.embeddings.create(
-#                 model=self.model.model_id,
-#                 input=text
-#             )
-#             return response.data[0].embedding
-#         except APIStatusError as e:
-#             # the model does not support function calling etc.
-#             # 403 Authorization failed (api key error)
-#             logger.error(f"APIStatusError: {e}")
-#         except APITimeoutError as e:
-#             logger.error(f"APITimeoutError: {e}")
-#         except APIConnectionError as e:
-#             # APIConnectionError: Connection error.(base_url error)
-#             logger.error(f"APIConnectionError: {e}")
-#         except Exception as e:
-#             logger.error(f"Error: {e}")
-
-#     async def generate_batch(self, texts: list[str]) -> list[list[float]]:
-#         if self._client is None:
-#             self._client = AsyncOpenAI(
-#                 api_key=self.model.provider_config.get("api_key", ""),
-#                 base_url=self.model.provider_config.get("base_url", "")
-#             )
-#         try:
-#             response = await self._client.embeddings.create(
-#                 model=self.model.model_id,
-#                 input=texts
-#             )
-#             sorted_data = sorted(response.data, key=lambda x: x.index)
-#             return [item.embedding for item in sorted_data]
-#         except APIStatusError as e:
-#             # the model does not support function calling etc.
-#             # 403 Authorization failed (api key error)
-#             logger.error(f"APIStatusError: {e}")
-#         except APITimeoutError as e:
-#             logger.error(f"APITimeoutError: {e}")
-#         except APIConnectionError as e:
-#             # APIConnectionError: Connection error.(base_url error)
-#             logger.error(f"APIConnectionError: {e}")
-#         except Exception as e:
-#             logger.error(f"Error: {e}")

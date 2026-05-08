@@ -434,15 +434,17 @@ class TelegramAdapter(IMAdapter):
 
             # ── Image ──
             elif isinstance(ele, Image):
-                if ele.image_type == "url":
-                    sent = await self.message_sender.send_with_retry(
-                        self.app.bot.send_photo, chat_id=chat_id, photo=ele.image, **reply_kw
-                    )
-                else:
-                    image_base64 = await ele.to_base64()
-                    sent = await self.message_sender.send_with_retry(
-                        self.app.bot.send_photo, chat_id=chat_id, photo=base64.b64decode(image_base64), **reply_kw
-                    )
+                # if ele.image_type == "url":
+                #     sent = await self.message_sender.send_with_retry(
+                #         self.app.bot.send_photo, chat_id=chat_id, photo=ele.image, **reply_kw
+                #     )
+                # else:
+
+                # Some URLs may not accessible by Telegram's servers
+                image_base64 = await ele.to_base64()
+                sent = await self.message_sender.send_with_retry(
+                    self.app.bot.send_photo, chat_id=chat_id, photo=base64.b64decode(image_base64), **reply_kw
+                )
                 message_id = str(sent.message_id)
 
             # ── Record (voice) ──
