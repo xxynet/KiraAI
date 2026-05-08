@@ -488,8 +488,12 @@ class DiscordAdapter(IMAdapter):
                 try:
                     ref_msg = await channel.fetch_message(reply_to_id)
                     reply_kw["reference"] = ref_msg
-                except Exception:
-                    pass
+                except discord.NotFound:
+                    self.logger.warning(f"Reply target message {reply_to_id} not found")
+                except discord.Forbidden:
+                    self.logger.warning(f"No permission to fetch reply target message {reply_to_id}")
+                except discord.HTTPException as e:
+                    self.logger.debug(f"Failed to fetch reply target message {reply_to_id}: {e}")
                 reply_to_id = None
 
             # ── Text / At / Emoji (merge contiguous run into one message) ──
@@ -508,12 +512,12 @@ class DiscordAdapter(IMAdapter):
                     elif isinstance(part, Emoji):
                         # Discord uses custom emoji format: <:name:id> or <a:name:id>
                         # If emoji_id looks like a Discord emoji ID (numeric), try custom format
-                        eid = part.emoji_id
+                        eid = part.emoji_id or ""
                         edesc = part.emoji_desc or ""
                         if eid.isdigit():
-                            content += f"<:{edesc}:{eid}>" if edesc else eid
+                            content += f"<:{edesc or 'unknown'}:{eid}>"
                         else:
-                            content += edesc or eid
+                            content += edesc or eid or ""
                     idx += 1
 
                 if content or files_to_send:
