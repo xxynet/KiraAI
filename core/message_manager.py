@@ -246,7 +246,18 @@ class MessageProcessor:
                             await self.image_desc_cache.set(md5, ele.caption)
                     except Exception as e:
                         logger.warning(f"Failed to cache image desc: {e}")
-                message_str += f"[Image {str(ele.caption)}]"
+                try:
+                    path = Path(await ele.to_path())
+                    data_dir = get_data_path()
+                    try:
+                        rel = path.relative_to(data_dir)
+                        path_result = f"data/{rel}"
+                    except ValueError:
+                        path_result = str(path)
+                    message_str += f"[Image {str(ele.caption)}, file_path: {path_result}]"
+                except Exception as e:
+                    logger.warning(f"Failed to save image: {e}")
+                    message_str += f"[Image {str(ele.caption)}]"
             elif isinstance(ele, Sticker):
                 if ele.caption is None:
                     try:
