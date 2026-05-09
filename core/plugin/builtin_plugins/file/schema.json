@@ -1,17 +1,29 @@
 {
   "allowed_sessions": {
+    "name": "Allowed Sessions",
     "type": "list",
     "default": [],
-    "hint": "Allowed sessions in the format of `<adapter_name>:<gm/dm>:<session_id>`"
+    "hint": "Allowed sessions in the format of `<adapter_name>:<gm/dm>:<session_id>`",
+    "locales": {
+      "zh": { "name": "允许的会话", "hint": "允许访问的会话，格式为 `<adapter_name>:<gm/dm>:<session_id>`" }
+    }
   },
   "allowed_exec_sessions": {
+    "name": "Allowed Exec Sessions",
     "type": "list",
     "default": [],
-    "hint": "Allowed sessions to use `exec` tool in the format of `<adapter_name>:<gm/dm>:<session_id>`"
+    "hint": "Allowed sessions to use `exec` tool in the format of `<adapter_name>:<gm/dm>:<session_id>`",
+    "locales": {
+      "zh": { "name": "允许执行命令的会话", "hint": "允许使用 exec 工具的会话，格式为 `<adapter_name>:<gm/dm>:<session_id>`" }
+    }
   },
   "exec_deny_list": {
+    "name": "Exec Deny List",
     "type": "list",
     "default": ["shutdown", "poweroff", "sudo"],
-    "hint": "Denied commands"
+    "hint": "Denied commands",
+    "locales": {
+      "zh": { "name": "命令黑名单", "hint": "禁止执行的命令列表" }
+    }
   }
 }

@@ -5,5 +5,11 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "Default & simple long term memory implementation, disable it before using third party memory plugins.",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "display_name": "简单记忆",
+            "description": "默认的简单长期记忆实现，使用第三方记忆插件前请先禁用此插件"
+        }
+    }
 }

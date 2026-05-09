@@ -3,5 +3,11 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "Volcengine Provider",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "name": "火山引擎",
+            "description": "火山引擎提供商"
+        }
+    }
 }

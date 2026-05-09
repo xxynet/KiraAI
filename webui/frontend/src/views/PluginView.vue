@@ -78,10 +78,10 @@
           :key="plugin.id"
           mode="installed"
           :id="plugin.id"
-          :name="plugin.name"
+          :name="localize(plugin, 'display_name', plugin.name)"
           :version="plugin.version"
           :author="plugin.author"
-          :description="plugin.description"
+          :description="localize(plugin, 'description', plugin.description)"
           :repo="plugin.repo"
           :enabled="plugin.enabled"
           :uninstallable="(plugin as any).uninstallable"
@@ -349,10 +349,10 @@
           :key="item.id"
           mode="store"
           :id="item.id"
-          :name="item.name"
+          :name="localize(item, 'name', item.name)"
           :version="item.version"
           :author="item.author"
-          :description="item.description"
+          :description="localize(item, 'description', item.description)"
           :repo="item.repo"
           :installed="item.installed"
           @install="handleStoreInstall(item)"
@@ -649,6 +649,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
@@ -673,6 +674,7 @@ import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem } fr
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
+const { localize } = useLocalized()
 const activeTab = ref('plugins')
 
 // Plugins

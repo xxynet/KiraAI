@@ -137,6 +137,7 @@
 <script setup lang="ts">
 import { reactive, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useLocalized } from '@/composables/useLocalized'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import { getProviders, getModels } from '@/api/provider'
@@ -151,6 +152,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { localize } = useLocalized()
 
 const drafts = reactive<Record<string, string>>({})
 const draftErrors = reactive<Record<string, string>>({})
@@ -172,11 +174,14 @@ const BOOL_TYPES = new Set(['switch', 'boolean'])
 const JSON_TYPES = new Set(['object', 'array'])
 
 function labelFor(field: any, key: string): string {
-  return field?.name || field?.title || key
+  const fallback = field?.name || field?.title || key
+  return localize(field, 'name', fallback)
 }
 
 function hintFor(field: any): string | undefined {
-  return field?.hint ?? field?.description ?? undefined
+  const fallback = field?.hint ?? field?.description ?? undefined
+  if (!fallback) return undefined
+  return localize(field, 'hint', fallback)
 }
 
 function optionsFor(field: any): any[] {

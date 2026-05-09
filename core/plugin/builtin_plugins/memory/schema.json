@@ -3,12 +3,19 @@
     "name": "Max memory num",
     "type": "integer",
     "default": 100,
-    "hint": "Maximum number of memories, triggers memory compression while hit this number"
+    "hint": "Maximum number of memories, triggers memory compression while hit this number",
+    "locales": {
+      "zh": { "name": "最大记忆数量", "hint": "记忆条数达到此数量时触发记忆压缩" }
+    }
   },
   "compression_model": {
-    "name": "Compression_model",
-    "type": "string",
+    "name": "Compression Model",
+    "type": "model_select",
+    "model_type": "llm",
     "default": null,
-    "hint": "Model ID used to compress memories, use default fast LLM by default"
+    "hint": "Model ID used to compress memories, use default fast LLM by default",
+    "locales": {
+      "zh": { "name": "压缩模型", "hint": "用于压缩记忆的模型 ID，默认使用快速 LLM" }
+    }
   }
 }

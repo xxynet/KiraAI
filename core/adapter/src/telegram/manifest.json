@@ -3,5 +3,11 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "Telegram Adapter",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "name": "Telegram 适配器",
+            "description": "Telegram 平台适配器"
+        }
+    }
 }

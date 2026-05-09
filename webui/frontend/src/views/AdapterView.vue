@@ -166,6 +166,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
 import {
   getAdapters, getAdapterPlatforms, getAdapterSchema,
@@ -179,6 +180,7 @@ import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import type { AdapterResponse } from '@/types'
 
 const { t } = useI18n()
+const { localize } = useLocalized()
 
 const configFormRef = ref<InstanceType<typeof ConfigForm>>()
 const confirmModalRef = ref<InstanceType<typeof ConfirmModal>>()

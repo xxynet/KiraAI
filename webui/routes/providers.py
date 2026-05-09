@@ -134,6 +134,13 @@ class ProvidersRoutes(Routes):
             ),
         ]
 
+    def _get_provider_locales(self, provider_type: str) -> Dict[str, Dict[str, str]]:
+        """Get locales dict from provider manifest for the given provider type."""
+        if self.lifecycle and self.lifecycle.provider_manager:
+            manifest = self.lifecycle.provider_manager.get_manifest(provider_type)
+            return manifest.get("locales") or {}
+        return {}
+
     def _get_supported_model_types(self, provider_id: str) -> List[str]:
         if not self.lifecycle or not self.lifecycle.provider_manager:
             return []
@@ -211,6 +218,7 @@ class ProvidersRoutes(Routes):
             is_active = provider_id in active_providers
             config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
             supported_model_types = self._get_supported_model_types(provider_id)
+            locales = self._get_provider_locales(provider_info.provider_type)
             providers.append(
                 ProviderResponse(
                     id=provider_info.provider_id,
@@ -220,6 +228,7 @@ class ProvidersRoutes(Routes):
                     config=provider_info.provider_config,
                     model_config_data=config.get("model_config", {}),
                     supported_model_types=supported_model_types,
+                    locales=locales,
                 )
             )
         return providers
@@ -253,6 +262,7 @@ class ProvidersRoutes(Routes):
             self.lifecycle.kira_config.save_config()
             config_for_instantiation = generated_config.copy()
             self.lifecycle.provider_manager.set_provider(provider_id, config_for_instantiation)
+            locales = self._get_provider_locales(provider_type)
             return ProviderResponse(
                 id=provider_id,
                 name=payload.name or provider_id,
@@ -261,6 +271,7 @@ class ProvidersRoutes(Routes):
                 config=generated_config["provider_config"],
                 model_config_data=generated_config.get("model_config", {}),
                 supported_model_types=self._get_supported_model_types(provider_id),
+                locales=locales,
             )
         except Exception as e:
             logger.error(f"Error creating provider: {e}")
@@ -273,6 +284,7 @@ class ProvidersRoutes(Routes):
             if not provider_info:
                 raise HTTPException(status_code=404, detail="Provider not found")
             config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
+            locales = self._get_provider_locales(provider_info.provider_type)
             return ProviderResponse(
                 id=provider_info.provider_id,
                 name=provider_info.provider_name,
@@ -281,6 +293,7 @@ class ProvidersRoutes(Routes):
                 config=provider_info.provider_config,
                 model_config_data=config.get("model_config", {}),
                 supported_model_types=self._get_supported_model_types(provider_id),
+                locales=locales,
             )
         provider = self._providers.get(provider_id)
         if not provider:
@@ -300,6 +313,7 @@ class ProvidersRoutes(Routes):
             self.lifecycle.kira_config.save_config()
             config_for_instantiation = config.copy()
             self.lifecycle.provider_manager.set_provider(provider_id, config_for_instantiation)
+            locales = self._get_provider_locales(config.get("format", "unknown"))
             return ProviderResponse(
                 id=provider_id,
                 name=config.get("name", provider_id),
@@ -308,6 +322,7 @@ class ProvidersRoutes(Routes):
                 config=config["provider_config"],
                 model_config_data=config.get("model_config", {}),
                 supported_model_types=self._get_supported_model_types(provider_id),
+                locales=locales,
             )
         provider = self._providers.get(provider_id)
         if not provider:

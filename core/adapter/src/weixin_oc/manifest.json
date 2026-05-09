@@ -3,5 +3,11 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "个人微信适配器 (OpenClaw)",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "en": {
+            "name": "Weixin OC",
+            "description": "Personal WeChat Adapter (OpenClaw)"
+        }
+    }
 }

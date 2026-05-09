@@ -3,61 +3,91 @@
     "name": "API Base URL",
     "type": "string",
     "default": "https://ilinkai.weixin.qq.com",
-    "hint": "OpenClaw API 地址"
+    "hint": "OpenClaw API address",
+    "locales": {
+      "zh": { "name": "API Base URL", "hint": "OpenClaw API 地址" }
+    }
   },
   "weixin_oc_cdn_base_url": {
     "name": "CDN Base URL",
     "type": "string",
     "default": "https://novac2c.cdn.weixin.qq.com/c2c",
-    "hint": "媒体文件 CDN 地址"
+    "hint": "Media file CDN address",
+    "locales": {
+      "zh": { "name": "CDN Base URL", "hint": "媒体文件 CDN 地址" }
+    }
   },
   "weixin_oc_token": {
     "name": "Bot Token",
     "type": "string",
     "default": "",
-    "hint": "登录后自动保存，无需手动填写"
+    "hint": "Automatically saved after login, no need to fill in manually",
+    "locales": {
+      "zh": { "name": "Bot Token", "hint": "登录后自动保存，无需手动填写" }
+    }
   },
   "weixin_oc_account_id": {
     "name": "Account ID",
     "type": "string",
     "default": "",
-    "hint": "登录后自动保存"
+    "hint": "Automatically saved after login",
+    "locales": {
+      "zh": { "name": "账号 ID", "hint": "登录后自动保存" }
+    }
   },
   "weixin_oc_bot_type": {
     "name": "Bot Type",
     "type": "string",
     "default": "3",
-    "hint": "机器人类型，默认为 3"
+    "hint": "Robot type, default is 3",
+    "locales": {
+      "zh": { "name": "机器人类型", "hint": "机器人类型，默认为 3" }
+    }
   },
   "weixin_oc_api_timeout_ms": {
     "name": "API Timeout (ms)",
     "type": "int",
     "default": 15000,
-    "hint": "API 请求超时时间（毫秒）"
+    "hint": "API request timeout in milliseconds",
+    "locales": {
+      "zh": { "name": "API 超时（毫秒）", "hint": "API 请求超时时间（毫秒）" }
+    }
   },
   "weixin_oc_long_poll_timeout_ms": {
     "name": "Long Poll Timeout (ms)",
     "type": "int",
     "default": 35000,
-    "hint": "长轮询超时时间（毫秒）"
+    "hint": "Long polling timeout in milliseconds",
+    "locales": {
+      "zh": { "name": "长轮询超时（毫秒）", "hint": "长轮询超时时间（毫秒）" }
+    }
   },
   "permission_mode": {
     "name": "Permission Mode",
     "type": "string",
     "options": ["allow_list", "deny_list"],
     "default": "allow_list",
-    "hint": "白名单或黑名单模式"
+    "hint": "Allow list or deny list mode",
+    "locales": {
+      "zh": { "name": "权限模式", "hint": "白名单或黑名单模式" }
+    }
   },
   "user_allow_list": {
-    "name": "私聊白名单",
+    "name": "User Allow List",
     "type": "list",
     "default": [],
-    "hint": "允许响应的用户 ID 列表"
+    "hint": "Allowed user IDs list",
+    "locales": {
+      "zh": { "name": "私聊白名单", "hint": "允许响应的用户 ID 列表" }
+    }
   },
   "user_deny_list": {
-    "name": "私聊黑名单",
+    "name": "User Deny List",
     "type": "list",
     "default": [],
-    "hint": "禁止响应的用户 ID 列表"
+    "hint": "Denied user IDs list",
+    "locales": {
+      "zh": { "name": "私聊黑名单", "hint": "禁止响应的用户 ID 列表" }
+    }
   }
 }

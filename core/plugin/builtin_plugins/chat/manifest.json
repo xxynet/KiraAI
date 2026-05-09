@@ -4,5 +4,11 @@
     "version": "1.2.0",
     "author": "KiraAI",
     "description": "Default IM Chat processing implementation, merge messages received in a certain duration & add unmentioned messages as context",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "display_name": "默认聊天",
+            "description": "默认即时通讯聊天处理实现，合并一段时间内收到的消息并将未提及的消息作为上下文"
+        }
+    }
 }

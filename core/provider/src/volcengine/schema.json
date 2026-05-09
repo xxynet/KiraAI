@@ -4,13 +4,19 @@
       "name": "Base URL",
       "type": "string",
       "default": "https://ark.cn-beijing.volces.com/api/v3",
-      "hint": "火山平台 base url，可根据需要更换"
+      "hint": "火山平台 base url，可根据需要更换",
+      "locales": {
+        "en": { "name": "Base URL", "hint": "Volcengine base URL, can be changed as needed" }
+      }
     },
     "api_key": {
       "name": "API 密钥",
       "type": "sensitive",
       "default": null,
-      "hint": "火山平台 API 密钥，可进入 https://console.volcengine.com/ark/ 获取"
+      "hint": "火山平台 API 密钥，可进入 https://console.volcengine.com/ark/ 获取",
+      "locales": {
+        "en": { "name": "API Key", "hint": "Volcengine API Key, get it from https://console.volcengine.com/ark/" }
+      }
     }
   },
   "model_config": {
@@ -20,7 +26,10 @@
         "type": "integer",
         "default": 120,
         "min": 1,
-        "hint": "超时秒数"
+        "hint": "超时秒数",
+        "locales": {
+          "en": { "name": "Timeout", "hint": "Timeout seconds" }
+        }
       },
       "temperature": {
         "name": "温度",
@@ -28,7 +37,10 @@
         "default": null,
         "min": 0,
         "max": 2,
-        "hint": "模型温度"
+        "hint": "模型温度",
+        "locales": {
+          "en": { "name": "Temperature", "hint": "Model temperature" }
+        }
       }
     },
     "image": {
@@ -36,7 +48,10 @@
         "name": "图片尺寸",
         "type": "string",
         "default": null,
-        "hint": "图片尺寸"
+        "hint": "图片尺寸",
+        "locales": {
+          "en": { "name": "Image Size", "hint": "Image size" }
+        }
       }
     },
     "video": {},
@@ -46,14 +61,20 @@
         "type": "integer",
         "default": 60,
         "min": 1,
-        "hint": "请求超时时间（秒）"
+        "hint": "请求超时时间（秒）",
+        "locales": {
+          "en": { "name": "Timeout", "hint": "Request timeout in seconds" }
+        }
       },
       "slow_request_threshold": {
         "name": "慢请求阈值",
         "type": "float",
         "default": 5.0,
         "min": 0,
-        "hint": "超过此阈值（秒）的请求将被记录为慢请求"
+        "hint": "超过此阈值（秒）的请求将被记录为慢请求",
+        "locales": {
+          "en": { "name": "Slow Request Threshold", "hint": "Requests slower than this threshold (seconds) will be logged as slow requests" }
+        }
       }
     }
   }

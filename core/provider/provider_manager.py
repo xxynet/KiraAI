@@ -66,6 +66,10 @@ class ProviderManager:
     def get_schema(cls, name: str) -> dict:
         return cls._schemas.get(name, {})
 
+    @classmethod
+    def get_manifest(cls, name: str) -> dict:
+        return cls._manifests.get(name, {})
+
     def get_model_client(self, provider_id: str, model_id: str) -> Optional[BaseModelClient]:
         provider = self.get_provider(provider_id)
         model_info = self.get_model_info(provider_id, model_id)
