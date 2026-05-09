@@ -3,5 +3,11 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "BiliBili Adapter",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "name": "BiliBili 适配器",
+            "description": "BiliBili 平台适配器"
+        }
+    }
 }

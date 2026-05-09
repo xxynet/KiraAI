@@ -133,6 +133,7 @@ class PluginsRoutes(Routes):
                 author = str(manifest.get("author") or "")
                 desc = str(manifest.get("description") or "")
                 repo = manifest.get("repo")
+                locales = manifest.get("locales") or {}
                 enabled = plugin_manager.is_plugin_enabled(plugin_id)
                 is_builtin = plugin_manager.is_builtin_plugin(plugin_id)
                 uninstallable = plugin_manager.is_plugin_uninstallable(plugin_id)
@@ -147,6 +148,7 @@ class PluginsRoutes(Routes):
                         enabled=enabled,
                         builtin=is_builtin,
                         uninstallable=uninstallable,
+                        locales=locales,
                     )
                 )
             return items
@@ -344,6 +346,7 @@ class PluginsRoutes(Routes):
                     description=str(item.get("description", "")),
                     category=item.get("category"),
                     repo=item.get("repo"),
+                    locales=item.get("locales") or {},
                 ))
             return result
         except Exception as e:
@@ -390,6 +393,8 @@ class PluginsRoutes(Routes):
             category = raw.get("category")
             repo = raw.get("repo") or raw.get("repo_url")
 
+            locales = raw.get("locales")
+
             item: Dict[str, Any] = {
                 "plugin_id": str(plugin_id),
                 "display_name": str(display_name),
@@ -398,6 +403,7 @@ class PluginsRoutes(Routes):
                 "description": str(description),
                 "category": str(category) if category else None,
                 "repo": str(repo) if repo else None,
+                "locales": locales if isinstance(locales, dict) else {},
             }
 
             if "id" in raw and raw["id"] is not None:

@@ -3,5 +3,15 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "硅基流动CN提供商",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "name": "硅基流动 CN",
+            "description": "硅基流动 CN 提供商"
+        },
+        "en": {
+            "name": "SiliconFlow CN",
+            "description": "SiliconFlow CN Provider"
+        }
+    }
 }

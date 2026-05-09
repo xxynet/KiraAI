@@ -5,5 +5,11 @@
     "version": "1.0.0",
     "author": "xxynet",
     "description": "A search tool that empowers llm to search the Internet via Tavily",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "display_name": "Tavily 搜索",
+            "description": "通过 Tavily 赋能 LLM 搜索互联网的工具"
+        }
+    }
 }

@@ -3,54 +3,81 @@
     "name": "Bot UID",
     "type": "string",
     "default": "",
-    "hint": "Bot的B站UID"
+    "hint": "Bot's Bilibili UID",
+    "locales": {
+      "zh": { "name": "机器人 UID", "hint": "Bot 的 B 站 UID" }
+    }
   },
   "listening_bvid": {
-    "name": "监听视频 BVID",
+    "name": "Listening Video BVID",
     "type": "string",
     "default": "",
-    "hint": "监听的B站视频BVID"
+    "hint": "Listening BVID of the video on Bilibili",
+    "locales": {
+      "zh": { "name": "监听视频 BVID", "hint": "监听的 B 站视频 BVID" }
+    }
   },
   "listening_interval": {
-    "name": "轮询间隔",
+    "name": "Polling Interval",
     "type": "float",
     "default": 20.0,
-    "hint": "视频评论轮询间隔秒数"
+    "hint": "Video comment polling interval in seconds",
+    "locales": {
+      "zh": { "name": "轮询间隔", "hint": "视频评论轮询间隔秒数" }
+    }
   },
   "message_process_interval": {
-    "name": "消息处理间隔",
+    "name": "Message Process Interval",
     "type": "float",
     "default": 5.0,
-    "hint": "消息处理间隔，防止操作过快"
+    "hint": "Message processing interval to prevent rapid operations",
+    "locales": {
+      "zh": { "name": "消息处理间隔", "hint": "消息处理间隔，防止操作过快" }
+    }
   },
   "sesdata": {
     "name": "sesdata",
     "type": "string",
-    "default": [],
-    "hint": "sesdata（从Cookie获取）"
+    "default": "",
+    "hint": "sesdata（From Cookie）",
+    "locales": {
+      "zh": { "name": "SESSDATA", "hint": "SESSDATA（从 Cookie 获取）" }
+    }
   },
   "bili_jct": {
     "name": "bili_jct",
     "type": "string",
     "default": "",
-    "hint": "bili_jct（从Cookie获取）"
+    "hint": "bili_jct（From Cookie）",
+    "locales": {
+      "zh": { "name": "bili_jct", "hint": "bili_jct（从 Cookie 获取）" }
+    }
   },
   "buvid3": {
     "name": "buvid3",
     "type": "string",
     "default": "",
-    "hint": "buvid3（从Cookie获取）"
+    "hint": "buvid3（From Cookie）",
+    "locales": {
+      "zh": { "name": "buvid3", "hint": "buvid3（从 Cookie 获取）" }
+    }
   },
   "dedeuserid": {
     "name": "dedeuserid",
     "type": "string",
     "default": "",
-    "hint": "dedeuserid（从Cookie获取）"
+    "hint": "dedeuserid（From Cookie）",
+    "locales": {
+      "zh": { "name": "DedeUserID", "hint": "DedeUserID（从 Cookie 获取）" }
+    }
   },
   "ac_time_value": {
     "name": "ac_time_value",
     "type": "string",
     "default": "",
-    "hint": "ac_time_value（从LocalStorage获取）"
+    "hint": "ac_time_value（From LocalStorage）",
+    "locales": {
+      "zh": { "name": "ac_time_value", "hint": "ac_time_value（从 LocalStorage 获取）" }
+    }
   }
 }

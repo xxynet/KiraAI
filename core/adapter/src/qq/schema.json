@@ -3,61 +3,91 @@
     "name": "Bot QQ",
     "type": "string",
     "default": "",
-    "hint": "AI的QQ号"
+    "hint": "AI的QQ号",
+    "locales": {
+      "zh": { "name": "机器人QQ号", "hint": "AI的QQ号" }
+    }
   },
   "ws_uri": {
     "name": "WS Server URI",
     "type": "string",
     "default": "ws://localhost:3001",
-    "hint": "Wesocket server 的 URI"
+    "hint": "WebSocket server 的 URI",
+    "locales": {
+      "zh": { "name": "WebSocket 地址", "hint": "WebSocket 服务器的 URI" }
+    }
   },
   "ws_token": {
     "name": "WS Server Token",
     "type": "string",
     "default": "",
-    "hint": "Websocket server 的 token"
+    "hint": "WebSocket server 的 token",
+    "locales": {
+      "zh": { "name": "WebSocket 令牌", "hint": "WebSocket 服务器的 Token" }
+    }
   },
   "permission_mode": {
     "name": "Permission Mode",
     "type": "string",
     "options": ["allow_list", "deny_list"],
     "default": "allow_list",
-    "hint": "白名单（allow）或黑名单（deny）模式"
+    "hint": "白名单（allow）或黑名单（deny）模式",
+    "locales": {
+      "zh": { "name": "权限模式", "hint": "白名单（allow）或黑名单（deny）模式" }
+    }
   },
   "group_allow_list": {
     "name": "群聊白名单",
     "type": "list",
     "default": [],
-    "hint": "群聊白名单，当 permission mode 为 allow list 时起作用"
+    "hint": "群聊白名单，当 permission mode 为 allow list 时起作用",
+    "locales": {
+      "zh": { "name": "群聊白名单", "hint": "群聊白名单，当权限模式为白名单时起作用" }
+    }
   },
   "user_allow_list": {
     "name": "私聊白名单",
     "type": "list",
     "default": [],
-    "hint": "私聊白名单，当 permission mode 为 allow list 时起作用"
+    "hint": "私聊白名单，当 permission mode 为 allow list 时起作用",
+    "locales": {
+      "zh": { "name": "私聊白名单", "hint": "私聊白名单，当权限模式为白名单时起作用" }
+    }
   },
   "group_deny_list": {
     "name": "群聊黑名单",
     "type": "list",
     "default": [],
-    "hint": "群聊黑名单，当 permission mode 为 deny list 时起作用"
+    "hint": "群聊黑名单，当 permission mode 为 deny list 时起作用",
+    "locales": {
+      "zh": { "name": "群聊黑名单", "hint": "群聊黑名单，当权限模式为黑名单时起作用" }
+    }
   },
   "user_deny_list": {
     "name": "私聊黑名单",
     "type": "list",
     "default": [],
-    "hint": "私聊黑名单，当 permission mode 为 deny list 时起作用"
+    "hint": "私聊黑名单，当 permission mode 为 deny list 时起作用",
+    "locales": {
+      "zh": { "name": "私聊黑名单", "hint": "私聊黑名单，当权限模式为黑名单时起作用" }
+    }
   },
   "debug_mode": {
     "name": "调试模式",
     "type": "switch",
     "default": false,
-    "hint": "开启时，会以 DEBUG 等级打印收到的原始消息"
+    "hint": "开启时，会以 DEBUG 等级打印收到的原始消息",
+    "locales": {
+      "en": { "name": "Debug Mode", "hint": "Print received raw messages at DEBUG level" }
+    }
   },
   "debug_mode_list": {
     "name": "调试模式会话",
     "type": "list",
     "default": [],
-    "hint": "要开启调试模式的会话，默认为所有接收消息的会话，例：\n私聊：dm:xxxx\n群聊：gm:xxxx"
+    "hint": "要开启调试模式的会话，默认为所有接收消息的会话，例：\n私聊：dm:xxxx\n群聊：gm:xxxx",
+    "locales": {
+      "en": { "name": "Debug Mode Sessions", "hint": "Sessions to enable debug mode for (all by default), e.g.:\ndm:xxxx\ngm:xxxx" }
+    }
   }
 }

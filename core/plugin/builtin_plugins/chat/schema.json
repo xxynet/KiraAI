@@ -3,36 +3,54 @@
     "name": "Waking words",
     "type": "list",
     "default": [],
-    "hint": "Treat message as mentioned if any wake word appears"
+    "hint": "Treat message as mentioned if any wake word appears",
+    "locales": {
+      "zh": { "name": "唤醒词", "hint": "如果消息中包含任一唤醒词，则视为被提及" }
+    }
   },
   "receive_unmentioned": {
     "name": "Receive Unmentioned Messages",
     "type": "switch",
     "default": false,
-    "hint": "Pass unmentioned messages as context"
+    "hint": "Pass unmentioned messages as context",
+    "locales": {
+      "zh": { "name": "接收未提及消息", "hint": "将未提及的消息作为上下文传入" }
+    }
   },
   "max_unmentioned_messages": {
     "name": "Max Unmentioned Messages",
     "type": "integer",
     "default": 5,
-    "hint": "Max unmentioned messages to include in context buffer"
+    "hint": "Max unmentioned messages to include in context buffer",
+    "locales": {
+      "zh": { "name": "最大未提及消息数", "hint": "上下文缓冲区中包含的最大未提及消息数" }
+    }
   },
   "group_chat_prompt": {
     "name": "Group Chat Prompt",
     "type": "markdown",
     "default": "",
-    "hint": "Extra prompt to guide AI behavior in group chats"
+    "hint": "Extra prompt to guide AI behavior in group chats",
+    "locales": {
+      "zh": { "name": "群聊提示词", "hint": "引导 AI 在群聊中行为的额外提示词" }
+    }
   },
   "group_proactive_chat": {
     "name": "Group Proactive Chat",
     "type": "switch",
     "default": false,
-    "hint": "Allow AI to send messages proactively in group chats, be sure to have receive_unmentioned enabled"
+    "hint": "Allow AI to send messages proactively in group chats, be sure to have receive_unmentioned enabled",
+    "locales": {
+      "zh": { "name": "群聊主动发言", "hint": "允许 AI 在群聊中主动发送消息，请确保已启用接收未提及消息" }
+    }
   },
   "group_proactive_chat_probability": {
     "name": "Group Proactive Chat Probability",
     "type": "float",
     "default": 0.1,
-    "hint": "Probability of triggering a proactive message (default 0.1)"
+    "hint": "Probability of triggering a proactive message (default 0.1)",
+    "locales": {
+      "zh": { "name": "主动发言概率", "hint": "触发主动发言的概率（默认 0.1）" }
+    }
   }
 }

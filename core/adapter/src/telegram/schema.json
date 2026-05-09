@@ -3,43 +3,64 @@
     "name": "Bot Username",
     "type": "string",
     "default": "",
-    "hint": "Username (at name) of your bot"
+    "hint": "Username (at name) of your bot",
+    "locales": {
+      "zh": { "name": "机器人用户名", "hint": "机器人的用户名（@名称）" }
+    }
   },
   "bot_token": {
     "name": "Bot Token",
     "type": "string",
     "default": "",
-    "hint": "Your bot token generated from @BotFather"
+    "hint": "Your bot token generated from @BotFather",
+    "locales": {
+      "zh": { "name": "机器人令牌", "hint": "从 @BotFather 获取的 Bot Token" }
+    }
   },
   "permission_mode": {
     "name": "Permission Mode",
     "type": "string",
     "options": ["allow_list", "deny_list"],
     "default": "allow_list",
-    "hint": "Allow list or deny list"
+    "hint": "Allow list or deny list",
+    "locales": {
+      "zh": { "name": "权限模式", "hint": "白名单或黑名单" }
+    }
   },
   "group_allow_list": {
     "name": "Group Allow List",
     "type": "list",
     "default": [],
-    "hint": "When permission mode is allow_list"
+    "hint": "When permission mode is allow_list",
+    "locales": {
+      "zh": { "name": "群聊白名单", "hint": "当权限模式为白名单时生效" }
+    }
   },
   "user_allow_list": {
     "name": "User Allow List",
     "type": "list",
     "default": [],
-    "hint": "When permission mode is allow_list"
+    "hint": "When permission mode is allow_list",
+    "locales": {
+      "zh": { "name": "用户白名单", "hint": "当权限模式为白名单时生效" }
+    }
   },
   "group_deny_list": {
     "name": "Group Deny List",
     "type": "list",
     "default": [],
-    "hint": "When permission mode is deny_list"
+    "hint": "When permission mode is deny_list",
+    "locales": {
+      "zh": { "name": "群聊黑名单", "hint": "当权限模式为黑名单时生效" }
+    }
   },
   "user_deny_list": {
     "name": "User Deny List",
     "type": "list",
     "default": [],
-    "hint": "When permission mode is deny_list"
+    "hint": "When permission mode is deny_list",
+    "locales": {
+      "zh": { "name": "用户黑名单", "hint": "当权限模式为黑名单时生效" }
+    }
   }
 }

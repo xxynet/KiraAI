@@ -1,12 +1,20 @@
 {
   "tavily_key": {
+    "name": "Tavily Key",
     "type": "string",
     "default": null,
-    "hint": "Your Tavily key, create one in https://app.tavily.com/home "
+    "hint": "Your Tavily key, create one in https://app.tavily.com/home ",
+    "locales": {
+      "zh": { "name": "Tavily 密钥", "hint": "你的 Tavily 密钥，在 https://app.tavily.com/home 创建" }
+    }
   },
   "max_results": {
+    "name": "Max Results",
     "type": "integer",
     "default": 5,
-    "hint": "The maximum number of search results to return."
+    "hint": "The maximum number of search results to return.",
+    "locales": {
+      "zh": { "name": "最大结果数", "hint": "返回的最大搜索结果数" }
+    }
   }
 }
