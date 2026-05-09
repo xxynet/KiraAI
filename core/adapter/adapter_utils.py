@@ -4,9 +4,10 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Union, Optional, List, TYPE_CHECKING
 
-from core.llm_client import LLMClient
-
 from core.adapter.adapter_info import AdapterInfo
+
+if TYPE_CHECKING:
+    from core.llm_client import LLMClient
 
 if TYPE_CHECKING:
     from core.chat.message_utils import KiraMessageEvent, MessageChain

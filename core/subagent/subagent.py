@@ -1,0 +1,263 @@
+from __future__ import annotations
+
+import time
+import uuid
+from copy import deepcopy
+from typing import Optional, TYPE_CHECKING
+
+from core.logging_manager import get_logger
+from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
+from core.agent.tool import ToolSet
+from core.prompt_manager import Prompt
+from core.provider.llm_model import LLMRequest
+
+from .models import SubAgentConfig, SubAgentRequest, SubAgentResponse, ParentContextStrategy
+
+if TYPE_CHECKING:
+    from core.provider import ProviderManager, LLMModelClient, LLMResponse
+    from core.llm_client import LLMClient
+    from core.prompt_manager import PromptManager
+
+logger = get_logger("subagent", "magenta")
+llm_logger = get_logger("llm", "purple")
+
+
+class SubAgent:
+    """SubAgent 实体：封装独立的 Persona、工具集、模型和记忆"""
+
+    def __init__(
+        self,
+        config: SubAgentConfig,
+        provider_mgr: ProviderManager,
+        llm_api: LLMClient,
+        prompt_manager: Optional[PromptManager] = None,
+    ):
+        self.config = config
+        self.provider_mgr = provider_mgr
+        self.llm_api = llm_api
+        self.prompt_manager = prompt_manager
+
+        self.session_id = f"sub:dm:{config.subagent_id}"
+        self._memory: list = []
+        self._lock = False
+
+    def _get_model_client(self) -> Optional[LLMModelClient]:
+        if self.config.model_uuid:
+            try:
+                parts = self.config.model_uuid.split(":")
+                provider_id = parts[0]
+                model_id = ":".join(parts[1:])
+                return self.provider_mgr.get_model_client(provider_id, model_id)
+            except Exception as e:
+                logger.warning(f"Failed to get model {self.config.model_uuid}: {e}")
+        return self.provider_mgr.get_default_llm()
+
+    def _build_tool_set(self) -> ToolSet:
+        tool_set = ToolSet()
+        if not self.config.tools:
+            return tool_set
+        for tool_name in self.config.tools:
+            if tool_name in self.llm_api.tools_functions:
+                # 内置 tool，通过 ToolSet 包装后注册
+                from core.utils.tool_utils import BaseTool
+
+                class DynamicTool(BaseTool):
+                    name = tool_name
+                    description = ""
+                    parameters = {}
+
+                    async def execute(self, event, **kwargs):
+                        func = self.llm_api.tools_functions.get(tool_name)
+                        if func:
+                            return await func(event, **kwargs)
+                        return {"error": f"Tool {tool_name} not found"}
+
+                # 尝试从 tools_definitions 获取描述和参数
+                for td in self.llm_api.tools_definitions:
+                    if td.get("function", {}).get("name") == tool_name:
+                        DynamicTool.description = td["function"].get("description", "")
+                        DynamicTool.parameters = td["function"].get("parameters", {})
+                        break
+                tool_set.add(DynamicTool())
+        return tool_set
+
+    def _build_system_prompt(self) -> list[Prompt]:
+        prompts: list[Prompt] = []
+        if self.config.persona:
+            prompts.append(Prompt(self.config.persona, name="persona", source="system"))
+        prompts.append(
+            Prompt(
+                "You are a specialized sub-agent. Focus on your assigned task and respond concisely.",
+                name="role",
+                source="system",
+            )
+        )
+        return prompts
+
+    def _prepare_context(self, request: SubAgentRequest) -> list[dict]:
+        strategy = request.parent_context_strategy
+        messages = []
+
+        if strategy == ParentContextStrategy.NONE:
+            pass
+        elif strategy == ParentContextStrategy.SUMMARY:
+            summary = request.metadata.get("context_summary", "")
+            if summary:
+                messages.append({"role": "system", "content": f"Context summary from parent agent: {summary}"})
+        elif strategy == ParentContextStrategy.FULL:
+            history = request.metadata.get("context_history", [])
+            max_tokens = request.max_tokens or 4000
+            # 简单截断：直接取历史后段
+            # TODO: 更精确的 token 计算截断
+            messages.extend(history[-20:] if len(history) > 20 else history)
+        elif strategy == ParentContextStrategy.SELECTIVE:
+            selective = request.metadata.get("context_selective", [])
+            # TODO: 根据消息 ID 匹配提取
+            if selective:
+                messages.append({"role": "system", "content": f"Selected context: {selective}"})
+
+        return messages
+
+    async def execute(self, request: SubAgentRequest) -> SubAgentResponse:
+        if self._lock:
+            return SubAgentResponse(
+                correlation_id=request.correlation_id,
+                status="cancelled",
+                err="SubAgent is busy",
+            )
+
+        self._lock = True
+        start_time = time.time()
+        correlation_id = request.correlation_id
+
+        try:
+            llm_model = self._get_model_client()
+            if not llm_model:
+                return SubAgentResponse(
+                    correlation_id=correlation_id,
+                    status="model_error",
+                    err="No available LLM model",
+                )
+
+            tool_set = self._build_tool_set()
+            agent_executor = AgentExecutor(self.llm_api, tool_set)
+
+            # 构建请求
+            context_messages = self._prepare_context(request)
+            system_prompts = self._build_system_prompt()
+
+            llm_request = LLMRequest(
+                messages=context_messages[:],
+                tools=deepcopy(self.llm_api.tools_definitions),
+                tool_funcs=self.llm_api.tools_functions,
+                tool_set=tool_set,
+            )
+            llm_request.system_prompt.extend(system_prompts)
+            llm_request.user_prompt.append(Prompt(request.content, name="task", source="user"))
+            llm_request.assemble_prompt()
+            # 合并 tool_set 中的工具
+            llm_request.tools.extend(llm_request.tool_set.to_list())
+
+            new_memory = NewMemory()
+            new_memory.user(request.content)
+
+            agent_ctx = AgentExecutionContext(
+                event=None,
+                request=llm_request,
+                llm_model=llm_model,
+                new_memory=new_memory,
+            )
+
+            max_agent_steps = self.config.max_tool_loop + 1
+            final_text = ""
+            final_reasoning = ""
+            total_input_tokens = 0
+            total_output_tokens = 0
+            has_error = False
+            error_msg = ""
+
+            async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
+                llm_resp = step.llm_response
+                if not llm_resp:
+                    has_error = True
+                    error_msg = "Empty LLM response"
+                    break
+
+                if llm_resp.input_tokens:
+                    total_input_tokens += llm_resp.input_tokens
+                if llm_resp.output_tokens:
+                    total_output_tokens += llm_resp.output_tokens
+
+                if step.state == "error":
+                    has_error = True
+                    error_msg = step.err or "Unknown agent error"
+                    break
+
+                if llm_resp.text_response:
+                    final_text = llm_resp.text_response
+                    final_reasoning = llm_resp.reasoning_content or ""
+
+                if not step.has_tool_calls or step.is_final:
+                    break
+
+            # 保存记忆
+            self._memory.extend(new_memory.memory_list)
+
+            time_consumed = round(time.time() - start_time, 3)
+
+            if has_error:
+                status = "tool_error" if "tool" in error_msg.lower() else "model_error"
+                return SubAgentResponse(
+                    correlation_id=correlation_id,
+                    status=status,
+                    result=final_text,
+                    err=error_msg,
+                    metadata={
+                        "time_consumed": time_consumed,
+                        "input_tokens": total_input_tokens,
+                        "output_tokens": total_output_tokens,
+                    },
+                )
+
+            return SubAgentResponse(
+                correlation_id=correlation_id,
+                status="success",
+                result=final_text,
+                metadata={
+                    "time_consumed": time_consumed,
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                    "reasoning_content": final_reasoning,
+                },
+            )
+
+        except Exception as e:
+            logger.error(f"SubAgent '{self.config.subagent_id}' execution error: {e}")
+            return SubAgentResponse(
+                correlation_id=correlation_id,
+                status="model_error",
+                err=str(e),
+                metadata={"time_consumed": round(time.time() - start_time, 3)},
+            )
+        finally:
+            self._lock = False
+
+    def fetch_memory(self) -> list:
+        return list(self._memory)
+
+    def write_memory(self, memory: list):
+        # SessionManager 传入的是 list[list[dict]] 格式，需要扁平化
+        flat = []
+        for chunk in memory:
+            if isinstance(chunk, list):
+                flat.extend(chunk)
+            else:
+                flat.append(chunk)
+        self._memory = flat
+
+    def update_memory(self, new_chunk: list):
+        # SessionManager 传入的 new_chunk 可能是 list[dict]
+        if isinstance(new_chunk, list):
+            self._memory.extend(new_chunk)
+        else:
+            self._memory.append(new_chunk)

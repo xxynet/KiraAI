@@ -170,6 +170,46 @@ class RegisterDeco:
             return func
         return decorator
 
+    @staticmethod
+    def subagent(
+        subagent_id: str,
+        name: str,
+        description: str = "",
+        persona: str = "",
+        model_uuid: Optional[str] = None,
+        tools: Optional[list] = None,
+        max_steps: int = 3,
+        timeout: float = 60.0,
+        context_strategy: str = "none",
+        lifecycle: str = "on_demand",
+        max_tool_loop: int = 2,
+        extra: Optional[dict] = None,
+    ):
+        """Register a SubAgent configuration via decorator.
+
+        The decorated class will be ignored; only the config is registered.
+        """
+        def decorator(cls):
+            plugin_id = get_obj_plugin_id(cls)
+            plugin_entry = _plugin_components.setdefault(plugin_id, {})
+            subagents = plugin_entry.setdefault("subagents", [])
+            subagents.append({
+                "subagent_id": subagent_id,
+                "name": name,
+                "description": description,
+                "persona": persona,
+                "model_uuid": model_uuid,
+                "tools": tools or [],
+                "max_steps": max_steps,
+                "timeout": timeout,
+                "context_strategy": context_strategy,
+                "lifecycle": lifecycle,
+                "max_tool_loop": max_tool_loop,
+                "extra": extra or {},
+            })
+            return cls
+        return decorator
+
 
 class OnEventDeco:
 
@@ -493,6 +533,41 @@ class PluginManager:
             tag_names.append(tag_name)
         if tag_names:
             logger.info(f"Registered {len(tag_names)} tags from {plugin_id}: {tag_names}")
+
+    def _register_plugin_subagents_for(self, plugin_id: str):
+        comp = _plugin_components.get(plugin_id, {})
+        if not comp:
+            return
+        subagents = comp.get("subagents", [])
+        if not subagents:
+            return
+        if self.ctx is None or getattr(self.ctx, "subagent_registry", None) is None:
+            return
+        registry = self.ctx.subagent_registry
+        from core.subagent import SubAgentConfig
+        registered_ids: list[str] = []
+        for meta in subagents:
+            try:
+                cfg = SubAgentConfig(
+                    subagent_id=meta["subagent_id"],
+                    name=meta["name"],
+                    description=meta.get("description", ""),
+                    persona=meta.get("persona", ""),
+                    model_uuid=meta.get("model_uuid"),
+                    tools=meta.get("tools", []),
+                    max_steps=meta.get("max_steps", 3),
+                    timeout=meta.get("timeout", 60.0),
+                    context_strategy=meta.get("context_strategy", "none"),
+                    lifecycle=meta.get("lifecycle", "on_demand"),
+                    max_tool_loop=meta.get("max_tool_loop", 2),
+                    extra=meta.get("extra", {}),
+                )
+                registry.register(cfg)
+                registered_ids.append(cfg.subagent_id)
+            except Exception as e:
+                logger.error(f"Failed to register SubAgent from {plugin_id}: {e}")
+        if registered_ids:
+            logger.info(f"Registered {len(registered_ids)} SubAgents from {plugin_id}: {registered_ids}")
 
     def _register_plugin_apis_for(self, plugin_id: str) -> None:
         if self._web_app is None:
@@ -841,6 +916,7 @@ class PluginManager:
             self._register_plugin_tools_for(plugin_id)
             self._register_plugin_hooks_for(plugin_id)
             self._register_plugin_tags_for(plugin_id)
+            self._register_plugin_subagents_for(plugin_id)
             self._register_plugin_apis_for(plugin_id)
             self._register_plugin_pages_for(plugin_id)
             self._register_plugin_static_for(plugin_id)

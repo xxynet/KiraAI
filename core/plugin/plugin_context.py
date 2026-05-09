@@ -47,6 +47,8 @@ class PluginContext:
 
     plugin_mgr: Optional[PluginManager] = None
 
+    subagent_registry: Optional[Any] = None
+
     def get_plugin_data_dir(self):
         base_dir = get_data_path() / "plugin_data"
         frame = inspect.currentframe()
@@ -132,6 +134,13 @@ class PluginContext:
         if isinstance(client, EmbeddingModelClient):
             return client
         return
+
+    def register_subagent(self, config):
+        from core.subagent import SubAgentConfig
+        if self.subagent_registry and isinstance(config, SubAgentConfig):
+            self.subagent_registry.register(config)
+            return True
+        return False
 
     async def publish_notice(self, session: str, chain: MessageChain, is_mentioned: bool = True):
         import time
