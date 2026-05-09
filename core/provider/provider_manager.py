@@ -64,11 +64,13 @@ class ProviderManager:
 
     @classmethod
     def get_schema(cls, name: str) -> dict:
-        return cls._schemas.get(name, {})
+        schema = cls._schemas.get(name, {})
+        return copy.deepcopy(schema) if schema else {}
 
     @classmethod
     def get_manifest(cls, name: str) -> dict:
-        return cls._manifests.get(name, {})
+        manifest = cls._manifests.get(name, {})
+        return copy.deepcopy(manifest) if manifest else {}
 
     def get_model_client(self, provider_id: str, model_id: str) -> Optional[BaseModelClient]:
         provider = self.get_provider(provider_id)

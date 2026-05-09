@@ -393,6 +393,8 @@ class PluginsRoutes(Routes):
             category = raw.get("category")
             repo = raw.get("repo") or raw.get("repo_url")
 
+            locales = raw.get("locales")
+
             item: Dict[str, Any] = {
                 "plugin_id": str(plugin_id),
                 "display_name": str(display_name),
@@ -401,6 +403,7 @@ class PluginsRoutes(Routes):
                 "description": str(description),
                 "category": str(category) if category else None,
                 "repo": str(repo) if repo else None,
+                "locales": locales if isinstance(locales, dict) else {},
             }
 
             if "id" in raw and raw["id"] is not None:

@@ -48,7 +48,7 @@ class AdapterManager:
 
     @classmethod
     def get_manifest(cls, platform: str) -> dict:
-        return cls._manifests.get(platform, {})
+        return cls._manifests.get(platform, {}).copy()
 
     def get_adapter_info(self, adapter_id: str) -> Optional[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {})

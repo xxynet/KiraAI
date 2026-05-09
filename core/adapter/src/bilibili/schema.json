@@ -38,7 +38,7 @@
   "sesdata": {
     "name": "sesdata",
     "type": "string",
-    "default": [],
+    "default": "",
     "hint": "sesdata（From Cookie）",
     "locales": {
       "zh": { "name": "SESSDATA", "hint": "SESSDATA（从 Cookie 获取）" }
