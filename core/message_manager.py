@@ -459,16 +459,19 @@ class MessageProcessor:
                 if p.name == "tools":
                     agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt())
                     break
-
-        # Get default LLM model client
-        try:
-            llm_model = self.provider_mgr.get_default_llm()
-            if not llm_model:
+        
+        if event.model_group:
+            llm_model = event.model_group[0]
+        else:
+            # Get default LLM model client
+            try:
+                llm_model = self.provider_mgr.get_default_llm()
+                if not llm_model:
+                    llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+                    return
+            except Exception as _:
                 llm_logger.error(f"Default LLM model not set, please set it in Configuration")
                 return
-        except Exception as _:
-            llm_logger.error(f"Default LLM model not set, please set it in Configuration")
-            return
 
         request = LLMRequest(messages=session_memory[:], tools=deepcopy(self.llm_api.tools_definitions), tool_funcs=self.llm_api.tools_functions, tool_set=ToolSet())
         request.system_prompt.extend(agent_prompt_list)
