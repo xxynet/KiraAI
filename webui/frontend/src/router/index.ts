@@ -36,9 +36,9 @@ const router = createRouter({
 // Navigation guard
 router.beforeEach(async (to) => {
   const token = localStorage.getItem('jwt_token')
-  if (token) return
+  const isAutoDisabled = localStorage.getItem('jwt_auto_disabled') === 'true'
 
-  // If auth is disabled, auto-login with fixed token (even for public routes)
+  // Resolve auth config if unknown
   if (authEnabled === null) {
     try {
       const { data } = await getAuthConfig()
@@ -47,11 +47,26 @@ router.beforeEach(async (to) => {
       authEnabled = true
     }
   }
+
+  // When auth is enabled, any token obtained via the "disabled" sentinel flow
+  // must be invalidated — the API returns a real JWT, not the literal "disabled"
+  // string, so we track it with a companion marker in localStorage.
+  if (authEnabled && isAutoDisabled) {
+    localStorage.removeItem('jwt_token')
+    localStorage.removeItem('jwt_auto_disabled')
+  }
+
+  // Allow through if we have a genuinely authenticated token
+  if (token && !isAutoDisabled) return
+  // Auth disabled and we already have a sentinel-obtained token
+  if (!authEnabled && token && isAutoDisabled) return
+
+  // If auth is disabled, auto-login with sentinel token
   if (!authEnabled) {
     try {
       const { data } = await login({ access_token: 'disabled' })
       localStorage.setItem('jwt_token', data.access_token)
-      // If user was on a public route (e.g. /login), redirect to main page
+      localStorage.setItem('jwt_auto_disabled', 'true')
       return to.meta.public ? '/' : to.fullPath
     } catch {
       // fallback: continue to login

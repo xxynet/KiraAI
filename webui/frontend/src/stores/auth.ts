@@ -13,6 +13,8 @@ export const useAuthStore = defineStore('auth', () => {
     const response = await authApi.login(data)
     token.value = response.data.access_token
     localStorage.setItem('jwt_token', response.data.access_token)
+    // Clear sentinel marker — this is a genuine user login
+    localStorage.removeItem('jwt_auto_disabled')
   }
 
   async function logout() {
@@ -21,12 +23,14 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       token.value = null
       localStorage.removeItem('jwt_token')
+      localStorage.removeItem('jwt_auto_disabled')
     }
   }
 
   function clearAuth() {
     token.value = null
     localStorage.removeItem('jwt_token')
+    localStorage.removeItem('jwt_auto_disabled')
   }
 
   return {
