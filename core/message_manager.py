@@ -45,6 +45,8 @@ from core.agent.tool import ToolSet
 from core.tag import tag_registry, TagSet
 from core.db.service import DatabaseService
 
+from core.provider import LLMModelClient
+
 logger = get_logger("message", "cyan")
 llm_logger = get_logger("llm", "purple")
 
@@ -460,15 +462,17 @@ class MessageProcessor:
                     agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt())
                     break
         
+        model_group: list[LLMModelClient] = []
         if event.model_group:
-            llm_model = event.model_group[0]
-        else:
+            model_group = [m for m in event.model_group if isinstance(m, LLMModelClient)]
+        if not model_group:
             # Get default LLM model client
             try:
-                llm_model = self.provider_mgr.get_default_llm()
-                if not llm_model:
+                default_llm = self.provider_mgr.get_default_llm()
+                if not default_llm:
                     llm_logger.error(f"Default LLM model not set, please set it in Configuration")
                     return
+                model_group = [default_llm]
             except Exception as _:
                 llm_logger.error(f"Default LLM model not set, please set it in Configuration")
                 return
@@ -525,8 +529,8 @@ class MessageProcessor:
         agent_ctx = AgentExecutionContext(
             event=event,
             request=request,
-            llm_model=llm_model,
             new_memory=new_memory,
+            model_group=model_group,
         )
 
         async def send_llm_text(resp: LLMResponse):

@@ -23,8 +23,8 @@ llm_logger = get_logger("llm", "purple")
 class AgentExecutionContext:
     event: KiraMessageBatchEvent
     request: LLMRequest
-    llm_model: LLMModelClient
     new_memory: NewMemory
+    model_group: list[LLMModelClient] = field(default_factory=list)
 
 
 @dataclass
@@ -92,7 +92,8 @@ class AgentExecutor:
     ) -> AsyncIterator[AgentStepResult]:
         event = ctx.event
         request = ctx.request
-        llm_model = ctx.llm_model
+        model_group = ctx.model_group
+        llm_model = model_group[0]
 
         # Session Info
         sid = ctx.event.sid
@@ -108,15 +109,28 @@ class AgentExecutor:
             err = ""
             is_final = step_index == max_steps
 
-            try:
-                llm_resp = await llm_model.chat(request)
-            except Exception as e:
-                logger.error(f"{type(e).__name__}: {e}")
-                llm_resp = LLMResponse(f"[{type(e).__name__}] {e}")
-
-                state = "error"
-                err = f"{type(e).__name__}: {e}"
-                is_final = True
+            # Try models in order, failover to next on exception
+            llm_resp = None
+            for model_idx, model in enumerate(model_group):
+                try:
+                    llm_resp = await model.chat(request)
+                    llm_model = model
+                    if model_idx > 0:
+                        provider_name = llm_model.model.provider_name
+                        model_id = model.model.model_id
+                        llm_logger.info(f"[{sid}] Successfully switched to model: {model_id} ({provider_name})")
+                    break
+                except Exception as e:
+                    logger.error(f"[{sid}] Model {model.model.model_id} failed: {type(e).__name__}: {e}")
+                    if model_idx < len(model_group) - 1:
+                        next_model = model_group[model_idx + 1]
+                        llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_id}")
+                        continue
+                    else:
+                        llm_resp = LLMResponse(f"[{type(e).__name__}] {e}")
+                        state = "error"
+                        err = f"All models failed. Last error: {type(e).__name__}: {e}"
+                        is_final = True
 
             has_tool_calls = bool(llm_resp.tool_calls)
 
