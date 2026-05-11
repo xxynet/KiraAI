@@ -24,7 +24,7 @@ class AgentExecutionContext:
     event: KiraMessageBatchEvent
     request: LLMRequest
     new_memory: NewMemory
-    model_group: list[LLMModelClient] = field(default_factory=list)
+    model_group: list[LLMModelClient]
 
 
 @dataclass
@@ -93,6 +93,10 @@ class AgentExecutor:
         event = ctx.event
         request = ctx.request
         model_group = ctx.model_group
+
+        if not model_group:
+            raise ValueError("AgentExecutionContext.model_group must be a non-empty list of LLMModelClient")
+
         llm_model = model_group[0]
 
         # Session Info
@@ -109,8 +113,11 @@ class AgentExecutor:
             err = ""
             is_final = step_index == max_steps
 
-            # Try models in order, failover to next on exception
+            # Try models in order, failover to next on provider/API errors.
+            # Only catch provider-level exceptions (network, timeout, API status).
+            # Programming errors (TypeError, ValueError, etc.) should propagate.
             llm_resp = None
+            last_exc: Optional[Exception] = None
             for model_idx, model in enumerate(model_group):
                 try:
                     llm_resp = await model.chat(request)
@@ -120,16 +127,17 @@ class AgentExecutor:
                         model_id = model.model.model_id
                         llm_logger.info(f"[{sid}] Successfully switched to model: {model_id} ({provider_name})")
                     break
-                except Exception as e:
+                except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                    last_exc = e
                     logger.error(f"[{sid}] Model {model.model.model_id} failed: {type(e).__name__}: {e}")
                     if model_idx < len(model_group) - 1:
                         next_model = model_group[model_idx + 1]
                         llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_id}")
                         continue
                     else:
-                        llm_resp = LLMResponse(f"[{type(e).__name__}] {e}")
+                        llm_resp = LLMResponse(f"[ProviderError] All models in the group failed to respond. {type(last_exc).__name__}: {last_exc}")
                         state = "error"
-                        err = f"All models failed. Last error: {type(e).__name__}: {e}"
+                        err = f"All models failed. Last error: {type(last_exc).__name__}: {last_exc}"
                         is_final = True
 
             has_tool_calls = bool(llm_resp.tool_calls)
