@@ -36,9 +36,9 @@ const router = createRouter({
 // Navigation guard
 router.beforeEach(async (to) => {
   const token = localStorage.getItem('jwt_token')
-  if (token || to.meta.public) return
+  if (token) return
 
-  // If auth is disabled, auto-login with fixed token
+  // If auth is disabled, auto-login with fixed token (even for public routes)
   if (authEnabled === null) {
     try {
       const { data } = await getAuthConfig()
@@ -51,11 +51,14 @@ router.beforeEach(async (to) => {
     try {
       const { data } = await login({ access_token: 'disabled' })
       localStorage.setItem('jwt_token', data.access_token)
-      return to.fullPath
+      // If user was on a public route (e.g. /login), redirect to main page
+      return to.meta.public ? '/' : to.fullPath
     } catch {
-      // fallback: redirect to login
+      // fallback: continue to login
     }
   }
+
+  if (to.meta.public) return
   return '/login'
 })
 
