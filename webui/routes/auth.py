@@ -24,10 +24,11 @@ async def require_auth(authorization: Optional[str] = Header(None)) -> str:
 
 
 class AuthRoutes(Routes):
-    def __init__(self, app, lifecycle, access_token: str, dist_dir: Path):
+    def __init__(self, app, lifecycle, access_token: str, dist_dir: Path, disable_auth: bool = False):
         super().__init__(app, lifecycle)
         self.access_token = access_token
         self.dist_dir = dist_dir
+        self.disable_auth = disable_auth
 
     def get_routes(self):
         return [
@@ -58,6 +59,12 @@ class AuthRoutes(Routes):
                 response_model=VersionResponse,
                 tags=["system"],
                 dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/auth/config",
+                methods=["GET"],
+                endpoint=self.get_auth_config,
+                tags=["auth"],
             ),
             RouteDefinition(
                 path="/api/auth/login",
@@ -131,6 +138,9 @@ class AuthRoutes(Routes):
             content="<h1>Frontend not built. Run <code>npm install &amp;&amp; npm run build</code> inside <code>webui/frontend/</code>.</h1>",
             status_code=503,
         )
+
+    async def get_auth_config(self):
+        return {"auth_enabled": not self.disable_auth}
 
     async def health(self):
         return {"status": "ok", "lifecycle_available": self.lifecycle is not None}

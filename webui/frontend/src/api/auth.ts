@@ -1,5 +1,9 @@
 import apiClient from './client'
-import type { TokenLoginRequest, LoginResponse } from '@/types'
+import type { TokenLoginRequest, LoginResponse, AuthConfigResponse } from '@/types'
+
+export function getAuthConfig() {
+  return apiClient.get<AuthConfigResponse>('/auth/config')
+}
 
 export function login(data: TokenLoginRequest) {
   return apiClient.post<LoginResponse>('/auth/login', data)

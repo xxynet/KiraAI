@@ -35,7 +35,7 @@ class KiraWebUI:
     Holds lifecycle instance for accessing system components
     """
 
-    def __init__(self, lifecycle: KiraLifecycle, dist_dir: Optional[Path] = None):
+    def __init__(self, lifecycle: KiraLifecycle, dist_dir: Optional[Path] = None, disable_auth: bool = False):
         # Ensure proper MIME types on Windows (fixes .js served as text/plain)
         mimetypes.add_type("application/javascript", ".js")
         mimetypes.add_type("text/javascript", ".js")
@@ -44,7 +44,11 @@ class KiraWebUI:
         mimetypes.add_type("image/svg+xml", ".svg")
 
         self.lifecycle = lifecycle
-        self.access_token = _get_or_generate_access_token()
+        self.disable_auth = disable_auth
+        if disable_auth:
+            self.access_token = "disabled"
+        else:
+            self.access_token = _get_or_generate_access_token()
         self.app = FastAPI(
             title="KiraAI Admin Panel",
             description="Administration panel for KiraAI system",
@@ -94,7 +98,7 @@ class KiraWebUI:
         self.lifecycle.webui_app = self.app
 
     def _register_routes(self):
-        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.dist_dir)
+        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.dist_dir, self.disable_auth)
         auth_routes.register()
         OverviewRoutes(self.app, self.lifecycle).register()
         LogsRoutes(self.app, self.lifecycle).register()

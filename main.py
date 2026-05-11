@@ -35,6 +35,12 @@ def _parse_args() -> argparse.Namespace:
         default=False,
         help="Skip frontend dist version check (useful during development with --webui-dir)",
     )
+    parser.add_argument(
+        "--disable-webui-auth",
+        action="store_true",
+        default=False,
+        help="Disable WebUI authentication (use a fixed token so Electron can auto-login)",
+    )
     return parser.parse_args()
 
 
@@ -68,10 +74,15 @@ if __name__ == "__main__":
         logger.info(f"Using data dir override: {args.data_dir}")
     if args.webui_dir:
         logger.info(f"Using webui dir override: {args.webui_dir}")
+    if args.disable_webui_auth:
+        logger.info("WebUI authentication disabled")
 
     from core.launcher import KiraLauncher
 
-    launcher = KiraLauncher(ignore_webui_version_check=args.ignore_webui_version_check)
+    launcher = KiraLauncher(
+        ignore_webui_version_check=args.ignore_webui_version_check,
+        disable_webui_auth=args.disable_webui_auth,
+    )
 
     try:
         asyncio.run(launcher.start())
