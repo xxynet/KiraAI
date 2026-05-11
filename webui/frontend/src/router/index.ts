@@ -38,20 +38,24 @@ router.beforeEach(async (to) => {
   const token = localStorage.getItem('jwt_token')
   const isAutoDisabled = localStorage.getItem('jwt_auto_disabled') === 'true'
 
-  // Resolve auth config if unknown
-  if (authEnabled === null) {
+  // Resolve auth config if unknown; on failure, use a per-navigation fallback
+  // (assume auth enabled) so we don't permanently cache a wrong value and
+  // future navigations will retry the fetch.
+  let effectiveAuth = authEnabled
+  if (effectiveAuth === null) {
     try {
       const { data } = await getAuthConfig()
       authEnabled = data.auth_enabled
+      effectiveAuth = authEnabled
     } catch {
-      authEnabled = true
+      effectiveAuth = true
     }
   }
 
   // When auth is enabled, any token obtained via the "disabled" sentinel flow
   // must be invalidated — the API returns a real JWT, not the literal "disabled"
   // string, so we track it with a companion marker in localStorage.
-  if (authEnabled && isAutoDisabled) {
+  if (effectiveAuth && isAutoDisabled) {
     localStorage.removeItem('jwt_token')
     localStorage.removeItem('jwt_auto_disabled')
   }
@@ -59,10 +63,10 @@ router.beforeEach(async (to) => {
   // Allow through if we have a genuinely authenticated token
   if (token && !isAutoDisabled) return
   // Auth disabled and we already have a sentinel-obtained token
-  if (!authEnabled && token && isAutoDisabled) return
+  if (!effectiveAuth && token && isAutoDisabled) return
 
   // If auth is disabled, auto-login with sentinel token
-  if (!authEnabled) {
+  if (!effectiveAuth) {
     try {
       const { data } = await login({ access_token: 'disabled' })
       localStorage.setItem('jwt_token', data.access_token)
