@@ -447,6 +447,8 @@ export default {
       selfie_desc: '机器人外观参考设置',
       models: '默认模型',
       models_desc: '为每种能力选择默认提供商和模型',
+      cache: '缓存设置',
+      cache_desc: '临时文件缓存管理参数',
     },
     hints: {
       max_memory_length: '上下文窗口中保留的最大消息数',
@@ -456,6 +458,9 @@ export default {
       max_message_delay: '发送回复前的最大延迟秒数',
       max_tool_loop: '每次响应的最大工具调用迭代次数',
       selfie_path: '机器人外观参考图片路径',
+      max_size_mb: '缓存文件夹允许占用的最大磁盘空间',
+      max_files: '缓存文件夹中允许的最大文件数量',
+      max_age_hours: '超过此时间的缓存文件将被自动清理',
     },
     validation: {
       required: '此字段为必填项',
@@ -478,6 +483,10 @@ export default {
       max_tool_loop: '最大工具循环次数',
       selfie_section: '形象',
       selfie_path: '形象参考图路径',
+      cache_section: '缓存设置',
+      max_size_mb: '最大存储（MB）',
+      max_files: '最大文件数',
+      max_age_hours: '最大缓存时间（小时）',
     },
     model: {
       section_title: '默认模型',

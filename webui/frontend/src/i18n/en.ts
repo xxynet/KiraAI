@@ -447,6 +447,8 @@ export default {
       selfie_desc: 'Bot appearance reference settings',
       models: 'Default Models',
       models_desc: 'Select default provider and model for each capability',
+      cache: 'Cache Settings',
+      cache_desc: 'Temporary file cache management parameters',
     },
     hints: {
       max_memory_length: 'Maximum number of messages retained in context window',
@@ -456,6 +458,9 @@ export default {
       max_message_delay: 'Maximum delay in seconds before sending a reply',
       max_tool_loop: 'Maximum number of tool call iterations per response',
       selfie_path: 'Path to the bot appearance reference image',
+      max_size_mb: 'Maximum disk space allowed for the cache folder',
+      max_files: 'Maximum number of files allowed in the cache folder',
+      max_age_hours: 'Cache files older than this will be automatically cleaned up',
     },
     validation: {
       required: 'This field is required',
@@ -478,6 +483,10 @@ export default {
       max_tool_loop: 'Max Tool Loop',
       selfie_section: 'Selfie',
       selfie_path: 'Selfie Path',
+      cache_section: 'Cache Settings',
+      max_size_mb: 'Max Storage (MB)',
+      max_files: 'Max Files',
+      max_age_hours: 'Max Cache Age (hours)',
     },
     model: {
       section_title: 'Default Models',

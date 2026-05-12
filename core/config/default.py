@@ -14,6 +14,11 @@ DEFAULT_CONFIG = {
         },
         "selfie": {
             "path": None
+        },
+        "cache": {
+            "max_size_mb": 50,
+            "max_files": 50,
+            "max_age_hours": 24
         }
     },
     "locale": {
