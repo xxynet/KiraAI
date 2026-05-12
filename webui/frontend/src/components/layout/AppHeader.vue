@@ -15,6 +15,17 @@
       </h2>
     </div>
     <div class="flex items-center gap-2">
+      <!-- Update -->
+      <button
+        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        :aria-label="t('header.releases')"
+        :title="t('header.releases')"
+        @click="openReleases"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+      </button>
       <!-- Docs -->
       <a
         :href="t('header.docs_url')"
@@ -66,15 +77,27 @@
         </svg>
       </button>
     </div>
+
+    <!-- Releases Modal -->
+    <ReleasesModal
+      v-model="showReleases"
+      :current-version="currentVersion"
+      :releases="releases"
+      :loading="releasesLoading"
+    />
   </header>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { useTheme } from '@/composables/useTheme'
 import { useI18n } from 'vue-i18n'
+import { getReleases } from '@/api/auth'
+import ReleasesModal from './ReleasesModal.vue'
+import type { ReleaseItem } from '@/types'
 
 defineProps<{ title: string }>()
 defineEmits<{ 'toggle-sidebar': [] }>()
@@ -84,6 +107,25 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const router = useRouter()
 const { toggleTheme } = useTheme()
+
+const showReleases = ref(false)
+const releases = ref<ReleaseItem[]>([])
+const currentVersion = ref('')
+const releasesLoading = ref(false)
+
+async function openReleases() {
+  showReleases.value = true
+  releasesLoading.value = true
+  try {
+    const { data } = await getReleases()
+    currentVersion.value = data.current_version
+    releases.value = data.releases
+  } catch {
+    // modal will show empty state
+  } finally {
+    releasesLoading.value = false
+  }
+}
 
 async function handleLogout() {
   try {

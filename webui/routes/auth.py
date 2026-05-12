@@ -6,7 +6,8 @@ from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse
 
 from core.config.default import VERSION
-from webui.models import LoginResponse, TokenLoginRequest, VersionResponse
+from core.utils.github_api import get_all_releases
+from webui.models import LoginResponse, ReleasesResponse, TokenLoginRequest, VersionResponse
 from webui.routes.base import RouteDefinition, Routes
 from webui.utils import _create_jwt_token, _verify_jwt_token
 
@@ -79,6 +80,14 @@ class AuthRoutes(Routes):
                 endpoint=self.logout,
                 status_code=status.HTTP_204_NO_CONTENT,
                 tags=["auth"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/releases",
+                methods=["GET"],
+                endpoint=self.get_releases,
+                response_model=ReleasesResponse,
+                tags=["system"],
                 dependencies=[Depends(require_auth)],
             ),
         ]
@@ -162,3 +171,10 @@ class AuthRoutes(Routes):
 
     async def logout(self):
         return None
+
+    async def get_releases(self):
+        releases = await get_all_releases("xxynet", "KiraAI")
+        return ReleasesResponse(
+            current_version=VERSION,
+            releases=[r for r in releases if not r.get("draft")],
+        )
