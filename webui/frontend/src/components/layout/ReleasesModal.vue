@@ -126,14 +126,20 @@ const show = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
-function normalizeVersion(v: string): string {
-  return v.replace(/^v/i, '')
+function parseVersion(v: string): number[] {
+  return v.replace(/^v/i, '').split('.').map(Number)
 }
 
 function isNewer(tag: string): boolean {
-  const current = normalizeVersion(props.currentVersion)
-  const target = normalizeVersion(tag)
-  return target !== current && target > current
+  const current = parseVersion(props.currentVersion)
+  const target = parseVersion(tag)
+  for (let i = 0; i < Math.max(current.length, target.length); i++) {
+    const a = current[i] || 0
+    const b = target[i] || 0
+    if (b > a) return true
+    if (b < a) return false
+  }
+  return false
 }
 
 function formatDate(dateStr: string | null): string {
