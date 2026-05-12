@@ -14,6 +14,8 @@ export default {
     theme_toggle: '切换主题',
     switch_to_light: '切换到浅色主题',
     switch_to_dark: '切换到深色主题',
+    docs: '文档',
+    docs_url: 'https://docs.kira-ai.top/zh/',
   },
   nav: {
     overview: '概览',
