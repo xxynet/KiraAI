@@ -94,6 +94,7 @@ class PromptManager:
         formatted_time = self.get_current_time_str()
 
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
+        max_tool_calls_per_turn = self.kira_config.get_config("bot_config.agent.max_tool_calls_per_turn")
         persona = await self.persona_manager.get_persona()
         persona_prompt = persona.content
 
@@ -101,7 +102,7 @@ class PromptManager:
             Prompt(prompt_tmpl.role_tmpl, name="role", source="system"),
             Prompt(prompt_tmpl.persona_tmpl, name="persona", source="system", persona=persona_prompt),
             Prompt(prompt_tmpl.attention_tmpl, name="attention", source="system"),
-            Prompt(prompt_tmpl.output_tmpl, name="output", source="system", max_tool_loop=max_tool_loop),
+            Prompt(prompt_tmpl.output_tmpl, name="output", source="system", max_tool_loop=max_tool_loop, max_tool_calls_per_turn=max_tool_calls_per_turn),
             Prompt(prompt_tmpl.format_tmpl, name="format", source="system"),
             Prompt(prompt_tmpl.accounts_tmpl, name="accounts", source="system", accounts=self.ada_config_prompt),
             Prompt(prompt_tmpl.sessions_tmpl, name="sessions", source="system"),

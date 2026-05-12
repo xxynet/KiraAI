@@ -10,7 +10,8 @@ DEFAULT_CONFIG = {
             "max_message_delay": 5
         },
         "agent": {
-            "max_tool_loop": 2
+            "max_tool_loop": 5,
+            "max_tool_calls_per_turn": 5
         },
         "selfie": {
             "path": None
