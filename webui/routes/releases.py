@@ -54,6 +54,7 @@ class ReleasesRoutes(Routes):
         loop = asyncio.get_running_loop()
 
         if not zip_path.exists():
+            print(f"Downloading release {tag}...")
             try:
                 data = await download_source_zipball("xxynet", "KiraAI", tag)
             except Exception as e:
@@ -61,9 +62,11 @@ class ReleasesRoutes(Routes):
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"Failed to download release {tag}",
-                )
+                ) from e
             await loop.run_in_executor(None, zip_path.write_bytes, data)
+            print(f"Release {tag} downloaded to {zip_path}")
 
+        print(f"Applying update {tag}...")
         try:
             await loop.run_in_executor(None, self._apply_update, zip_path)
         except Exception as e:
@@ -71,7 +74,8 @@ class ReleasesRoutes(Routes):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to apply update: {e}",
-            )
+            ) from e
+        print(f"Update {tag} applied successfully")
         return {"status": "ok"}
 
     @staticmethod
