@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import Depends, HTTPException, status
 
 from core.config.default import VERSION
-from core.utils.github_api import download_source_zipball, get_all_releases
+from core.utils.github_api import download_asset, get_all_releases, pick_fastest_source
 from core.utils.path_utils import get_data_path, get_root_path
 from webui.models import DownloadReleaseRequest, ReleasesResponse
 from webui.routes.auth import require_auth
@@ -55,8 +55,16 @@ class ReleasesRoutes(Routes):
 
         if not zip_path.exists():
             print(f"Downloading release {tag}...")
+            direct_url = f"https://github.com/xxynet/KiraAI/archive/refs/tags/{tag}.zip"
+            ranked_urls = await pick_fastest_source(direct_url)
+            if not ranked_urls:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"All download sources failed for {tag}",
+                )
+            print(f"Using fastest source: {ranked_urls[0]}")
             try:
-                data = await download_source_zipball("xxynet", "KiraAI", tag)
+                data = await download_asset(ranked_urls[0])
             except Exception as e:
                 print(f"Failed to download release {tag}: {e}")
                 raise HTTPException(

@@ -3,6 +3,19 @@ import hashlib
 import httpx
 import asyncio
 
+from core.utils.network import test_url_speed
+from core.logging_manager import get_logger
+
+logger = get_logger("gh_api", "cyan")
+
+GH_PROXY_LIST = [
+    "https://gh-proxy.com/",
+    "https://gh-proxy.org/",
+    "https://hk.gh-proxy.org/",
+    "https://cdn.gh-proxy.org/",
+    "https://edgeone.gh-proxy.org/",
+]
+
 
 def parse_github_url(url: str) -> Tuple[str, str]:
     """
@@ -322,6 +335,53 @@ async def download_source_zipball(
             raise ConnectionError(f"Network error while downloading from GitHub: {e}") from e
 
     return resp.content
+
+
+async def pick_fastest_source(
+    direct_url: str,
+    proxy: Optional[str] = None,
+    timeout: float = 5.0,
+) -> list[str]:
+    """
+    Speed-test all GitHub proxy candidates + direct GitHub for *direct_url*,
+    return a list of download URLs ranked by latency (best first).
+    Returns empty list if all fail.
+    """
+    candidates: list[tuple[str, str]] = [("direct", direct_url)]
+    for base in GH_PROXY_LIST:
+        label = base.rstrip("/").split("//", 1)[-1]
+        candidates.append((label, f"{base.rstrip('/')}/{direct_url}"))
+
+    logger.info(f"Speed-testing {len(candidates)} GitHub sources ...")
+
+    async def _probe(label: str, url: str) -> tuple[str, Optional[float]]:
+        try:
+            result = await test_url_speed(url, proxy=proxy, timeout=timeout)
+            return label, result["latency"]
+        except Exception:
+            return label, None
+
+    results = await asyncio.gather(*[_probe(l, u) for l, u in candidates])
+
+    for label, latency in sorted(results, key=lambda x: x[1] or 999):
+        if latency is not None:
+            logger.info(f"  {label}: {latency:.3f}s")
+        else:
+            logger.warning(f"  {label}: FAILED")
+
+    ranked: list[str] = []
+    for label, latency in sorted(results, key=lambda x: x[1] or 999):
+        if latency is None:
+            continue
+        if label == "direct":
+            ranked.append(direct_url)
+        else:
+            proxy_base = next(b for b in GH_PROXY_LIST if label in b)
+            ranked.append(f"{proxy_base.rstrip('/')}/{direct_url}")
+
+    if ranked:
+        logger.info(f"Ranked {len(ranked)} usable source(s)")
+    return ranked
 
 
 if __name__ == '__main__':
