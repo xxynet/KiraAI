@@ -62,15 +62,22 @@ class ReleasesRoutes(Routes):
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"All download sources failed for {tag}",
                 )
-            print(f"Using fastest source: {ranked_urls[0]}")
-            try:
-                data = await download_asset(ranked_urls[0])
-            except Exception as e:
-                print(f"Failed to download release {tag}: {e}")
+            data = None
+            for i, url in enumerate(ranked_urls):
+                print(f"Trying source {i + 1}/{len(ranked_urls)}: {url}")
+                try:
+                    data = await download_asset(url)
+                    print(f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}")
+                    break
+                except Exception as e:
+                    print(f"Source {i + 1} failed: {e}")
+                    if i < len(ranked_urls) - 1:
+                        print("Trying next source...")
+            if data is None:
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"Failed to download release {tag}",
-                ) from e
+                )
             await loop.run_in_executor(None, zip_path.write_bytes, data)
             print(f"Release {tag} downloaded to {zip_path}")
 
