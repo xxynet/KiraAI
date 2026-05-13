@@ -196,14 +196,12 @@ class KiraLifecycle:
 
         # ====== init temp folder monitor ======
         temp_folder = get_data_path() / "temp"
-        max_temp_size = getattr(self.kira_config, "max_temp_size_mb", 100)  # 从配置读取，默认100MB
-        check_interval = getattr(self.kira_config, "temp_check_interval", 60)  # 默认60秒
 
         self.temp_monitor = AsyncTempMonitor(
             folder_path=str(temp_folder),
-            max_size_mb=50,
+            kira_config=self.kira_config,
             check_interval=10,
-            batch_size=20
+            batch_size=20,
         )
 
         self.tasks.append(

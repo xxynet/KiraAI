@@ -14,6 +14,10 @@ export interface LoginResponse {
   token_type: string
 }
 
+export interface AuthConfigResponse {
+  auth_enabled: boolean
+}
+
 export interface OverviewResponse {
   total_adapters: number
   active_adapters: number

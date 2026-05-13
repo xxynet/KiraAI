@@ -12,22 +12,14 @@ English | [简体中文](docs/README.zh.md)
 
 </div>
 
-KiraAI, a modular, multi-platform AI virtual being that connects Large Language Models (LLMs), and various chat platforms (QQ, Telegram, WeChat) with a virtual being centered architecture.
+KiraAI, a modular, multi-platform AI digital life that connects Large Language Models (LLMs), and various chat platforms (QQ, Telegram, WeChat, Discord) with a virtual being centered architecture.
 
 ## 🚀 Features
 - Optimized for anthropomorphic scenarios
+- Easy-to-use WebUI
 - Customizable LLM providers and models
 - Flexible message sending mechanism, various message elements
-- Add-ons, expand the boundarieds of AI virtual being
-- Function calling
-- Persistent memory
-
-## 🧩 Architecture
-- `core/`: orchestration for config, LLMs, prompts, memory, logging
-- `data/`: runtime data
-    - `config/`: INI/JSON configs for adapters, models, providers, stickers
-- `scripts/`: convenience launchers
-- `webui/`: Management panel
+- Add-ons, expand the boundarieds of AI digital life
 
 ## 📷 ScreenShots
 
@@ -55,6 +47,23 @@ KiraAI, a modular, multi-platform AI virtual being that connects Large Language 
 > [!IMPORTANT]
 > This project is in active development, and **breaking changes** may occur.
 
+## 💻 Quick Start
+
+> [!NOTE]
+> For other deployment options, see the [Deployment Guide](https://docs.kira-ai.top/deployment/windows.html).
+
+First of all, you need to have Python 3.10+ installed and in the `PATH` environment variable
+
+Go to [Releases](https://github.com/xxynet/KiraAI/releases) and download `Source code
+(zip)` from the release tagged latest
+
+Extract zip and run `scripts/run.bat` on Windows or run `scripts/run.sh` on Linux or Mac
+
+## 🧪 Development Guide
+
+<details>
+<summary>Toggle Development Guide</summary>
+
 ## 📦 Requirements
 - Python 3.10+
 - Node.js 18+ and npm (required to build the WebUI admin panel)
@@ -73,9 +82,15 @@ npm install
 npm run build
 ```
 
-The production bundle is emitted to `webui/static/dist/` and served automatically at `/` by the Python backend. The backend returns HTTP 503 at `/` if the bundle is missing — this step is required.
+The Vite build emits to `webui/static/dist/`. At startup, the backend checks for the matching frontend dist in `data/dist/` — if missing or outdated, it automatically downloads the pre-built bundle from GitHub Releases. The backend returns HTTP 503 at `/` if no dist is available.
 
 For frontend development with hot-reload, run `npm run dev` in the same directory (Vite dev server on `:3000`, proxies `/api` and `/sticker` to the Python backend on `:5267`).
+
+To use your local build instead of the downloaded one, pass `--webui-dir` and optionally skip the version check:
+
+```bash
+python main.py --webui-dir webui/static/dist --ignore-webui-version-check
+```
 
 Re-run `npm run build` after pulling frontend changes.
 
@@ -90,6 +105,8 @@ chmod +x scripts/run.sh
 scripts/run.sh
 ```
 
+</details>
+
 ## ⚙️ Configuration
 Run the project & enter webui to configure:
 - Providers
@@ -98,16 +115,36 @@ Run the project & enter webui to configure:
 ...
 
 ## 🗂️ Project Structure
+
+<details>
+<summary>Toggle Project Structure</summary>
+
 ```
 KiraAI/
-  core/               # Config/LLM/logging/memory/prompt managers
-  data/               # Memory store, stickers and configuration
+  core/               # Core modules
+    adapter/           # Chat platform adapters
+    agent/             # Agent executor, MCP & skill management
+    chat/              # Session management & message handling
+    config/            # Configuration loading & field definitions
+    db/                # Database management & models
+    persona/           # Persona management
+    plugin/            # Plugin system
+    prompts/           # Prompt templates
+    provider/          # LLM provider management
+    statistics/        # Statistics module
+    tag/               # Tag system
+    telemetry/         # Telemetry module
+    utils/             # Common utilities
+    workflow/          # Workflow system
+  data/               # Memory, stickers, configs, plugin data
+  docs/               # Documentation
   scripts/            # Launch scripts
-  main.py           # Main launcher
+  screenshots/        # Screenshots
+  webui/              # WebUI backend & frontend
+  main.py             # Main launcher
 ```
 
-## 🐞 Troubleshooting
-- Check errors printed in system logs on WebUI
+</details>
 
 ## ✨ Star History
 [![Star History Chart](https://api.star-history.com/svg?repos=xxynet/KiraAI&type=date&legend=top-left)](https://www.star-history.com/#xxynet/KiraAI&type=date&legend=top-left)

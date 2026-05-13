@@ -45,6 +45,8 @@ from core.agent.tool import ToolSet
 from core.tag import tag_registry, TagSet
 from core.db.service import DatabaseService
 
+from core.provider import LLMModelClient
+
 logger = get_logger("message", "cyan")
 llm_logger = get_logger("llm", "purple")
 
@@ -246,7 +248,18 @@ class MessageProcessor:
                             await self.image_desc_cache.set(md5, ele.caption)
                     except Exception as e:
                         logger.warning(f"Failed to cache image desc: {e}")
-                message_str += f"[Image {str(ele.caption)}]"
+                try:
+                    path = Path(await ele.to_path())
+                    data_dir = get_data_path()
+                    try:
+                        rel = path.relative_to(data_dir)
+                        path_result = f"data/{rel}"
+                    except ValueError:
+                        path_result = str(path)
+                    message_str += f"[Image {str(ele.caption)}, file_path: {path_result}]"
+                except Exception as e:
+                    logger.warning(f"Failed to save image: {e}")
+                    message_str += f"[Image {str(ele.caption)}]"
             elif isinstance(ele, Sticker):
                 if ele.caption is None:
                     try:
@@ -448,16 +461,21 @@ class MessageProcessor:
                 if p.name == "tools":
                     agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt())
                     break
-
-        # Get default LLM model client
-        try:
-            llm_model = self.provider_mgr.get_default_llm()
-            if not llm_model:
+        
+        model_group: list[LLMModelClient] = []
+        if event.model_group:
+            model_group = [m for m in event.model_group if isinstance(m, LLMModelClient)]
+        if not model_group:
+            # Get default LLM model client
+            try:
+                default_llm = self.provider_mgr.get_default_llm()
+                if not default_llm:
+                    llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+                    return
+                model_group = [default_llm]
+            except Exception as _:
                 llm_logger.error(f"Default LLM model not set, please set it in Configuration")
                 return
-        except Exception as _:
-            llm_logger.error(f"Default LLM model not set, please set it in Configuration")
-            return
 
         request = LLMRequest(messages=session_memory[:], tools=deepcopy(self.llm_api.tools_definitions), tool_funcs=self.llm_api.tools_functions, tool_set=ToolSet())
         request.system_prompt.extend(agent_prompt_list)
@@ -511,8 +529,8 @@ class MessageProcessor:
         agent_ctx = AgentExecutionContext(
             event=event,
             request=request,
-            llm_model=llm_model,
             new_memory=new_memory,
+            model_group=model_group,
         )
 
         async def send_llm_text(resp: LLMResponse):

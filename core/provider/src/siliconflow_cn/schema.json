@@ -4,13 +4,19 @@
       "name": "Base URL",
       "type": "string",
       "default": "https://api.siliconflow.cn/v1",
-      "hint": "硅基流动 Base URL"
+      "hint": "硅基流动 Base URL",
+      "locales": {
+        "en": { "name": "Base URL", "hint": "SiliconFlow Base URL" }
+      }
     },
     "api_key": {
       "name": "API 密钥",
       "type": "sensitive",
       "default": null,
-      "hint": "硅基流动 API 密钥，在 https://cloud.siliconflow.cn/me/account/ak 获取"
+      "hint": "硅基流动 API 密钥，在 https://cloud.siliconflow.cn/me/account/ak 获取",
+      "locales": {
+        "en": { "name": "API Key", "hint": "SiliconFlow API Key, get it from https://cloud.siliconflow.cn/me/account/ak" }
+      }
     }
   },
   "model_config": {
@@ -20,7 +26,10 @@
         "type": "integer",
         "default": 120,
         "min": 1,
-        "hint": "超时秒数"
+        "hint": "超时秒数",
+        "locales": {
+          "en": { "name": "Timeout", "hint": "Timeout seconds" }
+        }
       },
       "temperature": {
         "name": "温度",
@@ -28,7 +37,10 @@
         "default": null,
         "min": 0,
         "max": 2,
-        "hint": "模型温度"
+        "hint": "模型温度",
+        "locales": {
+          "en": { "name": "Temperature", "hint": "Model temperature" }
+        }
       }
     },
     "image": {
@@ -36,13 +48,19 @@
         "name": "图片尺寸",
         "type": "string",
         "default": "1024x1024",
-        "hint": "图片尺寸"
+        "hint": "图片尺寸",
+        "locales": {
+          "en": { "name": "Image Size", "hint": "Image size" }
+        }
       },
       "num_inference_steps": {
         "name": "推理步数",
         "type": "integer",
         "default": 20,
-        "hint": "推理步数"
+        "hint": "推理步数",
+        "locales": {
+          "en": { "name": "Inference Steps", "hint": "Number of inference steps" }
+        }
       }
     },
     "tts": {
@@ -50,7 +68,10 @@
         "name": "声音ID",
         "type": "string",
         "default": "speech:xxxx:xxxx:xxxxxx",
-        "hint": "声音ID，可以在 https://docs.siliconflow.cn/cn/api-reference/audio/upload-voice 上传参考音频获取声音名称"
+        "hint": "声音ID，可以在 https://docs.siliconflow.cn/cn/api-reference/audio/upload-voice 上传参考音频获取声音名称",
+        "locales": {
+          "en": { "name": "Voice ID", "hint": "Voice ID, upload reference audio at https://docs.siliconflow.cn/cn/api-reference/audio/upload-voice to get a voice name" }
+        }
       }
     },
     "stt": {},
@@ -60,14 +81,20 @@
         "type": "integer",
         "default": 60,
         "min": 1,
-        "hint": "请求超时时间（秒）"
+        "hint": "请求超时时间（秒）",
+        "locales": {
+          "en": { "name": "Timeout", "hint": "Request timeout in seconds" }
+        }
       },
       "slow_request_threshold": {
         "name": "慢请求阈值",
         "type": "float",
         "default": 5.0,
         "min": 0,
-        "hint": "超过此阈值（秒）的请求将被记录为慢请求"
+        "hint": "超过此阈值（秒）的请求将被记录为慢请求",
+        "locales": {
+          "en": { "name": "Slow Request Threshold", "hint": "Requests slower than this threshold (seconds) will be logged as slow requests" }
+        }
       }
     }
   }

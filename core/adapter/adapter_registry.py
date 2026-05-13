@@ -46,6 +46,10 @@ class AdapterManager:
     def get_schema(cls, platform: str) -> list[BaseConfigField]:
         return cls._schemas.get(platform, [])
 
+    @classmethod
+    def get_manifest(cls, platform: str) -> dict:
+        return cls._manifests.get(platform, {}).copy()
+
     def get_adapter_info(self, adapter_id: str) -> Optional[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {})
         config_entry = adapters_config.get(adapter_id)

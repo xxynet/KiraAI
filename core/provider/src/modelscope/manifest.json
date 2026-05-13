@@ -3,5 +3,11 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "ModelScope Provider",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "name": "ModelScope 提供商",
+            "description": "ModelScope 提供商"
+        }
+    }
 }

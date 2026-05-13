@@ -97,6 +97,13 @@ class AdaptersRoutes(Routes):
             )
         return schema_to_dict(schema_fields)
 
+    def _get_adapter_locales(self, platform: str) -> Dict[str, Dict[str, str]]:
+        """Get locales dict from adapter manifest for the given platform."""
+        if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
+            manifest = self.lifecycle.adapter_manager.get_manifest(platform)
+            return manifest.get("locales") or {}
+        return {}
+
     async def list_adapters(self):
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
             try:
@@ -108,6 +115,7 @@ class AdaptersRoutes(Routes):
                     adapter_status = (
                         "active" if info.enabled and info.name in running_adapters else "inactive"
                     )
+                    locales = self._get_adapter_locales(info.platform)
                     adapters.append(
                         AdapterResponse(
                             id=info.adapter_id,
@@ -116,6 +124,7 @@ class AdaptersRoutes(Routes):
                             status=adapter_status,
                             description=info.description,
                             config=info.config,
+                            locales=locales,
                         )
                     )
                 return adapters
@@ -142,6 +151,7 @@ class AdaptersRoutes(Routes):
                     raise HTTPException(status_code=500, detail="Failed to create adapter")
                 running_adapters = set(adapter_mgr.get_adapters().keys())
                 status_value = "active" if info.enabled and info.name in running_adapters else "inactive"
+                locales = self._get_adapter_locales(info.platform)
                 return AdapterResponse(
                     id=info.adapter_id,
                     name=info.name,
@@ -149,6 +159,7 @@ class AdaptersRoutes(Routes):
                     status=status_value,
                     description=info.description,
                     config=info.config,
+                    locales=locales,
                 )
             except HTTPException:
                 raise
@@ -169,6 +180,7 @@ class AdaptersRoutes(Routes):
                     raise HTTPException(status_code=404, detail="Adapter not found")
                 running_adapters = set(adapter_mgr.get_adapters().keys())
                 adapter_status = "active" if info.enabled and info.name in running_adapters else "inactive"
+                locales = self._get_adapter_locales(info.platform)
                 return AdapterResponse(
                     id=adapter_id,
                     name=info.name,
@@ -176,6 +188,7 @@ class AdaptersRoutes(Routes):
                     status=adapter_status,
                     description=info.description,
                     config=info.config,
+                    locales=locales,
                 )
             except HTTPException:
                 raise
@@ -202,6 +215,7 @@ class AdaptersRoutes(Routes):
                     raise HTTPException(status_code=404, detail="Adapter not found")
                 running_adapters = set(adapter_mgr.get_adapters().keys())
                 status_value = "active" if info.enabled and info.name in running_adapters else "inactive"
+                locales = self._get_adapter_locales(info.platform)
                 return AdapterResponse(
                     id=info.adapter_id,
                     name=info.name,
@@ -209,6 +223,7 @@ class AdaptersRoutes(Routes):
                     status=status_value,
                     description=info.description,
                     config=info.config,
+                    locales=locales,
                 )
             except HTTPException:
                 raise

@@ -37,6 +37,7 @@ class ProviderBase(BaseModel):
     type: str
     status: str = "inactive"
     config: Dict = Field(default_factory=dict)
+    locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
 
 
 class ProviderResponse(ProviderBase):
@@ -81,6 +82,7 @@ class AdapterBase(BaseModel):
     status: str = "inactive"
     description: str = ""
     config: Dict = Field(default_factory=dict)
+    locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
 
 
 class AdapterResponse(AdapterBase):
@@ -131,6 +133,7 @@ class PluginItem(BaseModel):
     enabled: bool = True
     builtin: bool = False
     uninstallable: bool = False
+    locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
 
 
 class PluginConfigUpdateRequest(BaseModel):
@@ -155,6 +158,7 @@ class PluginStoreItemResponse(BaseModel):
     description: str = ""
     category: Optional[str] = None
     repo: Optional[str] = None
+    locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
 
 
 class PluginStoreFetchRequest(BaseModel):

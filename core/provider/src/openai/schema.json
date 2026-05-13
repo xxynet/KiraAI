@@ -4,19 +4,28 @@
       "name": "Base URL",
       "type": "string",
       "default": "https://api.openai.com/v1",
-      "hint": "Base URL, compatible to OpenAI format platform"
+      "hint": "Base URL, compatible to OpenAI format platform",
+      "locales": {
+        "zh": { "name": "Base URL", "hint": "兼容 OpenAI 格式平台的 Base URL" }
+      }
     },
     "api_key": {
       "name": "API Key",
       "type": "sensitive",
       "default": null,
-      "hint": "Your API Key from your provider"
+      "hint": "Your API Key from your provider",
+      "locales": {
+        "zh": { "name": "API 密钥", "hint": "你的 API 密钥" }
+      }
     },
     "headers": {
       "name": "Custom Headers",
       "type": "json",
       "default": {},
-      "hint": "Custom headers passed to OpenAI Client"
+      "hint": "Custom headers passed to OpenAI Client",
+      "locales": {
+        "zh": { "name": "自定义请求头", "hint": "传递给 OpenAI 客户端的自定义请求头" }
+      }
     }
   },
   "model_config": {
@@ -26,7 +35,10 @@
         "type": "integer",
         "default": 120,
         "min": 1,
-        "hint": "Timeout seconds"
+        "hint": "Timeout seconds",
+        "locales": {
+          "zh": { "name": "超时", "hint": "超时秒数" }
+        }
       },
       "temperature": {
         "name": "Temperature",
@@ -34,16 +46,42 @@
         "default": null,
         "min": 0,
         "max": 2,
-        "hint": "Model temperature"
+        "hint": "Model temperature",
+        "locales": {
+          "zh": { "name": "温度", "hint": "模型温度" }
+        }
       }
     },
     "image": {
+      "timeout": {
+        "name": "Timeout",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "Timeout seconds",
+        "locales": {
+          "zh": { "name": "超时", "hint": "超时秒数" }
+        }
+      },
+      "endpoint": {
+        "name": "Endpoint",
+        "type": "enum",
+        "default": "v1/image",
+        "options": ["v1/image", "v1/chat"],
+        "hint": "Endpoint to send image generation requests. Use v1/chat for multimodal chat models that return images via chat completions.",
+        "locales": {
+          "zh": { "name": "端点", "hint": "发送图片生成请求的端点。使用 v1/chat 以支持通过聊天补全返回图片的多模态聊天模型。" }
+        }
+      },
       "size": {
         "name": "Image Size",
         "type": "string",
         "default": null,
         "enum": ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"],
-        "hint": "Image size (e.g., 1024x1024)"
+        "hint": "Image size (e.g., 1024x1024). Only applies to v1/image endpoint.",
+        "locales": {
+          "zh": { "name": "图片尺寸", "hint": "图片尺寸（如 1024x1024），仅适用于 v1/image 端点。" }
+        }
       }
     },
     "embedding": {
@@ -52,14 +90,20 @@
         "type": "integer",
         "default": 60,
         "min": 1,
-        "hint": "Request timeout in seconds"
+        "hint": "Request timeout in seconds",
+        "locales": {
+          "zh": { "name": "超时", "hint": "请求超时时间（秒）" }
+        }
       },
       "slow_request_threshold": {
         "name": "Slow Request Threshold",
         "type": "float",
         "default": 5.0,
         "min": 0,
-        "hint": "Requests slower than this threshold (seconds) will be logged as slow requests"
+        "hint": "Requests slower than this threshold (seconds) will be logged as slow requests",
+        "locales": {
+          "zh": { "name": "慢请求阈值", "hint": "超过此阈值（秒）的请求将被记录为慢请求" }
+        }
       }
     }
   }

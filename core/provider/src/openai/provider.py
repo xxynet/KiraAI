@@ -3,12 +3,13 @@ import httpx
 from core.provider import ModelType, BaseProvider
 
 from .model_clients import OpenAIImageClient, OpenAIEmbeddingClient
-from core.utils.model_clients import OpenAICompatibleLLMClient
+from core.utils.model_clients import OpenAICompatibleLLMClient, OpenAICompatibleTTSClient
 
 
 class OpenAIProvider(BaseProvider):
     models = {
         ModelType.LLM: OpenAICompatibleLLMClient,
+        ModelType.TTS: OpenAICompatibleTTSClient,
         ModelType.IMAGE: OpenAIImageClient,
         ModelType.EMBEDDING: OpenAIEmbeddingClient
     }

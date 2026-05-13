@@ -52,9 +52,27 @@ class LLMClient:
                 del self.tools_definitions[i]
 
     async def execute_tool(self, event: KiraMessageBatchEvent, resp: LLMResponse, tool_set: Optional[ToolSet] = None):
-        for tool_call in resp.tool_calls:
+        max_tool_calls_per_turn = self.kira_config.get_config("bot_config.agent.max_tool_calls_per_turn")
+        try:
+            max_tool_calls_per_turn = int(max_tool_calls_per_turn)
+        except (TypeError, ValueError):
+            max_tool_calls_per_turn = 5
+
+        for idx, tool_call in enumerate(resp.tool_calls):
             tool_call_id = tool_call.get("id")
             name = tool_call.get("function", {}).get("name")
+
+            # Exceeds per-turn tool call limit
+            if idx >= max_tool_calls_per_turn:
+                warn_msg = f"Tool call limit exceeded: maximum {max_tool_calls_per_turn} tool calls per turn, skipping tool '{name}'."
+                tool_logger.warning(warn_msg)
+                resp.tool_results.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "name": name,
+                    "content": warn_msg
+                })
+                continue
 
             raw_args = tool_call.get("function", {}).get("arguments")
             try:
@@ -137,8 +155,11 @@ class LLMClient:
         logger.info(f"Generating image using {model_id} ({provider_name})")
         try:
             img_res = await image_model.text_to_image(prompt)
-            if not img_res:
-                logger.error(f"Failed to generate image with text")
+            if img_res:
+                logger.info(f"Image generated with prompt: {prompt}")
+                logger.debug(f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}")
+            else:
+                logger.error("Failed to generate image with text: result is None")
             return img_res
         except Exception as e:
             logger.error(f"Failed to generate image with text: {e}")
@@ -150,8 +171,11 @@ class LLMClient:
         logger.info(f"Generating image using {model_id} ({provider_name}) with a reference image")
         try:
             img_res = await image_model.image_to_image(prompt=prompt, image=image)
-            if not img_res:
-                logger.error(f"Failed to generate image with a reference image")
+            if img_res:
+                logger.info(f"Image generated (img2img): prompt: {prompt}")
+                logger.debug(f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}")
+            else:
+                logger.error("Failed to generate image with a reference image: result is None")
             return img_res
         except Exception as e:
             logger.error(f"Failed to generate image with a reference image: {e}")

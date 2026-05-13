@@ -1,7 +1,11 @@
 {
   "scan_interval": {
+    "name": "Scan Interval",
     "type": "integer",
     "default": 120,
-    "hint": "Interval of scanning unregistered stickers (Unit: minutes)"
+    "hint": "Interval of scanning unregistered stickers (Unit: minutes)",
+    "locales": {
+      "zh": { "name": "扫描间隔", "hint": "扫描未注册贴纸的间隔（单位：分钟）" }
+    }
   }
 }

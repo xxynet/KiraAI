@@ -4,7 +4,7 @@ import uuid
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Union, Optional, Literal
+from typing import Union, Optional, Literal, TYPE_CHECKING
 
 from core.chat.message_elements import (
     BaseMessageElement,
@@ -23,6 +23,9 @@ from core.chat.message_elements import (
 from .session import Session, Group, User
 from core.adapter.adapter_info import AdapterInfo
 from core.prompt_manager import Prompt
+
+if TYPE_CHECKING:
+    from core.provider import LLMModelClient
 
 
 class MessageType(Enum):
@@ -172,6 +175,9 @@ class KiraMessageBatchEvent:
 
     """Message display text for logging"""
     message_repr: Optional[str] = field(default=None, init=False)
+
+    """Custom model group, fallback to default LLM if not set"""
+    model_group: Optional[list[LLMModelClient]] = field(default_factory=list)
 
     _is_stopped: bool = False
 

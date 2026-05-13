@@ -12,7 +12,7 @@ from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse, RerankResult
 
 from core.chat.message_elements import Record, Image
-from core.utils.model_clients import OpenAICompatibleLLMClient
+from core.utils.model_clients import OpenAICompatibleLLMClient, OpenAICompatibleTTSClient
 
 logger = get_logger("provider", "purple")
 
@@ -47,31 +47,8 @@ class SiliconflowImageClient(ImageModelClient):
         return Image(image=image_url)
 
 
-class SiliconflowTTSClient(TTSModelClient):
-    def __init__(self, model: ModelInfo):
-        super().__init__(model)
-
-    async def text_to_speech(self, text: str, **kwargs) -> Record:
-        client = AsyncOpenAI(
-            api_key=self.model.provider_config.get("api_key", ""),
-            base_url=self.model.provider_config.get("base_url", "https://api.siliconflow.cn/v1")
-        )
-
-        async with client.audio.speech.with_streaming_response.create(
-                model=self.model.model_id,
-                voice=self.model.model_config.get("voice_name", ""),
-                input=text,
-                response_format="mp3"
-        ) as response:
-            # response.stream_to_file(speech_file_path)
-            audio_bytes = b""
-            async for chunk in response.iter_bytes():
-                audio_bytes += chunk
-
-        b64_str = base64.b64encode(audio_bytes).decode("utf-8")
-        # audio_bs64 = f"base64://{b64_str}"
-        # return b64_str
-        return Record(record=b64_str)
+class SiliconflowTTSClient(OpenAICompatibleTTSClient):
+    pass
 
 
 class SiliconflowSTTClient(STTModelClient):

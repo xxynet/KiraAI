@@ -3,5 +3,11 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "OpenAI Provider",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "name": "OpenAI 提供商",
+            "description": "OpenAI 提供商"
+        }
+    }
 }

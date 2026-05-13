@@ -1,0 +1,13 @@
+{
+    "name": "Discord",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "Discord Adapter",
+    "repo": null,
+    "locales": {
+        "zh": {
+            "name": "Discord 适配器",
+            "description": "Discord 平台适配器"
+        }
+    }
+}

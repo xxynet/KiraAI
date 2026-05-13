@@ -5,5 +5,11 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "A plugin to enable your AI to have access to filesystem with permission control",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "display_name": "文件",
+            "description": "文件系统访问插件，支持权限控制"
+        }
+    }
 }

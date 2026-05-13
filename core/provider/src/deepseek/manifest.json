@@ -3,5 +3,11 @@
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "DeepSeek Provider with thinking mode support",
-    "repo": null
+    "repo": null,
+    "locales": {
+        "zh": {
+            "name": "DeepSeek 提供商",
+            "description": "支持思考模式的 DeepSeek 提供商"
+        }
+    }
 }

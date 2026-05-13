@@ -374,6 +374,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
 import {
   getProviders, getProviderTypes, getProviderSchema,
@@ -388,6 +389,7 @@ import Modal from '@/components/common/Modal.vue'
 import type { ProviderResponse } from '@/types'
 
 const { t } = useI18n()
+const { localize } = useLocalized()
 
 const configFormRef = ref<InstanceType<typeof ConfigForm>>()
 const createConfigFormRef = ref<InstanceType<typeof ConfigForm>>()
