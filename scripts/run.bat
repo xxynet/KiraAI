@@ -38,7 +38,9 @@ set "BEST_SPEED=0"
 :: --- PyPI official ---
 set "T=" & set "SPEED=" & set "HTTP="
 for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "https://pypi.org/simple/" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
-if "!HTTP!"=="200" (
+if "!HTTP!"=="200" set "OK=1"
+if "!HTTP!"=="206" set "OK=1"
+if defined OK (
     call :parse_ms "!T!" MS
     call :format_speed "!SPEED!" FMT
     echo     pypi.org ... !MS!ms, !FMT!
@@ -50,7 +52,9 @@ if "!HTTP!"=="200" (
 :: --- Tsinghua ---
 set "T=" & set "SPEED=" & set "HTTP="
 for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "https://pypi.tuna.tsinghua.edu.cn/simple/" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
-if "!HTTP!"=="200" (
+if "!HTTP!"=="200" set "OK=1"
+if "!HTTP!"=="206" set "OK=1"
+if defined OK (
     call :parse_ms "!T!" MS
     call :format_speed "!SPEED!" FMT
     echo     pypi.tuna.tsinghua.edu.cn ... !MS!ms, !FMT!
@@ -62,7 +66,9 @@ if "!HTTP!"=="200" (
 :: --- Aliyun ---
 set "T=" & set "SPEED=" & set "HTTP="
 for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "https://mirrors.aliyun.com/pypi/simple/" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
-if "!HTTP!"=="200" (
+if "!HTTP!"=="200" set "OK=1"
+if "!HTTP!"=="206" set "OK=1"
+if defined OK (
     call :parse_ms "!T!" MS
     call :format_speed "!SPEED!" FMT
     echo     mirrors.aliyun.com ... !MS!ms, !FMT!
@@ -74,7 +80,9 @@ if "!HTTP!"=="200" (
 :: --- Tencent Cloud ---
 set "T=" & set "SPEED=" & set "HTTP="
 for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "https://mirrors.cloud.tencent.com/pypi/simple/" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
-if "!HTTP!"=="200" (
+if "!HTTP!"=="200" set "OK=1"
+if "!HTTP!"=="206" set "OK=1"
+if defined OK (
     call :parse_ms "!T!" MS
     call :format_speed "!SPEED!" FMT
     echo     mirrors.cloud.tencent.com ... !MS!ms, !FMT!
@@ -88,6 +96,7 @@ if defined MIRROR (
     echo   Selected: !MIRROR!
 ) else (
     echo   All mirrors unreachable, using default PyPI.
+    set "MIRROR=-i https://pypi.org/simple/"
 )
 
 python -m pip install --upgrade pip !MIRROR!
@@ -133,4 +142,5 @@ echo ==============================
 echo  Launching application...
 echo ==============================
 
+setlocal disabledelayedexpansion
 python main.py %*
