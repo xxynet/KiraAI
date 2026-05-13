@@ -75,12 +75,11 @@
             </div>
 
             <!-- Release body -->
-            <p
+            <div
               v-if="release.body"
-              class="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line line-clamp-4 mb-2"
-            >
-              {{ release.body }}
-            </p>
+              class="release-body text-sm text-gray-600 dark:text-gray-400 line-clamp-4 mb-2"
+              v-html="renderMarkdown(release.body)"
+            />
 
             <!-- Link -->
             <a
@@ -105,6 +104,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { marked } from 'marked'
 import Modal from '@/components/common/Modal.vue'
 import type { ReleaseItem } from '@/types'
 
@@ -126,20 +126,16 @@ const show = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
-function parseVersion(v: string): number[] {
-  return v.replace(/^v/i, '').split('.').map(Number)
+function isNewer(tag: string): boolean {
+  const currentRelease = props.releases.find(r => r.tag_name === props.currentVersion)
+  if (!currentRelease?.published_at) return false
+  const targetRelease = props.releases.find(r => r.tag_name === tag)
+  if (!targetRelease?.published_at) return false
+  return new Date(targetRelease.published_at).getTime() > new Date(currentRelease.published_at).getTime()
 }
 
-function isNewer(tag: string): boolean {
-  const current = parseVersion(props.currentVersion)
-  const target = parseVersion(tag)
-  for (let i = 0; i < Math.max(current.length, target.length); i++) {
-    const a = current[i] || 0
-    const b = target[i] || 0
-    if (b > a) return true
-    if (b < a) return false
-  }
-  return false
+function renderMarkdown(text: string): string {
+  return marked.parse(text, { async: false }) as string
 }
 
 function formatDate(dateStr: string | null): string {
@@ -151,3 +147,74 @@ function formatDate(dateStr: string | null): string {
   }
 }
 </script>
+
+<style scoped>
+.release-body :deep(h1),
+.release-body :deep(h2),
+.release-body :deep(h3) {
+  font-weight: 600;
+  margin-top: 0.5em;
+  margin-bottom: 0.25em;
+}
+
+.release-body :deep(h1) { font-size: 1.1em; }
+.release-body :deep(h2) { font-size: 1em; }
+.release-body :deep(h3) { font-size: 0.95em; }
+
+.release-body :deep(ul) {
+  list-style-type: disc;
+  padding-left: 1.25em;
+  margin: 0.25em 0;
+}
+
+.release-body :deep(ol) {
+  list-style-type: decimal;
+  padding-left: 1.25em;
+  margin: 0.25em 0;
+}
+
+.release-body :deep(li) {
+  margin: 0.15em 0;
+}
+
+.release-body :deep(a) {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.release-body :deep(code) {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.release-body :deep(pre) {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.5em;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.release-body :deep(pre code) {
+  background: none;
+  padding: 0;
+}
+
+.release-body :deep(p) {
+  margin: 0.25em 0;
+}
+
+:deep(.dark) .release-body :deep(code) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+:deep(.dark) .release-body :deep(pre) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+:deep(.dark) .release-body :deep(a) {
+  color: #60a5fa;
+}
+</style>
