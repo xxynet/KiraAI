@@ -32,6 +32,17 @@
           </div>
         </div>
 
+        <!-- Error -->
+        <div v-else-if="error" class="p-6 text-center">
+          <p class="text-gray-500 dark:text-gray-400 mb-3">{{ t('header.fetch_error') }}</p>
+          <button
+            class="px-4 py-1.5 text-sm rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+            @click="emit('retry')"
+          >
+            {{ t('header.retry') }}
+          </button>
+        </div>
+
         <!-- Empty -->
         <div v-else-if="releases.length === 0" class="p-6 text-center text-gray-500 dark:text-gray-400">
           {{ t('header.no_releases') }}
@@ -105,6 +116,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import Modal from '@/components/common/Modal.vue'
 import type { ReleaseItem } from '@/types'
 
@@ -113,10 +125,12 @@ const props = defineProps<{
   currentVersion: string
   releases: ReleaseItem[]
   loading: boolean
+  error: boolean
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
+  retry: []
 }>()
 
 const { t } = useI18n()
@@ -135,7 +149,7 @@ function isNewer(tag: string): boolean {
 }
 
 function renderMarkdown(text: string): string {
-  return marked.parse(text, { async: false }) as string
+  return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
 }
 
 function formatDate(dateStr: string | null): string {

@@ -26,6 +26,8 @@ export default {
     draft: 'Draft',
     published: 'Published',
     no_releases: 'No releases found',
+    fetch_error: 'Failed to fetch releases',
+    retry: 'Retry',
     loading_releases: 'Loading releases...',
   },
   nav: {

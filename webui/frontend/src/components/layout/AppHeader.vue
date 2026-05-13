@@ -17,7 +17,8 @@
     <div class="flex items-center gap-2">
       <!-- Update -->
       <button
-        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] transition-colors"
+        :class="hasNewVersion ? 'text-blue-500 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'"
         :aria-label="t('header.releases')"
         :title="t('header.releases')"
         @click="openReleases"
@@ -84,12 +85,14 @@
       :current-version="currentVersion"
       :releases="releases"
       :loading="releasesLoading"
+      :error="releasesError"
+      @retry="openReleases"
     />
   </header>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
@@ -112,16 +115,36 @@ const showReleases = ref(false)
 const releases = ref<ReleaseItem[]>([])
 const currentVersion = ref('')
 const releasesLoading = ref(false)
+const releasesError = ref(false)
 
-async function openReleases() {
-  showReleases.value = true
-  releasesLoading.value = true
+const hasNewVersion = computed(() => {
+  const currentRelease = releases.value.find(r => r.tag_name === currentVersion.value)
+  if (!currentRelease?.published_at) return false
+  return releases.value.some(r =>
+    r.published_at && new Date(r.published_at).getTime() > new Date(currentRelease.published_at!).getTime()
+  )
+})
+
+onMounted(async () => {
   try {
     const { data } = await getReleases()
     currentVersion.value = data.current_version
     releases.value = data.releases
   } catch {
-    // modal will show empty state
+    // ignore - button stays gray
+  }
+})
+
+async function openReleases() {
+  showReleases.value = true
+  releasesLoading.value = true
+  releasesError.value = false
+  try {
+    const { data } = await getReleases()
+    currentVersion.value = data.current_version
+    releases.value = data.releases
+  } catch {
+    releasesError.value = true
   } finally {
     releasesLoading.value = false
   }

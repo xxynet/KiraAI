@@ -173,7 +173,11 @@ class AuthRoutes(Routes):
         return None
 
     async def get_releases(self):
-        releases = await get_all_releases("xxynet", "KiraAI")
+        try:
+            releases = await get_all_releases("xxynet", "KiraAI")
+        except Exception as e:
+            print(f"Failed to fetch releases: {e}")
+            return ReleasesResponse(current_version=VERSION, releases=[])
         return ReleasesResponse(
             current_version=VERSION,
             releases=[r for r in releases if not r.get("draft")],

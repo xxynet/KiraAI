@@ -26,6 +26,8 @@ export default {
     draft: '草稿',
     published: '发布时间',
     no_releases: '暂无版本发布',
+    fetch_error: '获取版本信息失败',
+    retry: '重试',
     loading_releases: '加载版本信息...',
   },
   nav: {
