@@ -2,6 +2,10 @@ import time
 import httpx
 from typing import Optional
 
+from core.logging_manager import get_logger
+
+logger = get_logger("network", "cyan")
+
 
 async def download_file(url: str, path: str, proxy: Optional[str] = None, timeout: float = 60.0):
     client_kwargs: dict = {"follow_redirects": True, "timeout": timeout}
@@ -86,9 +90,9 @@ if __name__ == "__main__":
     test_url = "https://github.com/xxynet/KiraAI/archive/refs/tags/v2.9.1.zip"
 
     result = asyncio.run(test_url_speed(test_url))
-    print(result)
+    logger.info(result)
 
     for proxy_url in proxies:
         url = f"{proxy_url.rstrip('/')}/https://github.com/xxynet/KiraAI/archive/refs/tags/v2.9.1.zip"
         result = asyncio.run(test_url_speed(url))
-        print(result)
+        logger.info(result)

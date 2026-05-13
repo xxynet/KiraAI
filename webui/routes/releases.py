@@ -7,11 +7,14 @@ from pathlib import Path
 from fastapi import Depends, HTTPException, status
 
 from core.config.default import VERSION
+from core.logging_manager import get_logger
 from core.utils.github_api import download_asset, get_all_releases, pick_fastest_source
 from core.utils.path_utils import get_data_path, get_root_path
 from webui.models import DownloadReleaseRequest, ReleasesResponse
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
+
+logger = get_logger("releases", "green")
 
 
 class ReleasesRoutes(Routes):
@@ -38,7 +41,7 @@ class ReleasesRoutes(Routes):
         try:
             releases = await get_all_releases("xxynet", "KiraAI")
         except Exception as e:
-            print(f"Failed to fetch releases: {e}")
+            logger.error(f"Failed to fetch releases: {e}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Failed to fetch releases: {e}",
@@ -57,7 +60,7 @@ class ReleasesRoutes(Routes):
         loop = asyncio.get_running_loop()
 
         if not zip_path.exists():
-            print(f"Downloading release {tag}...")
+            logger.info(f"Downloading release {tag}...")
             direct_url = f"https://github.com/xxynet/KiraAI/archive/refs/tags/{tag}.zip"
             ranked_urls = await pick_fastest_source(direct_url)
             if not ranked_urls:
@@ -67,33 +70,33 @@ class ReleasesRoutes(Routes):
                 )
             data = None
             for i, url in enumerate(ranked_urls):
-                print(f"Trying source {i + 1}/{len(ranked_urls)}: {url}")
+                logger.info(f"Trying source {i + 1}/{len(ranked_urls)}: {url}")
                 try:
                     data = await download_asset(url)
-                    print(f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}")
+                    logger.info(f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}")
                     break
                 except Exception as e:
-                    print(f"Source {i + 1} failed: {e}")
+                    logger.warning(f"Source {i + 1} failed: {e}")
                     if i < len(ranked_urls) - 1:
-                        print("Trying next source...")
+                        logger.info("Trying next source...")
             if data is None:
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"Failed to download release {tag}",
                 )
             await loop.run_in_executor(None, zip_path.write_bytes, data)
-            print(f"Release {tag} downloaded to {zip_path}")
+            logger.info(f"Release {tag} downloaded to {zip_path}")
 
-        print(f"Applying update {tag}...")
+        logger.info(f"Applying update {tag}...")
         try:
             await loop.run_in_executor(None, self._apply_update, zip_path)
         except Exception as e:
-            print(f"Failed to apply update {tag}: {e}")
+            logger.error(f"Failed to apply update {tag}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to apply update: {e}",
             ) from e
-        print(f"Update {tag} applied successfully")
+        logger.info(f"Update {tag} applied successfully")
         return {"status": "ok"}
 
     @staticmethod

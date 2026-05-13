@@ -56,7 +56,7 @@ async def get_latest_release(owner: str, repo: str, proxy: Optional[str] = None)
             resp = await client.get(url)
             resp.raise_for_status()
         except httpx.HTTPError as e:
-            print(f"Failed to get latest release: {e}")
+            logger.error(f"Failed to get latest release: {e}")
             return None
 
     data = resp.json()
@@ -103,7 +103,7 @@ async def get_all_releases(
                 resp = await client.get(url)
                 resp.raise_for_status()
             except httpx.HTTPError as e:
-                print(f"Failed to get releases (page {page}): {e}")
+                logger.error(f"Failed to get releases (page {page}): {e}")
                 break
 
             data = resp.json()
@@ -151,7 +151,7 @@ async def get_release_assets(
             resp = await client.get(url)
             resp.raise_for_status()
         except httpx.HTTPError as e:
-            print(f"Failed to get release '{tag}': {e}")
+            logger.error(f"Failed to get release '{tag}': {e}")
             return []
 
     data = resp.json()
