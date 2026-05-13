@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { TokenLoginRequest, LoginResponse, AuthConfigResponse } from '@/types'
+import type { TokenLoginRequest, LoginResponse, AuthConfigResponse, ReleasesResponse } from '@/types'
 
 export function getAuthConfig() {
   return apiClient.get<AuthConfigResponse>('/auth/config')
@@ -15,4 +15,12 @@ export function logout() {
 
 export function healthCheck() {
   return apiClient.get<{ status: string; lifecycle_available: boolean }>('/health')
+}
+
+export function getReleases() {
+  return apiClient.get<ReleasesResponse>('/releases')
+}
+
+export function downloadRelease(tagName: string) {
+  return apiClient.post('/releases/download', { tag_name: tagName })
 }

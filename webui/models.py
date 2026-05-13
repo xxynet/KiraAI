@@ -217,3 +217,22 @@ class SkillItem(BaseModel):
     description: str = ""
     enabled: bool = True
     path: str = ""
+
+
+class ReleaseItem(BaseModel):
+    tag_name: str
+    name: Optional[str] = None
+    body: Optional[str] = None
+    html_url: Optional[str] = None
+    published_at: Optional[str] = None
+    prerelease: bool = False
+    draft: bool = False
+
+
+class ReleasesResponse(BaseModel):
+    current_version: str
+    releases: List[ReleaseItem]
+
+
+class DownloadReleaseRequest(BaseModel):
+    tag_name: str

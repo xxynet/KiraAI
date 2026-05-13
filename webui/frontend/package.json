@@ -11,8 +11,10 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
     "axios": "^1.7.9",
+    "dompurify": "^3.4.2",
     "element-plus": "^2.9.0",
     "event-source-polyfill": "^1.0.31",
+    "marked": "^18.0.3",
     "monaco-editor": "^0.52.2",
     "pinia": "^2.3.0",
     "vue": "^3.5.13",
@@ -20,6 +22,7 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.0.5",
     "@types/event-source-polyfill": "^1.0.5",
     "@types/node": "^22.19.17",
     "@vitejs/plugin-vue": "^5.2.0",

@@ -232,3 +232,19 @@ export interface SchemaField {
   properties?: Record<string, SchemaField>
   required?: string[]
 }
+
+// Release types
+export interface ReleaseItem {
+  tag_name: string
+  name: string | null
+  body: string | null
+  html_url: string | null
+  published_at: string | null
+  prerelease: boolean
+  draft: boolean
+}
+
+export interface ReleasesResponse {
+  current_version: string
+  releases: ReleaseItem[]
+}

@@ -15,6 +15,7 @@ from core.lifecycle import KiraLifecycle
 from core.utils.path_utils import get_data_path, get_webui_dist_path
 from webui.utils import _get_or_generate_access_token
 from webui.routes.auth import AuthRoutes
+from webui.routes.releases import ReleasesRoutes
 from webui.routes.overview import OverviewRoutes
 from webui.routes.logs import LogsRoutes
 from webui.routes.personas import PersonasRoutes
@@ -112,6 +113,7 @@ class KiraWebUI:
         StickersRoutes(self.app, self.lifecycle).register()
         SkillsRoutes(self.app, self.lifecycle).register()
         SettingsRoutes(self.app, self.lifecycle).register()
+        ReleasesRoutes(self.app, self.lifecycle).register()
 
         # SPA catch-all must be registered last
         auth_routes.register_spa_fallback()
