@@ -41,7 +41,8 @@ export default {
     prerelease_update_message: '这是一个预发布版本，可能包含错误。确定要更新到 {version} 吗？',
     prerelease_switch_title: '预发布切换',
     prerelease_switch_message: '这是一个预发布版本，可能包含错误。确定要切换到 {version} 吗？',
-    download_success: '下载完成',
+    update_success: '更新已应用，请重启程序以生效',
+    switch_success: '切换已应用，请重启程序以生效',
     download_failed: '下载失败',
   },
   nav: {

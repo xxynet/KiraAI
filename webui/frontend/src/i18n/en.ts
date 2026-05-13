@@ -41,7 +41,8 @@ export default {
     prerelease_update_message: 'This is a pre-release version that may contain bugs. Are you sure you want to update to {version}?',
     prerelease_switch_title: 'Pre-release Switch',
     prerelease_switch_message: 'This is a pre-release version that may contain bugs. Are you sure you want to switch to {version}?',
-    download_success: 'Download complete',
+    update_success: 'Update applied. Please restart the program to apply changes.',
+    switch_success: 'Switch applied. Please restart the program to apply changes.',
     download_failed: 'Download failed',
   },
   nav: {

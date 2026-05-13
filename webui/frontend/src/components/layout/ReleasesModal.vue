@@ -141,6 +141,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import { notify } from '@/composables/useNotification'
 import { downloadRelease } from '@/api/auth'
 import type { ReleaseItem } from '@/types'
 
@@ -229,10 +230,12 @@ async function handleConfirm() {
   const release = pendingRelease.value
   if (!release) return
   downloadingTag.value = release.tag_name
+  const isNew = isNewer(release.tag_name)
   try {
     await downloadRelease(release.tag_name)
+    notify(isNew ? t('header.update_success') : t('header.switch_success'), 'success')
   } catch {
-    // error handled silently - button resets
+    notify(t('header.download_failed'), 'error')
   } finally {
     downloadingTag.value = null
     pendingRelease.value = null
