@@ -121,7 +121,7 @@ const hasNewVersion = computed(() => {
   const currentRelease = releases.value.find(r => r.tag_name === currentVersion.value)
   if (!currentRelease?.published_at) return false
   return releases.value.some(r =>
-    r.published_at && new Date(r.published_at).getTime() > new Date(currentRelease.published_at!).getTime()
+    !r.prerelease && r.published_at && new Date(r.published_at).getTime() > new Date(currentRelease.published_at!).getTime()
   )
 })
 

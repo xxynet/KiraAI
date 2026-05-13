@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import tempfile
 import zipfile
@@ -50,6 +51,7 @@ class ReleasesRoutes(Routes):
         updates_dir = get_data_path() / "updates"
         updates_dir.mkdir(parents=True, exist_ok=True)
         zip_path = updates_dir / f"{safe_tag}.zip"
+        loop = asyncio.get_running_loop()
 
         if not zip_path.exists():
             try:
@@ -60,10 +62,10 @@ class ReleasesRoutes(Routes):
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"Failed to download release {tag}",
                 )
-            zip_path.write_bytes(data)
+            await loop.run_in_executor(None, zip_path.write_bytes, data)
 
         try:
-            self._apply_update(zip_path)
+            await loop.run_in_executor(None, self._apply_update, zip_path)
         except Exception as e:
             print(f"Failed to apply update {tag}: {e}")
             raise HTTPException(
