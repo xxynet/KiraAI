@@ -39,7 +39,10 @@ class ReleasesRoutes(Routes):
             releases = await get_all_releases("xxynet", "KiraAI")
         except Exception as e:
             print(f"Failed to fetch releases: {e}")
-            return ReleasesResponse(current_version=VERSION, releases=[])
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to fetch releases: {e}",
+            ) from e
         return ReleasesResponse(
             current_version=VERSION,
             releases=[r for r in releases if not r.get("draft")],
