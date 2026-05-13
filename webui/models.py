@@ -232,3 +232,7 @@ class ReleaseItem(BaseModel):
 class ReleasesResponse(BaseModel):
     current_version: str
     releases: List[ReleaseItem]
+
+
+class DownloadReleaseRequest(BaseModel):
+    tag_name: str

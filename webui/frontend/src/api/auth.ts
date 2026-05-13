@@ -20,3 +20,7 @@ export function healthCheck() {
 export function getReleases() {
   return apiClient.get<ReleasesResponse>('/releases')
 }
+
+export function downloadRelease(tagName: string) {
+  return apiClient.post('/releases/download', { tag_name: tagName })
+}

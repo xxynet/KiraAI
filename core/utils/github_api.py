@@ -283,6 +283,47 @@ async def download_zipball(
     return resp.content
 
 
+async def download_source_zipball(
+    owner: str,
+    repo: str,
+    tag: str,
+    proxy: Optional[str] = None,
+    gh_proxy: Optional[str] = None,
+) -> bytes:
+    """
+    Download the source code zip archive for a specific release tag.
+
+    proxy    — standard HTTP/SOCKS proxy passed to httpx
+    gh_proxy — GitHub reverse-proxy base URL
+
+    Raises ValueError on HTTP errors, ConnectionError on network failures.
+    """
+    if gh_proxy:
+        base = gh_proxy.rstrip("/")
+        direct_url = f"https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip"
+        url = f"{base}/{direct_url}"
+    else:
+        url = f"https://api.github.com/repos/{owner}/{repo}/zipball/{tag}"
+
+    client_kwargs: dict = {"timeout": 120.0, "follow_redirects": True}
+    if proxy:
+        client_kwargs["proxy"] = proxy
+
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            if status == 404:
+                raise ValueError(f"Tag {tag} not found in {owner}/{repo}") from e
+            raise ValueError(f"GitHub returned HTTP {status}") from e
+        except httpx.HTTPError as e:
+            raise ConnectionError(f"Network error while downloading from GitHub: {e}") from e
+
+    return resp.content
+
+
 if __name__ == '__main__':
     print(asyncio.run(get_latest_release("xxynet", "KiraAI")))
 

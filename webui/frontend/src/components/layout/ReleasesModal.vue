@@ -56,33 +56,44 @@
             class="px-6 py-4 hover:bg-gray-50 dark:hover:bg-[#202024] transition-colors"
           >
             <!-- Release header -->
-            <div class="flex items-center justify-between mb-2">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="font-semibold text-gray-800 dark:text-white">
-                  {{ release.name || release.tag_name }}
-                </span>
-                <span
-                  v-if="index === 0"
-                  class="px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-                >
-                  {{ t('header.latest') }}
-                </span>
-                <span
-                  v-if="isNewer(release.tag_name)"
-                  class="px-1.5 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-                >
-                  {{ t('header.new_version_available') }}
-                </span>
-                <span
-                  v-if="release.prerelease"
-                  class="px-1.5 py-0.5 text-xs font-medium rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
-                >
-                  {{ t('header.prerelease') }}
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-semibold text-gray-800 dark:text-white">
+                    {{ release.name || release.tag_name }}
+                  </span>
+                  <span
+                    v-if="index === 0"
+                    class="px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                  >
+                    {{ t('header.latest') }}
+                  </span>
+                  <span
+                    v-if="isNewer(release.tag_name)"
+                    class="px-1.5 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                  >
+                    {{ t('header.new_version_available') }}
+                  </span>
+                  <span
+                    v-if="release.prerelease"
+                    class="px-1.5 py-0.5 text-xs font-medium rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+                  >
+                    {{ t('header.prerelease') }}
+                  </span>
+                </div>
+                <span class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 block">
+                  {{ formatDate(release.published_at) }}
                 </span>
               </div>
-              <span class="text-xs text-gray-400 dark:text-gray-500 shrink-0 ml-2">
-                {{ formatDate(release.published_at) }}
-              </span>
+              <button
+                v-if="release.tag_name !== currentVersion"
+                :class="actionButtonClass(release)"
+                :disabled="downloadingTag !== null"
+                class="shrink-0 ml-3 px-3 py-1 text-xs font-medium rounded-lg transition-colors"
+                @click="onActionClick(release)"
+              >
+                {{ actionButtonText(release) }}
+              </button>
             </div>
 
             <!-- Release body -->
@@ -109,15 +120,28 @@
         </div>
       </div>
     </div>
+
+    <!-- Confirm Modal -->
+    <ConfirmModal
+      ref="confirmRef"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      :cancel-text="t('provider.modal_cancel')"
+      :confirm-text="confirmButton"
+      variant="info"
+      @confirm="handleConfirm"
+    />
   </Modal>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import Modal from '@/components/common/Modal.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import { downloadRelease } from '@/api/auth'
 import type { ReleaseItem } from '@/types'
 
 const props = defineProps<{
@@ -140,12 +164,79 @@ const show = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
+const downloadingTag = ref<string | null>(null)
+const confirmRef = ref<InstanceType<typeof ConfirmModal>>()
+const pendingRelease = ref<ReleaseItem | null>(null)
+
+const confirmTitle = ref('')
+const confirmMessage = ref('')
+const confirmButton = ref('')
+
 function isNewer(tag: string): boolean {
   const currentRelease = props.releases.find(r => r.tag_name === props.currentVersion)
   if (!currentRelease?.published_at) return false
   const targetRelease = props.releases.find(r => r.tag_name === tag)
   if (!targetRelease?.published_at) return false
   return new Date(targetRelease.published_at).getTime() > new Date(currentRelease.published_at).getTime()
+}
+
+function isCurrentVersion(tag: string): boolean {
+  return tag === props.currentVersion
+}
+
+function actionButtonClass(release: ReleaseItem): string {
+  const isDownloading = downloadingTag.value !== null
+  if (isNewer(release.tag_name)) {
+    return isDownloading
+      ? 'bg-blue-300 dark:bg-blue-800 text-white/70 cursor-not-allowed'
+      : 'bg-blue-500 hover:bg-blue-600 text-white'
+  }
+  return isDownloading
+    ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+}
+
+function actionButtonText(release: ReleaseItem): string {
+  const isNew = isNewer(release.tag_name)
+  if (downloadingTag.value === release.tag_name) {
+    return isNew ? t('header.updating') : t('header.switching')
+  }
+  return isNew ? t('header.update') : t('header.switch')
+}
+
+function onActionClick(release: ReleaseItem) {
+  if (downloadingTag.value) return
+  pendingRelease.value = release
+  const isNew = isNewer(release.tag_name)
+  const version = release.name || release.tag_name
+
+  if (release.prerelease) {
+    confirmTitle.value = isNew ? t('header.prerelease_update_title') : t('header.prerelease_switch_title')
+    confirmMessage.value = isNew
+      ? t('header.prerelease_update_message', { version })
+      : t('header.prerelease_switch_message', { version })
+  } else {
+    confirmTitle.value = isNew ? t('header.confirm_update_title') : t('header.confirm_switch_title')
+    confirmMessage.value = isNew
+      ? t('header.confirm_update_message', { version })
+      : t('header.confirm_switch_message', { version })
+  }
+  confirmButton.value = isNew ? t('header.update') : t('header.switch')
+  confirmRef.value?.open()
+}
+
+async function handleConfirm() {
+  const release = pendingRelease.value
+  if (!release) return
+  downloadingTag.value = release.tag_name
+  try {
+    await downloadRelease(release.tag_name)
+  } catch {
+    // error handled silently - button resets
+  } finally {
+    downloadingTag.value = null
+    pendingRelease.value = null
+  }
 }
 
 function renderMarkdown(text: string): string {
