@@ -97,9 +97,18 @@ class ReleasesRoutes(Routes):
     def _apply_update(zip_path: Path) -> None:
         root = get_root_path()
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
+            tmp = Path(tmp_dir).resolve()
             with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(tmp)
+                for member in zf.infolist():
+                    target = (tmp / member.filename).resolve()
+                    if not target.is_relative_to(tmp):
+                        raise ValueError(f"Path traversal detected: {member.filename}")
+                    if member.is_dir():
+                        target.mkdir(parents=True, exist_ok=True)
+                    else:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with zf.open(member) as src, open(target, "wb") as dst:
+                            dst.write(src.read())
 
             # GitHub zipballs have a single top-level directory (e.g. xxynet-KiraAI-abc123/)
             entries = list(tmp.iterdir())
