@@ -71,7 +71,7 @@ if errorlevel 1 (
 goto :install_done
 
 :test_mirror
-set "T=" & set "SPEED=" & set "HTTP=" & set "OK="
+set "T=" & set "SPEED=" & set "HTTP=" & set "OK=" & set "SPEED_INT="
 for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "!URL!" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
 if "!HTTP!"=="200" set "OK=1"
 if "!HTTP!"=="206" set "OK=1"
