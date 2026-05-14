@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
     # parse CLI args and apply path overrides
     args = _parse_args()
-    from core.utils.path_utils import init_paths, get_data_path
+    from core.utils.path_utils import init_paths, get_data_path, get_root_path
 
     init_paths(
         data_dir=args.data_dir,
@@ -76,6 +76,19 @@ if __name__ == "__main__":
         logger.info(f"Using webui dir override: {args.webui_dir}")
     if args.disable_webui_auth:
         logger.info("WebUI authentication disabled")
+
+    # recover from any incomplete update left by a previous crash
+    import shutil
+    for bak in get_root_path().glob("*.bak"):
+        original = bak.with_suffix("")
+        if original.exists():
+            if bak.is_dir():
+                shutil.rmtree(bak)
+            else:
+                bak.unlink()
+        else:
+            bak.rename(original)
+            logger.info(f"Recovered {original.name} from incomplete update")
 
     from core.launcher import KiraLauncher
 
