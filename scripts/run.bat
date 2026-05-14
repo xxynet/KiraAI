@@ -76,10 +76,12 @@ for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time
 if "!HTTP!"=="200" set "OK=1"
 if "!HTTP!"=="206" set "OK=1"
 if defined OK (
+    for /f "tokens=1 delims=." %%S in ("!SPEED!") do set "SPEED_INT=%%S"
+    if not defined SPEED_INT set "SPEED_INT=0"
     call :parse_ms "!T!" MS
-    call :format_speed "!SPEED!" FMT
+    call :format_speed !SPEED_INT! FMT
     echo     !NAME! ... !MS!ms, !FMT!
-    if !SPEED! gtr !BEST_SPEED! (set "BEST_SPEED=!SPEED!" & set "MIRROR=-i !URL!")
+    if !SPEED_INT! gtr !BEST_SPEED! (set "BEST_SPEED=!SPEED_INT!" & set "MIRROR=-i !URL!")
 ) else (
     echo     !NAME! ... unreachable
 )

@@ -93,7 +93,7 @@ echo " Launching application..."
 echo "=============================="
 
 if [ -f main.py ]; then
-  exec python main.py
+  exec python main.py "$@"
 else
   echo "Error: main.py not found."
   exit 1
