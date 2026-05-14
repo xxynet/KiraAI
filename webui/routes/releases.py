@@ -148,29 +148,37 @@ class ReleasesRoutes(Routes):
                         shutil.copy2(src, staged)
 
                 # 2. Atomic swap: rename old → .bak, then rename staged → target
-                for name in zip_items:
-                    src = stage_dir / name
-                    dst = root / name
-                    if dst.exists():
-                        dst.rename(dst.with_suffix(dst.suffix + ".bak"))
-                    src.rename(dst)
+                #    Track each successful step so we can reverse them on failure.
+                #    (dst, bak_or_None, was_new)
+                actions: list[tuple[Path, Path | None, bool]] = []
+                try:
+                    for name in zip_items:
+                        src = stage_dir / name
+                        dst = root / name
+                        had_original = dst.exists()
+                        bak_path: Path | None = None
+                        if had_original:
+                            bak_path = dst.with_suffix(dst.suffix + ".bak")
+                            dst.rename(bak_path)
+                        src.rename(dst)
+                        actions.append((dst, bak_path, not had_original))
+                except Exception:
+                    for dst, bak_path, was_new in reversed(actions):
+                        if was_new:
+                            if dst.is_dir():
+                                shutil.rmtree(dst)
+                            else:
+                                dst.unlink()
+                        elif bak_path is not None:
+                            bak_path.rename(dst)
+                    raise
 
                 # 3. Clean up .bak files
-                for name in zip_items:
-                    bak = (root / name).with_suffix((root / name).suffix + ".bak")
-                    if bak.exists():
-                        if bak.is_dir():
-                            shutil.rmtree(bak)
+                for dst, bak_path, _ in actions:
+                    if bak_path is not None and bak_path.exists():
+                        if bak_path.is_dir():
+                            shutil.rmtree(bak_path)
                         else:
-                            bak.unlink()
-            except Exception:
-                # Roll back any completed swaps using .bak files
-                for name in zip_items:
-                    bak = (root / name).with_suffix((root / name).suffix + ".bak")
-                    if bak.exists():
-                        original = bak.with_suffix("")
-                        if not original.exists():
-                            bak.rename(original)
-                raise
+                            bak_path.unlink()
             finally:
                 shutil.rmtree(stage_dir, ignore_errors=True)
