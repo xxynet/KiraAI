@@ -2,10 +2,15 @@ import asyncio
 import os
 import re
 import shutil
+import sys
 import tempfile
-import time
 import zipfile
 from pathlib import Path
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 from fastapi import Depends, HTTPException, status
 
@@ -117,31 +122,28 @@ class ReleasesRoutes(Routes):
 
     @staticmethod
     def _acquire_lock(lock_path: Path):
-        """Acquire a cross-process file lock via atomic creation."""
-        lock_path_str = str(lock_path)
-        while True:
-            try:
-                return os.open(lock_path_str, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            except FileExistsError:
-                try:
-                    if lock_path.stat().st_mtime < time.time() - 600:
-                        lock_path.unlink(missing_ok=True)
-                        continue
-                except OSError:
-                    pass
-                time.sleep(0.5)
+        """Acquire a cross-process advisory file lock."""
+        lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+        try:
+            if sys.platform == "win32":
+                msvcrt.locking(lock_fd, msvcrt.LK_LOCK, 1)
+            else:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        except Exception:
+            os.close(lock_fd)
+            raise
+        return lock_fd
 
     @staticmethod
     def _release_lock(lock_path: Path, lock_fd) -> None:
-        """Release the cross-process file lock."""
+        """Release the cross-process advisory file lock."""
         try:
+            if sys.platform == "win32":
+                msvcrt.locking(lock_fd, msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
             os.close(lock_fd)
-        except OSError:
-            pass
-        try:
-            lock_path.unlink(missing_ok=True)
-        except OSError:
-            pass
 
     @staticmethod
     def _apply_update(zip_path: Path) -> None:
