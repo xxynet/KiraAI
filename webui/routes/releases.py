@@ -25,6 +25,7 @@ from webui.routes.base import RouteDefinition, Routes
 logger = get_logger("releases", "green")
 
 _update_lock = asyncio.Lock()
+_install_lock = asyncio.Lock()
 
 
 class ReleasesRoutes(Routes):
@@ -106,14 +107,15 @@ class ReleasesRoutes(Routes):
                     logger.info(f"Release {tag} downloaded to {zip_path}")
 
                 logger.info(f"Applying update {tag}...")
-                try:
-                    await loop.run_in_executor(None, self._apply_update, zip_path)
-                except Exception as e:
-                    logger.error(f"Failed to apply update {tag}: {e}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to apply update: {e}",
-                    ) from e
+                async with _install_lock:
+                    try:
+                        await loop.run_in_executor(None, self._apply_update, zip_path)
+                    except Exception as e:
+                        logger.error(f"Failed to apply update {tag}: {e}")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to apply update: {e}",
+                        ) from e
                 logger.info(f"Update {tag} applied successfully")
             finally:
                 await loop.run_in_executor(None, self._release_lock, lock_path, lock_fd)
@@ -175,7 +177,7 @@ class ReleasesRoutes(Routes):
                 zip_items.add(item.name)
 
             # Stage copies first, then atomically swap into place
-            stage_dir = Path(tempfile.mkdtemp())
+            stage_dir = Path(tempfile.mkdtemp(dir=str(root.parent)))
             try:
                 for name in zip_items:
                     src = source_root / name
