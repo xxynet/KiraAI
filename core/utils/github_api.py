@@ -361,7 +361,7 @@ async def pick_fastest_source(
         except Exception:
             return label, None
 
-    results = await asyncio.gather(*[_probe(l, u) for l, u in candidates])
+    results = await asyncio.gather(*[_probe(label, url) for label, url in candidates])
 
     for label, latency in sorted(results, key=lambda x: x[1] or 999):
         if latency is not None:
@@ -376,7 +376,9 @@ async def pick_fastest_source(
         if label == "direct":
             ranked.append(direct_url)
         else:
-            proxy_base = next(b for b in GH_PROXY_LIST if label in b)
+            proxy_base = next((b for b in GH_PROXY_LIST if label in b), None)
+            if proxy_base is None:
+                continue
             ranked.append(f"{proxy_base.rstrip('/')}/{direct_url}")
 
     if ranked:

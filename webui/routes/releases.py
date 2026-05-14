@@ -1,6 +1,9 @@
 import asyncio
+import os
+import re
 import shutil
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -15,6 +18,8 @@ from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 
 logger = get_logger("releases", "green")
+
+_update_lock = asyncio.Lock()
 
 
 class ReleasesRoutes(Routes):
@@ -53,51 +58,90 @@ class ReleasesRoutes(Routes):
 
     async def download_release(self, payload: DownloadReleaseRequest):
         tag = payload.tag_name
-        safe_tag = tag.replace("/", "-")
+        safe_tag = re.sub(r"[^A-Za-z0-9._-]", "-", tag)
+        safe_tag = re.sub(r"-{2,}", "-", safe_tag)
+        safe_tag = safe_tag.strip(".-")
+        safe_tag = safe_tag[:128] or "unknown"
         updates_dir = get_data_path() / "updates"
         updates_dir.mkdir(parents=True, exist_ok=True)
         zip_path = updates_dir / f"{safe_tag}.zip"
+        lock_path = updates_dir / f"{safe_tag}.lock"
         loop = asyncio.get_running_loop()
 
-        if not zip_path.exists():
-            logger.info(f"Downloading release {tag}...")
-            direct_url = f"https://github.com/xxynet/KiraAI/archive/refs/tags/{tag}.zip"
-            ranked_urls = await pick_fastest_source(direct_url)
-            if not ranked_urls:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"All download sources failed for {tag}",
-                )
-            data = None
-            for i, url in enumerate(ranked_urls):
-                logger.info(f"Trying source {i + 1}/{len(ranked_urls)}: {url}")
-                try:
-                    data = await download_asset(url)
-                    logger.info(f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}")
-                    break
-                except Exception as e:
-                    logger.warning(f"Source {i + 1} failed: {e}")
-                    if i < len(ranked_urls) - 1:
-                        logger.info("Trying next source...")
-            if data is None:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Failed to download release {tag}",
-                )
-            await loop.run_in_executor(None, zip_path.write_bytes, data)
-            logger.info(f"Release {tag} downloaded to {zip_path}")
+        async with _update_lock:
+            # Cross-process lock via atomic file creation
+            lock_fd = await loop.run_in_executor(None, self._acquire_lock, lock_path)
+            try:
+                if not zip_path.exists():
+                    logger.info(f"Downloading release {tag}...")
+                    direct_url = f"https://github.com/xxynet/KiraAI/archive/refs/tags/{tag}.zip"
+                    ranked_urls = await pick_fastest_source(direct_url)
+                    if not ranked_urls:
+                        raise HTTPException(
+                            status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"All download sources failed for {tag}",
+                        )
+                    data = None
+                    for i, url in enumerate(ranked_urls):
+                        logger.info(f"Trying source {i + 1}/{len(ranked_urls)}: {url}")
+                        try:
+                            data = await download_asset(url)
+                            logger.info(f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}")
+                            break
+                        except Exception as e:
+                            logger.warning(f"Source {i + 1} failed: {e}")
+                            if i < len(ranked_urls) - 1:
+                                logger.info("Trying next source...")
+                    if data is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"Failed to download release {tag}",
+                        )
+                    await loop.run_in_executor(None, zip_path.write_bytes, data)
+                    logger.info(f"Release {tag} downloaded to {zip_path}")
 
-        logger.info(f"Applying update {tag}...")
-        try:
-            await loop.run_in_executor(None, self._apply_update, zip_path)
-        except Exception as e:
-            logger.error(f"Failed to apply update {tag}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to apply update: {e}",
-            ) from e
-        logger.info(f"Update {tag} applied successfully")
+                logger.info(f"Applying update {tag}...")
+                try:
+                    await loop.run_in_executor(None, self._apply_update, zip_path)
+                except Exception as e:
+                    logger.error(f"Failed to apply update {tag}: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to apply update: {e}",
+                    ) from e
+                logger.info(f"Update {tag} applied successfully")
+            finally:
+                await loop.run_in_executor(None, self._release_lock, lock_path, lock_fd)
+
         return {"status": "ok"}
+
+    @staticmethod
+    def _acquire_lock(lock_path: Path):
+        """Acquire a cross-process file lock via atomic creation."""
+        lock_path_str = str(lock_path)
+        while True:
+            try:
+                return os.open(lock_path_str, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                try:
+                    if lock_path.stat().st_mtime < time.time() - 600:
+                        lock_path.unlink(missing_ok=True)
+                        continue
+                except OSError:
+                    pass
+                time.sleep(0.5)
+
+    @staticmethod
+    def _release_lock(lock_path: Path, lock_fd) -> None:
+        """Release the cross-process file lock."""
+        try:
+            os.close(lock_fd)
+        except OSError:
+            pass
+        try:
+            lock_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     @staticmethod
     def _apply_update(zip_path: Path) -> None:
@@ -128,16 +172,29 @@ class ReleasesRoutes(Routes):
             for item in source_root.iterdir():
                 zip_items.add(item.name)
 
-            # Replace existing items: delete from root, copy from zip
-            for name in zip_items:
-                src = source_root / name
-                dst = root / name
-                if dst.exists():
-                    if dst.is_dir():
-                        shutil.rmtree(dst)
+            # Stage copies first, then atomically swap into place
+            stage_dir = Path(tempfile.mkdtemp())
+            try:
+                for name in zip_items:
+                    src = source_root / name
+                    staged = stage_dir / name
+                    if src.is_dir():
+                        shutil.copytree(src, staged)
                     else:
-                        dst.unlink()
-                if src.is_dir():
-                    shutil.copytree(src, dst)
-                else:
-                    shutil.copy2(src, dst)
+                        staged.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src, staged)
+
+                for name in zip_items:
+                    src = stage_dir / name
+                    dst = root / name
+                    if dst.exists():
+                        if dst.is_dir():
+                            shutil.rmtree(dst)
+                        else:
+                            dst.unlink()
+                    if src.is_dir():
+                        shutil.move(str(src), str(dst))
+                    else:
+                        shutil.move(str(src), str(dst))
+            finally:
+                shutil.rmtree(stage_dir, ignore_errors=True)
