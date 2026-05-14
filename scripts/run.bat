@@ -35,60 +35,17 @@ echo [3/3] Testing pip mirrors...
 set "MIRROR="
 set "BEST_SPEED=0"
 
-:: --- PyPI official ---
-set "T=" & set "SPEED=" & set "HTTP=" & set "OK="
-for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "https://pypi.org/simple/" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
-if "!HTTP!"=="200" set "OK=1"
-if "!HTTP!"=="206" set "OK=1"
-if defined OK (
-    call :parse_ms "!T!" MS
-    call :format_speed "!SPEED!" FMT
-    echo     pypi.org ... !MS!ms, !FMT!
-    if !SPEED! gtr !BEST_SPEED! (set "BEST_SPEED=!SPEED!" & set "MIRROR=-i https://pypi.org/simple/")
-) else (
-    echo     pypi.org ... unreachable
-)
-
-:: --- Tsinghua ---
-set "T=" & set "SPEED=" & set "HTTP=" & set "OK="
-for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "https://pypi.tuna.tsinghua.edu.cn/simple/" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
-if "!HTTP!"=="200" set "OK=1"
-if "!HTTP!"=="206" set "OK=1"
-if defined OK (
-    call :parse_ms "!T!" MS
-    call :format_speed "!SPEED!" FMT
-    echo     pypi.tuna.tsinghua.edu.cn ... !MS!ms, !FMT!
-    if !SPEED! gtr !BEST_SPEED! (set "BEST_SPEED=!SPEED!" & set "MIRROR=-i https://pypi.tuna.tsinghua.edu.cn/simple/")
-) else (
-    echo     pypi.tuna.tsinghua.edu.cn ... unreachable
-)
-
-:: --- Aliyun ---
-set "T=" & set "SPEED=" & set "HTTP=" & set "OK="
-for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "https://mirrors.aliyun.com/pypi/simple/" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
-if "!HTTP!"=="200" set "OK=1"
-if "!HTTP!"=="206" set "OK=1"
-if defined OK (
-    call :parse_ms "!T!" MS
-    call :format_speed "!SPEED!" FMT
-    echo     mirrors.aliyun.com ... !MS!ms, !FMT!
-    if !SPEED! gtr !BEST_SPEED! (set "BEST_SPEED=!SPEED!" & set "MIRROR=-i https://mirrors.aliyun.com/pypi/simple/")
-) else (
-    echo     mirrors.aliyun.com ... unreachable
-)
-
-:: --- Tencent Cloud ---
-set "T=" & set "SPEED=" & set "HTTP=" & set "OK="
-for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "https://mirrors.cloud.tencent.com/pypi/simple/" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
-if "!HTTP!"=="200" set "OK=1"
-if "!HTTP!"=="206" set "OK=1"
-if defined OK (
-    call :parse_ms "!T!" MS
-    call :format_speed "!SPEED!" FMT
-    echo     mirrors.cloud.tencent.com ... !MS!ms, !FMT!
-    if !SPEED! gtr !BEST_SPEED! (set "BEST_SPEED=!SPEED!" & set "MIRROR=-i https://mirrors.cloud.tencent.com/pypi/simple/")
-) else (
-    echo     mirrors.cloud.tencent.com ... unreachable
+for %%M in (
+    "pypi.org|https://pypi.org/simple/"
+    "pypi.tuna.tsinghua.edu.cn|https://pypi.tuna.tsinghua.edu.cn/simple/"
+    "mirrors.aliyun.com|https://mirrors.aliyun.com/pypi/simple/"
+    "mirrors.cloud.tencent.com|https://mirrors.cloud.tencent.com/pypi/simple/"
+) do (
+    for /f "tokens=1,2 delims=|" %%N in ("%%~M") do (
+        set "NAME=%%N"
+        set "URL=%%O"
+        call :test_mirror
+    )
 )
 
 echo.
@@ -112,6 +69,21 @@ if errorlevel 1 (
     exit /b 1
 )
 goto :install_done
+
+:test_mirror
+set "T=" & set "SPEED=" & set "HTTP=" & set "OK="
+for /f "tokens=1-3" %%A in ('curl -s -o NUL -r 0-32767 -w "%%{http_code} %%{time_connect} %%{speed_download}" -m 5 "!URL!" 2^>NUL') do (set "HTTP=%%A" & set "T=%%B" & set "SPEED=%%C")
+if "!HTTP!"=="200" set "OK=1"
+if "!HTTP!"=="206" set "OK=1"
+if defined OK (
+    call :parse_ms "!T!" MS
+    call :format_speed "!SPEED!" FMT
+    echo     !NAME! ... !MS!ms, !FMT!
+    if !SPEED! gtr !BEST_SPEED! (set "BEST_SPEED=!SPEED!" & set "MIRROR=-i !URL!")
+) else (
+    echo     !NAME! ... unreachable
+)
+goto :eof
 
 :parse_ms
 set "S=%~1"
