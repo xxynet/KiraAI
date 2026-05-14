@@ -1,16 +1,9 @@
 import asyncio
-import os
 import re
 import shutil
-import sys
 import tempfile
 import zipfile
 from pathlib import Path
-
-if sys.platform == "win32":
-    import msvcrt
-else:
-    import fcntl
 
 from fastapi import Depends, HTTPException, status
 
@@ -24,7 +17,6 @@ from webui.routes.base import RouteDefinition, Routes
 
 logger = get_logger("releases", "green")
 
-_update_lock = asyncio.Lock()
 _install_lock = asyncio.Lock()
 
 
@@ -71,81 +63,49 @@ class ReleasesRoutes(Routes):
         updates_dir = get_data_path() / "updates"
         updates_dir.mkdir(parents=True, exist_ok=True)
         zip_path = updates_dir / f"{safe_tag}.zip"
-        lock_path = updates_dir / f"{safe_tag}.lock"
         loop = asyncio.get_running_loop()
 
-        async with _update_lock:
-            # Cross-process lock via atomic file creation
-            lock_fd = await loop.run_in_executor(None, self._acquire_lock, lock_path)
-            try:
-                if not zip_path.exists():
-                    logger.info(f"Downloading release {tag}...")
-                    direct_url = f"https://github.com/xxynet/KiraAI/archive/refs/tags/{tag}.zip"
-                    ranked_urls = await pick_fastest_source(direct_url)
-                    if not ranked_urls:
-                        raise HTTPException(
-                            status_code=status.HTTP_502_BAD_GATEWAY,
-                            detail=f"All download sources failed for {tag}",
-                        )
-                    data = None
-                    for i, url in enumerate(ranked_urls):
-                        logger.info(f"Trying source {i + 1}/{len(ranked_urls)}: {url}")
-                        try:
-                            data = await download_asset(url)
-                            logger.info(f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}")
-                            break
-                        except Exception as e:
-                            logger.warning(f"Source {i + 1} failed: {e}")
-                            if i < len(ranked_urls) - 1:
-                                logger.info("Trying next source...")
-                    if data is None:
-                        raise HTTPException(
-                            status_code=status.HTTP_502_BAD_GATEWAY,
-                            detail=f"Failed to download release {tag}",
-                        )
-                    await loop.run_in_executor(None, zip_path.write_bytes, data)
-                    logger.info(f"Release {tag} downloaded to {zip_path}")
-
-                logger.info(f"Applying update {tag}...")
-                async with _install_lock:
+        async with _install_lock:
+            if not zip_path.exists():
+                logger.info(f"Downloading release {tag}...")
+                direct_url = f"https://github.com/xxynet/KiraAI/archive/refs/tags/{tag}.zip"
+                ranked_urls = await pick_fastest_source(direct_url)
+                if not ranked_urls:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"All download sources failed for {tag}",
+                    )
+                data = None
+                for i, url in enumerate(ranked_urls):
+                    logger.info(f"Trying source {i + 1}/{len(ranked_urls)}: {url}")
                     try:
-                        await loop.run_in_executor(None, self._apply_update, zip_path)
+                        data = await download_asset(url)
+                        logger.info(f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}")
+                        break
                     except Exception as e:
-                        logger.error(f"Failed to apply update {tag}: {e}")
-                        raise HTTPException(
-                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail=f"Failed to apply update: {e}",
-                        ) from e
-                logger.info(f"Update {tag} applied successfully")
-            finally:
-                await loop.run_in_executor(None, self._release_lock, lock_path, lock_fd)
+                        logger.warning(f"Source {i + 1} failed: {e}")
+                        if i < len(ranked_urls) - 1:
+                            logger.info("Trying next source...")
+                if data is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Failed to download release {tag}",
+                    )
+                await loop.run_in_executor(None, zip_path.write_bytes, data)
+                logger.info(f"Release {tag} downloaded to {zip_path}")
+
+            logger.info(f"Applying update {tag}...")
+            try:
+                await loop.run_in_executor(None, self._apply_update, zip_path)
+            except Exception as e:
+                logger.error(f"Failed to apply update {tag}: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to apply update: {e}",
+                ) from e
+            logger.info(f"Update {tag} applied successfully")
 
         return {"status": "ok"}
-
-    @staticmethod
-    def _acquire_lock(lock_path: Path):
-        """Acquire a cross-process advisory file lock."""
-        lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
-        try:
-            if sys.platform == "win32":
-                msvcrt.locking(lock_fd, msvcrt.LK_LOCK, 1)
-            else:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX)
-        except Exception:
-            os.close(lock_fd)
-            raise
-        return lock_fd
-
-    @staticmethod
-    def _release_lock(lock_path: Path, lock_fd) -> None:
-        """Release the cross-process advisory file lock."""
-        try:
-            if sys.platform == "win32":
-                msvcrt.locking(lock_fd, msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(lock_fd, fcntl.LOCK_UN)
-        finally:
-            os.close(lock_fd)
 
     @staticmethod
     def _apply_update(zip_path: Path) -> None:
@@ -171,14 +131,13 @@ class ReleasesRoutes(Routes):
             else:
                 source_root = tmp
 
-            # Collect what the zip contains (relative paths)
-            zip_items: set[str] = set()
-            for item in source_root.iterdir():
-                zip_items.add(item.name)
+            # Collect what the zip contains (top-level names only)
+            zip_items: list[str] = [item.name for item in source_root.iterdir()]
 
-            # Stage copies first, then atomically swap into place
+            # Stage into a temp dir on the same filesystem so renames are atomic
             stage_dir = Path(tempfile.mkdtemp(dir=str(root.parent)))
             try:
+                # 1. Copy zip contents into staging
                 for name in zip_items:
                     src = source_root / name
                     staged = stage_dir / name
@@ -188,17 +147,30 @@ class ReleasesRoutes(Routes):
                         staged.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(src, staged)
 
+                # 2. Atomic swap: rename old → .bak, then rename staged → target
                 for name in zip_items:
                     src = stage_dir / name
                     dst = root / name
                     if dst.exists():
-                        if dst.is_dir():
-                            shutil.rmtree(dst)
+                        dst.rename(dst.with_suffix(dst.suffix + ".bak"))
+                    src.rename(dst)
+
+                # 3. Clean up .bak files
+                for name in zip_items:
+                    bak = (root / name).with_suffix((root / name).suffix + ".bak")
+                    if bak.exists():
+                        if bak.is_dir():
+                            shutil.rmtree(bak)
                         else:
-                            dst.unlink()
-                    if src.is_dir():
-                        shutil.move(str(src), str(dst))
-                    else:
-                        shutil.move(str(src), str(dst))
+                            bak.unlink()
+            except Exception:
+                # Roll back any completed swaps using .bak files
+                for name in zip_items:
+                    bak = (root / name).with_suffix((root / name).suffix + ".bak")
+                    if bak.exists():
+                        original = bak.with_suffix("")
+                        if not original.exists():
+                            bak.rename(original)
+                raise
             finally:
                 shutil.rmtree(stage_dir, ignore_errors=True)
