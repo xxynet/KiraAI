@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import inspect
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING, Literal
+from typing import Any, Optional, TYPE_CHECKING, Literal
 
 from ..provider import ProviderManager, LLMModelClient, EmbeddingModelClient
 from core.chat.session_manager import SessionManager
