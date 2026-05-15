@@ -140,7 +140,11 @@ class SubAgentRouter:
         subagent_id = self.parse_subagent_id(session)
         if not subagent_id:
             return
-        self._session_instances.pop(session, None)
+        for sid in list(self._session_instances.keys()):
+            session_map = self._session_instances[sid]
+            session_map.pop(subagent_id, None)
+            if not session_map:
+                self._session_instances.pop(sid, None)
         # app_scope 不随会话删除
 
     def cleanup_session(self, session_id: str):
