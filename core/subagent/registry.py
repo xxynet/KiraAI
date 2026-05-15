@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
-from .models import SubAgentConfig
+from .models import SubAgentConfig, ParentContextStrategy
 
 logger = get_logger("subagent", "magenta")
 
@@ -32,6 +32,11 @@ class SubAgentRegistry:
                 return
             for subagent_id, cfg in data.items():
                 try:
+                    try:
+                        context_strategy = ParentContextStrategy(cfg.get("context_strategy", "none"))
+                    except ValueError:
+                        context_strategy = ParentContextStrategy.NONE
+
                     config = SubAgentConfig(
                         subagent_id=subagent_id,
                         name=cfg.get("name", subagent_id),
@@ -41,7 +46,7 @@ class SubAgentRegistry:
                         tools=cfg.get("tools", []),
                         max_steps=cfg.get("max_steps", 3),
                         timeout=cfg.get("timeout", 60.0),
-                        context_strategy=cfg.get("context_strategy", "none"),
+                        context_strategy=context_strategy,
                         lifecycle=cfg.get("lifecycle", "on_demand"),
                         max_tool_loop=cfg.get("max_tool_loop", 2),
                         extra=cfg.get("extra", {}),
