@@ -61,16 +61,21 @@ class SubAgent:
                 # 内置 tool，通过 ToolSet 包装后注册
                 from core.utils.tool_utils import BaseTool
 
-                class DynamicTool(BaseTool):
-                    name = tool_name
-                    description = ""
-                    parameters = {}
+                def make_tool(name: str):
+                    class DynamicTool(BaseTool):
+                        name = name
+                        description = ""
+                        parameters = {}
 
-                    async def execute(self, event, **kwargs):
-                        func = self.llm_api.tools_functions.get(tool_name)
-                        if func:
-                            return await func(event, **kwargs)
-                        return {"error": f"Tool {tool_name} not found"}
+                        async def execute(self, event, **kwargs):
+                            func = self.llm_api.tools_functions.get(name)
+                            if func:
+                                return await func(event, **kwargs)
+                            return {"error": f"Tool {name} not found"}
+
+                    return DynamicTool
+
+                DynamicTool = make_tool(tool_name)
 
                 # 尝试从 tools_definitions 获取描述和参数
                 for td in self.llm_api.tools_definitions:
