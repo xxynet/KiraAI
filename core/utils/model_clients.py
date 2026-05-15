@@ -1,4 +1,4 @@
-from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
+from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError, NOT_GIVEN 
 import base64
 import time
 from typing import Optional
@@ -24,12 +24,14 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         try:
             start_time = time.perf_counter()
             temperature = self.model.model_config.get("temperature") if self.model.model_config else None
+            timeout = self.model.model_config.get("timeout") if self.model.model_config else None
             response = await client.chat.completions.create(
                 model=self.model.model_id,
                 messages=request.messages,
                 tools=request.tools if request.tools else None,
                 tool_choice=request.tool_choice if request.tool_choice != "none" else None,
-                temperature=temperature if temperature is not None else 1
+                temperature=temperature if temperature is not None else NOT_GIVEN,
+                timeout=timeout if timeout is not None else NOT_GIVEN
             )
             end_time = time.perf_counter()
             llm_resp = LLMResponse("")
