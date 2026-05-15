@@ -57,7 +57,7 @@ class SubAgentRegistry:
         except Exception as e:
             logger.error(f"Failed to load SubAgent configs: {e}")
 
-    def _save_configs(self):
+    def _save_configs(self) -> bool:
         try:
             SUBAGENT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
             data = {}
@@ -75,17 +75,29 @@ class SubAgentRegistry:
                     "max_tool_loop": cfg.max_tool_loop,
                     "extra": cfg.extra,
                 }
-            with open(SUBAGENT_CONFIG_PATH, "w", encoding="utf-8") as f:
+            temp_path = SUBAGENT_CONFIG_PATH.with_suffix(".tmp")
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            dir_fd = os.open(SUBAGENT_CONFIG_PATH.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+            os.replace(temp_path, SUBAGENT_CONFIG_PATH)
+            return True
         except Exception as e:
-            logger.error(f"Failed to save SubAgent configs: {e}")
+            logger.error(f"Failed to save SubAgent configs: {e}", exc_info=True)
+            return False
 
     def register(self, config: SubAgentConfig) -> bool:
         if not config.subagent_id:
             logger.error("SubAgent config must have a subagent_id")
             return False
         self._configs[config.subagent_id] = config
-        self._save_configs()
+        if not self._save_configs():
+            return False
         logger.info(f"Registered SubAgent '{config.subagent_id}' ({config.name})")
         return True
 
@@ -94,7 +106,8 @@ class SubAgentRegistry:
             return False
         del self._configs[subagent_id]
         self._instances.pop(subagent_id, None)
-        self._save_configs()
+        if not self._save_configs():
+            return False
         logger.info(f"Unregistered SubAgent '{subagent_id}'")
         return True
 
