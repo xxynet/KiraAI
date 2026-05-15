@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
@@ -19,7 +19,7 @@ class SubAgentRegistry:
 
     def __init__(self):
         self._configs: Dict[str, SubAgentConfig] = {}
-        self._instances: Dict[str, any] = {}  # app_scope 缓存
+        self._instances: Dict[str, Any] = {}  # app_scope 缓存
         self._load_configs()
 
     def _load_configs(self):
