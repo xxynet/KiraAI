@@ -3,6 +3,7 @@ from .registry import SubAgentRegistry
 from .subagent import SubAgent
 from .router import SubAgentRouter
 from .client import SubAgentClient
+from .tools import CallSubAgentTool, CreateSubAgentTool
 
 __all__ = [
     "SubAgentConfig",
@@ -13,4 +14,6 @@ __all__ = [
     "SubAgent",
     "SubAgentRouter",
     "SubAgentClient",
+    "CallSubAgentTool",
+    "CreateSubAgentTool",
 ]

@@ -186,6 +186,29 @@ class KiraLifecycle:
         )
         self.session_manager.register_subagent_router(self.subagent_router)
 
+        # ====== register SubAgent tools (call_subagent / create_subagent) ======
+        from core.subagent.client import SubAgentClient
+        from core.subagent.tools import CallSubAgentTool, CreateSubAgentTool
+
+        subagent_client = SubAgentClient(self.subagent_router)
+
+        call_tool = CallSubAgentTool(subagent_client, self.subagent_registry)
+        self.llm_api.register_tool(
+            name=call_tool.name,
+            description=call_tool.description,
+            parameters=call_tool.parameters,
+            func=call_tool.execute,
+        )
+
+        available_tools = list(self.llm_api.tools_functions.keys())
+        create_tool = CreateSubAgentTool(self.subagent_registry, available_tools)
+        self.llm_api.register_tool(
+            name=create_tool.name,
+            description=create_tool.description,
+            parameters=create_tool.parameters,
+            func=create_tool.execute,
+        )
+
         self.plugin_context = PluginContext(
             db=self.db_service,
             config=self.kira_config,
