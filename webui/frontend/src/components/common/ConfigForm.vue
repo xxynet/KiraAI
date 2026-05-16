@@ -50,11 +50,12 @@
         <input
           v-else-if="isNumberLike(field.type)"
           type="number"
-          :value="fieldValue(key, field) ?? ''"
-          :step="field.type === 'integer' ? '1' : 'any'"
+          :value="drafts[key as string] ?? ''"
+          :step="field.type === 'integer' ? '1' : '0.01'"
           class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
           :placeholder="hintFor(field)"
-          @input="updateField(key as string, parseNumberInput(($event.target as HTMLInputElement).value, field))"
+          @input="drafts[key as string] = ($event.target as HTMLInputElement).value"
+          @blur="commitNumberDraft(key as string, field)"
         >
 
         <!-- Sensitive: password with reveal -->
@@ -108,13 +109,11 @@
           <textarea
             :value="drafts[key as string]"
             rows="5"
-            class="w-full border rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-            :class="draftErrors[key as string] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'"
+            class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             :placeholder="hintFor(field)"
             @input="onDraftInput(key as string, ($event.target as HTMLTextAreaElement).value, field)"
             @blur="onDraftBlur(key as string, field)"
           />
-          <p v-if="draftErrors[key as string]" class="text-xs text-red-500 mt-1">{{ draftErrors[key as string] }}</p>
         </div>
 
         <!-- String fallback -->
@@ -155,7 +154,6 @@ const { t } = useI18n()
 const { localize } = useLocalized()
 
 const drafts = reactive<Record<string, string>>({})
-const draftErrors = reactive<Record<string, string>>({})
 const sensitiveVisible = reactive<Record<string, boolean>>({})
 const modelSelectOptions = reactive<Record<string, { value: string; label: string }[]>>({})
 
@@ -308,11 +306,13 @@ function initDrafts() {
     const field = schema[key]
     if (!field) continue
     const val = fieldValue(key, field)
-    if (isMonacoLike(field.type)) {
+    if (isNumberLike(field.type)) {
+      drafts[key] = val !== undefined && val !== null ? String(val) : ''
+      lastSynced[key] = drafts[key]
+    } else if (isMonacoLike(field.type)) {
       const serialized = field.type === 'json' && typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val ?? '')
       drafts[key] = serialized
       lastSynced[key] = serialized
-      delete draftErrors[key]
     } else if (isListLike(field.type)) {
       const serialized = Array.isArray(val) ? val.join('\n') : String(val ?? '')
       drafts[key] = serialized
@@ -321,7 +321,6 @@ function initDrafts() {
       const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
       drafts[key] = serialized
       lastSynced[key] = serialized
-      delete draftErrors[key]
     }
   }
 }
@@ -338,12 +337,17 @@ watch(() => props.modelValue, (next) => {
     const field = schema[key]
     if (!field) continue
     const val = next[key] !== undefined ? next[key] : field.default
-    if (isMonacoLike(field.type)) {
+    if (isNumberLike(field.type)) {
+      const serialized = val !== undefined && val !== null ? String(val) : ''
+      if (serialized !== lastSynced[key]) {
+        drafts[key] = serialized
+        lastSynced[key] = serialized
+      }
+    } else if (isMonacoLike(field.type)) {
       const serialized = field.type === 'json' && typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val ?? '')
       if (serialized !== lastSynced[key]) {
         drafts[key] = serialized
         lastSynced[key] = serialized
-        delete draftErrors[key]
       }
     } else if (isListLike(field.type)) {
       const serialized = Array.isArray(val) ? val.join('\n') : String(val ?? '')
@@ -356,7 +360,6 @@ watch(() => props.modelValue, (next) => {
       if (serialized !== lastSynced[key]) {
         drafts[key] = serialized
         lastSynced[key] = serialized
-        delete draftErrors[key]
       }
     }
   }
@@ -366,33 +369,17 @@ function updateField(key: string, value: any) {
   emit('update:modelValue', { ...props.modelValue, [key]: value })
 }
 
-function parseNumberInput(raw: string, field: any): any {
-  if (raw === '' || raw === null || raw === undefined) {
-    return field?.default ?? undefined
-  }
-  const parsed = field?.type === 'integer' ? parseInt(raw, 10) : parseFloat(raw)
-  if (Number.isNaN(parsed)) {
-    return field?.default ?? undefined
-  }
-  return parsed
-}
-
 function updateMonacoDraft(key: string, val: string, type: string) {
   drafts[key] = val
   if (type === 'json') {
     try {
       const parsed = JSON.parse(val)
-      delete draftErrors[key]
-      // Only advance lastSynced after a successful parse + emit, otherwise
-      // an external watcher would treat the persisted value as a divergent
-      // update and clobber the in-progress edit.
       lastSynced[key] = val
       emit('update:modelValue', { ...props.modelValue, [key]: parsed })
-    } catch (e: any) {
-      draftErrors[key] = t('configform.invalid_json')
+    } catch {
+      // Keep draft as-is; validation deferred to save
     }
   } else {
-    delete draftErrors[key]
     lastSynced[key] = val
     emit('update:modelValue', { ...props.modelValue, [key]: val })
   }
@@ -409,15 +396,23 @@ function onListDraftBlur(key: string) {
   emit('update:modelValue', { ...props.modelValue, [key]: arr })
 }
 
+function commitNumberDraft(key: string, field: any) {
+  const raw = drafts[key]
+  const empty = raw === '' || raw === null || raw === undefined
+  const parsed = empty ? null : Number(raw)
+  if (!empty) {
+    if (!Number.isFinite(parsed)) return
+    if (field?.type === 'integer' && !Number.isInteger(parsed)) return
+  }
+  lastSynced[key] = raw ?? ''
+  emit('update:modelValue', { ...props.modelValue, [key]: parsed })
+}
+
 function onDraftInput(key: string, val: string, field: any) {
   drafts[key] = val
-  delete draftErrors[key]
   try {
     const parsed = JSON.parse(val)
     if (isValidType(parsed, field.type)) {
-      // Same rationale as updateMonacoDraft: only sync after a successful
-      // emit so an invalid intermediate draft doesn't get treated as the
-      // canonical value.
       lastSynced[key] = val
       emit('update:modelValue', { ...props.modelValue, [key]: parsed })
     }
@@ -428,21 +423,16 @@ function onDraftInput(key: string, val: string, field: any) {
 
 function onDraftBlur(key: string, field: any) {
   if (!drafts[key] || !drafts[key].trim()) {
-    delete draftErrors[key]
-    const cleared = emptyValueFor(field.type)
-    emit('update:modelValue', { ...props.modelValue, [key]: cleared })
+    emit('update:modelValue', { ...props.modelValue, [key]: null })
     return
   }
   try {
     const parsed = JSON.parse(drafts[key])
-    if (!isValidType(parsed, field.type)) {
-      draftErrors[key] = t('configform.expected_type', { type: field.type })
-    } else {
-      delete draftErrors[key]
+    if (isValidType(parsed, field.type)) {
       emit('update:modelValue', { ...props.modelValue, [key]: parsed })
     }
   } catch {
-    draftErrors[key] = t('configform.invalid_json')
+    // Keep draft as-is; validation deferred to save
   }
 }
 
@@ -456,35 +446,71 @@ function isValidType(parsed: any, type: string): boolean {
   return true
 }
 
-function emptyValueFor(type: string): any {
-  if (type === 'array' || type === 'list') return []
-  if (type === 'object' || type === 'json') return {}
-  return null
-}
-
 function toggleSensitive(key: string) {
   sensitiveVisible[key] = !sensitiveVisible[key]
 }
 
 function validate(): { valid: boolean; message?: string } {
   const schema = effectiveSchema.value
+  const result = { ...props.modelValue }
+
   for (const key in schema) {
     const field = schema[key]
     if (!field) continue
+    const label = labelFor(field, key)
+
+    // Number / integer / float
+    if (isNumberLike(field.type)) {
+      const raw = drafts[key]
+      if (raw === '' || raw === undefined) {
+        result[key] = null
+      } else {
+        const parsed = Number(raw)
+        if (!Number.isFinite(parsed)) {
+          return { valid: false, message: `${label}: ${t('configform.invalid_number')}` }
+        }
+        if (field.type === 'integer' && !Number.isInteger(parsed)) {
+          return { valid: false, message: `${label}: ${t('configform.invalid_number')}` }
+        }
+        result[key] = parsed
+      }
+    }
+
+    // Monaco JSON
     if (isMonacoLike(field.type) && field.type === 'json') {
       const val = drafts[key]
-      if (val && val.trim()) {
+      if (!val || !val.trim()) {
+        result[key] = null
+      } else {
         try {
-          JSON.parse(val)
-        } catch (e: any) {
-          return { valid: false, message: `${labelFor(field, key)}: ${t('configform.invalid_json')}` }
+          result[key] = JSON.parse(val)
+        } catch {
+          return { valid: false, message: `${label}: ${t('configform.invalid_json')}` }
         }
       }
     }
-    if (draftErrors[key]) {
-      return { valid: false, message: `${labelFor(field, key)}: ${draftErrors[key]}` }
+
+    // Object / array
+    if (isJsonLike(field.type)) {
+      const val = drafts[key]
+      if (!val || !val.trim()) {
+        result[key] = null
+      } else {
+        try {
+          const parsed = JSON.parse(val)
+          if (!isValidType(parsed, field.type)) {
+            return { valid: false, message: `${label}: ${t('configform.expected_type', { type: field.type })}` }
+          }
+          result[key] = parsed
+        } catch {
+          return { valid: false, message: `${label}: ${t('configform.invalid_json')}` }
+        }
+      }
     }
   }
+
+  // All valid — commit drafts to modelValue so parent reads latest values
+  emit('update:modelValue', result)
   return { valid: true }
 }
 
