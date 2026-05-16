@@ -151,10 +151,20 @@ class SubAgent:
             context_messages = self._prepare_context(request)
             system_prompts = self._build_system_prompt()
 
+            allowed_tool_names = {t.name for t in tool_set}
+            filtered_tools_definitions = [
+                td for td in self.llm_api.tools_definitions
+                if td.get("function", {}).get("name") in allowed_tool_names
+            ]
+            filtered_tool_funcs = {
+                name: func for name, func in self.llm_api.tools_functions.items()
+                if name in allowed_tool_names
+            }
+
             llm_request = LLMRequest(
                 messages=context_messages[:],
-                tools=deepcopy(self.llm_api.tools_definitions),
-                tool_funcs=self.llm_api.tools_functions,
+                tools=deepcopy(filtered_tools_definitions),
+                tool_funcs=filtered_tool_funcs,
                 tool_set=tool_set,
             )
             llm_request.system_prompt.extend(system_prompts)
