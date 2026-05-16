@@ -398,12 +398,14 @@ function onListDraftBlur(key: string) {
 
 function commitNumberDraft(key: string, field: any) {
   const raw = drafts[key]
-  if (raw === '' || raw === null || raw === undefined) return
-  const parsed = field?.type === 'integer' ? parseInt(raw, 10) : parseFloat(raw)
-  if (!Number.isNaN(parsed)) {
-    lastSynced[key] = raw
-    emit('update:modelValue', { ...props.modelValue, [key]: parsed })
+  const empty = raw === '' || raw === null || raw === undefined
+  const parsed = empty ? null : Number(raw)
+  if (!empty) {
+    if (!Number.isFinite(parsed)) return
+    if (field?.type === 'integer' && !Number.isInteger(parsed)) return
   }
+  lastSynced[key] = raw ?? ''
+  emit('update:modelValue', { ...props.modelValue, [key]: parsed })
 }
 
 function onDraftInput(key: string, val: string, field: any) {
@@ -420,7 +422,10 @@ function onDraftInput(key: string, val: string, field: any) {
 }
 
 function onDraftBlur(key: string, field: any) {
-  if (!drafts[key] || !drafts[key].trim()) return
+  if (!drafts[key] || !drafts[key].trim()) {
+    emit('update:modelValue', { ...props.modelValue, [key]: null })
+    return
+  }
   try {
     const parsed = JSON.parse(drafts[key])
     if (isValidType(parsed, field.type)) {
@@ -457,9 +462,14 @@ function validate(): { valid: boolean; message?: string } {
     // Number / integer / float
     if (isNumberLike(field.type)) {
       const raw = drafts[key]
-      if (raw !== undefined && raw !== '') {
-        const parsed = field.type === 'integer' ? parseInt(raw, 10) : parseFloat(raw)
-        if (Number.isNaN(parsed)) {
+      if (raw === '' || raw === undefined) {
+        result[key] = null
+      } else {
+        const parsed = Number(raw)
+        if (!Number.isFinite(parsed)) {
+          return { valid: false, message: `${label}: ${t('configform.invalid_number')}` }
+        }
+        if (field.type === 'integer' && !Number.isInteger(parsed)) {
           return { valid: false, message: `${label}: ${t('configform.invalid_number')}` }
         }
         result[key] = parsed
@@ -469,7 +479,9 @@ function validate(): { valid: boolean; message?: string } {
     // Monaco JSON
     if (isMonacoLike(field.type) && field.type === 'json') {
       const val = drafts[key]
-      if (val && val.trim()) {
+      if (!val || !val.trim()) {
+        result[key] = null
+      } else {
         try {
           result[key] = JSON.parse(val)
         } catch {
@@ -481,7 +493,9 @@ function validate(): { valid: boolean; message?: string } {
     // Object / array
     if (isJsonLike(field.type)) {
       const val = drafts[key]
-      if (val && val.trim()) {
+      if (!val || !val.trim()) {
+        result[key] = null
+      } else {
         try {
           const parsed = JSON.parse(val)
           if (!isValidType(parsed, field.type)) {
