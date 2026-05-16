@@ -157,7 +157,7 @@ function openDropdown() {
     if (scrollAncestor) {
       scrollAncestor.addEventListener('scroll', closeDropdown, { passive: true })
     }
-    window.addEventListener('scroll', closeDropdown, true)
+    window.addEventListener('scroll', handleWindowScroll, true)
     window.addEventListener('resize', adjustPosition)
     document.addEventListener('click', handleClickOutside)
   }, 0)
@@ -181,7 +181,7 @@ function closeDropdown() {
     scrollAncestor.removeEventListener('scroll', closeDropdown)
     scrollAncestor = null
   }
-  window.removeEventListener('scroll', closeDropdown, true)
+  window.removeEventListener('scroll', handleWindowScroll, true)
   window.removeEventListener('resize', adjustPosition)
 
   // Keep position fixed at last known location so the close animation plays
@@ -233,6 +233,12 @@ function scrollActiveIntoView() {
   if (!optionsRef.value) return
   const el = optionsRef.value.querySelector<HTMLElement>(`#${selectId}-opt-${activeIndex.value}`)
   el?.scrollIntoView({ block: 'nearest' })
+}
+
+function handleWindowScroll(event: Event) {
+  // Ignore scrolls originating from inside the dropdown itself
+  if (optionsRef.value?.contains(event.target as Node)) return
+  closeDropdown()
 }
 
 function handleClickOutside(event: MouseEvent) {

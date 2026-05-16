@@ -651,5 +651,6 @@ export default {
   configform: {
     invalid_json: 'Invalid JSON',
     expected_type: 'Expected {type}',
+    invalid_number: 'Please enter a valid number',
   },
 }

@@ -651,5 +651,6 @@ export default {
   configform: {
     invalid_json: 'JSON 格式无效',
     expected_type: '期望类型：{type}',
+    invalid_number: '请输入有效的数字',
   },
 }

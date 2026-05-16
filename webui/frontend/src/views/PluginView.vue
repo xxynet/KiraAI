@@ -552,7 +552,7 @@
             </svg>
           </div>
           <div v-else-if="pluginConfigSchema">
-            <ConfigForm v-model="pluginConfigValues" :schema="pluginConfigSchema" />
+            <ConfigForm ref="configFormRef" v-model="pluginConfigValues" :schema="pluginConfigSchema" />
           </div>
           <div v-else class="text-center py-8 text-gray-400">
             {{ $t('plugin.no_config') }}
@@ -692,6 +692,7 @@ const pluginConfigSchema = ref<any>(null)
 const pluginConfigValues = ref<Record<string, any>>({})
 const configPluginId = ref('')
 const configPluginName = ref('')
+const configFormRef = ref<InstanceType<typeof ConfigForm> | null>(null)
 const configLoading = ref(false)
 const savingConfig = ref(false)
 
@@ -823,6 +824,11 @@ async function savePluginConfig() {
   // Posting {} back would wipe any legitimately-managed config for a plugin
   // that has no schema, so refuse to save instead of overwriting.
   if (!pluginConfigSchema.value) return
+  const validateRes = configFormRef.value?.validate()
+  if (validateRes && !validateRes.valid) {
+    notify(validateRes.message!, 'error')
+    return
+  }
   savingConfig.value = true
   try {
     await updatePluginConfig(configPluginId.value, { config: pluginConfigValues.value })
