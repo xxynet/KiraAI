@@ -22,8 +22,12 @@ export function togglePlugin(pluginId: string, enabled: boolean) {
   return apiClient.post(`/plugins/${encodeURIComponent(pluginId)}/enabled`, { enabled })
 }
 
-export function deletePlugin(pluginId: string) {
-  return apiClient.delete(`/plugins/${encodeURIComponent(pluginId)}`)
+export function deletePlugin(pluginId: string, options?: { deleteConfig?: boolean; deleteData?: boolean }) {
+  const params = new URLSearchParams()
+  if (options?.deleteConfig) params.set('delete_config', 'true')
+  if (options?.deleteData) params.set('delete_data', 'true')
+  const qs = params.toString()
+  return apiClient.delete(`/plugins/${encodeURIComponent(pluginId)}${qs ? '?' + qs : ''}`)
 }
 
 export function installFromGithub(data: PluginInstallGithubRequest) {

@@ -336,6 +336,8 @@ export default {
     uninstall_confirm: '确定要卸载此插件吗？',
     uninstall_success: '插件卸载成功',
     uninstall_failed: '卸载插件失败',
+    delete_config: '删除插件配置',
+    delete_data: '删除插件数据',
     file_required: '请上传插件文件',
     config_load_failed: '加载插件配置失败',
     load_failed: '加载插件列表失败',

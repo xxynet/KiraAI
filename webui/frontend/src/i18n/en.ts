@@ -336,6 +336,8 @@ export default {
     uninstall_confirm: 'Are you sure you want to uninstall this plugin?',
     uninstall_success: 'Plugin uninstalled successfully',
     uninstall_failed: 'Failed to uninstall plugin',
+    delete_config: 'Delete plugin config',
+    delete_data: 'Delete plugin data',
     file_required: 'Plugin file is required',
     config_load_failed: 'Failed to load plugin configuration',
     load_failed: 'Failed to load plugins',
