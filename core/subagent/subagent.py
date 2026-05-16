@@ -11,6 +11,8 @@ from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewM
 from core.agent.tool import ToolSet
 from core.prompt_manager import Prompt
 from core.provider.llm_model import LLMRequest
+from core.chat.message_utils import KiraMessageBatchEvent
+from core.chat.session import Session
 
 from .models import SubAgentConfig, SubAgentRequest, SubAgentResponse, ParentContextStrategy
 
@@ -40,7 +42,7 @@ class SubAgent:
 
         self.session_id = None
         self._memory: list = []
-        self._lock = False
+        self._lock = asyncio.Lock()
 
     def _get_model_client(self) -> Optional[LLMModelClient]:
         if self.config.model_uuid:
@@ -125,14 +127,17 @@ class SubAgent:
         return messages
 
     async def execute(self, request: SubAgentRequest) -> SubAgentResponse:
-        if self._lock:
+        if self._lock.locked():
             return SubAgentResponse(
                 correlation_id=request.correlation_id,
                 status="cancelled",
                 err="SubAgent is busy",
             )
 
-        self._lock = True
+        async with self._lock:
+            return await self._do_execute(request)
+
+    async def _do_execute(self, request: SubAgentRequest) -> SubAgentResponse:
         start_time = time.time()
         correlation_id = request.correlation_id
 
@@ -152,7 +157,7 @@ class SubAgent:
             context_messages = self._prepare_context(request)
             system_prompts = self._build_system_prompt()
 
-            allowed_tool_names = {t.name for t in tool_set}
+            allowed_tool_names = {t.name for t in tool_set.tools}
             filtered_tools_definitions = [
                 td for td in self.llm_api.tools_definitions
                 if td.get("function", {}).get("name") in allowed_tool_names
@@ -177,8 +182,20 @@ class SubAgent:
             new_memory = NewMemory()
             new_memory.user(request.content)
 
+            # 构造最小 stub event，满足 AgentExecutor 对 event.sid / event.is_stopped 的访问
+            stub_session = Session(
+                adapter_name="subagent",
+                session_type="dm",
+                session_id=correlation_id,
+            )
+            stub_event = KiraMessageBatchEvent(
+                message_types=[],
+                timestamp=int(time.time()),
+                session=stub_session,
+            )
+
             agent_ctx = AgentExecutionContext(
-                event=None,
+                event=stub_event,
                 request=llm_request,
                 llm_model=llm_model,
                 new_memory=new_memory,
@@ -194,30 +211,33 @@ class SubAgent:
 
             timeout = self.config.timeout
             try:
-                async with asyncio.timeout(timeout):
-                    async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
-                        llm_resp = step.llm_response
-                        if not llm_resp:
-                            has_error = True
-                            error_msg = "Empty LLM response"
-                            break
+                steps = await asyncio.wait_for(
+                    self._run_agent_executor(agent_executor, agent_ctx, max_agent_steps),
+                    timeout=timeout,
+                )
+                for step in steps:
+                    llm_resp = step.llm_response
+                    if not llm_resp:
+                        has_error = True
+                        error_msg = "Empty LLM response"
+                        break
 
-                        if llm_resp.input_tokens:
-                            total_input_tokens += llm_resp.input_tokens
-                        if llm_resp.output_tokens:
-                            total_output_tokens += llm_resp.output_tokens
+                    if llm_resp.input_tokens:
+                        total_input_tokens += llm_resp.input_tokens
+                    if llm_resp.output_tokens:
+                        total_output_tokens += llm_resp.output_tokens
 
-                        if step.state == "error":
-                            has_error = True
-                            error_msg = step.err or "Unknown agent error"
-                            break
+                    if step.state == "error":
+                        has_error = True
+                        error_msg = step.err or "Unknown agent error"
+                        break
 
-                        if llm_resp.text_response:
-                            final_text = llm_resp.text_response
-                            final_reasoning = llm_resp.reasoning_content or ""
+                    if llm_resp.text_response:
+                        final_text = llm_resp.text_response
+                        final_reasoning = llm_resp.reasoning_content or ""
 
-                        if not step.has_tool_calls or step.is_final:
-                            break
+                    if not step.has_tool_calls or step.is_final:
+                        break
             except asyncio.TimeoutError:
                 time_consumed = round(time.time() - start_time, 3)
                 logger.warning(
@@ -274,8 +294,6 @@ class SubAgent:
                 err=str(e),
                 metadata={"time_consumed": round(time.time() - start_time, 3)},
             )
-        finally:
-            self._lock = False
 
     def fetch_memory(self) -> list:
         return list(self._memory)
@@ -296,3 +314,10 @@ class SubAgent:
             self._memory.extend(new_chunk)
         else:
             self._memory.append(new_chunk)
+
+    async def _run_agent_executor(self, agent_executor, agent_ctx, max_agent_steps):
+        """收集 agent_executor.run 的全部 step，供外部加超时控制"""
+        steps = []
+        async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
+            steps.append(step)
+        return steps

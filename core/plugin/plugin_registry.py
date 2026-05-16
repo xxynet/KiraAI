@@ -562,7 +562,7 @@ class PluginManager:
                     max_tool_loop=meta.get("max_tool_loop", 2),
                     extra=meta.get("extra", {}),
                 )
-                registry.register(cfg)
+                registry.register(cfg, persist=False)
                 registered_ids.append(cfg.subagent_id)
             except Exception as e:
                 logger.error(f"Failed to register SubAgent from {plugin_id}: {e}")

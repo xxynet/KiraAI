@@ -248,6 +248,6 @@ class SessionManager:
             logger.info(f"Memory deleted for subagent session {session}")
             return
         with self.memory_lock:
-            self.chat_memory.pop(session, None)
+            self.chat_memory.pop(session)
             self._save_memory(self.chat_memory, self.chat_memory_path)
         logger.info(f"Memory deleted for {session}")

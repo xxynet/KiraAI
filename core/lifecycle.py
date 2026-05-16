@@ -174,6 +174,18 @@ class KiraLifecycle:
         self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
 
         # ====== init plugin system ======
+        # ====== init SubAgent registry & router ======
+        from core.subagent import SubAgentRegistry, SubAgentRouter
+
+        self.subagent_registry = SubAgentRegistry()
+        self.subagent_router = SubAgentRouter(
+            registry=self.subagent_registry,
+            provider_mgr=self.provider_manager,
+            llm_api=self.llm_api,
+            prompt_manager=self.prompt_manager,
+        )
+        self.session_manager.register_subagent_router(self.subagent_router)
+
         self.plugin_context = PluginContext(
             db=self.db_service,
             config=self.kira_config,
@@ -184,7 +196,8 @@ class KiraLifecycle:
             persona_mgr=self.persona_manager,
             sticker_manager=self.sticker_manager,
             session_mgr=self.session_manager,
-            message_processor=self.message_processor
+            message_processor=self.message_processor,
+            subagent_registry=self.subagent_registry,
         )
 
         self.plugin_manager = PluginManager(self.plugin_context)

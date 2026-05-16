@@ -91,12 +91,12 @@ class SubAgentRegistry:
             logger.error(f"Failed to save SubAgent configs: {e}", exc_info=True)
             return False
 
-    def register(self, config: SubAgentConfig) -> bool:
+    def register(self, config: SubAgentConfig, persist: bool = True) -> bool:
         if not config.subagent_id:
             logger.error("SubAgent config must have a subagent_id")
             return False
         self._configs[config.subagent_id] = config
-        if not self._save_configs():
+        if persist and not self._save_configs():
             return False
         logger.info(f"Registered SubAgent '{config.subagent_id}' ({config.name})")
         return True
