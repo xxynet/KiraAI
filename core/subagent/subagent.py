@@ -37,7 +37,7 @@ class SubAgent:
         self.llm_api = llm_api
         self.prompt_manager = prompt_manager
 
-        self.session_id = f"sub:dm:{config.subagent_id}"
+        self.session_id = None
         self._memory: list = []
         self._lock = False
 
@@ -181,29 +181,48 @@ class SubAgent:
             has_error = False
             error_msg = ""
 
-            async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
-                llm_resp = step.llm_response
-                if not llm_resp:
-                    has_error = True
-                    error_msg = "Empty LLM response"
-                    break
+            timeout = self.config.timeout
+            try:
+                async with asyncio.timeout(timeout):
+                    async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
+                        llm_resp = step.llm_response
+                        if not llm_resp:
+                            has_error = True
+                            error_msg = "Empty LLM response"
+                            break
 
-                if llm_resp.input_tokens:
-                    total_input_tokens += llm_resp.input_tokens
-                if llm_resp.output_tokens:
-                    total_output_tokens += llm_resp.output_tokens
+                        if llm_resp.input_tokens:
+                            total_input_tokens += llm_resp.input_tokens
+                        if llm_resp.output_tokens:
+                            total_output_tokens += llm_resp.output_tokens
 
-                if step.state == "error":
-                    has_error = True
-                    error_msg = step.err or "Unknown agent error"
-                    break
+                        if step.state == "error":
+                            has_error = True
+                            error_msg = step.err or "Unknown agent error"
+                            break
 
-                if llm_resp.text_response:
-                    final_text = llm_resp.text_response
-                    final_reasoning = llm_resp.reasoning_content or ""
+                        if llm_resp.text_response:
+                            final_text = llm_resp.text_response
+                            final_reasoning = llm_resp.reasoning_content or ""
 
-                if not step.has_tool_calls or step.is_final:
-                    break
+                        if not step.has_tool_calls or step.is_final:
+                            break
+            except asyncio.TimeoutError:
+                time_consumed = round(time.time() - start_time, 3)
+                logger.warning(
+                    f"SubAgent '{self.config.subagent_id}' execution timed out after {timeout}s "
+                    f"(correlation_id={correlation_id})"
+                )
+                return SubAgentResponse(
+                    correlation_id=correlation_id,
+                    status="timeout",
+                    err=f"SubAgent execution timed out after {timeout}s",
+                    metadata={
+                        "time_consumed": time_consumed,
+                        "input_tokens": total_input_tokens,
+                        "output_tokens": total_output_tokens,
+                    },
+                )
 
             # 保存记忆
             self._memory.extend(new_memory.memory_list)

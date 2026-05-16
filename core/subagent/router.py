@@ -60,13 +60,21 @@ class SubAgentRouter:
     def is_subagent_session(self, session: str) -> bool:
         return isinstance(session, str) and session.startswith("sub:dm:")
 
-    def parse_subagent_id(self, session: str) -> Optional[str]:
+    def parse_subagent_session(self, session: str) -> tuple[Optional[str], Optional[str]]:
+        """Parse a subagent session string into (parent_session_id, subagent_id).
+
+        Expected format: sub:dm:<parent_session>:<subagent_id>
+        """
         if not self.is_subagent_session(session):
-            return None
-        parts = session.split(":", maxsplit=2)
-        if len(parts) >= 3:
-            return parts[2]
-        return None
+            return None, None
+        parts = session.split(":", maxsplit=3)
+        if len(parts) >= 4:
+            return parts[2], parts[3]
+        return None, None
+
+    def parse_subagent_id(self, session: str) -> Optional[str]:
+        _, subagent_id = self.parse_subagent_session(session)
+        return subagent_id
 
     async def dispatch(self, request: SubAgentRequest, session_id: Optional[str] = None) -> SubAgentResponse:
         """同步调用：派发请求到对应 SubAgent 并等待结果"""
@@ -90,15 +98,14 @@ class SubAgentRouter:
         return await inst.execute(request)
 
     def fetch_memory(self, session: str) -> list:
-        subagent_id = self.parse_subagent_id(session)
+        parent_session_id, subagent_id = self.parse_subagent_session(session)
         if not subagent_id:
             return []
         config = self.registry.get_config(subagent_id)
         if not config:
             return []
-        # 尝试从 session 或 app 缓存获取实例
-        for session_map in self._session_instances.values():
-            inst = session_map.get(subagent_id)
+        if parent_session_id and parent_session_id in self._session_instances:
+            inst = self._session_instances[parent_session_id].get(subagent_id)
             if inst:
                 return inst.fetch_memory()
         inst = self._app_instances.get(subagent_id)
@@ -107,21 +114,19 @@ class SubAgentRouter:
         return []
 
     def _get_instance_for_memory(self, session: str):
-        subagent_id = self.parse_subagent_id(session)
+        parent_session_id, subagent_id = self.parse_subagent_session(session)
         if not subagent_id:
             return None
         config = self.registry.get_config(subagent_id)
         if not config:
             return None
-        # 优先查找已有实例
-        for session_map in self._session_instances.values():
-            inst = session_map.get(subagent_id)
+        if parent_session_id and parent_session_id in self._session_instances:
+            inst = self._session_instances[parent_session_id].get(subagent_id)
             if inst:
                 return inst
         inst = self._app_instances.get(subagent_id)
         if inst:
             return inst
-        # 如果没有实例，根据生命周期创建
         if config.lifecycle == "app_scope":
             return self._get_or_create_instance(config)
         return None
@@ -137,14 +142,14 @@ class SubAgentRouter:
             inst.update_memory(new_chunk)
 
     def delete_session(self, session: str):
-        subagent_id = self.parse_subagent_id(session)
+        parent_session_id, subagent_id = self.parse_subagent_session(session)
         if not subagent_id:
             return
-        for sid in list(self._session_instances.keys()):
-            session_map = self._session_instances[sid]
+        if parent_session_id and parent_session_id in self._session_instances:
+            session_map = self._session_instances[parent_session_id]
             session_map.pop(subagent_id, None)
             if not session_map:
-                self._session_instances.pop(sid, None)
+                self._session_instances.pop(parent_session_id, None)
         # app_scope 不随会话删除
 
     def cleanup_session(self, session_id: str):

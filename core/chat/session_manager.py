@@ -141,11 +141,23 @@ class SessionManager:
             return session_info_list
 
         if self._is_subagent_session(session):
+            parts = session.split(":", maxsplit=3)
+            if len(parts) >= 4:
+                parent_session = parts[2]
+                subagent_id = parts[3]
+                return Session(
+                    adapter_name=parts[0],
+                    session_type=parts[1],
+                    session_id=f"{parent_session}:{subagent_id}",
+                    session_title="",
+                    session_description="",
+                    timestamp=None
+                )
             parts = session.split(":", maxsplit=2)
             return Session(
                 adapter_name=parts[0],
                 session_type=parts[1],
-                session_id=parts[2],
+                session_id=parts[2] if len(parts) >= 3 else "",
                 session_title="",
                 session_description="",
                 timestamp=None
