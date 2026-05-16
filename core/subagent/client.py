@@ -19,6 +19,7 @@ class SubAgentClient:
         self.router = router
         self._call_depth = 0
         self._max_depth = 1  # 禁止嵌套调用
+        self._depth_lock = asyncio.Lock()
 
     def _generate_correlation_id(self) -> str:
         return f"sub_{uuid.uuid4().hex[:12]}_{int(time.time() * 1000)}"
@@ -33,12 +34,14 @@ class SubAgentClient:
         timeout: Optional[float] = None,
     ) -> SubAgentResponse:
         """同步调用 SubAgent，等待结果返回（带超时）"""
-        if self._call_depth >= self._max_depth:
-            return SubAgentResponse(
-                correlation_id="",
-                status="cancelled",
-                err="Nested SubAgent calls are not allowed",
-            )
+        async with self._depth_lock:
+            if self._call_depth >= self._max_depth:
+                return SubAgentResponse(
+                    correlation_id="",
+                    status="cancelled",
+                    err="Nested SubAgent calls are not allowed",
+                )
+            self._call_depth += 1
 
         config = self.router.registry.get_config(subagent_id)
         if not config:
@@ -61,7 +64,6 @@ class SubAgentClient:
 
         effective_timeout = timeout or config.timeout
 
-        self._call_depth += 1
         try:
             result = await asyncio.wait_for(
                 self.router.dispatch(request, session_id=session_id),
@@ -83,7 +85,8 @@ class SubAgentClient:
                 err=str(e),
             )
         finally:
-            self._call_depth -= 1
+            async with self._depth_lock:
+                self._call_depth -= 1
 
     async def call_with_retry(
         self,

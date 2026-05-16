@@ -27,6 +27,13 @@ class SubAgentConfig:
     max_tool_loop: int = 2
     extra: dict = field(default_factory=dict)
 
+    def __post_init__(self):
+        if isinstance(self.context_strategy, str):
+            try:
+                self.context_strategy = ParentContextStrategy(self.context_strategy)
+            except ValueError:
+                self.context_strategy = ParentContextStrategy.NONE
+
 
 @dataclass
 class SubAgentRequest:

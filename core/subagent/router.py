@@ -64,13 +64,20 @@ class SubAgentRouter:
         """Parse a subagent session string into (parent_session_id, subagent_id).
 
         Expected format: sub:dm:<parent_session>:<subagent_id>
+        subagent_id must not contain ':' to avoid ambiguity.
         """
         if not self.is_subagent_session(session):
             return None, None
         parts = session.split(":", maxsplit=3)
-        if len(parts) >= 4:
-            return parts[2], parts[3]
-        return None, None
+        if len(parts) < 4:
+            return None, None
+        parent_session_id = parts[2]
+        subagent_id = parts[3]
+        # subagent_id 含 ':' 会导致后续解析错位，直接拒绝
+        if ":" in subagent_id:
+            logger.warning(f"Invalid subagent_id contains ':' in session string: {session}")
+            return None, None
+        return parent_session_id, subagent_id
 
     def parse_subagent_id(self, session: str) -> Optional[str]:
         _, subagent_id = self.parse_subagent_session(session)

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import time
 import uuid
-from copy import deepcopy
 from typing import Optional, TYPE_CHECKING
 
 from core.logging_manager import get_logger
@@ -13,6 +13,7 @@ from core.prompt_manager import Prompt
 from core.provider.llm_model import LLMRequest
 from core.chat.message_utils import KiraMessageBatchEvent
 from core.chat.session import Session
+from core.adapter.adapter_info import AdapterInfo
 
 from .models import SubAgentConfig, SubAgentRequest, SubAgentResponse, ParentContextStrategy
 
@@ -46,13 +47,23 @@ class SubAgent:
 
     def _get_model_client(self) -> Optional[LLMModelClient]:
         if self.config.model_uuid:
+            parts = self.config.model_uuid.split(":")
+            if len(parts) < 2:
+                logger.error(
+                    f"Invalid model_uuid format '{self.config.model_uuid}', "
+                    f"expected 'provider_id:model_id'"
+                )
+                return None
+            provider_id = parts[0]
+            model_id = ":".join(parts[1:])
             try:
-                parts = self.config.model_uuid.split(":")
-                provider_id = parts[0]
-                model_id = ":".join(parts[1:])
-                return self.provider_mgr.get_model_client(provider_id, model_id)
+                client = self.provider_mgr.get_model_client(provider_id, model_id)
+                if client is None:
+                    logger.error(f"Model '{self.config.model_uuid}' not found in provider manager")
+                return client
             except Exception as e:
-                logger.warning(f"Failed to get model {self.config.model_uuid}: {e}")
+                logger.error(f"Failed to get model {self.config.model_uuid}: {e}")
+                return None
         return self.provider_mgr.get_default_llm()
 
     def _build_tool_set(self) -> ToolSet:
@@ -169,7 +180,7 @@ class SubAgent:
 
             llm_request = LLMRequest(
                 messages=context_messages[:],
-                tools=deepcopy(filtered_tools_definitions),
+                tools=copy.deepcopy(filtered_tools_definitions),
                 tool_funcs=filtered_tool_funcs,
                 tool_set=tool_set,
             )
@@ -183,15 +194,24 @@ class SubAgent:
             new_memory.user(request.content)
 
             # 构造最小 stub event，满足 AgentExecutor 对 event.sid / event.is_stopped 的访问
+            # 以及 execute_tool 时 tool 函数对 event.adapter 的访问
             stub_session = Session(
                 adapter_name="subagent",
                 session_type="dm",
                 session_id=correlation_id,
             )
+            stub_adapter = AdapterInfo(
+                enabled=True,
+                adapter_id="subagent",
+                name="subagent",
+                platform="subagent",
+                description="SubAgent stub adapter",
+            )
             stub_event = KiraMessageBatchEvent(
                 message_types=[],
                 timestamp=int(time.time()),
                 session=stub_session,
+                adapter=stub_adapter,
             )
 
             agent_ctx = AgentExecutionContext(
@@ -210,12 +230,19 @@ class SubAgent:
             error_msg = ""
 
             timeout = self.config.timeout
+            deadline = time.time() + timeout
+            timed_out = False
             try:
-                steps = await asyncio.wait_for(
-                    self._run_agent_executor(agent_executor, agent_ctx, max_agent_steps),
-                    timeout=timeout,
-                )
-                for step in steps:
+                async for step in self._run_agent_executor(agent_executor, agent_ctx, max_agent_steps):
+                    # 超时短路：每步之间检查，避免多烧 token
+                    if time.time() > deadline:
+                        timed_out = True
+                        break
+
+                    # 检查外部取消信号
+                    if stub_event.is_stopped:
+                        break
+
                     llm_resp = step.llm_response
                     if not llm_resp:
                         has_error = True
@@ -238,7 +265,12 @@ class SubAgent:
 
                     if not step.has_tool_calls or step.is_final:
                         break
+            except asyncio.CancelledError:
+                raise
             except asyncio.TimeoutError:
+                timed_out = True
+
+            if timed_out:
                 time_consumed = round(time.time() - start_time, 3)
                 logger.warning(
                     f"SubAgent '{self.config.subagent_id}' execution timed out after {timeout}s "
@@ -296,11 +328,9 @@ class SubAgent:
             )
 
     def fetch_memory(self) -> list:
-        import copy
         return copy.deepcopy(self._memory)
 
     def write_memory(self, memory: list):
-        import copy
         # SessionManager 传入的是 list[list[dict]] 格式，需要扁平化
         flat = []
         for chunk in memory:
@@ -312,7 +342,6 @@ class SubAgent:
         self._memory = flat
 
     def update_memory(self, new_chunk: list):
-        import copy
         # SessionManager 传入的 new_chunk 可能是 list[dict]
         copied = copy.deepcopy(new_chunk)
         if isinstance(copied, list):
@@ -321,8 +350,6 @@ class SubAgent:
             self._memory.append(copied)
 
     async def _run_agent_executor(self, agent_executor, agent_ctx, max_agent_steps):
-        """收集 agent_executor.run 的全部 step，供外部加超时控制"""
-        steps = []
+        """逐步 yield agent_executor.run 的结果，使外层 asyncio.wait_for 能在每步之间中断"""
         async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
-            steps.append(step)
-        return steps
+            yield step
