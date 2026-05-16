@@ -349,7 +349,7 @@
           :key="item.id"
           mode="store"
           :id="item.id"
-          :name="localize(item, 'name', item.name)"
+          :name="localize(item, 'display_name', item.name)"
           :version="item.version"
           :author="item.author"
           :description="localize(item, 'description', item.description)"
