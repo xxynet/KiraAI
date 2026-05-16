@@ -4,9 +4,9 @@ import json
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import Depends, File, HTTPException, UploadFile
+from fastapi import Depends, File, HTTPException, Query, UploadFile
 
-from core.plugin.plugin_registry import PluginManager
+from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_from_github, install_from_zip, install_requirements
 from core.utils.path_utils import get_data_path
@@ -214,7 +214,12 @@ class PluginsRoutes(Routes):
             logger.error(f"Failed to set plugin enabled state for {plugin_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to update plugin state")
 
-    async def delete_plugin(self, plugin_id: str):
+    async def delete_plugin(
+        self,
+        plugin_id: str,
+        delete_config: bool = Query(False),
+        delete_data: bool = Query(False),
+    ):
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
             raise HTTPException(status_code=503, detail="Plugin manager not available")
 
@@ -241,6 +246,22 @@ class PluginsRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to delete plugin directory {plugin_dir}: {e}")
             raise HTTPException(status_code=500, detail=f"Plugin unregistered but directory deletion failed: {e}")
+
+        if delete_config:
+            config_file = PLUGIN_CONFIG_DIR / f"{plugin_id}.json"
+            try:
+                if config_file.exists():
+                    config_file.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete plugin config {config_file}: {e}")
+
+        if delete_data:
+            data_dir = PLUGIN_DATA_DIR / plugin_id
+            try:
+                if data_dir.exists():
+                    shutil.rmtree(data_dir)
+            except Exception as e:
+                logger.warning(f"Failed to delete plugin data {data_dir}: {e}")
 
         return {"plugin_id": plugin_id, "deleted": True}
 

@@ -642,7 +642,18 @@
       :confirm-text="confirmButtonText"
       @confirm="onConfirmAction"
       @cancel="onCancelAction"
-    />
+    >
+      <div v-if="isUninstallConfirm" class="px-6 pb-2 space-y-2">
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+          <input type="checkbox" v-model="uninstallDeleteConfig" class="rounded border-gray-300 dark:border-gray-600" />
+          {{ t('plugin.delete_config') }}
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+          <input type="checkbox" v-model="uninstallDeleteData" class="rounded border-gray-300 dark:border-gray-600" />
+          {{ t('plugin.delete_data') }}
+        </label>
+      </div>
+    </ConfirmModal>
   </div>
 </template>
 
@@ -719,6 +730,9 @@ const confirmTitle = ref('')
 const confirmMessage = ref('')
 const confirmButtonText = ref('')
 let pendingConfirmAction: (() => void) | null = null
+const isUninstallConfirm = ref(false)
+const uninstallDeleteConfig = ref(false)
+const uninstallDeleteData = ref(false)
 
 function openConfirm(title: string, message: string, buttonText: string, action: () => void) {
   confirmTitle.value = title
@@ -731,10 +745,16 @@ function openConfirm(title: string, message: string, buttonText: string, action:
 function onConfirmAction() {
   pendingConfirmAction?.()
   pendingConfirmAction = null
+  isUninstallConfirm.value = false
+  uninstallDeleteConfig.value = false
+  uninstallDeleteData.value = false
 }
 
 function onCancelAction() {
   pendingConfirmAction = null
+  isUninstallConfirm.value = false
+  uninstallDeleteConfig.value = false
+  uninstallDeleteData.value = false
 }
 
 // Error flags so the UI can distinguish "no data" from "fetch failed"
@@ -782,13 +802,19 @@ async function togglePlugin(plugin: PluginItem) {
 }
 
 function handleDeletePlugin(id: string) {
+  isUninstallConfirm.value = true
+  uninstallDeleteConfig.value = false
+  uninstallDeleteData.value = false
   openConfirm(
     t('plugin.uninstall'),
     t('plugin.uninstall_confirm'),
     t('plugin.uninstall'),
     async () => {
       try {
-        await deletePlugin(id)
+        await deletePlugin(id, {
+          deleteConfig: uninstallDeleteConfig.value,
+          deleteData: uninstallDeleteData.value,
+        })
         notify(t('plugin.uninstall_success'), 'success')
         await loadPlugins()
       } catch {
