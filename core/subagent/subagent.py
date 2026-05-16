@@ -296,24 +296,29 @@ class SubAgent:
             )
 
     def fetch_memory(self) -> list:
-        return list(self._memory)
+        import copy
+        return copy.deepcopy(self._memory)
 
     def write_memory(self, memory: list):
+        import copy
         # SessionManager 传入的是 list[list[dict]] 格式，需要扁平化
         flat = []
         for chunk in memory:
-            if isinstance(chunk, list):
-                flat.extend(chunk)
+            copied = copy.deepcopy(chunk)
+            if isinstance(copied, list):
+                flat.extend(copied)
             else:
-                flat.append(chunk)
+                flat.append(copied)
         self._memory = flat
 
     def update_memory(self, new_chunk: list):
+        import copy
         # SessionManager 传入的 new_chunk 可能是 list[dict]
-        if isinstance(new_chunk, list):
-            self._memory.extend(new_chunk)
+        copied = copy.deepcopy(new_chunk)
+        if isinstance(copied, list):
+            self._memory.extend(copied)
         else:
-            self._memory.append(new_chunk)
+            self._memory.append(copied)
 
     async def _run_agent_executor(self, agent_executor, agent_ctx, max_agent_steps):
         """收集 agent_executor.run 的全部 step，供外部加超时控制"""

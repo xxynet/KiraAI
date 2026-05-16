@@ -80,7 +80,7 @@ class SubAgentRegistry:
                 json.dump(data, f, indent=4, ensure_ascii=False)
                 f.flush()
                 os.fsync(f.fileno())
-            dir_fd = os.open(SUBAGENT_CONFIG_PATH.parent, os.O_RDONLY | os.O_DIRECTORY)
+            dir_fd = os.open(SUBAGENT_CONFIG_PATH.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
             try:
                 os.fsync(dir_fd)
             finally:

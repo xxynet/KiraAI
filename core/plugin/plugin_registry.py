@@ -562,8 +562,11 @@ class PluginManager:
                     max_tool_loop=meta.get("max_tool_loop", 2),
                     extra=meta.get("extra", {}),
                 )
-                registry.register(cfg, persist=False)
-                registered_ids.append(cfg.subagent_id)
+                success = registry.register(cfg, persist=False)
+                if success:
+                    registered_ids.append(cfg.subagent_id)
+                else:
+                    logger.warning(f"SubAgent registration returned False for {cfg.subagent_id} from {plugin_id}")
             except Exception as e:
                 logger.error(f"Failed to register SubAgent from {plugin_id}: {e}")
         if registered_ids:
@@ -817,6 +820,18 @@ class PluginManager:
         tags = comp.get("tags", [])
         for tag in tags:
             tag_registry.unregister(tag.get("name"))
+
+        # clean up subagent registration
+        subagents = comp.get("subagents", [])
+        if subagents and self.ctx and getattr(self.ctx, "subagent_registry", None):
+            registry = self.ctx.subagent_registry
+            for meta in subagents:
+                sid = meta.get("subagent_id")
+                if sid:
+                    try:
+                        registry.unregister(sid)
+                    except Exception as e:
+                        logger.error(f"Failed to unregister SubAgent {sid} for plugin {plugin_id}: {e}")
 
         # API routes: disable is handled at request time via the plugin_check Depends,
         # which calls is_plugin_enabled(). No additional cleanup needed here.
