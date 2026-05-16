@@ -58,6 +58,21 @@ class CallSubAgentTool(BaseTool):
         if not subagent_id or not task:
             return "Error: 'subagent_id' and 'task' are required parameters."
 
+        # Validate and clamp timeout
+        min_timeout = 1.0
+        max_timeout = 600.0
+        default_timeout = 60.0
+        if timeout is not None:
+            try:
+                timeout = float(timeout)
+            except (ValueError, TypeError):
+                timeout = default_timeout
+            if timeout <= 0.0:
+                timeout = default_timeout
+            timeout = max(min_timeout, min(timeout, max_timeout))
+        else:
+            timeout = None  # let SubAgentClient use config default
+
         # 检查子Agent是否已注册
         config = self.subagent_registry.get_config(subagent_id)
         if not config:

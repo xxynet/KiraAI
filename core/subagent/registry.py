@@ -80,11 +80,17 @@ class SubAgentRegistry:
                 json.dump(data, f, indent=4, ensure_ascii=False)
                 f.flush()
                 os.fsync(f.fileno())
-            dir_fd = os.open(SUBAGENT_CONFIG_PATH.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            # Best-effort directory fsync; not all platforms support opening directories
+            dir_fd = None
             try:
-                os.fsync(dir_fd)
+                if hasattr(os, "O_DIRECTORY"):
+                    dir_fd = os.open(SUBAGENT_CONFIG_PATH.parent, os.O_RDONLY | os.O_DIRECTORY)
+                    os.fsync(dir_fd)
+            except (OSError, NotImplementedError) as exc:
+                logger.debug(f"Directory fsync not performed: {exc}")
             finally:
-                os.close(dir_fd)
+                if dir_fd is not None:
+                    os.close(dir_fd)
             os.replace(temp_path, SUBAGENT_CONFIG_PATH)
             return True
         except Exception as e:
@@ -95,8 +101,15 @@ class SubAgentRegistry:
         if not config.subagent_id:
             logger.error("SubAgent config must have a subagent_id")
             return False
+        previous = self._configs.get(config.subagent_id)
         self._configs[config.subagent_id] = config
         if persist and not self._save_configs():
+            # Rollback on save failure
+            if previous is not None:
+                self._configs[config.subagent_id] = previous
+            else:
+                del self._configs[config.subagent_id]
+            logger.error(f"Failed to persist SubAgent '{config.subagent_id}', registration rolled back")
             return False
         logger.info(f"Registered SubAgent '{config.subagent_id}' ({config.name})")
         return True
@@ -104,9 +117,14 @@ class SubAgentRegistry:
     def unregister(self, subagent_id: str) -> bool:
         if subagent_id not in self._configs:
             return False
-        del self._configs[subagent_id]
-        self._instances.pop(subagent_id, None)
+        removed_config = self._configs.pop(subagent_id)
+        removed_instance = self._instances.pop(subagent_id, None)
         if not self._save_configs():
+            # Rollback on save failure
+            self._configs[subagent_id] = removed_config
+            if removed_instance is not None:
+                self._instances[subagent_id] = removed_instance
+            logger.error(f"Failed to persist unregistration of SubAgent '{subagent_id}', rolled back")
             return False
         logger.info(f"Unregistered SubAgent '{subagent_id}'")
         return True

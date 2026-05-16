@@ -85,6 +85,22 @@ class CreateSubAgentTool(BaseTool):
         if not subagent_id or not name or not persona:
             return "Error: 'subagent_id', 'name', and 'persona' are required parameters."
 
+        # Validate and coerce max_steps
+        try:
+            max_steps = int(max_steps)
+        except (ValueError, TypeError):
+            max_steps = 3
+        if max_steps < 1:
+            max_steps = 3
+
+        # Validate and coerce timeout
+        try:
+            timeout = float(timeout)
+        except (ValueError, TypeError):
+            timeout = 60.0
+        if timeout <= 0.0:
+            timeout = 60.0
+
         # 验证 subagent_id 格式
         if not subagent_id.replace("_", "").isalnum():
             return "Error: 'subagent_id' can only contain letters, numbers, and underscores."

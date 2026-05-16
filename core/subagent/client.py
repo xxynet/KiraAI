@@ -34,6 +34,14 @@ class SubAgentClient:
         timeout: Optional[float] = None,
     ) -> SubAgentResponse:
         """同步调用 SubAgent，等待结果返回（带超时）"""
+        config = self.router.registry.get_config(subagent_id)
+        if not config:
+            return SubAgentResponse(
+                correlation_id="",
+                status="cancelled",
+                err=f"SubAgent '{subagent_id}' not found",
+            )
+
         async with self._depth_lock:
             if self._call_depth >= self._max_depth:
                 return SubAgentResponse(
@@ -42,14 +50,6 @@ class SubAgentClient:
                     err="Nested SubAgent calls are not allowed",
                 )
             self._call_depth += 1
-
-        config = self.router.registry.get_config(subagent_id)
-        if not config:
-            return SubAgentResponse(
-                correlation_id="",
-                status="cancelled",
-                err=f"SubAgent '{subagent_id}' not found",
-            )
 
         correlation_id = self._generate_correlation_id()
         meta = dict(metadata or {})
