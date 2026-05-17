@@ -924,8 +924,9 @@ async function toggleMcp(server: McpServerItem) {
   try {
     await toggleMcpServer(server.id, !server.enabled)
     notify(t('plugin.mcp_toggle_success'), 'success')
-  } catch {
-    notify(t('plugin.mcp_toggle_failed'), 'error')
+  } catch (e: any) {
+    const detail = e?.response?.data?.detail
+    notify(detail ? `${t('plugin.mcp_toggle_failed')}: ${detail}` : t('plugin.mcp_toggle_failed'), 'error')
   } finally {
     await loadMcpServers()
   }
@@ -944,23 +945,28 @@ async function openMcpEdit(server: McpServerItem) {
     const res = await getMcpServerConfig(server.id)
     mcpEditMode.value = true
     mcpEditId.value = server.id
-    mcpForm.value = { name: server.name, description: server.description || '' }
+    mcpForm.value = { name: res.data?.name || server.name, description: res.data?.description || server.description || '' }
     mcpConfigJson.value = JSON.stringify(res.data?.config ?? {}, null, 2)
     mcpDialogVisible.value = true
-  } catch {
+  } catch (e: any) {
     // Abort opening the editor — a lossy fallback built from list fields
     // would silently overwrite the real config if the user hits Save. Use
     // the load-specific key so the toast isn't misleading (the user never
     // tried to save anything).
-    notify(t('plugin.mcp_config_load_failed'), 'error')
+    const detail = e?.response?.data?.detail
+    notify(detail ? `${t('plugin.mcp_config_load_failed')}: ${detail}` : t('plugin.mcp_config_load_failed'), 'error')
   }
 }
 
+let mcpSaving = false
+
 async function saveMcpForm() {
+  if (mcpSaving) return
   if (!mcpForm.value.name?.trim()) {
     notify(t('plugin.mcp_name_required'), 'error')
     return
   }
+  mcpSaving = true
   savingMcp.value = true
   let config: any
   try {
@@ -968,6 +974,7 @@ async function saveMcpForm() {
   } catch {
     notify(t('plugin.mcp_invalid_json'), 'error')
     savingMcp.value = false
+    mcpSaving = false
     return
   }
   // Backend expects a JSON object; reject arrays, null, and primitives up
@@ -976,24 +983,24 @@ async function saveMcpForm() {
   if (config === null || typeof config !== 'object' || Array.isArray(config)) {
     notify(t('plugin.mcp_invalid_json'), 'error')
     savingMcp.value = false
+    mcpSaving = false
     return
   }
   try {
     if (mcpEditMode.value && mcpEditId.value) {
-      // Don't send `name` on edit — the backend uses the path param as the
-      // canonical key and silently drops any rename in the body. Submitting
-      // it would falsely advertise a feature that isn't wired up.
-      await updateMcpServerConfig(mcpEditId.value, { description: mcpForm.value.description, config })
+      await updateMcpServerConfig(mcpEditId.value, { name: mcpForm.value.name, description: mcpForm.value.description, config })
     } else {
       await createMcpServer({ name: mcpForm.value.name, description: mcpForm.value.description, config })
     }
     mcpDialogVisible.value = false
     notify(t('plugin.mcp_save_success'), 'success')
     await loadMcpServers()
-  } catch {
-    notify(t('plugin.mcp_save_failed'), 'error')
+  } catch (e: any) {
+    const detail = e?.response?.data?.detail
+    notify(detail ? `${t('plugin.mcp_save_failed')}: ${detail}` : t('plugin.mcp_save_failed'), 'error')
   } finally {
     savingMcp.value = false
+    mcpSaving = false
   }
 }
 
@@ -1007,8 +1014,9 @@ function handleDeleteMcp(id: string) {
         await deleteMcpServer(id)
         notify(t('plugin.mcp_delete_success'), 'success')
         await loadMcpServers()
-      } catch {
-        notify(t('plugin.mcp_delete_failed'), 'error')
+      } catch (e: any) {
+        const detail = e?.response?.data?.detail
+        notify(detail ? `${t('plugin.mcp_delete_failed')}: ${detail}` : t('plugin.mcp_delete_failed'), 'error')
       }
     }
   )
