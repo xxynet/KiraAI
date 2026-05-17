@@ -142,7 +142,7 @@ class McpRoutes(Routes):
         except HTTPException:
             raise
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+            raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
             logger.error(f"Failed to set MCP server enabled state for {server_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to update MCP server state")
@@ -164,7 +164,7 @@ class McpRoutes(Routes):
         except HTTPException:
             raise
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+            raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
             logger.error(f"Failed to load MCP config file for {server_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to load MCP config file")
