@@ -219,12 +219,12 @@ class MCPManager:
         }
         return editor_cfg
 
-    def update_server_from_editor(self, server_id: str, description: str, editor_config: dict) -> None:
+    def update_server_from_editor(self, server_id: str, name: Optional[str], description: str, editor_config: dict) -> None:
         """
         Merge editor JSON back into the stored config for a single server.
         Meta fields are managed outside the editor:
         - keep existing 'enabled'
-        - always set 'name' and 'description' from arguments / previous config
+        - update 'name' and 'description' from arguments
         """
         if not isinstance(editor_config, dict):
             raise ValueError("MCP editor config must be a JSON object")
@@ -240,7 +240,7 @@ class MCPManager:
             existing = {}
 
         enabled = bool(existing.get("enabled", False))
-        name = existing.get("name", server_id)
+        final_name = (name or "").strip() or existing.get("name", server_id)
         base_without_meta = {
             k: v
             for k, v in existing.items()
@@ -250,7 +250,7 @@ class MCPManager:
         merged = dict(base_without_meta)
         merged.update(editor_config)
         merged["enabled"] = enabled
-        merged["name"] = name
+        merged["name"] = final_name
         if description:
             merged["description"] = description
         else:
@@ -265,6 +265,7 @@ class MCPManager:
         for server in self.servers:
             if server.id != server_id:
                 continue
+            server.name = final_name
             server_type = self._check_server_type(merged)
             if server_type:
                 server.type = server_type

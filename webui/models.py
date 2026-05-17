@@ -198,6 +198,7 @@ class McpServerItem(BaseModel):
 
 
 class McpServerConfigUpdateRequest(BaseModel):
+    name: Optional[str] = None
     description: Optional[str] = None
     # Accept either a raw JSON string or an object so the frontend can
     # send the Monaco editor content directly as a string.

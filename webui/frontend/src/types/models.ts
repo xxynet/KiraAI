@@ -150,6 +150,7 @@ export interface McpServerCreateRequest {
 }
 
 export interface McpServerConfigUpdateRequest {
+  name?: string | null
   description?: string | null
   config: any
 }

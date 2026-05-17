@@ -610,8 +610,7 @@
             <input
               v-model="mcpForm.name"
               type="text"
-              :disabled="mcpEditMode"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             >
           </div>
           <div>
@@ -981,10 +980,7 @@ async function saveMcpForm() {
   }
   try {
     if (mcpEditMode.value && mcpEditId.value) {
-      // Don't send `name` on edit — the backend uses the path param as the
-      // canonical key and silently drops any rename in the body. Submitting
-      // it would falsely advertise a feature that isn't wired up.
-      await updateMcpServerConfig(mcpEditId.value, { description: mcpForm.value.description, config })
+      await updateMcpServerConfig(mcpEditId.value, { name: mcpForm.value.name, description: mcpForm.value.description, config })
     } else {
       await createMcpServer({ name: mcpForm.value.name, description: mcpForm.value.description, config })
     }
