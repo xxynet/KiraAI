@@ -1,5 +1,6 @@
 import json
 import asyncio
+import uuid
 from typing import Optional, Literal
 from dataclasses import dataclass, field
 from fastmcp import Client
@@ -22,6 +23,7 @@ default_config = {
 class MCPServer:
     type: Literal["stdio", "sse", "streamable_http"]
 
+    id: str
     enabled: bool
     name: str
     description: str = ""
@@ -52,9 +54,10 @@ class MCPServer:
                 server_cfg["headers"] = self.headers
         if self.timeout:
             server_cfg["timeout"] = self.timeout
-        
+
         server_cfg.setdefault("type", self.type)
-        config = {"mcpServers": {self.name: server_cfg}}
+        server_cfg["name"] = self.name
+        config = {"mcpServers": {self.id: server_cfg}}
         return config
 
 
@@ -108,17 +111,18 @@ class MCPManager:
         if not isinstance(server_configs, dict):
             return []
 
-        for server_key, server_config in server_configs.items():
+        for server_id, server_config in server_configs.items():
             server_type = self._check_server_type(server_config)
             if not server_type:
                 continue
 
             enabled = server_config.get("enabled", False)
-            name = server_config.get("name") or server_key
+            name = server_config.get("name") or server_id
             description = server_config.get("description") or ""
 
             server = MCPServer(
                 type=server_type,
+                id=server_id,
                 enabled=enabled,
                 name=name,
                 description=description
@@ -177,20 +181,23 @@ class MCPManager:
             servers = {}
             config["mcpServers"] = servers
 
+        # Generate a new unique id for the server
+        server_id = uuid.uuid4().hex
+
         server_cfg = self._build_single_server_config(name=name, description=description, raw_config=config_json)
-        servers[name] = server_cfg
+        servers[server_id] = server_cfg
 
         self.mcp_config = config
         self.save_server_config()
 
         self.load_servers()
         for server in self.servers:
-            if server.name == name:
+            if server.id == server_id:
                 return server
 
         raise ValueError(f"Failed to create or update MCP server {name}")
 
-    def get_server_config_for_editor(self, name: str) -> dict:
+    def get_server_config_for_editor(self, server_id: str) -> dict:
         """
         Return the config for a single server suitable for the editor:
         meta fields (enabled, name, description) removed.
@@ -198,20 +205,13 @@ class MCPManager:
         config = self.load_config()
         servers = config.get("mcpServers") or {}
         if not isinstance(servers, dict):
-            raise ValueError(f"MCP server {name} not found")
+            raise ValueError(f"MCP server {server_id} not found")
 
-        server_cfg = None
-        if name in servers:
-            server_cfg = servers.get(name) or {}
-        else:
-            for _, cfg in servers.items():
-                if isinstance(cfg, dict) and cfg.get("name") == name:
-                    server_cfg = cfg
-                    break
+        server_cfg = servers.get(server_id)
         if server_cfg is None:
-            raise ValueError(f"MCP server {name} not found")
+            raise ValueError(f"MCP server {server_id} not found")
         if not isinstance(server_cfg, dict):
-            raise ValueError(f"MCP server {name} config is invalid")
+            raise ValueError(f"MCP server {server_id} config is invalid")
         editor_cfg = {
             k: v
             for k, v in server_cfg.items()
@@ -219,7 +219,7 @@ class MCPManager:
         }
         return editor_cfg
 
-    def update_server_from_editor(self, name: str, description: str, editor_config: dict) -> None:
+    def update_server_from_editor(self, server_id: str, description: str, editor_config: dict) -> None:
         """
         Merge editor JSON back into the stored config for a single server.
         Meta fields are managed outside the editor:
@@ -235,11 +235,12 @@ class MCPManager:
             servers = {}
             config["mcpServers"] = servers
 
-        existing = servers.get(name) or {}
+        existing = servers.get(server_id) or {}
         if not isinstance(existing, dict):
             existing = {}
 
         enabled = bool(existing.get("enabled", False))
+        name = existing.get("name", server_id)
         base_without_meta = {
             k: v
             for k, v in existing.items()
@@ -256,13 +257,13 @@ class MCPManager:
             if "description" in existing:
                 merged["description"] = existing["description"]
 
-        servers[name] = merged
+        servers[server_id] = merged
 
         self.mcp_config = config
         self.save_server_config()
 
         for server in self.servers:
-            if server.name != name:
+            if server.id != server_id:
                 continue
             server_type = self._check_server_type(merged)
             if server_type:
@@ -282,39 +283,30 @@ class MCPManager:
                     server.headers = headers_val
             break
 
-    def delete_server(self, server_name: str) -> None:
+    def delete_server(self, server_id: str) -> None:
         """Remove a server from config and in-memory state. Raises ValueError if not found."""
         servers = self.mcp_config.get("mcpServers") or {}
         if not isinstance(servers, dict):
-            raise ValueError(f"MCP server {server_name} not found")
+            raise ValueError(f"MCP server {server_id} not found")
 
-        key_to_delete = None
-        if server_name in servers:
-            key_to_delete = server_name
-        else:
-            for key, cfg in servers.items():
-                if isinstance(cfg, dict) and cfg.get("name") == server_name:
-                    key_to_delete = key
-                    break
-
-        if key_to_delete is None:
-            raise ValueError(f"MCP server {server_name} not found")
+        if server_id not in servers:
+            raise ValueError(f"MCP server {server_id} not found")
 
         # Unregister tools if server was enabled
-        target_server = next((s for s in self.servers if s.name == server_name), None)
+        target_server = next((s for s in self.servers if s.id == server_id), None)
         if target_server and target_server.enabled:
             for tool in target_server.tools:
                 self.llm_api.unregister_tool(tool.get("name"))
 
-        servers.pop(key_to_delete)
+        servers.pop(server_id)
         self.mcp_config["mcpServers"] = servers
         self.save_server_config()
         self.load_servers()
 
-    async def enable_server(self, server_name: str):
+    async def enable_server(self, server_id: str):
         target_server = None
         for server in self.servers:
-            if server.name == server_name:
+            if server.id == server_id:
                 target_server = server
                 break
         if not target_server:
@@ -342,18 +334,14 @@ class MCPManager:
         logger.info(f"Registered {len(tool_names)} MCP tools from {target_server.name}: {tool_names}")
 
         target_server.enabled = True
-        if target_server.name in self.mcp_config["mcpServers"]:
-            self.mcp_config["mcpServers"][target_server.name]["enabled"] = True
-        else:
-            for _, s in self.mcp_config["mcpServers"].items():
-                if s.get("name") == target_server.name:
-                    s["enabled"] = True
+        if server_id in self.mcp_config["mcpServers"]:
+            self.mcp_config["mcpServers"][server_id]["enabled"] = True
         self.save_server_config()
 
-    def disable_server(self, server_name: str):
+    def disable_server(self, server_id: str):
         target_server = None
         for server in self.servers:
-            if server.name == server_name:
+            if server.id == server_id:
                 target_server = server
                 break
         if not target_server:
@@ -367,15 +355,11 @@ class MCPManager:
             self.llm_api.unregister_tool(tool_name)
 
         target_server.enabled = False
-        if target_server.name in self.mcp_config["mcpServers"]:
-            self.mcp_config["mcpServers"][target_server.name]["enabled"] = False
-        else:
-            for _, s in self.mcp_config["mcpServers"].items():
-                if s.get("name") == target_server.name:
-                    s["enabled"] = False
+        if server_id in self.mcp_config["mcpServers"]:
+            self.mcp_config["mcpServers"][server_id]["enabled"] = False
         self.save_server_config()
 
-        logger.info(f"Disabled MCP Server {server_name}")
+        logger.info(f"Disabled MCP Server {target_server.name}")
 
     async def init_mcp(self):
         self.mcp_config = self.load_config()
