@@ -926,7 +926,7 @@ async function toggleMcp(server: McpServerItem) {
     notify(t('plugin.mcp_toggle_success'), 'success')
   } catch (e: any) {
     const detail = e?.response?.data?.detail
-    notify(detail || t('plugin.mcp_toggle_failed'), 'error')
+    notify(detail ? `${t('plugin.mcp_toggle_failed')}: ${detail}` : t('plugin.mcp_toggle_failed'), 'error')
   } finally {
     await loadMcpServers()
   }
@@ -954,7 +954,7 @@ async function openMcpEdit(server: McpServerItem) {
     // the load-specific key so the toast isn't misleading (the user never
     // tried to save anything).
     const detail = e?.response?.data?.detail
-    notify(detail || t('plugin.mcp_config_load_failed'), 'error')
+    notify(detail ? `${t('plugin.mcp_config_load_failed')}: ${detail}` : t('plugin.mcp_config_load_failed'), 'error')
   }
 }
 
@@ -997,7 +997,7 @@ async function saveMcpForm() {
     await loadMcpServers()
   } catch (e: any) {
     const detail = e?.response?.data?.detail
-    notify(detail || t('plugin.mcp_save_failed'), 'error')
+    notify(detail ? `${t('plugin.mcp_save_failed')}: ${detail}` : t('plugin.mcp_save_failed'), 'error')
   } finally {
     savingMcp.value = false
     mcpSaving = false
@@ -1016,7 +1016,7 @@ function handleDeleteMcp(id: string) {
         await loadMcpServers()
       } catch (e: any) {
         const detail = e?.response?.data?.detail
-        notify(detail || t('plugin.mcp_delete_failed'), 'error')
+        notify(detail ? `${t('plugin.mcp_delete_failed')}: ${detail}` : t('plugin.mcp_delete_failed'), 'error')
       }
     }
   )
