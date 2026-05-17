@@ -106,8 +106,8 @@ class McpRoutes(Routes):
             )
             try:
                 await manager.list_tools(server)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to list tools for new MCP server {payload.name}: {e}")
             return McpServerItem(
                 id=str(server.id),
                 type=str(server.type),

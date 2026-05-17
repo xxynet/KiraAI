@@ -956,11 +956,15 @@ async function openMcpEdit(server: McpServerItem) {
   }
 }
 
+let mcpSaving = false
+
 async function saveMcpForm() {
+  if (mcpSaving) return
   if (!mcpForm.value.name?.trim()) {
     notify(t('plugin.mcp_name_required'), 'error')
     return
   }
+  mcpSaving = true
   savingMcp.value = true
   let config: any
   try {
@@ -968,6 +972,7 @@ async function saveMcpForm() {
   } catch {
     notify(t('plugin.mcp_invalid_json'), 'error')
     savingMcp.value = false
+    mcpSaving = false
     return
   }
   // Backend expects a JSON object; reject arrays, null, and primitives up
@@ -976,6 +981,7 @@ async function saveMcpForm() {
   if (config === null || typeof config !== 'object' || Array.isArray(config)) {
     notify(t('plugin.mcp_invalid_json'), 'error')
     savingMcp.value = false
+    mcpSaving = false
     return
   }
   try {
@@ -991,6 +997,7 @@ async function saveMcpForm() {
     notify(t('plugin.mcp_save_failed'), 'error')
   } finally {
     savingMcp.value = false
+    mcpSaving = false
   }
 }
 
