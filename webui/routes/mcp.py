@@ -129,10 +129,9 @@ class McpRoutes(Routes):
     async def set_mcp_server_enabled(self, server_id: str, payload: Dict):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
             raise HTTPException(status_code=503, detail="MCP manager not available")
-        try:
-            enabled = bool(payload.get("enabled"))
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid payload")
+        if "enabled" not in payload or not isinstance(payload["enabled"], bool):
+            raise HTTPException(status_code=400, detail="Invalid payload: 'enabled' must be a boolean")
+        enabled = payload["enabled"]
         try:
             manager = self.lifecycle.mcp_manager
             if enabled:
@@ -164,6 +163,8 @@ class McpRoutes(Routes):
             return {"id": server_id, "name": name, "description": description, "config": editor_cfg}
         except HTTPException:
             raise
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:
             logger.error(f"Failed to load MCP config file for {server_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to load MCP config file")
