@@ -175,16 +175,22 @@ class MCPManager:
         if not isinstance(config_json, dict):
             raise ValueError("MCP config must be a JSON object")
 
+        server_cfg = self._build_single_server_config(name=name, description=description, raw_config=config_json)
+        if not self._check_server_type(server_cfg):
+            raise ValueError(
+                "Cannot determine server type from config. "
+                "Please provide 'type' (stdio/sse/streamable_http), "
+                "a 'url' ending with /sse, /mcp or /message, "
+                "or a 'command' for stdio servers."
+            )
+
         config = self.load_config()
         servers = config.get("mcpServers")
         if not isinstance(servers, dict):
             servers = {}
             config["mcpServers"] = servers
 
-        # Generate a new unique id for the server
         server_id = uuid.uuid4().hex
-
-        server_cfg = self._build_single_server_config(name=name, description=description, raw_config=config_json)
         servers[server_id] = server_cfg
 
         self.mcp_config = config
@@ -256,6 +262,14 @@ class MCPManager:
         else:
             if "description" in existing:
                 merged["description"] = existing["description"]
+
+        if not self._check_server_type(merged):
+            raise ValueError(
+                "Cannot determine server type from config. "
+                "Please provide 'type' (stdio/sse/streamable_http), "
+                "a 'url' ending with /sse, /mcp or /message, "
+                "or a 'command' for stdio servers."
+            )
 
         servers[server_id] = merged
 
