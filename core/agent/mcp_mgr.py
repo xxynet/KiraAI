@@ -241,9 +241,9 @@ class MCPManager:
             servers = {}
             config["mcpServers"] = servers
 
-        existing = servers.get(server_id) or {}
-        if not isinstance(existing, dict):
-            existing = {}
+        existing = servers.get(server_id)
+        if existing is None or not isinstance(existing, dict):
+            raise ValueError(f"MCP server {server_id} not found")
 
         enabled = bool(existing.get("enabled", False))
         final_name = (name or "").strip() or existing.get("name", server_id)
@@ -257,11 +257,10 @@ class MCPManager:
         merged.update(editor_config)
         merged["enabled"] = enabled
         merged["name"] = final_name
-        if description:
+        if description is not None:
             merged["description"] = description
-        else:
-            if "description" in existing:
-                merged["description"] = existing["description"]
+        elif "description" in existing:
+            merged["description"] = existing["description"]
 
         if not self._check_server_type(merged):
             raise ValueError(
@@ -325,7 +324,7 @@ class MCPManager:
                 target_server = server
                 break
         if not target_server:
-            return
+            raise ValueError(f"MCP server {server_id} not found")
 
         if target_server.enabled:
             return
@@ -360,7 +359,7 @@ class MCPManager:
                 target_server = server
                 break
         if not target_server:
-            return
+            raise ValueError(f"MCP server {server_id} not found")
 
         if not target_server.enabled:
             return

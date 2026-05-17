@@ -142,6 +142,8 @@ class McpRoutes(Routes):
             return {"server_id": server_id, "enabled": enabled}
         except HTTPException:
             raise
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:
             logger.error(f"Failed to set MCP server enabled state for {server_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to update MCP server state")
