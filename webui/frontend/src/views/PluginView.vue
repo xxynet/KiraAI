@@ -924,8 +924,9 @@ async function toggleMcp(server: McpServerItem) {
   try {
     await toggleMcpServer(server.id, !server.enabled)
     notify(t('plugin.mcp_toggle_success'), 'success')
-  } catch {
-    notify(t('plugin.mcp_toggle_failed'), 'error')
+  } catch (e: any) {
+    const detail = e?.response?.data?.detail
+    notify(detail || t('plugin.mcp_toggle_failed'), 'error')
   } finally {
     await loadMcpServers()
   }
@@ -947,12 +948,13 @@ async function openMcpEdit(server: McpServerItem) {
     mcpForm.value = { name: res.data?.name || server.name, description: res.data?.description || server.description || '' }
     mcpConfigJson.value = JSON.stringify(res.data?.config ?? {}, null, 2)
     mcpDialogVisible.value = true
-  } catch {
+  } catch (e: any) {
     // Abort opening the editor — a lossy fallback built from list fields
     // would silently overwrite the real config if the user hits Save. Use
     // the load-specific key so the toast isn't misleading (the user never
     // tried to save anything).
-    notify(t('plugin.mcp_config_load_failed'), 'error')
+    const detail = e?.response?.data?.detail
+    notify(detail || t('plugin.mcp_config_load_failed'), 'error')
   }
 }
 
@@ -993,8 +995,9 @@ async function saveMcpForm() {
     mcpDialogVisible.value = false
     notify(t('plugin.mcp_save_success'), 'success')
     await loadMcpServers()
-  } catch {
-    notify(t('plugin.mcp_save_failed'), 'error')
+  } catch (e: any) {
+    const detail = e?.response?.data?.detail
+    notify(detail || t('plugin.mcp_save_failed'), 'error')
   } finally {
     savingMcp.value = false
     mcpSaving = false
@@ -1011,8 +1014,9 @@ function handleDeleteMcp(id: string) {
         await deleteMcpServer(id)
         notify(t('plugin.mcp_delete_success'), 'success')
         await loadMcpServers()
-      } catch {
-        notify(t('plugin.mcp_delete_failed'), 'error')
+      } catch (e: any) {
+        const detail = e?.response?.data?.detail
+        notify(detail || t('plugin.mcp_delete_failed'), 'error')
       }
     }
   )
