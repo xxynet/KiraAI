@@ -39,7 +39,7 @@ class DefaultPlugin(BasePlugin):
 
     def _format_user_message(self, msg: Union[KiraIMMessage]) -> str:
         """格式化用户消息"""
-        ts=msg.timestamp
+        ts = msg.timestamp
         dt = datetime.fromtimestamp(ts)
         date_str = self._get_current_time_str(dt=dt)
         # TODO format it in message processor
