@@ -38,3 +38,6 @@ webui/frontend/vite.config.d.ts
 
 # Runtime data
 /data/
+
+# tests
+/tests/
