@@ -21,7 +21,7 @@ jobs:
       - name: Check VERSION matches tag
         id: check
         run: |
-          FILE_VERSION=$(sed -n 's/^VERSION\s*=\s*"\([^"]*\)".*/\1/p' core/config/default.py)
+          FILE_VERSION=$(python -c "import importlib.util; s=importlib.util.spec_from_file_location('m','core/config/default.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.VERSION)")
           TAG_VERSION="${{ github.ref_name }}"
           echo "FILE_VERSION=$FILE_VERSION"
           echo "TAG_VERSION=$TAG_VERSION"
@@ -60,7 +60,7 @@ jobs:
         run: |
           NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes \
             --field tag_name="${{ github.ref_name }}" \
-            --field target_commitish=main \
+            --field target_commitish="${{ github.event.repository.default_branch }}" \
             --jq .body)
           echo "$NOTES" > release_notes.md
 
