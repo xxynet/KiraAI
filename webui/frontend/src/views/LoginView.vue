@@ -109,7 +109,7 @@
         <!-- Footer -->
         <div class="mt-8 text-center">
           <p class="text-xs text-gray-500 dark:text-gray-400">
-            KiraAI WebUI Preview
+            KiraAI WebUI
           </p>
         </div>
       </div>
