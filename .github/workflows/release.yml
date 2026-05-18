@@ -66,13 +66,21 @@ jobs:
           fi
           echo "## What's Changed" > release_notes.md
           echo "" >> release_notes.md
-          git log "${PREV_TAG}..${{ github.ref_name }}" --pretty=format:"%h|%aN|%aE|%s" --no-merges --reverse | grep -vi 'chore: bump version to ' | while IFS='|' read -r hash author email msg; do
+          git log "${PREV_TAG}..${{ github.ref_name }}" --pretty=format:"%h|%aN|%aE|%s" --no-merges --reverse | { grep -vi 'chore: bump version to ' || true; } | while IFS='|' read -r hash author email msg; do
             GH_USER=$(echo "$email" | grep -oP '[0-9]+\+\K[^@]+(?=@users\.noreply\.github\.com)' || true)
             PR=$(echo "$msg" | grep -oE '\(#[0-9]+\)' | tr -d '()')
             if [ -n "$GH_USER" ]; then
-              [ -n "$PR" ] && echo "* ${msg%% (*} by @${GH_USER} in ${PR}" >> release_notes.md || echo "* ${msg} by @${GH_USER} in ${hash}" >> release_notes.md
+              if [ -n "$PR" ]; then
+                echo "* ${msg%% (*} by @${GH_USER} in ${PR}" >> release_notes.md
+              else
+                echo "* ${msg} by @${GH_USER} in ${hash}" >> release_notes.md
+              fi
             else
-              [ -n "$PR" ] && echo "* ${msg%% (*} in ${PR}" >> release_notes.md || echo "* ${msg} in ${hash}" >> release_notes.md
+              if [ -n "$PR" ]; then
+                echo "* ${msg%% (*} in ${PR}" >> release_notes.md
+              else
+                echo "* ${msg} in ${hash}" >> release_notes.md
+              fi
             fi
           done
           COMMIT_COUNT=$(git log "${PREV_TAG}..${{ github.ref_name }}" --no-merges --oneline | grep -cv 'chore: bump version to ' || true)
@@ -103,6 +111,15 @@ jobs:
           fi
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${{ github.ref_name }}" >> release_notes.md
 
+      - name: Check if pre-release
+        id: prerelease
+        run: |
+          if echo "${{ github.ref_name }}" | grep -q '-'; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -110,3 +127,4 @@ jobs:
           body_path: release_notes.md
           files: release-assets/dist.zip
           generate_release_notes: false
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
