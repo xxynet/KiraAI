@@ -55,14 +55,23 @@ jobs:
 
       - name: Generate release notes
         id: notes
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes \
-            --field tag_name="${{ github.ref_name }}" \
-            --field target_commitish="${{ github.event.repository.default_branch }}" \
-            --jq .body)
-          echo "$NOTES" > release_notes.md
+          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v' | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD | head -1)
+          fi
+          echo "## What's Changed" > release_notes.md
+          echo "" >> release_notes.md
+          git log "${PREV_TAG}..${{ github.ref_name }}" --pretty=format:"%h|%s" --no-merges --reverse | grep -vi 'chore: bump version to ' | while IFS='|' read -r hash msg; do
+            if echo "$msg" | grep -qE '\(#[0-9]+\)'; then
+              echo "* $msg" >> release_notes.md
+            else
+              echo "* $msg ($hash)" >> release_notes.md
+            fi
+          done
+          echo "" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${{ github.ref_name }}" >> release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
