@@ -127,3 +127,4 @@ jobs:
           files: release-assets/dist.zip
           generate_release_notes: false
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          token: ${{ secrets.PAT }}
