@@ -58,7 +58,6 @@ jobs:
       - name: Generate release notes
         id: notes
         run: |
-          set -o pipefail
           CURRENT_TAG="${{ github.ref_name }}"
           PREV_TAG=$(git describe --tags --abbrev=0 "$CURRENT_TAG^" 2>/dev/null || true)
           if [ -z "$PREV_TAG" ]; then
