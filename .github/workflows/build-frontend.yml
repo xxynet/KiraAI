@@ -1,0 +1,46 @@
+name: Build Frontend
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version tag to write into .version file"
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: webui/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: webui/frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: webui/frontend
+        run: npm run build
+
+      - name: Write version file
+        run: echo "${{ inputs.version }}" > webui/static/dist/.version
+
+      - name: Package dist
+        working-directory: webui/static
+        run: zip -r dist.zip dist/
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-zip
+          path: webui/static/dist.zip
+          retention-days: 1

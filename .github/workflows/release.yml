@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check VERSION matches tag
+        id: check
+        run: |
+          FILE_VERSION=$(sed -n 's/^VERSION\s*=\s*"\([^"]*\)".*/\1/p' core/config/default.py)
+          TAG_VERSION="${{ github.ref_name }}"
+          echo "FILE_VERSION=$FILE_VERSION"
+          echo "TAG_VERSION=$TAG_VERSION"
+          if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::VERSION mismatch: core/config/default.py says '$FILE_VERSION' but tag is '$TAG_VERSION'"
+            exit 1
+          fi
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    uses: ./.github/workflows/build-frontend.yml
+    with:
+      version: ${{ needs.validate.outputs.version }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-zip
+          path: release-assets
+
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+            --field tag_name="${{ github.ref_name }}" \
+            --field target_commitish=main \
+            --jq .body)
+          echo "$NOTES" > release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          body_path: release_notes.md
+          files: release-assets/dist.zip
+          generate_release_notes: false
