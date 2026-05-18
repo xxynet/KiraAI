@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -40,6 +40,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -56,7 +58,9 @@ jobs:
       - name: Generate release notes
         id: notes
         run: |
-          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v' | sed -n '2p')
+          set -o pipefail
+          CURRENT_TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 "$CURRENT_TAG^" 2>/dev/null || true)
           if [ -z "$PREV_TAG" ]; then
             PREV_TAG=$(git rev-list --max-parents=0 HEAD | head -1)
           fi
@@ -64,14 +68,17 @@ jobs:
           echo "" >> release_notes.md
           git log "${PREV_TAG}..${{ github.ref_name }}" --pretty=format:"%h|%aN|%aE|%s" --no-merges --reverse | grep -vi 'chore: bump version to ' | while IFS='|' read -r hash author email msg; do
             GH_USER=$(echo "$email" | grep -oP '[0-9]+\+\K[^@]+(?=@users\.noreply\.github\.com)' || true)
-            [ -z "$GH_USER" ] && GH_USER="$author"
             PR=$(echo "$msg" | grep -oE '\(#[0-9]+\)' | tr -d '()')
-            if [ -n "$PR" ]; then
-              echo "* ${msg%% (*} by @${GH_USER} in ${PR}" >> release_notes.md
+            if [ -n "$GH_USER" ]; then
+              [ -n "$PR" ] && echo "* ${msg%% (*} by @${GH_USER} in ${PR}" >> release_notes.md || echo "* ${msg} by @${GH_USER} in ${hash}" >> release_notes.md
             else
-              echo "* ${msg} by @${GH_USER} in ${hash}" >> release_notes.md
+              [ -n "$PR" ] && echo "* ${msg%% (*} in ${PR}" >> release_notes.md || echo "* ${msg} in ${hash}" >> release_notes.md
             fi
           done
+          COMMIT_COUNT=$(git log "${PREV_TAG}..${{ github.ref_name }}" --no-merges --oneline | grep -cv 'chore: bump version to ' || true)
+          if [ "$COMMIT_COUNT" -eq 0 ]; then
+            echo "::warning::No commits found between ${PREV_TAG} and ${{ github.ref_name }}, release notes may be incomplete"
+          fi
           echo "" >> release_notes.md
           NEW_CONTRIBUTORS=""
           CURRENT_AUTHORS=$(git log "${PREV_TAG}..${{ github.ref_name }}" --pretty=format:"%aN|%aE" --no-merges | sort -u)
@@ -79,12 +86,13 @@ jobs:
           while IFS='|' read -r name email; do
             if ! echo "$PREV_AUTHORS" | grep -qF "$name|$email"; then
               GH_USER=$(echo "$email" | grep -oP '[0-9]+\+\K[^@]+(?=@users\.noreply\.github\.com)' || true)
-              [ -z "$GH_USER" ] && GH_USER="$name"
-              PR=$(git log "${PREV_TAG}..${{ github.ref_name }}" --author="$email" --pretty=format:"%h|%s" --no-merges | grep -oE '\(#[0-9]+\)' | tr -d '()' | head -1)
-              if [ -n "$PR" ]; then
-                NEW_CONTRIBUTORS="${NEW_CONTRIBUTORS}* @${GH_USER} made their first contribution in ${PR}"$'\n'
-              else
-                NEW_CONTRIBUTORS="${NEW_CONTRIBUTORS}* @${GH_USER} made their first contribution"$'\n'
+              if [ -n "$GH_USER" ]; then
+                PR=$(git log "${PREV_TAG}..${{ github.ref_name }}" --author="$email" --pretty=format:"%h|%s" --no-merges | grep -oE '\(#[0-9]+\)' | tr -d '()' | head -1)
+                if [ -n "$PR" ]; then
+                  NEW_CONTRIBUTORS="${NEW_CONTRIBUTORS}* @${GH_USER} made their first contribution in ${PR}"$'\n'
+                else
+                  NEW_CONTRIBUTORS="${NEW_CONTRIBUTORS}* @${GH_USER} made their first contribution"$'\n'
+                fi
               fi
             fi
           done <<< "$CURRENT_AUTHORS"
