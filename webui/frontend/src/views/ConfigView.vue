@@ -282,6 +282,15 @@
               />
             </button>
 
+            <!-- Select -->
+            <CustomSelect
+              v-else-if="field.type === 'select'"
+              :modelValue="getFieldValue(field.key) || ''"
+              :options="field.selectOptions || []"
+              :placeholder="$t(field.hintKey, field.hintFallback)"
+              @update:modelValue="(v: string) => setFieldValue(field.key, v)"
+            />
+
             <!-- String -->
             <input
               v-else
@@ -327,6 +336,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
+import CustomSelect from '@/components/common/CustomSelect.vue'
 
 const { t } = useI18n()
 
@@ -361,6 +371,7 @@ interface ConfigField {
   type: string
   default?: any
   modelType?: string
+  selectOptions?: { value: string; label: string }[]
   validation?: { min?: number; max?: number; required?: boolean }
 }
 
@@ -425,6 +436,25 @@ const allGroups: ConfigGroup[] = [
       { key: 'bot_config.cache.max_size_mb', labelKey: 'configuration.message.max_size_mb', labelFallback: 'Max Storage (MB)', hintKey: 'configuration.hints.max_size_mb', hintFallback: 'Maximum disk space allowed for the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 10240, required: true } },
       { key: 'bot_config.cache.max_files', labelKey: 'configuration.message.max_files', labelFallback: 'Max Files', hintKey: 'configuration.hints.max_files', hintFallback: 'Maximum number of files allowed in the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 100000, required: true } },
       { key: 'bot_config.cache.max_age_hours', labelKey: 'configuration.message.max_age_hours', labelFallback: 'Max Cache Age (hours)', hintKey: 'configuration.hints.max_age_hours', hintFallback: 'Cache files older than this will be automatically cleaned up', type: 'integer', default: 24, validation: { min: 1, max: 8760, required: true } },
+    ],
+  },
+  {
+    id: 'logging',
+    labelKey: 'configuration.groups.logging',
+    labelFallback: 'Logging Settings',
+    descKey: 'configuration.groups.logging_desc',
+    descFallback: 'Terminal and file logging configuration',
+    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>',
+    fields: [
+      { key: 'logging.log_level', labelKey: 'configuration.message.log_level', labelFallback: 'Log Level', hintKey: 'configuration.hints.log_level', hintFallback: 'Minimum log level displayed in the terminal', type: 'select', default: 'INFO', selectOptions: [
+        { value: 'DEBUG', label: 'DEBUG' },
+        { value: 'INFO', label: 'INFO' },
+        { value: 'WARNING', label: 'WARNING' },
+        { value: 'ERROR', label: 'ERROR' },
+        { value: 'CRITICAL', label: 'CRITICAL' },
+      ]},
+      { key: 'logging.log_file_path', labelKey: 'configuration.message.log_file_path', labelFallback: 'Log File Path', hintKey: 'configuration.hints.log_file_path', hintFallback: 'Path to the log file, leave empty for default', type: 'string', default: '' },
+      { key: 'logging.log_file_max_size', labelKey: 'configuration.message.log_file_max_size', labelFallback: 'Max Log File Size (MB)', hintKey: 'configuration.hints.log_file_max_size', hintFallback: 'Maximum size of a single log file in megabytes', type: 'integer', default: 10, validation: { min: 1, max: 1024, required: true } },
     ],
   },
   {

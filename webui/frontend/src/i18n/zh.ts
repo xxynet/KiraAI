@@ -481,6 +481,8 @@ export default {
       models_desc: '为每种能力选择默认提供商和模型',
       cache: '缓存设置',
       cache_desc: '临时文件缓存管理参数',
+      logging: '日志设置',
+      logging_desc: '终端和文件日志配置',
     },
     hints: {
       max_memory_length: '上下文窗口中保留的最大消息数',
@@ -494,6 +496,9 @@ export default {
       max_size_mb: '缓存文件夹允许占用的最大磁盘空间',
       max_files: '缓存文件夹中允许的最大文件数量',
       max_age_hours: '超过此时间的缓存文件将被自动清理',
+      log_level: '终端显示的最低日志等级',
+      log_file_path: '日志文件路径，留空使用默认路径',
+      log_file_max_size: '单个日志文件的最大体积（MB）',
     },
     validation: {
       required: '此字段为必填项',
@@ -521,6 +526,9 @@ export default {
       max_size_mb: '最大存储（MB）',
       max_files: '最大文件数',
       max_age_hours: '最大缓存时间（小时）',
+      log_level: '日志等级',
+      log_file_path: '日志文件路径',
+      log_file_max_size: '日志文件最大体积（MB）',
     },
     model: {
       section_title: '默认模型',

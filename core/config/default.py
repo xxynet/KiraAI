@@ -47,5 +47,10 @@ DEFAULT_CONFIG = {
     "database": {
         "url": None,
         "echo": False
+    },
+    "logging": {
+        "log_level": "INFO",
+        "log_file_path": None,  # None = {data_path}/log.log
+        "log_file_max_size": 10  # MB
     }
 }
