@@ -481,6 +481,8 @@ export default {
       models_desc: 'Select default provider and model for each capability',
       cache: 'Cache Settings',
       cache_desc: 'Temporary file cache management parameters',
+      logging: 'Logging Settings',
+      logging_desc: 'Terminal and file logging configuration',
     },
     hints: {
       max_memory_length: 'Maximum number of messages retained in context window',
@@ -494,6 +496,9 @@ export default {
       max_size_mb: 'Maximum disk space allowed for the cache folder',
       max_files: 'Maximum number of files allowed in the cache folder',
       max_age_hours: 'Cache files older than this will be automatically cleaned up',
+      log_level: 'Minimum log level displayed in the terminal',
+      log_file_path: 'Path to the log file, leave empty for default',
+      log_file_max_size: 'Maximum size of a single log file in megabytes',
     },
     validation: {
       required: 'This field is required',
@@ -521,6 +526,9 @@ export default {
       max_size_mb: 'Max Storage (MB)',
       max_files: 'Max Files',
       max_age_hours: 'Max Cache Age (hours)',
+      log_level: 'Log Level',
+      log_file_path: 'Log File Path',
+      log_file_max_size: 'Max Log File Size (MB)',
     },
     model: {
       section_title: 'Default Models',

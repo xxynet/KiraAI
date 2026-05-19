@@ -1,8 +1,9 @@
+from copy import deepcopy
 from typing import Dict
 
 from fastapi import Depends, HTTPException
 
-from core.logging_manager import get_logger
+from core.logging_manager import get_logger, setup_logging
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 
@@ -59,6 +60,7 @@ class ConfigRoutes(Routes):
             "configuration": {
                 "bot_config": bot_config,
                 "models": models,
+                "logging": config.get("logging", {}),
             },
             "providers": providers,
             "provider_models": provider_models,
@@ -70,6 +72,7 @@ class ConfigRoutes(Routes):
         config = self.lifecycle.kira_config
         bot_config = payload.get("bot_config")
         models = payload.get("models")
+        logging_config = payload.get("logging")
         updated = False
         if isinstance(bot_config, dict):
             config["bot_config"] = bot_config
@@ -77,13 +80,27 @@ class ConfigRoutes(Routes):
         if isinstance(models, dict):
             config["models"] = models
             updated = True
+        logging_changed = False
+        if isinstance(logging_config, dict):
+            old_logging = deepcopy(config.get("logging", {}))
+            config["logging"] = logging_config
+            logging_changed = logging_config != old_logging
+            updated = True
         if updated:
             config.save_config()
             logger.info("Configuration saved")
+        if logging_changed:
+            setup_logging(
+                log_level=logging_config.get("log_level", "INFO"),
+                log_file_path=logging_config.get("log_file_path"),
+                log_file_max_size=logging_config.get("log_file_max_size", 10),
+            )
+            logger.info("Logging configuration applied")
         return {
             "status": "ok",
             "configuration": {
                 "bot_config": config.get("bot_config", {}),
                 "models": config.get("models", {}),
+                "logging": config.get("logging", {}),
             },
         }
