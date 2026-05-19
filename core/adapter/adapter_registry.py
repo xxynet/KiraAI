@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import os
 import importlib.util
@@ -307,6 +308,9 @@ class AdapterManager:
             return None
 
         old_enabled = bool(config_entry.get("enabled", False))
+        old_config = copy.deepcopy(config_entry.get("config") or {})
+        old_name = config_entry.get("name") or adapter_id
+        old_desc = config_entry.get("desc") or ""
 
         if name:
             config_entry["name"] = name
@@ -342,6 +346,22 @@ class AdapterManager:
                     await self.register_adapter(info)
             except Exception as e:
                 logger.error(f"Failed to start adapter {adapter_id} after update: {e}")
+
+        if old_enabled and new_enabled:
+            new_config = config_entry.get("config") or {}
+            new_desc = config_entry.get("desc") or ""
+            config_changed = config and new_config != old_config
+            name_changed = old_name != name_for_runtime
+            desc_changed = old_desc != new_desc
+            if config_changed or name_changed or desc_changed:
+                try:
+                    await self.stop_adapter(old_name)
+                    info = self.get_adapter_info(adapter_id)
+                    if info:
+                        await self.register_adapter(info)
+                    logger.info(f"Reloaded adapter {name_for_runtime} after update")
+                except Exception as e:
+                    logger.error(f"Failed to reload adapter {adapter_id} after config update: {e}")
 
         if old_enabled and not new_enabled:
             try:
