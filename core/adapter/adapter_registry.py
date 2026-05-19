@@ -326,6 +326,11 @@ class AdapterManager:
         if status:
             config_entry["enabled"] = status == "active"
 
+        new_name_for_check = config_entry.get("name") or adapter_id
+        if old_enabled and old_name != new_name_for_check and new_name_for_check in self._adapters:
+            logger.error(f"Cannot update adapter {adapter_id}: name '{new_name_for_check}' is already in use by another running adapter")
+            raise ValueError(f"Adapter name '{new_name_for_check}' is already in use")
+
         adapters_config[adapter_id] = config_entry
         self.kira_config["adapters"] = adapters_config
         try:
