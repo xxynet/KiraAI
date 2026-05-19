@@ -6,6 +6,7 @@
     "author": "KiraAI",
     "description": "Default & simple long term memory implementation, disable it before using third party memory plugins.",
     "repo": null,
+    "tags": ["memory"],
     "locales": {
         "zh": {
             "display_name": "简单记忆",

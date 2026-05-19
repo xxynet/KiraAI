@@ -5,6 +5,7 @@
     "author": "KiraAI",
     "description": "Session tools that enable LLM to interact across sessions",
     "repo": null,
+    "tags": ["session", "tools"],
     "locales": {
         "zh": {
             "display_name": "会话工具",

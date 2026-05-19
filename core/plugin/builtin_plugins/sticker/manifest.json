@@ -6,6 +6,7 @@
     "author": "KiraAI",
     "description": "Default implementation of sticker functionality, manually disable it before using third-party sticker plugins",
     "repo": null,
+    "tags": ["sticker"],
     "locales": {
         "zh": {
             "display_name": "默认贴纸",
