@@ -6,6 +6,7 @@
     "author": "xxynet",
     "description": "A search tool that empowers llm to search the Internet via Tavily",
     "repo": null,
+    "tags": ["search"],
     "locales": {
         "zh": {
             "display_name": "Tavily 搜索",

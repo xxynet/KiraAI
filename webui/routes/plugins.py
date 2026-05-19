@@ -134,6 +134,7 @@ class PluginsRoutes(Routes):
                 desc = str(manifest.get("description") or "")
                 repo = manifest.get("repo")
                 locales = manifest.get("locales") or {}
+                tags = manifest.get("tags") or []
                 enabled = plugin_manager.is_plugin_enabled(plugin_id)
                 is_builtin = plugin_manager.is_builtin_plugin(plugin_id)
                 uninstallable = plugin_manager.is_plugin_uninstallable(plugin_id)
@@ -149,6 +150,7 @@ class PluginsRoutes(Routes):
                         builtin=is_builtin,
                         uninstallable=uninstallable,
                         locales=locales,
+                        tags=[str(t) for t in tags if t],
                     )
                 )
             return items
@@ -317,6 +319,7 @@ class PluginsRoutes(Routes):
     @staticmethod
     def _build_install_result(plugin_manager, plugin_id: str, warnings: List[str]) -> PluginInstallResult:
         manifest = plugin_manager.get_plugin_manifest(plugin_id) or {}
+        tags = manifest.get("tags") or []
         return PluginInstallResult(
             id=plugin_id,
             name=str(manifest.get("display_name") or plugin_id),
@@ -325,6 +328,7 @@ class PluginsRoutes(Routes):
             description=str(manifest.get("description") or ""),
             repo=manifest.get("repo") if isinstance(manifest.get("repo"), str) else None,
             enabled=plugin_manager.is_plugin_enabled(plugin_id),
+            tags=[str(t) for t in tags if t],
             warnings=warnings,
         )
 
@@ -359,6 +363,7 @@ class PluginsRoutes(Routes):
                     )
             result: List[PluginStoreItemResponse] = []
             for item in items:
+                tags = item.get("tags") or []
                 result.append(PluginStoreItemResponse(
                     id=str(item.get("plugin_id", "")),
                     name=str(item.get("display_name", "")),
@@ -368,6 +373,7 @@ class PluginsRoutes(Routes):
                     category=item.get("category"),
                     repo=item.get("repo"),
                     locales=item.get("locales") or {},
+                    tags=[str(t) for t in tags if t],
                 ))
             return result
         except Exception as e:

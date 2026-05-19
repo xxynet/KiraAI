@@ -85,6 +85,7 @@
           :repo="plugin.repo"
           :enabled="plugin.enabled"
           :uninstallable="(plugin as any).uninstallable"
+          :tags="plugin.tags"
           @toggle="togglePlugin(plugin)"
           @configure="openPluginConfig(plugin)"
           @uninstall="handleDeletePlugin(plugin.id)"
@@ -354,6 +355,7 @@
           :author="item.author"
           :description="localize(item, 'description', item.description)"
           :repo="item.repo"
+          :tags="item.tags"
           :installed="item.installed"
           @install="handleStoreInstall(item)"
         />

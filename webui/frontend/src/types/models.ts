@@ -117,6 +117,7 @@ export interface PluginItem {
   description: string
   repo: string | null
   enabled: boolean
+  tags: string[]
 }
 
 export interface PluginConfigUpdateRequest {

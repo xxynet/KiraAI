@@ -134,6 +134,7 @@ class PluginItem(BaseModel):
     builtin: bool = False
     uninstallable: bool = False
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
 
 
 class PluginConfigUpdateRequest(BaseModel):
@@ -159,6 +160,7 @@ class PluginStoreItemResponse(BaseModel):
     category: Optional[str] = None
     repo: Optional[str] = None
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
 
 
 class PluginStoreFetchRequest(BaseModel):

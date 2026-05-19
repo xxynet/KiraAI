@@ -42,6 +42,15 @@
     <p v-if="description" class="text-sm text-gray-600 dark:text-gray-300 line-clamp-3 mb-3">
       {{ description }}
     </p>
+    <div v-if="tags && tags.length" class="flex flex-wrap gap-1.5 mb-3">
+      <span
+        v-for="tag in tags"
+        :key="tag"
+        class="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+      >
+        {{ tag }}
+      </span>
+    </div>
     <div class="mt-auto">
       <div v-if="mode === 'installed'" class="text-xs font-mono text-gray-400 dark:text-gray-500 break-all mb-3">{{ id }}</div>
       <!-- Installed mode: Configure / Uninstall buttons -->
@@ -104,6 +113,7 @@ const props = withDefaults(defineProps<{
   // installed mode
   enabled?: boolean
   uninstallable?: boolean
+  tags?: string[]
   // store mode
   installed?: boolean
   installing?: boolean
@@ -114,6 +124,7 @@ const props = withDefaults(defineProps<{
   repo: null,
   enabled: true,
   uninstallable: false,
+  tags: () => [],
   installed: false,
   installing: false,
 })
