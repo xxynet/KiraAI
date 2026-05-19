@@ -177,6 +177,7 @@ export interface PluginStoreItem {
   repo?: string | null
   icon?: string | null
   downloads?: number
+  tags?: string[]
   installed?: boolean
 }
 
