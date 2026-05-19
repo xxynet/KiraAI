@@ -2,7 +2,7 @@ import asyncio
 import time
 from typing import Optional
 
-from .logging_manager import get_logger
+from .logging_manager import get_logger, setup_logging
 from .config import KiraConfig
 from .sticker_manager import StickerManager
 from .message_manager import MessageProcessor
@@ -94,6 +94,13 @@ class KiraLifecycle:
 
         # ====== init KiraAI config ======
         self.kira_config = KiraConfig()
+
+        # ====== apply logging config ======
+        setup_logging(
+            log_level=self.kira_config.get_config("logging.log_level", "INFO"),
+            log_file_path=self.kira_config.get_config("logging.log_file_path"),
+            log_file_max_size=self.kira_config.get_config("logging.log_file_max_size", 10),
+        )
 
         # ====== init database manager ======
         db_url = self.kira_config.get_config("database.url")
