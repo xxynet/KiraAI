@@ -83,19 +83,22 @@ class ConfigRoutes(Routes):
         logging_changed = False
         if isinstance(logging_config, dict):
             old_logging = deepcopy(config.get("logging", {}))
-            config["logging"] = logging_config
             logging_changed = logging_config != old_logging
-            updated = True
+            if logging_changed:
+                try:
+                    setup_logging(
+                        log_level=logging_config.get("log_level", "INFO"),
+                        log_file_path=logging_config.get("log_file_path"),
+                        log_file_max_size=logging_config.get("log_file_max_size", 10),
+                    )
+                    config["logging"] = logging_config
+                    updated = True
+                    logger.info("Logging configuration applied")
+                except Exception as e:
+                    logger.error(f"Failed to apply logging config, not saving: {e}")
         if updated:
             config.save_config()
             logger.info("Configuration saved")
-        if logging_changed:
-            setup_logging(
-                log_level=logging_config.get("log_level", "INFO"),
-                log_file_path=logging_config.get("log_file_path"),
-                log_file_max_size=logging_config.get("log_file_max_size", 10),
-            )
-            logger.info("Logging configuration applied")
         return {
             "status": "ok",
             "configuration": {

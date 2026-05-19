@@ -106,16 +106,38 @@ _created_by_get_logger = set()
 def setup_logging(log_level: str = "INFO", log_file_path: str = None, log_file_max_size: int = 10):
     """Called once after config is loaded to apply logging settings."""
     global _log_level, _log_file_path, _log_file_max_size
+
+    log_level = str(log_level) if log_level else "INFO"
+    if log_level.upper() not in _LEVEL_MAP:
+        log_level = "INFO"
+    try:
+        log_file_max_size = int(log_file_max_size)
+    except (TypeError, ValueError):
+        log_file_max_size = 10
+
     _log_level = log_level
     _log_file_path = log_file_path
     _log_file_max_size = log_file_max_size
 
     level = _LEVEL_MAP.get(log_level.upper(), logging.INFO)
+    log_file = _log_file_path or f"{get_data_path()}/log.log"
+    max_bytes = _log_file_max_size * 1024 * 1024
 
     for name in _created_by_get_logger:
         logger = logging.getLogger(name)
-        for handler in logger.handlers:
-            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, RotatingFileHandler) and not isinstance(handler, LogQueueHandler):
+        for i, handler in enumerate(logger.handlers):
+            if isinstance(handler, RotatingFileHandler):
+                if handler.baseFilename == log_file and handler.maxBytes == max_bytes:
+                    continue
+                formatter = handler.formatter
+                handler.close()
+                new_fh = RotatingFileHandler(
+                    filename=log_file, maxBytes=max_bytes, backupCount=1, encoding='utf-8'
+                )
+                new_fh.setLevel(logging.DEBUG)
+                new_fh.setFormatter(formatter)
+                logger.handlers[i] = new_fh
+            elif isinstance(handler, logging.StreamHandler) and not isinstance(handler, LogQueueHandler):
                 handler.setLevel(level)
 
 
