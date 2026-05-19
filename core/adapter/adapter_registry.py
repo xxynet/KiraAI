@@ -328,6 +328,10 @@ class AdapterManager:
         old_name = config_entry.get("name") or adapter_id
         old_desc = config_entry.get("desc") or ""
 
+        new_name_for_check = name or old_name
+        if name and old_name != new_name_for_check and not self._check_name_unique(new_name_for_check, exclude_id=adapter_id):
+            raise ValueError(f"Adapter name '{new_name_for_check}' is already in use")
+
         if name:
             config_entry["name"] = name
         if platform:
@@ -341,10 +345,6 @@ class AdapterManager:
 
         if status:
             config_entry["enabled"] = status == "active"
-
-        new_name_for_check = config_entry.get("name") or adapter_id
-        if old_name != new_name_for_check and not self._check_name_unique(new_name_for_check, exclude_id=adapter_id):
-            raise ValueError(f"Adapter name '{new_name_for_check}' is already in use")
 
         adapters_config[adapter_id] = config_entry
         self.kira_config["adapters"] = adapters_config
