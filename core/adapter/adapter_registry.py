@@ -204,6 +204,19 @@ class AdapterManager:
                 logger.error(f"Failed to register adapter {adapter_id}: {e}")
         logger.info(f"Adapters set: {list(self._adapters.keys())}")
 
+    def _check_name_unique(self, name: str, exclude_id: Optional[str] = None) -> bool:
+        """Check if adapter name is unique across all adapters (including disabled).
+        Returns True if name is available, False if already in use."""
+        adapters_config = self.kira_config.get("adapters", {}) or {}
+        for aid, entry in adapters_config.items():
+            if not isinstance(entry, dict):
+                continue
+            if exclude_id and aid == exclude_id:
+                continue
+            if entry.get("name") == name:
+                return False
+        return True
+
     def generate_adapter_config(self, platform: str, name: str) -> Optional[str]:
         schema_fields = self.get_schema(platform)
         if not schema_fields:
@@ -246,6 +259,9 @@ class AdapterManager:
         if not name or not platform:
             logger.error("Adapter name and platform are required for creation")
             return None
+
+        if not self._check_name_unique(name):
+            raise ValueError(f"Adapter name '{name}' is already in use")
 
         adapter_id = self.generate_adapter_config(platform, name)
         if not adapter_id:
@@ -327,8 +343,7 @@ class AdapterManager:
             config_entry["enabled"] = status == "active"
 
         new_name_for_check = config_entry.get("name") or adapter_id
-        if old_enabled and old_name != new_name_for_check and new_name_for_check in self._adapters:
-            logger.error(f"Cannot update adapter {adapter_id}: name '{new_name_for_check}' is already in use by another running adapter")
+        if old_name != new_name_for_check and not self._check_name_unique(new_name_for_check, exclude_id=adapter_id):
             raise ValueError(f"Adapter name '{new_name_for_check}' is already in use")
 
         adapters_config[adapter_id] = config_entry
