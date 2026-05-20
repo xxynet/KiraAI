@@ -117,26 +117,19 @@
             type="button"
             class="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             :disabled="backupLoading"
-            @click="handleCreateBackup"
+            @click="backupConfirmRef?.open()"
           >
             {{ backupLoading ? $t('settings.backup_creating') : $t('settings.backup_create') }}
           </button>
 
-          <label
-            class="px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer"
+          <button
+            type="button"
+            class="px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            @click="restoreModalVisible = true"
           >
             {{ $t('settings.restore_title') }}
-            <input
-              type="file"
-              accept=".zip"
-              class="hidden"
-              :disabled="restoreLoading"
-              @change="handleRestore"
-            />
-          </label>
+          </button>
         </div>
-
-        <p class="text-xs text-gray-400 dark:text-gray-500 mb-4">{{ $t('settings.restore_upload_hint') }}</p>
 
         <!-- Backup List -->
         <div v-if="backupList.length > 0">
@@ -156,6 +149,14 @@
               <div class="flex items-center gap-2 ml-4">
                 <button
                   type="button"
+                  class="px-2.5 py-1 text-xs font-medium text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  :disabled="restoreLoading"
+                  @click="openListConfirm('restore', backup.filename)"
+                >
+                  {{ $t('settings.backup_restore') }}
+                </button>
+                <button
+                  type="button"
                   class="px-2.5 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
                   @click="handleDownloadBackup(backup.filename)"
                 >
@@ -164,7 +165,7 @@
                 <button
                   type="button"
                   class="px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                  @click="handleDeleteBackup(backup.filename)"
+                  @click="openListConfirm('delete', backup.filename)"
                 >
                   {{ $t('settings.backup_delete') }}
                 </button>
@@ -279,6 +280,66 @@
         </div>
       </div>
     </div>
+
+    <!-- Backup Confirm Modal -->
+    <ConfirmModal
+      ref="backupConfirmRef"
+      variant="info"
+      :title="$t('settings.backup_create')"
+      :message="$t('settings.backup_confirm')"
+      :cancel-text="$t('settings.backup_confirm_cancel')"
+      :confirm-text="$t('settings.backup_confirm_ok')"
+      @confirm="handleCreateBackup"
+    />
+
+    <!-- List Action Confirm Modal -->
+    <ConfirmModal
+      ref="listConfirmRef"
+      :variant="listAction.type === 'delete' ? 'danger' : 'info'"
+      :title="listAction.type === 'delete' ? $t('settings.backup_delete') : $t('settings.backup_restore')"
+      :message="listAction.type === 'delete' ? $t('settings.backup_confirm_delete') : $t('settings.restore_confirm')"
+      :cancel-text="$t('settings.backup_confirm_cancel')"
+      :confirm-text="$t('settings.backup_confirm_ok')"
+      @confirm="executeListAction"
+    />
+
+    <!-- Restore Modal -->
+    <Modal v-model="restoreModalVisible" content-class="max-w-lg">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl">
+        <div class="px-6 py-4">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
+            {{ $t('settings.restore_title') }}
+          </h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            {{ $t('settings.restore_upload_hint') }}
+          </p>
+          <FileDropzone
+            ref="restoreDropzoneRef"
+            v-model="restoreFile"
+            accept=".zip"
+            title-key="settings.restore_dropzone_title"
+            title-fallback="拖拽备份文件到此处，或点击选择"
+            reselect-key="settings.restore_dropzone_reselect"
+            reselect-fallback="点击或拖拽可重新选择文件"
+          />
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            @click="restoreModalVisible = false"
+          >
+            {{ $t('settings.backup_confirm_cancel') }}
+          </button>
+          <button
+            class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="!restoreFile || restoreLoading"
+            @click="handleRestore"
+          >
+            {{ restoreLoading ? $t('settings.restore_uploading') : $t('settings.restore_confirm_ok') }}
+          </button>
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>
 
@@ -288,6 +349,9 @@ import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import apiClient from '@/api/client'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import Modal from '@/components/common/Modal.vue'
+import FileDropzone from '@/components/common/FileDropzone.vue'
 import {
   getStorageInfo,
   createBackup,
@@ -295,6 +359,7 @@ import {
   downloadBackup,
   deleteBackup,
   restoreBackup,
+  restoreFromBackup,
   type StorageInfoResponse,
   type BackupItem,
 } from '@/api/settings'
@@ -357,6 +422,12 @@ async function fetchStorageInfo() {
 const backupLoading = ref(false)
 const restoreLoading = ref(false)
 const backupList = ref<BackupItem[]>([])
+const backupConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
+const listConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
+const restoreDropzoneRef = ref<InstanceType<typeof FileDropzone>>()
+const restoreModalVisible = ref(false)
+const restoreFile = ref<File | null>(null)
+const listAction = ref<{ type: 'delete' | 'restore'; filename: string }>({ type: 'delete', filename: '' })
 
 async function fetchBackupList() {
   try {
@@ -397,7 +468,6 @@ async function handleDownloadBackup(filename: string) {
 }
 
 async function handleDeleteBackup(filename: string) {
-  if (!confirm(t('settings.backup_confirm_delete'))) return
   try {
     await deleteBackup(filename)
     notify(t('settings.backup_deleted'), 'success')
@@ -407,19 +477,10 @@ async function handleDeleteBackup(filename: string) {
   }
 }
 
-async function handleRestore(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-
-  if (!confirm(t('settings.restore_confirm'))) {
-    input.value = ''
-    return
-  }
-
+async function handleRestoreFromBackup(filename: string) {
   restoreLoading.value = true
   try {
-    const { data } = await restoreBackup(file)
+    const { data } = await restoreFromBackup(filename)
     const result = data as unknown as { success: boolean; message: string }
     if (result.success) {
       notify(t('settings.restore_success'), 'success')
@@ -431,7 +492,43 @@ async function handleRestore(event: Event) {
     notify(t('settings.restore_failed'), 'error')
   } finally {
     restoreLoading.value = false
-    input.value = ''
+  }
+}
+
+function openListConfirm(type: 'delete' | 'restore', filename: string) {
+  listAction.value = { type, filename }
+  listConfirmRef.value?.open()
+}
+
+async function executeListAction() {
+  if (listAction.value.type === 'delete') {
+    await handleDeleteBackup(listAction.value.filename)
+  } else {
+    await handleRestoreFromBackup(listAction.value.filename)
+  }
+}
+
+async function handleRestore() {
+  const file = restoreFile.value
+  if (!file) return
+
+  restoreLoading.value = true
+  try {
+    const { data } = await restoreBackup(file)
+    const result = data as unknown as { success: boolean; message: string }
+    if (result.success) {
+      notify(t('settings.restore_success'), 'success')
+      restoreModalVisible.value = false
+      restoreFile.value = null
+      restoreDropzoneRef.value?.reset()
+      await fetchStorageInfo()
+    } else {
+      notify(result.message || t('settings.restore_failed'), 'error')
+    }
+  } catch {
+    notify(t('settings.restore_failed'), 'error')
+  } finally {
+    restoreLoading.value = false
   }
 }
 

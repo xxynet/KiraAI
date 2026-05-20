@@ -81,6 +81,14 @@ class SettingsRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
+                path="/api/settings/backup/{filename}/restore",
+                methods=["POST"],
+                endpoint=self.restore_from_backup,
+                response_model=RestoreResponse,
+                tags=["settings"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/settings/restore",
                 methods=["POST"],
                 endpoint=self.restore_backup,
@@ -195,29 +203,29 @@ class SettingsRoutes(Routes):
         backup_path.unlink()
         return {"success": True}
 
+    async def restore_from_backup(self, filename: str):
+        backup_path = _get_backup_dir() / filename
+        if not backup_path.exists() or not backup_path.is_file():
+            raise HTTPException(status_code=404, detail="Backup not found")
+        if backup_path.resolve().parent != _get_backup_dir().resolve():
+            raise HTTPException(status_code=400, detail="Invalid filename")
+
+        return self._do_restore(backup_path)
+
     # ── Restore ──────────────────────────────────────────────────────────────
 
-    async def restore_backup(self, file: UploadFile = File(...)):
-        if not file.filename or not file.filename.endswith(".zip"):
-            raise HTTPException(status_code=400, detail="Only .zip files are accepted")
-
+    def _do_restore(self, zip_source) -> RestoreResponse:
+        """Extract a zip into the data directory. *zip_source* can be a Path or file-like."""
         data_path = get_data_path()
-
-        # Directories that should not be overwritten during restore
         exclude_dirs = {BACKUP_DIR_NAME, "__pycache__"}
 
         try:
-            content = await file.read()
-            import io
-
-            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+            with zipfile.ZipFile(zip_source, "r") as zf:
                 for member in zf.infolist():
-                    # Security: prevent path traversal
                     target = (data_path / member.filename).resolve()
                     if not str(target).startswith(str(data_path.resolve())):
                         raise HTTPException(status_code=400, detail="Invalid archive content")
 
-                    # Skip excluded top-level directories
                     parts = Path(member.filename).parts
                     if parts and parts[0] in exclude_dirs:
                         continue
@@ -236,3 +244,11 @@ class SettingsRoutes(Routes):
             raise
         except Exception as e:
             return RestoreResponse(success=False, message=f"Restore failed: {e}")
+
+    async def restore_backup(self, file: UploadFile = File(...)):
+        if not file.filename or not file.filename.endswith(".zip"):
+            raise HTTPException(status_code=400, detail="Only .zip files are accepted")
+
+        import io
+        content = await file.read()
+        return self._do_restore(io.BytesIO(content))

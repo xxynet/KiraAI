@@ -44,6 +44,10 @@ export function deleteBackup(filename: string) {
   return apiClient.delete(`/settings/backup/${filename}`)
 }
 
+export function restoreFromBackup(filename: string) {
+  return apiClient.post(`/settings/backup/${filename}/restore`)
+}
+
 export function restoreBackup(file: File) {
   const formData = new FormData()
   formData.append('file', file)
