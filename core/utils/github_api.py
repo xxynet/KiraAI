@@ -103,8 +103,8 @@ async def get_all_releases(
                 resp = await client.get(url)
                 resp.raise_for_status()
             except httpx.HTTPError as e:
-                logger.error(f"Failed to get releases (page {page}): {e}")
-                break
+                # logger.error(f"Failed to get releases (page {page}): {e}")
+                raise
 
             data = resp.json()
             if not data:
