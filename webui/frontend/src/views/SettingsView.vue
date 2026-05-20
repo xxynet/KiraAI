@@ -179,6 +179,22 @@
       </div>
     </div>
 
+    <!-- System Tab -->
+    <div v-show="activeTab === 'system'" class="space-y-6">
+      <div>
+        <h4 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ $t('settings.system_title') }}</h4>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{{ $t('settings.system_restart_desc') }}</p>
+        <button
+          type="button"
+          class="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="restarting"
+          @click="restartConfirmRef?.open()"
+        >
+          {{ restarting ? $t('header.restarting') : $t('settings.system_restart') }}
+        </button>
+      </div>
+    </div>
+
     <!-- Custom CSS/JS Tab -->
     <div v-show="activeTab === 'custom'" class="space-y-6">
       <div>
@@ -281,6 +297,17 @@
       </div>
     </div>
 
+    <!-- Restart Confirm Modal -->
+    <ConfirmModal
+      ref="restartConfirmRef"
+      variant="danger"
+      :title="$t('settings.system_restart')"
+      :message="$t('settings.system_restart_confirm')"
+      :cancel-text="$t('settings.backup_confirm_cancel')"
+      :confirm-text="$t('settings.system_restart')"
+      @confirm="handleRestart"
+    />
+
     <!-- Backup Confirm Modal -->
     <ConfirmModal
       ref="backupConfirmRef"
@@ -363,6 +390,7 @@ import {
   type StorageInfoResponse,
   type BackupItem,
 } from '@/api/settings'
+import { restartAndWait } from '@/composables/useRestart'
 
 const { t } = useI18n()
 const saving = ref(false)
@@ -372,6 +400,7 @@ const projectVersion = ref('dev')
 
 const tabs = computed(() => [
   { key: 'storage', label: t('settings.tab_storage') },
+  { key: 'system', label: t('settings.tab_system') },
   { key: 'custom', label: t('settings.tab_custom') },
   { key: 'about', label: t('settings.tab_about') },
 ])
@@ -424,10 +453,33 @@ const restoreLoading = ref(false)
 const backupList = ref<BackupItem[]>([])
 const backupConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
 const listConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
+const restartConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
 const restoreDropzoneRef = ref<InstanceType<typeof FileDropzone>>()
 const restoreModalVisible = ref(false)
 const restoreFile = ref<File | null>(null)
 const listAction = ref<{ type: 'delete' | 'restore'; filename: string }>({ type: 'delete', filename: '' })
+
+const restarting = ref(false)
+
+async function triggerRestart() {
+  try {
+    await restartAndWait()
+  } catch {
+    notify(t('header.restart_timeout'), 'warning', 600000)
+  }
+}
+
+async function handleRestart() {
+  restarting.value = true
+  notify(t('header.restarting'), 'info')
+  try {
+    await restartAndWait()
+  } catch {
+    notify(t('header.restart_timeout'), 'warning', 600000)
+  } finally {
+    restarting.value = false
+  }
+}
 
 async function fetchBackupList() {
   try {
@@ -484,7 +536,7 @@ async function handleRestoreFromBackup(filename: string) {
     const result = data as unknown as { success: boolean; message: string }
     if (result.success) {
       notify(t('settings.restore_success'), 'success')
-      await fetchStorageInfo()
+      await triggerRestart()
     } else {
       notify(result.message || t('settings.restore_failed'), 'error')
     }
@@ -521,7 +573,7 @@ async function handleRestore() {
       restoreModalVisible.value = false
       restoreFile.value = null
       restoreDropzoneRef.value?.reset()
-      await fetchStorageInfo()
+      await triggerRestart()
     } else {
       notify(result.message || t('settings.restore_failed'), 'error')
     }

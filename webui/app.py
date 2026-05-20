@@ -28,6 +28,7 @@ from webui.routes.config import ConfigRoutes
 from webui.routes.stickers import StickersRoutes
 from webui.routes.settings import SettingsRoutes
 from webui.routes.skills import SkillsRoutes
+from webui.routes.system import SystemRoutes
 
 
 class KiraWebUI:
@@ -115,6 +116,7 @@ class KiraWebUI:
         StickersRoutes(self.app, self.lifecycle).register()
         SkillsRoutes(self.app, self.lifecycle).register()
         SettingsRoutes(self.app, self.lifecycle).register()
+        SystemRoutes(self.app, self.lifecycle).register()
         ReleasesRoutes(self.app, self.lifecycle).register()
 
         # SPA catch-all must be registered last
@@ -128,8 +130,9 @@ class KiraWebUI:
             log_level="info",
             loop="asyncio",
         )
-        server = uvicorn.Server(config)
-        await server.serve()
+        self.server = uvicorn.Server(config)
+        self.lifecycle.uvicorn_server = self.server
+        await self.server.serve()
 
     def get_app(self) -> FastAPI:
         """Get the FastAPI application instance"""

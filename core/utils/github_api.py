@@ -83,7 +83,7 @@ async def get_all_releases(
 
     Returns a list of release dicts, each containing:
       tag_name, name, body, html_url, published_at, prerelease, draft
-    Returns an empty list on failure.
+    Raises httpx.HTTPError on network or API failures.
 
     per_page  — results per page (max 100, default 30)
     max_pages — safety cap to avoid excessive pagination
@@ -103,8 +103,8 @@ async def get_all_releases(
                 resp = await client.get(url)
                 resp.raise_for_status()
             except httpx.HTTPError as e:
-                logger.error(f"Failed to get releases (page {page}): {e}")
-                break
+                # logger.error(f"Failed to get releases (page {page}): {e}")
+                raise
 
             data = resp.json()
             if not data:
@@ -139,7 +139,7 @@ async def get_release_assets(
 
     Returns a list of asset dicts, each containing:
       name, size, download_url (browser_download_url), content_type, state
-    Returns an empty list on failure.
+    Raises httpx.HTTPError on network or API failures.
     """
     url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
     client_kwargs: dict = {"timeout": 10.0}
@@ -147,12 +147,8 @@ async def get_release_assets(
         client_kwargs["proxy"] = proxy
 
     async with httpx.AsyncClient(**client_kwargs) as client:
-        try:
-            resp = await client.get(url)
-            resp.raise_for_status()
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to get release '{tag}': {e}")
-            return []
+        resp = await client.get(url)
+        resp.raise_for_status()
 
     data = resp.json()
     assets: List[dict] = []
