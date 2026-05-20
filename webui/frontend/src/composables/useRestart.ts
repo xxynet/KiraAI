@@ -20,8 +20,10 @@ export async function restartAndWait(options: RestartOptions = {}): Promise<void
 
   try {
     await restartApplication()
-  } catch {
-    // Expected — server is shutting down
+  } catch (err: any) {
+    // Network errors are expected (server already shutting down).
+    // HTTP errors (auth, 5xx) are real failures — propagate them.
+    if (err?.response) throw err
   }
 
   for (let i = 0; i < maxRetries; i++) {
