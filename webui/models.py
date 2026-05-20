@@ -100,15 +100,6 @@ class PersonaResponse(PersonaBase):
     created_at: int = 0
 
 
-class SettingsRequest(BaseModel):
-    language: str = "en"
-    theme: str = "light"
-
-
-class SettingsResponse(SettingsRequest):
-    updated_by: Optional[str] = None
-
-
 class TokenLoginRequest(BaseModel):
     access_token: str
 

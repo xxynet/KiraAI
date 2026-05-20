@@ -11,8 +11,6 @@ from webui.models import (
     BackupCreateResponse,
     DirectoryEntry,
     RestoreResponse,
-    SettingsRequest,
-    SettingsResponse,
     StorageInfoResponse,
 )
 from webui.routes.auth import require_auth
@@ -43,28 +41,8 @@ def _calc_dir_size(path: Path) -> tuple[int, int]:
 
 
 class SettingsRoutes(Routes):
-    def __init__(self, app, lifecycle):
-        super().__init__(app, lifecycle)
-        self._settings = SettingsResponse()
-
     def get_routes(self):
         return [
-            RouteDefinition(
-                path="/api/settings",
-                methods=["GET"],
-                endpoint=self.get_settings,
-                response_model=SettingsResponse,
-                tags=["settings"],
-                dependencies=[Depends(require_auth)],
-            ),
-            RouteDefinition(
-                path="/api/settings",
-                methods=["PUT"],
-                endpoint=self.update_settings,
-                response_model=SettingsResponse,
-                tags=["settings"],
-                dependencies=[Depends(require_auth)],
-            ),
             RouteDefinition(
                 path="/api/settings/storage",
                 methods=["GET"],
@@ -111,13 +89,6 @@ class SettingsRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
         ]
-
-    async def get_settings(self):
-        return self._settings
-
-    async def update_settings(self, payload: SettingsRequest):
-        self._settings = SettingsResponse(**payload.model_dump(), updated_by="admin")
-        return self._settings
 
     # ── Storage ──────────────────────────────────────────────────────────────
 
