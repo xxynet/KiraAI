@@ -363,6 +363,7 @@ import {
   type StorageInfoResponse,
   type BackupItem,
 } from '@/api/settings'
+import { restartApplication } from '@/api/system'
 
 const { t } = useI18n()
 const saving = ref(false)
@@ -429,6 +430,25 @@ const restoreModalVisible = ref(false)
 const restoreFile = ref<File | null>(null)
 const listAction = ref<{ type: 'delete' | 'restore'; filename: string }>({ type: 'delete', filename: '' })
 
+async function triggerRestart() {
+  try {
+    await restartApplication()
+  } catch {
+    // Expected — server is shutting down
+  }
+  // Poll until server is back
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 1000))
+    try {
+      await apiClient.get('/overview')
+      window.location.reload()
+      return
+    } catch {
+      // server not ready yet
+    }
+  }
+}
+
 async function fetchBackupList() {
   try {
     const { data } = await listBackups()
@@ -484,7 +504,7 @@ async function handleRestoreFromBackup(filename: string) {
     const result = data as unknown as { success: boolean; message: string }
     if (result.success) {
       notify(t('settings.restore_success'), 'success')
-      await fetchStorageInfo()
+      await triggerRestart()
     } else {
       notify(result.message || t('settings.restore_failed'), 'error')
     }
@@ -521,7 +541,7 @@ async function handleRestore() {
       restoreModalVisible.value = false
       restoreFile.value = null
       restoreDropzoneRef.value?.reset()
-      await fetchStorageInfo()
+      await triggerRestart()
     } else {
       notify(result.message || t('settings.restore_failed'), 'error')
     }
