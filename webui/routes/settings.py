@@ -223,7 +223,7 @@ class SettingsRoutes(Routes):
             with zipfile.ZipFile(zip_source, "r") as zf:
                 for member in zf.infolist():
                     target = (data_path / member.filename).resolve()
-                    if not str(target).startswith(str(data_path.resolve())):
+                    if not target.is_relative_to(data_path.resolve()):
                         raise HTTPException(status_code=400, detail="Invalid archive content")
 
                     parts = Path(member.filename).parts
@@ -249,6 +249,5 @@ class SettingsRoutes(Routes):
         if not file.filename or not file.filename.endswith(".zip"):
             raise HTTPException(status_code=400, detail="Only .zip files are accepted")
 
-        import io
-        content = await file.read()
-        return self._do_restore(io.BytesIO(content))
+        file.file.seek(0)
+        return self._do_restore(file.file)
