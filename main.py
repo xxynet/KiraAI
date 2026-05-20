@@ -168,7 +168,12 @@ def _run_supervisor(args: argparse.Namespace):
     while True:
         child = subprocess.Popen(child_cmd, cwd=script_dir)
         child_start = time.monotonic()
-        child.wait()
+        try:
+            child.wait()
+        except KeyboardInterrupt:
+            child.terminate()
+            child.wait()
+            sys.exit(0)
         elapsed = time.monotonic() - child_start
 
         if child.returncode != RESTART_EXIT_CODE:
