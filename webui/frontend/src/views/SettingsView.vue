@@ -19,6 +19,165 @@
       </button>
     </div>
 
+    <!-- Storage Tab -->
+    <div v-show="activeTab === 'storage'" class="space-y-8">
+      <!-- Storage Overview -->
+      <div>
+        <div class="flex items-center justify-between mb-4">
+          <h4 class="text-base font-semibold text-gray-800 dark:text-gray-100">{{ $t('settings.storage_title') }}</h4>
+          <button
+            type="button"
+            class="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            :disabled="storageLoading"
+            @click="fetchStorageInfo"
+          >
+            {{ $t('settings.storage_refresh') }}
+          </button>
+        </div>
+
+        <div v-if="storageLoading" class="flex items-center justify-center py-12">
+          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+
+        <template v-else-if="storageInfo">
+          <!-- Data Path -->
+          <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
+            <div class="flex justify-between items-center">
+              <span class="text-sm text-gray-500 dark:text-gray-400">{{ $t('settings.storage_data_path') }}</span>
+              <span class="text-sm font-mono font-medium text-gray-800 dark:text-gray-200 break-all text-right max-w-[70%]">{{ storageInfo.data_path }}</span>
+            </div>
+            <div class="flex justify-between items-center mt-2">
+              <span class="text-sm text-gray-500 dark:text-gray-400">{{ $t('settings.storage_total_size') }}</span>
+              <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.total_size_bytes) }}</span>
+            </div>
+          </div>
+
+          <!-- Disk Usage -->
+          <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
+            <h5 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('settings.storage_disk_usage') }}</h5>
+            <div class="space-y-2">
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500 dark:text-gray-400">{{ $t('settings.storage_disk_total') }}</span>
+                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.disk_total_bytes) }}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500 dark:text-gray-400">{{ $t('settings.storage_disk_used') }}</span>
+                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.disk_used_bytes) }}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500 dark:text-gray-400">{{ $t('settings.storage_disk_free') }}</span>
+                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.disk_free_bytes) }}</span>
+              </div>
+              <!-- Progress bar -->
+              <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3 mt-2">
+                <div
+                  class="h-3 rounded-full transition-all duration-500"
+                  :class="diskUsagePercent > 90 ? 'bg-red-500' : diskUsagePercent > 70 ? 'bg-yellow-500' : 'bg-blue-500'"
+                  :style="{ width: diskUsagePercent + '%' }"
+                ></div>
+              </div>
+              <div class="text-right text-xs text-gray-500 dark:text-gray-400">
+                {{ diskUsagePercent.toFixed(1) }}%
+              </div>
+            </div>
+          </div>
+
+          <!-- Directory Breakdown -->
+          <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+            <h5 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('settings.storage_directories') }}</h5>
+            <div v-if="storageInfo.directories.length === 0" class="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+              {{ $t('settings.storage_no_data') }}
+            </div>
+            <table v-else class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 dark:border-gray-600">
+                  <th class="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">{{ $t('settings.storage_dir_name') }}</th>
+                  <th class="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">{{ $t('settings.storage_dir_size') }}</th>
+                  <th class="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">{{ $t('settings.storage_dir_files') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="dir in storageInfo.directories" :key="dir.name" class="border-b border-gray-100 dark:border-gray-700 last:border-0">
+                  <td class="py-2 font-mono text-gray-800 dark:text-gray-200">{{ dir.name }}</td>
+                  <td class="py-2 text-right text-gray-600 dark:text-gray-300">{{ formatBytes(dir.size_bytes) }}</td>
+                  <td class="py-2 text-right text-gray-600 dark:text-gray-300">{{ dir.file_count }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </div>
+
+      <!-- Backup & Restore -->
+      <div>
+        <h4 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ $t('settings.backup_title') }}</h4>
+
+        <div class="flex flex-wrap gap-3 mb-4">
+          <button
+            type="button"
+            class="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="backupLoading"
+            @click="handleCreateBackup"
+          >
+            {{ backupLoading ? $t('settings.backup_creating') : $t('settings.backup_create') }}
+          </button>
+
+          <label
+            class="px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer"
+          >
+            {{ $t('settings.restore_title') }}
+            <input
+              type="file"
+              accept=".zip"
+              class="hidden"
+              :disabled="restoreLoading"
+              @change="handleRestore"
+            />
+          </label>
+        </div>
+
+        <p class="text-xs text-gray-400 dark:text-gray-500 mb-4">{{ $t('settings.restore_upload_hint') }}</p>
+
+        <!-- Backup List -->
+        <div v-if="backupList.length > 0">
+          <h5 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{{ $t('settings.backup_list') }}</h5>
+          <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg divide-y divide-gray-100 dark:divide-gray-700">
+            <div
+              v-for="backup in backupList"
+              :key="backup.filename"
+              class="flex items-center justify-between px-4 py-3"
+            >
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-mono text-gray-800 dark:text-gray-200 truncate">{{ backup.filename }}</p>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                  {{ formatBytes(backup.size_bytes) }} &middot; {{ formatDate(backup.created_at) }}
+                </p>
+              </div>
+              <div class="flex items-center gap-2 ml-4">
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                  @click="handleDownloadBackup(backup.filename)"
+                >
+                  {{ $t('settings.backup_download') }}
+                </button>
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                  @click="handleDeleteBackup(backup.filename)"
+                >
+                  {{ $t('settings.backup_delete') }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-sm text-gray-400 dark:text-gray-500 text-center py-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+          {{ $t('settings.backup_no_backups') }}
+        </div>
+      </div>
+    </div>
+
     <!-- Custom CSS/JS Tab -->
     <div v-show="activeTab === 'custom'" class="space-y-6">
       <div>
@@ -129,20 +288,154 @@ import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import apiClient from '@/api/client'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
+import {
+  getStorageInfo,
+  createBackup,
+  listBackups,
+  downloadBackup,
+  deleteBackup,
+  restoreBackup,
+  type StorageInfoResponse,
+  type BackupItem,
+} from '@/api/settings'
 
 const { t } = useI18n()
 const saving = ref(false)
-const activeTab = ref('custom')
+const activeTab = ref('storage')
 
 const projectVersion = ref('dev')
 
 const tabs = computed(() => [
+  { key: 'storage', label: t('settings.tab_storage') },
   { key: 'custom', label: t('settings.tab_custom') },
   { key: 'about', label: t('settings.tab_about') },
 ])
 
 const customCSS = ref('')
 const customJS = ref('')
+
+// ── Storage ─────────────────────────────────────────────────────────────
+
+const storageLoading = ref(false)
+const storageInfo = ref<StorageInfoResponse | null>(null)
+
+const diskUsagePercent = computed(() => {
+  if (!storageInfo.value || storageInfo.value.disk_total_bytes === 0) return 0
+  return (storageInfo.value.disk_used_bytes / storageInfo.value.disk_total_bytes) * 100
+})
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return (bytes / Math.pow(k, i)).toFixed(i > 0 ? 2 : 0) + ' ' + sizes[i]
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
+}
+
+async function fetchStorageInfo() {
+  storageLoading.value = true
+  try {
+    const { data } = await getStorageInfo()
+    storageInfo.value = data
+  } catch {
+    // silent
+  } finally {
+    storageLoading.value = false
+  }
+}
+
+// ── Backup & Restore ────────────────────────────────────────────────────
+
+const backupLoading = ref(false)
+const restoreLoading = ref(false)
+const backupList = ref<BackupItem[]>([])
+
+async function fetchBackupList() {
+  try {
+    const { data } = await listBackups()
+    backupList.value = data as unknown as BackupItem[]
+  } catch {
+    // silent
+  }
+}
+
+async function handleCreateBackup() {
+  backupLoading.value = true
+  try {
+    await createBackup()
+    notify(t('settings.backup_created'), 'success')
+    await fetchBackupList()
+  } catch {
+    notify(t('settings.backup_create_failed'), 'error')
+  } finally {
+    backupLoading.value = false
+  }
+}
+
+async function handleDownloadBackup(filename: string) {
+  try {
+    const { data } = await downloadBackup(filename)
+    const url = URL.createObjectURL(data as Blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch {
+    // silent
+  }
+}
+
+async function handleDeleteBackup(filename: string) {
+  if (!confirm(t('settings.backup_confirm_delete'))) return
+  try {
+    await deleteBackup(filename)
+    notify(t('settings.backup_deleted'), 'success')
+    await fetchBackupList()
+  } catch {
+    notify(t('settings.backup_delete_failed'), 'error')
+  }
+}
+
+async function handleRestore(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  if (!confirm(t('settings.restore_confirm'))) {
+    input.value = ''
+    return
+  }
+
+  restoreLoading.value = true
+  try {
+    const { data } = await restoreBackup(file)
+    const result = data as unknown as { success: boolean; message: string }
+    if (result.success) {
+      notify(t('settings.restore_success'), 'success')
+      await fetchStorageInfo()
+    } else {
+      notify(result.message || t('settings.restore_failed'), 'error')
+    }
+  } catch {
+    notify(t('settings.restore_failed'), 'error')
+  } finally {
+    restoreLoading.value = false
+    input.value = ''
+  }
+}
+
+// ── Init ────────────────────────────────────────────────────────────────
 
 onMounted(() => {
   customCSS.value = localStorage.getItem('custom_css') || ''
@@ -151,6 +444,9 @@ onMounted(() => {
   apiClient.get('/version').then(({ data }) => {
     if (data?.version) projectVersion.value = data.version
   }).catch(() => {})
+
+  fetchStorageInfo()
+  fetchBackupList()
 })
 
 function applyCustomCSS() {
