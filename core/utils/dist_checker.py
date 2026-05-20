@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import httpx
+
 from core.config import VERSION
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_webui_dist_path
@@ -89,7 +91,11 @@ async def _fetch_asset_digest(
     Returns the hex digest string (without the ``sha256:`` prefix), or None
     if the information is unavailable.
     """
-    assets = await get_release_assets(REPO_OWNER, REPO_NAME, tag, proxy)
+    try:
+        assets = await get_release_assets(REPO_OWNER, REPO_NAME, tag, proxy)
+    except httpx.HTTPError as e:
+        logger.warning(f"Failed to fetch release assets for {tag}: {e}")
+        return None
     if not assets:
         return None
 
