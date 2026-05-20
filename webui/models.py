@@ -100,15 +100,6 @@ class PersonaResponse(PersonaBase):
     created_at: int = 0
 
 
-class SettingsRequest(BaseModel):
-    language: str = "en"
-    theme: str = "light"
-
-
-class SettingsResponse(SettingsRequest):
-    updated_by: Optional[str] = None
-
-
 class TokenLoginRequest(BaseModel):
     access_token: str
 
@@ -221,6 +212,22 @@ class SkillItem(BaseModel):
     path: str = ""
 
 
+class DirectoryEntry(BaseModel):
+    name: str
+    path: str
+    size_bytes: int = 0
+    file_count: int = 0
+
+
+class StorageInfoResponse(BaseModel):
+    data_path: str
+    total_size_bytes: int = 0
+    disk_total_bytes: int = 0
+    disk_used_bytes: int = 0
+    disk_free_bytes: int = 0
+    directories: List[DirectoryEntry] = Field(default_factory=list)
+
+
 class ReleaseItem(BaseModel):
     tag_name: str
     name: Optional[str] = None
@@ -234,6 +241,17 @@ class ReleaseItem(BaseModel):
 class ReleasesResponse(BaseModel):
     current_version: str
     releases: List[ReleaseItem]
+
+
+class BackupCreateResponse(BaseModel):
+    filename: str
+    size_bytes: int = 0
+    created_at: str = ""
+
+
+class RestoreResponse(BaseModel):
+    success: bool
+    message: str = ""
 
 
 class DownloadReleaseRequest(BaseModel):

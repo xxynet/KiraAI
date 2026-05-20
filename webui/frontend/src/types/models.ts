@@ -90,15 +90,6 @@ export interface PersonaContentUpdateRequest {
   format?: string
 }
 
-export interface SettingsRequest {
-  language: string
-  theme: string
-}
-
-export interface SettingsResponse extends SettingsRequest {
-  updated_by: string | null
-}
-
 export interface StickerItem {
   id: string
   desc: string
