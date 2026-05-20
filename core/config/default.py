@@ -1,4 +1,4 @@
-VERSION = "v2.16.5"
+VERSION = "v2.17.0"
 
 DEFAULT_CONFIG = {
     "bot_config": {
