@@ -5,6 +5,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -18,6 +19,9 @@ kira_logo = r"""
 
 RESTART_EXIT_CODE = 42
 DEFAULT_PORT = 5267
+MAX_RESTARTS = 10
+RESTART_BACKOFF_BASE = 2  # seconds
+STABLE_RUN_SECONDS = 30  # child running this long resets the restart counter
 
 
 def _parse_args() -> argparse.Namespace:
@@ -85,7 +89,6 @@ def _get_port(data_path: Path) -> int:
 
 def _wait_for_port_release(port: int, timeout: float = 15.0):
     """Block until the given TCP port is free or timeout expires."""
-    import time
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -160,12 +163,29 @@ def _run_supervisor(args: argparse.Namespace):
     if args.disable_webui_auth:
         child_cmd.append("--disable-webui-auth")
 
+    restart_count = 0
+
     while True:
         child = subprocess.Popen(child_cmd, cwd=script_dir)
+        child_start = time.monotonic()
         child.wait()
+        elapsed = time.monotonic() - child_start
 
         if child.returncode != RESTART_EXIT_CODE:
             break
+
+        # Child ran long enough — treat as a stable run, reset counter
+        if elapsed >= STABLE_RUN_SECONDS:
+            restart_count = 0
+
+        restart_count += 1
+        if restart_count > MAX_RESTARTS:
+            print(f"[supervisor] Exceeded {MAX_RESTARTS} rapid restarts, exiting.")
+            break
+
+        backoff = min(RESTART_BACKOFF_BASE * restart_count, 60)
+        print(f"[supervisor] Restart {restart_count}/{MAX_RESTARTS} in {backoff}s ...")
+        time.sleep(backoff)
 
         _wait_for_port_release(port)
 
