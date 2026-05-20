@@ -628,7 +628,7 @@ export default {
     tab_about: 'About',
     system_title: 'System',
     system_restart: 'Restart System',
-    system_restart_desc: 'Restart the application server. This will briefly interrupt all connections.',
+    system_restart_desc: 'Restart the application. This will briefly interrupt all connections.',
     system_restart_confirm: 'Are you sure you want to restart the system? All active connections will be briefly interrupted.',
     about_tagline: 'Light up the digital soul',
     about_version: 'Version',
