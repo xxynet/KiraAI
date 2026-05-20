@@ -1,5 +1,6 @@
 import os
 import shutil
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -215,27 +216,41 @@ class SettingsRoutes(Routes):
     # ── Restore ──────────────────────────────────────────────────────────────
 
     def _do_restore(self, zip_source) -> RestoreResponse:
-        """Extract a zip into the data directory. *zip_source* can be a Path or file-like."""
+        """Extract a zip into a staging dir, validate, then copy to data directory."""
         data_path = get_data_path()
         exclude_dirs = {BACKUP_DIR_NAME, "__pycache__"}
 
         try:
-            with zipfile.ZipFile(zip_source, "r") as zf:
-                for member in zf.infolist():
-                    target = (data_path / member.filename).resolve()
-                    if not target.is_relative_to(data_path.resolve()):
-                        raise HTTPException(status_code=400, detail="Invalid archive content")
+            with tempfile.TemporaryDirectory() as staging_dir:
+                staging_path = Path(staging_dir)
 
-                    parts = Path(member.filename).parts
-                    if parts and parts[0] in exclude_dirs:
-                        continue
+                # Step 1: Extract to staging
+                with zipfile.ZipFile(zip_source, "r") as zf:
+                    for member in zf.infolist():
+                        target = (staging_path / member.filename).resolve()
+                        if not target.is_relative_to(staging_path.resolve()):
+                            raise HTTPException(status_code=400, detail="Invalid archive content")
 
-                    if member.is_dir():
-                        target.mkdir(parents=True, exist_ok=True)
+                        parts = Path(member.filename).parts
+                        if parts and parts[0] in exclude_dirs:
+                            continue
+
+                        if member.is_dir():
+                            target.mkdir(parents=True, exist_ok=True)
+                        else:
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            with zf.open(member) as src, open(target, "wb") as dst:
+                                shutil.copyfileobj(src, dst)
+
+                # Step 2: Copy validated files to data_path
+                for src_file in staging_path.rglob("*"):
+                    rel = src_file.relative_to(staging_path)
+                    dst_file = data_path / rel
+                    if src_file.is_dir():
+                        dst_file.mkdir(parents=True, exist_ok=True)
                     else:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        with zf.open(member) as src, open(target, "wb") as dst:
-                            dst.write(src.read())
+                        dst_file.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_file, dst_file)
 
             return RestoreResponse(success=True, message="Restore completed successfully")
         except zipfile.BadZipFile:
