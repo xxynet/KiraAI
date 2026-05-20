@@ -57,6 +57,8 @@ class KiraWebUI:
             openapi_url="/api/openapi.json",
             docs_url="/api/docs",
         )
+        # require_auth reads this to detect mode-mismatched JWTs.
+        self.app.state.disable_auth = disable_auth
 
         # Paths
         self.webui_dir = Path(__file__).parent

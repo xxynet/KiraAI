@@ -11,8 +11,18 @@ from webui.routes.base import RouteDefinition, Routes
 from webui.utils import _create_jwt_token, _verify_jwt_token
 
 
-async def require_auth(authorization: Optional[str] = Header(None)) -> str:
-    """Authenticate requests using JWT Bearer token."""
+async def require_auth(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+) -> str:
+    """Authenticate requests using JWT Bearer token.
+
+    Beyond signature/expiry, also rejects JWTs whose auth_mode claim doesn't
+    match the current server mode — so a sentinel JWT issued under
+    --disable-webui-auth becomes invalid the moment the server restarts with
+    auth enabled (and vice versa). Truth lives in the JWT, not in a client-side
+    marker.
+    """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -20,6 +30,14 @@ async def require_auth(authorization: Optional[str] = Header(None)) -> str:
         )
     token = authorization.split(" ", 1)[1]
     payload = _verify_jwt_token(token)
+
+    current_mode = "disabled" if getattr(request.app.state, "disable_auth", False) else "enabled"
+    token_mode = payload.get("auth_mode", "enabled")
+    if token_mode != current_mode:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token issued under a different auth mode, please re-login",
+        )
     return payload.get("sub", "admin")
 
 
@@ -154,8 +172,14 @@ class AuthRoutes(Routes):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid access token",
             )
+        # auth_mode claim lets require_auth reject JWTs issued under the opposite
+        # mode after a restart (e.g. a sentinel JWT cached in localStorage from a
+        # prior --disable-webui-auth run, when auth is now back on).
         access_token = _create_jwt_token(
-            data={"sub": "admin"},
+            data={
+                "sub": "admin",
+                "auth_mode": "disabled" if self.disable_auth else "enabled",
+            },
             expires_delta=timedelta(days=5),
         )
         return LoginResponse(access_token=access_token)
