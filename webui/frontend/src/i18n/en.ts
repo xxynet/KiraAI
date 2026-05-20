@@ -44,6 +44,7 @@ export default {
     update_success: 'Update applied. Restarting...',
     switch_success: 'Switch applied. Restarting...',
     restarting: 'Restarting...',
+    restart_timeout: 'Restart timed out. Please refresh the page manually.',
     download_failed: 'Download failed',
   },
   nav: {

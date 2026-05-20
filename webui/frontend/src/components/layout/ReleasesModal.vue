@@ -143,8 +143,7 @@ import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import { notify } from '@/composables/useNotification'
 import { downloadRelease } from '@/api/auth'
-import { restartApplication } from '@/api/system'
-import apiClient from '@/api/client'
+import { restartAndWait } from '@/composables/useRestart'
 import type { ReleaseItem } from '@/types'
 
 const props = defineProps<{
@@ -238,19 +237,9 @@ async function handleConfirm() {
     notify(isNew ? t('header.update_success') : t('header.switch_success'), 'success')
     // Auto restart
     try {
-      await restartApplication()
+      await restartAndWait()
     } catch {
-      // Expected — server is shutting down
-    }
-    for (let i = 0; i < 60; i++) {
-      await new Promise(r => setTimeout(r, 1000))
-      try {
-        await apiClient.get('/overview')
-        window.location.reload()
-        return
-      } catch {
-        // server not ready yet
-      }
+      notify(t('header.restart_timeout'), 'warning', 600000)
     }
   } catch {
     notify(t('header.download_failed'), 'error')

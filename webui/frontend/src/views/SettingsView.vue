@@ -363,7 +363,7 @@ import {
   type StorageInfoResponse,
   type BackupItem,
 } from '@/api/settings'
-import { restartApplication } from '@/api/system'
+import { restartAndWait } from '@/composables/useRestart'
 
 const { t } = useI18n()
 const saving = ref(false)
@@ -432,20 +432,9 @@ const listAction = ref<{ type: 'delete' | 'restore'; filename: string }>({ type:
 
 async function triggerRestart() {
   try {
-    await restartApplication()
+    await restartAndWait()
   } catch {
-    // Expected — server is shutting down
-  }
-  // Poll until server is back
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 1000))
-    try {
-      await apiClient.get('/overview')
-      window.location.reload()
-      return
-    } catch {
-      // server not ready yet
-    }
+    notify(t('header.restart_timeout'), 'warning', 600000)
   }
 }
 

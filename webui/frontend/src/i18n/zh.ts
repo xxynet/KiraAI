@@ -44,6 +44,7 @@ export default {
     update_success: '更新已应用，正在重启...',
     switch_success: '切换已应用，正在重启...',
     restarting: '正在重启...',
+    restart_timeout: '重启超时，请手动刷新页面',
     download_failed: '下载失败',
   },
   nav: {
