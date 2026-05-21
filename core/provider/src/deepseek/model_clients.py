@@ -23,7 +23,7 @@ class DeepSeekLLMClient(LLMModelClient):
         super().__init__(model)
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
-        default_headers = self.model.provider_config.get("headers", {})
+        default_headers = self.model.provider_config.get("section_advanced", {}).get("headers", {})
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
         client = AsyncOpenAI(
