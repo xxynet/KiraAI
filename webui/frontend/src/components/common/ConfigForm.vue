@@ -6,9 +6,18 @@
           {{ labelFor(field, key as string) }}
         </label>
 
+        <!-- Multi-select with options -->
+        <CustomMultiSelect
+          v-if="isMultiSelectLike(field.type)"
+          :modelValue="(fieldValue(key, field) as string[]) ?? []"
+          :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
+          :placeholder="hintFor(field) || 'Select...'"
+          @update:modelValue="updateField(key as string, $event)"
+        />
+
         <!-- Select with options -->
         <CustomSelect
-          v-if="hasOptions(field)"
+          v-else-if="hasOptions(field)"
           :model-value="fieldValue(key, field) ?? ''"
           :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
           :placeholder="hintFor(field) || 'Select...'"
@@ -138,6 +147,7 @@ import { reactive, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import { getProviders, getModels } from '@/api/provider'
 
@@ -217,6 +227,10 @@ function isJsonLike(type: string): boolean {
 
 function isModelSelectLike(type: string): boolean {
   return type === 'model_select'
+}
+
+function isMultiSelectLike(type: string): boolean {
+  return type === 'multi_select'
 }
 
 async function loadModelSelectOptions() {

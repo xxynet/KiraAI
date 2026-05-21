@@ -15,6 +15,7 @@ class ConfigType(Enum):
     Editor = "editor"
     Textarea = "textarea"
     ModelSelect = "model_select"
+    MultiSelect = "multi_select"
 
 
 class BaseConfigField:
@@ -47,7 +48,7 @@ class BaseConfigField:
             data["locales"] = self.locales
         if isinstance(self, EnumField):
             data["options"] = list(self.options)
-        if isinstance(self, EnumField):
+        if isinstance(self, MultiSelectField):
             if getattr(self, "options", None):
                 data["options"] = list(self.options)
         if isinstance(self, EditorField) and getattr(self, "language", None):
@@ -160,6 +161,14 @@ class ModelSelectField(BaseConfigField):
         self.model_type = model_type
 
 
+class MultiSelectField(BaseConfigField):
+    type = ConfigType.MultiSelect
+
+    def __init__(self, key: str, name: str, hint: str, options, default=None, locales: dict = None):
+        super().__init__(key, name, hint, default if isinstance(default, list) else [], locales)
+        self.options = list(options)
+
+
 def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     field_type = schema.get("type", "string")
     name = schema.get("name") or key
@@ -210,6 +219,9 @@ def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     if field_type == "model_select":
         model_type = schema.get("model_type", "llm")
         return ModelSelectField(key=key, name=name, hint=hint, model_type=model_type, default=default, locales=locales)
+
+    if field_type == "multi_select":
+        return MultiSelectField(key=key, name=name, hint=hint, options=options or [], default=default, locales=locales)
 
     return StringField(key=key, name=name, hint=hint, default=default, locales=locales)
 
