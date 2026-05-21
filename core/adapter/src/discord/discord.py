@@ -38,9 +38,40 @@ class MessageSender:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
+    @staticmethod
+    def _refresh_discord_files(kwargs: dict):
+        """Recreate discord.File objects for retry.
+
+        After a failed attempt the internal file handle may be closed or at
+        EOF.  For path-backed files we reopen from ``fp.name``; for seekable
+        streams (BytesIO) we just rewind.
+        """
+        def _recreate(f: discord.File) -> discord.File:
+            fp = f.fp
+            # path-backed file (BufferedReader with .name)
+            if hasattr(fp, "name"):
+                new_f = discord.File(fp.name, filename=f.filename, spoiler=f.spoiler)
+                if f.description:
+                    new_f.description = f.description
+                return new_f
+            # seekable stream (BytesIO etc.) – just rewind
+            if hasattr(fp, "seek"):
+                fp.seek(0)
+            return f
+
+        file_val = kwargs.get("file")
+        if isinstance(file_val, discord.File):
+            kwargs["file"] = _recreate(file_val)
+
+        files_val = kwargs.get("files")
+        if files_val and isinstance(files_val, list):
+            kwargs["files"] = [_recreate(f) if isinstance(f, discord.File) else f for f in files_val]
+
     async def send_with_retry(self, send_func, *args, **kwargs):
         async with self.semaphore:
             for attempt in range(self.max_retries + 1):
+                if attempt > 0:
+                    self._refresh_discord_files(kwargs)
                 try:
                     return await asyncio.wait_for(send_func(*args, **kwargs), timeout=30.0)
                 except Exception:
