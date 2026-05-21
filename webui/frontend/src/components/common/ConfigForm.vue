@@ -148,7 +148,7 @@
         :description="hintFor(group.section)"
         v-model:collapsed="sectionCollapsed[group.sectionKey]"
       >
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="flex flex-col gap-4">
           <template v-for="(field, key) in group.fields" :key="key">
             <div v-if="field" class="mb-0">
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
