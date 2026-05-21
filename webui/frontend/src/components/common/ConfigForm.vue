@@ -333,11 +333,24 @@ const groupedSchema = computed(() => {
   return { ungrouped, sections }
 })
 
+interface DataFieldEntry {
+  field: any
+  sectionKey: string | null
+  fieldKey: string
+}
+
+/** Map keyed by draftKey: "fieldKey" for ungrouped, "sectionKey.fieldKey" for section fields */
 const allDataFields = computed(() => {
   const { ungrouped, sections } = groupedSchema.value
-  const all: Record<string, any> = { ...ungrouped }
+  const all: Record<string, DataFieldEntry> = {}
+  for (const key in ungrouped) {
+    all[key] = { field: ungrouped[key], sectionKey: null, fieldKey: key }
+  }
   for (const group of sections) {
-    Object.assign(all, group.fields)
+    for (const key in group.fields) {
+      const dk = group.sectionKey + '.' + key
+      all[dk] = { field: group.fields[key], sectionKey: group.sectionKey, fieldKey: key }
+    }
   }
   return all
 })
@@ -410,8 +423,8 @@ function isSectionLike(type: string): boolean {
 async function loadModelSelectOptions() {
   const schema = allDataFields.value
   const modelTypes = new Set<string>()
-  for (const key in schema) {
-    const field = schema[key]
+  for (const dk in schema) {
+    const { field } = schema[dk]
     if (field && isModelSelectLike(field.type)) {
       modelTypes.add(field.model_type || 'llm')
     }
@@ -476,41 +489,23 @@ function sectionFieldValue(sectionKey: string, key: string, field: any): any {
   return field?.default
 }
 
-/** Get the actual config value for any field, handling section nesting */
-function getActualValue(key: string, field: any): any {
-  for (const group of groupedSchema.value.sections) {
-    if (group.fields[key] !== undefined) {
-      const section = props.modelValue[group.sectionKey]
-      if (section && typeof section === 'object' && section[key] !== undefined) return section[key]
-      return field?.default
-    }
-  }
-  if (props.modelValue[key] !== undefined) return props.modelValue[key]
-  return field?.default
-}
-
 /** Apply field.defaults to modelValue for any missing keys */
 function applyDefaults() {
   const schema = allDataFields.value
   const result = { ...props.modelValue }
   let changed = false
-  for (const key in schema) {
-    const field = schema[key]
+  for (const dk in schema) {
+    const { field, sectionKey, fieldKey } = schema[dk]
     if (!field) continue
-    // Find section context
-    let sectionKey: string | null = null
-    for (const group of groupedSchema.value.sections) {
-      if (group.fields[key] !== undefined) { sectionKey = group.sectionKey; break }
-    }
     if (sectionKey) {
       if (!result[sectionKey] || typeof result[sectionKey] !== 'object') result[sectionKey] = {}
-      if (result[sectionKey][key] === undefined && field.default !== undefined) {
-        result[sectionKey][key] = field.default
+      if (result[sectionKey][fieldKey] === undefined && field.default !== undefined) {
+        result[sectionKey][fieldKey] = field.default
         changed = true
       }
     } else {
-      if (result[key] === undefined && field.default !== undefined) {
-        result[key] = field.default
+      if (result[fieldKey] === undefined && field.default !== undefined) {
+        result[fieldKey] = field.default
         changed = true
       }
     }
@@ -522,19 +517,11 @@ function applyDefaults() {
 
 function initDrafts() {
   const schema = allDataFields.value
-  // Build a lookup: field key → section key
-  const sectionLookup: Record<string, string> = {}
-  for (const group of groupedSchema.value.sections) {
-    for (const fk in group.fields) {
-      sectionLookup[fk] = group.sectionKey
-    }
-  }
 
-  for (const key in schema) {
-    const field = schema[key]
+  for (const dk in schema) {
+    const { field, sectionKey, fieldKey } = schema[dk]
     if (!field) continue
-    const dk = sectionLookup[key] ? sectionLookup[key] + '.' + key : key
-    const val = getActualValue(key, field)
+    const val = sectionKey ? sectionFieldValue(sectionKey, fieldKey, field) : fieldValue(fieldKey, field)
     if (isNumberLike(field.type)) {
       drafts[dk] = val !== undefined && val !== null ? String(val) : ''
       lastSynced[dk] = drafts[dk]
@@ -563,17 +550,12 @@ watch(() => effectiveSchema.value, () => {
   }
 }, { immediate: true, deep: true })
 
-watch(() => props.modelValue, (next) => {
+watch(() => props.modelValue, () => {
   const schema = allDataFields.value
-  const sectionLookup: Record<string, string> = {}
-  for (const group of groupedSchema.value.sections) {
-    for (const fk in group.fields) sectionLookup[fk] = group.sectionKey
-  }
-  for (const key in schema) {
-    const field = schema[key]
+  for (const dk in schema) {
+    const { field, sectionKey, fieldKey } = schema[dk]
     if (!field) continue
-    const dk = sectionLookup[key] ? sectionLookup[key] + '.' + key : key
-    const val = getActualValue(key, field)
+    const val = sectionKey ? sectionFieldValue(sectionKey, fieldKey, field) : fieldValue(fieldKey, field)
     if (isNumberLike(field.type)) {
       const serialized = val !== undefined && val !== null ? String(val) : ''
       if (serialized !== lastSynced[dk]) {
@@ -746,23 +728,17 @@ function validate(): { valid: boolean; message?: string } {
     }
   }
 
-  for (const key in schema) {
-    const field = schema[key]
+  for (const dk in schema) {
+    const { field, sectionKey, fieldKey } = schema[dk]
     if (!field) continue
-    const label = labelFor(field, key)
+    const label = labelFor(field, fieldKey)
 
-    // Find section context for this field
-    let sectionKey: string | null = null
-    for (const group of groupedSchema.value.sections) {
-      if (group.fields[key] !== undefined) { sectionKey = group.sectionKey; break }
-    }
-    const dk = sectionKey ? sectionKey + '.' + key : key
     const setResult = (v: any) => {
       if (sectionKey) {
         if (!result[sectionKey] || typeof result[sectionKey] !== 'object') result[sectionKey] = {}
-        result[sectionKey][key] = v
+        result[sectionKey][fieldKey] = v
       } else {
-        result[key] = v
+        result[fieldKey] = v
       }
     }
 
