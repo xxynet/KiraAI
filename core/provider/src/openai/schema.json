@@ -18,13 +18,24 @@
         "zh": { "name": "API 密钥", "hint": "你的 API 密钥" }
       }
     },
-    "headers": {
-      "name": "Custom Headers",
-      "type": "json",
-      "default": {},
-      "hint": "Custom headers passed to OpenAI Client",
+    "section_advanced": {
+      "type": "section",
+      "name": "Advanced Settings",
+      "hint": "Advanced configuration options",
+      "collapsed": true,
       "locales": {
-        "zh": { "name": "自定义请求头", "hint": "传递给 OpenAI 客户端的自定义请求头" }
+        "zh": { "name": "高级设置", "hint": "高级配置选项" }
+      },
+      "fields": {
+        "headers": {
+          "name": "Custom Headers",
+          "type": "json",
+          "default": {},
+          "hint": "Custom headers passed to OpenAI Client",
+          "locales": {
+            "zh": { "name": "自定义请求头", "hint": "传递给 OpenAI 客户端的自定义请求头" }
+          }
+        }
       }
     }
   },

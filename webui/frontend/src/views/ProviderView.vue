@@ -58,7 +58,7 @@
         </div>
       </div>
 
-      <div v-else class="flex flex-col flex-1 overflow-y-auto">
+      <div v-else class="flex flex-col flex-1 overflow-y-auto pr-2">
         <div class="border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
           <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100 truncate">{{ selectedProvider?.name }}</h3>
           <p class="text-sm text-gray-500 mt-1 truncate">{{ selectedProvider?.type }}</p>

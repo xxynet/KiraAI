@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable, Union
 from core.utils.path_utils import get_data_path, get_config_path
 from core.logging_manager import get_logger
-from core.config.config_field import BaseConfigField, build_fields
+from core.config.config_field import BaseConfigField, SectionField, build_fields
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
 from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
@@ -767,7 +767,15 @@ class PluginManager:
         config_path = PLUGIN_CONFIG_DIR / f"{plugin_name}.json"
         cfg: Dict[str, Any] = self._load_plugin_config_from_file(plugin_name)
         for field in schema_fields:
-            if isinstance(field, BaseConfigField) and field.key not in cfg:
+            if isinstance(field, SectionField):
+                section_cfg = cfg.get(field.key)
+                if not isinstance(section_cfg, dict):
+                    section_cfg = {}
+                for child in field.fields:
+                    if isinstance(child, BaseConfigField) and child.key not in section_cfg:
+                        section_cfg[child.key] = child.default
+                cfg[field.key] = section_cfg
+            elif isinstance(field, BaseConfigField) and field.key not in cfg:
                 cfg[field.key] = field.default
         try:
             with config_path.open("w", encoding="utf-8") as f:
