@@ -93,15 +93,12 @@
           />
         </div>
 
-        <!-- List type: textarea with newline separation -->
-        <textarea
+        <!-- List type: tag input -->
+        <TagInput
           v-else-if="isListLike(field.type)"
-          :value="drafts[key as string] ?? ''"
-          rows="3"
-          class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          :modelValue="(fieldValue(key, field) as string[]) ?? []"
           :placeholder="hintFor(field)"
-          @input="updateListDraft(key as string, ($event.target as HTMLTextAreaElement).value)"
-          @blur="onListDraftBlur(key as string)"
+          @update:modelValue="updateField(key as string, $event)"
         />
 
         <!-- Textarea-like (textarea) -->
@@ -234,14 +231,11 @@
                 />
               </div>
 
-              <textarea
+              <TagInput
                 v-else-if="isListLike(field.type)"
-                :value="drafts[group.sectionKey + '.' + key] ?? ''"
-                rows="3"
-                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                :modelValue="(sectionFieldValue(group.sectionKey, key as string, field) as string[]) ?? []"
                 :placeholder="hintFor(field)"
-                @input="updateListDraft(group.sectionKey + '.' + key, ($event.target as HTMLTextAreaElement).value)"
-                @blur="onSectionListDraftBlur(group.sectionKey, key as string)"
+                @update:modelValue="updateSectionField(group.sectionKey, key as string, $event)"
               />
 
               <textarea
@@ -288,6 +282,7 @@ import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
+import TagInput from '@/components/common/TagInput.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import { getProviders, getModels } from '@/api/provider'
@@ -547,10 +542,6 @@ function initDrafts() {
       const serialized = field.type === 'json' && typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val ?? '')
       drafts[dk] = serialized
       lastSynced[dk] = serialized
-    } else if (isListLike(field.type)) {
-      const serialized = Array.isArray(val) ? val.join('\n') : String(val ?? '')
-      drafts[dk] = serialized
-      lastSynced[dk] = serialized
     } else if (isJsonLike(field.type)) {
       const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
       drafts[dk] = serialized
@@ -595,12 +586,6 @@ watch(() => props.modelValue, (next) => {
         drafts[dk] = serialized
         lastSynced[dk] = serialized
       }
-    } else if (isListLike(field.type)) {
-      const serialized = Array.isArray(val) ? val.join('\n') : String(val ?? '')
-      if (serialized !== lastSynced[dk]) {
-        drafts[dk] = serialized
-        lastSynced[dk] = serialized
-      }
     } else if (isJsonLike(field.type)) {
       const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
       if (serialized !== lastSynced[dk]) {
@@ -636,16 +621,6 @@ function updateMonacoDraft(key: string, val: string, type: string) {
   }
 }
 
-function updateListDraft(key: string, val: string) {
-  drafts[key] = val
-}
-
-function onListDraftBlur(key: string) {
-  const val = drafts[key] ?? ''
-  lastSynced[key] = val
-  const arr = val.split('\n').map(s => s.trim()).filter(s => s.length > 0)
-  emit('update:modelValue', { ...props.modelValue, [key]: arr })
-}
 
 function commitNumberDraft(key: string, field: any) {
   const raw = drafts[key]
@@ -729,14 +704,6 @@ function updateSectionMonacoDraft(sectionKey: string, key: string, val: string, 
     lastSynced[dk] = val
     updateSectionField(sectionKey, key, val)
   }
-}
-
-function onSectionListDraftBlur(sectionKey: string, key: string) {
-  const dk = sectionKey + '.' + key
-  const val = drafts[dk] ?? ''
-  lastSynced[dk] = val
-  const arr = val.split('\n').map(s => s.trim()).filter(s => s.length > 0)
-  updateSectionField(sectionKey, key, arr)
 }
 
 function onSectionDraftInput(sectionKey: string, key: string, val: string, field: any) {
