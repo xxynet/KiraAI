@@ -6,6 +6,7 @@ from enum import Enum
 import hashlib
 import uuid
 import base64
+import binascii
 import os
 import re
 import mimetypes
@@ -333,8 +334,8 @@ class BaseMediaElement(BaseMessageElement, ABC):
             try:
                 sample = base64.b64decode(base64_str[:32])
                 mime = _infer_mime_from_bytes(sample)
-            except Exception:
-                pass
+            except (binascii.Error, ValueError, TypeError) as e:
+                logger.debug(f"MIME inference from bytes failed (sample len={len(base64_str[:32])}): {e}")
         if not mime:
             # Judge default type by class name
             class_name = self.__class__.__name__.lower()
