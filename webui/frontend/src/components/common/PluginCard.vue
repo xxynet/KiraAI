@@ -1,12 +1,22 @@
 <template>
   <div
     class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col"
+    :class="error ? 'ring-1 ring-red-300 dark:ring-red-700' : ''"
   >
     <div class="flex items-start justify-between mb-3">
       <div>
         <div class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ name || id }}</div>
         <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {{ version ? `v${version}` : '' }}{{ version && author ? ' · ' : '' }}{{ author || '' }}
+        </div>
+        <div v-if="coreVersion" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          {{ $t('plugin.core_version') }}: {{ coreVersion }}
+        </div>
+        <div v-if="error" class="mt-2 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
+          <svg class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>{{ error }}</span>
         </div>
       </div>
       <div class="flex items-start space-x-2">
@@ -25,7 +35,7 @@
         </a>
         <!-- Enable/disable toggle (installed mode) -->
         <button
-          v-if="mode === 'installed'"
+          v-if="mode === 'installed' && !error"
           type="button"
           class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
           :class="enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
@@ -53,14 +63,34 @@
     </div>
     <div class="mt-auto">
       <div v-if="mode === 'installed'" class="text-xs font-mono text-gray-400 dark:text-gray-500 break-all mb-3">{{ id }}</div>
-      <!-- Installed mode: Configure / Uninstall buttons -->
+      <!-- Installed mode: Configure / Reload / Uninstall buttons -->
       <div v-if="mode === 'installed'" class="flex items-center justify-end space-x-3">
         <button
+          v-if="!error"
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
           @click="emit('configure')"
         >
           {{ $t('plugin.configure') }}
+        </button>
+        <button
+          v-if="!builtin"
+          type="button"
+          class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
+          :class="reloading
+            ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
+            : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'"
+          :disabled="reloading"
+          @click="!reloading && emit('reload')"
+        >
+          <span v-if="reloading" class="flex items-center">
+            <svg class="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            {{ $t('plugin.reloading') }}
+          </span>
+          <span v-else>{{ $t('plugin.reload') }}</span>
         </button>
         <button
           type="button"
@@ -112,8 +142,12 @@ const props = withDefaults(defineProps<{
   mode: 'installed' | 'store'
   // installed mode
   enabled?: boolean
+  builtin?: boolean
   uninstallable?: boolean
   tags?: string[]
+  coreVersion?: string | null
+  error?: string | null
+  reloading?: boolean
   // store mode
   installed?: boolean
   installing?: boolean
@@ -123,8 +157,12 @@ const props = withDefaults(defineProps<{
   description: '',
   repo: null,
   enabled: true,
+  builtin: false,
   uninstallable: false,
   tags: () => [],
+  coreVersion: null,
+  error: null,
+  reloading: false,
   installed: false,
   installing: false,
 })
@@ -134,6 +172,7 @@ const emit = defineEmits<{
   configure: []
   uninstall: []
   install: []
+  reload: []
 }>()
 
 const safeRepo = computed(() => {
