@@ -108,6 +108,8 @@ export interface PluginItem {
   description: string
   repo: string | null
   enabled: boolean
+  builtin?: boolean
+  uninstallable?: boolean
   tags: string[]
   core_version?: string | null
   error?: string | null
