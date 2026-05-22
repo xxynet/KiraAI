@@ -165,6 +165,8 @@ class PluginsRoutes(Routes):
 
             # Include plugins that failed to load (e.g. version mismatch)
             for plugin_id, error_info in plugin_manager.get_plugin_load_errors().items():
+                if plugin_manager.is_plugin_hidden(plugin_id):
+                    continue
                 manifest = error_info.get("manifest") or {}
                 display_name = manifest.get("display_name") or plugin_id
                 version = str(manifest.get("version") or "")
@@ -174,6 +176,8 @@ class PluginsRoutes(Routes):
                 locales = manifest.get("locales") or {}
                 tags = manifest.get("tags") or []
                 core_version = manifest.get("core_version")
+                is_builtin = plugin_manager.is_builtin_plugin(plugin_id)
+                uninstallable = plugin_manager.is_plugin_uninstallable(plugin_id)
                 items.append(
                     PluginItem(
                         id=str(plugin_id),
@@ -183,8 +187,8 @@ class PluginsRoutes(Routes):
                         description=desc,
                         repo=repo if isinstance(repo, str) and repo else None,
                         enabled=False,
-                        builtin=False,
-                        uninstallable=True,
+                        builtin=is_builtin,
+                        uninstallable=uninstallable,
                         locales=locales,
                         tags=[str(t) for t in tags if t],
                         core_version=str(core_version) if core_version else None,
