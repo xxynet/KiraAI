@@ -88,8 +88,9 @@ class AsyncTempMonitor:
             # Only add if not already in cache
             if path_str not in self.file_cache:
                 def add_file():
-                    if Path(file_path).exists():
-                        stat = Path(file_path).stat()
+                    p = Path(file_path)
+                    if p.exists() and p.is_file():
+                        stat = p.stat()
                         return stat.st_size, stat.st_mtime
                     return None, None
 
@@ -106,8 +107,9 @@ class AsyncTempMonitor:
                 old_size, old_mtime, creation_time = self.file_cache[path_str]
 
                 def modify_file():
-                    if Path(file_path).exists():
-                        stat = Path(file_path).stat()
+                    p = Path(file_path)
+                    if p.exists() and p.is_file():
+                        stat = p.stat()
                         return stat.st_size, stat.st_mtime
                     return None, None
 
@@ -191,7 +193,7 @@ class AsyncTempMonitor:
         def delete():
             try:
                 file_path = Path(path_str)
-                if file_path.exists():
+                if file_path.exists() and file_path.is_file():
                     size = file_path.stat().st_size
                     file_path.unlink()
                     return size
