@@ -62,14 +62,6 @@ class BaseConfigField:
         return data
 
 
-class ConfigSection:
-    def __init__(self, name: str, hint: str, fields: list[BaseConfigField], fold: bool = False):
-        self.name = name
-        self.hint = hint
-        self.fields = fields
-        self.fold = fold
-
-
 class StringField(BaseConfigField):
     type = ConfigType.String
 
@@ -176,7 +168,7 @@ class MultiSelectField(BaseConfigField):
 class SectionField(BaseConfigField):
     type = ConfigType.Section
 
-    def __init__(self, key: str, name: str, hint: str, fields: list = None, collapsed: bool = False, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, fields: list[BaseConfigField] = None, collapsed: bool = False, locales: dict = None):
         super().__init__(key, name, hint, default=None, locales=locales)
         self.fields = fields or []
         self.collapsed = collapsed
