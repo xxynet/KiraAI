@@ -366,7 +366,7 @@ export default {
     skills_upload_label: '技能压缩包（.zip）',
     skills_upload_btn: '上传',
     skills_load_failed: '加载技能列表失败',
-    core_version: 'KiraAI',
+    core_version: 'KiraAI 版本',
     reload: '重载',
     reloading: '重载中...',
     reload_success: '插件重载成功',

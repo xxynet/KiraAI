@@ -340,11 +340,26 @@ class PluginManager:
         self.plugin_enabled[plugin_id] = bool(enabled)
         self._save_plugin_state()
 
+        is_builtin = self.is_builtin_plugin(plugin_id)
+
         if enabled and not previous:
-            await self.init_plugin(plugin_id)
+            if is_builtin:
+                await self.init_plugin(plugin_id)
+            else:
+                # User plugin: always re-import from disk for fresh code
+                plugin_dir = _plugin_module_paths.get(plugin_id)
+                if plugin_dir and plugin_dir.exists():
+                    await self.load_plugin_from_dir(plugin_dir)
+                else:
+                    await self.init_plugin(plugin_id)
         elif not enabled and previous:
             try:
                 await self.terminate(plugin_id)
+                if not is_builtin:
+                    # User plugin: purge class & modules so next enable re-imports fresh
+                    _plugin_classes.pop(plugin_id, None)
+                    _plugin_schemas.pop(plugin_id, None)
+                    self._cleanup_plugin_modules(plugin_id)
             except Exception as e:
                 logger.error(f"Failed to terminate plugin {plugin_id} when disabling: {e}")
 
@@ -1009,11 +1024,10 @@ class PluginManager:
         if stale_names:
             logger.debug(f"Cleaned {len(stale_names)} module(s) for plugin {plugin_id}")
 
-    async def reload(self, plugin_id: Optional[str]):
+    async def reload(self, plugin_id: Optional[str] = None):
         """
-        Reload all plugins or reload a specific plugin.
-        For a specific plugin, its own modules are purged from sys.modules
-        so that code changes take effect on re-import.
+        Reload all plugins or reload a specific user plugin.
+        Builtin plugins are not supported for single-plugin reload.
         """
         if plugin_id:
             plugin_id = str(plugin_id)
@@ -1022,7 +1036,7 @@ class PluginManager:
             # 1. Terminate the running instance
             await self.terminate(plugin_id)
 
-            # 2. Remove class / schema / component registrations
+            # 2. Remove class / schema / error registrations
             _plugin_classes.pop(plugin_id, None)
             _plugin_schemas.pop(plugin_id, None)
             _plugin_load_errors.pop(plugin_id, None)
@@ -1030,43 +1044,10 @@ class PluginManager:
             # 3. Purge the plugin's own modules from sys.modules
             self._cleanup_plugin_modules(plugin_id)
 
-            # 4. Re-discover & re-import from disk
+            # 4. Re-import from disk
             plugin_dir = _plugin_module_paths.get(plugin_id)
             if plugin_dir and plugin_dir.exists():
-                if not plugin_dir.is_relative_to(BUILTIN_PLUGINS_DIR):
-                    # User plugin: load_plugin_from_dir handles everything
-                    await self.load_plugin_from_dir(plugin_dir)
-                else:
-                    # Builtin plugin: targeted re-import of just this plugin
-                    entry = plugin_dir.name
-                    _plugin_module_dirs.pop(plugin_id, None)
-                    _plugin_module_paths.pop(plugin_id, None)
-                    _plugin_manifests.pop(plugin_id, None)
-
-                    # Pop cached builtin modules so importlib re-reads from disk
-                    for mod_name in [
-                        f"core.plugin.builtin_plugins.{entry}.main",
-                        f"core.plugin.builtin_plugins.{entry}",
-                    ]:
-                        sys.modules.pop(mod_name, None)
-
-                    # Re-load metadata and re-import
-                    new_id = self._load_plugin_meta(plugin_dir, entry)
-                    if new_id:
-                        _plugin_load_errors.pop(new_id, None)
-                        module = None
-                        for mod_name in [
-                            f"core.plugin.builtin_plugins.{entry}.main",
-                            f"core.plugin.builtin_plugins.{entry}",
-                        ]:
-                            try:
-                                module = importlib.import_module(mod_name)
-                                break
-                            except Exception as e:
-                                logger.error(f"Failed to re-import builtin plugin {mod_name}: {e}")
-                        if module:
-                            self._register_plugin_class(new_id, module, plugin_dir)
-                            await self.init_plugin(new_id)
+                await self.load_plugin_from_dir(plugin_dir)
             else:
                 logger.warning(f"Plugin directory not found for {plugin_id}, cannot reload")
             return
@@ -1113,6 +1094,13 @@ class PluginManager:
 
         plugin_id = manifest.get("plugin_id") or entry
 
+        # Persist directory info early so failed plugins can be found for retry
+        _plugin_module_dirs[plugin_id] = plugin_root.name
+        _plugin_module_paths[plugin_id] = plugin_root
+
+        if manifest:
+            _plugin_manifests[plugin_id] = manifest
+
         # Check core_version compatibility
         core_version_spec = manifest.get("core_version")
         if core_version_spec:
@@ -1124,9 +1112,6 @@ class PluginManager:
                 }
                 logger.warning(f"Plugin {plugin_id} skipped: {error}")
                 return None
-
-        if manifest:
-            _plugin_manifests[plugin_id] = manifest
 
         schema_fields: List[BaseConfigField] = []
         if schema_path.exists():

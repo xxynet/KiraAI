@@ -263,8 +263,11 @@ class PluginsRoutes(Routes):
         try:
             plugin_manager = self.lifecycle.plugin_manager
             registered = plugin_manager.get_registered_plugins()
-            if plugin_id not in registered:
+            errors = plugin_manager.get_plugin_load_errors()
+            if plugin_id not in registered and plugin_id not in errors:
                 raise HTTPException(status_code=404, detail="Plugin not found")
+            if plugin_manager.is_builtin_plugin(plugin_id):
+                raise HTTPException(status_code=400, detail="Built-in plugins cannot be reloaded")
             await plugin_manager.reload(plugin_id)
             # Check if the plugin reloaded successfully
             new_registered = plugin_manager.get_registered_plugins()
@@ -297,7 +300,7 @@ class PluginsRoutes(Routes):
         if not is_registered and not is_failed:
             raise HTTPException(status_code=404, detail="Plugin not found")
 
-        if is_registered and not plugin_manager.is_plugin_uninstallable(plugin_id):
+        if not plugin_manager.is_plugin_uninstallable(plugin_id):
             raise HTTPException(status_code=400, detail="This built-in plugin cannot be deleted")
 
         plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)

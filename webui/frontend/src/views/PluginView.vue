@@ -84,6 +84,7 @@
           :description="localize(plugin, 'description', plugin.description)"
           :repo="plugin.repo"
           :enabled="plugin.enabled"
+          :builtin="(plugin as any).builtin"
           :uninstallable="(plugin as any).uninstallable"
           :tags="plugin.tags"
           :core-version="plugin.core_version"

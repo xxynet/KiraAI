@@ -74,6 +74,7 @@
           {{ $t('plugin.configure') }}
         </button>
         <button
+          v-if="!builtin"
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
           :class="reloading
@@ -141,6 +142,7 @@ const props = withDefaults(defineProps<{
   mode: 'installed' | 'store'
   // installed mode
   enabled?: boolean
+  builtin?: boolean
   uninstallable?: boolean
   tags?: string[]
   coreVersion?: string | null
@@ -155,6 +157,7 @@ const props = withDefaults(defineProps<{
   description: '',
   repo: null,
   enabled: true,
+  builtin: false,
   uninstallable: false,
   tags: () => [],
   coreVersion: null,
