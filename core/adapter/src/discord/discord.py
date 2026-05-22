@@ -30,6 +30,9 @@ from core.chat.message_elements import (
 from core.chat import Session, Group, User
 
 
+_msg_sender_logger = get_logger("discord.send", "blue")
+
+
 class MessageSender:
     """Concurrency control & retry for Discord sends."""
 
@@ -71,7 +74,10 @@ class MessageSender:
         async with self.semaphore:
             for attempt in range(self.max_retries + 1):
                 if attempt > 0:
-                    self._refresh_discord_files(kwargs)
+                    try:
+                        self._refresh_discord_files(kwargs)
+                    except Exception as e:
+                        _msg_sender_logger.warning(f"Failed to refresh discord files for retry: {e}")
                 try:
                     return await asyncio.wait_for(send_func(*args, **kwargs), timeout=30.0)
                 except Exception:
