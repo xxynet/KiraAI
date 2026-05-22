@@ -86,6 +86,8 @@
           :enabled="plugin.enabled"
           :uninstallable="(plugin as any).uninstallable"
           :tags="plugin.tags"
+          :core-version="plugin.core_version"
+          :error="plugin.error"
           @toggle="togglePlugin(plugin)"
           @configure="openPluginConfig(plugin)"
           @uninstall="handleDeletePlugin(plugin.id)"

@@ -8,9 +8,12 @@ import types
 import httpx
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable, Union
+from packaging.specifiers import SpecifierSet, InvalidSpecifier
+from packaging.version import Version, InvalidVersion
 from core.utils.path_utils import get_data_path, get_config_path
 from core.logging_manager import get_logger
 from core.config.config_field import BaseConfigField, SectionField, build_fields
+from core.config import VERSION
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
 from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
@@ -35,6 +38,8 @@ _module_to_plugin: Dict[str, str] = {}
 _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
 _plugin_components: Dict[str, dict] = {}
 
+"""Plugins that failed to load: {plugin_id: {"manifest": {...}, "error": "..."}}"""
+_plugin_load_errors: Dict[str, Dict[str, Any]] = {}
 
 """plugin_ids whose API routes have already been added to FastAPI."""
 _plugin_api_registered: set[str] = set()
@@ -348,6 +353,9 @@ class PluginManager:
 
     def get_plugin_manifest(self, name: str) -> Dict[str, Any]:
         return _plugin_manifests.get(name, {})
+
+    def get_plugin_load_errors(self) -> Dict[str, Dict[str, Any]]:
+        return dict(_plugin_load_errors)
 
     def get_plugin_module_dir(self, name: str) -> str:
         return _plugin_module_dirs.get(name, "")
@@ -885,6 +893,15 @@ class PluginManager:
         Terminate a plugin and remove all its registrations from memory.
         The caller is responsible for deleting the plugin directory afterwards.
         """
+        # Allow uninstalling failed plugins that never fully loaded
+        if plugin_id in _plugin_load_errors:
+            _plugin_load_errors.pop(plugin_id, None)
+            _plugin_manifests.pop(plugin_id, None)
+            self.plugin_enabled.pop(plugin_id, None)
+            self._save_plugin_state()
+            logger.info(f"Failed plugin '{plugin_id}' removed from records")
+            return
+
         if plugin_id not in _plugin_classes:
             raise ValueError(f"Plugin '{plugin_id}' is not registered")
 
@@ -898,6 +915,7 @@ class PluginManager:
         _plugin_module_paths.pop(plugin_id, None)
         _plugin_schemas.pop(plugin_id, None)
         _plugin_components.pop(plugin_id, None)
+        _plugin_load_errors.pop(plugin_id, None)
 
         # Remove module-to-plugin mappings and evict from sys.modules
         stale_modules = [k for k, v in _module_to_plugin.items() if v == plugin_id]
@@ -924,6 +942,30 @@ class PluginManager:
         await self.terminate()
         await self.init()
 
+    @staticmethod
+    def _check_core_version(core_version_spec: str) -> Optional[str]:
+        """Check if the current KiraAI version satisfies the given specifier string.
+
+        Returns None if compatible, or an error message string if not.
+        """
+        try:
+            spec = SpecifierSet(core_version_spec)
+        except InvalidSpecifier:
+            return f"Invalid core_version specifier: {core_version_spec}"
+
+        current = VERSION.lstrip("v")
+        try:
+            ver = Version(current)
+        except InvalidVersion:
+            return f"Cannot parse current KiraAI version: {VERSION}"
+
+        if ver not in spec:
+            return (
+                f"Requires KiraAI {core_version_spec}, "
+                f"but current version is {VERSION}"
+            )
+        return None
+
     def _load_plugin_meta(self, plugin_root: Path, entry: str):
         manifest = {}
         manifest_path = plugin_root / "manifest.json"
@@ -937,6 +979,18 @@ class PluginManager:
                 logger.warning(f"Failed to load manifest for plugin {entry}: {e}")
 
         plugin_id = manifest.get("plugin_id") or entry
+
+        # Check core_version compatibility
+        core_version_spec = manifest.get("core_version")
+        if core_version_spec:
+            error = self._check_core_version(str(core_version_spec))
+            if error:
+                _plugin_load_errors[plugin_id] = {
+                    "manifest": manifest,
+                    "error": error,
+                }
+                logger.warning(f"Plugin {plugin_id} skipped: {error}")
+                return None
 
         if manifest:
             _plugin_manifests[plugin_id] = manifest
@@ -988,6 +1042,11 @@ class PluginManager:
                 continue
 
             plugin_id = self._load_plugin_meta(plugin_dir, entry)
+            if plugin_id is None:
+                continue
+
+            # Clear any previous load error
+            _plugin_load_errors.pop(plugin_id, None)
 
             module = None
             candidate_modules = [
@@ -1008,6 +1067,10 @@ class PluginManager:
 
             if module is None:
                 logger.warning(f"No module found for builtin plugin {entry}")
+                _plugin_load_errors.setdefault(plugin_id, {
+                    "manifest": _plugin_manifests.get(plugin_id, {}),
+                    "error": "No module found",
+                })
                 continue
 
             self._register_plugin_class(plugin_id, module, plugin_dir)
@@ -1025,6 +1088,11 @@ class PluginManager:
             return None
 
         plugin_id = self._load_plugin_meta(plugin_root, entry)
+        if plugin_id is None:
+            return None
+
+        # Clear any previous load error (e.g. plugin was fixed since last attempt)
+        _plugin_load_errors.pop(plugin_id, None)
 
         # Ensure the top-level "plugins" package is registered in sys.modules
         base_package = "plugins"
@@ -1056,6 +1124,10 @@ class PluginManager:
 
         if not script_path or not module_name:
             logger.warning(f"No entry script found in plugin directory: {plugin_root}")
+            _plugin_load_errors[plugin_id] = {
+                "manifest": _plugin_manifests.get(plugin_id, {}),
+                "error": "No entry script found (main.py / plugin.py / __init__.py)",
+            }
             return None
 
         # Clear decorator-registered components so re-import starts fresh
@@ -1068,6 +1140,10 @@ class PluginManager:
         spec = importlib.util.spec_from_file_location(module_name, script_path)
         if not spec or not spec.loader:
             logger.warning(f"Failed to create module spec for: {plugin_root}")
+            _plugin_load_errors[plugin_id] = {
+                "manifest": _plugin_manifests.get(plugin_id, {}),
+                "error": "Failed to create module spec",
+            }
             return None
 
         try:
@@ -1077,11 +1153,19 @@ class PluginManager:
         except Exception as e:
             logger.error(f"Error loading plugin from {plugin_root}: {e}")
             sys.modules.pop(module_name, None)
+            _plugin_load_errors[plugin_id] = {
+                "manifest": _plugin_manifests.get(plugin_id, {}),
+                "error": f"Import error: {e}",
+            }
             return None
 
         registered = self._register_plugin_class(plugin_id, module, plugin_root)
         if not registered:
             logger.warning(f"No BasePlugin subclass found in {plugin_root}")
+            _plugin_load_errors[plugin_id] = {
+                "manifest": _plugin_manifests.get(plugin_id, {}),
+                "error": "No BasePlugin subclass found",
+            }
             return None
 
         await self.init_plugin(plugin_id)

@@ -366,6 +366,7 @@ export default {
     skills_upload_label: 'Skill Archive (.zip)',
     skills_upload_btn: 'Upload',
     skills_load_failed: 'Failed to load skills',
+    core_version: 'KiraAI',
   },
   pluginStore: {
     title: 'Plugin Store',

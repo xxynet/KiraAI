@@ -1,12 +1,22 @@
 <template>
   <div
     class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col"
+    :class="error ? 'ring-1 ring-red-300 dark:ring-red-700' : ''"
   >
     <div class="flex items-start justify-between mb-3">
       <div>
         <div class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ name || id }}</div>
         <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {{ version ? `v${version}` : '' }}{{ version && author ? ' · ' : '' }}{{ author || '' }}
+        </div>
+        <div v-if="coreVersion" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          {{ $t('plugin.core_version') }}: {{ coreVersion }}
+        </div>
+        <div v-if="error" class="mt-2 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
+          <svg class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>{{ error }}</span>
         </div>
       </div>
       <div class="flex items-start space-x-2">
@@ -25,7 +35,7 @@
         </a>
         <!-- Enable/disable toggle (installed mode) -->
         <button
-          v-if="mode === 'installed'"
+          v-if="mode === 'installed' && !error"
           type="button"
           class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
           :class="enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
@@ -56,6 +66,7 @@
       <!-- Installed mode: Configure / Uninstall buttons -->
       <div v-if="mode === 'installed'" class="flex items-center justify-end space-x-3">
         <button
+          v-if="!error"
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
           @click="emit('configure')"
@@ -114,6 +125,8 @@ const props = withDefaults(defineProps<{
   enabled?: boolean
   uninstallable?: boolean
   tags?: string[]
+  coreVersion?: string | null
+  error?: string | null
   // store mode
   installed?: boolean
   installing?: boolean
@@ -125,6 +138,8 @@ const props = withDefaults(defineProps<{
   enabled: true,
   uninstallable: false,
   tags: () => [],
+  coreVersion: null,
+  error: null,
   installed: false,
   installing: false,
 })

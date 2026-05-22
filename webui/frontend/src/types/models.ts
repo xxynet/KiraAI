@@ -109,6 +109,8 @@ export interface PluginItem {
   repo: string | null
   enabled: boolean
   tags: string[]
+  core_version?: string | null
+  error?: string | null
 }
 
 export interface PluginConfigUpdateRequest {

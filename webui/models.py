@@ -126,6 +126,8 @@ class PluginItem(BaseModel):
     uninstallable: bool = False
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
+    core_version: Optional[str] = None
+    error: Optional[str] = None
 
 
 class PluginConfigUpdateRequest(BaseModel):

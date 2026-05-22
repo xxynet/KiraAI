@@ -135,6 +135,7 @@ class PluginsRoutes(Routes):
                 repo = manifest.get("repo")
                 locales = manifest.get("locales") or {}
                 tags = manifest.get("tags") or []
+                core_version = manifest.get("core_version")
                 enabled = plugin_manager.is_plugin_enabled(plugin_id)
                 is_builtin = plugin_manager.is_builtin_plugin(plugin_id)
                 uninstallable = plugin_manager.is_plugin_uninstallable(plugin_id)
@@ -151,8 +152,39 @@ class PluginsRoutes(Routes):
                         uninstallable=uninstallable,
                         locales=locales,
                         tags=[str(t) for t in tags if t],
+                        core_version=str(core_version) if core_version else None,
                     )
                 )
+
+            # Include plugins that failed to load (e.g. version mismatch)
+            for plugin_id, error_info in plugin_manager.get_plugin_load_errors().items():
+                manifest = error_info.get("manifest") or {}
+                display_name = manifest.get("display_name") or plugin_id
+                version = str(manifest.get("version") or "")
+                author = str(manifest.get("author") or "")
+                desc = str(manifest.get("description") or "")
+                repo = manifest.get("repo")
+                locales = manifest.get("locales") or {}
+                tags = manifest.get("tags") or []
+                core_version = manifest.get("core_version")
+                items.append(
+                    PluginItem(
+                        id=str(plugin_id),
+                        name=str(display_name),
+                        version=version,
+                        author=author,
+                        description=desc,
+                        repo=repo if isinstance(repo, str) and repo else None,
+                        enabled=False,
+                        builtin=False,
+                        uninstallable=True,
+                        locales=locales,
+                        tags=[str(t) for t in tags if t],
+                        core_version=str(core_version) if core_version else None,
+                        error=str(error_info.get("error", "")),
+                    )
+                )
+
             return items
         except Exception as e:
             logger.error(f"Failed to list plugins: {e}")
@@ -207,6 +239,8 @@ class PluginsRoutes(Routes):
             plugin_manager = self.lifecycle.plugin_manager
             registered = plugin_manager.get_registered_plugins()
             if plugin_id not in registered:
+                if plugin_id in plugin_manager.get_plugin_load_errors():
+                    raise HTTPException(status_code=400, detail="Cannot enable a plugin that failed to load")
                 raise HTTPException(status_code=404, detail="Plugin not found")
             await plugin_manager.set_plugin_enabled(plugin_id, enabled)
             return {"plugin_id": plugin_id, "enabled": enabled}
@@ -227,15 +261,21 @@ class PluginsRoutes(Routes):
 
         plugin_manager = self.lifecycle.plugin_manager
 
-        if plugin_id not in plugin_manager.get_registered_plugins():
+        is_registered = plugin_id in plugin_manager.get_registered_plugins()
+        is_failed = plugin_id in plugin_manager.get_plugin_load_errors()
+
+        if not is_registered and not is_failed:
             raise HTTPException(status_code=404, detail="Plugin not found")
 
-        if not plugin_manager.is_plugin_uninstallable(plugin_id):
+        if is_registered and not plugin_manager.is_plugin_uninstallable(plugin_id):
             raise HTTPException(status_code=400, detail="This built-in plugin cannot be deleted")
 
         plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)
         if not plugin_dir:
-            raise HTTPException(status_code=500, detail="Could not resolve plugin path")
+            # Failed plugins may not have a registered path; try the plugins directory
+            plugin_dir = plugin_manager.plugin_dir / plugin_id
+            if not plugin_dir.exists():
+                raise HTTPException(status_code=500, detail="Could not resolve plugin path")
 
         try:
             await plugin_manager.uninstall_plugin(plugin_id)
