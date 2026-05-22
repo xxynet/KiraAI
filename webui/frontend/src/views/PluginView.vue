@@ -88,9 +88,11 @@
           :tags="plugin.tags"
           :core-version="plugin.core_version"
           :error="plugin.error"
+          :reloading="reloadingPlugins.has(plugin.id)"
           @toggle="togglePlugin(plugin)"
           @configure="openPluginConfig(plugin)"
           @uninstall="handleDeletePlugin(plugin.id)"
+          @reload="handleReloadPlugin(plugin)"
         />
       </div>
     </div>
@@ -674,6 +676,7 @@ import {
   getPlugins, getPluginConfig, updatePluginConfig,
   togglePlugin as apiTogglePlugin, deletePlugin,
   installFromGithub, installFromUpload,
+  reloadPlugin as apiReloadPlugin,
 } from '@/api/plugin'
 import {
   getMcpServers, getMcpServerConfig, createMcpServer, updateMcpServerConfig,
@@ -700,6 +703,7 @@ const installForm = ref({ repo_url: '', gh_proxy: '' })
 const uploadFile = ref<File | null>(null)
 const installDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
 const installing = ref(false)
+const reloadingPlugins = ref(new Set<string>())
 
 // Plugin Config
 const pluginConfigVisible = ref(false)
@@ -826,6 +830,23 @@ function handleDeletePlugin(id: string) {
       }
     }
   )
+}
+
+async function handleReloadPlugin(plugin: PluginItem) {
+  reloadingPlugins.value.add(plugin.id)
+  try {
+    const res = await apiReloadPlugin(plugin.id)
+    if (res.data.reloaded) {
+      notify(t('plugin.reload_success'), 'success')
+    } else {
+      notify(t('plugin.reload_failed') + ': ' + (res.data.error || ''), 'error')
+    }
+    await loadPlugins()
+  } catch {
+    notify(t('plugin.reload_failed'), 'error')
+  } finally {
+    reloadingPlugins.value.delete(plugin.id)
+  }
 }
 
 async function openPluginConfig(plugin: PluginItem) {

@@ -22,6 +22,10 @@ export function togglePlugin(pluginId: string, enabled: boolean) {
   return apiClient.post(`/plugins/${encodeURIComponent(pluginId)}/enabled`, { enabled })
 }
 
+export function reloadPlugin(pluginId: string) {
+  return apiClient.post<{ plugin_id: string; reloaded: boolean; error?: string }>(`/plugins/${encodeURIComponent(pluginId)}/reload`)
+}
+
 export function deletePlugin(pluginId: string, options?: { deleteConfig?: boolean; deleteData?: boolean }) {
   const params = new URLSearchParams()
   if (options?.deleteConfig) params.set('delete_config', 'true')

@@ -367,6 +367,10 @@ export default {
     skills_upload_btn: 'Upload',
     skills_load_failed: 'Failed to load skills',
     core_version: 'KiraAI',
+    reload: 'Reload',
+    reloading: 'Reloading...',
+    reload_success: 'Plugin reloaded successfully',
+    reload_failed: 'Failed to reload plugin',
   },
   pluginStore: {
     title: 'Plugin Store',

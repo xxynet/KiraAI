@@ -55,6 +55,13 @@ class PluginsRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
+                path="/api/plugins/{plugin_id}/reload",
+                methods=["POST"],
+                endpoint=self.reload_plugin,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/plugins/{plugin_id}",
                 methods=["DELETE"],
                 endpoint=self.delete_plugin,
@@ -249,6 +256,29 @@ class PluginsRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to set plugin enabled state for {plugin_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to update plugin state")
+
+    async def reload_plugin(self, plugin_id: str):
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+        try:
+            plugin_manager = self.lifecycle.plugin_manager
+            registered = plugin_manager.get_registered_plugins()
+            if plugin_id not in registered:
+                raise HTTPException(status_code=404, detail="Plugin not found")
+            await plugin_manager.reload(plugin_id)
+            # Check if the plugin reloaded successfully
+            new_registered = plugin_manager.get_registered_plugins()
+            if plugin_id in new_registered:
+                return {"plugin_id": plugin_id, "reloaded": True}
+            # Plugin failed to reload — get the error
+            errors = plugin_manager.get_plugin_load_errors()
+            error_msg = errors.get(plugin_id, {}).get("error", "Unknown error")
+            return {"plugin_id": plugin_id, "reloaded": False, "error": error_msg}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to reload plugin {plugin_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to reload plugin: {e}")
 
     async def delete_plugin(
         self,

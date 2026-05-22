@@ -727,6 +727,53 @@ class PluginManager:
         for plugin_id in _plugin_components.keys():
             self._register_plugin_tools_for(plugin_id)
 
+    def _remove_plugin_routes(self, plugin_id: str) -> None:
+        """Remove all FastAPI routes and mounts registered by a plugin.
+
+        Cleans up API routes, page routes, and static file mounts from
+        the web app, and resets the tracking sets so re-registration works.
+        """
+        # Reset tracking sets so init_plugin can re-register
+        _plugin_api_registered.discard(plugin_id)
+        if hasattr(self, '_plugin_pages_registered'):
+            self._plugin_pages_registered.discard(plugin_id)
+        if hasattr(self, '_plugin_static_registered'):
+            self._plugin_static_registered.discard(plugin_id)
+
+        if self._web_app is None:
+            return
+
+        tag_prefix = f"plugin:{plugin_id}"
+        page_prefix = f"/page/plugin/{plugin_id}/"
+        static_prefix = f"/static/plugin/{plugin_id}/"
+
+        routes = self._web_app.routes
+        filtered_routes = []
+        removed = 0
+        for route in routes:
+            should_remove = False
+
+            # API / page routes registered via add_api_route
+            if hasattr(route, 'tags') and tag_prefix in (route.tags or []):
+                should_remove = True
+            # Page catch-all routes or static mounts
+            elif hasattr(route, 'path') and (
+                route.path.startswith(page_prefix) or route.path.startswith(static_prefix)
+            ):
+                should_remove = True
+
+            if should_remove:
+                removed += 1
+            else:
+                filtered_routes.append(route)
+
+        if removed:
+            routes.clear()
+            routes.extend(filtered_routes)
+            # Invalidate the OpenAPI schema cache so it gets regenerated
+            self._web_app.openapi_schema = None
+            logger.debug(f"Removed {removed} route(s) for plugin {plugin_id}")
+
     def _cleanup_plugin_registration(self, plugin_id: str) -> None:
         comp = _plugin_components.get(plugin_id)
         if not comp:
@@ -751,8 +798,8 @@ class PluginManager:
         for tag in tags:
             tag_registry.unregister(tag.get("name"))
 
-        # API routes: disable is handled at request time via the plugin_check Depends,
-        # which calls is_plugin_enabled(). No additional cleanup needed here.
+        # clean up FastAPI routes (API routes, page routes, static mounts)
+        self._remove_plugin_routes(plugin_id)
 
     def _load_plugin_config_from_file(self, plugin_id: str) -> Dict[str, Any]:
         PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -929,13 +976,99 @@ class PluginManager:
 
         logger.info(f"Plugin '{plugin_id}' uninstalled from memory")
 
+    def _cleanup_plugin_modules(self, plugin_id: str) -> None:
+        """Remove a plugin's own modules from sys.modules.
+
+        Uses both the module-name→plugin-id mapping and file-path matching
+        to find all modules that belong to this plugin.  Third-party modules
+        imported by the plugin are left untouched (they may be shared).
+        """
+        plugin_dir = _plugin_module_paths.get(plugin_id)
+        stale_names: list[str] = []
+
+        for name, mod in list(sys.modules.items()):
+            # 1) Direct mapping from _register_plugin_class
+            if _module_to_plugin.get(name) == plugin_id:
+                stale_names.append(name)
+                continue
+
+            # 2) Path-based: module file lives inside the plugin directory
+            if plugin_dir:
+                mod_file = getattr(mod, "__file__", None)
+                if mod_file:
+                    try:
+                        if Path(mod_file).resolve().is_relative_to(plugin_dir):
+                            stale_names.append(name)
+                    except (ValueError, OSError):
+                        pass
+
+        for name in stale_names:
+            sys.modules.pop(name, None)
+            _module_to_plugin.pop(name, None)
+
+        if stale_names:
+            logger.debug(f"Cleaned {len(stale_names)} module(s) for plugin {plugin_id}")
+
     async def reload(self, plugin_id: Optional[str]):
         """
-        Reload all plugins or reload a specific plugin
+        Reload all plugins or reload a specific plugin.
+        For a specific plugin, its own modules are purged from sys.modules
+        so that code changes take effect on re-import.
         """
         if plugin_id:
+            plugin_id = str(plugin_id)
             logger.info(f"Reloading plugin {plugin_id}...")
-            await self.init_plugin(plugin_id)
+
+            # 1. Terminate the running instance
+            await self.terminate(plugin_id)
+
+            # 2. Remove class / schema / component registrations
+            _plugin_classes.pop(plugin_id, None)
+            _plugin_schemas.pop(plugin_id, None)
+            _plugin_load_errors.pop(plugin_id, None)
+
+            # 3. Purge the plugin's own modules from sys.modules
+            self._cleanup_plugin_modules(plugin_id)
+
+            # 4. Re-discover & re-import from disk
+            plugin_dir = _plugin_module_paths.get(plugin_id)
+            if plugin_dir and plugin_dir.exists():
+                if not plugin_dir.is_relative_to(BUILTIN_PLUGINS_DIR):
+                    # User plugin: load_plugin_from_dir handles everything
+                    await self.load_plugin_from_dir(plugin_dir)
+                else:
+                    # Builtin plugin: targeted re-import of just this plugin
+                    entry = plugin_dir.name
+                    _plugin_module_dirs.pop(plugin_id, None)
+                    _plugin_module_paths.pop(plugin_id, None)
+                    _plugin_manifests.pop(plugin_id, None)
+
+                    # Pop cached builtin modules so importlib re-reads from disk
+                    for mod_name in [
+                        f"core.plugin.builtin_plugins.{entry}.main",
+                        f"core.plugin.builtin_plugins.{entry}",
+                    ]:
+                        sys.modules.pop(mod_name, None)
+
+                    # Re-load metadata and re-import
+                    new_id = self._load_plugin_meta(plugin_dir, entry)
+                    if new_id:
+                        _plugin_load_errors.pop(new_id, None)
+                        module = None
+                        for mod_name in [
+                            f"core.plugin.builtin_plugins.{entry}.main",
+                            f"core.plugin.builtin_plugins.{entry}",
+                        ]:
+                            try:
+                                module = importlib.import_module(mod_name)
+                                break
+                            except Exception as e:
+                                logger.error(f"Failed to re-import builtin plugin {mod_name}: {e}")
+                        if module:
+                            self._register_plugin_class(new_id, module, plugin_dir)
+                            await self.init_plugin(new_id)
+            else:
+                logger.warning(f"Plugin directory not found for {plugin_id}, cannot reload")
             return
 
         logger.info("Reloading all plugins...")
