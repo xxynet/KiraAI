@@ -1,23 +1,23 @@
 default_persona_template = """\
-character：
-  ChineseName：
+character:
+  ChineseName: 
   NickName(s): []
-  EnglishName：
-  gender：
-  age：
+  EnglishName: 
+  gender: 
+  age: 
   birthday: 
-  personality：
+  personality: 
     - p1
     - p2
   appearance: 
   language: Chinese, English, Japanese (conduct dialogue based on the language the user is using)
-  views：
+  views: 
     - 
     - 
-  values：
+  values: 
     - 
     - 
-  hobbies：
+  hobbies: 
     - 
     - 
   expressions:

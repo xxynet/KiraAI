@@ -19,25 +19,19 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import httpx
+
 from core.config import VERSION
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_webui_dist_path
-from core.utils.network import test_url_speed, get_file_content
-from core.utils.github_api import get_release_assets, verify_sha256
+from core.utils.network import get_file_content
+from core.utils.github_api import get_release_assets, pick_fastest_source, verify_sha256
 
 logger = get_logger("dist_checker", "blue")
 
 REPO_OWNER = "xxynet"
 REPO_NAME = "KiraAI"
 ASSET_NAME = "dist.zip"
-
-GH_PROXY_LIST = [
-    "https://gh-proxy.com/",
-    "https://gh-proxy.org/",
-    "https://hk.gh-proxy.org/",
-    "https://cdn.gh-proxy.org/",
-    "https://edgeone.gh-proxy.org/",
-]
 
 # Files / dirs that must exist for dist to be considered complete
 REQUIRED_ENTRIES = ["index.html", "assets"]
@@ -81,68 +75,6 @@ def is_dist_complete(ignore_webui_version_check: bool = False) -> bool:
     return True
 
 
-# ─── Speed test helpers ───────────────────────────────────────────────────────
-
-
-async def _test_latency(url: str, proxy: Optional[str] = None, timeout: float = 8.0) -> Optional[float]:
-    """Return latency in seconds, or None on failure. Wraps network.test_url_speed."""
-    result = await test_url_speed(url, proxy=proxy, timeout=timeout)
-    return result["latency"]
-
-
-async def pick_fastest_source(
-    tag: str,
-    proxy: Optional[str] = None,
-) -> list[str]:
-    """
-    Speed-test all GitHub proxy candidates + direct GitHub, return a list of
-    download URLs ranked by latency (best first).  Returns empty list if all fail.
-    """
-    # Build the direct GitHub asset download URL (for HEAD probing)
-    direct_url = (
-        f"https://github.com/{REPO_OWNER}/{REPO_NAME}"
-        f"/releases/download/{tag}/{ASSET_NAME}"
-    )
-
-    candidates: list[tuple[str, str]] = []  # (label, probe_url)
-    candidates.append(("direct", direct_url))
-    for base in GH_PROXY_LIST:
-        label = base.rstrip("/").split("//", 1)[-1]
-        candidates.append((label, f"{base.rstrip('/')}/{direct_url}"))
-
-    logger.info(f"Speed-testing {len(candidates)} GitHub sources for {ASSET_NAME} ...")
-
-    # Fire all HEAD probes concurrently
-    tasks = {
-        label: asyncio.create_task(_test_latency(url, proxy))
-        for label, url in candidates
-    }
-    results: dict[str, Optional[float]] = {}
-    for label, task in tasks.items():
-        results[label] = await task
-
-    # Log results
-    for label, latency in sorted(results.items(), key=lambda x: x[1] or 999):
-        if latency is not None:
-            logger.info(f"  {label}: {latency:.3f}s")
-        else:
-            logger.info(f"  {label}: FAILED")
-
-    # Build ranked list of download URLs (best latency first)
-    ranked: list[str] = []
-    for label, latency in sorted(results.items(), key=lambda x: x[1] or 999):
-        if latency is None:
-            continue
-        if label == "direct":
-            ranked.append(direct_url)
-        else:
-            proxy_base = next(b for b in GH_PROXY_LIST if label in b)
-            ranked.append(f"{proxy_base.rstrip('/')}/{direct_url}")
-
-    if ranked:
-        logger.info(f"Ranked {len(ranked)} usable source(s)")
-    return ranked
-
 
 # ─── Download + verify ─────
 
@@ -159,7 +91,11 @@ async def _fetch_asset_digest(
     Returns the hex digest string (without the ``sha256:`` prefix), or None
     if the information is unavailable.
     """
-    assets = await get_release_assets(REPO_OWNER, REPO_NAME, tag, proxy)
+    try:
+        assets = await get_release_assets(REPO_OWNER, REPO_NAME, tag, proxy)
+    except httpx.HTTPError as e:
+        logger.warning(f"Failed to fetch release assets for {tag}: {e}")
+        return None
     if not assets:
         return None
 
@@ -236,7 +172,8 @@ async def ensure_dist(proxy: Optional[str] = None, ignore_webui_version_check: b
     dist_dir = get_dist_dir()
 
     # 1. Rank all sources by latency
-    ranked_urls = await pick_fastest_source(tag, proxy)
+    direct_url = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/{tag}/{ASSET_NAME}"
+    ranked_urls = await pick_fastest_source(direct_url, proxy)
     if not ranked_urls:
         logger.error(
             "✘ All GitHub sources failed. Please manually place the frontend "

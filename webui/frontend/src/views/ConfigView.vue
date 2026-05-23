@@ -282,6 +282,15 @@
               />
             </button>
 
+            <!-- Select -->
+            <CustomSelect
+              v-else-if="field.type === 'select'"
+              :modelValue="getFieldValue(field.key) || ''"
+              :options="field.selectOptions || []"
+              :placeholder="$t(field.hintKey, field.hintFallback)"
+              @update:modelValue="(v: string) => setFieldValue(field.key, v)"
+            />
+
             <!-- String -->
             <input
               v-else
@@ -327,6 +336,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
+import CustomSelect from '@/components/common/CustomSelect.vue'
 
 const { t } = useI18n()
 
@@ -361,6 +371,7 @@ interface ConfigField {
   type: string
   default?: any
   modelType?: string
+  selectOptions?: { value: string; label: string }[]
   validation?: { min?: number; max?: number; required?: boolean }
 }
 
@@ -399,7 +410,8 @@ const allGroups: ConfigGroup[] = [
     descFallback: 'Agent and tool execution parameters',
     iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>',
     fields: [
-      { key: 'bot_config.agent.max_tool_loop', labelKey: 'configuration.message.max_tool_loop', labelFallback: 'Max Tool Loop', hintKey: 'configuration.hints.max_tool_loop', hintFallback: 'Maximum number of tool call iterations per response', type: 'integer', default: 5, validation: { min: 1, max: 50, required: true } },
+      { key: 'bot_config.agent.max_tool_loop', labelKey: 'configuration.message.max_tool_loop', labelFallback: 'Max Agent Loop', hintKey: 'configuration.hints.max_tool_loop', hintFallback: 'Maximum number of agent loop iterations per response', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
+      { key: 'bot_config.agent.max_tool_calls_per_turn', labelKey: 'configuration.message.max_tool_calls_per_turn', labelFallback: 'Max Tool Calls Per Turn', hintKey: 'configuration.hints.max_tool_calls_per_turn', hintFallback: 'Maximum number of tool calls allowed in a single turn', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
     ],
   },
   {
@@ -410,7 +422,39 @@ const allGroups: ConfigGroup[] = [
     descFallback: 'Bot appearance reference settings',
     iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>',
     fields: [
-      { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the bot appearance reference image', type: 'string', default: '', validation: { required: false } },
+      { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the bot appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
+    ],
+  },
+  {
+    id: 'cache',
+    labelKey: 'configuration.groups.cache',
+    labelFallback: 'Cache Settings',
+    descKey: 'configuration.groups.cache_desc',
+    descFallback: 'Temporary file cache management parameters',
+    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>',
+    fields: [
+      { key: 'bot_config.cache.max_size_mb', labelKey: 'configuration.message.max_size_mb', labelFallback: 'Max Storage (MB)', hintKey: 'configuration.hints.max_size_mb', hintFallback: 'Maximum disk space allowed for the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 10240, required: true } },
+      { key: 'bot_config.cache.max_files', labelKey: 'configuration.message.max_files', labelFallback: 'Max Files', hintKey: 'configuration.hints.max_files', hintFallback: 'Maximum number of files allowed in the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 100000, required: true } },
+      { key: 'bot_config.cache.max_age_hours', labelKey: 'configuration.message.max_age_hours', labelFallback: 'Max Cache Age (hours)', hintKey: 'configuration.hints.max_age_hours', hintFallback: 'Cache files older than this will be automatically cleaned up', type: 'integer', default: 24, validation: { min: 1, max: 8760, required: true } },
+    ],
+  },
+  {
+    id: 'logging',
+    labelKey: 'configuration.groups.logging',
+    labelFallback: 'Logging Settings',
+    descKey: 'configuration.groups.logging_desc',
+    descFallback: 'Terminal and file logging configuration',
+    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>',
+    fields: [
+      { key: 'logging.log_level', labelKey: 'configuration.message.log_level', labelFallback: 'Log Level', hintKey: 'configuration.hints.log_level', hintFallback: 'Minimum log level displayed in the terminal', type: 'select', default: 'INFO', selectOptions: [
+        { value: 'DEBUG', label: 'DEBUG' },
+        { value: 'INFO', label: 'INFO' },
+        { value: 'WARNING', label: 'WARNING' },
+        { value: 'ERROR', label: 'ERROR' },
+        { value: 'CRITICAL', label: 'CRITICAL' },
+      ]},
+      { key: 'logging.log_file_path', labelKey: 'configuration.message.log_file_path', labelFallback: 'Log File Path', hintKey: 'configuration.hints.log_file_path', hintFallback: 'Path to the log file, leave empty for default', type: 'string', default: '' },
+      { key: 'logging.log_file_max_size', labelKey: 'configuration.message.log_file_max_size', labelFallback: 'Max Log File Size (MB)', hintKey: 'configuration.hints.log_file_max_size', hintFallback: 'Maximum size of a single log file in megabytes', type: 'integer', default: 10, validation: { min: 1, max: 1024, required: true } },
     ],
   },
   {

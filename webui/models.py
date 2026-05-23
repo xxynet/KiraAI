@@ -100,15 +100,6 @@ class PersonaResponse(PersonaBase):
     created_at: int = 0
 
 
-class SettingsRequest(BaseModel):
-    language: str = "en"
-    theme: str = "light"
-
-
-class SettingsResponse(SettingsRequest):
-    updated_by: Optional[str] = None
-
-
 class TokenLoginRequest(BaseModel):
     access_token: str
 
@@ -134,6 +125,9 @@ class PluginItem(BaseModel):
     builtin: bool = False
     uninstallable: bool = False
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
+    core_version: Optional[str] = None
+    error: Optional[str] = None
 
 
 class PluginConfigUpdateRequest(BaseModel):
@@ -159,6 +153,7 @@ class PluginStoreItemResponse(BaseModel):
     category: Optional[str] = None
     repo: Optional[str] = None
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
 
 
 class PluginStoreFetchRequest(BaseModel):
@@ -217,3 +212,49 @@ class SkillItem(BaseModel):
     description: str = ""
     enabled: bool = True
     path: str = ""
+
+
+class DirectoryEntry(BaseModel):
+    name: str
+    path: str
+    size_bytes: int = 0
+    file_count: int = 0
+
+
+class StorageInfoResponse(BaseModel):
+    data_path: str
+    total_size_bytes: int = 0
+    disk_total_bytes: int = 0
+    disk_used_bytes: int = 0
+    disk_free_bytes: int = 0
+    directories: List[DirectoryEntry] = Field(default_factory=list)
+
+
+class ReleaseItem(BaseModel):
+    tag_name: str
+    name: Optional[str] = None
+    body: Optional[str] = None
+    html_url: Optional[str] = None
+    published_at: Optional[str] = None
+    prerelease: bool = False
+    draft: bool = False
+
+
+class ReleasesResponse(BaseModel):
+    current_version: str
+    releases: List[ReleaseItem]
+
+
+class BackupCreateResponse(BaseModel):
+    filename: str
+    size_bytes: int = 0
+    created_at: str = ""
+
+
+class RestoreResponse(BaseModel):
+    success: bool
+    message: str = ""
+
+
+class DownloadReleaseRequest(BaseModel):
+    tag_name: str

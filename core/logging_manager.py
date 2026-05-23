@@ -16,6 +16,18 @@ logger_color_mapping = {}
 
 MAX_QUEUE_SIZE = 100
 
+_log_level = "INFO"
+_log_file_path = None
+_log_file_max_size = 10  # MB
+
+_LEVEL_MAP = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
 
 class LogCacheManager:
     def __init__(self):
@@ -91,6 +103,44 @@ class GetLoggerFilter(logging.Filter):
 _created_by_get_logger = set()
 
 
+def setup_logging(log_level: str = "INFO", log_file_path: str = None, log_file_max_size: int = 10):
+    """Called once after config is loaded to apply logging settings."""
+    global _log_level, _log_file_path, _log_file_max_size
+
+    log_level = str(log_level) if log_level else "INFO"
+    if log_level.upper() not in _LEVEL_MAP:
+        log_level = "INFO"
+    try:
+        log_file_max_size = int(log_file_max_size)
+    except (TypeError, ValueError):
+        log_file_max_size = 10
+
+    _log_level = log_level
+    _log_file_path = log_file_path
+    _log_file_max_size = log_file_max_size
+
+    level = _LEVEL_MAP.get(log_level.upper(), logging.INFO)
+    log_file = _log_file_path or f"{get_data_path()}/log.log"
+    max_bytes = _log_file_max_size * 1024 * 1024
+
+    for name in _created_by_get_logger:
+        logger = logging.getLogger(name)
+        for i, handler in enumerate(logger.handlers):
+            if isinstance(handler, RotatingFileHandler):
+                if handler.baseFilename == log_file and handler.maxBytes == max_bytes:
+                    continue
+                formatter = handler.formatter
+                handler.close()
+                new_fh = RotatingFileHandler(
+                    filename=log_file, maxBytes=max_bytes, backupCount=1, encoding='utf-8'
+                )
+                new_fh.setLevel(logging.DEBUG)
+                new_fh.setFormatter(formatter)
+                logger.handlers[i] = new_fh
+            elif isinstance(handler, logging.StreamHandler) and not isinstance(handler, LogQueueHandler):
+                handler.setLevel(level)
+
+
 def get_logger(name: str, color: str):
     logger = logging.getLogger(name)
 
@@ -123,11 +173,14 @@ def get_logger(name: str, color: str):
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
+    level = _LEVEL_MAP.get(_log_level.upper(), logging.INFO)
+
     ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
+    ch.setLevel(level)
     ch.setFormatter(console_formatter)
 
-    fh = RotatingFileHandler(filename=f"{get_data_path()}/log.log", maxBytes=10*1024*1024, backupCount=1, encoding='utf-8')
+    log_file = _log_file_path or f"{get_data_path()}/log.log"
+    fh = RotatingFileHandler(filename=log_file, maxBytes=_log_file_max_size * 1024 * 1024, backupCount=1, encoding='utf-8')
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(file_formatter)
 

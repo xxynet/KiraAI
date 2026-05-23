@@ -15,6 +15,7 @@ from core.lifecycle import KiraLifecycle
 from core.utils.path_utils import get_data_path, get_webui_dist_path
 from webui.utils import _get_or_generate_access_token
 from webui.routes.auth import AuthRoutes
+from webui.routes.releases import ReleasesRoutes
 from webui.routes.overview import OverviewRoutes
 from webui.routes.logs import LogsRoutes
 from webui.routes.personas import PersonasRoutes
@@ -27,6 +28,7 @@ from webui.routes.config import ConfigRoutes
 from webui.routes.stickers import StickersRoutes
 from webui.routes.settings import SettingsRoutes
 from webui.routes.skills import SkillsRoutes
+from webui.routes.system import SystemRoutes
 
 
 class KiraWebUI:
@@ -35,7 +37,7 @@ class KiraWebUI:
     Holds lifecycle instance for accessing system components
     """
 
-    def __init__(self, lifecycle: KiraLifecycle, dist_dir: Optional[Path] = None):
+    def __init__(self, lifecycle: KiraLifecycle, dist_dir: Optional[Path] = None, disable_auth: bool = False):
         # Ensure proper MIME types on Windows (fixes .js served as text/plain)
         mimetypes.add_type("application/javascript", ".js")
         mimetypes.add_type("text/javascript", ".js")
@@ -44,7 +46,11 @@ class KiraWebUI:
         mimetypes.add_type("image/svg+xml", ".svg")
 
         self.lifecycle = lifecycle
-        self.access_token = _get_or_generate_access_token()
+        self.disable_auth = disable_auth
+        if disable_auth:
+            self.access_token = "disabled"
+        else:
+            self.access_token = _get_or_generate_access_token()
         self.app = FastAPI(
             title="KiraAI Admin Panel",
             description="Administration panel for KiraAI system",
@@ -52,6 +58,8 @@ class KiraWebUI:
             openapi_url="/api/openapi.json",
             docs_url="/api/docs",
         )
+        # require_auth reads this to detect mode-mismatched JWTs.
+        self.app.state.disable_auth = disable_auth
 
         # Paths
         self.webui_dir = Path(__file__).parent
@@ -94,7 +102,7 @@ class KiraWebUI:
         self.lifecycle.webui_app = self.app
 
     def _register_routes(self):
-        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.dist_dir)
+        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.dist_dir, self.disable_auth)
         auth_routes.register()
         OverviewRoutes(self.app, self.lifecycle).register()
         LogsRoutes(self.app, self.lifecycle).register()
@@ -108,6 +116,8 @@ class KiraWebUI:
         StickersRoutes(self.app, self.lifecycle).register()
         SkillsRoutes(self.app, self.lifecycle).register()
         SettingsRoutes(self.app, self.lifecycle).register()
+        SystemRoutes(self.app, self.lifecycle).register()
+        ReleasesRoutes(self.app, self.lifecycle).register()
 
         # SPA catch-all must be registered last
         auth_routes.register_spa_fallback()
@@ -120,8 +130,9 @@ class KiraWebUI:
             log_level="info",
             loop="asyncio",
         )
-        server = uvicorn.Server(config)
-        await server.serve()
+        self.server = uvicorn.Server(config)
+        self.lifecycle.uvicorn_server = self.server
+        await self.server.serve()
 
     def get_app(self) -> FastAPI:
         """Get the FastAPI application instance"""

@@ -1,4 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getAuthConfig, login } from '@/api/auth'
+
+let authEnabled: boolean | null = null
 
 const router = createRouter({
   history: createWebHistory(),
@@ -31,11 +34,48 @@ const router = createRouter({
 })
 
 // Navigation guard
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const token = localStorage.getItem('jwt_token')
-  if (!to.meta.public && !token) {
-    return '/login'
+
+  // Resolve auth config if unknown; on failure, use a per-navigation fallback
+  // (assume auth enabled) so we don't permanently cache a wrong value and
+  // future navigations will retry the fetch.
+  let effectiveAuth = authEnabled
+  if (effectiveAuth === null) {
+    try {
+      const { data } = await getAuthConfig()
+      authEnabled = data.auth_enabled
+      effectiveAuth = authEnabled
+    } catch {
+      effectiveAuth = true
+    }
   }
+
+  // Auth disabled: the user must never see the login form. Mint a fresh
+  // sentinel JWT whenever we have no token, OR whenever we land directly on
+  // /login (e.g. Electron shell loads ${BACKEND_URL}/login on startup) — in
+  // that case any cached token may be stale from a prior enabled-mode session
+  // and there's no API call on this page to surface the mode mismatch.
+  if (!effectiveAuth) {
+    if (!token || to.path === '/login') {
+      try {
+        const { data } = await login({ access_token: 'disabled' })
+        localStorage.setItem('jwt_token', data.access_token)
+        return to.path === '/login' ? '/' : to.fullPath
+      } catch {
+        // sentinel login shouldn't fail; fall through and keep whatever
+        // token we had (if any) so the user isn't blocked entirely.
+      }
+    }
+    return
+  }
+
+  // Auth enabled: trust whatever token we have. If it was issued under the
+  // wrong auth_mode (cached sentinel JWT) the next API call will 401 and the
+  // response interceptor will clear the token and route back to /login.
+  if (token) return
+  if (to.meta.public) return
+  return '/login'
 })
 
 export default router

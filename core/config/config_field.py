@@ -15,6 +15,8 @@ class ConfigType(Enum):
     Editor = "editor"
     Textarea = "textarea"
     ModelSelect = "model_select"
+    MultiSelect = "multi_select"
+    Section = "section"
 
 
 class BaseConfigField:
@@ -47,22 +49,17 @@ class BaseConfigField:
             data["locales"] = self.locales
         if isinstance(self, EnumField):
             data["options"] = list(self.options)
-        if isinstance(self, EnumField):
+        if isinstance(self, MultiSelectField):
             if getattr(self, "options", None):
                 data["options"] = list(self.options)
+        if isinstance(self, SectionField):
+            data["collapsed"] = self.collapsed
+            data["fields"] = {f.key: f.to_dict() for f in self.fields}
         if isinstance(self, EditorField) and getattr(self, "language", None):
             data["language"] = self.language
         if isinstance(self, ModelSelectField) and getattr(self, "model_type", None):
             data["model_type"] = self.model_type
         return data
-
-
-class ConfigSection:
-    def __init__(self, name: str, hint: str, fields: list[BaseConfigField], fold: bool = False):
-        self.name = name
-        self.hint = hint
-        self.fields = fields
-        self.fold = fold
 
 
 class StringField(BaseConfigField):
@@ -160,6 +157,23 @@ class ModelSelectField(BaseConfigField):
         self.model_type = model_type
 
 
+class MultiSelectField(BaseConfigField):
+    type = ConfigType.MultiSelect
+
+    def __init__(self, key: str, name: str, hint: str, options, default=None, locales: dict = None):
+        super().__init__(key, name, hint, default if isinstance(default, list) else [], locales)
+        self.options = list(options)
+
+
+class SectionField(BaseConfigField):
+    type = ConfigType.Section
+
+    def __init__(self, key: str, name: str, hint: str, fields: list[BaseConfigField] = None, collapsed: bool = False, locales: dict = None):
+        super().__init__(key, name, hint, default=None, locales=locales)
+        self.fields = fields or []
+        self.collapsed = collapsed
+
+
 def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     field_type = schema.get("type", "string")
     name = schema.get("name") or key
@@ -210,6 +224,15 @@ def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     if field_type == "model_select":
         model_type = schema.get("model_type", "llm")
         return ModelSelectField(key=key, name=name, hint=hint, model_type=model_type, default=default, locales=locales)
+
+    if field_type == "multi_select":
+        return MultiSelectField(key=key, name=name, hint=hint, options=options or [], default=default, locales=locales)
+
+    if field_type == "section":
+        collapsed = schema.get("collapsed", False)
+        nested = schema.get("fields", {})
+        child_fields = build_fields(nested) if isinstance(nested, dict) else []
+        return SectionField(key=key, name=name, hint=hint, fields=child_fields, collapsed=collapsed, locales=locales)
 
     return StringField(key=key, name=name, hint=hint, default=default, locales=locales)
 

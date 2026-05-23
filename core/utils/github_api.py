@@ -3,6 +3,19 @@ import hashlib
 import httpx
 import asyncio
 
+from core.utils.network import test_url_speed
+from core.logging_manager import get_logger
+
+logger = get_logger("gh_api", "cyan")
+
+GH_PROXY_LIST = [
+    "https://gh-proxy.com/",
+    "https://gh-proxy.org/",
+    "https://hk.gh-proxy.org/",
+    "https://cdn.gh-proxy.org/",
+    "https://edgeone.gh-proxy.org/",
+]
+
 
 def parse_github_url(url: str) -> Tuple[str, str]:
     """
@@ -43,7 +56,7 @@ async def get_latest_release(owner: str, repo: str, proxy: Optional[str] = None)
             resp = await client.get(url)
             resp.raise_for_status()
         except httpx.HTTPError as e:
-            print(f"Failed to get latest release: {e}")
+            logger.error(f"Failed to get latest release: {e}")
             return None
 
     data = resp.json()
@@ -70,7 +83,7 @@ async def get_all_releases(
 
     Returns a list of release dicts, each containing:
       tag_name, name, body, html_url, published_at, prerelease, draft
-    Returns an empty list on failure.
+    Raises httpx.HTTPError on network or API failures.
 
     per_page  — results per page (max 100, default 30)
     max_pages — safety cap to avoid excessive pagination
@@ -90,8 +103,8 @@ async def get_all_releases(
                 resp = await client.get(url)
                 resp.raise_for_status()
             except httpx.HTTPError as e:
-                print(f"Failed to get releases (page {page}): {e}")
-                break
+                # logger.error(f"Failed to get releases (page {page}): {e}")
+                raise
 
             data = resp.json()
             if not data:
@@ -126,7 +139,7 @@ async def get_release_assets(
 
     Returns a list of asset dicts, each containing:
       name, size, download_url (browser_download_url), content_type, state
-    Returns an empty list on failure.
+    Raises httpx.HTTPError on network or API failures.
     """
     url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
     client_kwargs: dict = {"timeout": 10.0}
@@ -134,12 +147,8 @@ async def get_release_assets(
         client_kwargs["proxy"] = proxy
 
     async with httpx.AsyncClient(**client_kwargs) as client:
-        try:
-            resp = await client.get(url)
-            resp.raise_for_status()
-        except httpx.HTTPError as e:
-            print(f"Failed to get release '{tag}': {e}")
-            return []
+        resp = await client.get(url)
+        resp.raise_for_status()
 
     data = resp.json()
     assets: List[dict] = []
@@ -281,6 +290,96 @@ async def download_zipball(
             raise ConnectionError(f"Network error while downloading from GitHub: {e}") from e
 
     return resp.content
+
+
+async def download_source_zipball(
+    owner: str,
+    repo: str,
+    tag: str,
+    proxy: Optional[str] = None,
+    gh_proxy: Optional[str] = None,
+) -> bytes:
+    """
+    Download the source code zip archive for a specific release tag.
+
+    proxy    — standard HTTP/SOCKS proxy passed to httpx
+    gh_proxy — GitHub reverse-proxy base URL
+
+    Raises ValueError on HTTP errors, ConnectionError on network failures.
+    """
+    if gh_proxy:
+        base = gh_proxy.rstrip("/")
+        direct_url = f"https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip"
+        url = f"{base}/{direct_url}"
+    else:
+        url = f"https://api.github.com/repos/{owner}/{repo}/zipball/{tag}"
+
+    client_kwargs: dict = {"timeout": 120.0, "follow_redirects": True}
+    if proxy:
+        client_kwargs["proxy"] = proxy
+
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            if status == 404:
+                raise ValueError(f"Tag {tag} not found in {owner}/{repo}") from e
+            raise ValueError(f"GitHub returned HTTP {status}") from e
+        except httpx.HTTPError as e:
+            raise ConnectionError(f"Network error while downloading from GitHub: {e}") from e
+
+    return resp.content
+
+
+async def pick_fastest_source(
+    direct_url: str,
+    proxy: Optional[str] = None,
+    timeout: float = 5.0,
+) -> list[str]:
+    """
+    Speed-test all GitHub proxy candidates + direct GitHub for *direct_url*,
+    return a list of download URLs ranked by latency (best first).
+    Returns empty list if all fail.
+    """
+    candidates: list[tuple[str, str]] = [("direct", direct_url)]
+    for base in GH_PROXY_LIST:
+        label = base.rstrip("/").split("//", 1)[-1]
+        candidates.append((label, f"{base.rstrip('/')}/{direct_url}"))
+
+    logger.info(f"Speed-testing {len(candidates)} GitHub sources ...")
+
+    async def _probe(label: str, url: str) -> tuple[str, Optional[float]]:
+        try:
+            result = await test_url_speed(url, proxy=proxy, timeout=timeout)
+            return label, result["latency"]
+        except Exception:
+            return label, None
+
+    results = await asyncio.gather(*[_probe(label, url) for label, url in candidates])
+
+    for label, latency in sorted(results, key=lambda x: x[1] or 999):
+        if latency is not None:
+            logger.info(f"  {label}: {latency:.3f}s")
+        else:
+            logger.warning(f"  {label}: FAILED")
+
+    ranked: list[str] = []
+    for label, latency in sorted(results, key=lambda x: x[1] or 999):
+        if latency is None:
+            continue
+        if label == "direct":
+            ranked.append(direct_url)
+        else:
+            proxy_base = next((b for b in GH_PROXY_LIST if label in b), None)
+            if proxy_base is None:
+                continue
+            ranked.append(f"{proxy_base.rstrip('/')}/{direct_url}")
+
+    if ranked:
+        logger.info(f"Ranked {len(ranked)} usable source(s)")
+    return ranked
 
 
 if __name__ == '__main__':

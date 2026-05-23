@@ -42,7 +42,8 @@ class OpenAIImageClient(ImageModelClient):
         """Build the AsyncOpenAI client (shared by both modes)."""
         from httpx import Timeout
 
-        default_headers = self.model.provider_config.get("headers", {})
+        section_advanced = self.model.provider_config.get("section_advanced")
+        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
         timeout_val = self.model.model_config.get("timeout", 120)
@@ -306,7 +307,8 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
         timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
         slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
 
-        default_headers = self.model.provider_config.get("headers", {})
+        section_advanced = self.model.provider_config.get("section_advanced")
+        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
 

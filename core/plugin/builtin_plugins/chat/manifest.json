@@ -5,6 +5,7 @@
     "author": "KiraAI",
     "description": "Default IM Chat processing implementation, merge messages received in a certain duration & add unmentioned messages as context",
     "repo": null,
+    "tags": ["chat", "im"],
     "locales": {
         "zh": {
             "display_name": "默认聊天",

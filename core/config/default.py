@@ -1,4 +1,4 @@
-VERSION = "v2.14.0"
+VERSION = "v2.18.0"
 
 DEFAULT_CONFIG = {
     "bot_config": {
@@ -10,10 +10,16 @@ DEFAULT_CONFIG = {
             "max_message_delay": 5
         },
         "agent": {
-            "max_tool_loop": 2
+            "max_tool_loop": 5,
+            "max_tool_calls_per_turn": 5
         },
         "selfie": {
             "path": None
+        },
+        "cache": {
+            "max_size_mb": 50,
+            "max_files": 50,
+            "max_age_hours": 24
         }
     },
     "locale": {
@@ -41,5 +47,10 @@ DEFAULT_CONFIG = {
     "database": {
         "url": None,
         "echo": False
+    },
+    "logging": {
+        "log_level": "INFO",
+        "log_file_path": None,  # None = {data_path}/log.log
+        "log_file_max_size": 10  # MB
     }
 }

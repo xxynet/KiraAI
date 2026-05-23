@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check VERSION matches tag
+        id: check
+        run: |
+          FILE_VERSION=$(python -c "import importlib.util; s=importlib.util.spec_from_file_location('m','core/config/default.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.VERSION)")
+          TAG_VERSION="${{ github.ref_name }}"
+          echo "FILE_VERSION=$FILE_VERSION"
+          echo "TAG_VERSION=$TAG_VERSION"
+          if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::VERSION mismatch: core/config/default.py says '$FILE_VERSION' but tag is '$TAG_VERSION'"
+            exit 1
+          fi
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    uses: ./.github/workflows/build-frontend.yml
+    with:
+      version: ${{ needs.validate.outputs.version }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-zip
+          path: release-assets
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          CURRENT_TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 "$CURRENT_TAG^" 2>/dev/null || true)
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD | head -1)
+          fi
+          echo "## What's Changed" > release_notes.md
+          echo "" >> release_notes.md
+          git log "${PREV_TAG}..${{ github.ref_name }}" --pretty=format:"%h|%aN|%aE|%s" --no-merges --reverse | { grep -vi 'chore: bump version to ' || true; } | while IFS='|' read -r hash author email msg; do
+            GH_USER=$(echo "$email" | grep -oP '[0-9]+\+\K[^@]+(?=@users\.noreply\.github\.com)' || true)
+            PR=$(echo "$msg" | grep -oE '\(#[0-9]+\)' | tr -d '()')
+            if [ -n "$GH_USER" ]; then
+              if [ -n "$PR" ]; then
+                echo "* ${msg%% (*} by @${GH_USER} in ${PR}" >> release_notes.md
+              else
+                echo "* ${msg} by @${GH_USER} in ${hash}" >> release_notes.md
+              fi
+            else
+              if [ -n "$PR" ]; then
+                echo "* ${msg%% (*} in ${PR}" >> release_notes.md
+              else
+                echo "* ${msg} in ${hash}" >> release_notes.md
+              fi
+            fi
+          done
+          COMMIT_COUNT=$(git log "${PREV_TAG}..${{ github.ref_name }}" --no-merges --oneline | grep -cv 'chore: bump version to ' || true)
+          if [ "$COMMIT_COUNT" -eq 0 ]; then
+            echo "::warning::No commits found between ${PREV_TAG} and ${{ github.ref_name }}, release notes may be incomplete"
+          fi
+          echo "" >> release_notes.md
+          NEW_CONTRIBUTORS=""
+          CURRENT_AUTHORS=$(git log "${PREV_TAG}..${{ github.ref_name }}" --pretty=format:"%aN|%aE" --no-merges | sort -u)
+          PREV_AUTHORS=$(git log "$PREV_TAG" --pretty=format:"%aN|%aE" | sort -u)
+          while IFS='|' read -r name email; do
+            if ! echo "$PREV_AUTHORS" | grep -qF "$name|$email"; then
+              GH_USER=$(echo "$email" | grep -oP '[0-9]+\+\K[^@]+(?=@users\.noreply\.github\.com)' || true)
+              if [ -n "$GH_USER" ]; then
+                PR=$(git log "${PREV_TAG}..${{ github.ref_name }}" --author="$email" --pretty=format:"%h|%s" --no-merges | grep -oE '\(#[0-9]+\)' | tr -d '()' | head -1)
+                if [ -n "$PR" ]; then
+                  NEW_CONTRIBUTORS="${NEW_CONTRIBUTORS}* @${GH_USER} made their first contribution in ${PR}"$'\n'
+                else
+                  NEW_CONTRIBUTORS="${NEW_CONTRIBUTORS}* @${GH_USER} made their first contribution"$'\n'
+                fi
+              fi
+            fi
+          done <<< "$CURRENT_AUTHORS"
+          if [ -n "$NEW_CONTRIBUTORS" ]; then
+            echo "## New Contributors" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "$NEW_CONTRIBUTORS" >> release_notes.md
+          fi
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${{ github.ref_name }}" >> release_notes.md
+
+      - name: Check if pre-release
+        id: prerelease
+        run: |
+          if echo "${{ github.ref_name }}" | grep -q '-'; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          body_path: release_notes.md
+          files: release-assets/dist.zip
+          generate_release_notes: false
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          token: ${{ secrets.PAT }}

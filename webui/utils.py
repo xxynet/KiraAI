@@ -103,11 +103,16 @@ def _save_webui_config(config: Dict):
 
 
 def _get_or_generate_access_token() -> str:
-    """Get or generate access_token"""
+    """Get or generate access_token.
+
+    The reserved sentinel "disabled" is never returned — if it appears in the
+    config file (e.g. manually edited), the token is silently regenerated.
+    """
     config = _load_webui_config()
-    if "access_token" not in config or not config["access_token"]:
+    if "access_token" not in config or not config["access_token"] or config["access_token"] == "disabled":
         config["access_token"] = _generate_strong_password()
         _save_webui_config(config)
+        logger.warning("access_token was missing or reserved, regenerated a new one")
     return config["access_token"]
 
 

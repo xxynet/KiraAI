@@ -4,9 +4,9 @@ import json
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import Depends, File, HTTPException, UploadFile
+from fastapi import Depends, File, HTTPException, Query, UploadFile
 
-from core.plugin.plugin_registry import PluginManager
+from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_from_github, install_from_zip, install_requirements
 from core.utils.path_utils import get_data_path
@@ -51,6 +51,13 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/{plugin_id}/enabled",
                 methods=["POST"],
                 endpoint=self.set_plugin_enabled,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/{plugin_id}/reload",
+                methods=["POST"],
+                endpoint=self.reload_plugin,
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -134,6 +141,8 @@ class PluginsRoutes(Routes):
                 desc = str(manifest.get("description") or "")
                 repo = manifest.get("repo")
                 locales = manifest.get("locales") or {}
+                tags = manifest.get("tags") or []
+                core_version = manifest.get("core_version")
                 enabled = plugin_manager.is_plugin_enabled(plugin_id)
                 is_builtin = plugin_manager.is_builtin_plugin(plugin_id)
                 uninstallable = plugin_manager.is_plugin_uninstallable(plugin_id)
@@ -149,8 +158,44 @@ class PluginsRoutes(Routes):
                         builtin=is_builtin,
                         uninstallable=uninstallable,
                         locales=locales,
+                        tags=[str(t) for t in tags if t],
+                        core_version=str(core_version) if core_version else None,
                     )
                 )
+
+            # Include plugins that failed to load (e.g. version mismatch)
+            for plugin_id, error_info in plugin_manager.get_plugin_load_errors().items():
+                if plugin_manager.is_plugin_hidden(plugin_id):
+                    continue
+                manifest = error_info.get("manifest") or {}
+                display_name = manifest.get("display_name") or plugin_id
+                version = str(manifest.get("version") or "")
+                author = str(manifest.get("author") or "")
+                desc = str(manifest.get("description") or "")
+                repo = manifest.get("repo")
+                locales = manifest.get("locales") or {}
+                tags = manifest.get("tags") or []
+                core_version = manifest.get("core_version")
+                is_builtin = plugin_manager.is_builtin_plugin(plugin_id)
+                uninstallable = plugin_manager.is_plugin_uninstallable(plugin_id)
+                items.append(
+                    PluginItem(
+                        id=str(plugin_id),
+                        name=str(display_name),
+                        version=version,
+                        author=author,
+                        description=desc,
+                        repo=repo if isinstance(repo, str) and repo else None,
+                        enabled=False,
+                        builtin=is_builtin,
+                        uninstallable=uninstallable,
+                        locales=locales,
+                        tags=[str(t) for t in tags if t],
+                        core_version=str(core_version) if core_version else None,
+                        error=str(error_info.get("error", "")),
+                    )
+                )
+
             return items
         except Exception as e:
             logger.error(f"Failed to list plugins: {e}")
@@ -205,6 +250,8 @@ class PluginsRoutes(Routes):
             plugin_manager = self.lifecycle.plugin_manager
             registered = plugin_manager.get_registered_plugins()
             if plugin_id not in registered:
+                if plugin_id in plugin_manager.get_plugin_load_errors():
+                    raise HTTPException(status_code=400, detail="Cannot enable a plugin that failed to load")
                 raise HTTPException(status_code=404, detail="Plugin not found")
             await plugin_manager.set_plugin_enabled(plugin_id, enabled)
             return {"plugin_id": plugin_id, "enabled": enabled}
@@ -214,13 +261,47 @@ class PluginsRoutes(Routes):
             logger.error(f"Failed to set plugin enabled state for {plugin_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to update plugin state")
 
-    async def delete_plugin(self, plugin_id: str):
+    async def reload_plugin(self, plugin_id: str):
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+        try:
+            plugin_manager = self.lifecycle.plugin_manager
+            registered = plugin_manager.get_registered_plugins()
+            errors = plugin_manager.get_plugin_load_errors()
+            if plugin_id not in registered and plugin_id not in errors:
+                raise HTTPException(status_code=404, detail="Plugin not found")
+            if plugin_manager.is_builtin_plugin(plugin_id):
+                raise HTTPException(status_code=400, detail="Built-in plugins cannot be reloaded")
+            await plugin_manager.reload(plugin_id)
+            # Check if the plugin reloaded successfully
+            new_registered = plugin_manager.get_registered_plugins()
+            if plugin_id in new_registered:
+                return {"plugin_id": plugin_id, "reloaded": True}
+            # Plugin failed to reload — get the error
+            errors = plugin_manager.get_plugin_load_errors()
+            error_msg = errors.get(plugin_id, {}).get("error", "Unknown error")
+            return {"plugin_id": plugin_id, "reloaded": False, "error": error_msg}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to reload plugin {plugin_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to reload plugin: {e}")
+
+    async def delete_plugin(
+        self,
+        plugin_id: str,
+        delete_config: bool = Query(False),
+        delete_data: bool = Query(False),
+    ):
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
             raise HTTPException(status_code=503, detail="Plugin manager not available")
 
         plugin_manager = self.lifecycle.plugin_manager
 
-        if plugin_id not in plugin_manager.get_registered_plugins():
+        is_registered = plugin_id in plugin_manager.get_registered_plugins()
+        is_failed = plugin_id in plugin_manager.get_plugin_load_errors()
+
+        if not is_registered and not is_failed:
             raise HTTPException(status_code=404, detail="Plugin not found")
 
         if not plugin_manager.is_plugin_uninstallable(plugin_id):
@@ -228,7 +309,10 @@ class PluginsRoutes(Routes):
 
         plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)
         if not plugin_dir:
-            raise HTTPException(status_code=500, detail="Could not resolve plugin path")
+            # Failed plugins may not have a registered path; try the plugins directory
+            plugin_dir = plugin_manager.plugin_dir / plugin_id
+            if not plugin_dir.exists():
+                raise HTTPException(status_code=500, detail="Could not resolve plugin path")
 
         try:
             await plugin_manager.uninstall_plugin(plugin_id)
@@ -241,6 +325,22 @@ class PluginsRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to delete plugin directory {plugin_dir}: {e}")
             raise HTTPException(status_code=500, detail=f"Plugin unregistered but directory deletion failed: {e}")
+
+        if delete_config:
+            config_file = PLUGIN_CONFIG_DIR / f"{plugin_id}.json"
+            try:
+                if config_file.exists():
+                    config_file.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete plugin config {config_file}: {e}")
+
+        if delete_data:
+            data_dir = PLUGIN_DATA_DIR / plugin_id
+            try:
+                if data_dir.exists():
+                    shutil.rmtree(data_dir)
+            except Exception as e:
+                logger.warning(f"Failed to delete plugin data {data_dir}: {e}")
 
         return {"plugin_id": plugin_id, "deleted": True}
 
@@ -296,6 +396,7 @@ class PluginsRoutes(Routes):
     @staticmethod
     def _build_install_result(plugin_manager, plugin_id: str, warnings: List[str]) -> PluginInstallResult:
         manifest = plugin_manager.get_plugin_manifest(plugin_id) or {}
+        tags = manifest.get("tags") or []
         return PluginInstallResult(
             id=plugin_id,
             name=str(manifest.get("display_name") or plugin_id),
@@ -304,6 +405,7 @@ class PluginsRoutes(Routes):
             description=str(manifest.get("description") or ""),
             repo=manifest.get("repo") if isinstance(manifest.get("repo"), str) else None,
             enabled=plugin_manager.is_plugin_enabled(plugin_id),
+            tags=[str(t) for t in tags if t],
             warnings=warnings,
         )
 
@@ -338,6 +440,7 @@ class PluginsRoutes(Routes):
                     )
             result: List[PluginStoreItemResponse] = []
             for item in items:
+                tags = item.get("tags") or []
                 result.append(PluginStoreItemResponse(
                     id=str(item.get("plugin_id", "")),
                     name=str(item.get("display_name", "")),
@@ -347,6 +450,7 @@ class PluginsRoutes(Routes):
                     category=item.get("category"),
                     repo=item.get("repo"),
                     locales=item.get("locales") or {},
+                    tags=[str(t) for t in tags if t],
                 ))
             return result
         except Exception as e:

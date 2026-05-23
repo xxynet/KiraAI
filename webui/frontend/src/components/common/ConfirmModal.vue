@@ -24,6 +24,7 @@
             </p>
           </div>
         </div>
+        <slot></slot>
       </div>
       <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
         <button

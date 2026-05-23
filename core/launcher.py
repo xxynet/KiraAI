@@ -17,11 +17,12 @@ from webui.app import KiraWebUI
 
 class KiraLauncher:
     """KiraAI Launcher"""
-    def __init__(self, ignore_webui_version_check: bool = False):
+    def __init__(self, ignore_webui_version_check: bool = False, disable_webui_auth: bool = False):
         self.lifecycle: Optional[KiraLifecycle] = None
         self.stats: Optional[Statistics] = None
         self.webui = None
         self.ignore_webui_version_check = ignore_webui_version_check
+        self.disable_webui_auth = disable_webui_auth
         self.logger = get_logger("launcher", "blue")
 
     async def start(self):
@@ -63,13 +64,17 @@ class KiraLauncher:
         from core.utils.dist_checker import ensure_dist
         await ensure_dist(ignore_webui_version_check=self.ignore_webui_version_check)
 
-        self.webui = KiraWebUI(lifecycle=self.lifecycle)
-
-        self.logger.info(f"WebUI server started at http://{webui_config['host']}:{webui_config['port']}")
+        self.webui = KiraWebUI(lifecycle=self.lifecycle, disable_auth=self.disable_webui_auth)
 
         try:
             host = webui_config["host"]
             port = webui_config["port"]
+
+            if self.disable_webui_auth and host not in ("localhost", "127.0.0.1"):
+                self.logger.warning("Auth disabled — forcing host to 127.0.0.1 for security")
+                host = "127.0.0.1"
+
+            self.logger.info(f"WebUI server started at http://{host}:{port}")
             access_token = self.webui.access_token
 
             if host not in ("localhost", "127.0.0.1"):

@@ -8,9 +8,12 @@ import types
 import httpx
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable, Union
+from packaging.specifiers import SpecifierSet, InvalidSpecifier
+from packaging.version import Version, InvalidVersion
 from core.utils.path_utils import get_data_path, get_config_path
 from core.logging_manager import get_logger
-from core.config.config_field import BaseConfigField, build_fields
+from core.config.config_field import BaseConfigField, SectionField, build_fields
+from core.config import VERSION
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
 from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
@@ -35,6 +38,8 @@ _module_to_plugin: Dict[str, str] = {}
 _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
 _plugin_components: Dict[str, dict] = {}
 
+"""Plugins that failed to load: {plugin_id: {"manifest": {...}, "error": "..."}}"""
+_plugin_load_errors: Dict[str, Dict[str, Any]] = {}
 
 """plugin_ids whose API routes have already been added to FastAPI."""
 _plugin_api_registered: set[str] = set()
@@ -375,11 +380,26 @@ class PluginManager:
         self.plugin_enabled[plugin_id] = bool(enabled)
         self._save_plugin_state()
 
+        is_builtin = self.is_builtin_plugin(plugin_id)
+
         if enabled and not previous:
-            await self.init_plugin(plugin_id)
+            if is_builtin:
+                await self.init_plugin(plugin_id)
+            else:
+                # User plugin: always re-import from disk for fresh code
+                plugin_dir = _plugin_module_paths.get(plugin_id)
+                if plugin_dir and plugin_dir.exists():
+                    await self.load_plugin_from_dir(plugin_dir)
+                else:
+                    await self.init_plugin(plugin_id)
         elif not enabled and previous:
             try:
                 await self.terminate(plugin_id)
+                if not is_builtin:
+                    # User plugin: purge class & modules so next enable re-imports fresh
+                    _plugin_classes.pop(plugin_id, None)
+                    _plugin_schemas.pop(plugin_id, None)
+                    self._cleanup_plugin_modules(plugin_id)
             except Exception as e:
                 logger.error(f"Failed to terminate plugin {plugin_id} when disabling: {e}")
 
@@ -388,6 +408,9 @@ class PluginManager:
 
     def get_plugin_manifest(self, name: str) -> Dict[str, Any]:
         return _plugin_manifests.get(name, {})
+
+    def get_plugin_load_errors(self) -> Dict[str, Dict[str, Any]]:
+        return dict(_plugin_load_errors)
 
     def get_plugin_module_dir(self, name: str) -> str:
         return _plugin_module_dirs.get(name, "")
@@ -799,6 +822,53 @@ class PluginManager:
         for plugin_id in _plugin_components.keys():
             self._register_plugin_tools_for(plugin_id)
 
+    def _remove_plugin_routes(self, plugin_id: str) -> None:
+        """Remove all FastAPI routes and mounts registered by a plugin.
+
+        Cleans up API routes, page routes, and static file mounts from
+        the web app, and resets the tracking sets so re-registration works.
+        """
+        # Reset tracking sets so init_plugin can re-register
+        _plugin_api_registered.discard(plugin_id)
+        if hasattr(self, '_plugin_pages_registered'):
+            self._plugin_pages_registered.discard(plugin_id)
+        if hasattr(self, '_plugin_static_registered'):
+            self._plugin_static_registered.discard(plugin_id)
+
+        if self._web_app is None:
+            return
+
+        tag_prefix = f"plugin:{plugin_id}"
+        page_prefix = f"/page/plugin/{plugin_id}/"
+        static_prefix = f"/static/plugin/{plugin_id}/"
+
+        routes = self._web_app.routes
+        filtered_routes = []
+        removed = 0
+        for route in routes:
+            should_remove = False
+
+            # API / page routes registered via add_api_route
+            if hasattr(route, 'tags') and tag_prefix in (route.tags or []):
+                should_remove = True
+            # Page catch-all routes or static mounts
+            elif hasattr(route, 'path') and (
+                route.path.startswith(page_prefix) or route.path.startswith(static_prefix)
+            ):
+                should_remove = True
+
+            if should_remove:
+                removed += 1
+            else:
+                filtered_routes.append(route)
+
+        if removed:
+            routes.clear()
+            routes.extend(filtered_routes)
+            # Invalidate the OpenAPI schema cache so it gets regenerated
+            self._web_app.openapi_schema = None
+            logger.debug(f"Removed {removed} route(s) for plugin {plugin_id}")
+
     def _cleanup_plugin_registration(self, plugin_id: str) -> None:
         comp = _plugin_components.get(plugin_id)
         if not comp:
@@ -833,8 +903,8 @@ class PluginManager:
                 except Exception as e:
                     logger.error(f"Failed to unregister SubAgent {sid} for plugin {plugin_id}: {e}")
 
-        # API routes: disable is handled at request time via the plugin_check Depends,
-        # which calls is_plugin_enabled(). No additional cleanup needed here.
+        # clean up FastAPI routes (API routes, page routes, static mounts)
+        self._remove_plugin_routes(plugin_id)
 
     def _load_plugin_config_from_file(self, plugin_id: str) -> Dict[str, Any]:
         PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -857,7 +927,15 @@ class PluginManager:
         config_path = PLUGIN_CONFIG_DIR / f"{plugin_name}.json"
         cfg: Dict[str, Any] = self._load_plugin_config_from_file(plugin_name)
         for field in schema_fields:
-            if isinstance(field, BaseConfigField) and field.key not in cfg:
+            if isinstance(field, SectionField):
+                section_cfg = cfg.get(field.key)
+                if not isinstance(section_cfg, dict):
+                    section_cfg = {}
+                for child in field.fields:
+                    if isinstance(child, BaseConfigField) and child.key not in section_cfg:
+                        section_cfg[child.key] = child.default
+                cfg[field.key] = section_cfg
+            elif isinstance(field, BaseConfigField) and field.key not in cfg:
                 cfg[field.key] = field.default
         try:
             with config_path.open("w", encoding="utf-8") as f:
@@ -968,6 +1046,15 @@ class PluginManager:
         Terminate a plugin and remove all its registrations from memory.
         The caller is responsible for deleting the plugin directory afterwards.
         """
+        # Allow uninstalling failed plugins that never fully loaded
+        if plugin_id in _plugin_load_errors:
+            _plugin_load_errors.pop(plugin_id, None)
+            _plugin_manifests.pop(plugin_id, None)
+            self.plugin_enabled.pop(plugin_id, None)
+            self._save_plugin_state()
+            logger.info(f"Failed plugin '{plugin_id}' removed from records")
+            return
+
         if plugin_id not in _plugin_classes:
             raise ValueError(f"Plugin '{plugin_id}' is not registered")
 
@@ -981,6 +1068,7 @@ class PluginManager:
         _plugin_module_paths.pop(plugin_id, None)
         _plugin_schemas.pop(plugin_id, None)
         _plugin_components.pop(plugin_id, None)
+        _plugin_load_errors.pop(plugin_id, None)
 
         # Remove module-to-plugin mappings and evict from sys.modules
         stale_modules = [k for k, v in _module_to_plugin.items() if v == plugin_id]
@@ -994,18 +1082,94 @@ class PluginManager:
 
         logger.info(f"Plugin '{plugin_id}' uninstalled from memory")
 
-    async def reload(self, plugin_id: Optional[str]):
+    def _cleanup_plugin_modules(self, plugin_id: str) -> None:
+        """Remove a plugin's own modules from sys.modules.
+
+        Uses both the module-name→plugin-id mapping and file-path matching
+        to find all modules that belong to this plugin.  Third-party modules
+        imported by the plugin are left untouched (they may be shared).
         """
-        Reload all plugins or reload a specific plugin
+        plugin_dir = _plugin_module_paths.get(plugin_id)
+        stale_names: list[str] = []
+
+        for name, mod in list(sys.modules.items()):
+            # 1) Direct mapping from _register_plugin_class
+            if _module_to_plugin.get(name) == plugin_id:
+                stale_names.append(name)
+                continue
+
+            # 2) Path-based: module file lives inside the plugin directory
+            if plugin_dir:
+                mod_file = getattr(mod, "__file__", None)
+                if mod_file:
+                    try:
+                        if Path(mod_file).resolve().is_relative_to(plugin_dir):
+                            stale_names.append(name)
+                    except (ValueError, OSError):
+                        pass
+
+        for name in stale_names:
+            sys.modules.pop(name, None)
+            _module_to_plugin.pop(name, None)
+
+        if stale_names:
+            logger.debug(f"Cleaned {len(stale_names)} module(s) for plugin {plugin_id}")
+
+    async def reload(self, plugin_id: Optional[str] = None):
+        """
+        Reload all plugins or reload a specific user plugin.
+        Builtin plugins are not supported for single-plugin reload.
         """
         if plugin_id:
+            plugin_id = str(plugin_id)
             logger.info(f"Reloading plugin {plugin_id}...")
-            await self.init_plugin(plugin_id)
+
+            # 1. Terminate the running instance
+            await self.terminate(plugin_id)
+
+            # 2. Remove class / schema / error registrations
+            _plugin_classes.pop(plugin_id, None)
+            _plugin_schemas.pop(plugin_id, None)
+            _plugin_load_errors.pop(plugin_id, None)
+
+            # 3. Purge the plugin's own modules from sys.modules
+            self._cleanup_plugin_modules(plugin_id)
+
+            # 4. Re-import from disk
+            plugin_dir = _plugin_module_paths.get(plugin_id)
+            if plugin_dir and plugin_dir.exists():
+                await self.load_plugin_from_dir(plugin_dir)
+            else:
+                logger.warning(f"Plugin directory not found for {plugin_id}, cannot reload")
             return
 
         logger.info("Reloading all plugins...")
         await self.terminate()
         await self.init()
+
+    @staticmethod
+    def _check_core_version(core_version_spec: str) -> Optional[str]:
+        """Check if the current KiraAI version satisfies the given specifier string.
+
+        Returns None if compatible, or an error message string if not.
+        """
+        try:
+            spec = SpecifierSet(core_version_spec)
+        except InvalidSpecifier:
+            return f"Invalid core_version specifier: {core_version_spec}"
+
+        current = VERSION.lstrip("v")
+        try:
+            ver = Version(current)
+        except InvalidVersion:
+            return f"Cannot parse current KiraAI version: {VERSION}"
+
+        if ver not in spec:
+            return (
+                f"Requires KiraAI {core_version_spec}, "
+                f"but current version is {VERSION}"
+            )
+        return None
 
     def _load_plugin_meta(self, plugin_root: Path, entry: str):
         manifest = {}
@@ -1021,8 +1185,24 @@ class PluginManager:
 
         plugin_id = manifest.get("plugin_id") or entry
 
+        # Persist directory info early so failed plugins can be found for retry
+        _plugin_module_dirs[plugin_id] = plugin_root.name
+        _plugin_module_paths[plugin_id] = plugin_root
+
         if manifest:
             _plugin_manifests[plugin_id] = manifest
+
+        # Check core_version compatibility
+        core_version_spec = manifest.get("core_version")
+        if core_version_spec:
+            error = self._check_core_version(str(core_version_spec))
+            if error:
+                _plugin_load_errors[plugin_id] = {
+                    "manifest": manifest,
+                    "error": error,
+                }
+                logger.warning(f"Plugin {plugin_id} skipped: {error}")
+                return None
 
         schema_fields: List[BaseConfigField] = []
         if schema_path.exists():
@@ -1071,6 +1251,11 @@ class PluginManager:
                 continue
 
             plugin_id = self._load_plugin_meta(plugin_dir, entry)
+            if plugin_id is None:
+                continue
+
+            # Clear any previous load error
+            _plugin_load_errors.pop(plugin_id, None)
 
             module = None
             candidate_modules = [
@@ -1091,6 +1276,10 @@ class PluginManager:
 
             if module is None:
                 logger.warning(f"No module found for builtin plugin {entry}")
+                _plugin_load_errors.setdefault(plugin_id, {
+                    "manifest": _plugin_manifests.get(plugin_id, {}),
+                    "error": "No module found",
+                })
                 continue
 
             self._register_plugin_class(plugin_id, module, plugin_dir)
@@ -1108,6 +1297,11 @@ class PluginManager:
             return None
 
         plugin_id = self._load_plugin_meta(plugin_root, entry)
+        if plugin_id is None:
+            return None
+
+        # Clear any previous load error (e.g. plugin was fixed since last attempt)
+        _plugin_load_errors.pop(plugin_id, None)
 
         # Ensure the top-level "plugins" package is registered in sys.modules
         base_package = "plugins"
@@ -1139,6 +1333,10 @@ class PluginManager:
 
         if not script_path or not module_name:
             logger.warning(f"No entry script found in plugin directory: {plugin_root}")
+            _plugin_load_errors[plugin_id] = {
+                "manifest": _plugin_manifests.get(plugin_id, {}),
+                "error": "No entry script found (main.py / plugin.py / __init__.py)",
+            }
             return None
 
         # Clear decorator-registered components so re-import starts fresh
@@ -1151,6 +1349,10 @@ class PluginManager:
         spec = importlib.util.spec_from_file_location(module_name, script_path)
         if not spec or not spec.loader:
             logger.warning(f"Failed to create module spec for: {plugin_root}")
+            _plugin_load_errors[plugin_id] = {
+                "manifest": _plugin_manifests.get(plugin_id, {}),
+                "error": "Failed to create module spec",
+            }
             return None
 
         try:
@@ -1160,11 +1362,19 @@ class PluginManager:
         except Exception as e:
             logger.error(f"Error loading plugin from {plugin_root}: {e}")
             sys.modules.pop(module_name, None)
+            _plugin_load_errors[plugin_id] = {
+                "manifest": _plugin_manifests.get(plugin_id, {}),
+                "error": f"Import error: {e}",
+            }
             return None
 
         registered = self._register_plugin_class(plugin_id, module, plugin_root)
         if not registered:
             logger.warning(f"No BasePlugin subclass found in {plugin_root}")
+            _plugin_load_errors[plugin_id] = {
+                "manifest": _plugin_manifests.get(plugin_id, {}),
+                "error": "No BasePlugin subclass found",
+            }
             return None
 
         await self.init_plugin(plugin_id)

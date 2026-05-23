@@ -6,6 +6,7 @@ from enum import Enum
 import hashlib
 import uuid
 import base64
+import binascii
 import os
 import re
 import mimetypes
@@ -14,6 +15,22 @@ from urllib.parse import urlparse, unquote
 from core.utils.path_utils import get_data_path
 from core.utils.network import download_file, get_file_content
 from core.logging_manager import get_logger
+
+
+def _infer_mime_from_bytes(data: bytes) -> Optional[str]:
+    if len(data) < 4:
+        return None
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return "image/png"
+    if data[:3] == b'GIF':
+        return "image/gif"
+    if data[:4] == b'RIFF' and len(data) >= 12 and data[8:12] == b'WEBP':
+        return "image/webp"
+    if data[:2] == b'\xff\xd8':
+        return "image/jpeg"
+    if data[:2] == b'BM':
+        return "image/bmp"
+    return None
 
 if TYPE_CHECKING:
     from .message_utils import MessageChain
@@ -281,6 +298,10 @@ class BaseMediaElement(BaseMessageElement, ABC):
                 return base64.b64encode(f.read()).decode()
         if self.file_type == "url" and self.file is not None:
             data = await get_file_content(self.file)
+            if not self.mime:
+                detected = _infer_mime_from_bytes(data[:16])
+                if detected:
+                    self.mime = detected
             return base64.b64encode(data).decode()
         if self.file:
             return self.file
@@ -308,6 +329,13 @@ class BaseMediaElement(BaseMessageElement, ABC):
 
         # Get MIME type
         mime = self.mime
+        if not mime:
+            # Try to detect from actual content via magic bytes
+            try:
+                sample = base64.b64decode(base64_str[:32])
+                mime = _infer_mime_from_bytes(sample)
+            except (binascii.Error, ValueError, TypeError) as e:
+                logger.debug(f"MIME inference from bytes failed (sample len={len(base64_str[:32])}): {e}")
         if not mime:
             # Judge default type by class name
             class_name = self.__class__.__name__.lower()
