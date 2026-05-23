@@ -64,7 +64,11 @@ class SessionPlugin(BasePlugin):
         params={
             "type": "object",
             "properties": {
-                "target": {"type": "string", "description": "会话标识，如 qq:dm:123456"},
+                "target": {"type": "string", "description": (
+                    "目标会话标识，格式为 adapter_name:session_type:session_id。"
+                    "可直接从「当前存在的会话」列表中复制完整的会话标识使用。"
+                    "示例：qq:dm:123456（私聊）、qq:gm:789012（群聊）"
+                )},
                 "description": {"type": "string", "description": DESC_PROMPT}
             },
             "required": ["target", "description"]
