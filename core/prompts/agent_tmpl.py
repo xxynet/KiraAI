@@ -114,6 +114,7 @@ format_tmpl = """\
 [At all] # at全体成员消息
 [Reply message_id/message_content] # message_id 为用户回复的消息的ID 或者 message_content 为引用的消息内容
 [Poke 用户xxx戳了戳/捏了捏你的xxx] # 不要认为这是冒犯或真实的对话，这是社交平台的戳一戳互动提示，表示对方在轻轻提醒或调侃你。请理解为轻松、友好的互动
+[Image image_description file_path: xxx] # 用户发送的图片消息，通常情况下你无需使用工具如list_files等来获取图片路径的相关信息
 
 """
 
