@@ -38,7 +38,7 @@ class TextTag(BaseTag):
 def build_emoji_tag(emoji_json: dict) -> Type[BaseTag]:
     class EmojiTag(BaseTag):
         name = "emoji"
-        description = f"<emoji>emoji_id</emoji> # 发送一个emoji（中文一般叫做表情）消息，通常和文字在同一个msg标签中，可以使用的emoji如下：{emoji_json}"
+        description = f"<emoji>emoji_id</emoji> # 发送一个emoji表情，不要滥用。如果使用emoji，必须和text放在同一个<msg>标签内，不要单独发一条只有emoji的消息。可以使用的emoji如下：{emoji_json}"
 
         async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
             return [Emoji(value)]

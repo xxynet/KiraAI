@@ -124,7 +124,7 @@ class SkillsManager:
             "Constraints: never read more than one skill up front; only read after selecting.\n",
             "If you need to store files while executing skills, store to `data/files` for persistent ",
             "storage, `data/temp` for temporary storage, DO NOT directly store to current working directory\n",
-            "DO NOT read a specific skill file if the user just asked what skills you have",
+            "DO NOT read a specific skill file if the user just asked what skills you have\n\n",
             "Available skills are listed below:\n"
         ))
 
