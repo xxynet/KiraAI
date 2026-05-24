@@ -66,7 +66,7 @@
               </div>
               <div class="flex justify-between text-sm">
                 <span class="text-gray-500 dark:text-gray-400">{{ $t('settings.storage_disk_free') }}</span>
-                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.disk_free_bytes) }}</span>
+                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(diskFreeBytes) }}</span>
               </div>
               <!-- Progress bar -->
               <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3 mt-2">
@@ -480,11 +480,20 @@ const diskUsagePercent = computed(() => {
   return (storageInfo.value.disk_used_bytes / storageInfo.value.disk_total_bytes) * 100
 })
 
+// Compute free from total - used instead of using the API's disk_free_bytes
+// (shutil.disk_usage().free). On Linux the OS-reported free can be 0 when ext4
+// reserved blocks fill the remaining space, causing a mismatch with the
+// used/total progress bar. Clamped to 0 to guard against negative deltas.
+const diskFreeBytes = computed(() => {
+  if (!storageInfo.value) return 0
+  return Math.max(0, storageInfo.value.disk_total_bytes - storageInfo.value.disk_used_bytes)
+})
+
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  const i = Math.min(Math.max(0, Math.floor(Math.log(bytes) / Math.log(k))), sizes.length - 1)
   return (bytes / Math.pow(k, i)).toFixed(i > 0 ? 2 : 0) + ' ' + sizes[i]
 }
 
