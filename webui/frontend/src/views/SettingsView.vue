@@ -66,7 +66,7 @@
               </div>
               <div class="flex justify-between text-sm">
                 <span class="text-gray-500 dark:text-gray-400">{{ $t('settings.storage_disk_free') }}</span>
-                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.disk_free_bytes) }}</span>
+                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(diskFreeBytes) }}</span>
               </div>
               <!-- Progress bar -->
               <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3 mt-2">
@@ -480,11 +480,16 @@ const diskUsagePercent = computed(() => {
   return (storageInfo.value.disk_used_bytes / storageInfo.value.disk_total_bytes) * 100
 })
 
+const diskFreeBytes = computed(() => {
+  if (!storageInfo.value) return 0
+  return Math.max(0, storageInfo.value.disk_total_bytes - storageInfo.value.disk_used_bytes)
+})
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  const i = Math.max(0, Math.floor(Math.log(bytes) / Math.log(k)))
   return (bytes / Math.pow(k, i)).toFixed(i > 0 ? 2 : 0) + ' ' + sizes[i]
 }
 
