@@ -200,8 +200,9 @@
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{{ $t('settings.token_desc') }}</p>
         <div class="max-w-md space-y-3">
           <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('settings.token_old') }}</label>
+            <label for="token-old" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('settings.token_old') }}</label>
             <input
+              id="token-old"
               v-model="oldToken"
               type="password"
               :placeholder="$t('settings.token_old_placeholder')"
@@ -209,8 +210,9 @@
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('settings.token_new') }}</label>
+            <label for="token-new" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('settings.token_new') }}</label>
             <input
+              id="token-new"
               v-model="newToken"
               type="password"
               :placeholder="$t('settings.token_new_placeholder')"
@@ -218,8 +220,9 @@
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('settings.token_confirm') }}</label>
+            <label for="token-confirm" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('settings.token_confirm') }}</label>
             <input
+              id="token-confirm"
               v-model="confirmToken"
               type="password"
               :placeholder="$t('settings.token_confirm_placeholder')"

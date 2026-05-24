@@ -286,6 +286,8 @@ class SettingsRoutes(Routes):
             raise HTTPException(status_code=400, detail="Old token is incorrect")
         if not body.new_token or len(body.new_token) < 6:
             raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
+        if body.new_token == "disabled":
+            raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
         _update_access_token(body.new_token)
         request.app.state.access_token = body.new_token
         return {"success": True}
