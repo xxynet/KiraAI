@@ -37,8 +37,9 @@ class FilePlugin(BasePlugin):
         self.exec_deny_list = self.plugin_cfg.get("exec_deny_list", [])
         base_read = ["data/files", "data/temp", "data/skills"]
         base_write = ["data/files", "data/temp"]
-        extra_read = self.plugin_cfg.get("extra_read_paths", [])
-        extra_write = self.plugin_cfg.get("extra_write_paths", [])
+        extra_paths_cfg = self.plugin_cfg.get("extra_paths", {})
+        extra_read = extra_paths_cfg.get("extra_read_paths", [])
+        extra_write = extra_paths_cfg.get("extra_write_paths", [])
         self.allowed_read_paths = tuple(base_read + extra_read)
         self.allowed_write_paths = tuple(base_write + extra_write)
     
