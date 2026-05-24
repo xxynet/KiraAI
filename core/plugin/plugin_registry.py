@@ -332,6 +332,10 @@ class PluginManager:
             return False
         return self.plugin_enabled.get(plugin_id, True)
 
+    # TODO: implement a standalone list[PluginInfo] to track discovered plugins,
+    #       so that list_plugins() and related webui queries no longer depend on
+    #       _plugin_classes.  This allows set_plugin_enabled() to safely pop &
+    #       re-import plugin classes on disable/enable without affecting visibility.
     async def set_plugin_enabled(self, plugin_id: str, enabled: bool) -> None:
         if not plugin_id:
             return
@@ -346,7 +350,9 @@ class PluginManager:
             if is_builtin:
                 await self.init_plugin(plugin_id)
             else:
-                # User plugin: always re-import from disk for fresh code
+                # User plugin: purge stale modules then re-import from disk for fresh code
+                self._cleanup_plugin_modules(plugin_id)
+                _plugin_schemas.pop(plugin_id, None)
                 plugin_dir = _plugin_module_paths.get(plugin_id)
                 if plugin_dir and plugin_dir.exists():
                     await self.load_plugin_from_dir(plugin_dir)
@@ -355,11 +361,6 @@ class PluginManager:
         elif not enabled and previous:
             try:
                 await self.terminate(plugin_id)
-                if not is_builtin:
-                    # User plugin: purge class & modules so next enable re-imports fresh
-                    _plugin_classes.pop(plugin_id, None)
-                    _plugin_schemas.pop(plugin_id, None)
-                    self._cleanup_plugin_modules(plugin_id)
             except Exception as e:
                 logger.error(f"Failed to terminate plugin {plugin_id} when disabling: {e}")
 
