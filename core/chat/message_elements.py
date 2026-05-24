@@ -49,7 +49,16 @@ def _build_temp_file_path(name: Optional[str], mime: Optional[str]) -> str:
         guessed = mimetypes.guess_extension(mime)
         if guessed:
             base_name = base_name + guessed
-    return os.path.join(base_dir, base_name)
+            root, ext = os.path.splitext(base_name)
+    candidate = os.path.join(base_dir, base_name)
+    if not os.path.exists(candidate):
+        return candidate
+    counter = 1
+    while True:
+        candidate = os.path.join(base_dir, f"{root}_{counter}{ext}")
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
 
 
 class ElementType(Enum):
