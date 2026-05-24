@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from core.logging_manager import get_logger
-from core.utils.github_api import parse_github_url
+from core.utils.github_api import parse_github_url, pick_fastest_source
 from core.utils.network import download_file
 from core.utils.path_utils import get_data_path
 
@@ -58,15 +58,20 @@ async def install_from_github(
     Raises ConnectionError for network failures.
     """
     owner, repo = parse_github_url(repo_url)
+    direct_url = f"https://github.com/{owner}/{repo}/archive/HEAD.zip"
 
-    if gh_proxy:
-        url = f"{gh_proxy.rstrip('/')}/https://github.com/{owner}/{repo}/archive/HEAD.zip"
+    if gh_proxy == "auto":
+        ranked = await pick_fastest_source(direct_url, proxy=proxy)
+        url = ranked[0] if ranked else direct_url
+        logger.info(f"Auto-selected fastest source: {url}")
+    elif gh_proxy:
+        url = f"{gh_proxy.rstrip('/')}/{direct_url}"
     else:
-        url = f"https://github.com/{owner}/{repo}/archive/HEAD.zip"
+        url = direct_url
 
     temp_zip = _temp_dir() / f"{repo}_{uuid.uuid4().hex[:8]}.zip"
     logger.info(f"Downloading plugin {owner}/{repo} → {temp_zip.name}")
-    if gh_proxy:
+    if gh_proxy and gh_proxy != "auto":
         logger.info(f"Proxy: {gh_proxy}")
 
     try:
