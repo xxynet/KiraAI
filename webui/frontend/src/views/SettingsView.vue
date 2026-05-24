@@ -193,6 +193,49 @@
           {{ restarting ? $t('header.restarting') : $t('settings.system_restart') }}
         </button>
       </div>
+
+      <!-- Change Access Token -->
+      <div v-if="authEnabled">
+        <h4 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ $t('settings.token_title') }}</h4>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{{ $t('settings.token_desc') }}</p>
+        <div class="max-w-md space-y-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('settings.token_old') }}</label>
+            <input
+              v-model="oldToken"
+              type="password"
+              :placeholder="$t('settings.token_old_placeholder')"
+              class="w-full px-3 py-2 rounded-lg text-gray-800 dark:text-gray-200"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('settings.token_new') }}</label>
+            <input
+              v-model="newToken"
+              type="password"
+              :placeholder="$t('settings.token_new_placeholder')"
+              class="w-full px-3 py-2 rounded-lg text-gray-800 dark:text-gray-200"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('settings.token_confirm') }}</label>
+            <input
+              v-model="confirmToken"
+              type="password"
+              :placeholder="$t('settings.token_confirm_placeholder')"
+              class="w-full px-3 py-2 rounded-lg text-gray-800 dark:text-gray-200"
+            />
+          </div>
+          <button
+            type="button"
+            class="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="tokenChanging"
+            @click="tokenConfirmRef?.open()"
+          >
+            {{ tokenChanging ? $t('settings.token_changing') : $t('settings.token_submit') }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Custom CSS/JS Tab -->
@@ -330,6 +373,17 @@
       @confirm="executeListAction"
     />
 
+    <!-- Token Change Confirm Modal -->
+    <ConfirmModal
+      ref="tokenConfirmRef"
+      variant="danger"
+      :title="$t('settings.token_submit')"
+      :message="$t('settings.token_confirm_dialog')"
+      :cancel-text="$t('settings.backup_confirm_cancel')"
+      :confirm-text="$t('settings.backup_confirm_ok')"
+      @confirm="handleChangeToken"
+    />
+
     <!-- Restore Modal -->
     <Modal v-model="restoreModalVisible" content-class="max-w-lg">
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl">
@@ -373,8 +427,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { notify } from '@/composables/useNotification'
 import apiClient from '@/api/client'
+import { getAuthConfig } from '@/api/auth'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
@@ -387,14 +443,17 @@ import {
   deleteBackup,
   restoreBackup,
   restoreFromBackup,
+  changeAccessToken,
   type StorageInfoResponse,
   type BackupItem,
 } from '@/api/settings'
 import { restartAndWait } from '@/composables/useRestart'
 
 const { t } = useI18n()
+const router = useRouter()
 const saving = ref(false)
 const activeTab = ref('storage')
+const authEnabled = ref(true)
 
 const projectVersion = ref('dev')
 
@@ -461,6 +520,14 @@ const listAction = ref<{ type: 'delete' | 'restore'; filename: string }>({ type:
 
 const restarting = ref(false)
 
+// ── Change Access Token ────────────────────────────────────────────────
+
+const oldToken = ref('')
+const newToken = ref('')
+const confirmToken = ref('')
+const tokenChanging = ref(false)
+const tokenConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
+
 async function triggerRestart() {
   try {
     await restartAndWait()
@@ -478,6 +545,38 @@ async function handleRestart() {
     notify(t('header.restart_timeout'), 'warning', 600000)
   } finally {
     restarting.value = false
+  }
+}
+
+async function handleChangeToken() {
+  if (!oldToken.value) {
+    notify(t('settings.token_old_required'), 'error')
+    return
+  }
+  if (!newToken.value || newToken.value.length < 6) {
+    notify(t('settings.token_new_too_short'), 'error')
+    return
+  }
+  if (newToken.value !== confirmToken.value) {
+    notify(t('settings.token_mismatch'), 'error')
+    return
+  }
+  tokenChanging.value = true
+  try {
+    await changeAccessToken(oldToken.value, newToken.value)
+    notify(t('settings.token_changed_logout'), 'success')
+    localStorage.removeItem('jwt_token')
+    router.push('/login')
+    return
+  } catch (err: any) {
+    const detail = err?.response?.data?.detail
+    if (detail === 'Old token is incorrect') {
+      notify(t('settings.token_old_wrong'), 'error')
+    } else {
+      notify(t('settings.token_change_failed'), 'error')
+    }
+  } finally {
+    tokenChanging.value = false
   }
 }
 
@@ -592,6 +691,10 @@ onMounted(() => {
 
   apiClient.get('/version').then(({ data }) => {
     if (data?.version) projectVersion.value = data.version
+  }).catch(() => {})
+
+  getAuthConfig().then(({ data }) => {
+    authEnabled.value = data.auth_enabled
   }).catch(() => {})
 
   fetchStorageInfo()

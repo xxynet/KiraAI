@@ -166,8 +166,9 @@ class AuthRoutes(Routes):
     async def get_version(self):
         return VersionResponse(version=VERSION)
 
-    async def token_login(self, payload: TokenLoginRequest):
-        if payload.access_token != self.access_token:
+    async def token_login(self, payload: TokenLoginRequest, request: Request):
+        current_token = request.app.state.access_token
+        if payload.access_token != current_token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid access token",

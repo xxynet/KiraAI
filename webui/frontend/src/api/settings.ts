@@ -53,3 +53,7 @@ export function restoreBackup(file: File) {
   formData.append('file', file)
   return apiClient.post('/settings/restore', formData)
 }
+
+export function changeAccessToken(oldToken: string, newToken: string) {
+  return apiClient.post('/settings/change-token', { old_token: oldToken, new_token: newToken })
+}
