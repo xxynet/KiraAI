@@ -25,5 +25,23 @@
     "locales": {
       "zh": { "name": "命令黑名单", "hint": "禁止执行的命令列表" }
     }
+  },
+  "extra_read_paths": {
+    "name": "Extra Read Paths",
+    "type": "list",
+    "default": [],
+    "hint": "Additional allowed path prefixes for read_file and list_files (data/files, data/temp and data/skills are always allowed)",
+    "locales": {
+      "zh": { "name": "额外允许读取的路径", "hint": "read_file 和 list_files 额外允许的路径前缀（data/files、data/temp 和 data/skills 始终允许）" }
+    }
+  },
+  "extra_write_paths": {
+    "name": "Extra Write Paths",
+    "type": "list",
+    "default": [],
+    "hint": "Additional allowed path prefixes for write_file and edit_file",
+    "locales": {
+      "zh": { "name": "额外允许写入的路径", "hint": "write_file 和 edit_file 额外允许的路径前缀" }
+    }
   }
 }

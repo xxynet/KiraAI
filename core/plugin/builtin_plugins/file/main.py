@@ -28,18 +28,32 @@ class FilePlugin(BasePlugin):
         self.allowed_sessions = list()
         self.allowed_exec_sessions = list()
         self.exec_deny_list = list()
-    
+        self.allowed_read_paths = tuple()
+        self.allowed_write_paths = tuple()
+
     async def initialize(self):
         self.allowed_sessions = self.plugin_cfg.get("allowed_sessions", [])
         self.allowed_exec_sessions = self.plugin_cfg.get("allowed_exec_sessions", [])
         self.exec_deny_list = self.plugin_cfg.get("exec_deny_list", [])
+        base_read = ["data/files", "data/temp", "data/skills"]
+        base_write = ["data/files", "data/temp"]
+        extra_read = self.plugin_cfg.get("extra_read_paths", [])
+        extra_write = self.plugin_cfg.get("extra_write_paths", [])
+        self.allowed_read_paths = tuple(base_read + extra_read)
+        self.allowed_write_paths = tuple(base_write + extra_write)
     
     async def terminate(self):
         pass
 
+    @staticmethod
+    def _resolve_path(path: str) -> Path:
+        if path.startswith("data/"):
+            return get_data_path() / path.removeprefix("data/")
+        return Path(path)
+
     @register.tool(
         "read_file",
-        "Read a plain text file (txt, html, py, etc..) in `data/files` `data/temp` or `data/skills`",
+        "Read a plain text file (txt, html, py, etc..) in allowed read paths",
         {
             "type": "object",
             "properties": {
@@ -61,15 +75,15 @@ class FilePlugin(BasePlugin):
         if "../" in path:
             return "Permission denied: Path traversal detected"
 
-        if not path.startswith(("data/files", "data/temp", "data/skills")):
-            return "Permission denied: Path must start with data/files, data/temp or data/skills"
+        if not path.startswith(self.allowed_read_paths):
+            return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
             return "Multimedia and binary files are not allowed"
 
         try:
-            abs_path = get_data_path() / path.removeprefix("data/")
+            abs_path = self._resolve_path(path)
             with open(abs_path, 'r', encoding="utf-8") as f:
                 file_lines = f.readlines()
             if offset > len(file_lines) or offset < 1:
@@ -91,7 +105,7 @@ class FilePlugin(BasePlugin):
 
     @register.tool(
         "write_file",
-        "Write content to a plain text file in `data/files` or `data/temp`. Creates the file if it doesn't exist, overwrites if it does.",
+        "Write content to a plain text file in allowed write paths. Creates the file if it doesn't exist, overwrites if it does.",
         {
             "type": "object",
             "properties": {
@@ -112,15 +126,15 @@ class FilePlugin(BasePlugin):
         if "../" in path:
             return "Permission denied: Path traversal detected"
 
-        if not path.startswith(("data/files", "data/temp")):
-            return "Permission denied: Path must start with data/files or data/temp"
+        if not path.startswith(self.allowed_write_paths):
+            return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
             return "Multimedia and binary files are not allowed"
 
         try:
-            abs_path = get_data_path() / path.removeprefix("data/")
+            abs_path = self._resolve_path(path)
             with open(abs_path, 'w', encoding="utf-8") as f:
                 f.write(content)
             return "File written successfully"
@@ -152,15 +166,15 @@ class FilePlugin(BasePlugin):
         if "../" in path:
             return "Permission denied: Path traversal detected"
 
-        if not path.startswith(("data/files", "data/temp")):
-            return "Permission denied: Path must start with data/files or data/temp"
+        if not path.startswith(self.allowed_write_paths):
+            return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
             return "Permission denied: Multimedia and binary files are not allowed"
 
         try:
-            abs_path = get_data_path() / path.removeprefix("data/")
+            abs_path = self._resolve_path(path)
 
             with open(abs_path, 'r', encoding="utf-8") as f:
                 content = f.read()
@@ -184,7 +198,7 @@ class FilePlugin(BasePlugin):
 
     @register.tool(
         "list_files",
-        "List files in a specified directory, could be `data/files` `data/temp` `data/skills` or their sub directories",
+        "List files in a specified directory within allowed read paths",
         {
             "type": "object",
             "properties": {
@@ -206,11 +220,11 @@ class FilePlugin(BasePlugin):
         if "../" in path:
             return "Permission denied: Path traversal detected"
 
-        if not path.startswith(("data/files", "data/temp", "data/skills")):
-            return "Permission denied: Path must start with data/files, data/temp or data/skills"
+        if not path.startswith(self.allowed_read_paths):
+            return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
 
         try:
-            abs_path = get_data_path() / path.removeprefix("data/")
+            abs_path = self._resolve_path(path)
 
             files = sorted(os.listdir(abs_path))
 
