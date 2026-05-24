@@ -104,6 +104,11 @@ class TokenLoginRequest(BaseModel):
     access_token: str
 
 
+class ChangeTokenRequest(BaseModel):
+    old_token: str
+    new_token: str
+
+
 class StickerItem(BaseModel):
     id: str
     desc: str = ""

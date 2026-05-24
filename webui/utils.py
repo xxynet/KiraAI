@@ -116,6 +116,13 @@ def _get_or_generate_access_token() -> str:
     return config["access_token"]
 
 
+def _update_access_token(new_token: str) -> None:
+    """Persist a new access token into webui.json."""
+    config = _load_webui_config()
+    config["access_token"] = new_token
+    _save_webui_config(config)
+
+
 def _create_jwt_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT token"""
     to_encode = data.copy()

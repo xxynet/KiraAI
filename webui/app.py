@@ -60,6 +60,7 @@ class KiraWebUI:
         )
         # require_auth reads this to detect mode-mismatched JWTs.
         self.app.state.disable_auth = disable_auth
+        self.app.state.access_token = self.access_token
 
         # Paths
         self.webui_dir = Path(__file__).parent
