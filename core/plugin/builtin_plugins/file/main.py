@@ -58,7 +58,7 @@ class FilePlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path, must start with `data/`"},
+                "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
                 "offset": {"type": "integer", "description": "Which line to start reading, defaults to 1"},
                 "limit": {"type": "integer", "description": "Maximum lines to read, defaults to 200"},
             },
@@ -110,7 +110,7 @@ class FilePlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path, must start with `data/`"},
+                "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
                 "content": {"type": "string", "description": "Content to write to the file"},
             },
             "required": ["path", "content"]
@@ -148,7 +148,7 @@ class FilePlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path, must start with `data/`"},
+                "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
                 "old_text": {"type": "string",
                              "description": "Exact text to find and replace (must match exactly, including whitespace)"},
                 "new_text": {"type": "string", "description": "New text to replace the old text with"},
@@ -203,7 +203,7 @@ class FilePlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Directory path, must start with `data/`"},
+                "path": {"type": "string", "description": "Directory path, must start with an allowed path prefix"},
                 "offset": {"type": "integer", "description": "Which index to start displaying file or folder name, defaults to 1"},
                 "limit": {"type": "integer", "description": "Maximum file count to display, defaults to 20"},
             },
