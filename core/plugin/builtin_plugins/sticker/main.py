@@ -50,14 +50,20 @@ class DefaultStickerPlugin(BasePlugin):
     DefaultStickerPlugin
     """
     
+    DEFAULT_RECOGNITION_PROMPT = "这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出"
+
     def __init__(self, ctx, cfg: dict):
         super().__init__(ctx, cfg)
         self.scan_interval = 120
+        self.recognition_model = None
+        self.recognition_prompt = self.DEFAULT_RECOGNITION_PROMPT
         self.sticker_mgr = self.ctx.sticker_manager
         self._scan_task: Optional[asyncio.Task] = None
     
     async def initialize(self):
         self.scan_interval = self.plugin_cfg.get("scan_interval", 120)
+        self.recognition_model = self.plugin_cfg.get("recognition_model", None)
+        self.recognition_prompt = self.plugin_cfg.get("recognition_prompt", "").strip() or self.DEFAULT_RECOGNITION_PROMPT
         self.sticker_mgr.on_sticker_registered(self.on_sticker_registered)
 
         self._scan_task = asyncio.create_task(self._scan_loop())
@@ -87,8 +93,15 @@ class DefaultStickerPlugin(BasePlugin):
         from core.chat.message_elements import Image
         from core.utils.common_utils import desc_img
 
-        vlm_model = self.ctx.get_default_llm_client()
-        sticker_desc = await desc_img(client=vlm_model, image=Image(image=sticker_path), prompt="这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出")
+        if self.recognition_model:
+            vlm_model = self.ctx.get_llm_client(model_uuid=self.recognition_model)
+        else:
+            try:
+                vlm_model = self.ctx.provider_mgr.get_default_vlm()
+            except Exception as e:
+                logger.error(f"Failed to get default VLM model for sticker recognition: {e}")
+                return ""
+        sticker_desc = await desc_img(client=vlm_model, image=Image(image=sticker_path), prompt=self.recognition_prompt)
 
         return sticker_desc
 

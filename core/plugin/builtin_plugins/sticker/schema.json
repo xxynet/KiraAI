@@ -7,5 +7,24 @@
     "locales": {
       "zh": { "name": "扫描间隔", "hint": "扫描未注册贴纸的间隔（单位：分钟）" }
     }
+  },
+  "recognition_model": {
+    "name": "Sticker Recognition Model",
+    "type": "model_select",
+    "model_type": "llm",
+    "default": null,
+    "hint": "VLM Model used to recognize sticker content, use default multimodal LLM by default",
+    "locales": {
+      "zh": { "name": "表情包识别模型", "hint": "用于识别表情包内容的模型 ID，留空使用默认多模态模型" }
+    }
+  },
+  "recognition_prompt": {
+    "name": "Sticker Recognition Prompt",
+    "type": "textarea",
+    "default": "",
+    "hint": "Prompt to guide the model in recognizing sticker expressions and emotions, leave empty to use the default prompt",
+    "locales": {
+      "zh": { "name": "表情包识别提示词", "hint": "引导模型识别表情包表情和情绪的提示词，留空使用默认提示词" }
+    }
   }
 }
