@@ -1,4 +1,5 @@
 import os
+import posixpath
 
 from pathlib import Path
 
@@ -52,6 +53,14 @@ class FilePlugin(BasePlugin):
             return get_data_path() / path.removeprefix("data/")
         return Path(path)
 
+    @staticmethod
+    def _normalize_path(path: str) -> str:
+        normalized = path.replace("\\", "/")
+        normalized = posixpath.normpath(normalized)
+        if normalized.startswith("../") or normalized == "..":
+            return None
+        return normalized
+
     @register.tool(
         "read_file",
         "Read a plain text file (txt, html, py, etc..) in allowed read paths",
@@ -69,12 +78,13 @@ class FilePlugin(BasePlugin):
         if event.sid not in self.allowed_sessions:
             return "Permission denied: current session not allowed to access local files"
 
+        path = self._normalize_path(path)
+        if path is None:
+            return "Permission denied: Path traversal detected"
+
         for rp in restricted_paths:
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
-
-        if "../" in path:
-            return "Permission denied: Path traversal detected"
 
         if not path.startswith(self.allowed_read_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
@@ -120,12 +130,13 @@ class FilePlugin(BasePlugin):
         if event.sid not in self.allowed_sessions:
             return "Permission denied: current session not allowed to access local files"
 
+        path = self._normalize_path(path)
+        if path is None:
+            return "Permission denied: Path traversal detected"
+
         for rp in restricted_paths:
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
-
-        if "../" in path:
-            return "Permission denied: Path traversal detected"
 
         if not path.startswith(self.allowed_write_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
@@ -160,12 +171,13 @@ class FilePlugin(BasePlugin):
         if event.sid not in self.allowed_sessions:
             return "Permission denied: current session not allowed to access local files"
 
+        path = self._normalize_path(path)
+        if path is None:
+            return "Permission denied: Path traversal detected"
+
         for rp in restricted_paths:
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
-
-        if "../" in path:
-            return "Permission denied: Path traversal detected"
 
         if not path.startswith(self.allowed_write_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
@@ -214,12 +226,13 @@ class FilePlugin(BasePlugin):
         if event.sid not in self.allowed_sessions:
             return "Permission denied: current session not allowed to access local files"
 
+        path = self._normalize_path(path)
+        if path is None:
+            return "Permission denied: Path traversal detected"
+
         for rp in restricted_paths:
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
-
-        if "../" in path:
-            return "Permission denied: Path traversal detected"
 
         if not path.startswith(self.allowed_read_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
