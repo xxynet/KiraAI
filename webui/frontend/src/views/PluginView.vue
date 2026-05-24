@@ -511,12 +511,18 @@
                 <span>{{ $t('plugin.install_gh_proxy_label') }}</span>
                 <span class="text-xs font-normal text-gray-400 dark:text-gray-500 ml-1">{{ $t('plugin.install_optional') }}</span>
               </label>
-              <input
-                v-model="installForm.gh_proxy"
-                type="text"
-                placeholder="https://ghproxy.com/"
-                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-              >
+              <CustomSelect
+                v-model="proxyStrategy"
+                :options="proxyStrategyOptions"
+                :placeholder="$t('plugin.proxy_strategy_auto')"
+              />
+            </div>
+            <div v-if="proxyStrategy === 'specific'" class="mt-3">
+              <CustomSelect
+                v-model="selectedProxyUrl"
+                :options="proxySelectOptions"
+                :placeholder="$t('plugin.proxy_select_placeholder')"
+              />
             </div>
           </div>
           <div v-show="installTab === 'upload'">
@@ -665,7 +671,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
@@ -688,6 +694,7 @@ import {
 } from '@/api/skills'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfigForm from '@/components/common/ConfigForm.vue'
+import CustomSelect from '@/components/common/CustomSelect.vue'
 import PluginCard from '@/components/common/PluginCard.vue'
 import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
@@ -700,11 +707,32 @@ const activeTab = ref('plugins')
 const plugins = ref<PluginItem[]>([])
 const installDialogVisible = ref(false)
 const installTab = ref('github')
-const installForm = ref({ repo_url: '', gh_proxy: '' })
+const installForm = ref({ repo_url: '' })
 const uploadFile = ref<File | null>(null)
 const installDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
 const installing = ref(false)
 const reloadingPlugins = ref(new Set<string>())
+
+// Proxy strategy
+const GH_PROXY_LIST = [
+  'https://gh-proxy.com/',
+  'https://gh-proxy.org/',
+  'https://hk.gh-proxy.org/',
+  'https://cdn.gh-proxy.org/',
+  'https://edgeone.gh-proxy.org/',
+]
+const proxyStrategy = ref<'auto' | 'none' | 'specific'>('auto')
+const selectedProxyUrl = ref(GH_PROXY_LIST[0])
+
+const proxyStrategyOptions = computed(() => [
+  { value: 'auto', label: t('plugin.proxy_strategy_auto') },
+  { value: 'none', label: t('plugin.proxy_strategy_none') },
+  { value: 'specific', label: t('plugin.proxy_strategy_specific') },
+])
+
+const proxySelectOptions = computed(() =>
+  GH_PROXY_LIST.map(url => ({ value: url, label: url }))
+)
 
 // Plugin Config
 const pluginConfigVisible = ref(false)
@@ -898,10 +926,12 @@ async function savePluginConfig() {
 // Modal preserves its child state across closes; reset the form before
 // opening so the user never sees stale data.
 function resetInstallForm() {
-  installForm.value = { repo_url: '', gh_proxy: '' }
+  installForm.value = { repo_url: '' }
   uploadFile.value = null
   installDropzoneRef.value?.reset()
   installTab.value = 'github'
+  proxyStrategy.value = 'auto'
+  selectedProxyUrl.value = GH_PROXY_LIST[0]
 }
 
 function openInstallDialog() {
@@ -925,7 +955,11 @@ async function handleInstall() {
         installing.value = false
         return
       }
-      const ghProxy = installForm.value.gh_proxy?.trim() || undefined
+      const ghProxy = proxyStrategy.value === 'specific'
+        ? selectedProxyUrl.value
+        : proxyStrategy.value === 'auto'
+          ? 'auto'
+          : null
       await installFromGithub({ repo_url: repoUrl, gh_proxy: ghProxy })
     } else {
       if (!uploadFile.value) {
