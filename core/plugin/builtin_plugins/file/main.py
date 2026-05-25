@@ -47,6 +47,14 @@ class FilePlugin(BasePlugin):
     async def terminate(self):
         pass
 
+    def _is_path_allowed(self, path: str, allowed_prefixes: tuple) -> bool:
+        """Check if path starts with an allowed prefix directory."""
+        for prefix in allowed_prefixes:
+            prefix = prefix.rstrip('/')
+            if path == prefix or path.startswith(prefix + '/'):
+                return True
+        return False
+
     @staticmethod
     def _resolve_path(path: str) -> Path:
         if path.startswith("data/"):
@@ -86,7 +94,7 @@ class FilePlugin(BasePlugin):
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
 
-        if not path.startswith(self.allowed_read_paths):
+        if not self._is_path_allowed(path, self.allowed_read_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
 
         ext = Path(path).suffix.lower()
@@ -138,7 +146,7 @@ class FilePlugin(BasePlugin):
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
 
-        if not path.startswith(self.allowed_write_paths):
+        if not self._is_path_allowed(path, self.allowed_write_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
 
         ext = Path(path).suffix.lower()
@@ -179,7 +187,7 @@ class FilePlugin(BasePlugin):
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
 
-        if not path.startswith(self.allowed_write_paths):
+        if not self._is_path_allowed(path, self.allowed_write_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
 
         ext = Path(path).suffix.lower()
@@ -234,7 +242,7 @@ class FilePlugin(BasePlugin):
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
 
-        if not path.startswith(self.allowed_read_paths):
+        if not self._is_path_allowed(path, self.allowed_read_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
 
         try:
