@@ -362,19 +362,9 @@ class PluginManager:
         self.plugin_enabled[plugin_id] = bool(enabled)
         self._save_plugin_state()
 
-        is_builtin = self.is_builtin_plugin(plugin_id)
-
         if enabled and not previous:
-            if is_builtin:
-                await self.init_plugin(plugin_id)
-            else:
-                # User plugin: modules already cleaned at disable time, just re-import
-                _plugin_schemas.pop(plugin_id, None)
-                plugin_dir = _plugin_module_paths.get(plugin_id)
-                if plugin_dir and plugin_dir.exists():
-                    await self.load_plugin_from_dir(plugin_dir)
-                else:
-                    await self.init_plugin(plugin_id)
+            # Toggle: plugin code unchanged, just re-initialize from existing class
+            await self.init_plugin(plugin_id)
         elif not enabled and previous:
             try:
                 await self.terminate(plugin_id)
@@ -960,7 +950,6 @@ class PluginManager:
             except Exception as e:
                 logger.error(f"Error terminating plugin {plugin_id}: {e}")
             self._cleanup_plugin_registration(plugin_id)
-            self._cleanup_plugin_modules(plugin_id)
             return
 
         for plug_id, plugin_instance in list(self.plugin_instances.items()):
@@ -974,7 +963,6 @@ class PluginManager:
         self.plugin_configs.clear()
         for name in list(_plugin_components.keys()):
             self._cleanup_plugin_registration(name)
-            self._cleanup_plugin_modules(name)
 
     async def uninstall_plugin(self, plugin_id: str) -> None:
         """
@@ -997,6 +985,9 @@ class PluginManager:
         # Stop the running instance and unregister tools / hooks / tags
         await self.terminate(plugin_id)
 
+        # Remove module-to-plugin mappings and evict from sys.modules
+        self._cleanup_plugin_modules(plugin_id)
+
         # Remove from global registries
         _plugin_classes.pop(plugin_id, None)
         _plugin_manifests.pop(plugin_id, None)
@@ -1006,12 +997,6 @@ class PluginManager:
         _plugin_components.pop(plugin_id, None)
         _plugin_load_errors.pop(plugin_id, None)
         _plugin_infos.pop(plugin_id, None)
-
-        # Remove module-to-plugin mappings and evict from sys.modules
-        stale_modules = [k for k, v in _module_to_plugin.items() if v == plugin_id]
-        for mod_name in stale_modules:
-            _module_to_plugin.pop(mod_name, None)
-            sys.modules.pop(mod_name, None)
 
         # Remove enabled state and persist
         self.plugin_enabled.pop(plugin_id, None)
@@ -1069,7 +1054,10 @@ class PluginManager:
             _plugin_schemas.pop(plugin_id, None)
             _plugin_load_errors.pop(plugin_id, None)
 
-            # 3. Re-import from disk
+            # 3. Purge the plugin's own modules from sys.modules
+            self._cleanup_plugin_modules(plugin_id)
+
+            # 4. Re-import from disk
             plugin_dir = _plugin_module_paths.get(plugin_id)
             if plugin_dir and plugin_dir.exists():
                 await self.load_plugin_from_dir(plugin_dir)
