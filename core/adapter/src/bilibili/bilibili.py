@@ -24,8 +24,8 @@ from core.chat.message_elements import (
 
 
 class BiliBiliAdapter(SocialMediaAdapter):
-    def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue):
-        super().__init__(info, loop, event_bus)
+    def __init__(self, info, event_bus: asyncio.Queue):
+        super().__init__(info, event_bus)
         self.emoji_dict: Optional[dict] = None
         self.last_process_ts: int = int(time.time())
         self.listening_task = None

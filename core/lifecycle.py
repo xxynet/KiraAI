@@ -90,7 +90,6 @@ class KiraLifecycle:
 
         # ====== event bus ======
         event_queue: asyncio.Queue = asyncio.Queue()
-        loop = asyncio.get_running_loop()
 
         # ====== init KiraAI config ======
         self.kira_config = KiraConfig()
@@ -131,7 +130,7 @@ class KiraLifecycle:
         await register_all_tools(self.llm_api)  # Legacy tools
 
         # ====== init adapter manager ======
-        self.adapter_manager = AdapterManager(self.kira_config, loop, event_queue, self.llm_api)
+        self.adapter_manager = AdapterManager(self.kira_config, event_queue)
         await self.adapter_manager.initialize()
 
         # ====== init session manager ======

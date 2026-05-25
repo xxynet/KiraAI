@@ -24,13 +24,11 @@ class AdapterManager:
     _manifests: Dict[str, dict] = {}
     _schemas: Dict[str, list[BaseConfigField]] = {}
 
-    def __init__(self, kira_config: KiraConfig, loop: asyncio.AbstractEventLoop, event_queue: asyncio.Queue, llm_api):
+    def __init__(self, kira_config: KiraConfig, event_queue: asyncio.Queue):
         self.kira_config = kira_config
         self._adapters: dict[str, Union[IMAdapter, SocialMediaAdapter]] = {}
         self.adas_config: dict = kira_config.get("adapters", {}) or {}
-        self.loop = loop
         self.event_queue = event_queue
-        self.llm_api = llm_api
 
         src_dir = os.path.join(os.path.dirname(__file__), "src")
         self.scan_adapters(src_dir)
@@ -413,9 +411,9 @@ class AdapterManager:
 
         try:
             if issubclass(adapter_cls, IMAdapter):
-                instance = adapter_cls(info, self.loop, self.event_queue, self.llm_api)
+                instance = adapter_cls(info, self.event_queue)
             elif issubclass(adapter_cls, SocialMediaAdapter):
-                instance = adapter_cls(info, self.loop, self.event_queue)
+                instance = adapter_cls(info, self.event_queue)
             else:
                 logger.error(f"Adapter class for platform {platform} is not a valid adapter type")
                 return
