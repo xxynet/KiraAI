@@ -1,4 +1,4 @@
-VERSION = "v2.18.1.post1"
+VERSION = "v2.19.0"
 
 DEFAULT_CONFIG = {
     "bot_config": {
