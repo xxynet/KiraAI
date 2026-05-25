@@ -47,8 +47,8 @@ def extract_card_info(card_json: str) -> str:
 
 
 class QQAdapter(IMAdapter):
-    def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
-        super().__init__(info, loop, event_bus, llm_api)
+    def __init__(self, info, event_bus: asyncio.Queue):
+        super().__init__(info, event_bus)
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
         self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file", "video", "forward"]
         self.bot: NapCatWebSocketClient = NapCatWebSocketClient()

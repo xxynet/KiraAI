@@ -78,8 +78,8 @@ class WeixinOCAdapter(IMAdapter):
     VIDEO_UPLOAD_TYPE = 2
     FILE_UPLOAD_TYPE = 3
 
-    def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
-        super().__init__(info, loop, event_bus, llm_api)
+    def __init__(self, info, event_bus: asyncio.Queue):
+        super().__init__(info, event_bus)
         self.message_types = ["text", "image", "video", "file", "record"]
         self.logger = get_logger(info.name, "green")
         
