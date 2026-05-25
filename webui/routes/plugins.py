@@ -202,7 +202,7 @@ class PluginsRoutes(Routes):
             plugin_manager = self.lifecycle.plugin_manager
             if not plugin_manager.has_plugin(plugin_id):
                 raise HTTPException(status_code=404, detail="Plugin not found")
-            if plugin_id in plugin_manager.get_plugin_load_errors():
+            if enabled and plugin_id in plugin_manager.get_plugin_load_errors():
                 raise HTTPException(status_code=400, detail="Cannot enable a plugin that failed to load")
             await plugin_manager.set_plugin_enabled(plugin_id, enabled)
             return {"plugin_id": plugin_id, "enabled": enabled}
