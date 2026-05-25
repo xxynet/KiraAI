@@ -1,6 +1,6 @@
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
-from .plugin_registry import PluginManager, register_tool, on, register
+from .plugin_registry import PluginManager, PluginInfo, register_tool, on, register
 from .plugin_handlers import EventType, Priority
 
 from core.logging_manager import get_logger
@@ -12,6 +12,7 @@ __all__ = [
     'BasePlugin',
     'PluginContext',
     'PluginManager',
+    'PluginInfo',
     "register_tool",
     "register",
     "on",

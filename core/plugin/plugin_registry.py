@@ -6,6 +6,7 @@ import json
 import sys
 import types
 import httpx
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable, Union
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
@@ -19,6 +20,24 @@ from .plugin_context import PluginContext
 from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
 
 from core.tag import tag_registry, BaseTag
+
+
+@dataclass
+class PluginInfo:
+    plugin_id: str
+    display_name: str
+    version: str = ""
+    author: str = ""
+    description: str = ""
+    repo: Optional[str] = None
+    locales: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    tags: List[str] = field(default_factory=list)
+    core_version: Optional[str] = None
+    builtin: bool = False
+    uninstallable: bool = False
+    hidden: bool = False
+    error: Optional[str] = None
+
 
 logger = get_logger("plugin_manager", "cyan")
 
@@ -43,6 +62,9 @@ _plugin_load_errors: Dict[str, Dict[str, Any]] = {}
 
 """plugin_ids whose API routes have already been added to FastAPI."""
 _plugin_api_registered: set[str] = set()
+
+"""Discovered plugin metadata: {plugin_id: PluginInfo}"""
+_plugin_infos: Dict[str, PluginInfo] = {}
 
 
 def get_obj_plugin_id(obj: Any):
@@ -332,10 +354,6 @@ class PluginManager:
             return False
         return self.plugin_enabled.get(plugin_id, True)
 
-    # TODO: implement a standalone list[PluginInfo] to track discovered plugins,
-    #       so that list_plugins() and related webui queries no longer depend on
-    #       _plugin_classes.  This allows set_plugin_enabled() to safely pop &
-    #       re-import plugin classes on disable/enable without affecting visibility.
     async def set_plugin_enabled(self, plugin_id: str, enabled: bool) -> None:
         if not plugin_id:
             return
@@ -350,8 +368,7 @@ class PluginManager:
             if is_builtin:
                 await self.init_plugin(plugin_id)
             else:
-                # User plugin: purge stale modules then re-import from disk for fresh code
-                self._cleanup_plugin_modules(plugin_id)
+                # User plugin: modules already cleaned at disable time, just re-import
                 _plugin_schemas.pop(plugin_id, None)
                 plugin_dir = _plugin_module_paths.get(plugin_id)
                 if plugin_dir and plugin_dir.exists():
@@ -366,6 +383,12 @@ class PluginManager:
 
     def get_registered_plugins(self) -> Dict[str, type[BasePlugin]]:
         return dict(_plugin_classes)
+
+    def has_plugin(self, plugin_id: str) -> bool:
+        return plugin_id in _plugin_infos
+
+    def list_plugins(self) -> List[PluginInfo]:
+        return list(_plugin_infos.values())
 
     def get_plugin_manifest(self, name: str) -> Dict[str, Any]:
         return _plugin_manifests.get(name, {})
@@ -937,6 +960,7 @@ class PluginManager:
             except Exception as e:
                 logger.error(f"Error terminating plugin {plugin_id}: {e}")
             self._cleanup_plugin_registration(plugin_id)
+            self._cleanup_plugin_modules(plugin_id)
             return
 
         for plug_id, plugin_instance in list(self.plugin_instances.items()):
@@ -950,6 +974,7 @@ class PluginManager:
         self.plugin_configs.clear()
         for name in list(_plugin_components.keys()):
             self._cleanup_plugin_registration(name)
+            self._cleanup_plugin_modules(name)
 
     async def uninstall_plugin(self, plugin_id: str) -> None:
         """
@@ -960,6 +985,7 @@ class PluginManager:
         if plugin_id in _plugin_load_errors:
             _plugin_load_errors.pop(plugin_id, None)
             _plugin_manifests.pop(plugin_id, None)
+            _plugin_infos.pop(plugin_id, None)
             self.plugin_enabled.pop(plugin_id, None)
             self._save_plugin_state()
             logger.info(f"Failed plugin '{plugin_id}' removed from records")
@@ -979,6 +1005,7 @@ class PluginManager:
         _plugin_schemas.pop(plugin_id, None)
         _plugin_components.pop(plugin_id, None)
         _plugin_load_errors.pop(plugin_id, None)
+        _plugin_infos.pop(plugin_id, None)
 
         # Remove module-to-plugin mappings and evict from sys.modules
         stale_modules = [k for k, v in _module_to_plugin.items() if v == plugin_id]
@@ -1042,10 +1069,7 @@ class PluginManager:
             _plugin_schemas.pop(plugin_id, None)
             _plugin_load_errors.pop(plugin_id, None)
 
-            # 3. Purge the plugin's own modules from sys.modules
-            self._cleanup_plugin_modules(plugin_id)
-
-            # 4. Re-import from disk
+            # 3. Re-import from disk
             plugin_dir = _plugin_module_paths.get(plugin_id)
             if plugin_dir and plugin_dir.exists():
                 await self.load_plugin_from_dir(plugin_dir)
@@ -1081,6 +1105,32 @@ class PluginManager:
             )
         return None
 
+    @staticmethod
+    def _build_plugin_info(plugin_id: str, manifest: dict, error: Optional[str] = None) -> PluginInfo:
+        path = _plugin_module_paths.get(plugin_id)
+        is_builtin = path is not None and path.is_relative_to(BUILTIN_PLUGINS_DIR)
+        hidden = bool(manifest.get("hide", False)) if is_builtin else False
+        if is_builtin:
+            uninstallable = bool(manifest.get("uninstallable", False))
+        else:
+            uninstallable = True
+
+        return PluginInfo(
+            plugin_id=plugin_id,
+            display_name=manifest.get("display_name") or plugin_id,
+            version=str(manifest.get("version") or ""),
+            author=str(manifest.get("author") or ""),
+            description=str(manifest.get("description") or ""),
+            repo=manifest.get("repo") if isinstance(manifest.get("repo"), str) and manifest.get("repo") else None,
+            locales=manifest.get("locales") or {},
+            tags=[str(t) for t in (manifest.get("tags") or []) if t],
+            core_version=str(manifest["core_version"]) if manifest.get("core_version") else None,
+            builtin=is_builtin,
+            uninstallable=uninstallable,
+            hidden=hidden,
+            error=error,
+        )
+
     def _load_plugin_meta(self, plugin_root: Path, entry: str):
         manifest = {}
         manifest_path = plugin_root / "manifest.json"
@@ -1102,6 +1152,9 @@ class PluginManager:
         if manifest:
             _plugin_manifests[plugin_id] = manifest
 
+        # Build PluginInfo early — even if class loading later fails, we have metadata
+        _plugin_infos[plugin_id] = self._build_plugin_info(plugin_id, manifest)
+
         # Check core_version compatibility
         core_version_spec = manifest.get("core_version")
         if core_version_spec:
@@ -1111,6 +1164,7 @@ class PluginManager:
                     "manifest": manifest,
                     "error": error,
                 }
+                _plugin_infos[plugin_id].error = error
                 logger.warning(f"Plugin {plugin_id} skipped: {error}")
                 return None
 
@@ -1190,6 +1244,8 @@ class PluginManager:
                     "manifest": _plugin_manifests.get(plugin_id, {}),
                     "error": "No module found",
                 })
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].error = "No module found"
                 continue
 
             self._register_plugin_class(plugin_id, module, plugin_dir)
@@ -1247,6 +1303,8 @@ class PluginManager:
                 "manifest": _plugin_manifests.get(plugin_id, {}),
                 "error": "No entry script found (main.py / plugin.py / __init__.py)",
             }
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].error = "No entry script found (main.py / plugin.py / __init__.py)"
             return None
 
         # Clear decorator-registered components so re-import starts fresh
@@ -1263,6 +1321,8 @@ class PluginManager:
                 "manifest": _plugin_manifests.get(plugin_id, {}),
                 "error": "Failed to create module spec",
             }
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].error = "Failed to create module spec"
             return None
 
         try:
@@ -1276,6 +1336,8 @@ class PluginManager:
                 "manifest": _plugin_manifests.get(plugin_id, {}),
                 "error": f"Import error: {e}",
             }
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].error = f"Import error: {e}"
             return None
 
         registered = self._register_plugin_class(plugin_id, module, plugin_root)
@@ -1285,6 +1347,8 @@ class PluginManager:
                 "manifest": _plugin_manifests.get(plugin_id, {}),
                 "error": "No BasePlugin subclass found",
             }
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].error = "No BasePlugin subclass found"
             return None
 
         await self.init_plugin(plugin_id)
