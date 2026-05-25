@@ -15,13 +15,13 @@ class IMAdapter(ABC):
     def __init__(
         self,
         info: AdapterInfo,
-        event_bus: asyncio.Queue,
+        event_queue: asyncio.Queue,
     ):
         self.info = info
         self.config = info.config
         self.emoji_dict: Optional[dict] = None
         self.message_types: list = []
-        self.event_queue = event_bus
+        self._event_queue = event_queue
 
         self.permission_mode = None
 
@@ -72,7 +72,7 @@ class IMAdapter(ABC):
 
     def publish(self, message: Union[KiraMessageEvent]):
         """把消息放到事件总线"""
-        self.event_queue.put_nowait(message)
+        self._event_queue.put_nowait(message)
 
     @abstractmethod
     async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain) -> Optional[KiraIMSentResult]:

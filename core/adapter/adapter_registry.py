@@ -73,7 +73,7 @@ class AdapterManager:
             config=config,
         )
 
-    def get_adapter_infos(self) -> list[AdapterInfo]:
+    def get_adapters_info(self) -> list[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {})
         if not isinstance(adapters_config, dict):
             return []

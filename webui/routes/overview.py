@@ -47,7 +47,7 @@ class OverviewRoutes(Routes):
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
             try:
                 adapter_mgr = self.lifecycle.adapter_manager
-                adapter_infos = adapter_mgr.get_adapter_infos()
+                adapter_infos = adapter_mgr.get_adapters_info()
                 total_adapters = len(adapter_infos)
                 running_adapters = set(adapter_mgr.get_adapters().keys())
                 active_adapters = len(

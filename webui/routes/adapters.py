@@ -108,10 +108,10 @@ class AdaptersRoutes(Routes):
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
             try:
                 adapter_mgr = self.lifecycle.adapter_manager
-                adapter_infos = adapter_mgr.get_adapter_infos()
+                adapters_info = adapter_mgr.get_adapters_info()
                 running_adapters = set(adapter_mgr.get_adapters().keys())
                 adapters: List[AdapterResponse] = []
-                for info in adapter_infos:
+                for info in adapters_info:
                     adapter_status = (
                         "active" if info.enabled and info.name in running_adapters else "inactive"
                     )

@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, TYPE_CHECKING
 
 from fastapi import FastAPI
 
+if TYPE_CHECKING:
+    from core.lifecycle import KiraLifecycle
 
 
 Handler = Callable[..., Any]
@@ -27,7 +31,7 @@ class RouteDefinition:
 
 
 class Routes:
-    def __init__(self, app: FastAPI, lifecycle: Any | None = None) -> None:
+    def __init__(self, app: FastAPI, lifecycle: Optional[KiraLifecycle] = None) -> None:
         self.app = app
         self.lifecycle = lifecycle
 
