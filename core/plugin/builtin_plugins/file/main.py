@@ -50,6 +50,9 @@ class FilePlugin(BasePlugin):
     def _is_path_allowed(self, path: str, allowed_prefixes: tuple) -> bool:
         """Check if path starts with an allowed prefix directory."""
         for prefix in allowed_prefixes:
+            prefix = self._normalize_path(prefix)
+            if prefix is None:
+                continue
             prefix = prefix.rstrip('/')
             if path == prefix or path.startswith(prefix + '/'):
                 return True
