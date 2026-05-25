@@ -1012,30 +1012,31 @@ class PluginManager:
         imported by the plugin are left untouched (they may be shared).
         """
         plugin_dir = _plugin_module_paths.get(plugin_id)
-        stale_names: list[str] = []
+        cleaned = 0
 
         for name, mod in list(sys.modules.items()):
+            matched = False
+
             # 1) Direct mapping from _register_plugin_class
             if _module_to_plugin.get(name) == plugin_id:
-                stale_names.append(name)
-                continue
+                matched = True
 
             # 2) Path-based: module file lives inside the plugin directory
-            if plugin_dir:
+            elif plugin_dir:
                 mod_file = getattr(mod, "__file__", None)
                 if mod_file:
                     try:
-                        if Path(mod_file).resolve().is_relative_to(plugin_dir):
-                            stale_names.append(name)
+                        matched = Path(mod_file).resolve().is_relative_to(plugin_dir)
                     except (ValueError, OSError):
                         pass
 
-        for name in stale_names:
-            sys.modules.pop(name, None)
-            _module_to_plugin.pop(name, None)
+            if matched:
+                sys.modules.pop(name, None)
+                _module_to_plugin.pop(name, None)
+                cleaned += 1
 
-        if stale_names:
-            logger.debug(f"Cleaned {len(stale_names)} module(s) for plugin {plugin_id}")
+        if cleaned:
+            logger.debug(f"Cleaned {cleaned} module(s) for plugin {plugin_id}")
 
     async def reload(self, plugin_id: Optional[str] = None):
         """
