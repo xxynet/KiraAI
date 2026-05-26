@@ -75,8 +75,63 @@ class PluginComponents:
         return bool(self.tools or self.tags or self.hooks or self.pages
                     or self.api_routes or self.static_dirs)
 
+    def register_tool(self, name: str, description: str, params: dict, func: Callable):
+        self.tools[name] = {
+            "name": name,
+            "description": description,
+            "parameters": params,
+            "func": func,
+        }
+        self.tool_funcs[name] = func
+
+    def register_tag(self, name: str, description: str, func: Callable):
+        self.tags.append({"name": name, "description": description})
+        self.tag_funcs[name] = func
+
+    def register_hook(self, handler: Callable, priority: Union[Priority, int],
+                      event_type: EventType):
+        eh = EventHandler(
+            event_type=event_type,
+            priority=priority,
+            handler=handler,
+            desc=handler.__doc__,
+        )
+        self.hooks.append(eh)
+
+    def register_page(self, route: str, func: Callable, auth: bool = True,
+                      menu: Optional[dict] = None):
+        self.pages.append({
+            "route": route,
+            "func": func,
+            "auth": auth,
+            "menu": menu,
+        })
+        self.page_funcs[func.__name__] = func
+
+    def register_static(self, path: str, directory: str, html: bool = False):
+        self.static_dirs.append({
+            "path": path,
+            "directory": directory,
+            "html": html,
+        })
+
+    def register_api(self, method: str, path: str, func: Callable,
+                     auth: bool = True, **kwargs):
+        self.api_routes.append({
+            "method": method.upper(),
+            "path": path,
+            "func": func,
+            "auth": auth,
+            "kwargs": kwargs,
+        })
+        self.api_route_funcs[func.__name__] = func
+
 
 _plugin_components: Dict[str, PluginComponents] = {}
+
+
+def _ensure_components(plugin_id: str) -> PluginComponents:
+    return _plugin_components.setdefault(plugin_id, PluginComponents())
 
 """Plugins that failed to load: {plugin_id: {"manifest": {...}, "error": "..."}}"""
 _plugin_load_errors: Dict[str, Dict[str, Any]] = {}
@@ -117,29 +172,15 @@ class RegisterDeco:
     def tool(name: str, description: str, params: dict):
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            comp = _plugin_components.setdefault(plugin_id, PluginComponents())
-            comp.tools[name] = {
-                "name": name,
-                "description": description,
-                "parameters": params,
-                "func": func,
-            }
-            comp.tool_funcs[name] = func
-
+            _ensure_components(plugin_id).register_tool(name, description, params, func)
             return func
-
         return decorator
 
     @staticmethod
     def tag(name: str, description: str):
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            comp = _plugin_components.setdefault(plugin_id, PluginComponents())
-            comp.tags.append({
-                "name": name,
-                "description": description
-            })
-            comp.tag_funcs[name] = func
+            _ensure_components(plugin_id).register_tag(name, description, func)
             return func
         return decorator
 
@@ -154,14 +195,7 @@ class RegisterDeco:
         """
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            comp = _plugin_components.setdefault(plugin_id, PluginComponents())
-            comp.pages.append({
-                "route": route,
-                "func": func,
-                "auth": auth,
-                "menu": menu,
-            })
-            comp.page_funcs[func.__name__] = func
+            _ensure_components(plugin_id).register_page(route, func, auth, menu)
             return func
         return decorator
 
@@ -176,12 +210,7 @@ class RegisterDeco:
         """
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            comp = _plugin_components.setdefault(plugin_id, PluginComponents())
-            comp.static_dirs.append({
-                "path": path,
-                "directory": directory,
-                "html": html,
-            })
+            _ensure_components(plugin_id).register_static(path, directory, html)
             return func
         return decorator
 
@@ -197,15 +226,7 @@ class RegisterDeco:
         """
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            comp = _plugin_components.setdefault(plugin_id, PluginComponents())
-            comp.api_routes.append({
-                "method": method.upper(),
-                "path":   path,
-                "func":   func,
-                "auth":   auth,
-                "kwargs": kwargs,
-            })
-            comp.api_route_funcs[func.__name__] = func
+            _ensure_components(plugin_id).register_api(method, path, func, auth, **kwargs)
             return func
         return decorator
 
@@ -215,15 +236,7 @@ class OnEventDeco:
     @staticmethod
     def _register_hook(func: Callable, priority: Union[Priority, int], event_type: EventType):
         plugin_id = get_obj_plugin_id(func)
-        eh = EventHandler(
-            event_type=event_type,
-            priority=priority,
-            handler=func,
-            desc=func.__doc__
-        )
-
-        comp = _plugin_components.setdefault(plugin_id, PluginComponents())
-        comp.hooks.append(eh)
+        _ensure_components(plugin_id).register_hook(func, priority, event_type)
 
     def im_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
