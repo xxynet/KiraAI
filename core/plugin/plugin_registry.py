@@ -556,7 +556,6 @@ class PluginManager:
         comp = _plugin_components.get(plugin_id)
         if not comp or not comp.api_routes:
             return
-            return
 
         # Routes already in FastAPI: the dynamic_endpoint always looks up the
         # current instance at call time, so re-init requires no action here.
@@ -632,7 +631,6 @@ class PluginManager:
         comp = _plugin_components.get(plugin_id)
         if not comp or not comp.pages:
             return
-            return
 
         # Track registered pages to avoid duplicates
         if plugin_id in getattr(self, '_plugin_pages_registered', set()):
@@ -705,7 +703,6 @@ class PluginManager:
 
         comp = _plugin_components.get(plugin_id)
         if not comp or not comp.static_dirs:
-            return
             return
 
         # Track registered static dirs to avoid duplicates
