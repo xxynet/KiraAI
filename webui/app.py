@@ -3,6 +3,7 @@ KiraAI WebUI Application
 Provides a web-based admin panel for managing KiraAI system
 """
 import mimetypes
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -51,13 +52,20 @@ class KiraWebUI:
             self.access_token = "disabled"
         else:
             self.access_token = _get_or_generate_access_token()
-        self.app = FastAPI(
-            title="KiraAI Admin Panel",
-            description="Administration panel for KiraAI system",
-            version="1.0.0",
-            openapi_url="/api/openapi.json",
-            docs_url="/api/docs",
-        )
+        self.is_prod = os.environ.get("KIRA_ENV", "prod").lower() == "prod"
+        fastapi_kwargs: dict = {
+            "title": "KiraAI Admin Panel",
+            "description": "Administration panel for KiraAI system",
+            "version": "1.0.0",
+        }
+        if not self.is_prod:
+            fastapi_kwargs["openapi_url"] = "/api/openapi.json"
+            fastapi_kwargs["docs_url"] = "/api/docs"
+        else:
+            fastapi_kwargs["openapi_url"] = None
+            fastapi_kwargs["docs_url"] = None
+            fastapi_kwargs["redoc_url"] = None
+        self.app = FastAPI(**fastapi_kwargs)
         # require_auth reads this to detect mode-mismatched JWTs.
         self.app.state.disable_auth = disable_auth
         self.app.state.access_token = self.access_token
@@ -128,8 +136,9 @@ class KiraWebUI:
             self.app,
             host=host,
             port=port,
-            log_level="info",
+            log_level="warning" if self.is_prod else "info",
             loop="asyncio",
+            access_log=not self.is_prod,
         )
         self.server = uvicorn.Server(config)
         self.lifecycle.uvicorn_server = self.server

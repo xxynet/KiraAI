@@ -48,6 +48,13 @@ def _parse_args() -> argparse.Namespace:
         help="Skip frontend dist version check (useful during development with --webui-dir)",
     )
     parser.add_argument(
+        "--env",
+        type=str,
+        choices=["dev", "prod"],
+        default=None,
+        help="Set environment mode: 'dev' enables API docs/access log; 'prod' disables them (default: prod, also reads KIRA_ENV env var)",
+    )
+    parser.add_argument(
         "--disable-webui-auth",
         action="store_true",
         default=False,
@@ -103,6 +110,9 @@ def _wait_for_port_release(port: int, timeout: float = 15.0):
 
 def _run_child(args: argparse.Namespace):
     """Run the actual application (called in the child process)."""
+    if args.env:
+        os.environ["KIRA_ENV"] = args.env
+
     from core.utils.path_utils import init_paths, get_data_path
 
     init_paths(data_dir=args.data_dir, webui_dir=args.webui_dir)
@@ -162,6 +172,8 @@ def _run_supervisor(args: argparse.Namespace):
         child_cmd.append("--ignore-webui-version-check")
     if args.disable_webui_auth:
         child_cmd.append("--disable-webui-auth")
+    if args.env:
+        child_cmd += ["--env", args.env]
 
     restart_count = 0
 
