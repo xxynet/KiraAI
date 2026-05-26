@@ -24,9 +24,14 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         )
         try:
             start_time = time.perf_counter()
-            temperature = self.model.model_config.get("temperature") if self.model.model_config else None
-            timeout = self.model.model_config.get("timeout") if self.model.model_config else None
-            response = await client.chat.completions.create(
+            model_config = self.model.model_config if self.model.model_config else {}
+            section_advanced = model_config.get("section_advanced") or {}
+            temperature = section_advanced.get("temperature")
+            timeout = model_config.get("timeout")
+            extra_body = section_advanced.get("extra_body")
+            if not isinstance(extra_body, dict) or not extra_body:
+                extra_body = None
+            request_kwargs = dict(
                 model=self.model.model_id,
                 messages=request.messages,
                 tools=request.tools if request.tools else None,
@@ -34,6 +39,9 @@ class OpenAICompatibleLLMClient(LLMModelClient):
                 temperature=temperature if temperature is not None else NOT_GIVEN,
                 timeout=timeout if timeout is not None else NOT_GIVEN
             )
+            if extra_body:
+                request_kwargs["extra_body"] = extra_body
+            response = await client.chat.completions.create(**request_kwargs)
             end_time = time.perf_counter()
             llm_resp = LLMResponse("")
             llm_resp.time_consumed = round(end_time - start_time, 2)
