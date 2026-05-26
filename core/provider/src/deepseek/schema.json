@@ -51,17 +51,6 @@
           "en": { "name": "Timeout", "hint": "Timeout seconds" }
         }
       },
-      "temperature": {
-        "name": "温度",
-        "type": "float",
-        "default": null,
-        "min": 0,
-        "max": 2,
-        "hint": "模型温度（注意：思考模式下此参数不生效）",
-        "locales": {
-          "en": { "name": "Temperature", "hint": "Model temperature (Note: this parameter does not apply in thinking mode)" }
-        }
-      },
       "thinking_enabled": {
         "name": "思考模式",
         "type": "switch",
@@ -79,6 +68,37 @@
         "hint": "思考强度：high（默认）或 max（复杂 Agent 任务推荐）",
         "locales": {
           "en": { "name": "Reasoning Effort", "hint": "Reasoning intensity: high (default) or max (recommended for complex Agent tasks)" }
+        }
+      },
+      "section_advanced": {
+        "type": "section",
+        "name": "高级设置",
+        "hint": "高级模型配置选项",
+        "collapsed": true,
+        "locales": {
+          "en": { "name": "Advanced Settings", "hint": "Advanced model configuration options" }
+        },
+        "fields": {
+          "temperature": {
+            "name": "温度",
+            "type": "float",
+            "default": null,
+            "min": 0,
+            "max": 2,
+            "hint": "模型温度（注意：思考模式下此参数不生效）",
+            "locales": {
+              "en": { "name": "Temperature", "hint": "Model temperature (Note: this parameter does not apply in thinking mode)" }
+            }
+          },
+          "extra_body": {
+            "name": "自定义请求体",
+            "type": "json",
+            "default": {},
+            "hint": "合并到请求体中的额外字段（JSON 对象）",
+            "locales": {
+              "en": { "name": "Extra Body", "hint": "Additional fields merged into the request body (JSON object)" }
+            }
+          }
         }
       }
     }

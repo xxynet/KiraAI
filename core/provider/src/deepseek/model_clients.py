@@ -37,6 +37,8 @@ class DeepSeekLLMClient(LLMModelClient):
         model_config = self.model.model_config or {}
         thinking_enabled = model_config.get("thinking_enabled", True)
         reasoning_effort = model_config.get("reasoning_effort", "high")
+        section_advanced = model_config.get("section_advanced") or {}
+        user_extra_body = section_advanced.get("extra_body")
 
         # Build extra_body for DeepSeek thinking mode
         extra_body = {}
@@ -44,6 +46,10 @@ class DeepSeekLLMClient(LLMModelClient):
             extra_body["thinking"] = {"type": "enabled"}
         else:
             extra_body["thinking"] = {"type": "disabled"}
+
+        # Merge user-provided extra_body
+        if isinstance(user_extra_body, dict) and user_extra_body:
+            extra_body.update(user_extra_body)
 
         # Build request kwargs
         request_kwargs = dict(
@@ -58,7 +64,7 @@ class DeepSeekLLMClient(LLMModelClient):
             request_kwargs["reasoning_effort"] = reasoning_effort
         else:
             # Non-thinking mode: use normal temperature
-            temperature = model_config.get("temperature")
+            temperature = section_advanced.get("temperature")
             request_kwargs["temperature"] = temperature if temperature is not None else 1
 
         if extra_body:
