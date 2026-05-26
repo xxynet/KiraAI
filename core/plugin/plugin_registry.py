@@ -55,7 +55,83 @@ _plugin_module_paths: Dict[str, Path] = {}
 """key: module name, value: plugin id"""
 _module_to_plugin: Dict[str, str] = {}
 _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
-_plugin_components: Dict[str, dict] = {}
+
+
+@dataclass
+class PluginComponents:
+    """Typed container for all components registered by a single plugin."""
+    tools: Dict[str, dict] = field(default_factory=dict)
+    tool_funcs: Dict[str, Callable] = field(default_factory=dict)
+    tags: List[dict] = field(default_factory=list)
+    tag_funcs: Dict[str, Callable] = field(default_factory=dict)
+    hooks: List[EventHandler] = field(default_factory=list)
+    pages: List[dict] = field(default_factory=list)
+    page_funcs: Dict[str, Callable] = field(default_factory=dict)
+    api_routes: List[dict] = field(default_factory=list)
+    api_route_funcs: Dict[str, Callable] = field(default_factory=dict)
+    static_dirs: List[dict] = field(default_factory=list)
+
+    def has_any(self) -> bool:
+        return bool(self.tools or self.tags or self.hooks or self.pages
+                    or self.api_routes or self.static_dirs)
+
+    def register_tool(self, name: str, description: str, params: dict, func: Callable):
+        self.tools[name] = {
+            "name": name,
+            "description": description,
+            "parameters": params,
+            "func": func,
+        }
+        self.tool_funcs[name] = func
+
+    def register_tag(self, name: str, description: str, func: Callable):
+        self.tags.append({"name": name, "description": description})
+        self.tag_funcs[name] = func
+
+    def register_hook(self, handler: Callable, priority: Union[Priority, int],
+                      event_type: EventType):
+        eh = EventHandler(
+            event_type=event_type,
+            priority=priority,
+            handler=handler,
+            desc=handler.__doc__,
+        )
+        self.hooks.append(eh)
+
+    def register_page(self, route: str, func: Callable, auth: bool = True,
+                      menu: Optional[dict] = None):
+        self.pages.append({
+            "route": route,
+            "func": func,
+            "auth": auth,
+            "menu": menu,
+        })
+        self.page_funcs[func.__name__] = func
+
+    def register_static(self, path: str, directory: str, html: bool = False):
+        self.static_dirs.append({
+            "path": path,
+            "directory": directory,
+            "html": html,
+        })
+
+    def register_api(self, method: str, path: str, func: Callable,
+                     auth: bool = True, **kwargs):
+        self.api_routes.append({
+            "method": method.upper(),
+            "path": path,
+            "func": func,
+            "auth": auth,
+            "kwargs": kwargs,
+        })
+        self.api_route_funcs[func.__name__] = func
+
+
+_plugin_components: Dict[str, PluginComponents] = {}
+
+
+def _ensure_components(plugin_id: str) -> PluginComponents:
+    return _plugin_components.setdefault(plugin_id, PluginComponents())
 
 """Plugins that failed to load: {plugin_id: {"manifest": {...}, "error": "..."}}"""
 _plugin_load_errors: Dict[str, Dict[str, Any]] = {}
@@ -96,33 +172,15 @@ class RegisterDeco:
     def tool(name: str, description: str, params: dict):
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            tools = plugin_entry.setdefault("tools", {})
-            tool_funcs = plugin_entry.setdefault("tool_funcs", {})
-            tools[name] = {
-                "name": name,
-                "description": description,
-                "parameters": params,
-                "func": func,
-            }
-            tool_funcs[name] = func
-
+            _ensure_components(plugin_id).register_tool(name, description, params, func)
             return func
-
         return decorator
 
     @staticmethod
     def tag(name: str, description: str):
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            tags = plugin_entry.setdefault("tags", [])
-            tag_funcs = plugin_entry.setdefault("tag_funcs", {})
-            tags.append({
-                "name": name,
-                "description": description
-            })
-            tag_funcs[name] = func
+            _ensure_components(plugin_id).register_tag(name, description, func)
             return func
         return decorator
 
@@ -137,16 +195,7 @@ class RegisterDeco:
         """
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            pages = plugin_entry.setdefault("pages", [])
-            page_funcs = plugin_entry.setdefault("page_funcs", {})
-            pages.append({
-                "route": route,
-                "func": func,
-                "auth": auth,
-                "menu": menu,
-            })
-            page_funcs[func.__name__] = func
+            _ensure_components(plugin_id).register_page(route, func, auth, menu)
             return func
         return decorator
 
@@ -161,13 +210,7 @@ class RegisterDeco:
         """
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            static_dirs = plugin_entry.setdefault("static_dirs", [])
-            static_dirs.append({
-                "path": path,
-                "directory": directory,
-                "html": html,
-            })
+            _ensure_components(plugin_id).register_static(path, directory, html)
             return func
         return decorator
 
@@ -183,17 +226,7 @@ class RegisterDeco:
         """
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            api_routes = plugin_entry.setdefault("api_routes", [])
-            api_funcs = plugin_entry.setdefault("api_route_funcs", {})
-            api_routes.append({
-                "method": method.upper(),
-                "path":   path,
-                "func":   func,
-                "auth":   auth,
-                "kwargs": kwargs,
-            })
-            api_funcs[func.__name__] = func
+            _ensure_components(plugin_id).register_api(method, path, func, auth, **kwargs)
             return func
         return decorator
 
@@ -203,16 +236,7 @@ class OnEventDeco:
     @staticmethod
     def _register_hook(func: Callable, priority: Union[Priority, int], event_type: EventType):
         plugin_id = get_obj_plugin_id(func)
-        eh = EventHandler(
-            event_type=event_type,
-            priority=priority,
-            handler=func,
-            desc=func.__doc__
-        )
-
-        plugin_entry = _plugin_components.setdefault(plugin_id, {})
-        hooks = plugin_entry.setdefault("hooks", [])
-        hooks.append(eh)
+        _ensure_components(plugin_id).register_hook(func, priority, event_type)
 
     def im_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
@@ -453,25 +477,23 @@ class PluginManager:
             await self.init_plugin(plugin_name)
         return dict(current_cfg)
 
-    def get_plugin_components(self) -> Dict[str, dict]:
+    def get_plugin_components(self) -> Dict[str, PluginComponents]:
         return dict(_plugin_components)
 
     def get_plugin_tools(self, plugin_name: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         if plugin_name is None:
-            return {name: comp.get("tools", {}) for name, comp in _plugin_components.items()}
-        entry = _plugin_components.get(plugin_name, {})
-        return entry.get("tools", {})
+            return {pid: dict(comp.tools) for pid, comp in _plugin_components.items()}
+        comp = _plugin_components.get(plugin_name)
+        return dict(comp.tools) if comp else {}
 
     def _register_plugin_tools_for(self, plugin_id: str) -> None:
-        comp = _plugin_components.get(plugin_id, {})
+        comp = _plugin_components.get(plugin_id)
         if not comp:
             return
-        tools = comp.get("tools", {})
-        tool_funcs = comp.get("tool_funcs", {})
         plugin_instance = self.plugin_instances.get(plugin_id)
         tool_names: list[str] = []
-        for tool_name, meta in tools.items():
-            func = tool_funcs.get(tool_name)
+        for tool_name, meta in comp.tools.items():
+            func = comp.tool_funcs.get(tool_name)
             if not func:
                 continue
             bound_func = func
@@ -488,12 +510,11 @@ class PluginManager:
             logger.info(f"Registered {len(tool_names)} tools from {plugin_id}: {tool_names}")
 
     def _register_plugin_hooks_for(self, plugin_id: str):
-        comp = _plugin_components.get(plugin_id, {})
+        comp = _plugin_components.get(plugin_id)
         if not comp:
             return
-        hooks = comp.get("hooks", [])
         plugin_instance = self.plugin_instances.get(plugin_id)
-        for hook in hooks:
+        for hook in comp.hooks:
             bound_handler = hook.handler
             if plugin_instance is not None and bound_handler is not None and hasattr(
                 plugin_instance, bound_handler.__name__
@@ -503,20 +524,18 @@ class PluginManager:
                     bound_handler = candidate
             hook.handler = bound_handler
             event_handler_reg.register(hook)
-        if hooks:
-            logger.info(f"Registered {len(hooks)} hooks from {plugin_id}")
+        if comp.hooks:
+            logger.info(f"Registered {len(comp.hooks)} hooks from {plugin_id}")
 
     def _register_plugin_tags_for(self, plugin_id: str):
-        comp = _plugin_components.get(plugin_id, {})
+        comp = _plugin_components.get(plugin_id)
         if not comp:
             return
-        tags = comp.get("tags", [])
-        tag_funcs = comp.get("tag_funcs", {})
         plugin_instance = self.plugin_instances.get(plugin_id)
         tag_names: list[str] = []
-        for tag_meta in tags:
+        for tag_meta in comp.tags:
             tag_name = tag_meta["name"]
-            func = tag_funcs.get(tag_name)
+            func = comp.tag_funcs.get(tag_name)
             if not func:
                 continue
             bound_func = func
@@ -534,9 +553,8 @@ class PluginManager:
     def _register_plugin_apis_for(self, plugin_id: str) -> None:
         if self._web_app is None:
             return
-        comp = _plugin_components.get(plugin_id, {})
-        api_routes = comp.get("api_routes", [])
-        if not api_routes:
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.api_routes:
             return
 
         # Routes already in FastAPI: the dynamic_endpoint always looks up the
@@ -559,7 +577,7 @@ class PluginManager:
 
         registered: List[str] = []
 
-        for route in api_routes:
+        for route in comp.api_routes:
             func = route["func"]
             func_name = func.__name__
             full_path = f"/api/plugin/{plugin_id}/{route['path'].lstrip('/')}"
@@ -610,9 +628,8 @@ class PluginManager:
         if self._web_app is None:
             return
 
-        comp = _plugin_components.get(plugin_id, {})
-        pages = comp.get("pages", [])
-        if not pages:
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.pages:
             return
 
         # Track registered pages to avoid duplicates
@@ -630,7 +647,7 @@ class PluginManager:
         mgr = self
         registered: List[str] = []
 
-        for page in pages:
+        for page in comp.pages:
             func = page["func"]
             func_name = func.__name__
             route_path = page["route"].lstrip('/')
@@ -684,9 +701,8 @@ class PluginManager:
         if self._web_app is None:
             return
 
-        comp = _plugin_components.get(plugin_id, {})
-        static_dirs = comp.get("static_dirs", [])
-        if not static_dirs:
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.static_dirs:
             return
 
         # Track registered static dirs to avoid duplicates
@@ -716,7 +732,7 @@ class PluginManager:
 
         registered: List[str] = []
 
-        for static in static_dirs:
+        for static in comp.static_dirs:
             path_prefix = static["path"].lstrip('/')
             full_path = f"/page/plugin/{plugin_id}/{path_prefix}"
             dir_path = plugin_root / static["directory"]
@@ -809,22 +825,19 @@ class PluginManager:
             return
 
         # clean up tool registration
-        tools = comp.get("tools", {})
         if self.ctx and getattr(self.ctx, "llm_api", None):
-            for tool_name in list(tools.keys()):
+            for tool_name in list(comp.tools.keys()):
                 try:
                     self.ctx.llm_api.unregister_tool(tool_name)
                 except Exception as e:
                     logger.error(f"Failed to unregister tool {tool_name} for plugin {plugin_id}: {e}")
 
         # clean up hook registration
-        hooks = comp.get("hooks", [])
-        for hook in hooks:
+        for hook in comp.hooks:
             event_handler_reg.del_handler(hook)
 
         # clean up tag registration
-        tags = comp.get("tags", [])
-        for tag in tags:
+        for tag in comp.tags:
             tag_registry.unregister(tag.get("name"))
 
         # clean up FastAPI routes (API routes, page routes, static mounts)
@@ -1298,7 +1311,7 @@ class PluginManager:
 
         # Clear decorator-registered components so re-import starts fresh
         if plugin_id in _plugin_components:
-            _plugin_components[plugin_id] = {}
+            _plugin_components[plugin_id] = PluginComponents()
 
         # Remove stale module from cache so exec_module re-runs the file
         sys.modules.pop(module_name, None)
