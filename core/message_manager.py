@@ -517,13 +517,15 @@ class MessageProcessor:
         new_memory.user(user_message)
 
         # Get max tool loop config, defaults to 2 if not a valid integer
+        # Note: This variable represents the total agent loop iterations (not just tool calls),
+        # but the name is kept as-is for backward compatibility with existing config files.
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
         try:
             max_tool_loop = int(max_tool_loop)
         except ValueError:
             max_tool_loop = 2
 
-        max_agent_steps = max_tool_loop + 1
+        max_agent_steps = max_tool_loop
 
         agent_executor = AgentExecutor(self.llm_api, request.tool_set)
         agent_ctx = AgentExecutionContext(

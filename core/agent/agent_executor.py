@@ -113,6 +113,13 @@ class AgentExecutor:
             err = ""
             is_final = step_index == max_steps
 
+            # Inject last-step hint so the LLM knows to wrap up
+            if is_final:
+                request.messages.append({
+                    "role": "system",
+                    "content": "⚠️ This is your last response opportunity in this turn. There will be no more conversation turns after this. If you need to communicate anything to the user, output it directly in this response. If you choose to end silently (<msg/>), no output is needed."
+                })
+
             # Try models in order, failover to next on provider/API errors.
             # Only catch provider-level exceptions (network, timeout, API status).
             # Programming errors (TypeError, ValueError, etc.) should propagate.
