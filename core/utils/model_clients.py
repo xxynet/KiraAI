@@ -33,7 +33,7 @@ class OpenAICompatibleLLMClient(LLMModelClient):
                 extra_body = None
             request_kwargs = dict(
                 model=self.model.model_id,
-                messages=request.messages,
+                messages=[m if isinstance(m, dict) else m.to_dict() for m in request.messages],
                 tools=request.tools if request.tools else None,
                 tool_choice=request.tool_choice if request.tool_choice != "none" else None,
                 temperature=temperature if temperature is not None else NOT_GIVEN,

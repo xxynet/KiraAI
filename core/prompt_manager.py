@@ -10,11 +10,13 @@ logger = get_logger("prompt_manager", "yellow")
 
 
 class Prompt:
-    def __init__(self, content: str, name: Optional[str] = None, source: Optional[str] = None, end: Optional[str] = "\n", **kwargs):
+    def __init__(self, content: str, name: Optional[str] = None, source: Optional[str] = None,
+                 end: Optional[str] = "\n", persist: bool = True, **kwargs):
         self.name = name
         self.source = source
         self.content = content
         self.end = end
+        self.persist = persist
         self.kwargs = kwargs
 
     def __str__(self):

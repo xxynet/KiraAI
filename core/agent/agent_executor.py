@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Optional, TYPE_CHECKING, Union, Literal
+from dataclasses import dataclass
+from typing import AsyncIterator, Optional, TYPE_CHECKING, Literal
 
 from openai import APIStatusError, APITimeoutError, APIConnectionError
 
@@ -9,6 +9,7 @@ from core.logging_manager import get_logger
 from core.llm_client import LLMClient
 from core.provider import LLMRequest, LLMResponse, LLMModelClient
 from core.agent.tool import ToolSet
+from core.agent.message import OpenAIMessage
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 
 if TYPE_CHECKING:
@@ -23,7 +24,7 @@ llm_logger = get_logger("llm", "purple")
 class AgentExecutionContext:
     event: KiraMessageBatchEvent
     request: LLMRequest
-    new_memory: NewMemory
+    new_messages: list[OpenAIMessage]
     model_group: list[LLMModelClient]
 
 
@@ -32,52 +33,10 @@ class AgentStepResult:
     state: Literal["success", "stopped", "error"]
     step_index: int
     llm_response: Optional[LLMResponse]
-    new_memory: NewMemory
+    new_messages: list[OpenAIMessage]
     is_final: bool
     has_tool_calls: bool
     err: Optional[str] = None
-
-
-@dataclass
-class NewMemory:
-    memory_list: list = field(default_factory=list)
-
-    def user(self, content: Union[str, dict]):
-        self.memory_list.append(
-            {
-                "role": "user",
-                "content": content
-            }
-        )
-
-    # Add reasoning_content param, defaults to blank string，to satisfy the requirements of Kimi API
-    def assistant(self, content: str, tool_calls: Optional[list[dict]] = None, reasoning_content: str = ""):
-        if not tool_calls:
-            self.memory_list.append(
-                {
-                    "role": "assistant",
-                    "content": content,
-                    "reasoning_content": reasoning_content
-                }
-            )
-        else:
-            self.memory_list.append(
-                {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": tool_calls,
-                    "reasoning_content": reasoning_content
-                }
-            )
-
-    def tool(self, tool_results: list[dict]):
-        self.memory_list.extend(tool_results)
-        # self.memory_list.append({
-        #     "role": "tool",
-        #     "tool_call_id": tool_call_id,
-        #     "name": name,
-        #     "content": str(result)
-        # })
 
 
 class AgentExecutor:
@@ -115,10 +74,10 @@ class AgentExecutor:
 
             # Inject last-step hint so the LLM knows to wrap up
             if is_final:
-                request.messages.append({
-                    "role": "system",
-                    "content": "⚠️ This is your last response opportunity in this turn. There will be no more conversation turns after this. If you need to communicate anything to the user, output it directly in this response. If you choose to end silently (<msg/>), no output is needed."
-                })
+                request.messages.append(OpenAIMessage(
+                    role="system",
+                    content="⚠️ This is your last response opportunity in this turn. There will be no more conversation turns after this. If you need to communicate anything to the user, output it directly in this response. If you choose to end silently (<msg/>), no output is needed."
+                ))
 
             # Try models in order, failover to next on provider/API errors.
             # Only catch provider-level exceptions (network, timeout, API status).
@@ -168,7 +127,7 @@ class AgentExecutor:
                         state="stopped",
                         step_index=step_index,
                         llm_response=llm_resp,
-                        new_memory=ctx.new_memory,
+                        new_messages=ctx.new_messages,
                         is_final=is_final,
                         has_tool_calls=has_tool_calls,
                     )
@@ -178,21 +137,19 @@ class AgentExecutor:
                 is_final = True
                 assistant_content = llm_resp.text_response or ""
                 reasoning = llm_resp.reasoning_content or ""
-                # Add reasoning_content
-                request.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": assistant_content,
-                        "reasoning_content": reasoning
-                    }
+                msg = OpenAIMessage(
+                    role="assistant",
+                    content=assistant_content,
+                    reasoning_content=reasoning
                 )
-                ctx.new_memory.assistant(assistant_content, reasoning_content=reasoning)
+                request.messages.append(msg)
+                ctx.new_messages.append(msg)
                 yield AgentStepResult(
                     state=state,
                     err=err,
                     step_index=step_index,
                     llm_response=llm_resp,
-                    new_memory=ctx.new_memory,
+                    new_messages=ctx.new_messages,
                     is_final=is_final,
                     has_tool_calls=has_tool_calls,
                 )
@@ -202,25 +159,24 @@ class AgentExecutor:
             reasoning = llm_resp.reasoning_content or ""
 
             await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
-            # Add reasoning_content
-            request.messages.append(
-                {
-                    "role": "assistant",
-                    "content": assistant_content,
-                    "tool_calls": llm_resp.tool_calls,
-                    "reasoning_content": reasoning
-                }
+            msg = OpenAIMessage(
+                role="assistant",
+                content=assistant_content,
+                tool_calls=llm_resp.tool_calls,
+                reasoning_content=reasoning
             )
-            ctx.new_memory.assistant(assistant_content, llm_resp.tool_calls, reasoning_content=reasoning)
-            request.messages.extend(llm_resp.tool_results)
-            ctx.new_memory.tool(llm_resp.tool_results)
+            request.messages.append(msg)
+            ctx.new_messages.append(msg)
+            tool_msgs = [OpenAIMessage(**r) for r in llm_resp.tool_results]
+            request.messages.extend(tool_msgs)
+            ctx.new_messages.extend(tool_msgs)
 
             yield AgentStepResult(
                 state=state,
                 err=err,
                 step_index=step_index,
                 llm_response=llm_resp,
-                new_memory=ctx.new_memory,
+                new_messages=ctx.new_messages,
                 is_final=is_final,
                 has_tool_calls=has_tool_calls,
             )

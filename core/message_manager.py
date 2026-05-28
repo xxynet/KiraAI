@@ -40,7 +40,8 @@ from .adapter import AdapterManager
 from .agent.skills_mgr import SkillsManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
-from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
+from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
+from core.agent.message import OpenAIMessage
 from core.agent.tool import ToolSet
 from core.tag import tag_registry, TagSet
 from core.db.service import DatabaseService
@@ -512,9 +513,10 @@ class MessageProcessor:
         user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt))
         logger.info(f"processing message(s) from {sid}:\n{user_message}")
 
-        # 把收到的消息放到新收到的消息内容中
-        new_memory = NewMemory()
-        new_memory.user(user_message)
+        # 把收到的消息放到新收到的消息内容中（仅持久化 persist=True 的 Prompt）
+        persist_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
+        new_messages: list[OpenAIMessage] = []
+        new_messages.append(OpenAIMessage(role="user", content=persist_message))
 
         # Get max tool loop config, defaults to 2 if not a valid integer
         # Note: This variable represents the total agent loop iterations (not just tool calls),
@@ -531,7 +533,7 @@ class MessageProcessor:
         agent_ctx = AgentExecutionContext(
             event=event,
             request=request,
-            new_memory=new_memory,
+            new_messages=new_messages,
             model_group=model_group,
         )
 
@@ -554,10 +556,10 @@ class MessageProcessor:
                 logger.info(f"LLM -> {sid}: {step_result.raw_output}")
                 llm_resp.text_response = step_result.raw_output
 
-                for idx in range(-1, -len(new_memory.memory_list), -1):
-                    if new_memory.memory_list[idx]["role"] == "assistant":
-                        new_memory.memory_list[idx]["content"] = step_result.raw_output
-                        request.messages[idx]["content"] = step_result.raw_output
+                for idx in range(-1, -len(new_messages), -1):
+                    if new_messages[idx].role == "assistant":
+                        new_messages[idx].content = step_result.raw_output
+                        request.messages[idx].content = step_result.raw_output
                         break
 
         # Iter agent executor to get LLMResponse
@@ -576,7 +578,7 @@ class MessageProcessor:
             # Process tool calls if existed
 
         # Save new memory
-        self.session_manager.update_memory(sid, new_memory.memory_list)
+        self.session_manager.update_memory(sid, new_messages)
 
     async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
@@ -597,7 +599,7 @@ class MessageProcessor:
             llm_logger.error(f"Default LLM model not set, please set it in Configuration")
             return
 
-        llm_req = LLMRequest(messages=[{"role": "user", "content": cmt_prompt}])
+        llm_req = LLMRequest(messages=[OpenAIMessage(role="user", content=cmt_prompt)])
 
         llm_resp = await client.chat(llm_req)
 
