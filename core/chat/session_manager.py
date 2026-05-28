@@ -174,8 +174,7 @@ class SessionManager:
     def update_memory(self, session: str, new_chunk):
         self._ensure_session_data(session)
         from core.agent.message import OpenAIMessage
-        if new_chunk and isinstance(new_chunk[0], OpenAIMessage):
-            new_chunk = [m.to_dict() for m in new_chunk]
+        new_chunk = [m.to_dict() if isinstance(m, OpenAIMessage) else m for m in new_chunk]
         with self.memory_lock:
             session_data = self.chat_memory[session]
 

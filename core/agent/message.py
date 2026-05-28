@@ -29,7 +29,10 @@ class OpenAIMessage(BaseModel):
         return d
 
     def __getitem__(self, key: str):
-        return getattr(self, key)
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key)
 
     def __setitem__(self, key: str, value):
         setattr(self, key, value)
