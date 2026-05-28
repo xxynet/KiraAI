@@ -4,6 +4,7 @@ from typing import Optional, Callable, Literal
 from dataclasses import dataclass, field
 
 from core.agent.tool import ToolSet
+from core.agent.message import OpenAIMessage
 from core.prompt_manager import Prompt
 
 
@@ -33,6 +34,10 @@ class LLMRequest:
     tool_choice: Optional[Literal["auto", "none", "required"]] = None
 
     def __post_init__(self):
+        self.messages = [
+            m if isinstance(m, OpenAIMessage) else OpenAIMessage(**m)
+            for m in self.messages
+        ]
         if not self.tool_choice:
             if self.tools:
                 self.tool_choice = "auto"
@@ -41,14 +46,14 @@ class LLMRequest:
 
     def assemble_prompt(self):
         if self.system_prompt:
-            if self.messages and self.messages[0].get("role") == "system":
+            if self.messages and self.messages[0].role == "system":
                 self.messages.pop(0)
             system_prompt = "".join(p.to_string() for p in self.system_prompt if isinstance(p, Prompt))
-            self.messages.insert(0, {"role": "system", "content": system_prompt})
+            self.messages.insert(0, OpenAIMessage(role="system", content=system_prompt))
 
         if self.user_prompt:
             user_prompt = "".join(p.to_string() for p in self.user_prompt if isinstance(p, Prompt))
-            self.messages.append({"role": "user", "content": user_prompt})
+            self.messages.append(OpenAIMessage(role="user", content=user_prompt))
 
 
 @dataclass

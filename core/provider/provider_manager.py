@@ -13,6 +13,7 @@ from .provider import (
     VideoModelClient, EmbeddingModelClient, RerankModelClient
 )
 from .llm_model import LLMRequest
+from core.agent.message import OpenAIMessage
 
 from core.utils.path_utils import get_config_path
 from core.logging_manager import get_logger
@@ -482,7 +483,7 @@ class ProviderManager:
 
             if isinstance(model_client, LLMModelClient):
                 request = LLMRequest(
-                    messages=[{"role": "user", "content": "Say 'pong'"}],
+                    messages=[OpenAIMessage(role="user", content="Say 'pong'")],
                     tools=None,
                     tool_choice="none",
                 )
