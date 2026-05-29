@@ -7,7 +7,7 @@ from core.provider import LLMRequest
 from core.chat.message_elements import Text
 
 
-class DebouncePlugin(BasePlugin):
+class DefaultChatPlugin(BasePlugin):
     def __init__(self, ctx, cfg: dict):
         super().__init__(ctx, cfg)
         self.session_events: dict[str, asyncio.Event] = {}
@@ -24,7 +24,7 @@ class DebouncePlugin(BasePlugin):
         self.waking_words = cfg.get("waking_words", [])
     
     async def initialize(self):
-        logger.info(f"[Debounce] enabled")
+        logger.info(f"[Default Chat] initialize")
     
     async def terminate(self):
         """

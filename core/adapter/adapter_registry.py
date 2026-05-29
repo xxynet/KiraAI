@@ -9,6 +9,8 @@ import sys
 import types
 from typing import Union, Optional, Dict, Type
 
+from deprecated import deprecated
+
 from core.logging_manager import get_logger
 from core.config import KiraConfig
 from core.config.config_field import BaseConfigField, build_fields
@@ -72,6 +74,10 @@ class AdapterManager:
             description=description,
             config=config,
         )
+    
+    @deprecated("get_adapter_infos deprecated, use get_adapters_info instead")
+    def get_adapter_infos(self) -> list[AdapterInfo]:
+        return self.get_adapters_info()
 
     def get_adapters_info(self) -> list[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {})

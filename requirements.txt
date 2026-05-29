@@ -21,3 +21,4 @@ sqlalchemy[asyncio]>=2.0.0
 aiosqlite>=0.19.0
 packaging>=21.0
 py-cord>=2.7.2
+deprecated>=1.2.13
