@@ -4,7 +4,10 @@ import time
 from copy import deepcopy
 from asyncio import Lock
 import xml.etree.ElementTree as ET
-from typing import Union, Any, List, Optional
+from typing import Union, Any, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.event_bus import EventBus
 from pathlib import Path
 from asyncio import Semaphore
 import random
@@ -155,6 +158,7 @@ class MessageProcessor:
         self.max_message_delay = float(self.bot_config.get("max_message_delay", "1.5"))
 
         self.llm_api = llm_api
+        self.event_bus: Optional[EventBus] = None
 
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
 
@@ -205,7 +209,7 @@ class MessageProcessor:
             session=last_event.session,
             messages=[m.message for m in pending_messages]
         )
-        await self.handle_im_batch_message(batch_msg)
+        await self.event_bus.publish(batch_msg)
         return True
 
     async def message_format_to_text(self, message_chain: MessageChain):
