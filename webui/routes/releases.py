@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 import shutil
 import tempfile
@@ -17,6 +18,7 @@ from webui.routes.base import RouteDefinition, Routes
 
 logger = get_logger("releases", "green")
 
+RESTART_EXIT_CODE = 42
 _install_lock = asyncio.Lock()
 
 
@@ -105,7 +107,13 @@ class ReleasesRoutes(Routes):
                 ) from e
             logger.info(f"Update {tag} applied successfully")
 
-        return {"status": "ok"}
+        # Trigger restart — let the response be sent first, then exit
+        logger.info("Scheduling restart after update...")
+        await self.lifecycle.stop()
+        if self.lifecycle.uvicorn_server:
+            self.lifecycle.uvicorn_server.should_exit = True
+        asyncio.get_running_loop().call_later(0.5, os._exit, RESTART_EXIT_CODE)
+        return {"status": "restarting"}
 
     @staticmethod
     def _apply_update(zip_path: Path) -> None:
