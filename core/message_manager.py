@@ -436,7 +436,7 @@ class MessageProcessor:
         for handler in im_batch_handlers:
             await handler.exec_handler(event)
             if event.is_stopped:
-                logger.info("Event stopped")
+                logger.info(f"[ON_IM_BATCH_MESSAGE] Event {event.event_id} stopped")
                 return
 
         # Set session title
@@ -497,7 +497,7 @@ class MessageProcessor:
         for handler in llm_handlers:
             await handler.exec_handler(event, request, tag_set)
             if event.is_stopped:
-                logger.info("Event stopped while llm request stage")
+                logger.info(f"Event {event.event_id} stopped while llm request stage")
                 return
 
         # Register persistent tags registered by user plugins
@@ -513,8 +513,8 @@ class MessageProcessor:
         # TODO: migrate tools & tool_func params to tool_set
         request.tools.extend(request.tool_set.to_list())
 
-        # Print user message info
-        user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt))
+        # Print user message info (skip persist=False prompts to avoid log spam)
+        user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
         logger.info(f"processing message(s) from {sid}:\n{user_message}")
 
         # 把收到的消息放到新收到的消息内容中（仅持久化 persist=True 的 Prompt）
@@ -555,7 +555,7 @@ class MessageProcessor:
                 for step_handler in step_handlers:
                     await step_handler.exec_handler(event, step_result)
                     if event.is_stopped:
-                        logger.info("Event stopped while ON_STEP_RESULT stage")
+                        logger.info(f"Event {event.event_id} stopped while ON_STEP_RESULT stage")
                         return
                 logger.info(f"LLM -> {sid}: {step_result.raw_output}")
                 llm_resp.text_response = step_result.raw_output
@@ -641,7 +641,7 @@ class MessageProcessor:
             for handler in llm_handlers:
                 await handler.exec_handler(event, message_chains)
                 if event.is_stopped:
-                    logger.info("Event stopped while AFTER_XML_PARSE stage")
+                    logger.info(f"Event {event.event_id} stopped while AFTER_XML_PARSE stage")
                     return None
         except Exception as e:
             logger.error(f"Error parsing message: {str(e)}")
