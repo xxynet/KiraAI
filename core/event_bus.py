@@ -11,6 +11,7 @@ from .statistics import Statistics
 from .logging_manager import get_logger
 
 from core.chat import KiraMessageEvent, KiraCommentEvent
+from core.chat.message_utils import KiraMessageBatchEvent
 
 
 class EventType(Enum):
@@ -80,6 +81,9 @@ class EventBus:
         self.logger = get_logger("event_bus", "blue")
 
     async def _dispatch_event(self, event):
+        if isinstance(event, KiraMessageBatchEvent):
+            await self.message_processor.handle_im_batch_message(event)
+            return
         async with self.message_processing_semaphore:
             if isinstance(event, KiraMessageEvent):
                 await self.message_processor.handle_im_message(event)
