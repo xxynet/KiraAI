@@ -13,9 +13,7 @@
           {{ $t('plugin.core_version') }}: {{ coreVersion }}
         </div>
         <div v-if="error" class="mt-2 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
-          <svg class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <IconInfo class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>{{ error }}</span>
         </div>
       </div>
@@ -29,9 +27,7 @@
           class="inline-flex items-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors mt-1"
           :title="$t('plugin.repo_link')"
         >
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.726-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.835 2.807 1.305 3.492.998.108-.776.42-1.305.762-1.605-2.665-.305-5.467-1.334-5.467-5.93 0-1.31.468-2.382 1.235-3.22-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.3 1.23A11.51 11.51 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.652.242 2.873.118 3.176.77.838 1.233 1.91 1.233 3.22 0 4.61-2.807 5.624-5.479 5.92.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 21.795 24 17.298 24 12c0-6.63-5.37-12-12-12z" />
-          </svg>
+          <IconGithub class="w-4 h-4" />
         </a>
         <!-- Enable/disable toggle (installed mode) -->
         <button
@@ -84,10 +80,7 @@
           @click="!reloading && emit('reload')"
         >
           <span v-if="reloading" class="flex items-center">
-            <svg class="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+            <IconSpinner class="animate-spin h-3 w-3 mr-1" />
             {{ $t('plugin.reloading') }}
           </span>
           <span v-else>{{ $t('plugin.reload') }}</span>
@@ -116,10 +109,7 @@
           @click="!installed && !installing && emit('install')"
         >
           <span v-if="installing" class="flex items-center">
-            <svg class="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+            <IconSpinner class="animate-spin h-3 w-3 mr-1" />
             {{ $t('pluginStore.installing') }}
           </span>
           <span v-else>{{ installed ? $t('pluginStore.installed') : $t('pluginStore.install') }}</span>
@@ -131,6 +121,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { IconInfo, IconGithub, IconSpinner } from '@/components/icons'
 
 const props = withDefaults(defineProps<{
   id: string

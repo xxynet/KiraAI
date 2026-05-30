@@ -25,9 +25,7 @@
             :aria-label="$t('configuration.search_aria_label')"
             class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
           />
-          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         </div>
 
         <!-- Actions -->
@@ -40,9 +38,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             @click="undo"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2M3 10l4-4m-4 4l4 4" />
-            </svg>
+            <IconUndo class="w-4 h-4" />
           </button>
           <button
             type="button"
@@ -52,9 +48,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             @click="redo"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a5 5 0 00-5 5v2m15-7l-4-4m4 4l-4 4" />
-            </svg>
+            <IconRedo class="w-4 h-4" />
           </button>
           <button
             type="button"
@@ -63,9 +57,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             @click="loadConfig"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
+            <IconRefresh class="w-4 h-4" />
           </button>
           <div class="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
           <button
@@ -75,9 +67,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             @click="expandAll"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-            </svg>
+            <IconExpand class="w-4 h-4" />
           </button>
           <button
             type="button"
@@ -86,9 +76,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             @click="collapseAll"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M15 15h4.5m-4.5 0v4.5m0-4.5l5.5 5.5" />
-            </svg>
+            <IconCollapse class="w-4 h-4" />
           </button>
           <div class="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
           <button
@@ -97,9 +85,7 @@
             class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
             @click="handleSave"
           >
-            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-            </svg>
+            <IconCheck class="w-4 h-4 mr-1.5" />
             {{ $t('configuration.save') }}
           </button>
         </div>
@@ -124,7 +110,7 @@
         @keydown.space.prevent="toggleGroup(group.id)"
       >
         <div class="flex items-center space-x-3 min-w-0">
-          <span class="text-gray-500 dark:text-gray-400 shrink-0" v-html="group.iconSvg" />
+          <component :is="group.icon" class="w-5 h-5 text-gray-500 dark:text-gray-400 shrink-0" />
           <div class="min-w-0">
             <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center">
               <span v-html="highlightSearch($t(group.labelKey, group.labelFallback))" />
@@ -139,15 +125,10 @@
             <p class="text-xs text-gray-500 dark:text-gray-400 truncate" v-html="highlightSearch($t(group.descKey, group.descFallback))" />
           </div>
         </div>
-        <svg
+        <IconChevronDown
           class="w-5 h-5 text-gray-400 dark:text-gray-500 transform transition-transform duration-200 shrink-0 ml-2"
           :class="{ 'rotate-180': !collapsedGroups.has(group.id) }"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </div>
 
       <!-- Horizontal layout (model selects) -->
@@ -332,11 +313,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, reactive } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, reactive, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import {
+  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask,
+  IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
+} from '@/components/icons'
 
 const { t } = useI18n()
 
@@ -381,7 +366,7 @@ interface ConfigGroup {
   labelFallback: string
   descKey: string
   descFallback: string
-  iconSvg: string
+  icon: Component
   layout?: 'grid' | 'horizontal'
   fields: ConfigField[]
 }
@@ -393,7 +378,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Bot Settings',
     descKey: 'configuration.groups.bot_desc',
     descFallback: 'Core bot behavior parameters',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>',
+    icon: IconMonitor,
     fields: [
       { key: 'bot_config.bot.max_memory_length', labelKey: 'configuration.message.max_memory_length', labelFallback: 'Max Memory Length', hintKey: 'configuration.hints.max_memory_length', hintFallback: 'Maximum number of messages retained in context window', type: 'integer', default: 50, validation: { min: 1, max: 9999, required: true } },
       { key: 'bot_config.bot.max_message_interval', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum seconds to wait before processing buffered messages', type: 'float', default: 5, validation: { min: 0.1, max: 300, required: true } },
@@ -408,7 +393,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Agent Settings',
     descKey: 'configuration.groups.agent_desc',
     descFallback: 'Agent and tool execution parameters',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>',
+    icon: IconCog,
     fields: [
       { key: 'bot_config.agent.max_tool_loop', labelKey: 'configuration.message.max_tool_loop', labelFallback: 'Max Agent Loop', hintKey: 'configuration.hints.max_tool_loop', hintFallback: 'Maximum number of agent loop iterations per response', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
       { key: 'bot_config.agent.max_tool_calls_per_turn', labelKey: 'configuration.message.max_tool_calls_per_turn', labelFallback: 'Max Tool Calls Per Turn', hintKey: 'configuration.hints.max_tool_calls_per_turn', hintFallback: 'Maximum number of tool calls allowed in a single turn', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
@@ -421,7 +406,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Appearance',
     descKey: 'configuration.groups.selfie_desc',
     descFallback: 'Bot appearance reference settings',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>',
+    icon: IconImage,
     fields: [
       { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the bot appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
     ],
@@ -432,7 +417,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Cache Settings',
     descKey: 'configuration.groups.cache_desc',
     descFallback: 'Temporary file cache management parameters',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>',
+    icon: IconDatabase,
     fields: [
       { key: 'bot_config.cache.max_size_mb', labelKey: 'configuration.message.max_size_mb', labelFallback: 'Max Storage (MB)', hintKey: 'configuration.hints.max_size_mb', hintFallback: 'Maximum disk space allowed for the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 10240, required: true } },
       { key: 'bot_config.cache.max_files', labelKey: 'configuration.message.max_files', labelFallback: 'Max Files', hintKey: 'configuration.hints.max_files', hintFallback: 'Maximum number of files allowed in the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 100000, required: true } },
@@ -445,7 +430,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Logging Settings',
     descKey: 'configuration.groups.logging_desc',
     descFallback: 'Terminal and file logging configuration',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>',
+    icon: IconFileText,
     fields: [
       { key: 'logging.log_level', labelKey: 'configuration.message.log_level', labelFallback: 'Log Level', hintKey: 'configuration.hints.log_level', hintFallback: 'Minimum log level displayed in the terminal', type: 'select', default: 'INFO', selectOptions: [
         { value: 'DEBUG', label: 'DEBUG' },
@@ -464,7 +449,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Default Models',
     descKey: 'configuration.groups.models_desc',
     descFallback: 'Select default provider and model for each capability',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>',
+    icon: IconFlask,
     layout: 'horizontal',
     fields: [
       { key: 'models.default_llm', labelKey: 'configuration.model.default_llm', labelFallback: 'Default LLM', hintKey: 'configuration.model.default_llm_desc', hintFallback: 'Main chat model.', type: 'model_select', modelType: 'llm' },

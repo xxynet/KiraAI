@@ -11,7 +11,7 @@
       @keydown.space.prevent="toggle"
     >
       <div class="flex items-center space-x-3 min-w-0">
-        <span v-if="iconSvg" class="text-gray-500 dark:text-gray-400 shrink-0" v-html="iconSvg" />
+        <slot name="icon" />
         <div class="min-w-0">
           <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">
             {{ title }}
@@ -21,15 +21,10 @@
           </p>
         </div>
       </div>
-      <svg
+      <IconChevronDown
         class="w-5 h-5 text-gray-400 dark:text-gray-500 transform transition-transform duration-200 shrink-0 ml-2"
         :class="{ 'rotate-180': !isCollapsed }"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-      </svg>
+      />
     </div>
     <div
       class="collapsible-section-body border border-t-0 border-gray-200 dark:border-gray-700 rounded-b-lg bg-white dark:bg-gray-900 overflow-hidden transition-all duration-200"
@@ -44,11 +39,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { IconChevronDown } from '@/components/icons'
 
 const props = withDefaults(defineProps<{
   title: string
   description?: string
-  iconSvg?: string
   collapsed?: boolean
 }>(), {
   collapsed: false,
