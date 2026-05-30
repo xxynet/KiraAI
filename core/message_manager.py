@@ -402,7 +402,7 @@ class MessageProcessor:
                 session=event.session,
                 messages=[event.message]
             )
-            await self.handle_im_batch_message(batch_msg)
+            await self.event_bus.publish(batch_msg)
             return
 
         if event.process_strategy == "buffer":
