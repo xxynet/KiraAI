@@ -17,7 +17,6 @@ function resolveOptions(options: RestartOptions): Required<RestartOptions> {
 
 async function pollUntilReady(opts: Required<RestartOptions>): Promise<void> {
   for (let i = 0; i < opts.maxRetries; i++) {
-    await new Promise(r => setTimeout(r, opts.intervalMs))
     try {
       await apiClient.get(opts.probeEndpoint)
       window.location.reload()
@@ -25,6 +24,7 @@ async function pollUntilReady(opts: Required<RestartOptions>): Promise<void> {
     } catch {
       // server not ready yet
     }
+    await new Promise(r => setTimeout(r, opts.intervalMs))
   }
 
   throw new Error('Restart timed out')
