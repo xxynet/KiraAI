@@ -880,7 +880,7 @@ async function handleReloadPlugin(plugin: PluginItem) {
 
 async function openPluginConfig(plugin: PluginItem) {
   configPluginId.value = plugin.id
-  configPluginName.value = plugin.name || plugin.id
+  configPluginName.value = localize(plugin, 'display_name', plugin.name || plugin.id)
   pluginConfigSchema.value = null
   pluginConfigValues.value = {}
   configLoading.value = true
