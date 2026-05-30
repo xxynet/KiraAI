@@ -19,6 +19,7 @@ from webui.routes.base import RouteDefinition, Routes
 logger = get_logger("releases", "green")
 
 RESTART_EXIT_CODE = 42
+RESTART_DELAY_SECONDS = 0.5  # Allow HTTP response to flush before hard exit
 _install_lock = asyncio.Lock()
 
 
@@ -112,7 +113,7 @@ class ReleasesRoutes(Routes):
         await self.lifecycle.stop()
         if self.lifecycle.uvicorn_server:
             self.lifecycle.uvicorn_server.should_exit = True
-        asyncio.get_running_loop().call_later(0.5, os._exit, RESTART_EXIT_CODE)
+        asyncio.get_running_loop().call_later(RESTART_DELAY_SECONDS, os._exit, RESTART_EXIT_CODE)
         return {"status": "restarting"}
 
     @staticmethod
