@@ -412,6 +412,7 @@ const allGroups: ConfigGroup[] = [
     fields: [
       { key: 'bot_config.agent.max_tool_loop', labelKey: 'configuration.message.max_tool_loop', labelFallback: 'Max Agent Loop', hintKey: 'configuration.hints.max_tool_loop', hintFallback: 'Maximum number of agent loop iterations per response', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
       { key: 'bot_config.agent.max_tool_calls_per_turn', labelKey: 'configuration.message.max_tool_calls_per_turn', labelFallback: 'Max Tool Calls Per Turn', hintKey: 'configuration.hints.max_tool_calls_per_turn', hintFallback: 'Maximum number of tool calls allowed in a single turn', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
+      { key: 'bot_config.agent.tool_call_timeout', labelKey: 'configuration.message.tool_call_timeout', labelFallback: 'Tool Call Timeout (s)', hintKey: 'configuration.hints.tool_call_timeout', hintFallback: 'Maximum seconds to wait for a single tool call to complete, 0 means no timeout', type: 'float', default: 60, validation: { min: 0, max: 600 } },
     ],
   },
   {

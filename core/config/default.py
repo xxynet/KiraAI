@@ -11,7 +11,8 @@ DEFAULT_CONFIG = {
         },
         "agent": {
             "max_tool_loop": 5,
-            "max_tool_calls_per_turn": 5
+            "max_tool_calls_per_turn": 5,
+            "tool_call_timeout": 60
         },
         "selfie": {
             "path": None

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from asyncio import Semaphore
+from asyncio import Semaphore, wait_for, TimeoutError as AsyncTimeoutError
 from typing import Optional, Union, TYPE_CHECKING
 import copy
 import json
@@ -58,6 +58,14 @@ class LLMClient:
         except (TypeError, ValueError):
             max_tool_calls_per_turn = 5
 
+        tool_call_timeout = self.kira_config.get_config("bot_config.agent.tool_call_timeout")
+        try:
+            tool_call_timeout = float(tool_call_timeout)
+            if tool_call_timeout <= 0:
+                tool_call_timeout = None
+        except (TypeError, ValueError):
+            tool_call_timeout = 60
+
         for idx, tool_call in enumerate(resp.tool_calls):
             tool_call_id = tool_call.get("id")
             name = tool_call.get("function", {}).get("name")
@@ -89,14 +97,22 @@ class LLMClient:
             # Call corresponding Python function(s)
             if self.tools_functions and name in self.tools_functions:
                 try:
-                    result = await self.tools_functions[name](event, **args)
+                    coro = self.tools_functions[name](event, **args)
+                    result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
+                except AsyncTimeoutError:
+                    result = {"error": f"Tool '{name}' timed out after {tool_call_timeout}s"}
+                    tool_logger.error(f"Tool '{name}' timed out after {tool_call_timeout}s")
                 except Exception as e:
                     result = {"error": f"Failed to call tool '{name}': {e}"}
                     tool_logger.error(f"Failed to call tool '{name}': {e}")
             elif tool_set and name in tool_set:
                 try:
                     tool_inst = tool_set.get(name)
-                    result = await tool_inst.execute(event, **args)
+                    coro = tool_inst.execute(event, **args)
+                    result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
+                except AsyncTimeoutError:
+                    result = {"error": f"Tool '{name}' timed out after {tool_call_timeout}s"}
+                    tool_logger.error(f"Tool '{name}' timed out after {tool_call_timeout}s")
                 except Exception as e:
                     result = {"error": f"Failed to call tool '{name}': {e}"}
                     tool_logger.error(f"Failed to call tool '{name}': {e}")
