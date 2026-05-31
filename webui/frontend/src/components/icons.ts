@@ -11,6 +11,8 @@ function svgIcon(children: string, defaults: Record<string, any> = {}) {
             fill: 'none',
             stroke: 'currentColor',
             viewBox: '0 0 24 24',
+            'aria-hidden': 'true',
+            focusable: 'false',
             ...defaults,
             ...attrs,
             class: [defaults.class, attrs.class],
