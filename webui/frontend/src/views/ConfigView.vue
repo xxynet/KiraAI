@@ -92,9 +92,35 @@
       </div>
     </div>
 
+    <!-- Category Tabs -->
+    <div class="mb-4 border-b border-gray-200 dark:border-gray-700">
+      <nav class="flex space-x-0 -mb-px" role="tablist" :aria-label="$t('configuration.categories_aria', 'Configuration categories')">
+        <button
+          v-for="(tab, index) in visibleCategoryTabs"
+          :key="tab.id"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === tab.id"
+          class="relative flex items-center space-x-2 px-4 py-2.5 text-sm font-medium transition-colors duration-150 whitespace-nowrap border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          :class="activeTab === tab.id
+            ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+            : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'"
+          @click="switchTab(tab.id)"
+        >
+          <component :is="tab.icon" class="w-4 h-4" />
+          <span>{{ $t(tab.labelKey, tab.labelFallback) }}</span>
+          <span
+            v-if="tabHasModified(tab)"
+            class="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full ml-1"
+            aria-hidden="true"
+          ></span>
+        </button>
+      </nav>
+    </div>
+
     <!-- Groups -->
     <div
-      v-for="group in filteredAllGroups"
+      v-for="group in currentTabGroups"
       :key="group.id"
       class="mb-4"
     >
@@ -300,6 +326,15 @@
       </div>
     </div>
 
+    <!-- No results for search -->
+    <div
+      v-if="searchTerm && currentTabGroups.length === 0"
+      class="text-center py-12 text-gray-400 dark:text-gray-500"
+    >
+      <IconSearch class="w-8 h-8 mx-auto mb-2 opacity-50" />
+      <p class="text-sm">{{ $t('configuration.no_results', 'No matching settings found') }}</p>
+    </div>
+
     <!-- Bottom keyboard hints -->
     <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
       <p class="text-xs text-gray-400 dark:text-gray-500 text-center">
@@ -313,7 +348,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, reactive, type Component } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
@@ -329,6 +364,7 @@ const searchTerm = ref('')
 const saving = ref(false)
 const loading = ref(false)
 const searchInputRef = ref<HTMLInputElement | null>(null)
+const activeTab = ref('life')
 
 // Data
 const originalData = ref<Record<string, any>>({})
@@ -463,6 +499,20 @@ const allGroups: ConfigGroup[] = [
       { key: 'models.default_video', labelKey: 'configuration.model.default_video', labelFallback: 'Default Video', hintKey: 'configuration.model.default_video_desc', hintFallback: 'Video generation.', type: 'model_select', modelType: 'video' },
     ],
   },
+]
+
+interface CategoryTab {
+  id: string
+  labelKey: string
+  labelFallback: string
+  icon: Component
+  groupIds: string[]
+}
+
+const categoryTabs: CategoryTab[] = [
+  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['bot', 'agent', 'selfie'] },
+  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['cache', 'logging'] },
+  { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
 
 function escapeHtml(str: string): string {
@@ -676,6 +726,58 @@ const filteredAllGroups = computed(() => {
   )
 })
 
+// Category tabs
+const visibleCategoryTabs = computed(() => {
+  const tabs = [...categoryTabs]
+  if (searchTerm.value) {
+    const allFiltered = filteredAllGroups.value
+    const hasResultsOutsideCurrentTab = allFiltered.some(
+      g => !categoryTabs.find(t => t.id === activeTab.value)?.groupIds.includes(g.id)
+    )
+    if (hasResultsOutsideCurrentTab || currentTabGroups.value.length === 0) {
+      tabs.push({ id: 'all', labelKey: 'config_tab.all', labelFallback: '全部', icon: IconSearch, groupIds: allGroups.map(g => g.id) })
+    }
+  }
+  return tabs
+})
+
+const currentTabGroups = computed(() => {
+  if (activeTab.value === 'all') return filteredAllGroups.value
+  const tab = categoryTabs.find(t => t.id === activeTab.value)
+  if (!tab) return []
+  const groups = allGroups.filter(g => tab.groupIds.includes(g.id))
+  if (!searchTerm.value) return groups
+  return groups.filter(g => g.fields.some(f => fieldMatchesSearch(f)))
+})
+
+function switchTab(tabId: string) {
+  activeTab.value = tabId
+}
+
+function tabHasModified(tab: CategoryTab): boolean {
+  return allGroups
+    .filter(g => tab.groupIds.includes(g.id))
+    .some(g => g.fields.some(f => modifiedFields.has(f.key)))
+}
+
+// Auto-switch tab when searching if current tab has no results
+watch(searchTerm, (term) => {
+  if (!term) {
+    if (activeTab.value === 'all') activeTab.value = categoryTabs[0]?.id ?? 'life'
+    return
+  }
+  if (activeTab.value === 'all') return
+  const hasResults = currentTabGroups.value.length > 0
+  if (!hasResults) {
+    const firstMatch = categoryTabs.find(tab =>
+      allGroups
+        .filter(g => tab.groupIds.includes(g.id))
+        .some(g => g.fields.some(f => fieldMatchesSearch(f)))
+    )
+    if (firstMatch) activeTab.value = firstMatch.id
+  }
+})
+
 function getVisibleFields(group: ConfigGroup): ConfigField[] {
   if (!searchTerm.value) return group.fields
   return group.fields.filter(f => fieldMatchesSearch(f))
@@ -694,12 +796,11 @@ function toggleGroup(id: string) {
 }
 
 function expandAll() {
-  collapsedGroups.clear()
+  currentTabGroups.value.forEach(g => collapsedGroups.delete(g.id))
 }
 
 function collapseAll() {
-  collapsedGroups.clear()
-  allGroups.forEach(g => collapsedGroups.add(g.id))
+  currentTabGroups.value.forEach(g => collapsedGroups.add(g.id))
 }
 
 // Save
