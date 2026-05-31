@@ -28,5 +28,8 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-anyio
 
+      - name: Create data directories
+        run: mkdir -p data/config
+
       - name: Run tests
         run: python -m pytest tests/ -v
