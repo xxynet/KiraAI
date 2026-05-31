@@ -449,6 +449,12 @@ export default {
     load_failed: 'Failed to load stickers',
     retry: 'Retry',
   },
+  config_tab: {
+    life: 'Digital Life',
+    system: 'System',
+    models: 'Models',
+    all: 'All',
+  },
   configuration: {
     title: 'Configuration',
     save: 'Save',
@@ -481,6 +487,7 @@ export default {
     save_success: 'Configuration saved successfully',
     no_changes: 'No changes to save',
     load_failed: 'Failed to load configuration',
+    no_results: 'No matching settings found',
     groups: {
       bot: 'Bot Settings',
       bot_desc: 'Core bot behavior parameters',

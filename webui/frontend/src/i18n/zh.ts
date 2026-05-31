@@ -449,6 +449,12 @@ export default {
     load_failed: '加载表情包失败',
     retry: '重试',
   },
+  config_tab: {
+    life: '数字生命',
+    system: '系统',
+    models: '模型',
+    all: '全部',
+  },
   configuration: {
     title: '配置项',
     save: '保存',
@@ -481,6 +487,7 @@ export default {
     save_success: '配置保存成功',
     no_changes: '没有需要保存的修改',
     load_failed: '加载配置失败',
+    no_results: '未找到匹配的设置项',
     groups: {
       bot: '机器人设置',
       bot_desc: '核心机器人行为参数',
