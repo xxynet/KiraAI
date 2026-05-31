@@ -103,6 +103,7 @@ export default {
     modal_cancel: '取消',
     modal_save: '保存',
     select_provider: '选择一个提供商进行配置',
+    go_to_model_config: '配置默认模型',
     schema_error: '加载配置架构出错',
     schema_loading: '加载配置中...',
     schema_none: '无需配置',

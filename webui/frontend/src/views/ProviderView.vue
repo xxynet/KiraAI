@@ -47,6 +47,12 @@
         <div class="text-center">
           <IconCpu class="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p class="text-gray-500">{{ $t('provider.select_provider') }}</p>
+          <button
+            class="mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            @click="goToModelConfig"
+          >
+            {{ $t('provider.go_to_model_config') }}
+          </button>
         </div>
       </div>
 
@@ -333,6 +339,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
@@ -349,8 +356,13 @@ import Modal from '@/components/common/Modal.vue'
 import { IconClose, IconPlus, IconCpu, IconChevronDown, IconRefresh, IconSpinner, IconPulse, IconSliders, IconInfo } from '@/components/icons'
 import type { ProviderResponse } from '@/types'
 
+const router = useRouter()
 const { t } = useI18n()
 const { localize } = useLocalized()
+
+function goToModelConfig() {
+  router.push('/configuration?tab=models')
+}
 
 const configFormRef = ref<InstanceType<typeof ConfigForm>>()
 const createConfigFormRef = ref<InstanceType<typeof ConfigForm>>()
