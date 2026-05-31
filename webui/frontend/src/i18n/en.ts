@@ -103,6 +103,7 @@ export default {
     modal_cancel: 'Cancel',
     modal_save: 'Save',
     select_provider: 'Select a provider to configure',
+    go_to_model_config: 'Configure default models',
     schema_error: 'Error loading configuration schema',
     schema_loading: 'Loading configuration...',
     schema_none: 'No configuration required',

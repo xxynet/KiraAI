@@ -350,6 +350,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -359,6 +360,7 @@ import {
 } from '@/components/icons'
 
 const { t } = useI18n()
+const route = useRoute()
 
 const searchTerm = ref('')
 const saving = ref(false)
@@ -936,6 +938,11 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
+  // Support ?tab= query parameter to switch to a specific category tab
+  const queryTab = route.query.tab as string | undefined
+  if (queryTab && categoryTabs.some(t => t.id === queryTab)) {
+    activeTab.value = queryTab
+  }
   await loadConfig()
 })
 
