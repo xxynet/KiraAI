@@ -7,18 +7,14 @@
           {{ $t('pages.provider.title') }}
         </h3>
         <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" @click="openCreateDialog">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-          </svg>
+          <IconPlus class="w-5 h-5" />
           <span class="ml-1">{{ $t('provider.add_short') }}</span>
         </button>
       </div>
 
       <div v-if="providers.length === 0" class="flex justify-center items-center py-12 flex-1">
         <div class="text-center">
-          <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-          </svg>
+          <IconCpu class="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p class="text-gray-500 text-sm">{{ $t('provider.no_providers') }}</p>
         </div>
       </div>
@@ -32,9 +28,7 @@
             @click="selectProvider(provider.id)"
           >
             <div class="mr-3">
-              <svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-              </svg>
+              <IconCpu class="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </div>
             <div class="flex-1 min-w-0">
               <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ provider.name }}</div>
@@ -51,9 +45,7 @@
     <div class="w-2/3 bg-white rounded-lg shadow p-6 flex flex-col">
       <div v-if="!selectedId" class="flex justify-center items-center flex-1">
         <div class="text-center">
-          <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-          </svg>
+          <IconCpu class="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p class="text-gray-500">{{ $t('provider.select_provider') }}</p>
         </div>
       </div>
@@ -103,25 +95,15 @@
               @click="toggleModelGroup(modelType)"
             >
               <div class="flex items-center">
-                <svg
-                  class="w-5 h-5 text-gray-500 dark:text-gray-400 mr-2 transition-transform duration-200"
-                  :class="{ 'rotate-180': activeModelGroups.includes(modelType) }"
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                </svg>
+                <IconChevronDown class="w-5 h-5 text-gray-500 dark:text-gray-400 mr-2 transition-transform duration-200" :class="{ 'rotate-180': activeModelGroups.includes(modelType) }" />
                 <span class="font-medium text-gray-700 dark:text-gray-200">{{ $t(`provider.model_group_${modelType}`) }}</span>
               </div>
               <div class="flex items-center gap-1">
                 <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors" @click.stop="openAddModelDialog(modelType)">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                  </svg>
+                  <IconPlus class="w-5 h-5" />
                 </button>
                 <button class="p-1 text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors" :title="$t('provider.fetch_remote_models')" @click.stop="openFetchRemoteModels(modelType)">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                  </svg>
+                  <IconRefresh class="w-5 h-5" />
                 </button>
               </div>
             </div>
@@ -140,23 +122,14 @@
                       :title="$t('provider.health_check')"
                       @click="handleHealthCheck(modelType, String(modelId))"
                     >
-                      <svg v-if="healthCheckingKey === `${modelType}:${String(modelId)}`" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                      </svg>
-                      <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h4l3-9 4 18 3-9h4"></path>
-                      </svg>
+                      <IconSpinner v-if="healthCheckingKey === `${modelType}:${String(modelId)}`" class="w-5 h-5 animate-spin" />
+                      <IconPulse v-else class="w-5 h-5" />
                     </button>
                     <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="editModel(modelType, String(modelId), modelConfig)">
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
-                      </svg>
+                      <IconSliders class="w-5 h-5" />
                     </button>
                     <button class="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="removeModel(modelType, String(modelId))">
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                      </svg>
+                      <IconClose class="w-5 h-5" />
                     </button>
                   </div>
                 </div>
@@ -169,9 +142,7 @@
                   + {{ $t('provider.add_model') }}
                 </button>
                 <button class="px-3 py-1.5 text-sm border border-green-300 dark:border-green-600 rounded-lg text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors flex items-center" @click="openFetchRemoteModels(modelType)">
-                  <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                  </svg>
+                  <IconRefresh class="w-4 h-4 mr-1" />
                   {{ $t('provider.fetch_remote_models') }}
                 </button>
               </div>
@@ -187,9 +158,7 @@
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('provider.add') }}</h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="createDialogVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
@@ -223,9 +192,7 @@
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ modelEditMode ? $t('provider.edit_model') : $t('provider.add_model') }}</h3>
           <button class="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300" @click="modelDialogVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
@@ -238,9 +205,7 @@
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ $t('provider.model_id') }}</label>
               <div class="relative ml-1 group">
                 <button type="button" class="p-0.5" :aria-label="$t('provider.model_id_tooltip')">
-                  <svg class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                  </svg>
+                  <IconInfo class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help" />
                 </button>
                 <div role="tooltip" class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
                   {{ $t('provider.model_id_tooltip') }}
@@ -286,18 +251,13 @@
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('provider.fetch_remote_models') }}</h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="remoteModelDialogVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-hidden flex flex-col">
           <!-- Loading -->
           <div v-if="remoteModelsLoading" class="flex justify-center items-center py-12">
-            <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
+            <IconSpinner class="animate-spin h-8 w-8 text-blue-600" />
             <span class="ml-3 text-gray-600 dark:text-gray-400">{{ $t('provider.fetch_remote_loading') }}</span>
           </div>
           <!-- Empty -->
@@ -386,6 +346,7 @@ import ConfigForm from '@/components/common/ConfigForm.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
+import { IconClose, IconPlus, IconCpu, IconChevronDown, IconRefresh, IconSpinner, IconPulse, IconSliders, IconInfo } from '@/components/icons'
 import type { ProviderResponse } from '@/types'
 
 const { t } = useI18n()

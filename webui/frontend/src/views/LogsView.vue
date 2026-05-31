@@ -8,18 +8,14 @@
           class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center"
           @click="clearLogs"
         >
-          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-          </svg>
+          <IconTrash class="w-5 h-5 mr-2" />
           <span>{{ $t('logs.clear') }}</span>
         </button>
         <button
           class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
           @click="refreshLogs"
         >
-          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-          </svg>
+          <IconRefresh class="w-5 h-5 mr-2" />
           <span>{{ $t('logs.refresh') }}</span>
         </button>
       </div>
@@ -38,9 +34,7 @@
         class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center whitespace-nowrap"
         @click="downloadLogs"
       >
-        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-        </svg>
+        <IconDownload class="w-5 h-5 mr-2" />
         <span>{{ $t('logs.download') }}</span>
       </button>
     </div>
@@ -74,6 +68,7 @@ import { useSSE } from '@/composables/useSSE'
 import { getLogHistory, getLogConfig } from '@/api/logs'
 import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
 import { notify } from '@/composables/useNotification'
+import { IconTrash, IconRefresh, IconDownload } from '@/components/icons'
 import type { LogEntry } from '@/types'
 
 const { t } = useI18n()

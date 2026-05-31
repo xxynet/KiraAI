@@ -20,9 +20,7 @@
         {{ selectedLabel || placeholder }}
       </div>
       <div class="custom-select-arrow" :class="{ active: isOpen }">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
+        <IconChevronDown width="20" height="20" />
       </div>
     </div>
 
@@ -55,6 +53,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
+import { IconChevronDown } from '@/components/icons'
 
 interface Option {
   value: string

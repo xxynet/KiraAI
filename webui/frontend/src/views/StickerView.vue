@@ -9,18 +9,14 @@
         class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
         @click="openCreateDialog"
       >
-        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-        </svg>
+        <IconPlus class="w-5 h-5 mr-2" />
         <span>{{ $t('sticker.add') }}</span>
       </button>
     </div>
 
     <!-- Error State -->
     <div v-if="loadError" class="flex flex-col justify-center items-center py-12">
-      <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-      </svg>
+      <IconWarning class="w-16 h-16 text-gray-400 mx-auto mb-4" />
       <p class="text-gray-500">{{ $t('sticker.load_failed') }}</p>
       <button
         class="mt-3 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
@@ -33,9 +29,7 @@
     <!-- Empty State -->
     <div v-else-if="stickers.length === 0" class="flex justify-center items-center py-12">
       <div class="text-center">
-        <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-        </svg>
+        <IconImage class="w-16 h-16 text-gray-400 mx-auto mb-4" />
         <p class="text-gray-500">{{ $t('sticker.no_stickers') }}</p>
       </div>
     </div>
@@ -87,9 +81,7 @@
             {{ editMode ? $t('sticker.modal_title_edit') : $t('sticker.modal_title_add') }}
           </h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="dialogVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
@@ -179,6 +171,7 @@ import {
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import ImageDropzone from '@/components/common/ImageDropzone.vue'
+import { IconPlus, IconWarning, IconImage, IconClose } from '@/components/icons'
 import type { StickerItem } from '@/types'
 
 const { t } = useI18n()

@@ -9,9 +9,7 @@
         class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
         @click="openCreateDialog"
       >
-        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-        </svg>
+        <IconPlus class="w-5 h-5 mr-2" />
         <span>{{ $t('persona.add') }}</span>
       </button>
     </div>
@@ -19,9 +17,7 @@
     <!-- Empty State -->
     <div v-if="personas.length === 0" class="flex justify-center items-center py-12">
       <div class="text-center">
-        <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-        </svg>
+        <IconUser class="w-16 h-16 text-gray-400 mx-auto mb-4" />
         <p class="text-gray-500">{{ $t('persona.no_personas') }}</p>
       </div>
     </div>
@@ -74,9 +70,7 @@
             {{ editMode ? $t('persona.edit_title') : $t('persona.modal_title') }}
           </h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="dialogVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
@@ -152,6 +146,7 @@ import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
+import { IconPlus, IconUser, IconClose } from '@/components/icons'
 import type { PersonaResponse } from '@/types'
 
 const { t } = useI18n()
