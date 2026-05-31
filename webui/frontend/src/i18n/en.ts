@@ -488,6 +488,7 @@ export default {
     no_changes: 'No changes to save',
     load_failed: 'Failed to load configuration',
     no_results: 'No matching settings found',
+    categories_aria: 'Configuration categories',
     groups: {
       bot: 'Bot Settings',
       bot_desc: 'Core bot behavior parameters',

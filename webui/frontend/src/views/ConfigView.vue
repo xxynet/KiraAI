@@ -94,7 +94,7 @@
 
     <!-- Category Tabs -->
     <div class="mb-4 border-b border-gray-200 dark:border-gray-700">
-      <nav class="flex space-x-0 -mb-px" role="tablist" aria-label="Configuration categories">
+      <nav class="flex space-x-0 -mb-px" role="tablist" :aria-label="$t('configuration.categories_aria', 'Configuration categories')">
         <button
           v-for="(tab, index) in visibleCategoryTabs"
           :key="tab.id"
@@ -762,7 +762,10 @@ function tabHasModified(tab: CategoryTab): boolean {
 
 // Auto-switch tab when searching if current tab has no results
 watch(searchTerm, (term) => {
-  if (!term) return
+  if (!term) {
+    if (activeTab.value === 'all') activeTab.value = categoryTabs[0]?.id ?? 'life'
+    return
+  }
   if (activeTab.value === 'all') return
   const hasResults = currentTabGroups.value.length > 0
   if (!hasResults) {

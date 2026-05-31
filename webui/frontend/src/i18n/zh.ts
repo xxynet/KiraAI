@@ -488,6 +488,7 @@ export default {
     no_changes: '没有需要保存的修改',
     load_failed: '加载配置失败',
     no_results: '未找到匹配的设置项',
+    categories_aria: '配置分类',
     groups: {
       bot: '机器人设置',
       bot_desc: '核心机器人行为参数',
