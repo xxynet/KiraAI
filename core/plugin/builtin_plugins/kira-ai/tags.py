@@ -55,16 +55,37 @@ class AtTag(BaseTag):
 
 class ImgTag(BaseTag):
     name = "img"
-    description = "<img>prompt for image generator</img> # 用于发送图片。请勿滥用，仅在用户请求看照片时使用，需要详细的绘画提示词。"
+    description = "<img path=\"image_path(s)\">prompt for image generator</img> # 用于发送图片。请勿滥用，仅在用户请求看照片时使用，需要详细的绘画提示词。可选属性 path 指定参考图片路径（支持绝对路径、相对路径 data/files/*、data/temp/*），多张图片用英文逗号分隔，使用 path 属性时将基于参考图片进行图生图。"
 
     def __init__(self, ctx):
         super().__init__(ctx=ctx)
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
-        img_res = await self.ctx.llm_api.generate_img(value)
-        if img_res:
-            return [img_res]
-        return []
+        path = kwargs.get("path")
+        if path:
+            # image-to-image mode
+            ref_images = []
+            for p in path.split(","):
+                p = p.strip()
+                if not p:
+                    continue
+                ref_file = Path(p) if Path(p).is_absolute() else get_data_path() / p
+                if not ref_file.is_file():
+                    message_logger.warning(f"Image reference not found: {ref_file}, skipped")
+                    continue
+                img_extension = ref_file.suffix.lstrip(".")
+                bs64 = await image_to_base64(str(ref_file))
+                ref_images.append(Image(image=bs64, name=p, mime=f"image/{img_extension}"))
+            if not ref_images:
+                message_logger.warning("No valid reference images found, falling back to text-to-image")
+                img_res = await self.ctx.llm_api.generate_img(value)
+                return [img_res] if img_res else []
+            img_res = await self.ctx.llm_api.image_to_image(value, image=ref_images)
+            return [img_res] if img_res else []
+        else:
+            # text-to-image mode (original behavior)
+            img_res = await self.ctx.llm_api.generate_img(value)
+            return [img_res] if img_res else []
 
 
 class VideoTag(BaseTag):

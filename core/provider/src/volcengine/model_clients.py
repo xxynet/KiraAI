@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import time
 import httpx
-from typing import Optional
+from typing import Optional, Union
 
 from core.provider import ModelInfo, ImageModelClient, VideoModelClient, EmbeddingModelClient
 from core.logging_manager import get_logger
@@ -38,14 +38,10 @@ class VolcengineImageClient(ImageModelClient):
 
         return Image(image=images_response.data[0].url)
 
-    async def image_to_image(self, prompt: str, image: Image) -> Image:
-        # if url:
-        #     ref_img = url
-        # elif base64:
-        #     ref_img = base64
-        # else:
-        #     ref_img = None
-        ref_img = await image.to_data_url()
+    async def image_to_image(self, prompt: str, image: Union[Image, list[Image]]) -> Image:
+        if isinstance(image, Image):
+            image = [image]
+        ref_imgs = [await img.to_data_url() for img in image]
 
         client = AsyncOpenAI(
             base_url=self.model.provider_config.get("base_url", "https://ark.cn-beijing.volces.com/api/v3"),
@@ -58,7 +54,7 @@ class VolcengineImageClient(ImageModelClient):
             size=image_size if image_size else None,
             response_format="url",
             extra_body={
-                "image": ref_img,
+                "image": ref_imgs,
                 "watermark": False
             }
         )

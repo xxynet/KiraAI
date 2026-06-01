@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import re
 import time
-from typing import Optional
+from typing import Optional, Union
 
 from core.provider import ModelInfo
 from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
@@ -232,7 +232,9 @@ class OpenAIImageClient(ImageModelClient):
             ("http://", "https://")
         )
 
-    async def image_to_image(self, prompt: str, image: Image) -> Image:
+    async def image_to_image(self, prompt: str, image: Union[Image, list[Image]]) -> Image:
+        if isinstance(image, Image):
+            image = [image]
         endpoint = self.model.model_config.get("endpoint", "v1/image")
         if endpoint == "v1/chat":
             return await self._image_to_image_via_chat(prompt, image)
@@ -240,18 +242,17 @@ class OpenAIImageClient(ImageModelClient):
 
     # ──────── image-to-image Mode A: /v1/images/generations ────────
 
-    async def _image_to_image_via_generations(self, prompt: str, image: Image) -> Image:
+    async def _image_to_image_via_generations(self, prompt: str, images: list[Image]) -> Image:
         client = self._build_client()
         image_size = self.model.model_config.get("size", None)
-        # Convert the input image to a data URL that the API can consume
-        image_data_url = await image.to_data_url()
+        image_data_urls = [await img.to_data_url() for img in images]
         try:
             images_response = await client.images.generate(
                 model=self.model.model_id,
                 prompt=prompt,
                 size=image_size if image_size else None,
                 response_format="url",
-                extra_body={"watermark": False, "image": [image_data_url]},
+                extra_body={"watermark": False, "image": image_data_urls},
             )
             return Image(image=images_response.data[0].url)
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
@@ -263,16 +264,13 @@ class OpenAIImageClient(ImageModelClient):
 
     # ──────── image-to-image Mode B: /v1/chat/completions ────────
 
-    async def _image_to_image_via_chat(self, prompt: str, image: Image) -> Image:
+    async def _image_to_image_via_chat(self, prompt: str, images: list[Image]) -> Image:
         client = self._build_client()
-        image_data_url = await image.to_data_url()
-        messages = [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": image_data_url}},
-            ],
-        }]
+        content = [{"type": "text", "text": prompt}]
+        for img in images:
+            image_data_url = await img.to_data_url()
+            content.append({"type": "image_url", "image_url": {"url": image_data_url}})
+        messages = [{"role": "user", "content": content}]
         try:
             response = await client.chat.completions.create(
                 model=self.model.model_id,
