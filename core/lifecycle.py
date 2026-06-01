@@ -86,11 +86,18 @@ class KiraLifecycle:
                 logger.error(f"Scheduled task '{task.get_name()}' failed: {result}")
 
     def _apply_network_env(self):
-        proxy = (self.kira_config.get("network") or {}).get("http_proxy")
+        network = self.kira_config.get("network") or {}
+        proxy = network.get("http_proxy")
         if proxy:
-            os.environ["HTTP_PROXY"] = proxy
-            os.environ["HTTPS_PROXY"] = proxy
-            logger.info(f"HTTP proxy set from config: {proxy}")
+            if not proxy.startswith(("http://", "https://")):
+                logger.warning(f"Ignoring invalid http_proxy (must start with http:// or https://): {proxy}")
+            else:
+                os.environ["HTTP_PROXY"] = proxy
+                os.environ["HTTPS_PROXY"] = proxy
+                logger.info(f"HTTP proxy set from config: {proxy}")
+        mirror = network.get("pypi_mirror")
+        if mirror and not mirror.startswith(("http://", "https://")):
+            logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {mirror}")
 
     async def init_and_run_system(self):
         """主函数：负责启动和初始化各个模块"""

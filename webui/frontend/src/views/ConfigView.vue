@@ -359,7 +359,7 @@ import {
   IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
 } from '@/components/icons'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 
 const searchTerm = ref('')
@@ -395,7 +395,7 @@ interface ConfigField {
   default?: any
   modelType?: string
   selectOptions?: { value: string; label: string }[]
-  validation?: { min?: number; max?: number; required?: boolean }
+  validation?: { min?: number; max?: number; required?: boolean; pattern?: RegExp; patternMessageKey?: string }
 }
 
 interface ConfigGroup {
@@ -457,8 +457,8 @@ const allGroups: ConfigGroup[] = [
     descFallback: 'Network and package source configuration',
     icon: IconGlobe,
     fields: [
-      { key: 'network.pypi_mirror', labelKey: 'configuration.message.pypi_mirror', labelFallback: 'PyPI Mirror', hintKey: 'configuration.hints.pypi_mirror', hintFallback: 'Custom PyPI package index URL for plugin dependency installation. Leave empty to use the default', type: 'string', default: '' },
-      { key: 'network.http_proxy', labelKey: 'configuration.message.http_proxy', labelFallback: 'HTTP Proxy', hintKey: 'configuration.hints.http_proxy', hintFallback: 'HTTP proxy address, sets HTTP_PROXY and HTTPS_PROXY environment variables for all network requests. Leave empty to use system default', type: 'string', default: '' },
+      { key: 'network.pypi_mirror', labelKey: 'configuration.message.pypi_mirror', labelFallback: 'PyPI Mirror', hintKey: 'configuration.hints.pypi_mirror', hintFallback: 'Custom PyPI package index URL for plugin dependency installation. Leave empty to use the default', type: 'string', default: '', validation: { pattern: /^https?:\/\/.+/, patternMessageKey: 'configuration.validation.url_invalid' } },
+      { key: 'network.http_proxy', labelKey: 'configuration.message.http_proxy', labelFallback: 'HTTP Proxy', hintKey: 'configuration.hints.http_proxy', hintFallback: 'HTTP proxy address, sets HTTP_PROXY and HTTPS_PROXY environment variables. Restart required to take effect. Leave empty to use system default', type: 'string', default: '', validation: { pattern: /^https?:\/\/.+/, patternMessageKey: 'configuration.validation.url_invalid' } },
     ],
   },
   {
@@ -717,6 +717,10 @@ function validateField(key: string) {
     validationErrors.value[key] = t('configuration.validation.max', { max: v.max })
     return
   }
+  if (v.pattern && value && !v.pattern.test(String(value))) {
+    validationErrors.value[key] = v.patternMessageKey ? t(v.patternMessageKey) : t('configuration.validation.url_invalid')
+    return
+  }
   delete validationErrors.value[key]
 }
 
@@ -789,6 +793,13 @@ watch(searchTerm, (term) => {
         .some(g => g.fields.some(f => fieldMatchesSearch(f)))
     )
     if (firstMatch) activeTab.value = firstMatch.id
+  }
+})
+
+// Re-validate fields with errors when locale changes
+watch(locale, () => {
+  for (const key of Object.keys(validationErrors.value)) {
+    validateField(key)
   }
 })
 

@@ -122,7 +122,10 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
     logger.info(f"Installing requirements for plugin at {plugin_dir}")
     pip_cmd = [sys.executable, "-m", "pip", "install", "-r", str(req_file)]
     if pypi_mirror:
-        pip_cmd.extend(["-i", pypi_mirror])
+        if pypi_mirror.startswith(("http://", "https://")):
+            pip_cmd.extend(["-i", pypi_mirror])
+        else:
+            logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {pypi_mirror}")
     try:
         proc = await asyncio.create_subprocess_exec(
             *pip_cmd,

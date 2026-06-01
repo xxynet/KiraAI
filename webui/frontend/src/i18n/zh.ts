@@ -523,7 +523,7 @@ export default {
       log_file_path: '日志文件路径，留空使用默认路径',
       log_file_max_size: '单个日志文件的最大体积（MB）',
       pypi_mirror: '自定义 PyPI 包索引 URL，用于安装插件依赖。留空使用默认源',
-      http_proxy: 'HTTP 代理地址，设置 HTTP_PROXY 和 HTTPS_PROXY 环境变量，影响所有网络请求。留空使用系统默认',
+      http_proxy: 'HTTP 代理地址，设置 HTTP_PROXY 和 HTTPS_PROXY 环境变量，重启程序后生效。留空使用系统默认',
     },
     validation: {
       required: '此字段为必填项',
@@ -532,6 +532,7 @@ export default {
       min: '最小值为',
       max: '最大值为',
       has_errors: '请先修复验证错误',
+      url_invalid: '请输入有效的 URL，以 http:// 或 https:// 开头',
     },
     tab_message: '消息',
     tab_model: '模型',
