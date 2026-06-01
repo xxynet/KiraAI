@@ -355,7 +355,7 @@ import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import {
-  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask,
+  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe,
   IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
 } from '@/components/icons'
 
@@ -450,6 +450,17 @@ const allGroups: ConfigGroup[] = [
     ],
   },
   {
+    id: 'network',
+    labelKey: 'configuration.groups.network',
+    labelFallback: 'Network Settings',
+    descKey: 'configuration.groups.network_desc',
+    descFallback: 'Network and package source configuration',
+    icon: IconGlobe,
+    fields: [
+      { key: 'network.pypi_mirror', labelKey: 'configuration.message.pypi_mirror', labelFallback: 'PyPI Mirror', hintKey: 'configuration.hints.pypi_mirror', hintFallback: 'Custom PyPI package index URL for plugin dependency installation. Leave empty to use the default', type: 'string', default: '' },
+    ],
+  },
+  {
     id: 'cache',
     labelKey: 'configuration.groups.cache',
     labelFallback: 'Cache Settings',
@@ -513,7 +524,7 @@ interface CategoryTab {
 
 const categoryTabs: CategoryTab[] = [
   { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['bot', 'agent', 'selfie'] },
-  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['cache', 'logging'] },
+  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['network', 'cache', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
 

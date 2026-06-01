@@ -503,6 +503,8 @@ export default {
       cache_desc: 'Temporary file cache management parameters',
       logging: 'Logging Settings',
       logging_desc: 'Terminal and file logging configuration',
+      network: 'Network Settings',
+      network_desc: 'Network and package source configuration',
     },
     hints: {
       max_memory_length: 'Maximum number of messages retained in context window',
@@ -520,6 +522,7 @@ export default {
       log_level: 'Minimum log level displayed in the terminal',
       log_file_path: 'Path to the log file, leave empty for default',
       log_file_max_size: 'Maximum size of a single log file in megabytes',
+      pypi_mirror: 'Custom PyPI package index URL for plugin dependency installation. Leave empty to use the default',
     },
     validation: {
       required: 'This field is required',
@@ -551,6 +554,7 @@ export default {
       log_level: 'Log Level',
       log_file_path: 'Log File Path',
       log_file_max_size: 'Max Log File Size (MB)',
+      pypi_mirror: 'PyPI Mirror',
     },
     model: {
       section_title: 'Default Models',
