@@ -66,10 +66,15 @@ class ImgTag(BaseTag):
             # image-to-image mode
             ref_images = []
             for p in path.split(","):
-                p = p.strip()
+                p = p.strip().replace("\\", "/")
                 if not p:
                     continue
-                ref_file = Path(p) if Path(p).is_absolute() else get_data_path() / p
+                if os.path.isabs(p):
+                    ref_file = Path(p)
+                elif p.startswith("data/"):
+                    ref_file = get_data_path() / p.removeprefix("data/")
+                else:
+                    ref_file = get_data_path() / p
                 if not ref_file.is_file():
                     message_logger.warning(f"Image reference not found: {ref_file}, skipped")
                     continue
@@ -159,7 +164,13 @@ class SelfieTag(BaseTag):
             if not ref_img_path:
                 message_logger.warning("Selfie reference image not set, skipped generation")
                 return []
-            ref_file = Path(ref_img_path) if Path(ref_img_path).is_absolute() else get_data_path() / ref_img_path
+            ref_img_path = ref_img_path.replace("\\", "/")
+            if os.path.isabs(ref_img_path):
+                ref_file = Path(ref_img_path)
+            elif ref_img_path.startswith("data/"):
+                ref_file = get_data_path() / ref_img_path.removeprefix("data/")
+            else:
+                ref_file = get_data_path() / ref_img_path
             if ref_file.is_file():
                 img_extension = ref_file.suffix.lstrip(".")
                 bs64 = await image_to_base64(str(ref_file))
@@ -193,11 +204,13 @@ def build_file_tag():
             if not file_type or file_type not in ("image", "record", "video"):
                 file_type = "file"
 
+            value = value.replace("\\", "/")
+
             # Absolute path
             if os.path.exists(value):
                 file_string = value
                 name = Path(value).name
-            elif value.startswith(("data/files/", "data/temp/")):
+            elif value.startswith("data/"):
                 abs_path = str(get_data_path() / value.removeprefix("data/"))
                 file_string = abs_path
                 name = Path(abs_path).name
