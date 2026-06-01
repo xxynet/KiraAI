@@ -180,7 +180,7 @@ class LLMClient:
         except Exception as e:
             logger.error(f"Failed to generate image with text: {e}")
 
-    async def image_to_image(self, prompt, image: Image) -> Image:
+    async def image_to_image(self, prompt, image: Union[Image, list[Image]]) -> Image:
         image_model = self.provider_mgr.get_default_image()
         provider_name = image_model.model.provider_name
         model_id = image_model.model.model_id

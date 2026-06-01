@@ -1,7 +1,7 @@
 from abc import abstractmethod, ABC
 from enum import Enum, auto
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Union
 import asyncio
 
 from .llm_model import LLMRequest, LLMResponse, RerankResult
@@ -105,7 +105,7 @@ class ImageModelClient(BaseModelClient):
     async def text_to_image(self, prompt: str) -> Image:
         pass
 
-    async def image_to_image(self, prompt: str, image: Image) -> Image:
+    async def image_to_image(self, prompt: str, image: Union[Image, list[Image]]) -> Image:
         pass
 
 

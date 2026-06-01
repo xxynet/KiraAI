@@ -105,6 +105,11 @@ format_tmpl = """\
     <img>an island near sea, with seagulls, moon shining over the sea</img>
 </msg>
 
+基于参考图片生图示例（支持多张参考图，逗号分隔）：
+<msg>
+    <img path="data/files/ref.png">make the character wear a red hat</img>
+</msg>
+
 错误示例（绝对不要这样写）：
 - 裸文本：你好啊（缺少<msg><text>包裹，消息不会发出）
 - 嵌套标签：<msg><text>hello<emoji>21</emoji></text></msg>（emoji在text内部，会解析失败）
