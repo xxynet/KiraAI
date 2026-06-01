@@ -1,5 +1,6 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import base64
+import logging
 import time
 from typing import Optional
 
@@ -7,6 +8,8 @@ from core.provider import ModelInfo
 from core.provider import LLMModelClient, TTSModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.chat.message_elements import Record
+
+logger = logging.getLogger(__name__)
 
 class OpenAICompatibleLLMClient(LLMModelClient):
     def __init__(self, model: ModelInfo):
@@ -91,15 +94,33 @@ class OpenAICompatibleTTSClient(TTSModelClient):
             default_headers=default_headers
         )
 
-        async with client.audio.speech.with_streaming_response.create(
-                model=self.model.model_id,
-                voice=self.model.model_config.get("voice_name", ""),
-                input=text,
-                response_format="mp3"
-        ) as response:
-            audio_bytes = b""
-            async for chunk in response.iter_bytes():
-                audio_bytes += chunk
+        model_config = self.model.model_config if self.model.model_config else {}
+        section_advanced = model_config.get("section_advanced") or {}
+
+        request_kwargs = dict(
+            model=self.model.model_id,
+            voice=model_config.get("voice_name", ""),
+            input=text,
+            response_format=section_advanced.get("response_format", "mp3"),
+        )
+
+        speed = section_advanced.get("speed")
+        if speed is not None:
+            request_kwargs["speed"] = speed
+
+        # Pass through any extra parameters from config
+        extra_params = section_advanced.get("extra_params")
+        if isinstance(extra_params, dict):
+            request_kwargs.update(extra_params)
+
+        try:
+            async with client.audio.speech.with_streaming_response.create(**request_kwargs) as response:
+                audio_bytes = b""
+                async for chunk in response.iter_bytes():
+                    audio_bytes += chunk
+        except Exception as e:
+            logger.error(f"TTS generation failed: {e}")
+            raise
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str)
