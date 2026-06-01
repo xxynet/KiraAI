@@ -61,6 +61,8 @@ class ConfigRoutes(Routes):
                 "bot_config": bot_config,
                 "models": models,
                 "logging": config.get("logging", {}),
+                "adapters": config.get("adapters", {}),
+                "network": config.get("network", {}),
             },
             "providers": providers,
             "provider_models": provider_models,
@@ -73,6 +75,8 @@ class ConfigRoutes(Routes):
         bot_config = payload.get("bot_config")
         models = payload.get("models")
         logging_config = payload.get("logging")
+        adapters_config = payload.get("adapters")
+        network_config = payload.get("network")
         updated = False
         if isinstance(bot_config, dict):
             config["bot_config"] = bot_config
@@ -96,8 +100,16 @@ class ConfigRoutes(Routes):
                     logger.info("Logging configuration applied")
                 except Exception as e:
                     logger.error(f"Failed to apply logging config, not saving: {e}")
+        if isinstance(adapters_config, dict):
+            config["adapters"] = adapters_config
+            updated = True
+        if isinstance(network_config, dict):
+            config["network"] = network_config
+            updated = True
         if updated:
             config.save_config()
+            if isinstance(network_config, dict) and self.lifecycle:
+                self.lifecycle._apply_network_env()
             logger.info("Configuration saved")
         return {
             "status": "ok",
@@ -105,5 +117,7 @@ class ConfigRoutes(Routes):
                 "bot_config": config.get("bot_config", {}),
                 "models": config.get("models", {}),
                 "logging": config.get("logging", {}),
+                "adapters": config.get("adapters", {}),
+                "network": config.get("network", {}),
             },
         }

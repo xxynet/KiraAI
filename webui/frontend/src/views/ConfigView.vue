@@ -355,11 +355,11 @@ import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import {
-  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask,
+  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe,
   IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
 } from '@/components/icons'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 
 const searchTerm = ref('')
@@ -395,7 +395,7 @@ interface ConfigField {
   default?: any
   modelType?: string
   selectOptions?: { value: string; label: string }[]
-  validation?: { min?: number; max?: number; required?: boolean }
+  validation?: { min?: number; max?: number; required?: boolean; pattern?: RegExp; patternMessageKey?: string }
 }
 
 interface ConfigGroup {
@@ -447,6 +447,18 @@ const allGroups: ConfigGroup[] = [
     icon: IconImage,
     fields: [
       { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the bot appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
+    ],
+  },
+  {
+    id: 'network',
+    labelKey: 'configuration.groups.network',
+    labelFallback: 'Network Settings',
+    descKey: 'configuration.groups.network_desc',
+    descFallback: 'Network and package source configuration',
+    icon: IconGlobe,
+    fields: [
+      { key: 'network.pypi_mirror', labelKey: 'configuration.message.pypi_mirror', labelFallback: 'PyPI Mirror', hintKey: 'configuration.hints.pypi_mirror', hintFallback: 'Custom PyPI package index URL for plugin dependency installation. Leave empty to use the default', type: 'string', default: '', validation: { pattern: /^https?:\/\/.+/, patternMessageKey: 'configuration.validation.url_invalid' } },
+      { key: 'network.http_proxy', labelKey: 'configuration.message.http_proxy', labelFallback: 'HTTP Proxy', hintKey: 'configuration.hints.http_proxy', hintFallback: 'HTTP proxy address, sets HTTP_PROXY and HTTPS_PROXY environment variables. Restart required to take effect. Leave empty to use system default', type: 'string', default: '', validation: { pattern: /^https?:\/\/.+/, patternMessageKey: 'configuration.validation.url_invalid' } },
     ],
   },
   {
@@ -513,7 +525,7 @@ interface CategoryTab {
 
 const categoryTabs: CategoryTab[] = [
   { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['bot', 'agent', 'selfie'] },
-  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['cache', 'logging'] },
+  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['network', 'cache', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
 
@@ -705,6 +717,10 @@ function validateField(key: string) {
     validationErrors.value[key] = t('configuration.validation.max', { max: v.max })
     return
   }
+  if (v.pattern && value && !v.pattern.test(String(value))) {
+    validationErrors.value[key] = v.patternMessageKey ? t(v.patternMessageKey) : t('configuration.validation.url_invalid')
+    return
+  }
   delete validationErrors.value[key]
 }
 
@@ -777,6 +793,13 @@ watch(searchTerm, (term) => {
         .some(g => g.fields.some(f => fieldMatchesSearch(f)))
     )
     if (firstMatch) activeTab.value = firstMatch.id
+  }
+})
+
+// Re-validate fields with errors when locale changes
+watch(locale, () => {
+  for (const key of Object.keys(validationErrors.value)) {
+    validateField(key)
   }
 })
 

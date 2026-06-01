@@ -307,7 +307,7 @@ class PluginsRoutes(Routes):
         except ConnectionError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
-        warnings = await install_requirements(plugin_dir)
+        warnings = await install_requirements(plugin_dir, pypi_mirror=self._get_pypi_mirror())
 
         plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
         if not plugin_id:
@@ -330,13 +330,19 @@ class PluginsRoutes(Routes):
         except (ValueError, IOError) as e:
             raise HTTPException(status_code=422, detail=str(e))
 
-        warnings = await install_requirements(plugin_dir)
+        warnings = await install_requirements(plugin_dir, pypi_mirror=self._get_pypi_mirror())
 
         plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
         if not plugin_id:
             raise HTTPException(status_code=500, detail="Plugin files were installed but failed to load")
 
         return self._build_install_result(plugin_manager, plugin_id, warnings)
+
+    def _get_pypi_mirror(self) -> Optional[str]:
+        config = getattr(self.lifecycle, "kira_config", None)
+        if not config:
+            return None
+        return (config.get("network") or {}).get("pypi_mirror") or None
 
     @staticmethod
     def _build_install_result(plugin_manager, plugin_id: str, warnings: List[str]) -> PluginInstallResult:

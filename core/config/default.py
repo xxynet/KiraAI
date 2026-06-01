@@ -40,6 +40,10 @@ DEFAULT_CONFIG = {
         "default_video": None
     },
     "adapters": {},  # ID: Adapter config dict
+    "network": {
+        "pypi_mirror": None,
+        "http_proxy": None
+    },
     "telemetry": {
         "enabled": True,
         "client_uuid": None,

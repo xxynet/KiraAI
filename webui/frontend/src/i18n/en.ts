@@ -503,6 +503,8 @@ export default {
       cache_desc: 'Temporary file cache management parameters',
       logging: 'Logging Settings',
       logging_desc: 'Terminal and file logging configuration',
+      network: 'Network Settings',
+      network_desc: 'Network and package source configuration',
     },
     hints: {
       max_memory_length: 'Maximum number of messages retained in context window',
@@ -520,6 +522,8 @@ export default {
       log_level: 'Minimum log level displayed in the terminal',
       log_file_path: 'Path to the log file, leave empty for default',
       log_file_max_size: 'Maximum size of a single log file in megabytes',
+      pypi_mirror: 'Custom PyPI package index URL for plugin dependency installation. Leave empty to use the default',
+      http_proxy: 'HTTP proxy address, sets HTTP_PROXY and HTTPS_PROXY environment variables. Restart required to take effect. Leave empty to use system default',
     },
     validation: {
       required: 'This field is required',
@@ -528,6 +532,7 @@ export default {
       min: 'Minimum value is',
       max: 'Maximum value is',
       has_errors: 'Please fix validation errors',
+      url_invalid: 'Please enter a valid URL starting with http:// or https://',
     },
     tab_message: 'Message',
     tab_model: 'Model',
@@ -551,6 +556,8 @@ export default {
       log_level: 'Log Level',
       log_file_path: 'Log File Path',
       log_file_max_size: 'Max Log File Size (MB)',
+      pypi_mirror: 'PyPI Mirror',
+      http_proxy: 'HTTP Proxy',
     },
     model: {
       section_title: 'Default Models',

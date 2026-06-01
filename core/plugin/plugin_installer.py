@@ -107,7 +107,7 @@ async def install_from_zip(
     return await _extract_and_install(temp_zip, plugins_dir, preferred_name=preferred_name)
 
 
-async def install_requirements(plugin_dir: Path) -> List[str]:
+async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = None) -> List[str]:
     """
     Install dependencies listed in the plugin's requirements.txt using pip.
 
@@ -120,9 +120,15 @@ async def install_requirements(plugin_dir: Path) -> List[str]:
         return []
 
     logger.info(f"Installing requirements for plugin at {plugin_dir}")
+    pip_cmd = [sys.executable, "-m", "pip", "install", "-r", str(req_file)]
+    if pypi_mirror:
+        if pypi_mirror.startswith(("http://", "https://")):
+            pip_cmd.extend(["-i", pypi_mirror])
+        else:
+            logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {pypi_mirror}")
     try:
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "pip", "install", "-r", str(req_file),
+            *pip_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
