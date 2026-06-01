@@ -12,7 +12,7 @@
 
 </div>
 
-KiraAI，一个模块化、跨平台的 AI 数字生命项目，以数字生命为中心，连接大语言模型（LLM）与多种聊天平台（QQ、Telegram、微信，Discord等）。
+KiraAI，一个模块化、跨平台的 AI 数字生命项目，以数字生命为中心，连接多种 AI 模型（LLM、TTS、STT、图片/视频生成等）与聊天平台（QQ、Telegram、微信、Discord、Bilibili等）。
 
 ## 🚀 功能特性
 - 专为拟人场景优化
