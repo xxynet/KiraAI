@@ -212,6 +212,8 @@ def build_file_tag():
                 name = Path(value).name
             elif value.startswith("data/"):
                 abs_path = str(get_data_path() / value.removeprefix("data/"))
+                if not os.path.exists(abs_path):
+                    return []
                 file_string = abs_path
                 name = Path(abs_path).name
             # File URL
