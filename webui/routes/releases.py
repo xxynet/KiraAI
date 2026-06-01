@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, status
 
 from core.config.default import VERSION
 from core.logging_manager import get_logger
+from core.plugin.plugin_installer import install_requirements
 from core.utils.github_api import download_asset, get_all_releases, pick_fastest_source
 from core.utils.path_utils import get_data_path, get_root_path
 from webui.models import DownloadReleaseRequest, ReleasesResponse
@@ -107,6 +108,14 @@ class ReleasesRoutes(Routes):
                     detail=f"Failed to apply update: {e}",
                 ) from e
             logger.info(f"Update {tag} applied successfully")
+
+            # Install any new dependencies from the updated requirements.txt
+            logger.info("Installing dependencies...")
+            config = getattr(self.lifecycle, "kira_config", None)
+            pypi_mirror = ((config.get("network") or {}).get("pypi_mirror") if config else None)
+            warnings = await install_requirements(get_root_path(), pypi_mirror=pypi_mirror)
+            for w in warnings:
+                logger.warning(f"Dependency install warning: {w}")
 
         # Trigger restart — let the response be sent first, then exit
         logger.info("Scheduling restart after update...")
