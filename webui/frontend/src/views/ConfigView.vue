@@ -458,6 +458,7 @@ const allGroups: ConfigGroup[] = [
     icon: IconGlobe,
     fields: [
       { key: 'network.pypi_mirror', labelKey: 'configuration.message.pypi_mirror', labelFallback: 'PyPI Mirror', hintKey: 'configuration.hints.pypi_mirror', hintFallback: 'Custom PyPI package index URL for plugin dependency installation. Leave empty to use the default', type: 'string', default: '' },
+      { key: 'network.http_proxy', labelKey: 'configuration.message.http_proxy', labelFallback: 'HTTP Proxy', hintKey: 'configuration.hints.http_proxy', hintFallback: 'HTTP proxy address, sets HTTP_PROXY and HTTPS_PROXY environment variables for all network requests. Leave empty to use system default', type: 'string', default: '' },
     ],
   },
   {

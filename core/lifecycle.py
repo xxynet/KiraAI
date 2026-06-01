@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 from typing import Optional
 
@@ -84,6 +85,13 @@ class KiraLifecycle:
                 task = self.tasks[i]
                 logger.error(f"Scheduled task '{task.get_name()}' failed: {result}")
 
+    def _apply_network_env(self):
+        proxy = (self.kira_config.get("network") or {}).get("http_proxy")
+        if proxy:
+            os.environ["HTTP_PROXY"] = proxy
+            os.environ["HTTPS_PROXY"] = proxy
+            logger.info(f"HTTP proxy set from config: {proxy}")
+
     async def init_and_run_system(self):
         """主函数：负责启动和初始化各个模块"""
         logger.info(f"✨ Starting KiraAI {VERSION}...")
@@ -93,6 +101,9 @@ class KiraLifecycle:
 
         # ====== init KiraAI config ======
         self.kira_config = KiraConfig()
+
+        # ====== apply network proxy config ======
+        self._apply_network_env()
 
         # ====== apply logging config ======
         setup_logging(

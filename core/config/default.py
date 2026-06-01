@@ -41,7 +41,8 @@ DEFAULT_CONFIG = {
     },
     "adapters": {},  # ID: Adapter config dict
     "network": {
-        "pypi_mirror": None
+        "pypi_mirror": None,
+        "http_proxy": None
     },
     "telemetry": {
         "enabled": True,

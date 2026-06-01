@@ -108,6 +108,8 @@ class ConfigRoutes(Routes):
             updated = True
         if updated:
             config.save_config()
+            if isinstance(network_config, dict) and self.lifecycle:
+                self.lifecycle._apply_network_env()
             logger.info("Configuration saved")
         return {
             "status": "ok",

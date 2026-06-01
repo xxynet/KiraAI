@@ -27,7 +27,7 @@ class KiraConfig(dict):
     def _load_config(self):
         """Load config from JSON or create default file"""
         self.update(self.default_config)
-        
+
         if os.path.exists(CONFIG_PATH):
             try:
                 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -35,7 +35,7 @@ class KiraConfig(dict):
                 self._deep_update(self, data)
             except Exception as e:
                 logger.error(f"Error loading JSON config: {e}")
-        
+
         self.save_config()
 
     def _deep_update(self, target: dict, source: dict):
