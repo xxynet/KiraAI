@@ -791,9 +791,9 @@ async function refreshPlugins() {
   }
 }
 
-// Auto-poll while any plugin is in a transient state
+// Auto-poll while any enabled plugin is in a transient state
 const hasTransientPlugins = computed(() =>
-  plugins.value.some(p => ['installing', 'loading'].includes(p.status || ''))
+  plugins.value.some(p => p.enabled && ['installing', 'loading'].includes(p.status || ''))
 )
 let pluginPollTimer: ReturnType<typeof setInterval> | null = null
 

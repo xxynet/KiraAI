@@ -38,7 +38,7 @@ class PluginInfo:
     uninstallable: bool = False
     hidden: bool = False
     error: Optional[str] = None
-    status: str = "pending"  # "pending" | "installing" | "loading" | "ready" | "error"
+    status: str = "pending"  # "pending" | "installing" | "loading" | "ready" | "disabled" | "error"
 
 
 logger = get_logger("plugin_manager", "cyan")
@@ -391,7 +391,11 @@ class PluginManager:
         if enabled and not previous:
             # Toggle: plugin code unchanged, just re-initialize from existing class
             await self.init_plugin(plugin_id)
+            if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "ready"
         elif not enabled and previous:
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "disabled"
             try:
                 await self.terminate(plugin_id)
             except Exception as e:
@@ -968,6 +972,8 @@ class PluginManager:
 
         if not self.is_plugin_enabled(plugin_id):
             logger.debug(f"Plugin {plugin_id} is disabled, skipping initialization")
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "disabled"
             return
 
         existing = self.plugin_instances.get(plugin_id)
