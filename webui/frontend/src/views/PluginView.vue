@@ -766,25 +766,26 @@ function onCancelAction() {
 const pluginsError = ref<string | null>(null)
 const mcpServersError = ref<string | null>(null)
 
-async function loadPlugins() {
+async function loadPlugins(): Promise<boolean> {
   try {
     const res = await getPlugins()
     plugins.value = Array.isArray(res.data) ? res.data : []
     pluginsError.value = null
+    return true
   } catch (e: any) {
     plugins.value = []
     pluginsError.value = e?.message || t('plugin.load_failed')
     notify(pluginsError.value!, 'error')
+    return false
   }
 }
 
 async function refreshPlugins() {
   refreshingPlugins.value = true
   try {
-    await loadPlugins()
-    notify(t('plugin.refresh_success'), 'success')
-  } catch {
-    notify(t('plugin.refresh_failed'), 'error')
+    if (await loadPlugins()) {
+      notify(t('plugin.refresh_success'), 'success')
+    }
   } finally {
     refreshingPlugins.value = false
   }

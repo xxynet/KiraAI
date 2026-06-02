@@ -347,17 +347,19 @@ class PluginsRoutes(Routes):
 
     @staticmethod
     def _build_install_result(plugin_manager, plugin_id: str, warnings: List[str]) -> PluginInstallResult:
-        manifest = plugin_manager.get_plugin_manifest(plugin_id) or {}
-        tags = manifest.get("tags") or []
+        info = plugin_manager.get_plugin_info(plugin_id)
         return PluginInstallResult(
             id=plugin_id,
-            name=str(manifest.get("display_name") or plugin_id),
-            version=str(manifest.get("version") or ""),
-            author=str(manifest.get("author") or ""),
-            description=str(manifest.get("description") or ""),
-            repo=manifest.get("repo") if isinstance(manifest.get("repo"), str) else None,
+            name=info.display_name if info else plugin_id,
+            version=info.version if info else "",
+            author=info.author if info else "",
+            description=info.description if info else "",
+            repo=info.repo if info else None,
             enabled=plugin_manager.is_plugin_enabled(plugin_id),
-            tags=[str(t) for t in tags if t],
+            tags=info.tags if info else [],
+            core_version=info.core_version if info else None,
+            error=info.error if info else None,
+            status=info.status if info else "pending",
             warnings=warnings,
         )
 

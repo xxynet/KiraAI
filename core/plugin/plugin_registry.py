@@ -406,6 +406,9 @@ class PluginManager:
     def list_plugins(self) -> List[PluginInfo]:
         return list(_plugin_infos.values())
 
+    def get_plugin_info(self, plugin_id: str) -> Optional[PluginInfo]:
+        return _plugin_infos.get(plugin_id)
+
     def get_plugin_manifest(self, name: str) -> Dict[str, Any]:
         return _plugin_manifests.get(name, {})
 
@@ -994,6 +997,7 @@ class PluginManager:
             initialized = True
         except Exception as e:
             logger.error(f"Failed to initialize plugin {plugin_id}: {e}")
+            self.plugin_instances.pop(plugin_id, None)
         if initialized:
             self._register_plugin_tools_for(plugin_id)
             self._register_plugin_hooks_for(plugin_id)
@@ -1161,6 +1165,8 @@ class PluginManager:
 
     @staticmethod
     def _build_plugin_info(plugin_id: str, manifest: dict, error: Optional[str] = None, status: str = "pending") -> PluginInfo:
+        if status == "pending" and error:
+            status = "error"
         path = _plugin_module_paths.get(plugin_id)
         is_builtin = path is not None and path.is_relative_to(BUILTIN_PLUGINS_DIR)
         hidden = bool(manifest.get("hide", False)) if is_builtin else False
@@ -1220,6 +1226,7 @@ class PluginManager:
                     "error": error,
                 }
                 _plugin_infos[plugin_id].error = error
+                _plugin_infos[plugin_id].status = "error"
                 logger.warning(f"Plugin {plugin_id} skipped: {error}")
                 return None
 
@@ -1301,6 +1308,7 @@ class PluginManager:
                 })
                 if plugin_id in _plugin_infos:
                     _plugin_infos[plugin_id].error = "No module found"
+                    _plugin_infos[plugin_id].status = "error"
                 continue
 
             self._register_plugin_class(plugin_id, module, plugin_dir)
@@ -1469,7 +1477,7 @@ class PluginManager:
             plugin_root = self.plugin_dir / entry
             if not plugin_root.is_dir():
                 continue
-            await self.load_plugin_from_dir(plugin_root)
+            await self.load_plugin_from_dir(plugin_root, auto_install=False)
 
     @staticmethod
     async def fetch_plugin_store_data(url: str) -> Any:
