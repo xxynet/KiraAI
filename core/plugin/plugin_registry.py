@@ -18,6 +18,7 @@ from core.config import VERSION
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
 from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
+from .plugin_installer import install_requirements
 
 from core.tag import tag_registry, BaseTag
 
@@ -37,6 +38,7 @@ class PluginInfo:
     uninstallable: bool = False
     hidden: bool = False
     error: Optional[str] = None
+    status: str = "pending"  # "pending" | "installing" | "loading" | "ready" | "error"
 
 
 logger = get_logger("plugin_manager", "cyan")
@@ -404,11 +406,19 @@ class PluginManager:
     def list_plugins(self) -> List[PluginInfo]:
         return list(_plugin_infos.values())
 
+    def get_plugin_info(self, plugin_id: str) -> Optional[PluginInfo]:
+        return _plugin_infos.get(plugin_id)
+
     def get_plugin_manifest(self, name: str) -> Dict[str, Any]:
         return _plugin_manifests.get(name, {})
 
     def get_plugin_load_errors(self) -> Dict[str, Dict[str, Any]]:
         return dict(_plugin_load_errors)
+
+    def _get_pypi_mirror(self) -> Optional[str]:
+        if self.ctx and hasattr(self.ctx, "config"):
+            return (self.ctx.config.get("network") or {}).get("pypi_mirror") or None
+        return None
 
     def get_plugin_module_dir(self, name: str) -> str:
         return _plugin_module_dirs.get(name, "")
@@ -883,7 +893,10 @@ class PluginManager:
 
     async def init(self):
         """
-        Initialize plugin manager and load all discovered plugins
+        Initialize plugin manager and load all discovered plugins.
+
+        Uses a two-phase approach: first attempt all loads, then install
+        dependencies for plugins that failed with import errors and retry.
         """
         self.plugin_dir.mkdir(parents=True, exist_ok=True)
         self.plugin_data_dir.mkdir(parents=True, exist_ok=True)
@@ -894,10 +907,52 @@ class PluginManager:
         discovered = list(_plugin_classes.keys())
         logger.info(f"Discovered plugins: {discovered}")
 
+        # Phase 1: Attempt to initialize all discovered plugins
         for plugin_id in _plugin_classes.keys():
             if plugin_id in self.plugin_instances:
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "ready"
                 continue
             await self.init_plugin(plugin_id)
+            if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "ready"
+
+        # Phase 2: Recover plugins that failed with import errors
+        import_failures = [
+            pid for pid, err_info in _plugin_load_errors.items()
+            if "Import error" in err_info.get("error", "") and pid in _plugin_module_paths
+        ]
+        if import_failures:
+            logger.info(f"Plugins with import errors, will attempt dependency install: {import_failures}")
+
+        for plugin_id in import_failures:
+            plugin_path = _plugin_module_paths.get(plugin_id)
+            if not plugin_path:
+                continue
+
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "installing"
+
+            warnings = await install_requirements(plugin_path, pypi_mirror=self._get_pypi_mirror())
+            for w in warnings:
+                logger.warning(f"Dependency install warning for {plugin_id}: {w}")
+
+            # Clear old error and retry loading
+            _plugin_load_errors.pop(plugin_id, None)
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].error = None
+                _plugin_infos[plugin_id].status = "loading"
+
+            await self.load_plugin_from_dir(plugin_path, auto_install=False)
+
+            if plugin_id in self.plugin_instances:
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "ready"
+                logger.info(f"Successfully recovered plugin {plugin_id} after dependency install")
+            else:
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "error"
+                logger.warning(f"Plugin {plugin_id} still failed after dependency install")
 
     async def init_plugin(self, plugin_id: Optional[str] = None):
         if plugin_id is None:
@@ -942,6 +997,7 @@ class PluginManager:
             initialized = True
         except Exception as e:
             logger.error(f"Failed to initialize plugin {plugin_id}: {e}")
+            self.plugin_instances.pop(plugin_id, None)
         if initialized:
             self._register_plugin_tools_for(plugin_id)
             self._register_plugin_hooks_for(plugin_id)
@@ -1108,7 +1164,9 @@ class PluginManager:
         return None
 
     @staticmethod
-    def _build_plugin_info(plugin_id: str, manifest: dict, error: Optional[str] = None) -> PluginInfo:
+    def _build_plugin_info(plugin_id: str, manifest: dict, error: Optional[str] = None, status: str = "pending") -> PluginInfo:
+        if status == "pending" and error:
+            status = "error"
         path = _plugin_module_paths.get(plugin_id)
         is_builtin = path is not None and path.is_relative_to(BUILTIN_PLUGINS_DIR)
         hidden = bool(manifest.get("hide", False)) if is_builtin else False
@@ -1131,6 +1189,7 @@ class PluginManager:
             uninstallable=uninstallable,
             hidden=hidden,
             error=error,
+            status=status,
         )
 
     def _load_plugin_meta(self, plugin_root: Path, entry: str):
@@ -1167,6 +1226,7 @@ class PluginManager:
                     "error": error,
                 }
                 _plugin_infos[plugin_id].error = error
+                _plugin_infos[plugin_id].status = "error"
                 logger.warning(f"Plugin {plugin_id} skipped: {error}")
                 return None
 
@@ -1248,17 +1308,21 @@ class PluginManager:
                 })
                 if plugin_id in _plugin_infos:
                     _plugin_infos[plugin_id].error = "No module found"
+                    _plugin_infos[plugin_id].status = "error"
                 continue
 
             self._register_plugin_class(plugin_id, module, plugin_dir)
 
-    async def load_plugin_from_dir(self, plugin_root: Path) -> Optional[str]:
+    async def load_plugin_from_dir(self, plugin_root: Path, auto_install: bool = True) -> Optional[str]:
         """
         Dynamically load and initialize a single plugin from the given directory.
 
         Safe to call at runtime (e.g. after installing a new plugin). If the
         plugin was already loaded, it is terminated and reloaded cleanly.
         Returns the plugin_id on success, or None if loading failed.
+
+        When *auto_install* is True and the import fails with ModuleNotFoundError,
+        the plugin's requirements.txt is installed and the import is retried once.
         """
         entry = plugin_root.name
         if entry.startswith("_") or not plugin_root.is_dir():
@@ -1307,6 +1371,7 @@ class PluginManager:
             }
             if plugin_id in _plugin_infos:
                 _plugin_infos[plugin_id].error = "No entry script found (main.py / plugin.py / __init__.py)"
+                _plugin_infos[plugin_id].status = "error"
             return None
 
         # Clear decorator-registered components so re-import starts fresh
@@ -1325,22 +1390,59 @@ class PluginManager:
             }
             if plugin_id in _plugin_infos:
                 _plugin_infos[plugin_id].error = "Failed to create module spec"
+                _plugin_infos[plugin_id].status = "error"
             return None
+
+        if plugin_id in _plugin_infos:
+            _plugin_infos[plugin_id].status = "loading"
 
         try:
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
             spec.loader.exec_module(module)
         except Exception as e:
-            logger.error(f"Error loading plugin from {plugin_root}: {e}")
-            sys.modules.pop(module_name, None)
-            _plugin_load_errors[plugin_id] = {
-                "manifest": _plugin_manifests.get(plugin_id, {}),
-                "error": f"Import error: {e}",
-            }
-            if plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].error = f"Import error: {e}"
-            return None
+            if auto_install and isinstance(e, ModuleNotFoundError):
+                logger.info(f"ModuleNotFoundError in {plugin_root}, attempting dependency install: {e}")
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "installing"
+                    _plugin_infos[plugin_id].error = None
+
+                warnings = await install_requirements(plugin_root, pypi_mirror=self._get_pypi_mirror())
+                for w in warnings:
+                    logger.warning(f"Dependency install warning for {plugin_id}: {w}")
+
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "loading"
+
+                # Clean up and retry (once)
+                sys.modules.pop(module_name, None)
+                _plugin_load_errors.pop(plugin_id, None)
+                try:
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module
+                    spec.loader.exec_module(module)
+                except Exception as retry_e:
+                    logger.error(f"Retry after dep install also failed for {plugin_root}: {retry_e}")
+                    sys.modules.pop(module_name, None)
+                    _plugin_load_errors[plugin_id] = {
+                        "manifest": _plugin_manifests.get(plugin_id, {}),
+                        "error": f"Import error (after retry): {retry_e}",
+                    }
+                    if plugin_id in _plugin_infos:
+                        _plugin_infos[plugin_id].error = f"Import error (after retry): {retry_e}"
+                        _plugin_infos[plugin_id].status = "error"
+                    return None
+            else:
+                logger.error(f"Error loading plugin from {plugin_root}: {e}")
+                sys.modules.pop(module_name, None)
+                _plugin_load_errors[plugin_id] = {
+                    "manifest": _plugin_manifests.get(plugin_id, {}),
+                    "error": f"Import error: {e}",
+                }
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].error = f"Import error: {e}"
+                    _plugin_infos[plugin_id].status = "error"
+                return None
 
         registered = self._register_plugin_class(plugin_id, module, plugin_root)
         if not registered:
@@ -1351,9 +1453,12 @@ class PluginManager:
             }
             if plugin_id in _plugin_infos:
                 _plugin_infos[plugin_id].error = "No BasePlugin subclass found"
+                _plugin_infos[plugin_id].status = "error"
             return None
 
         await self.init_plugin(plugin_id)
+        if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
+            _plugin_infos[plugin_id].status = "ready"
         return plugin_id
 
     async def _discover_user_plugins(self):
@@ -1372,7 +1477,7 @@ class PluginManager:
             plugin_root = self.plugin_dir / entry
             if not plugin_root.is_dir():
                 continue
-            await self.load_plugin_from_dir(plugin_root)
+            await self.load_plugin_from_dir(plugin_root, auto_install=False)
 
     @staticmethod
     async def fetch_plugin_store_data(url: str) -> Any:

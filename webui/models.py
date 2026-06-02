@@ -133,6 +133,7 @@ class PluginItem(BaseModel):
     tags: List[str] = Field(default_factory=list)
     core_version: Optional[str] = None
     error: Optional[str] = None
+    status: str = "pending"
 
 
 class PluginConfigUpdateRequest(BaseModel):

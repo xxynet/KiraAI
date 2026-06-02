@@ -3,6 +3,7 @@ export default {
     on: 'On',
     off: 'Off',
     delete: 'Delete',
+    refresh: 'Refresh',
   },
   app: {
     title: 'KiraAI',
@@ -268,6 +269,9 @@ export default {
     name: 'Name',
     version: 'Version',
     status: 'Status',
+    status_installing: 'Installing dependencies...',
+    status_loading: 'Loading...',
+    status_pending: 'Pending',
     actions: 'Actions',
     tab_plugins: 'Plugins',
     tab_mcp: 'MCP',
@@ -376,6 +380,8 @@ export default {
     reloading: 'Reloading...',
     reload_success: 'Plugin reloaded successfully',
     reload_failed: 'Failed to reload plugin',
+    refresh_success: 'Plugins refreshed',
+    refresh_failed: 'Failed to refresh plugins',
   },
   pluginStore: {
     title: 'Plugin Store',

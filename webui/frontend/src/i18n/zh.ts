@@ -3,6 +3,7 @@ export default {
     on: '启用',
     off: '禁用',
     delete: '删除',
+    refresh: '刷新',
   },
   app: {
     title: 'KiraAI',
@@ -268,6 +269,9 @@ export default {
     name: '名称',
     version: '版本',
     status: '状态',
+    status_installing: '正在安装依赖...',
+    status_loading: '加载中...',
+    status_pending: '等待中',
     actions: '操作',
     tab_plugins: '插件',
     tab_mcp: 'MCP',
@@ -376,6 +380,8 @@ export default {
     reloading: '重载中...',
     reload_success: '插件重载成功',
     reload_failed: '插件重载失败',
+    refresh_success: '插件已刷新',
+    refresh_failed: '刷新插件失败',
   },
   pluginStore: {
     title: '插件商店',

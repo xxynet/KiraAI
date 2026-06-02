@@ -113,6 +113,7 @@ export interface PluginItem {
   tags: string[]
   core_version?: string | null
   error?: string | null
+  status?: string
 }
 
 export interface PluginConfigUpdateRequest {
