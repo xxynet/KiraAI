@@ -151,8 +151,8 @@ class SettingsRoutes(Routes):
         filename = f"backup_{timestamp}.zip"
         zip_path = backup_dir / filename
 
-        # Directories to exclude from backup (backups themselves, dist builds)
-        exclude_dirs = {BACKUP_DIR_NAME, "dist", "__pycache__"}
+        # Directories to exclude from backup (backups themselves, dist builds, transient data)
+        exclude_dirs = {BACKUP_DIR_NAME, "dist", "__pycache__", "updates", "temp"}
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(data_path):
@@ -227,7 +227,7 @@ class SettingsRoutes(Routes):
     def _do_restore(self, zip_source) -> RestoreResponse:
         """Extract a zip into a staging dir, validate, then copy to data directory."""
         data_path = get_data_path()
-        exclude_dirs = {BACKUP_DIR_NAME, "__pycache__"}
+        exclude_dirs = {BACKUP_DIR_NAME, "__pycache__", "updates", "temp"}
 
         try:
             with tempfile.TemporaryDirectory() as staging_dir:
