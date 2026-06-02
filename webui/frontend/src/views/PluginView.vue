@@ -52,6 +52,15 @@
           <span class="mr-1">+</span>
           <span>{{ $t('plugin.install_add') }}</span>
         </button>
+        <button
+          type="button"
+          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ml-2"
+          :disabled="refreshingPlugins"
+          @click="refreshPlugins"
+        >
+          <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': refreshingPlugins }" />
+          <span>{{ $t('common.refresh') }}</span>
+        </button>
       </div>
 
       <div v-if="pluginsError" class="flex justify-center items-center py-12">
@@ -85,6 +94,7 @@
           :tags="plugin.tags"
           :core-version="plugin.core_version"
           :error="plugin.error"
+          :status="plugin.status"
           :reloading="reloadingPlugins.has(plugin.id)"
           @toggle="togglePlugin(plugin)"
           @configure="openPluginConfig(plugin)"
@@ -193,7 +203,7 @@
           @click="refreshSkillList"
         >
           <IconRefresh class="w-4 h-4 mr-1" />
-          <span>{{ $t('plugin.skills_refresh') }}</span>
+          <span>{{ $t('common.refresh') }}</span>
         </button>
       </div>
 
@@ -264,7 +274,7 @@
           @click="() => fetchStorePlugins(true)"
         >
           <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': storeLoading }" />
-          <span>{{ $t('pluginStore.refresh') }}</span>
+          <span>{{ $t('common.refresh') }}</span>
         </button>
         <span v-if="currentStoreSource" class="ml-3 text-sm text-gray-500 dark:text-gray-400">
           {{ $t('pluginStore.current_source') }}: <span class="font-medium text-gray-700 dark:text-gray-300">{{ currentStoreSource.name }}</span>
@@ -281,7 +291,7 @@
             class="mt-3 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             @click="() => fetchStorePlugins()"
           >
-            {{ $t('plugin.skills_refresh') }}
+            {{ $t('common.refresh') }}
           </button>
         </div>
       </div>
@@ -669,6 +679,7 @@ const uploadFile = ref<File | null>(null)
 const installDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
 const installing = ref(false)
 const reloadingPlugins = ref(new Set<string>())
+const refreshingPlugins = ref(false)
 
 // Proxy strategy
 const GH_PROXY_LIST = [
@@ -762,10 +773,20 @@ async function loadPlugins() {
     pluginsError.value = null
   } catch (e: any) {
     plugins.value = []
-    // Prefer backend detail when useful; always default to the localized
-    // message so Chinese users don't see an English fallback.
     pluginsError.value = e?.message || t('plugin.load_failed')
     notify(pluginsError.value!, 'error')
+  }
+}
+
+async function refreshPlugins() {
+  refreshingPlugins.value = true
+  try {
+    await loadPlugins()
+    notify(t('plugin.refresh_success'), 'success')
+  } catch {
+    notify(t('plugin.refresh_failed'), 'error')
+  } finally {
+    refreshingPlugins.value = false
   }
 }
 

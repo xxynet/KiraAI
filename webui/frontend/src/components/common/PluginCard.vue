@@ -12,6 +12,18 @@
         <div v-if="coreVersion" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
           {{ $t('plugin.core_version') }}: {{ coreVersion }}
         </div>
+        <div v-if="status === 'installing'" class="mt-2 flex items-center gap-1.5 text-xs">
+          <IconSpinner class="animate-spin h-3.5 w-3.5 text-yellow-500" />
+          <span class="text-yellow-600 dark:text-yellow-400">{{ $t('plugin.status_installing') }}</span>
+        </div>
+        <div v-else-if="status === 'loading'" class="mt-2 flex items-center gap-1.5 text-xs">
+          <IconSpinner class="animate-spin h-3.5 w-3.5 text-blue-500" />
+          <span class="text-blue-600 dark:text-blue-400">{{ $t('plugin.status_loading') }}</span>
+        </div>
+        <div v-else-if="status === 'pending'" class="mt-2 flex items-center gap-1.5 text-xs">
+          <span class="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
+          <span class="text-gray-500 dark:text-gray-400">{{ $t('plugin.status_pending') }}</span>
+        </div>
         <div v-if="error" class="mt-2 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
           <IconInfo class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>{{ error }}</span>
@@ -138,6 +150,7 @@ const props = withDefaults(defineProps<{
   tags?: string[]
   coreVersion?: string | null
   error?: string | null
+  status?: string
   reloading?: boolean
   // store mode
   installed?: boolean
@@ -153,6 +166,7 @@ const props = withDefaults(defineProps<{
   tags: () => [],
   coreVersion: null,
   error: null,
+  status: 'ready',
   reloading: false,
   installed: false,
   installing: false,

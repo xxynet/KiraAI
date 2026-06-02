@@ -148,6 +148,7 @@ class PluginsRoutes(Routes):
                         tags=info.tags,
                         core_version=info.core_version,
                         error=info.error,
+                        status=info.status,
                     )
                 )
             return items
