@@ -634,7 +634,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
@@ -790,6 +790,33 @@ async function refreshPlugins() {
     refreshingPlugins.value = false
   }
 }
+
+// Auto-poll while any plugin is in a transient state
+const hasTransientPlugins = computed(() =>
+  plugins.value.some(p => ['installing', 'loading'].includes(p.status || ''))
+)
+let pluginPollTimer: ReturnType<typeof setInterval> | null = null
+
+watch(hasTransientPlugins, (hasTransient) => {
+  if (hasTransient && !pluginPollTimer) {
+    pluginPollTimer = setInterval(async () => {
+      try {
+        const res = await getPlugins()
+        plugins.value = Array.isArray(res.data) ? res.data : plugins.value
+      } catch { /* keep stale data during poll */ }
+    }, 5000)
+  } else if (!hasTransient && pluginPollTimer) {
+    clearInterval(pluginPollTimer)
+    pluginPollTimer = null
+  }
+})
+
+onUnmounted(() => {
+  if (pluginPollTimer) {
+    clearInterval(pluginPollTimer)
+    pluginPollTimer = null
+  }
+})
 
 async function loadMcpServers() {
   try {
