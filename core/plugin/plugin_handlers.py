@@ -23,7 +23,7 @@ class EventType(Enum):
     ON_IM_BATCH_MESSAGE = "on_im_batch_message"  # 消息合并后
     ON_LLM_REQUEST = "on_llm_request"  # LLM请求前
     ON_LLM_RESPONSE = "on_llm_response"  # LLM 原始输出
-    AFTER_XML_PARSE = "after_xml_parse"  # XML 解析后 (MessageChain)
+    AFTER_XML_PARSE = "after_xml_parse"  # XML 解析后 (list[MessageChain | RootTagAction])
     ON_TOOL_RESULT = "on_tool_result"  # 工具调用结果
     ON_STEP_RESULT = "on_step_result"  # Agent 步骤结果
     ON_FINAL_RESULT = "on_final_result"  # 最终消息结果
