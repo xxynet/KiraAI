@@ -12,7 +12,7 @@ class BaseTag(ABC):
 
     name: str = None
     description: str = None
-    parent: str = "msg"
+    parent: Optional[str] = "msg"
 
     @abstractmethod
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:

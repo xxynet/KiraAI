@@ -663,7 +663,10 @@ class MessageProcessor:
                 else:
                     message_results.append(KiraIMSentResult(ok=False, err="Blank message list detected"))
             elif isinstance(action, RootTagAction):
-                await action.tag.handle(action.value, **action.attrs)
+                try:
+                    await action.tag.handle(action.value, **action.attrs)
+                except Exception as e:
+                    logger.error(f"Error executing root tag <{action.tag.name}>{action.value}: {e}")
 
         return message_results
 

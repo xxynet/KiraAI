@@ -512,7 +512,7 @@ class PluginManager:
             if not func:
                 continue
             bound_func = func
-            if plugin_instance is not None and func.__name__ in type(plugin_instance).__dict__:
+            if plugin_instance is not None and hasattr(plugin_instance, func.__name__):
                 bound_func = getattr(plugin_instance, func.__name__)
             self.ctx.llm_api.register_tool(
                 name=tool_name,
@@ -554,7 +554,7 @@ class PluginManager:
             if not func:
                 continue
             bound_func = func
-            if plugin_instance is not None and func.__name__ in type(plugin_instance).__dict__:
+            if plugin_instance is not None and hasattr(plugin_instance, func.__name__):
                 bound_func = getattr(plugin_instance, func.__name__)
             tag_registry.register(_build_tag_inst(
                 tag_name,
