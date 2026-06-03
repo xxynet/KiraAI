@@ -46,10 +46,11 @@ from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
 from core.agent.message import OpenAIMessage
 from core.agent.tool import ToolSet
-from core.tag import tag_registry, TagSet
+from core.tag import tag_registry, TagSet, BaseTag, RootTagAction
 from core.db.service import DatabaseService
 
 from core.provider import LLMModelClient
+
 
 logger = get_logger("message", "cyan")
 llm_logger = get_logger("llm", "purple")
@@ -502,11 +503,15 @@ class MessageProcessor:
 
         # Register persistent tags registered by user plugins
         tag_set.register(*tag_registry.get_all())
+        tag_set.register(*tag_registry.get_all_root())
 
         # Assemble messages
+        root_prompt = tag_set.to_root_prompt()
         for sp in request.system_prompt:
             if sp.name == "format":
                 sp.content = sp.content.replace("<|message_types|>", tag_set.to_prompt())
+                sp.content = sp.content.replace("<|root_tags|>",
+                    f"此外，你可以在<msg>标签外使用以下控制标签（与<msg>同级）：\n{root_prompt}" if root_prompt else "")
                 break
         request.assemble_prompt()
 
@@ -634,12 +639,12 @@ class MessageProcessor:
 
         message_results = []
         try:
-            message_chains = await self._parse_xml_msg(xml_data, tag_set)
+            actions = await self._parse_xml_msg(xml_data, tag_set)
 
             # EventType.AFTER_XML_PARSE
             llm_handlers = event_handler_reg.get_handlers(event_type=EventType.AFTER_XML_PARSE)
             for handler in llm_handlers:
-                await handler.exec_handler(event, message_chains)
+                await handler.exec_handler(event, actions)
                 if event.is_stopped:
                     logger.info(f"Event {event.event_id} stopped while AFTER_XML_PARSE stage")
                     return None
@@ -647,17 +652,19 @@ class MessageProcessor:
             logger.error(f"Error parsing message: {str(e)}")
             return []
 
-        for message_chain in message_chains:
-            if not message_chain.is_empty():
-                result = await self.send_message_chain(event.sid, message_chain)
-                if not result.ok and result.err:
-                    logger.error(result.err)
-                message_results.append(result)
+        for action in actions:
+            if isinstance(action, MessageChain):
+                if not action.is_empty():
+                    result = await self.send_message_chain(event.sid, action)
+                    if not result.ok and result.err:
+                        logger.error(result.err)
+                    message_results.append(result)
+                    await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
+                else:
+                    message_results.append(KiraIMSentResult(ok=False, err="Blank message list detected"))
+            elif isinstance(action, RootTagAction):
+                await action.tag.handle(action.value, **action.attrs)
 
-                # add random message delay
-                await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
-            else:
-                message_results.append(KiraIMSentResult(ok=False, err="Blank message list detected"))
         return message_results
 
     async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
@@ -688,31 +695,37 @@ class MessageProcessor:
         return result
 
     @staticmethod
-    async def _parse_xml_msg(xml_data, tag_set: TagSet) -> list[MessageChain]:
-        """Parse xml to list[MessageChain]"""
+    async def _parse_xml_msg(xml_data, tag_set: TagSet) -> list[Union[MessageChain, RootTagAction]]:
+        """Parse xml into an ordered list of MessageChain and RootTagAction."""
         root = ET.fromstring(f"<root>{xml_data}</root>")
-        message_chains = []
+        actions: list[Union[MessageChain, RootTagAction]] = []
 
-        for msg in root.findall("msg"):
-            message_elements = []
-            for child in msg:
-                tag = child.tag
-                value = child.text.strip() if child.text else ""
-                attrs = child.attrib
+        for element in root:
+            if element.tag == "msg":
+                message_elements = []
+                for child in element:
+                    tag = child.tag
+                    value = child.text.strip() if child.text else ""
+                    attrs = child.attrib
 
-                if tag in tag_set:
-                    tag_inst = tag_set.get(name=tag)
-                    tag_res = await tag_inst.handle(value, **attrs)
+                    if tag in tag_set:
+                        tag_inst = tag_set.get(name=tag)
+                        tag_res = await tag_inst.handle(value, **attrs)
 
-                    if isinstance(tag_res, BaseMessageElement):
-                        message_elements.append(tag_res)
-                    elif isinstance(tag_res, list):
-                        message_elements.extend(tag_res)
+                        if isinstance(tag_res, BaseMessageElement):
+                            message_elements.append(tag_res)
+                        elif isinstance(tag_res, list):
+                            message_elements.extend(tag_res)
 
-            if message_elements:
-                message_chains.append(MessageChain(message_elements))
+                if message_elements:
+                    actions.append(MessageChain(message_elements))
+            elif element.tag in tag_set:
+                root_tag = tag_set.get(name=element.tag)
+                if root_tag and root_tag.parent is None:
+                    value = element.text.strip() if element.text else ""
+                    actions.append(RootTagAction(tag=root_tag, value=value, attrs=element.attrib))
 
-        return message_chains
+        return actions
 
     @staticmethod
     def _add_message_ids(xml_data: str, message_results: List[KiraIMSentResult]) -> str:

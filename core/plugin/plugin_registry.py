@@ -86,8 +86,8 @@ class PluginComponents:
         }
         self.tool_funcs[name] = func
 
-    def register_tag(self, name: str, description: str, func: Callable):
-        self.tags.append({"name": name, "description": description})
+    def register_tag(self, name: str, description: str, func: Callable, parent: str = "msg"):
+        self.tags.append({"name": name, "description": description, "parent": parent})
         self.tag_funcs[name] = func
 
     def register_hook(self, handler: Callable, priority: Union[Priority, int],
@@ -179,10 +179,10 @@ class RegisterDeco:
         return decorator
 
     @staticmethod
-    def tag(name: str, description: str):
+    def tag(name: str, description: str, parent: str = "msg"):
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_tag(name, description, func)
+            _ensure_components(plugin_id).register_tag(name, description, func, parent)
             return func
         return decorator
 
@@ -307,10 +307,11 @@ on = OnEventDeco()
 register_tool = register.tool
 
 
-def _build_tag_inst(tag_name: str, tag_description: str, func: Callable):
+def _build_tag_inst(tag_name: str, tag_description: str, func: Callable, tag_parent: str = "msg"):
     class TagInst(BaseTag):
         name = tag_name
         description = tag_description
+        parent = tag_parent
 
         async def handle(self, value: str, **kwargs):
             res = await func(value, **kwargs)
@@ -511,7 +512,7 @@ class PluginManager:
             if not func:
                 continue
             bound_func = func
-            if plugin_instance is not None and hasattr(plugin_instance, func.__name__):
+            if plugin_instance is not None and func.__name__ in type(plugin_instance).__dict__:
                 bound_func = getattr(plugin_instance, func.__name__)
             self.ctx.llm_api.register_tool(
                 name=tool_name,
@@ -553,12 +554,13 @@ class PluginManager:
             if not func:
                 continue
             bound_func = func
-            if plugin_instance is not None and hasattr(plugin_instance, func.__name__):
+            if plugin_instance is not None and func.__name__ in type(plugin_instance).__dict__:
                 bound_func = getattr(plugin_instance, func.__name__)
             tag_registry.register(_build_tag_inst(
                 tag_name,
                 tag_meta["description"],
-                bound_func
+                bound_func,
+                tag_meta.get("parent", "msg")
             ))
             tag_names.append(tag_name)
         if tag_names:
