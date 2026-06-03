@@ -86,7 +86,7 @@ class PluginComponents:
         }
         self.tool_funcs[name] = func
 
-    def register_tag(self, name: str, description: str, func: Callable, parent: str = "msg"):
+    def register_tag(self, name: str, description: str, func: Callable, parent: Optional[str] = "msg"):
         self.tags.append({"name": name, "description": description, "parent": parent})
         self.tag_funcs[name] = func
 
@@ -179,7 +179,7 @@ class RegisterDeco:
         return decorator
 
     @staticmethod
-    def tag(name: str, description: str, parent: str = "msg"):
+    def tag(name: str, description: str, parent: Optional[str] = "msg"):
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
             _ensure_components(plugin_id).register_tag(name, description, func, parent)
@@ -307,7 +307,7 @@ on = OnEventDeco()
 register_tool = register.tool
 
 
-def _build_tag_inst(tag_name: str, tag_description: str, func: Callable, tag_parent: str = "msg"):
+def _build_tag_inst(tag_name: str, tag_description: str, func: Callable, tag_parent: Optional[str] = "msg"):
     class TagInst(BaseTag):
         name = tag_name
         description = tag_description
