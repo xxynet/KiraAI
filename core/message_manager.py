@@ -548,23 +548,26 @@ class MessageProcessor:
 
         async def send_llm_text(resp: LLMResponse):
             text = resp.text_response
-            session_lock = self.get_session_lock(sid)
-            async with session_lock:
-                message_results = await self.send_xml_messages(event, text.strip(), tag_set)
-                if message_results is None:
-                    return
-                response_with_ids = self._add_message_ids(text, message_results)
-                step_result = KiraStepResult(message_results=message_results, raw_output=response_with_ids)
-                # EventType.ON_STEP_RESULT
-                step_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_STEP_RESULT)
-                for step_handler in step_handlers:
-                    await step_handler.exec_handler(event, step_result)
-                    if event.is_stopped:
-                        logger.info(f"Event {event.event_id} stopped while ON_STEP_RESULT stage")
+            message_results = []
+            raw_output = ""
+            if text:
+                session_lock = self.get_session_lock(sid)
+                async with session_lock:
+                    message_results = await self.send_xml_messages(event, text.strip(), tag_set)
+                    if message_results is None:
                         return
-                logger.info(f"LLM -> {sid}: {step_result.raw_output}")
+                    raw_output = self._add_message_ids(text, message_results)
+                    logger.info(f"LLM -> {sid}: {raw_output}")
+            step_result = KiraStepResult(message_results=message_results, raw_output=raw_output)
+            # EventType.ON_STEP_RESULT
+            step_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_STEP_RESULT)
+            for step_handler in step_handlers:
+                await step_handler.exec_handler(event, step_result)
+                if event.is_stopped:
+                    logger.info(f"Event {event.event_id} stopped while ON_STEP_RESULT stage")
+                    return
+            if raw_output:
                 llm_resp.text_response = step_result.raw_output
-
                 for idx in range(-1, -len(new_messages), -1):
                     if new_messages[idx].role == "assistant":
                         new_messages[idx].content = step_result.raw_output
@@ -578,8 +581,7 @@ class MessageProcessor:
             if not llm_resp:
                 break
 
-            if llm_resp.text_response:
-                await send_llm_text(llm_resp)
+            await send_llm_text(llm_resp)
 
             if not step.has_tool_calls or step.is_final:
                 break
@@ -658,10 +660,17 @@ class MessageProcessor:
                     result = await self.send_message_chain(event.sid, action)
                     if not result.ok and result.err:
                         logger.error(result.err)
-                    message_results.append(result)
-                    await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
                 else:
-                    message_results.append(KiraIMSentResult(ok=False, err="Blank message list detected"))
+                    result = KiraIMSentResult(ok=False, err="Blank message list detected")
+                message_results.append(result)
+                # EventType.ON_MESSAGE_SENT
+                sent_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_MESSAGE_SENT)
+                for handler in sent_handlers:
+                    await handler.exec_handler(event, action, result)
+                    if event.is_stopped:
+                        logger.info(f"Event {event.event_id} stopped while ON_MESSAGE_SENT stage")
+                        return message_results
+                await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
             elif isinstance(action, RootTagAction):
                 try:
                     await action.tag.handle(action.value, **action.attrs)
