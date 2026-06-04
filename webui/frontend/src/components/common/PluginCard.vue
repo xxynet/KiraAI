@@ -24,9 +24,9 @@
           <span class="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
           <span class="text-gray-500 dark:text-gray-400">{{ $t('plugin.status_pending') }}</span>
         </div>
-        <div v-if="error" class="mt-2 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
+        <div v-if="error" class="mt-2 min-w-0 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400 overflow-hidden">
           <IconInfo class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-          <span>{{ error }}</span>
+          <span class="min-w-0 break-all line-clamp-6">{{ error }}</span>
         </div>
       </div>
       <div class="flex items-start space-x-2">
