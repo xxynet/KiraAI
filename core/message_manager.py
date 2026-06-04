@@ -546,7 +546,8 @@ class MessageProcessor:
             model_group=model_group,
         )
 
-        async def send_llm_text(resp: LLMResponse):
+        async def send_llm_text(resp: LLMResponse) -> bool:
+            """Process and send LLM text response. Returns False if stopped, True to continue."""
             text = resp.text_response
             message_results = []
             raw_output = ""
@@ -555,7 +556,7 @@ class MessageProcessor:
                 async with session_lock:
                     message_results = await self.send_xml_messages(event, text.strip(), tag_set)
                     if message_results is None:
-                        return
+                        return False
                     raw_output = self._add_message_ids(text, message_results)
                     logger.info(f"LLM -> {sid}: {raw_output}")
             step_result = KiraStepResult(message_results=message_results, raw_output=raw_output)
@@ -565,7 +566,7 @@ class MessageProcessor:
                 await step_handler.exec_handler(event, step_result)
                 if event.is_stopped:
                     logger.info(f"Event {event.event_id} stopped while ON_STEP_RESULT stage")
-                    return
+                    return False
             if raw_output:
                 llm_resp.text_response = step_result.raw_output
                 for idx in range(-1, -len(new_messages), -1):
@@ -573,6 +574,7 @@ class MessageProcessor:
                         new_messages[idx].content = step_result.raw_output
                         request.messages[idx].content = step_result.raw_output
                         break
+            return True
 
         # Iter agent executor to get LLMResponse
         # TODO use llm_semaphore to restrict concurrent LLM requests
@@ -581,7 +583,8 @@ class MessageProcessor:
             if not llm_resp:
                 break
 
-            await send_llm_text(llm_resp)
+            if not await send_llm_text(llm_resp):
+                break
 
             if not step.has_tool_calls or step.is_final:
                 break
