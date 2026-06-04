@@ -932,7 +932,7 @@ class PluginManager:
         # Phase 2: Recover plugins that failed with import errors
         import_failures = [
             pid for pid, err_info in _plugin_load_errors.items()
-            if "Import error" in err_info.get("error", "") and pid in _plugin_module_paths
+            if err_info.get("error_type") is ModuleNotFoundError and pid in _plugin_module_paths
         ]
         if import_failures:
             logger.info(f"Plugins with import errors, will attempt dependency install: {import_failures}")
@@ -1452,6 +1452,7 @@ class PluginManager:
                 _plugin_load_errors[plugin_id] = {
                     "manifest": _plugin_manifests.get(plugin_id, {}),
                     "error": f"Import error: {e}",
+                    "error_type": type(e),
                 }
                 if plugin_id in _plugin_infos:
                     _plugin_infos[plugin_id].error = f"Import error: {e}"
