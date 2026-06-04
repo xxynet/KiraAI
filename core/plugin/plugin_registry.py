@@ -282,6 +282,12 @@ class OnEventDeco:
             return func
         return decorator
 
+    def message_sent(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_MESSAGE_SENT)
+            return func
+        return decorator
+
     def step_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_STEP_RESULT)
