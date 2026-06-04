@@ -1,1 +1,1 @@
-IMPORTANT: Before doing anything, you MUST read [AGENTS.md](AGENTS.md) first. It contains all project rules, guidelines, architecture, and development commands. Treat AGENTS.md as mandatory project instructions — follow its rules exactly as written.
+D:/MyProject/Python/KiraAI_OpenSource/AGENTS.md
