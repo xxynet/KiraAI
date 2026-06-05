@@ -41,6 +41,7 @@ from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager
 from .agent.skills_mgr import SkillsManager
+from .agent.mcp_mgr import MCPManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
@@ -149,6 +150,7 @@ class MessageProcessor:
                  adapter_manager: AdapterManager,
                  session_manager: SessionManager,
                  prompt_manager: PromptManager,
+                 mcp_manager: MCPManager,
                  max_concurrent_messages: int = 3):
         self.db = db
         self.kira_config = kira_config
@@ -169,6 +171,7 @@ class MessageProcessor:
         self.provider_mgr = provider_manager
         self.adapter_mgr = adapter_manager
         self.skills_manager = skills_manager
+        self.mcp_manager = mcp_manager
 
         # message buffer
         self.session_locks: dict[str, asyncio.Lock] = {}
@@ -461,11 +464,17 @@ class MessageProcessor:
         # Generate agent prompt
         agent_prompt_list = await self.prompt_manager.get_agent_prompt(chat_env)
 
-        # Inject skills prompt
-        if len(self.skills_manager.skills_info) > 0:
+        # Inject skills prompt (filtered by scope)
+        allowed_skills = []
+        for s in self.skills_manager.skills_info:
+            if not s.enabled:
+                continue
+            if self.skills_manager.is_skill_allowed(s.name, sid):
+                allowed_skills.append(s)
+        if allowed_skills:
             for i, p in enumerate(agent_prompt_list):
                 if p.name == "tools":
-                    agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt())
+                    agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt(allowed_skills))
                     break
         
         model_group: list[LLMModelClient] = []
@@ -483,7 +492,25 @@ class MessageProcessor:
                 llm_logger.error(f"Default LLM model not set, please set it in Configuration")
                 return
 
-        request = LLMRequest(messages=session_memory[:], tools=deepcopy(self.llm_api.tools_definitions), tool_funcs=self.llm_api.tools_functions, tool_set=ToolSet())
+        # Filter tools by scope
+        tool_server_map = self.mcp_manager.get_tool_server_map()
+
+        scoped_tools = []
+        for t in deepcopy(self.llm_api.tools_definitions):
+            tool_name = t.get("function", {}).get("name")
+            server_id = tool_server_map.get(tool_name)
+            if server_id and not self.mcp_manager.is_server_allowed(server_id, sid):
+                continue  # blocked by scope
+            scoped_tools.append(t)
+
+        scoped_tool_funcs = {}
+        for name, func in self.llm_api.tools_functions.items():
+            server_id = tool_server_map.get(name)
+            if server_id and not self.mcp_manager.is_server_allowed(server_id, sid):
+                continue
+            scoped_tool_funcs[name] = func
+
+        request = LLMRequest(messages=session_memory[:], tools=scoped_tools, tool_funcs=scoped_tool_funcs, tool_set=ToolSet())
         request.system_prompt.extend(agent_prompt_list)
 
         # Add received im messages

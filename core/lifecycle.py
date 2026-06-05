@@ -187,7 +187,8 @@ class KiraLifecycle:
             skills_manager=self.skills_manager,
             adapter_manager=self.adapter_manager,
             session_manager=self.session_manager,
-            prompt_manager=self.prompt_manager)
+            prompt_manager=self.prompt_manager,
+            mcp_manager=self.mcp_manager)
 
         self.tasks.append(
             asyncio.create_task(
