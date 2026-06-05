@@ -131,4 +131,9 @@ class SessionsRoutes(Routes):
         if not self.lifecycle or not self.lifecycle.session_manager:
             raise HTTPException(status_code=404, detail="Memory manager not available")
         self.lifecycle.session_manager.delete_session(session_id)
+        # Clean up scope entries referencing this session
+        if self.lifecycle.mcp_manager:
+            self.lifecycle.mcp_manager.remove_session_from_scopes(session_id)
+        if self.lifecycle.skills_manager:
+            self.lifecycle.skills_manager.remove_session_from_scopes(session_id)
         return None

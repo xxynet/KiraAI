@@ -25,15 +25,42 @@ class SkillsManager:
     def __init__(self):
         self.skills_dir = get_data_path() / "skills"
         self.skills_config = get_config_path() / "skills.json"
-        self.skills_config_dict = self.get_skill_config_dict()
+        self._raw_config = self._load_raw_config()
+        self.skills_config_dict = self._build_enabled_dict()
         self.skills_info = self.scan_skill_dir()
         logger.info(f"Loaded skills: {[info.name for info in self.skills_info]}")
 
+    def _load_raw_config(self) -> dict:
+        """Load the full JSON config (including _scope)."""
+        if not self.skills_config.exists():
+            self.skills_config.write_text("{}", encoding="utf-8")
+        with open(self.skills_config, 'r', encoding="utf-8") as f:
+            try:
+                return json.loads(f.read())
+            except json.JSONDecodeError:
+                logger.error("Error loading data/config/skills.json")
+                return {}
+
+    def _build_enabled_dict(self) -> dict:
+        """Build {name: bool} dict from raw config, excluding reserved keys."""
+        return {k: v for k, v in self._raw_config.items() if not k.startswith("_")}
+
+    def _save_config(self):
+        """Write full config (enabled states + _scope) back to disk."""
+        full = {}
+        full.update(self.skills_config_dict)
+        scope = self._raw_config.get("_scope", {})
+        if scope:
+            full["_scope"] = scope
+        self._raw_config = full
+        with open(self.skills_config, 'w', encoding="utf-8") as f:
+            f.write(json.dumps(full, indent=4, ensure_ascii=False))
+
     def scan_skill_dir(self) -> list[SkillInfo]:
         skills_info = []
-        self.skills_config_dict = self.get_skill_config_dict()
+        self._raw_config = self._load_raw_config()
+        self.skills_config_dict = self._build_enabled_dict()
         skills_config_dict = self.skills_config_dict
-
 
         for s in os.listdir(self.skills_dir):
             skill_path = self.skills_dir / s
@@ -51,16 +78,8 @@ class SkillsManager:
         return skills_info
 
     def get_skill_config_dict(self):
-        skills_config_dict = {}
-        if not self.skills_config.exists():
-            self.skills_config.write_text("{}", encoding="utf-8")
-        with open(self.skills_config, 'r', encoding="utf-8") as f:
-            skills_config = f.read()
-        try:
-            skills_config_dict = json.loads(skills_config)
-        except json.JSONDecodeError:
-            logger.error("Error loading data/config/skills.json")
-        return skills_config_dict
+        self._raw_config = self._load_raw_config()
+        return self._build_enabled_dict()
 
     def set_skill_enabled(self, skill_name: str, enabled: bool):
         for skill in self.skills_info:
@@ -68,8 +87,7 @@ class SkillsManager:
                 if skill.enabled != enabled:
                     skill.enabled = enabled
                     self.skills_config_dict[skill_name] = enabled
-                    with open(self.skills_config, 'w', encoding="utf-8") as f:
-                        f.write(json.dumps(self.skills_config_dict, indent=4, ensure_ascii=False))
+                    self._save_config()
                     return True
                 return False
         return False
@@ -135,4 +153,55 @@ class SkillsManager:
             p.content += f"- **{s.name}**: {s.description}\n  Path: {str(s.path)}"
 
         return p
+
+    # ====== Scope methods ======
+
+    def get_skill_scope(self, skill_name: str) -> Optional[dict]:
+        """Return scope entry for a skill. None = global.
+        Format: {"allow": [sids]} or {"deny": [sids]}"""
+        return self._raw_config.get("_scope", {}).get(skill_name)
+
+    def is_skill_allowed(self, skill_name: str, session_id: str) -> bool:
+        """Check if a session is allowed to use a skill."""
+        scope = self.get_skill_scope(skill_name)
+        if not scope:
+            return True  # global
+        if "allow" in scope:
+            return session_id in scope["allow"]
+        if "deny" in scope:
+            return session_id not in scope["deny"]
+        return True
+
+    def set_skill_scope(self, skill_name: str, mode: Optional[str], sessions: list[str]):
+        """Set scope for a skill. mode='allow'|'deny', or None to clear."""
+        scope = self._raw_config.get("_scope", {})
+        if mode and sessions:
+            scope[skill_name] = {mode: sessions}
+        else:
+            scope.pop(skill_name, None)
+        if scope:
+            self._raw_config["_scope"] = scope
+        else:
+            self._raw_config.pop("_scope", None)
+        self._save_config()
+
+    def remove_session_from_scopes(self, session_id: str):
+        """Remove a session from all skill scope entries (cleanup on session delete)."""
+        scope = self._raw_config.get("_scope", {})
+        changed = False
+        for name in list(scope.keys()):
+            entry = scope[name]
+            for mode_key in ("allow", "deny"):
+                if mode_key in entry and session_id in entry[mode_key]:
+                    entry[mode_key].remove(session_id)
+                    if not entry[mode_key]:
+                        del scope[name]
+                    changed = True
+                    break
+        if changed:
+            if scope:
+                self._raw_config["_scope"] = scope
+            else:
+                self._raw_config.pop("_scope", None)
+            self._save_config()
 

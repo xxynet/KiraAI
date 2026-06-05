@@ -246,3 +246,14 @@ export interface ReleasesResponse {
   current_version: string
   releases: ReleaseItem[]
 }
+
+// Scope types — mirrors webui/routes/scope.py
+export type ScopeEntry = { allow: string[] } | { deny: string[] }
+
+export interface ScopeResponse {
+  mcp_scopes: Record<string, ScopeEntry>
+  skill_scopes: Record<string, ScopeEntry>
+  sessions: { id: string; adapter: string; type: string; session_id: string; title: string }[]
+  mcp_servers: { id: string; name: string; enabled: boolean }[]
+  skills: { name: string; enabled: boolean }[]
+}

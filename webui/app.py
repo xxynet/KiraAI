@@ -29,6 +29,7 @@ from webui.routes.config import ConfigRoutes
 from webui.routes.stickers import StickersRoutes
 from webui.routes.settings import SettingsRoutes
 from webui.routes.skills import SkillsRoutes
+from webui.routes.scope import ScopeRoutes
 from webui.routes.system import SystemRoutes
 
 
@@ -124,6 +125,7 @@ class KiraWebUI:
         ConfigRoutes(self.app, self.lifecycle).register()
         StickersRoutes(self.app, self.lifecycle).register()
         SkillsRoutes(self.app, self.lifecycle).register()
+        ScopeRoutes(self.app, self.lifecycle).register()
         SettingsRoutes(self.app, self.lifecycle).register()
         SystemRoutes(self.app, self.lifecycle).register()
         ReleasesRoutes(self.app, self.lifecycle).register()
