@@ -300,6 +300,20 @@ class OnEventDeco:
             return func
         return decorator
 
+    def loaded(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        """Fired once after ALL plugins have been loaded (system-level lifecycle)."""
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_LOADED)
+            return func
+        return decorator
+
+    def shutdown(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        """Fired once before system shutdown begins (system-level lifecycle)."""
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_SHUTDOWN)
+            return func
+        return decorator
+
     def exception(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_EXCEPTION)

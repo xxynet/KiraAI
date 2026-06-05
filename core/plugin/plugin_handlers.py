@@ -28,6 +28,8 @@ class EventType(Enum):
     ON_MESSAGE_SENT = "on_message_sent"  # 单条消息发送后
     ON_STEP_RESULT = "on_step_result"  # Agent 步骤结果
     ON_FINAL_RESULT = "on_final_result"  # 最终消息结果
+    ON_LOADED = "on_loaded"            # 所有插件加载完成后
+    ON_SHUTDOWN = "on_shutdown"        # 系统即将关闭
     ON_EXCEPTION = "on_exception"  # 异常发生时
     ...
 
