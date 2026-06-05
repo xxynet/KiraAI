@@ -17,6 +17,7 @@ from .event_bus import EventBus
 from .persona import PersonaManager
 from .provider import ProviderManager
 from .plugin import PluginContext, PluginManager
+from .plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.mcp_mgr import MCPManager
 from core.agent.skills_mgr import SkillsManager
 from core.config import VERSION
@@ -219,6 +220,11 @@ class KiraLifecycle:
         if webui_app is not None:
             self.plugin_manager.set_web_app(webui_app)
 
+        # Fire ON_LOADED lifecycle event (all plugins are initialized)
+        loaded_handlers = event_handler_reg.get_handlers(EventType.ON_LOADED)
+        for handler in loaded_handlers:
+            await handler.exec_handler(None)
+
         # ====== init temp folder monitor ======
         temp_folder = get_data_path() / "temp"
 
@@ -244,9 +250,18 @@ class KiraLifecycle:
         await self.event_bus.dispatch()
 
     async def stop(self):
+        # Fire ON_SHUTDOWN lifecycle event (before any teardown)
+        shutdown_handlers = event_handler_reg.get_handlers(EventType.ON_SHUTDOWN)
+        for handler in shutdown_handlers:
+            await handler.exec_handler(None)
+
         # shutdown telemetry client
         if self.telemetry_client:
             await self.telemetry_client.shutdown()
+
+        # terminate all plugins
+        if self.plugin_manager:
+            await self.plugin_manager.terminate()
 
         # terminate all running adapters
         await self.adapter_manager.stop_adapters()
