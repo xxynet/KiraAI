@@ -535,6 +535,9 @@ class MessageProcessor:
 
         # Re-derive tools list after plugins may have added to tool_set
         request.tools = request.tool_set.to_list()
+        # Recompute tool_choice if it was auto-derived (not explicitly set by a plugin)
+        if request.tool_choice in ("auto", "none"):
+            request.tool_choice = "auto" if request.tools else "none"
 
         # Print user message info (skip persist=False prompts to avoid log spam)
         user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
