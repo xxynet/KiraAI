@@ -51,6 +51,7 @@ class EventHandler:
         return self.priority > other.priority
 
     async def exec_handler(self, *args, **kwargs):
+        event = args[0] if args else None
         try:
             await self.handler(*args, **kwargs)
         except Exception as e:
