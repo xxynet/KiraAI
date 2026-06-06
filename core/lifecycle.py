@@ -224,7 +224,7 @@ class KiraLifecycle:
         # Fire ON_LOADED lifecycle event (all plugins are initialized)
         loaded_handlers = event_handler_reg.get_handlers(EventType.ON_LOADED)
         for handler in loaded_handlers:
-            await handler.exec_handler(None)
+            await handler.exec_handler()
 
         # ====== init temp folder monitor ======
         temp_folder = get_data_path() / "temp"
@@ -254,7 +254,7 @@ class KiraLifecycle:
         # Fire ON_SHUTDOWN lifecycle event (before any teardown)
         shutdown_handlers = event_handler_reg.get_handlers(EventType.ON_SHUTDOWN)
         for handler in shutdown_handlers:
-            await handler.exec_handler(None)
+            await handler.exec_handler()
 
         # shutdown telemetry client
         if self.telemetry_client:
