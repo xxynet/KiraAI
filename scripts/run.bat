@@ -118,3 +118,4 @@ echo ==============================
 
 setlocal disabledelayedexpansion
 python main.py %*
+pause
