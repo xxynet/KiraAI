@@ -135,17 +135,7 @@ class LLMClient:
             tool_logger.info(f"{name} args: {args}")
 
             # Call corresponding Python function(s)
-            if self.tools_functions and name in self.tools_functions:
-                try:
-                    coro = self.tools_functions[name](event, **args)
-                    result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
-                except AsyncTimeoutError:
-                    result = {"error": f"Tool '{name}' timed out after {tool_call_timeout}s"}
-                    tool_logger.error(f"Tool '{name}' timed out after {tool_call_timeout}s")
-                except Exception as e:
-                    result = {"error": f"Failed to call tool '{name}': {e}"}
-                    tool_logger.error(f"Failed to call tool '{name}': {e}")
-            elif tool_set and name in tool_set:
+            if tool_set and name in tool_set:
                 try:
                     tool_inst = tool_set.get(name)
                     coro = tool_inst.execute(event, **args)
