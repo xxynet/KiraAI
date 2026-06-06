@@ -50,9 +50,9 @@ class EventHandler:
     def __gt__(self, other):
         return self.priority > other.priority
 
-    async def exec_handler(self, event, *args, **kwargs):
+    async def exec_handler(self, *args, **kwargs):
         try:
-            await self.handler(event, *args, **kwargs)
+            await self.handler(*args, **kwargs)
         except Exception as e:
             import traceback as tb
             logger.error(tb.format_exc())
