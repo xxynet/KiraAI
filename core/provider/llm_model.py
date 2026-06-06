@@ -38,6 +38,9 @@ class LLMRequest:
             m if isinstance(m, OpenAIMessage) else OpenAIMessage(**m)
             for m in self.messages
         ]
+        # Derive tools list from tool_set when present
+        if self.tool_set:
+            self.tools = self.tool_set.to_list()
         if not self.tool_choice:
             if self.tools:
                 self.tool_choice = "auto"

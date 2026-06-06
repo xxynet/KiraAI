@@ -1,7 +1,6 @@
 import asyncio
 import json
 import time
-from copy import deepcopy
 from asyncio import Lock
 import xml.etree.ElementTree as ET
 from typing import Union, Any, List, Optional, TYPE_CHECKING
@@ -46,7 +45,6 @@ from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
 from core.agent.message import OpenAIMessage
-from core.agent.tool import ToolSet
 from core.tag import tag_registry, TagSet, BaseTag, RootTagAction
 from core.db.service import DatabaseService
 
@@ -495,22 +493,15 @@ class MessageProcessor:
         # Filter tools by scope
         tool_server_map = self.mcp_manager.get_tool_server_map()
 
-        scoped_tools = []
-        for t in deepcopy(self.llm_api.tools_definitions):
-            tool_name = t.get("function", {}).get("name")
-            server_id = tool_server_map.get(tool_name)
-            if server_id and not self.mcp_manager.is_server_allowed(server_id, sid):
-                continue  # blocked by scope
-            scoped_tools.append(t)
+        tool_set = self.llm_api.build_tool_set()
+        # Remove tools blocked by MCP server scope
+        tool_set.tools = [
+            t for t in tool_set.tools
+            if not (tool_server_map.get(t.name)
+                    and not self.mcp_manager.is_server_allowed(tool_server_map[t.name], sid))
+        ]
 
-        scoped_tool_funcs = {}
-        for name, func in self.llm_api.tools_functions.items():
-            server_id = tool_server_map.get(name)
-            if server_id and not self.mcp_manager.is_server_allowed(server_id, sid):
-                continue
-            scoped_tool_funcs[name] = func
-
-        request = LLMRequest(messages=session_memory[:], tools=scoped_tools, tool_funcs=scoped_tool_funcs, tool_set=ToolSet())
+        request = LLMRequest(messages=session_memory[:], tool_set=tool_set)
         request.system_prompt.extend(agent_prompt_list)
 
         # Add received im messages
@@ -542,8 +533,11 @@ class MessageProcessor:
                 break
         request.assemble_prompt()
 
-        # TODO: migrate tools & tool_func params to tool_set
-        request.tools.extend(request.tool_set.to_list())
+        # Re-derive tools list after plugins may have added to tool_set
+        request.tools = request.tool_set.to_list()
+        # Recompute tool_choice if it was auto-derived (not explicitly set by a plugin)
+        if request.tool_choice in ("auto", "none"):
+            request.tool_choice = "auto" if request.tools else "none"
 
         # Print user message info (skip persist=False prompts to avoid log spam)
         user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
