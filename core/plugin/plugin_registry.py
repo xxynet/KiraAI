@@ -1174,7 +1174,7 @@ class PluginManager:
         Returns None if compatible, or an error message string if not.
         """
         try:
-            spec = SpecifierSet(core_version_spec)
+            spec = SpecifierSet(core_version_spec, prereleases=True)
         except InvalidSpecifier:
             return f"Invalid core_version specifier: {core_version_spec}"
 
