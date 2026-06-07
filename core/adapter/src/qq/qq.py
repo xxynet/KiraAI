@@ -19,6 +19,7 @@ from core.chat.message_elements import (
     Sticker,
     Record,
     Poke,
+    Json,
     File,
     Video
 )
@@ -28,22 +29,36 @@ from core.chat import Session, Group, User
 from .napcat_client import NapCatWebSocketClient, QQMessageChain, QQMessageType
 
 
-def extract_card_info(card_json: str) -> str:
-    card_json = json.loads(card_json)
-    detail = card_json.get("meta", {}).get("detail_1", {})
-    card_json_dic = {
-        "title": detail.get("title", ""),
-        "desc": detail.get("desc", ""),
-        # "icon": detail.get("icon", ""),
-        # "preview": detail.get("preview", ""),
-        # "url": detail.get("url", ""),
-        # "qqdocurl": detail.get("qqdocurl", ""),
-        "appid": detail.get("appid", ""),
-        "nick": detail.get("host", {}).get("nick", ""),
-        "prompt": card_json.get("prompt", ""),
-        "app": card_json.get("app", "")
-    }
-    return json.dumps(card_json_dic, ensure_ascii=False)
+def extract_card_info(card_json: str) -> dict:
+    try:
+        card_json = json.loads(card_json)
+    except (json.JSONDecodeError, TypeError):
+        return {"raw": card_json} if isinstance(card_json, str) else {}
+
+    meta = card_json.get("meta", {})
+    content = (
+        meta.get("detail_1")
+        or meta.get("news")
+        or meta.get("music")
+        or meta
+    )
+
+    result = {}
+
+    # 顶层字段
+    for key in ("app", "prompt", "bizsrc", "view"):
+        val = card_json.get(key, "")
+        if val:
+            result[key] = val
+
+    # 内容字段 (detail_1 / news / music 或 fallback meta)
+    if isinstance(content, dict):
+        for key in ("title", "desc", "jumpUrl", "qqdocurl", "tag"):
+            val = content.get(key, "")
+            if val:
+                result[key] = val
+
+    return result
 
 
 class QQAdapter(IMAdapter):
@@ -447,8 +462,8 @@ class QQAdapter(IMAdapter):
                     self.logger.error(traceback.format_exc())
             elif ele.get("type") == "json":
                 json_card_info = ele.get("data", "").get("data", "")
-                cleaned_card_info = extract_card_info(json_card_info)
-                message_content.append(Text(f"[Json {cleaned_card_info}]"))
+                card_data = extract_card_info(json_card_info)
+                message_content.append(Json(card_data))
             elif ele.get("type") == "file":
                 try:
                     file_name = ele.get("data").get("file")

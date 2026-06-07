@@ -31,6 +31,7 @@ from core.chat.message_elements import (
     Record,
     Notice,
     Poke,
+    Json,
     File,
     Video
 )
@@ -316,6 +317,12 @@ class MessageProcessor:
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, Notice):
                 message_str += f"{ele.text}"
+            elif isinstance(ele, Json):
+                try:
+                    card_str = json.dumps(ele.data, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    card_str = json.dumps(str(ele.data), ensure_ascii=False)
+                message_str += f"[Json card {card_str}]"
             elif isinstance(ele, File):
                 try:
                     file_size = int(ele.size)

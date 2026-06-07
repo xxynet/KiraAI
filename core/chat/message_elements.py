@@ -7,6 +7,7 @@ import hashlib
 import uuid
 import base64
 import binascii
+import json
 import os
 import re
 import mimetypes
@@ -74,6 +75,7 @@ class ElementType(Enum):
     Poke = "poke"
     File = "file"
     Video = "video"
+    Json = "json"
 
 
 def check_base64(s: str) -> bool:
@@ -547,6 +549,22 @@ class Poke(BaseMessageElement):
     @property
     def repr(self) -> str:
         return f"[Poke {self.pid}]"
+
+
+class Json(BaseMessageElement):
+    type = ElementType.Json
+
+    def __init__(self, data: dict):
+        if not isinstance(data, dict):
+            raise TypeError(f"Json expects a dict, got {type(data).__name__}")
+        self.data = data
+
+    @property
+    def repr(self) -> str:
+        try:
+            return json.dumps(self.data, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return json.dumps(str(self.data), ensure_ascii=False)
 
 
 class File(BaseMediaElement):
