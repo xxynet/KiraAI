@@ -138,7 +138,6 @@ def test_json_element():
 
 
 def test_json_element_rejects_non_dict():
-    import pytest
     with pytest.raises(TypeError, match="Json expects a dict"):
         Json("not a dict")
 
