@@ -51,7 +51,7 @@ def extract_card_info(card_json: str) -> dict:
         if val:
             result[key] = val
 
-    # 内容字段（detail_1 / news / music 或 fallback meta）
+    # 内容字段 (detail_1 / news / music 或 fallback meta)
     if isinstance(content, dict):
         for key in ("title", "desc", "jumpUrl", "qqdocurl", "tag"):
             val = content.get(key, "")

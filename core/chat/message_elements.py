@@ -555,11 +555,16 @@ class Json(BaseMessageElement):
     type = ElementType.Json
 
     def __init__(self, data: dict):
+        if not isinstance(data, dict):
+            raise TypeError(f"Json expects a dict, got {type(data).__name__}")
         self.data = data
 
     @property
     def repr(self) -> str:
-        return json.dumps(self.data, ensure_ascii=False)
+        try:
+            return json.dumps(self.data, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return json.dumps(str(self.data), ensure_ascii=False)
 
 
 class File(BaseMediaElement):

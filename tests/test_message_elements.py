@@ -14,6 +14,7 @@ from core.chat.message_elements import (
     Emoji,
     Notice,
     Poke,
+    Json,
     Image,
     Sticker,
     Record,
@@ -123,6 +124,23 @@ def test_poke_element():
     p = Poke("user_1")
     assert p.type == ElementType.Poke
     assert p.repr == "[Poke user_1]"
+
+
+# ── Json element ────────────────────────────────────────────────────
+
+def test_json_element():
+    data = {"app": "com.tencent.miniapp_01", "title": "哔哩哔哩", "desc": "test"}
+    j = Json(data)
+    assert j.type == ElementType.Json
+    assert j.data == data
+    assert '"app": "com.tencent.miniapp_01"' in j.repr
+    assert '"title": "哔哩哔哩"' in j.repr
+
+
+def test_json_element_rejects_non_dict():
+    import pytest
+    with pytest.raises(TypeError, match="Json expects a dict"):
+        Json("not a dict")
 
 
 # ── BaseMediaElement.check_file_type ────────────────────────────────

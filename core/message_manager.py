@@ -318,7 +318,11 @@ class MessageProcessor:
             elif isinstance(ele, Notice):
                 message_str += f"{ele.text}"
             elif isinstance(ele, Json):
-                message_str += f"[Json card {json.dumps(ele.data, ensure_ascii=False)}]"
+                try:
+                    card_str = json.dumps(ele.data, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    card_str = json.dumps(str(ele.data), ensure_ascii=False)
+                message_str += f"[Json card {card_str}]"
             elif isinstance(ele, File):
                 try:
                     file_size = int(ele.size)
