@@ -12,7 +12,6 @@ from core.chat.session_manager import SessionManager
 from .adapter import AdapterManager
 from .statistics import Statistics
 from .llm_client import LLMClient
-from .tool_manager import register_all_tools
 from .event_bus import EventBus
 from .persona import PersonaManager
 from .provider import ProviderManager
@@ -146,8 +145,6 @@ class KiraLifecycle:
 
         # ====== init LLMClient ======
         self.llm_api = LLMClient(self.kira_config, self.provider_manager)
-        await register_all_tools(self.llm_api)  # Legacy tools
-
         # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(self.kira_config, event_queue)
         await self.adapter_manager.initialize()
