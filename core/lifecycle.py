@@ -137,8 +137,8 @@ class KiraLifecycle:
 
         # ====== record startup time and init telemetry ======
         self.stats.set_stats("started_ts", int(time.time()))
-        # self.telemetry_client = TelemetryClient(self.db_service, self.kira_config, self.stats)
-        # await self.telemetry_client.initialize()
+        self.telemetry_client = TelemetryClient(self.db_service, self.kira_config, self.stats)
+        await self.telemetry_client.initialize()
 
         # ====== init ProviderManager config ======
         self.provider_manager = ProviderManager(self.db_service, self.kira_config)
@@ -255,7 +255,10 @@ class KiraLifecycle:
 
         # shutdown telemetry client
         if self.telemetry_client:
-            await self.telemetry_client.shutdown()
+            try:
+                await self.telemetry_client.shutdown()
+            except Exception as e:
+                logger.error(f"Telemetry shutdown error: {e}")
 
         # terminate all plugins
         if self.plugin_manager:

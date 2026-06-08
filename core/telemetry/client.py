@@ -2,6 +2,7 @@ import asyncio
 import hmac
 import hashlib
 import json
+import os
 import platform as sys_platform
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -38,7 +39,7 @@ class TelemetryClient:
         self.client_uuid: Optional[str] = self.telemetry_config.get("client_uuid")
         self.secret_key: Optional[str] = self.telemetry_config.get("secret_key")
 
-        self.server_url: str = "https://telemetry.kira-ai.top/api/v1"
+        self.server_url: str = os.environ.get("KIRA_TELEMETRY_SERVER", "https://telemetry.kira-ai.top/api/v1")
         self.heartbeat_interval: int = 300  # 5 minutes
 
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -70,33 +71,44 @@ class TelemetryClient:
         else:
             logger.warning("Telemetry client failed to acquire UUID; events will be dropped.")
 
+    def _send_sync(self, event_type: str, data: dict[str, Any]) -> None:
+        """Synchronous fire-and-forget send, immune to async task cancellation."""
+        if not self.client_uuid or not self.secret_key:
+            return
+        payload = self._build_payload(event_type, data)
+        payload["signature"] = self._sign_payload(payload)
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                client.post(f"{self.server_url}/events", json=payload).raise_for_status()
+            logger.info(f"Sync event sent: {event_type}")
+        except Exception as e:
+            logger.warning(f"Failed to send sync event {event_type}: {e}")
+
     async def shutdown(self) -> None:
         """Graceful shutdown: flush pending events and close HTTP client."""
-        self._shutdown_event.set()
+        try:
+            started_ts = self.stats.get_stats("started_ts") if self.stats else None
+            if started_ts:
+                uptime_ms = int((datetime.now(timezone.utc).timestamp() - started_ts) * 1000)
+                self._send_sync(TelemetryEventType.SYSTEM_SHUTDOWN, {"uptime_duration_ms": uptime_ms})
 
-        started_ts = self.stats.get_stats("started_ts") if self.stats else None
-        if started_ts:
-            uptime_duration_ms = int((datetime.now(timezone.utc).timestamp() - started_ts) * 1000)
-            self.send_system_shutdown(uptime_duration_ms)
+            self._shutdown_event.set()
 
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
-            try:
-                await self._heartbeat_task
-            except asyncio.CancelledError:
-                pass
+            for task in (self._heartbeat_task, self._worker_task):
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
 
-        if self._worker_task:
-            try:
-                await asyncio.wait_for(self._worker_task, timeout=5.0)
-            except asyncio.TimeoutError:
-                self._worker_task.cancel()
+            if self._http_client:
+                await self._http_client.aclose()
+                self._http_client = None
 
-        if self._http_client:
-            await self._http_client.aclose()
-            self._http_client = None
-
-        logger.info("Telemetry client shut down.")
+            logger.info("Telemetry client shut down.")
+        except Exception as e:
+            logger.warning(f"Telemetry shutdown error: {e}")
 
     # ------------------------------------------------------------------
     # Public API
@@ -226,6 +238,16 @@ class TelemetryClient:
             "secret_key": self.secret_key,
         })
         self.config.save_config()
+
+    def _build_payload(self, event_type: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Build an event payload dict (without signature)."""
+        event = TelemetryEvent(
+            event_type=event_type,
+            data=data,
+            client_uuid=self.client_uuid,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+        return event.to_payload()
 
     def _sign_payload(self, payload: dict[str, Any]) -> str:
         """Generate HMAC-SHA256 signature for a payload (excluding 'signature')."""
