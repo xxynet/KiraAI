@@ -309,7 +309,7 @@ class TelemetryClient:
                 else:
                     logger.warning(f"Telemetry server returned {e.response.status_code}: {e}")
             except Exception as e:
-                logger.warning(f"Failed to send telemetry event: {e}")
+                logger.warning(f"Failed to send telemetry event: {type(e).__name__}: {e}")
 
     # ------------------------------------------------------------------
     # Convenience helpers for common events
