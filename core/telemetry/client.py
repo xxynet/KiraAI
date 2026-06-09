@@ -107,8 +107,10 @@ class TelemetryClient:
                     task.cancel()
                     try:
                         await task
-                    except (asyncio.CancelledError, Exception):
+                    except asyncio.CancelledError:
                         pass
+                    except Exception as e:
+                        logger.debug(f"Telemetry task {task.get_name()} raised on shutdown: {e}")
 
             if self._http_client:
                 await self._http_client.aclose()
@@ -337,8 +339,7 @@ class TelemetryClient:
                 resp.raise_for_status()
                 code = resp.json().get("countryCode")
                 if code:
-                    self.country_code = code
-                    logger.info(f"Country code detected: {code}")
+                    logger.debug(f"Country code detected: {code}")
                     return code
         except Exception as e:
             logger.warning(f"Failed to fetch country code: {e}")

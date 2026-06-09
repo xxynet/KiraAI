@@ -622,8 +622,8 @@ class MessageProcessor:
                     response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
                     success=(step.state != "error"),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to record telemetry LLM usage: {e}")
 
             if not await send_llm_text(llm_resp):
                 break
@@ -669,8 +669,8 @@ class MessageProcessor:
                 response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
                 success=True,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to record telemetry LLM usage: {e}")
 
         response = llm_resp.text_response.strip()
 

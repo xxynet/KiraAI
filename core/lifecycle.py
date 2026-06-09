@@ -138,7 +138,10 @@ class KiraLifecycle:
         # ====== record startup time and init telemetry ======
         self.stats.set_stats("started_ts", int(time.time()))
         self.telemetry_client = TelemetryClient(self.db_service, self.kira_config, self.stats)
-        await self.telemetry_client.initialize()
+        try:
+            await self.telemetry_client.initialize()
+        except Exception as e:
+            logger.debug(f"Telemetry client initialization failed: {e}")
 
         # ====== init ProviderManager config ======
         self.provider_manager = ProviderManager(self.db_service, self.kira_config)

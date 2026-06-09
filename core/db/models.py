@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, Text, JSON, Boolean
+from sqlalchemy import Column, Integer, String, BigInteger, Text, JSON, Boolean, Index
 
 from .db_mgr import Base
 
@@ -37,6 +37,9 @@ class Persona(Base):
 class TelemetryMessage(Base):
     """Raw message telemetry records for hourly aggregation."""
     __tablename__ = "telemetry_messages"
+    __table_args__ = (
+        Index("ix_telemetry_messages_reported_ts", "reported", "timestamp"),
+    )
 
     id = Column(String(36), primary_key=True, nullable=False)
     timestamp = Column(BigInteger, nullable=False)
@@ -47,6 +50,9 @@ class TelemetryMessage(Base):
 class TelemetryLLMUsage(Base):
     """Raw LLM call telemetry records for hourly aggregation."""
     __tablename__ = "telemetry_llm_usage"
+    __table_args__ = (
+        Index("ix_telemetry_llm_reported_ts", "reported", "timestamp"),
+    )
 
     id = Column(String(36), primary_key=True, nullable=False)
     timestamp = Column(BigInteger, nullable=False)

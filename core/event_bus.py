@@ -179,8 +179,8 @@ class EventBus:
                     platform = getattr(getattr(event, "adapter", None), "platform", None) or getattr(event, "platform", "unknown")
                     try:
                         await self.db.add_telemetry_message(int(time.time()), platform)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.logger.debug(f"Failed to record telemetry message: {e}")
             task = asyncio.create_task(self._dispatch_event(event))
 
             def _log_task_error(t: asyncio.Task):
