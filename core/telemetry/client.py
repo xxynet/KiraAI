@@ -41,6 +41,7 @@ class TelemetryClient:
 
         self.server_url: str = os.environ.get("KIRA_TELEMETRY_SERVER", "https://telemetry.kira-ai.top/api/v1")
         self.heartbeat_interval: int = 300  # 5 minutes
+        self.country_code: Optional[str] = self.telemetry_config.get("country_code")
 
         self._http_client: Optional[httpx.AsyncClient] = None
         self._send_queue: asyncio.Queue[TelemetryEvent] = asyncio.Queue()
@@ -57,13 +58,16 @@ class TelemetryClient:
             logger.info("Telemetry is disabled.")
             return
 
-        self._http_client = httpx.AsyncClient(timeout=30.0)
+        # Use a transport with proxy=None to bypass HTTP_PROXY / HTTPS_PROXY env vars
+        self._http_client = httpx.AsyncClient(timeout=30.0, transport=httpx.AsyncHTTPTransport(proxy=None))
         self._shutdown_event = asyncio.Event()
 
         if not self.client_uuid or not self.secret_key:
             await self._request_uuid()
 
         if self.client_uuid and self.secret_key:
+            if not self.country_code:
+                self.country_code = await self._fetch_country_code()
             self._worker_task = asyncio.create_task(self._send_worker())
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
             self.send_system_startup()
@@ -78,7 +82,7 @@ class TelemetryClient:
         payload = self._build_payload(event_type, data)
         payload["signature"] = self._sign_payload(payload)
         try:
-            with httpx.Client(timeout=5.0) as client:
+            with httpx.Client(timeout=5.0, transport=httpx.HTTPTransport(proxy=None)) as client:
                 client.post(f"{self.server_url}/events", json=payload).raise_for_status()
             logger.info(f"Sync event sent: {event_type}")
         except Exception as e:
@@ -169,7 +173,7 @@ class TelemetryClient:
             return True
 
         if not self._http_client:
-            self._http_client = httpx.AsyncClient(timeout=30.0)
+            self._http_client = httpx.AsyncClient(timeout=30.0, transport=httpx.AsyncHTTPTransport(proxy=None))
 
         if not self.client_uuid or not self.secret_key:
             await self._request_uuid()
@@ -232,11 +236,14 @@ class TelemetryClient:
         if not hasattr(self.config, "telemetry"):
             self.config["telemetry"] = {}
 
-        self.config["telemetry"].update({
+        update: dict[str, Any] = {
             "enabled": self.enabled,
             "client_uuid": self.client_uuid,
             "secret_key": self.secret_key,
-        })
+        }
+        if self.country_code:
+            update["country_code"] = self.country_code
+        self.config["telemetry"].update(update)
         self.config.save_config()
 
     def _build_payload(self, event_type: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -312,14 +319,41 @@ class TelemetryClient:
                 logger.warning(f"Failed to send telemetry event: {type(e).__name__}: {e}")
 
     # ------------------------------------------------------------------
+    # Geo lookup
+    # ------------------------------------------------------------------
+    async def _fetch_country_code(self) -> Optional[str]:
+        """
+        Fetch country code from public IP via ip-api.com.
+        Uses a dedicated client with proxy explicitly disabled.
+        Caches the result to telemetry_config.json.
+        """
+        transport = httpx.AsyncHTTPTransport(proxy=None)
+        try:
+            async with httpx.AsyncClient(timeout=10.0, transport=transport) as client:
+                resp = await client.get("http://ip-api.com/json/?fields=countryCode")
+                resp.raise_for_status()
+                code = resp.json().get("countryCode")
+                if code:
+                    self.country_code = code
+                    self._persist_config()
+                    logger.info(f"Country code detected: {code}")
+                    return code
+        except Exception as e:
+            logger.warning(f"Failed to fetch country code: {e}")
+        return None
+
+    # ------------------------------------------------------------------
     # Convenience helpers for common events
     # ------------------------------------------------------------------
     def send_system_startup(self, python_version: str = "") -> None:
-        self.send_event(TelemetryEventType.SYSTEM_STARTUP, {
+        data: dict[str, Any] = {
             "kira_ai_version": VERSION,
             "python_version": python_version or sys_platform.python_version(),
             "platform": sys_platform.platform(),
-        })
+        }
+        if self.country_code:
+            data["country_code"] = self.country_code
+        self.send_event(TelemetryEventType.SYSTEM_STARTUP, data)
 
     def send_system_shutdown(self, uptime_duration_ms: int) -> None:
         self.send_event(TelemetryEventType.SYSTEM_SHUTDOWN, {
