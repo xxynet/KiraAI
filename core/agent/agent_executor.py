@@ -36,6 +36,7 @@ class AgentStepResult:
     new_messages: list[OpenAIMessage]
     is_final: bool
     has_tool_calls: bool
+    model_id: str = ""
     err: Optional[str] = None
 
 
@@ -130,6 +131,7 @@ class AgentExecutor:
                         new_messages=ctx.new_messages,
                         is_final=is_final,
                         has_tool_calls=has_tool_calls,
+                        model_id=model_id,
                     )
                     return
 
@@ -152,6 +154,7 @@ class AgentExecutor:
                     new_messages=ctx.new_messages,
                     is_final=is_final,
                     has_tool_calls=has_tool_calls,
+                    model_id=model_id,
                 )
                 return
 
@@ -179,6 +182,7 @@ class AgentExecutor:
                 new_messages=ctx.new_messages,
                 is_final=is_final,
                 has_tool_calls=has_tool_calls,
+                model_id=model_id,
             )
             if is_final:
                 return

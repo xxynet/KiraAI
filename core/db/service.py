@@ -1,9 +1,10 @@
 import time
+import uuid
 from typing import Optional
-from sqlalchemy import select, delete, or_, and_
+from sqlalchemy import select, delete, or_, and_, func, cast, Integer
 
 from .db_mgr import DatabaseManager
-from .models import Sticker, ImageDescCache, Persona, PluginStoreSource
+from .models import Sticker, ImageDescCache, Persona, PluginStoreSource, TelemetryMessage, TelemetryLLMUsage
 
 
 class DatabaseService:
@@ -355,3 +356,78 @@ class DatabaseService:
                 return False
             await session.delete(item)
             return True
+
+    # ------------------------------------------------------------------
+    # Telemetry raw records
+    # ------------------------------------------------------------------
+
+    async def add_telemetry_message(self, timestamp: int, platform: str) -> None:
+        async with self.db.transaction() as session:
+            session.add(TelemetryMessage(id=str(uuid.uuid4()), timestamp=timestamp, platform=platform))
+
+    async def add_telemetry_llm_usage(
+        self, timestamp: int, model: str,
+        input_tokens: int, output_tokens: int,
+        cached_tokens: Optional[int], response_time_ms: int, success: bool
+    ) -> None:
+        async with self.db.transaction() as session:
+            session.add(TelemetryLLMUsage(
+                id=str(uuid.uuid4()), timestamp=timestamp, model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                cached_tokens=cached_tokens, response_time_ms=response_time_ms, success=success,
+            ))
+
+    async def get_unreported_telemetry_messages_by_hour(self, since_ts: int) -> list[dict]:
+        hour_bucket = cast(TelemetryMessage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(hour_bucket.label("hour_ts"), TelemetryMessage.platform, func.count().label("count"))
+            .where(and_(TelemetryMessage.reported.is_(False), TelemetryMessage.timestamp >= since_ts))
+            .group_by(hour_bucket, TelemetryMessage.platform)
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [{"hour_ts": r["hour_ts"], "platform": r["platform"], "count": r["count"]} for r in rows]
+
+    async def get_unreported_telemetry_llm_usage_by_hour(self, since_ts: int) -> list[dict]:
+        hour_bucket = cast(TelemetryLLMUsage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(
+                hour_bucket.label("hour_ts"),
+                TelemetryLLMUsage.model,
+                func.count().label("call_count"),
+                func.sum(func.cast(TelemetryLLMUsage.success, Integer)).label("success_count"),
+                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label("total_input"),
+                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label("total_output"),
+                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label("total_cached"),
+                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label("total_response_ms"),
+            )
+            .where(and_(TelemetryLLMUsage.reported.is_(False), TelemetryLLMUsage.timestamp >= since_ts))
+            .group_by(hour_bucket, TelemetryLLMUsage.model)
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [
+            {
+                "hour_ts": r["hour_ts"], "model": r["model"],
+                "call_count": r["call_count"], "success_count": r["success_count"] or 0,
+                "total_input": r["total_input"], "total_output": r["total_output"],
+                "total_cached": r["total_cached"], "total_response_ms": r["total_response_ms"],
+            }
+            for r in rows
+        ]
+
+    async def mark_telemetry_reported(self) -> None:
+        async with self.db.transaction() as session:
+            await session.execute(
+                TelemetryMessage.__table__.update()
+                .where(TelemetryMessage.reported.is_(False))
+                .values(reported=True)
+            )
+            await session.execute(
+                TelemetryLLMUsage.__table__.update()
+                .where(TelemetryLLMUsage.reported.is_(False))
+                .values(reported=True)
+            )
+
+    async def delete_telemetry_records_before(self, cutoff_ts: int) -> None:
+        async with self.db.transaction() as session:
+            await session.execute(delete(TelemetryMessage).where(TelemetryMessage.timestamp < cutoff_ts))
+            await session.execute(delete(TelemetryLLMUsage).where(TelemetryLLMUsage.timestamp < cutoff_ts))

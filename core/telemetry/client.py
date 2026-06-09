@@ -3,6 +3,7 @@ import hmac
 import hashlib
 import json
 import os
+import time
 import platform as sys_platform
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -46,6 +47,7 @@ class TelemetryClient:
         self._send_queue: asyncio.Queue[TelemetryEvent] = asyncio.Queue()
         self._worker_task: Optional[asyncio.Task] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
+        self._stats_task: Optional[asyncio.Task] = None
         self._shutdown_event = asyncio.Event()
 
     # ------------------------------------------------------------------
@@ -68,6 +70,7 @@ class TelemetryClient:
             self.country_code = await self._fetch_country_code()
             self._worker_task = asyncio.create_task(self._send_worker())
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+            self._stats_task = asyncio.create_task(self._stats_loop())
             self.send_system_startup()
             logger.info(f"Telemetry client initialized (UUID: {self.client_uuid}).")
         else:
@@ -89,6 +92,9 @@ class TelemetryClient:
     async def shutdown(self) -> None:
         """Graceful shutdown: flush pending events and close HTTP client."""
         try:
+            # Final stats report before shutdown
+            await self._report_stats()
+
             started_ts = self.stats.get_stats("started_ts") if self.stats else None
             if started_ts:
                 uptime_ms = int((datetime.now(timezone.utc).timestamp() - started_ts) * 1000)
@@ -96,7 +102,7 @@ class TelemetryClient:
 
             self._shutdown_event.set()
 
-            for task in (self._heartbeat_task, self._worker_task):
+            for task in (self._heartbeat_task, self._worker_task, self._stats_task):
                 if task and not task.done():
                     task.cancel()
                     try:
@@ -188,6 +194,8 @@ class TelemetryClient:
             self._worker_task = asyncio.create_task(self._send_worker())
         if not self._heartbeat_task or self._heartbeat_task.done():
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        if not self._stats_task or self._stats_task.done():
+            self._stats_task = asyncio.create_task(self._stats_loop())
 
         self.enabled = True
         self._persist_config()
@@ -360,21 +368,65 @@ class TelemetryClient:
             "active_connections": active_connections,
         })
 
-    def send_llm_request(self, model_name: str, prompt_tokens: int, completion_tokens: int,
-                         response_time_ms: int, success: bool) -> None:
-        self.send_event(TelemetryEventType.LLM_REQUEST, {
-            "model_name": model_name,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-            "response_time_ms": response_time_ms,
-            "success": success,
-        })
+    # ------------------------------------------------------------------
+    # Hourly stats aggregation
+    # ------------------------------------------------------------------
+    async def _stats_loop(self) -> None:
+        """Background loop that aggregates and reports telemetry data every 30 minutes."""
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=1800.0)
+            except asyncio.TimeoutError:
+                pass
+            else:
+                break
 
-    def send_message_stats(self, total_messages: int, messages_by_platform: dict[str, int],
-                           time_window_minutes: int = 60) -> None:
-        self.send_event(TelemetryEventType.MESSAGE_STATS, {
-            "total_messages": total_messages,
-            "messages_by_platform": messages_by_platform,
-            "time_window_minutes": time_window_minutes,
-        })
+            await self._report_stats()
+
+    async def _report_stats(self) -> None:
+        """Aggregate unreported records, send to server, then mark as reported."""
+        try:
+            since_ts = int(time.time()) - 12 * 3600
+
+            # Message stats — combine all platforms per hour into one event
+            msg_rows = await self.db.get_unreported_telemetry_messages_by_hour(since_ts)
+            if msg_rows:
+                by_hour: dict[int, dict[str, int]] = {}
+                for row in msg_rows:
+                    hour = by_hour.setdefault(row["hour_ts"], {})
+                    hour[row["platform"]] = hour.get(row["platform"], 0) + row["count"]
+                for hour_ts, platforms in by_hour.items():
+                    self.send_event(TelemetryEventType.MESSAGE_STATS, {
+                        "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
+                        "total_messages": sum(platforms.values()),
+                        "messages_by_platform": platforms,
+                        "time_window_minutes": 60,
+                    })
+
+            # LLM usage stats — one event per (hour, model)
+            llm_rows = await self.db.get_unreported_telemetry_llm_usage_by_hour(since_ts)
+            for row in llm_rows:
+                avg_response = int(row["total_response_ms"] / row["call_count"]) if row["call_count"] else 0
+                self.send_event(TelemetryEventType.LLM_USAGE, {
+                    "hour": datetime.fromtimestamp(row["hour_ts"], tz=timezone.utc).isoformat(),
+                    "model": row["model"],
+                    "total_calls": row["call_count"],
+                    "success_calls": row["success_count"],
+                    "failed_calls": row["call_count"] - row["success_count"],
+                    "total_input_tokens": row["total_input"],
+                    "total_output_tokens": row["total_output"],
+                    "total_cached_tokens": row["total_cached"],
+                    "avg_response_time_ms": avg_response,
+                })
+
+            # Mark all as reported
+            if msg_rows or llm_rows:
+                await self.db.mark_telemetry_reported()
+                logger.info(f"Hourly stats reported: {len(msg_rows)} message rows, {len(llm_rows)} LLM rows.")
+
+            # Cleanup records older than 48 hours
+            cutoff = int(time.time()) - 48 * 3600
+            await self.db.delete_telemetry_records_before(cutoff)
+
+        except Exception as e:
+            logger.warning(f"Failed to report hourly stats: {e}")

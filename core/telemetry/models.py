@@ -8,9 +8,9 @@ class TelemetryEventType:
     SYSTEM_STARTUP = "system_startup"
     SYSTEM_SHUTDOWN = "system_shutdown"
     MESSAGE_STATS = "message_stats"
+    LLM_USAGE = "llm_usage"
     HEARTBEAT = "heartbeat"
     UUID_REQUEST = "uuid_request"
-    LLM_REQUEST = "llm_request"
     TELEMETRY_DISABLED = "telemetry_disabled"
     TELEMETRY_ENABLED = "telemetry_enabled"
 

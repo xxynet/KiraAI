@@ -194,7 +194,7 @@ class KiraLifecycle:
             )
         )
 
-        self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
+        self.event_bus = EventBus(self.stats, event_queue, self.message_processor, db=self.db_service)
         self.message_processor.event_bus = self.event_bus
 
         # ====== init plugin system ======
