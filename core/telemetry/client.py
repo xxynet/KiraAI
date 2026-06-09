@@ -41,9 +41,8 @@ class TelemetryClient:
 
         self.server_url: str = os.environ.get("KIRA_TELEMETRY_SERVER", "https://telemetry.kira-ai.top/api/v1")
         self.heartbeat_interval: int = 300  # 5 minutes
-        self.country_code: Optional[str] = self.telemetry_config.get("country_code")
-
         self._http_client: Optional[httpx.AsyncClient] = None
+        self.country_code: Optional[str] = None
         self._send_queue: asyncio.Queue[TelemetryEvent] = asyncio.Queue()
         self._worker_task: Optional[asyncio.Task] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
@@ -66,8 +65,7 @@ class TelemetryClient:
             await self._request_uuid()
 
         if self.client_uuid and self.secret_key:
-            if not self.country_code:
-                self.country_code = await self._fetch_country_code()
+            self.country_code = await self._fetch_country_code()
             self._worker_task = asyncio.create_task(self._send_worker())
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
             self.send_system_startup()
@@ -241,8 +239,6 @@ class TelemetryClient:
             "client_uuid": self.client_uuid,
             "secret_key": self.secret_key,
         }
-        if self.country_code:
-            update["country_code"] = self.country_code
         self.config["telemetry"].update(update)
         self.config.save_config()
 
@@ -325,7 +321,6 @@ class TelemetryClient:
         """
         Fetch country code from public IP via ip-api.com.
         Uses a dedicated client with proxy explicitly disabled.
-        Caches the result to telemetry_config.json.
         """
         transport = httpx.AsyncHTTPTransport(proxy=None)
         try:
@@ -335,7 +330,6 @@ class TelemetryClient:
                 code = resp.json().get("countryCode")
                 if code:
                     self.country_code = code
-                    self._persist_config()
                     logger.info(f"Country code detected: {code}")
                     return code
         except Exception as e:
