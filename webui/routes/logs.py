@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Optional
 
@@ -59,11 +60,12 @@ class LogsRoutes(Routes):
             que = log_cache_manager.add_queue()
             try:
                 while True:
-                    log_entry = await que.get()
+                    try:
+                        log_entry = await que.get()
+                    except asyncio.CancelledError:
+                        break
                     data = json.dumps(log_entry, ensure_ascii=False)
                     yield f"data: {data}\n\n"
-            except Exception as e:
-                logger.error(f"Error in SSE stream: {e}")
             finally:
                 log_cache_manager.remove_queue(que)
 

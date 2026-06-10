@@ -36,7 +36,11 @@ class TelemetryClient:
         self.stats = stats
         self.telemetry_config = config.get_config("telemetry", default={})
 
-        self.enabled: bool = self.telemetry_config.get("enabled", True)
+        env_enabled = os.environ.get("KIRA_TELEMETRY_ENABLED")
+        if env_enabled is not None:
+            self.enabled: bool = env_enabled.lower() not in ("0", "false", "no")
+        else:
+            self.enabled: bool = self.telemetry_config.get("enabled", True)
         self.client_uuid: Optional[str] = self.telemetry_config.get("client_uuid")
         self.secret_key: Optional[str] = self.telemetry_config.get("secret_key")
 
@@ -85,7 +89,7 @@ class TelemetryClient:
         try:
             with httpx.Client(timeout=5.0, transport=httpx.HTTPTransport(proxy=None)) as client:
                 client.post(f"{self.server_url}/events", json=payload).raise_for_status()
-            logger.info(f"Sync event sent: {event_type}")
+            logger.debug(f"Sync event sent: {event_type}")
         except Exception as e:
             logger.warning(f"Failed to send sync event {event_type}: {e}")
 
@@ -126,12 +130,16 @@ class TelemetryClient:
     def is_enabled(self) -> bool:
         return self.enabled and self.client_uuid is not None and self.secret_key is not None
 
-    def send_event(self, event_type: str, data: dict[str, Any], force: bool = False) -> None:
+    def send_event(
+        self, event_type: str, data: dict[str, Any],
+        force: bool = False, on_success: Optional[Any] = None,
+    ) -> None:
         """
         Fire-and-forget event submission.
         If the worker is not running, the event is silently dropped.
         Use ``force=True`` to bypass the local enabled check (used for
         telemetry state-change events themselves).
+        ``on_success`` is an async callback invoked after the server accepts the event.
         """
         if not force and not self.is_enabled():
             return
@@ -141,6 +149,7 @@ class TelemetryClient:
             data=data,
             client_uuid=self.client_uuid,
             timestamp=datetime.now(timezone.utc).isoformat(),
+            _on_success=on_success,
         )
         try:
             self._send_queue.put_nowait(event)
@@ -311,11 +320,18 @@ class TelemetryClient:
             try:
                 resp = await self._http_client.post(url, json=payload)
                 resp.raise_for_status()
-                logger.debug(
-                    f"Telemetry event sent: {event.event_id} "
-                    f"type={event.event_type} payload={json.dumps(payload, ensure_ascii=False)}"
-                )
-                logger.debug(f"Telemetry server response: {resp.text}")
+                if os.environ.get("KIRA_ENV", "prod").lower() == "dev":
+                    logger.debug(
+                        f"Telemetry event sent: {event.event_id} "
+                        f"type={event.event_type} payload={json.dumps(payload, ensure_ascii=False)}"
+                    )
+                    logger.debug(f"Telemetry server response: {resp.text}")
+                # Mark records as reported after successful send
+                if event._on_success:
+                    try:
+                        await event._on_success()
+                    except Exception as e:
+                        logger.warning(f"Telemetry on_success callback failed: {e}")
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 403:
                     logger.warning("Telemetry rejected by server (disabled or bad signature).")
@@ -334,7 +350,7 @@ class TelemetryClient:
         """
         transport = httpx.AsyncHTTPTransport(proxy=None)
         try:
-            async with httpx.AsyncClient(timeout=10.0, transport=transport) as client:
+            async with httpx.AsyncClient(timeout=5.0, transport=transport) as client:
                 resp = await client.get("http://ip-api.com/json/?fields=countryCode")
                 resp.raise_for_status()
                 code = resp.json().get("countryCode")
@@ -385,9 +401,10 @@ class TelemetryClient:
             await self._report_stats()
 
     async def _report_stats(self) -> None:
-        """Aggregate unreported records, send to server, then mark as reported."""
+        """Aggregate unreported records and queue for sending. Marking is done by the worker on success."""
         try:
             since_ts = int(time.time()) - 12 * 3600
+            event_count = 0
 
             # Message stats — combine all platforms per hour into one event
             msg_rows = await self.db.get_unreported_telemetry_messages_by_hour(since_ts)
@@ -397,33 +414,56 @@ class TelemetryClient:
                     hour = by_hour.setdefault(row["hour_ts"], {})
                     hour[row["platform"]] = hour.get(row["platform"], 0) + row["count"]
                 for hour_ts, platforms in by_hour.items():
+                    h = hour_ts
                     self.send_event(TelemetryEventType.MESSAGE_STATS, {
                         "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
                         "total_messages": sum(platforms.values()),
                         "messages_by_platform": platforms,
                         "time_window_minutes": 60,
-                    })
+                    }, on_success=lambda h=h: self.db.mark_telemetry_messages_by_hours([h]))
+                    event_count += 1
 
-            # LLM usage stats — one event per (hour, model)
+            # LLM usage stats — one event per hour, models nested
             llm_rows = await self.db.get_unreported_telemetry_llm_usage_by_hour(since_ts)
-            for row in llm_rows:
-                avg_response = int(row["total_response_ms"] / row["call_count"]) if row["call_count"] else 0
-                self.send_event(TelemetryEventType.LLM_USAGE, {
-                    "hour": datetime.fromtimestamp(row["hour_ts"], tz=timezone.utc).isoformat(),
-                    "model": row["model"],
-                    "total_calls": row["call_count"],
-                    "success_calls": row["success_count"],
-                    "failed_calls": row["call_count"] - row["success_count"],
-                    "total_input_tokens": row["total_input"],
-                    "total_output_tokens": row["total_output"],
-                    "total_cached_tokens": row["total_cached"],
-                    "avg_response_time_ms": avg_response,
-                })
+            if llm_rows:
+                llm_by_hour: dict[int, list[dict]] = {}
+                for row in llm_rows:
+                    llm_by_hour.setdefault(row["hour_ts"], []).append(row)
+                for hour_ts, rows in llm_by_hour.items():
+                    total_calls = sum(r["call_count"] for r in rows)
+                    total_success = sum(r["success_count"] for r in rows)
+                    total_input = sum(r["total_input"] for r in rows)
+                    total_output = sum(r["total_output"] for r in rows)
+                    total_cached = sum(r["total_cached"] for r in rows)
+                    total_resp_ms = sum(r["total_response_ms"] for r in rows)
+                    models = {}
+                    for r in rows:
+                        avg_resp = int(r["total_response_ms"] / r["call_count"]) if r["call_count"] else 0
+                        models[r["model"]] = {
+                            "total_calls": r["call_count"],
+                            "success_calls": r["success_count"],
+                            "failed_calls": r["call_count"] - r["success_count"],
+                            "total_input_tokens": r["total_input"],
+                            "total_output_tokens": r["total_output"],
+                            "total_cached_tokens": r["total_cached"],
+                            "avg_response_time_ms": avg_resp,
+                        }
+                    h = hour_ts
+                    self.send_event(TelemetryEventType.LLM_USAGE, {
+                        "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
+                        "total_calls": total_calls,
+                        "success_calls": total_success,
+                        "failed_calls": total_calls - total_success,
+                        "total_input_tokens": total_input,
+                        "total_output_tokens": total_output,
+                        "total_cached_tokens": total_cached,
+                        "avg_response_time_ms": int(total_resp_ms / total_calls) if total_calls else 0,
+                        "models": models,
+                    }, on_success=lambda h=h: self.db.mark_telemetry_llm_by_hours([h]))
+                    event_count += 1
 
-            # Mark all as reported
-            if msg_rows or llm_rows:
-                await self.db.mark_telemetry_reported()
-                logger.info(f"Hourly stats reported: {len(msg_rows)} message rows, {len(llm_rows)} LLM rows.")
+            if event_count:
+                logger.info(f"Queued {event_count} hourly stats events for sending.")
 
             # Cleanup records older than 48 hours
             cutoff = int(time.time()) - 48 * 3600

@@ -388,6 +388,7 @@ class DatabaseService:
         return [{"hour_ts": r["hour_ts"], "platform": r["platform"], "count": r["count"]} for r in rows]
 
     async def get_unreported_telemetry_llm_usage_by_hour(self, since_ts: int) -> list[dict]:
+        """Return per-(hour, model) rows for building aggregated hourly reports."""
         hour_bucket = cast(TelemetryLLMUsage.timestamp / 3600, Integer) * 3600
         stmt = (
             select(
@@ -424,6 +425,34 @@ class DatabaseService:
             await session.execute(
                 TelemetryLLMUsage.__table__.update()
                 .where(TelemetryLLMUsage.reported.is_(False))
+                .values(reported=True)
+            )
+
+    async def mark_telemetry_messages_by_hours(self, hour_ts_list: list[int]) -> None:
+        if not hour_ts_list:
+            return
+        async with self.db.transaction() as session:
+            conditions = [
+                and_(TelemetryMessage.timestamp >= h, TelemetryMessage.timestamp < h + 3600)
+                for h in hour_ts_list
+            ]
+            await session.execute(
+                TelemetryMessage.__table__.update()
+                .where(and_(TelemetryMessage.reported.is_(False), or_(*conditions)))
+                .values(reported=True)
+            )
+
+    async def mark_telemetry_llm_by_hours(self, hour_ts_list: list[int]) -> None:
+        if not hour_ts_list:
+            return
+        async with self.db.transaction() as session:
+            conditions = [
+                and_(TelemetryLLMUsage.timestamp >= h, TelemetryLLMUsage.timestamp < h + 3600)
+                for h in hour_ts_list
+            ]
+            await session.execute(
+                TelemetryLLMUsage.__table__.update()
+                .where(and_(TelemetryLLMUsage.reported.is_(False), or_(*conditions)))
                 .values(reported=True)
             )
 
