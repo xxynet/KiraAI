@@ -39,8 +39,10 @@ class TelemetryClient:
         env_enabled = os.environ.get("KIRA_TELEMETRY_ENABLED")
         if env_enabled is not None:
             self.enabled: bool = env_enabled.lower() not in ("0", "false", "no")
+            self._enabled_from_env = True
         else:
             self.enabled: bool = self.telemetry_config.get("enabled", True)
+            self._enabled_from_env = False
         self.client_uuid: Optional[str] = self.telemetry_config.get("client_uuid")
         self.secret_key: Optional[str] = self.telemetry_config.get("secret_key")
 
@@ -293,10 +295,11 @@ class TelemetryClient:
             self.config["telemetry"] = {}
 
         update: dict[str, Any] = {
-            "enabled": self.enabled,
             "client_uuid": self.client_uuid,
             "secret_key": self.secret_key,
         }
+        if not self._enabled_from_env:
+            update["enabled"] = self.enabled
         self.config["telemetry"].update(update)
         self.config.save_config()
 
