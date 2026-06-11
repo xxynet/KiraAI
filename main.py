@@ -61,6 +61,12 @@ def _parse_args() -> argparse.Namespace:
         help="Disable WebUI authentication (use a fixed token so Electron can auto-login)",
     )
     parser.add_argument(
+        "--telemetry-server",
+        type=str,
+        default=None,
+        help="Override the telemetry server URL (also reads KIRA_TELEMETRY_SERVER env var)",
+    )
+    parser.add_argument(
         "--_child",
         action="store_true",
         default=False,
@@ -112,6 +118,8 @@ def _run_child(args: argparse.Namespace):
     """Run the actual application (called in the child process)."""
     if args.env:
         os.environ["KIRA_ENV"] = args.env
+    if args.telemetry_server:
+        os.environ["KIRA_TELEMETRY_SERVER"] = args.telemetry_server
 
     from core.utils.path_utils import init_paths, get_data_path
 
@@ -174,6 +182,8 @@ def _run_supervisor(args: argparse.Namespace):
         child_cmd.append("--disable-webui-auth")
     if args.env:
         child_cmd += ["--env", args.env]
+    if args.telemetry_server:
+        child_cmd += ["--telemetry-server", args.telemetry_server]
 
     restart_count = 0
 

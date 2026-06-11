@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 from enum import Enum, auto
 from dataclasses import dataclass, field
@@ -40,11 +41,18 @@ class EventType(Enum):
 #     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+if TYPE_CHECKING:
+    from core.message_manager import MessageProcessor
+    from core.db.service import DatabaseService
+
+
 class EventBus:
     """事件总线"""
 
-    def __init__(self, stats: Statistics, event_queue: asyncio.Queue, message_processor: "MessageProcessor"):
+    def __init__(self, stats: Statistics, event_queue: asyncio.Queue, message_processor: MessageProcessor,
+                 db: DatabaseService = None):
         self.stats = stats
+        self.db = db
 
         self.event_queue: asyncio.Queue = event_queue
 
@@ -167,6 +175,12 @@ class EventBus:
             if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
                 self.total_messages_stats["total_messages"] += 1
                 self.stats.set_stats("messages", self.total_messages_stats)
+                if self.db:
+                    platform = getattr(getattr(event, "adapter", None), "platform", None) or getattr(event, "platform", "unknown")
+                    try:
+                        await self.db.add_telemetry_message(int(time.time()), platform)
+                    except Exception as e:
+                        self.logger.debug(f"Failed to record telemetry message: {e}")
             task = asyncio.create_task(self._dispatch_event(event))
 
             def _log_task_error(t: asyncio.Task):

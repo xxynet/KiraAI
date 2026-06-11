@@ -106,3 +106,15 @@ async def test_not_initialized_errors():
 
     with pytest.raises(RuntimeError, match="not initialized"):
         await manager.create_all()
+
+
+@pytest.mark.anyio
+async def test_create_all_includes_telemetry_tables(db):
+    await db.create_all()
+    async with db.get_session() as session:
+        for table_name in ("telemetry_messages", "telemetry_llm_usage"):
+            result = await session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
+                {"name": table_name},
+            )
+            assert result.scalar_one_or_none() == table_name

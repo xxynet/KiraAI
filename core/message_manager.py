@@ -611,6 +611,20 @@ class MessageProcessor:
             if not llm_resp:
                 break
 
+            # Record LLM usage telemetry per step
+            try:
+                await self.db.add_telemetry_llm_usage(
+                    timestamp=int(time.time()),
+                    model=step.model_id,
+                    input_tokens=llm_resp.input_tokens or 0,
+                    output_tokens=llm_resp.output_tokens or 0,
+                    cached_tokens=llm_resp.cached_tokens,
+                    response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
+                    success=(step.state != "error"),
+                )
+            except Exception as e:
+                logger.debug(f"Failed to record telemetry LLM usage: {e}")
+
             if not await send_llm_text(llm_resp):
                 break
 
@@ -644,6 +658,19 @@ class MessageProcessor:
         llm_req = LLMRequest(messages=[OpenAIMessage(role="user", content=cmt_prompt)])
 
         llm_resp = await client.chat(llm_req)
+
+        try:
+            await self.db.add_telemetry_llm_usage(
+                timestamp=int(time.time()),
+                model=client.model.model_id,
+                input_tokens=llm_resp.input_tokens or 0,
+                output_tokens=llm_resp.output_tokens or 0,
+                cached_tokens=llm_resp.cached_tokens,
+                response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
+                success=True,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to record telemetry LLM usage: {e}")
 
         response = llm_resp.text_response.strip()
 

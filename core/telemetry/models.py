@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 import uuid
 
 
@@ -8,9 +8,9 @@ class TelemetryEventType:
     SYSTEM_STARTUP = "system_startup"
     SYSTEM_SHUTDOWN = "system_shutdown"
     MESSAGE_STATS = "message_stats"
+    LLM_USAGE = "llm_usage"
     HEARTBEAT = "heartbeat"
     UUID_REQUEST = "uuid_request"
-    LLM_REQUEST = "llm_request"
     TELEMETRY_DISABLED = "telemetry_disabled"
     TELEMETRY_ENABLED = "telemetry_enabled"
 
@@ -23,6 +23,7 @@ class TelemetryEvent:
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     client_uuid: Optional[str] = None
     signature: Optional[str] = None
+    _on_success: Optional[Callable[[], Any]] = field(default=None, repr=False)
 
     def to_payload(self) -> dict[str, Any]:
         payload = {

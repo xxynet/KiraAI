@@ -227,3 +227,103 @@ async def test_plugin_store_source_is_current_invariant(svc):
     item_c = await svc.get_plugin_store_source("c")
     assert item_b["is_current"] is True
     assert item_c["is_current"] is False
+
+
+# ------------------------------------------------------------------
+# Telemetry raw records
+# ------------------------------------------------------------------
+
+HOUR = 3600
+
+
+@pytest.mark.anyio
+async def test_telemetry_messages_aggregation(svc):
+    # hour 10: 1718000000 // 3600 * 3600 = exact boundary
+    h10 = 10 * HOUR  # epoch 36000
+    h11 = 11 * HOUR  # epoch 39600
+
+    # 3 messages in hour 10 (two QQ, one Telegram)
+    await svc.add_telemetry_message(h10 + 100, "QQ")
+    await svc.add_telemetry_message(h10 + 200, "QQ")
+    await svc.add_telemetry_message(h10 + 300, "Telegram")
+
+    # 1 message in hour 11 (also unreported, should show up)
+    await svc.add_telemetry_message(h11 + 100, "Discord")
+
+    rows = await svc.get_unreported_telemetry_messages_by_hour(since_ts=0)
+    assert len(rows) == 3  # QQ, Telegram, Discord
+    by_platform = {(r["hour_ts"], r["platform"]): r["count"] for r in rows}
+    assert by_platform[(h10, "QQ")] == 2
+    assert by_platform[(h10, "Telegram")] == 1
+    assert by_platform[(h11, "Discord")] == 1
+
+    # Mark all as reported, then query again — should be empty
+    await svc.mark_telemetry_reported()
+    rows = await svc.get_unreported_telemetry_messages_by_hour(since_ts=0)
+    assert rows == []
+
+
+@pytest.mark.anyio
+async def test_telemetry_messages_empty_range(svc):
+    rows = await svc.get_unreported_telemetry_messages_by_hour(since_ts=0)
+    assert rows == []
+
+
+@pytest.mark.anyio
+async def test_telemetry_llm_usage_aggregation(svc):
+    h10 = 10 * HOUR
+
+    # 2 successful calls on gpt-4o
+    await svc.add_telemetry_llm_usage(h10 + 100, "gpt-4o", 1000, 500, 100, 800, True)
+    await svc.add_telemetry_llm_usage(h10 + 200, "gpt-4o", 2000, 800, 200, 1200, True)
+    # 1 failed call on deepseek
+    await svc.add_telemetry_llm_usage(h10 + 300, "deepseek", 500, 0, None, 5000, False)
+
+    rows = await svc.get_unreported_telemetry_llm_usage_by_hour(since_ts=0)
+    assert len(rows) == 2
+    by_model = {r["model"]: r for r in rows}
+
+    gpt = by_model["gpt-4o"]
+    assert gpt["call_count"] == 2
+    assert gpt["success_count"] == 2
+    assert gpt["total_input"] == 3000
+    assert gpt["total_output"] == 1300
+    assert gpt["total_cached"] == 300
+    assert gpt["total_response_ms"] == 2000
+
+    ds = by_model["deepseek"]
+    assert ds["call_count"] == 1
+    assert ds["success_count"] == 0
+    assert ds["total_input"] == 500
+    assert ds["total_output"] == 0
+
+    # Mark and verify
+    await svc.mark_telemetry_reported()
+    rows = await svc.get_unreported_telemetry_llm_usage_by_hour(since_ts=0)
+    assert rows == []
+
+
+@pytest.mark.anyio
+async def test_delete_telemetry_records_before(svc):
+    h10 = 10 * HOUR
+    h20 = 20 * HOUR
+    h30 = 30 * HOUR
+
+    await svc.add_telemetry_message(h10 + 100, "QQ")
+    await svc.add_telemetry_message(h20 + 100, "QQ")
+    await svc.add_telemetry_message(h30 + 100, "QQ")
+    await svc.add_telemetry_llm_usage(h10 + 100, "gpt-4o", 100, 50, None, 500, True)
+    await svc.add_telemetry_llm_usage(h20 + 100, "gpt-4o", 100, 50, None, 500, True)
+
+    # Delete everything before h20 — should remove h10 records only
+    await svc.delete_telemetry_records_before(h20)
+
+    rows_msg = await svc.get_unreported_telemetry_messages_by_hour(since_ts=0)
+    hour_ts_set = {r["hour_ts"] for r in rows_msg}
+    assert h10 not in hour_ts_set
+    assert h20 in hour_ts_set
+    assert h30 in hour_ts_set
+
+    rows_llm = await svc.get_unreported_telemetry_llm_usage_by_hour(since_ts=0)
+    assert len(rows_llm) == 1
+    assert rows_llm[0]["hour_ts"] == h20
