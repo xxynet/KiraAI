@@ -53,12 +53,19 @@ class TelemetryClient:
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._stats_task: Optional[asyncio.Task] = None
         self._shutdown_event = asyncio.Event()
+        self._report_lock = asyncio.Lock()
+        self._init_task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
     async def initialize(self) -> None:
-        """Asynchronous initialization: ensure HTTP client and UUID are ready."""
+        """Asynchronous initialization: set up local state and kick off background provisioning.
+
+        Network I/O (UUID request, geo lookup) runs in a background task so the
+        caller is never blocked.  The worker will silently drop events until the
+        UUID/secret are available.
+        """
         if not self.enabled:
             logger.info("Telemetry is disabled.")
             return
@@ -67,46 +74,50 @@ class TelemetryClient:
         self._http_client = httpx.AsyncClient(timeout=30.0, transport=httpx.AsyncHTTPTransport(proxy=None))
         self._shutdown_event = asyncio.Event()
 
-        if not self.client_uuid or not self.secret_key:
-            await self._request_uuid()
+        # Start background workers immediately — they tolerate missing UUID/secret
+        self._ensure_workers_running()
 
-        if self.client_uuid and self.secret_key:
-            self.country_code = await self._fetch_country_code()
-            self._worker_task = asyncio.create_task(self._send_worker())
-            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-            self._stats_task = asyncio.create_task(self._stats_loop())
-            self.send_system_startup()
-            logger.info(f"Telemetry client initialized (UUID: {self.client_uuid}).")
-        else:
-            logger.warning("Telemetry client failed to acquire UUID; events will be dropped.")
+        # Provision UUID + geo in the background; send startup event once ready
+        self._init_task = asyncio.create_task(self._initialize_background())
+        logger.info("Telemetry client started (background provisioning in progress).")
 
-    def _send_sync(self, event_type: str, data: dict[str, Any]) -> None:
-        """Synchronous fire-and-forget send, immune to async task cancellation."""
-        if not self.client_uuid or not self.secret_key:
-            return
-        payload = self._build_payload(event_type, data)
-        payload["signature"] = self._sign_payload(payload)
+    async def _initialize_background(self, post_event: Optional[str] = None) -> None:
+        """Background task: request UUID, fetch country code, then emit startup (and optional) events."""
         try:
-            with httpx.Client(timeout=5.0, transport=httpx.HTTPTransport(proxy=None)) as client:
-                client.post(f"{self.server_url}/events", json=payload).raise_for_status()
-            logger.debug(f"Sync event sent: {event_type}")
+            if not self.client_uuid or not self.secret_key:
+                await self._request_uuid()
+
+            if self.client_uuid and self.secret_key:
+                self.country_code = await self._fetch_country_code()
+                self.send_system_startup()
+                if post_event:
+                    self.send_event(post_event, {
+                        "reason": "user_requested",
+                        "client_uuid": self.client_uuid,
+                    }, force=True)
+                logger.info(f"Telemetry provisioning complete (UUID: {self.client_uuid}).")
+            else:
+                logger.warning("Telemetry client failed to acquire UUID; events will be dropped.")
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
-            logger.warning(f"Failed to send sync event {event_type}: {e}")
+            logger.warning(f"Telemetry background init failed: {e}")
 
     async def shutdown(self) -> None:
         """Graceful shutdown: flush pending events and close HTTP client."""
         try:
-            # Final stats report before shutdown
-            await self._report_stats()
-
-            started_ts = self.stats.get_stats("started_ts") if self.stats else None
-            if started_ts:
-                uptime_ms = int((datetime.now(timezone.utc).timestamp() - started_ts) * 1000)
-                self._send_sync(TelemetryEventType.SYSTEM_SHUTDOWN, {"uptime_duration_ms": uptime_ms})
-
             self._shutdown_event.set()
 
-            for task in (self._heartbeat_task, self._worker_task, self._stats_task):
+            if self._init_task and not self._init_task.done():
+                self._init_task.cancel()
+                try:
+                    await self._init_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+            # Cancel stats/heartbeat first — stats_loop finally block
+            # guarantees _report_lock is released on cancellation.
+            for task in (self._heartbeat_task, self._stats_task):
                 if task and not task.done():
                     task.cancel()
                     try:
@@ -115,6 +126,31 @@ class TelemetryClient:
                         pass
                     except Exception as e:
                         logger.debug(f"Telemetry task {task.get_name()} raised on shutdown: {e}")
+
+            # Now safe — lock is guaranteed free
+            await self._report_stats()
+
+            started_ts = self.stats.get_stats("started_ts") if self.stats else None
+            if started_ts:
+                uptime_ms = int((datetime.now(timezone.utc).timestamp() - started_ts) * 1000)
+                self.send_event(TelemetryEventType.SYSTEM_SHUTDOWN, {"uptime_duration_ms": uptime_ms})
+
+            # Restart worker if it already exited but events remain in queue
+            if self._worker_task is None or (self._worker_task.done() and not self._send_queue.empty()):
+                self._worker_task = asyncio.create_task(self._send_worker())
+
+            if self._worker_task and not self._worker_task.done():
+                try:
+                    await asyncio.wait_for(self._worker_task, timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Telemetry worker did not drain in time; cancelling.")
+                    self._worker_task.cancel()
+                    try:
+                        await self._worker_task
+                    except asyncio.CancelledError:
+                        pass
+                except Exception as e:
+                    logger.debug(f"Telemetry worker raised on drain: {e}")
 
             if self._http_client:
                 await self._http_client.aclose()
@@ -181,6 +217,7 @@ class TelemetryClient:
         """
         Re-enable telemetry and notify the server via event.
         Initializes the HTTP client and background workers if needed.
+        If UUID/secret are missing, provisioning runs in the background.
         Returns True on success.
         """
         if self.enabled and self._http_client:
@@ -190,28 +227,21 @@ class TelemetryClient:
         if not self._http_client:
             self._http_client = httpx.AsyncClient(timeout=30.0, transport=httpx.AsyncHTTPTransport(proxy=None))
 
-        if not self.client_uuid or not self.secret_key:
-            await self._request_uuid()
-
-        if not self.client_uuid or not self.secret_key:
-            logger.error("Cannot reopen telemetry: failed to acquire UUID.")
-            return False
+        self.enabled = True
+        self._persist_config()
 
         # Reset shutdown event so background workers can actually run
         self._shutdown_event = asyncio.Event()
 
-        # Start background workers if they are not running
-        if not self._worker_task or self._worker_task.done():
-            self._worker_task = asyncio.create_task(self._send_worker())
-        if not self._heartbeat_task or self._heartbeat_task.done():
-            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-        if not self._stats_task or self._stats_task.done():
-            self._stats_task = asyncio.create_task(self._stats_loop())
+        if not self.client_uuid or not self.secret_key:
+            # UUID missing — provision in background, start workers now
+            self._init_task = asyncio.create_task(self._initialize_background(TelemetryEventType.TELEMETRY_ENABLED))
+            self._ensure_workers_running()
+            logger.info("Telemetry re-enabled (background provisioning in progress).")
+            return True
 
-        self.enabled = True
-        self._persist_config()
-
-        # Emit event after enabling so it is actually sent
+        # UUID already available — fast path
+        self._ensure_workers_running()
         self.send_event(TelemetryEventType.TELEMETRY_ENABLED, {
             "reason": "user_requested",
             "client_uuid": self.client_uuid,
@@ -219,6 +249,15 @@ class TelemetryClient:
 
         logger.info("Telemetry reopened.")
         return True
+
+    def _ensure_workers_running(self) -> None:
+        """Start background worker tasks if they are not already running."""
+        if not self._worker_task or self._worker_task.done():
+            self._worker_task = asyncio.create_task(self._send_worker())
+        if not self._heartbeat_task or self._heartbeat_task.done():
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        if not self._stats_task or self._stats_task.done():
+            self._stats_task = asyncio.create_task(self._stats_loop())
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -390,18 +429,24 @@ class TelemetryClient:
     # ------------------------------------------------------------------
     async def _stats_loop(self) -> None:
         """Background loop that aggregates and reports telemetry data every 30 minutes."""
-        while not self._shutdown_event.is_set():
-            try:
-                await asyncio.wait_for(self._shutdown_event.wait(), timeout=1800.0)
-            except asyncio.TimeoutError:
-                pass
-            else:
-                break
+        try:
+            while not self._shutdown_event.is_set():
+                try:
+                    await asyncio.wait_for(self._shutdown_event.wait(), timeout=1800.0)
+                except asyncio.TimeoutError:
+                    pass
+                else:
+                    break
 
-            await self._report_stats()
+                await self._report_stats()
+        finally:
+            # Guarantee the lock is released if this task is cancelled while inside _report_stats
+            if self._report_lock.locked():
+                self._report_lock.release()
 
     async def _report_stats(self) -> None:
         """Aggregate unreported records and queue for sending. Marking is done by the worker on success."""
+        await self._report_lock.acquire()
         try:
             since_ts = int(time.time()) - 12 * 3600
             event_count = 0
@@ -471,3 +516,6 @@ class TelemetryClient:
 
         except Exception as e:
             logger.warning(f"Failed to report hourly stats: {e}")
+        finally:
+            if self._report_lock.locked():
+                self._report_lock.release()
