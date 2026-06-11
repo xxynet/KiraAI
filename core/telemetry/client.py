@@ -73,7 +73,7 @@ class TelemetryClient:
             return
 
         # Use a transport with proxy=None to bypass HTTP_PROXY / HTTPS_PROXY env vars
-        self._http_client = httpx.AsyncClient(timeout=30.0, transport=httpx.AsyncHTTPTransport(proxy=None))
+        self._http_client = httpx.AsyncClient(timeout=10.0, transport=httpx.AsyncHTTPTransport(proxy=None))
         self._shutdown_event = asyncio.Event()
 
         # Start background workers immediately — they tolerate missing UUID/secret
@@ -81,7 +81,7 @@ class TelemetryClient:
 
         # Provision UUID + geo in the background; send startup event once ready
         self._init_task = asyncio.create_task(self._initialize_background())
-        logger.info("Telemetry client started (background provisioning in progress).")
+        logger.debug("Telemetry client started (background provisioning in progress).")
 
     async def _initialize_background(self, post_event: Optional[str] = None) -> None:
         """Background task: request UUID, fetch country code, then emit startup (and optional) events."""
@@ -97,7 +97,7 @@ class TelemetryClient:
                         "reason": "user_requested",
                         "client_uuid": self.client_uuid,
                     }, force=True)
-                logger.info(f"Telemetry provisioning complete (UUID: {self.client_uuid}).")
+                logger.debug(f"Telemetry provisioning complete (UUID: {self.client_uuid}).")
             else:
                 logger.warning("Telemetry client failed to acquire UUID; events will be dropped.")
         except asyncio.CancelledError:
@@ -227,7 +227,7 @@ class TelemetryClient:
             return True
 
         if not self._http_client:
-            self._http_client = httpx.AsyncClient(timeout=30.0, transport=httpx.AsyncHTTPTransport(proxy=None))
+            self._http_client = httpx.AsyncClient(timeout=10.0, transport=httpx.AsyncHTTPTransport(proxy=None))
 
         self.enabled = True
         self._persist_config()
