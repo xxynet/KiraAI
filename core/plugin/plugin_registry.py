@@ -205,8 +205,8 @@ class RegisterDeco:
     def static(path: str, directory: str, html: bool = False):
         """Register a static file directory.
 
-        path:      URL path prefix relative to plugin, e.g., "/static"
-                   Final URL: /page/plugin/{plugin_id}{path}
+        path:      URL path prefix relative to plugin, e.g., "/assets"
+                   Final URL: /static/plugin/{plugin_id}{path}
         directory: Local directory path relative to plugin root
         html:      Try to serve index.html for directory requests
         """
@@ -770,7 +770,7 @@ class PluginManager:
 
         for static in comp.static_dirs:
             path_prefix = static["path"].lstrip('/')
-            full_path = f"/page/plugin/{plugin_id}/{path_prefix}"
+            full_path = f"/static/plugin/{plugin_id}/{path_prefix}"
             dir_path = plugin_root / static["directory"]
 
             if not dir_path.exists() or not dir_path.is_dir():
