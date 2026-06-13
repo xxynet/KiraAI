@@ -1,1 +1,1 @@
-D:/MyProject/Python/KiraAI_OpenSource/AGENTS.md
+AGENTS.md
