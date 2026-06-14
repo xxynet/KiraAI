@@ -72,6 +72,10 @@ export default {
     logs: { title: 'System Logs' },
     settings: { title: 'Settings' },
   },
+  pluginPage: {
+    title: 'Plugin Page',
+    invalid_config: 'Invalid plugin page configuration.',
+  },
   overview: {
     runtime_duration: 'Uptime',
     total_messages: 'Total Messages',

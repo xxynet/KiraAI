@@ -11,7 +11,7 @@ from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_from_github, install_from_zip, install_requirements
 from core.utils.path_utils import get_data_path
 from webui.models import (
-    PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem,
+    PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem,
     PluginStoreItemResponse, PluginStoreFetchRequest,
     PluginStoreSourceItem, PluginStoreSourceCreateRequest, PluginStoreSourceUpdateRequest,
 )
@@ -129,19 +129,36 @@ class PluginsRoutes(Routes):
             return []
         try:
             plugin_manager = self.lifecycle.plugin_manager
+            all_components = plugin_manager.get_plugin_components()
             items: List[PluginItem] = []
             for info in plugin_manager.list_plugins():
                 if info.hidden:
                     continue
+                pid = info.plugin_id
+                # Collect menu entries from registered pages
+                menus: List[PageMenu] = []
+                comp = all_components.get(pid)
+                if comp:
+                    for page in comp.pages:
+                        menu_cfg = page.get("menu")
+                        if not menu_cfg:
+                            continue
+                        menus.append(PageMenu(
+                            route=f"/page/plugin/{pid}/{page['route'].lstrip('/')}",
+                            label=menu_cfg.get("label", pid),
+                            icon=menu_cfg.get("icon"),
+                            order=menu_cfg.get("order", 100),
+                        ))
+                    menus.sort(key=lambda m: m.order)
                 items.append(
                     PluginItem(
-                        id=info.plugin_id,
+                        id=pid,
                         name=info.display_name,
                         version=info.version,
                         author=info.author,
                         description=info.description,
                         repo=info.repo,
-                        enabled=plugin_manager.is_plugin_enabled(info.plugin_id),
+                        enabled=plugin_manager.is_plugin_enabled(pid),
                         builtin=info.builtin,
                         uninstallable=info.uninstallable,
                         locales=info.locales,
@@ -149,6 +166,7 @@ class PluginsRoutes(Routes):
                         core_version=info.core_version,
                         error=info.error,
                         status=info.status,
+                        menus=menus,
                     )
                 )
             return items

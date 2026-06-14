@@ -72,6 +72,10 @@ export default {
     logs: { title: '系统日志' },
     settings: { title: '设置' },
   },
+  pluginPage: {
+    title: '插件页面',
+    invalid_config: '插件页面配置无效。',
+  },
   overview: {
     runtime_duration: '运行时长',
     total_messages: '消息总数',
