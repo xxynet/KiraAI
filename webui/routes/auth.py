@@ -237,7 +237,7 @@ class AuthRoutes(Routes):
             key="kira_token",
             value=access_token,
             path="/",
-            httponly=False,  # JS needs to read it for logout cleanup
+            httponly=True,
             samesite="lax",
             max_age=5 * 24 * 3600,  # 5 days, matches JWT expiry
         )

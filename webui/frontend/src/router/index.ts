@@ -28,7 +28,7 @@ const router = createRouter({
         { path: 'sessions', name: 'Sessions', component: () => import('@/views/SessionView.vue') },
         { path: 'logs', name: 'Logs', component: () => import('@/views/LogsView.vue') },
         { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue') },
-        { path: 'plugin-page/:pluginId/:pageRoute(.*)', name: 'PluginPagePlaceholder', component: () => import('@/views/PluginPageView.vue'), props: true, meta: { pluginPage: true, title: 'Plugin Page' } },
+        { path: 'plugin-page/:pluginId/:pageRoute(.*)', name: 'PluginPagePlaceholder', component: () => import('@/views/PluginPageView.vue'), props: true, meta: { pluginPage: true } },
         { path: ':pathMatch(.*)*', redirect: '/overview' },
       ],
     },

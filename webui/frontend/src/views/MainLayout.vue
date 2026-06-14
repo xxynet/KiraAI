@@ -63,7 +63,7 @@ const pageTitle = computed(() => {
     const pageRoute = route.params.pageRoute as string
     const menu = pluginMenuStore.menus.find(m => m.pluginId === pluginId && m.pageRoute === pageRoute)
     if (menu) return menu.label
-    return route.meta.title as string || 'Plugin Page'
+    return route.meta.title as string || t('pluginPage.title')
   }
   const name = route.name as string | undefined
   if (!name) return ''

@@ -8,20 +8,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!token.value)
 
-  function _setCookie(jwt: string) {
-    document.cookie = `kira_token=${jwt}; path=/; max-age=${5 * 24 * 3600}; SameSite=Lax`
-  }
-
-  function _clearCookie() {
-    document.cookie = 'kira_token=; path=/; max-age=0'
-  }
-
   async function login(accessToken: string) {
     const data: TokenLoginRequest = { access_token: accessToken }
     const response = await authApi.login(data)
     token.value = response.data.access_token
     localStorage.setItem('jwt_token', response.data.access_token)
-    _setCookie(response.data.access_token)
+    // Cookie is set server-side via Set-Cookie header (HttpOnly)
   }
 
   async function logout() {
@@ -30,14 +22,13 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       token.value = null
       localStorage.removeItem('jwt_token')
-      _clearCookie()
+      // Cookie is cleared server-side via Set-Cookie header
     }
   }
 
   function clearAuth() {
     token.value = null
     localStorage.removeItem('jwt_token')
-    _clearCookie()
   }
 
   return {

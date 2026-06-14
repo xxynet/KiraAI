@@ -7,7 +7,7 @@
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
     />
     <div v-else class="flex items-center justify-center h-64 text-gray-500">
-      <p>Invalid plugin page configuration.</p>
+      <p>{{ $t('pluginPage.invalid_config') }}</p>
     </div>
   </div>
 </template>
