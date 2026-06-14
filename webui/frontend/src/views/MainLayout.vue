@@ -8,12 +8,12 @@
     ></div>
     <AppSidebar :open="sidebarOpen" />
     <div class="flex-1 flex flex-col overflow-hidden">
-      <main class="flex-1 overflow-auto">
+      <main class="flex-1 flex flex-col" :class="route.meta.pluginPage ? 'overflow-hidden' : 'overflow-auto'">
         <AppHeader
           :title="pageTitle"
           @toggle-sidebar="toggleSidebar"
         />
-        <PageContainer>
+        <PageContainer :class="{ 'flex-1 min-h-0 !p-0': route.meta.pluginPage }">
           <router-view v-slot="{ Component, route: r }">
             <transition name="page-fade">
               <component :is="Component" :key="r.fullPath" />

@@ -29,8 +29,9 @@ const pageUrl = computed(() => {
 
 <style scoped>
 .plugin-page-wrapper {
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  height: calc(100vh - 80px);
 }
 
 .plugin-page-iframe {
