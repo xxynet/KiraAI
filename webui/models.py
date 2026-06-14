@@ -119,6 +119,14 @@ class StickerUpdateRequest(BaseModel):
     desc: str = ""
 
 
+class PageMenu(BaseModel):
+    """Menu entry for a plugin page, shown in sidebar."""
+    route: str
+    label: str
+    icon: Optional[str] = None
+    order: int = 100
+
+
 class PluginItem(BaseModel):
     id: str
     name: str
@@ -134,6 +142,7 @@ class PluginItem(BaseModel):
     core_version: Optional[str] = None
     error: Optional[str] = None
     status: str = "pending"
+    menus: List[PageMenu] = Field(default_factory=list)
 
 
 class PluginConfigUpdateRequest(BaseModel):

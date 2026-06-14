@@ -4,6 +4,8 @@ from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse, Response
 
 from core.config.default import VERSION
 from webui.models import LoginResponse, TokenLoginRequest, VersionResponse
@@ -22,13 +24,24 @@ async def require_auth(
     --disable-webui-auth becomes invalid the moment the server restarts with
     auth enabled (and vice versa). Truth lives in the JWT, not in a client-side
     marker.
+
+    Accepts kira_token cookie as a fallback for iframe/plugin page requests
+    that cannot send Authorization headers.
     """
-    if not authorization or not authorization.startswith("Bearer "):
+    token = None
+
+    # 1. Try Authorization header (standard path for API calls)
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+    else:
+        # 2. Fallback: try kira_token cookie (for iframe/plugin page requests)
+        token = request.cookies.get("kira_token")
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    token = authorization.split(" ", 1)[1]
     payload = _verify_jwt_token(token)
 
     current_mode = "disabled" if getattr(request.app.state, "disable_auth", False) else "enabled"
@@ -102,15 +115,50 @@ class AuthRoutes(Routes):
         ]
 
     def register_spa_fallback(self):
-        """Register SPA catch-all route. Must be called AFTER all other routes."""
-        self.app.add_api_route(
-            "/{full_path:path}",
-            self.serve_spa,
-            methods=["GET"],
-            response_class=HTMLResponse,
-            tags=["web"],
-            include_in_schema=False,
-        )
+        """Register SPA fallback middleware. Must be called AFTER all other routes.
+
+        Uses middleware instead of a catch-all route so that dynamically added
+        routes (e.g. plugin pages registered via set_web_app) are tried first.
+        The middleware only intercepts 404 responses for browser GET requests.
+        """
+        dist_dir = self.dist_dir
+
+        class SPAStaticFallbackMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                response = await call_next(request)
+                if response.status_code != 404:
+                    return response
+                if request.method != "GET":
+                    return response
+                if "text/html" not in request.headers.get("accept", ""):
+                    return response
+                full_path = request.url.path.lstrip("/")
+                if full_path.startswith(("api/", "sticker/", "assets/", "monacoeditorwork/", "page/")):
+                    return response
+                # Serve single-segment root files from dist (favicon.ico, etc.)
+                if full_path and "/" not in full_path and ".." not in full_path:
+                    candidate = dist_dir / full_path
+                    try:
+                        resolved = candidate.resolve()
+                        dist_resolved = dist_dir.resolve()
+                        if resolved.is_file() and resolved.is_relative_to(dist_resolved):
+                            return FileResponse(resolved)
+                    except (OSError, ValueError):
+                        pass
+                no_cache_headers = {
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                }
+                spa_index = dist_dir / "index.html"
+                if spa_index.exists():
+                    return FileResponse(spa_index, media_type="text/html", headers=no_cache_headers)
+                return HTMLResponse(
+                    content="<h1>Frontend not built. Run <code>npm install &amp;&amp; npm run build</code> inside <code>webui/frontend/</code>.</h1>",
+                    status_code=503,
+                )
+
+        self.app.add_middleware(SPAStaticFallbackMiddleware)
 
     async def serve_spa(self, request: Request = None, full_path: str = ""):
         """Serve the Vue SPA.
@@ -122,7 +170,7 @@ class AuthRoutes(Routes):
         the build command.
         """
         # Don't serve SPA for paths handled by dedicated mounts.
-        if full_path.startswith(("api/", "sticker/", "assets/", "monacoeditorwork/")):
+        if full_path.startswith(("api/", "sticker/", "assets/", "monacoeditorwork/", "page/")):
             raise HTTPException(status_code=404)
         # Serve single-segment root files from dist (favicon.ico, etc.).
         # Restrict to one path segment to avoid traversal.
@@ -183,7 +231,19 @@ class AuthRoutes(Routes):
             },
             expires_delta=timedelta(days=5),
         )
-        return LoginResponse(access_token=access_token)
+        response = LoginResponse(access_token=access_token)
+        resp = JSONResponse(content=response.model_dump())
+        resp.set_cookie(
+            key="kira_token",
+            value=access_token,
+            path="/",
+            httponly=False,  # JS needs to read it for logout cleanup
+            samesite="lax",
+            max_age=5 * 24 * 3600,  # 5 days, matches JWT expiry
+        )
+        return resp
 
     async def logout(self):
-        return None
+        resp = Response(status_code=204)
+        resp.delete_cookie("kira_token", path="/")
+        return resp

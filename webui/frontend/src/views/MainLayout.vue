@@ -55,6 +55,8 @@ watch(() => route.path, () => {
 })
 
 const pageTitle = computed(() => {
+  // Plugin pages set meta.title directly (raw string, not i18n key)
+  if (route.meta.title) return route.meta.title as string
   const name = route.name as string | undefined
   if (!name) return ''
   const key = `pages.${name.toLowerCase()}.title`

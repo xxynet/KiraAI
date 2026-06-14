@@ -100,6 +100,13 @@ export interface StickerUpdateRequest {
   desc: string
 }
 
+export interface PageMenu {
+  route: string
+  label: string
+  icon: string | null
+  order: number
+}
+
 export interface PluginItem {
   id: string
   name: string
@@ -114,6 +121,7 @@ export interface PluginItem {
   core_version?: string | null
   error?: string | null
   status?: string
+  menus?: PageMenu[]
 }
 
 export interface PluginConfigUpdateRequest {
