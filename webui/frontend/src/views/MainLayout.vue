@@ -29,6 +29,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { usePluginMenuStore } from '@/stores/pluginMenu'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
@@ -36,6 +37,7 @@ import PageContainer from '@/components/layout/PageContainer.vue'
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const pluginMenuStore = usePluginMenuStore()
 
 const sidebarOpen = ref(false)
 
@@ -55,8 +57,14 @@ watch(() => route.path, () => {
 })
 
 const pageTitle = computed(() => {
-  // Plugin pages set meta.title directly (raw string, not i18n key)
-  if (route.meta.title) return route.meta.title as string
+  // Plugin pages: look up label from store (reactively updates when menus load)
+  if (route.meta.pluginPage) {
+    const pluginId = route.params.pluginId as string
+    const pageRoute = route.params.pageRoute as string
+    const menu = pluginMenuStore.menus.find(m => m.pluginId === pluginId && m.pageRoute === pageRoute)
+    if (menu) return menu.label
+    return route.meta.title as string || 'Plugin Page'
+  }
   const name = route.name as string | undefined
   if (!name) return ''
   const key = `pages.${name.toLowerCase()}.title`
