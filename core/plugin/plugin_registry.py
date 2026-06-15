@@ -7,6 +7,7 @@ import sys
 import types
 import httpx
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable, Union
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
@@ -59,6 +60,73 @@ _module_to_plugin: Dict[str, str] = {}
 _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
 
 
+class PluginPageSource(Enum):
+    FOLDER = "folder"
+    URL = "url"
+    HTML = "html"
+
+
+class PluginPage:
+    """Flexible plugin page descriptor.
+
+    Use factory methods to create instances:
+
+    - ``PluginPage.from_folder("./web")`` — serve a directory of static files
+      (recommended for pre-built SPAs or plain HTML).
+    - ``PluginPage.from_url("https://example.com")`` — redirect to an external URL.
+    - ``PluginPage.from_html("<h1>Hello</h1>")`` — serve inline HTML.
+
+    The *auth* and *menu* parameters can also be passed to ``@register.page()``
+    as decorator-level overrides.
+    """
+
+    def __init__(self, source: PluginPageSource, source_value: str,
+                 auth: bool = True, menu: Optional[dict] = None):
+        self.source = source
+        self.source_value = source_value
+        self.auth = auth
+        self.menu = menu
+
+    @classmethod
+    def from_folder(cls, path: str, auth: bool = True,
+                    menu: Optional[dict] = None) -> "PluginPage":
+        """Serve static files from a directory relative to the plugin root.
+
+        Only files *inside* the plugin directory are accessible — any path
+        that resolves outside the plugin root is rejected at registration time.
+
+        Args:
+            path: Directory path relative to the plugin root, e.g. ``"./web"``.
+            auth: Require JWT auth (default ``True``).
+            menu: Optional sidebar menu config dict.
+        """
+        return cls(PluginPageSource.FOLDER, path, auth, menu)
+
+    @classmethod
+    def from_url(cls, url: str, auth: bool = True,
+                 menu: Optional[dict] = None) -> "PluginPage":
+        """Redirect the iframe to an external URL.
+
+        Args:
+            url: Full URL to redirect to, e.g. ``"https://example.com"``.
+            auth: Require JWT auth (default ``True``).
+            menu: Optional sidebar menu config dict.
+        """
+        return cls(PluginPageSource.URL, url, auth, menu)
+
+    @classmethod
+    def from_html(cls, html: str, auth: bool = True,
+                  menu: Optional[dict] = None) -> "PluginPage":
+        """Serve a static HTML string.
+
+        Args:
+            html: Raw HTML content.
+            auth: Require JWT auth (default ``True``).
+            menu: Optional sidebar menu config dict.
+        """
+        return cls(PluginPageSource.HTML, html, auth, menu)
+
+
 @dataclass
 class PluginComponents:
     """Typed container for all components registered by a single plugin."""
@@ -101,14 +169,19 @@ class PluginComponents:
         self.hooks.append(eh)
 
     def register_page(self, route: str, func: Callable, auth: bool = True,
-                      menu: Optional[dict] = None):
+                      menu: Optional[dict] = None,
+                      page_obj: Optional["PluginPage"] = None,
+                      returns_plugin_page: bool = False):
         self.pages.append({
             "route": route,
             "func": func,
             "auth": auth,
             "menu": menu,
+            "page": page_obj,
+            "returns_plugin_page": returns_plugin_page,
         })
-        self.page_funcs[func.__name__] = func
+        if func is not None:
+            self.page_funcs[func.__name__] = func
 
     def register_static(self, path: str, directory: str, html: bool = False):
         self.static_dirs.append({
@@ -146,10 +219,12 @@ _plugin_infos: Dict[str, PluginInfo] = {}
 
 
 def get_obj_plugin_id(obj: Any):
+    # 1. Try the module where obj is defined (works for functions/classes)
     module = inspect.getmodule(obj)
     module_name = module.__name__ if module else ""
     plugin_id = _module_to_plugin.get(module_name, "")
 
+    # 2. Try manifest.json next to the module file
     if not plugin_id and module and getattr(module, "__file__", None):
         module_path = Path(module.__file__).resolve()
         plugin_root = module_path.parent
@@ -165,6 +240,43 @@ def get_obj_plugin_id(obj: Any):
                 _module_to_plugin[module_name] = plugin_id
             except Exception:
                 plugin_id = plugin_root.name
+
+    # 3. Walk the call stack to find the caller's module.
+    #    Needed when obj is an instance of a framework class (e.g. PluginPage)
+    #    whose __module__ points to the framework, not the plugin.
+    if not plugin_id:
+        for depth in range(1, 10):
+            frame = inspect.currentframe()
+            for _ in range(depth):
+                if frame is None:
+                    break
+                frame = frame.f_back
+            if frame is None:
+                break
+            caller_module = inspect.getmodule(frame)
+            if caller_module is None:
+                continue
+            caller_name = caller_module.__name__
+            if caller_name in _module_to_plugin:
+                plugin_id = _module_to_plugin[caller_name]
+                break
+            if caller_module.__file__ and "plugin_registry" not in (caller_module.__file__ or ""):
+                caller_path = Path(caller_module.__file__).resolve()
+                caller_root = caller_path.parent
+                manifest_path = caller_root / "manifest.json"
+                if manifest_path.exists():
+                    try:
+                        with manifest_path.open("r", encoding="utf-8") as f:
+                            manifest = json.load(f)
+                        plugin_id = manifest.get("plugin_id") or caller_root.name
+                        _plugin_manifests.setdefault(plugin_id, manifest)
+                        _plugin_module_dirs.setdefault(plugin_id, caller_root.name)
+                        _plugin_module_paths.setdefault(plugin_id, caller_root)
+                        _module_to_plugin[caller_name] = plugin_id
+                        break
+                    except Exception:
+                        pass
+
     return plugin_id
 
 
@@ -190,15 +302,55 @@ class RegisterDeco:
     def page(route: str, auth: bool = True, menu: Optional[dict] = None):
         """Register a plugin page endpoint.
 
-        route: URL path relative to plugin prefix, e.g., "/dashboard"
-               Final route: /page/plugin/{plugin_id}{route}
-        auth:  Require JWT auth (default True)
-        menu:  Optional menu configuration for sidebar integration
+        Accepts either a ``PluginPage`` object or a callable that returns one.
+
+        **Object-based** (recommended — required for ``from_folder``)::
+
+            @register.page("/dashboard", menu={"label": "Dashboard", "icon": "Monitor"})
+            def dashboard():
+                return PluginPage.from_folder("./web")
+
+        **Function-based** (legacy, still supported)::
+
+            @register.page("/legacy")
+            async def legacy_page(self):
+                return HTMLResponse("<h1>Hello</h1>")
+
+        Args:
+            route: URL path relative to plugin prefix, e.g. ``"/dashboard"``.
+                   Final route: ``/page/plugin/{plugin_id}{route}``
+            auth:  Require JWT auth (default ``True``).
+            menu:  Optional sidebar menu config dict.
         """
-        def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_page(route, func, auth, menu)
-            return func
+        def decorator(obj):
+            plugin_id = get_obj_plugin_id(obj)
+            comp = _ensure_components(plugin_id)
+
+            if isinstance(obj, PluginPage):
+                obj.auth = auth
+                if menu is not None:
+                    obj.menu = menu
+                comp.register_page(route, None, obj.auth, obj.menu, page_obj=obj)
+                return obj
+
+            # Check if the function's return annotation indicates PluginPage.
+            # For class methods, we can't call them at decoration time (no
+            # instance yet), so we mark it and defer to _register_plugin_pages_for
+            # where the instance is available.
+            import typing
+            returns_plugin_page = False
+            try:
+                hints = typing.get_type_hints(obj)
+                rt = hints.get("return")
+                if rt is PluginPage or (isinstance(rt, str) and rt == "PluginPage"):
+                    returns_plugin_page = True
+            except Exception:
+                pass
+
+            comp.register_page(route, obj, auth, menu,
+                               returns_plugin_page=returns_plugin_page)
+            comp.page_funcs[obj.__name__] = obj
+            return obj
         return decorator
 
     @staticmethod
@@ -678,20 +830,306 @@ class PluginManager:
 
         import typing
         from fastapi import Depends, HTTPException
+        from fastapi.responses import HTMLResponse
+        from starlette.responses import RedirectResponse
         from webui.routes.auth import require_auth
 
         mgr = self
+        plugin_root = _plugin_module_paths.get(plugin_id)
         registered: List[str] = []
 
         for page in comp.pages:
-            func = page["func"]
-            func_name = func.__name__
+            page_obj = page.get("page")
             route_path = page["route"].lstrip('/')
             full_path = f"/page/plugin/{plugin_id}/{route_path}"
+            need_auth = page["auth"]
 
             # Handle catch-all routes (e.g., /{path:path})
             if '{' in route_path and ':path}' in route_path:
                 full_path = f"/page/plugin/{plugin_id}/" + "{path:path}"
+
+            # ── PluginPage object-based pages ──────────────────────────────
+            if page_obj is not None:
+                if page_obj.source == PluginPageSource.FOLDER:
+                    # Validate path: must stay within plugin root
+                    if plugin_root is None:
+                        logger.error(f"Plugin {plugin_id}: no plugin root, cannot serve folder page")
+                        continue
+                    try:
+                        folder_path = (plugin_root / page_obj.source_value).resolve()
+                        plugin_root_resolved = plugin_root.resolve()
+                    except (OSError, ValueError) as e:
+                        logger.error(f"Plugin {plugin_id}: invalid folder path: {e}")
+                        continue
+                    if not folder_path.is_relative_to(plugin_root_resolved):
+                        logger.error(
+                            f"Plugin {plugin_id}: folder path '{page_obj.source_value}' "
+                            f"escapes plugin root — rejected"
+                        )
+                        continue
+                    if not folder_path.is_dir():
+                        logger.error(
+                            f"Plugin {plugin_id}: folder not found: {page_obj.source_value}"
+                        )
+                        continue
+
+                    # Mount using PluginPageStaticFiles with integrated auth check
+                    from fastapi.staticfiles import StaticFiles
+
+                    class PluginPageStaticFiles(StaticFiles):
+                        """StaticFiles with plugin-enabled + optional auth gating."""
+                        def __init__(self, directory: str, html: bool = True):
+                            super().__init__(directory=directory, html=html)
+
+                        async def __call__(self, scope, receive, send):
+                            if scope["type"] == "http":
+                                from starlette.requests import Request as StarletteRequest
+                                from webui.utils import _verify_jwt_token
+
+                                request = StarletteRequest(scope)
+                                # Plugin-enabled check
+                                if not mgr.is_plugin_enabled(plugin_id):
+                                    response = HTMLResponse(
+                                        content='{"detail":"Plugin disabled"}',
+                                        status_code=404,
+                                    )
+                                    await response(scope, receive, send)
+                                    return
+                                # Auth check
+                                if need_auth:
+                                    token = None
+                                    auth_header = request.headers.get("authorization", "")
+                                    if auth_header.startswith("Bearer "):
+                                        token = auth_header.split(" ", 1)[1]
+                                    if not token:
+                                        token = request.cookies.get("kira_token")
+                                    if not token:
+                                        response = HTMLResponse(
+                                            content='{"detail":"Not authenticated"}',
+                                            status_code=401,
+                                        )
+                                        await response(scope, receive, send)
+                                        return
+                                    # Validate token
+                                    try:
+                                        _verify_jwt_token(token)
+                                    except Exception:
+                                        response = HTMLResponse(
+                                            content='{"detail":"Invalid token"}',
+                                            status_code=401,
+                                        )
+                                        await response(scope, receive, send)
+                                        return
+                            await super().__call__(scope, receive, send)
+
+                    try:
+                        self._web_app.mount(
+                            full_path,
+                            PluginPageStaticFiles(
+                                directory=str(folder_path),
+                                html=True,
+                            ),
+                            name=f"plugin:{plugin_id}:page:{route_path}",
+                        )
+                        registered.append(f"{full_path} (folder: {page_obj.source_value})")
+                    except Exception as e:
+                        logger.error(f"Plugin {plugin_id}: failed to mount folder page: {e}")
+
+                elif page_obj.source == PluginPageSource.URL:
+                    url = page_obj.source_value
+                    dependencies = []
+                    if need_auth:
+                        dependencies.append(Depends(require_auth))
+
+                    async def redirect_endpoint(_url=url):
+                        return RedirectResponse(url=_url)
+
+                    self._web_app.add_api_route(
+                        path=full_path,
+                        endpoint=redirect_endpoint,
+                        methods=["GET"],
+                        dependencies=dependencies,
+                        tags=[f"plugin:{plugin_id}"],
+                    )
+                    registered.append(f"{full_path} (url: {url})")
+
+                elif page_obj.source == PluginPageSource.HTML:
+                    html_content = page_obj.source_value
+                    dependencies = []
+                    if need_auth:
+                        dependencies.append(Depends(require_auth))
+
+                    async def html_endpoint(_html=html_content):
+                        return HTMLResponse(content=_html)
+
+                    self._web_app.add_api_route(
+                        path=full_path,
+                        endpoint=html_endpoint,
+                        methods=["GET"],
+                        dependencies=dependencies,
+                        tags=[f"plugin:{plugin_id}"],
+                    )
+                    registered.append(f"{full_path} (html)")
+
+                continue
+
+            # ── Function annotated -> PluginPage (deferred call) ─────────
+            func = page["func"]
+            if page.get("returns_plugin_page"):
+                # The function returns PluginPage but was registered as a
+                # function (e.g. a class method). Call it now that the
+                # plugin instance is available to get the PluginPage object.
+                inst = mgr.plugin_instances.get(plugin_id)
+                if inst is None:
+                    logger.error(f"Plugin {plugin_id}: instance not available for {func.__name__}")
+                    continue
+                try:
+                    raw = getattr(inst, func.__name__)()
+                    import asyncio
+                    if asyncio.iscoroutine(raw) or asyncio.isfuture(raw):
+                        # Async functions that return PluginPage can't be
+                        # awaited here (sync context). Use sync def instead.
+                        logger.error(
+                            f"Plugin {plugin_id}: {func.__name__}() is async but "
+                            f"returns PluginPage — use sync def for from_folder"
+                        )
+                        continue
+                    page_obj = raw
+                except Exception as e:
+                    logger.error(f"Plugin {plugin_id}: failed to call {func.__name__}(): {e}")
+                    continue
+
+                if not isinstance(page_obj, PluginPage):
+                    logger.error(f"Plugin {plugin_id}: {func.__name__}() did not return PluginPage")
+                    continue
+
+                # Merge decorator-level overrides
+                if page["auth"] is not None:
+                    page_obj.auth = page["auth"]
+                if page.get("menu") is not None:
+                    page_obj.menu = page["menu"]
+
+                # Handle the PluginPage (same logic as object-based above)
+                if page_obj.source == PluginPageSource.FOLDER:
+                    if plugin_root is None:
+                        logger.error(f"Plugin {plugin_id}: no plugin root, cannot serve folder page")
+                        continue
+                    try:
+                        folder_path = (plugin_root / page_obj.source_value).resolve()
+                        plugin_root_resolved = plugin_root.resolve()
+                    except (OSError, ValueError) as e:
+                        logger.error(f"Plugin {plugin_id}: invalid folder path: {e}")
+                        continue
+                    if not folder_path.is_relative_to(plugin_root_resolved):
+                        logger.error(
+                            f"Plugin {plugin_id}: folder path '{page_obj.source_value}' "
+                            f"escapes plugin root — rejected"
+                        )
+                        continue
+                    if not folder_path.is_dir():
+                        logger.error(
+                            f"Plugin {plugin_id}: folder not found: {page_obj.source_value}"
+                        )
+                        continue
+
+                    from fastapi.staticfiles import StaticFiles
+
+                    class DeferredPluginPageStaticFiles(StaticFiles):
+                        def __init__(self, directory: str, html: bool = True):
+                            super().__init__(directory=directory, html=html)
+
+                        async def __call__(self, scope, receive, send):
+                            if scope["type"] == "http":
+                                from starlette.requests import Request as StarletteRequest
+                                from webui.utils import _verify_jwt_token
+
+                                request = StarletteRequest(scope)
+                                if not mgr.is_plugin_enabled(plugin_id):
+                                    response = HTMLResponse(
+                                        content='{"detail":"Plugin disabled"}',
+                                        status_code=404,
+                                    )
+                                    await response(scope, receive, send)
+                                    return
+                                if need_auth:
+                                    token = None
+                                    auth_header = request.headers.get("authorization", "")
+                                    if auth_header.startswith("Bearer "):
+                                        token = auth_header.split(" ", 1)[1]
+                                    if not token:
+                                        token = request.cookies.get("kira_token")
+                                    if not token:
+                                        response = HTMLResponse(
+                                            content='{"detail":"Not authenticated"}',
+                                            status_code=401,
+                                        )
+                                        await response(scope, receive, send)
+                                        return
+                                    try:
+                                        _verify_jwt_token(token)
+                                    except Exception:
+                                        response = HTMLResponse(
+                                            content='{"detail":"Invalid token"}',
+                                            status_code=401,
+                                        )
+                                        await response(scope, receive, send)
+                                        return
+                            await super().__call__(scope, receive, send)
+
+                    try:
+                        self._web_app.mount(
+                            full_path,
+                            DeferredPluginPageStaticFiles(
+                                directory=str(folder_path),
+                                html=True,
+                            ),
+                            name=f"plugin:{plugin_id}:page:{route_path}",
+                        )
+                        registered.append(f"{full_path} (folder: {page_obj.source_value})")
+                    except Exception as e:
+                        logger.error(f"Plugin {plugin_id}: failed to mount folder page: {e}")
+
+                elif page_obj.source == PluginPageSource.URL:
+                    url = page_obj.source_value
+                    dependencies = []
+                    if need_auth:
+                        dependencies.append(Depends(require_auth))
+
+                    async def deferred_redirect_endpoint(_url=url):
+                        return RedirectResponse(url=_url)
+
+                    self._web_app.add_api_route(
+                        path=full_path,
+                        endpoint=deferred_redirect_endpoint,
+                        methods=["GET"],
+                        dependencies=dependencies,
+                        tags=[f"plugin:{plugin_id}"],
+                    )
+                    registered.append(f"{full_path} (url: {url})")
+
+                elif page_obj.source == PluginPageSource.HTML:
+                    html_content = page_obj.source_value
+                    dependencies = []
+                    if need_auth:
+                        dependencies.append(Depends(require_auth))
+
+                    async def deferred_html_endpoint(_html=html_content):
+                        return HTMLResponse(content=_html)
+
+                    self._web_app.add_api_route(
+                        path=full_path,
+                        endpoint=deferred_html_endpoint,
+                        methods=["GET"],
+                        dependencies=dependencies,
+                        tags=[f"plugin:{plugin_id}"],
+                    )
+                    registered.append(f"{full_path} (html)")
+
+                continue
+
+            # ── Legacy function-based pages ────────────────────────────────
+            func = page["func"]
+            func_name = func.__name__
 
             # Resolve annotations eagerly using the plugin module's own globals
             try:
@@ -712,7 +1150,25 @@ class PluginManager:
                 inst = _mgr.plugin_instances.get(_pid)
                 if inst is None:
                     raise HTTPException(status_code=503, detail="Plugin not available")
-                return await getattr(inst, _fname)(**kwargs)
+                raw = getattr(inst, _fname)(**kwargs)
+                import asyncio
+                if asyncio.iscoroutine(raw) or asyncio.isfuture(raw):
+                    result = await raw
+                else:
+                    result = raw
+                # Support legacy functions that return a PluginPage at request time
+                if isinstance(result, PluginPage):
+                    if result.source == PluginPageSource.URL:
+                        return RedirectResponse(url=result.source_value)
+                    elif result.source == PluginPageSource.HTML:
+                        return HTMLResponse(content=result.source_value)
+                    else:
+                        raise HTTPException(
+                            status_code=500,
+                            detail="PluginPage.from_folder() must be used with "
+                                   "@register.page(), not returned from a function",
+                        )
+                return result
 
             dynamic_page_endpoint.__signature__ = inspect.Signature(params)
 
