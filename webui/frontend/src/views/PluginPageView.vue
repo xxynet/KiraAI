@@ -61,7 +61,13 @@ function onMessage(e: MessageEvent) {
   }
 }
 
-onMounted(() => window.addEventListener('message', onMessage))
+onMounted(() => {
+  window.addEventListener('message', onMessage)
+  // Send context immediately in case the iframe's bridge already fired "ready"
+  // before we attached the listener. Harmless if iframe hasn't loaded yet —
+  // it will request context via its own "ready" message when it does.
+  sendContext()
+})
 onUnmounted(() => window.removeEventListener('message', onMessage))
 
 // Re-send context when theme or locale changes
