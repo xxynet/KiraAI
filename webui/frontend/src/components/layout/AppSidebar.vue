@@ -36,8 +36,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { usePluginMenuStore } from '@/stores/pluginMenu'
 import { getVersion } from '@/api/overview'
@@ -68,6 +69,12 @@ const appVersion = ref('-')
 const route = useRoute()
 const appStore = useAppStore()
 const pluginMenuStore = usePluginMenuStore()
+const { locale } = useI18n()
+
+// Re-resolve plugin page labels when UI language changes
+watch(locale, (newLocale) => {
+  pluginMenuStore.reResolveLabels(newLocale)
+})
 
 onMounted(async () => {
   try {

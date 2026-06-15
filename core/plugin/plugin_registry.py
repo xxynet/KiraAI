@@ -60,6 +60,33 @@ _module_to_plugin: Dict[str, str] = {}
 _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
 
 
+class PageMenu:
+    """Sidebar menu configuration for a plugin page.
+
+    Args:
+        label: Display text — a plain string or a dict of locale→translation
+               (e.g. ``{"zh": "仪表盘", "en": "Dashboard"}``).
+        icon:  Element Plus icon component name (e.g. ``"Monitor"``).
+        order: Sort order in the sidebar (lower = higher, default 100).
+    """
+
+    def __init__(self, label: Union[str, Dict[str, str]], icon: Optional[str] = None,
+                 order: int = 100):
+        if not isinstance(label, (str, dict)):
+            raise TypeError(f"label must be a str or dict, got {type(label).__name__}")
+        if isinstance(label, dict):
+            for k, v in label.items():
+                if not isinstance(k, str) or not isinstance(v, str):
+                    raise TypeError(f"label dict keys and values must be strings, "
+                                    f"got {type(k).__name__}: {type(v).__name__}")
+        self.label: Union[str, Dict[str, str]] = label
+        self.icon: Optional[str] = icon
+        self.order: int = order
+
+    def dict(self) -> dict:
+        return {"label": self.label, "icon": self.icon, "order": self.order}
+
+
 class PluginPageSource(Enum):
     FOLDER = "folder"
     URL = "url"
@@ -81,7 +108,7 @@ class PluginPage:
     """
 
     def __init__(self, source: PluginPageSource, source_value: str,
-                 auth: bool = True, menu: Optional[dict] = None):
+                 auth: bool = True, menu: Optional[Union[dict, "PageMenu"]] = None):
         self.source = source
         self.source_value = source_value
         self.auth = auth
@@ -89,7 +116,7 @@ class PluginPage:
 
     @classmethod
     def from_folder(cls, path: str, auth: bool = True,
-                    menu: Optional[dict] = None) -> "PluginPage":
+                    menu: Optional[Union[dict, "PageMenu"]] = None) -> "PluginPage":
         """Serve static files from a directory relative to the plugin root.
 
         Only files *inside* the plugin directory are accessible — any path
@@ -104,7 +131,7 @@ class PluginPage:
 
     @classmethod
     def from_url(cls, url: str, auth: bool = True,
-                 menu: Optional[dict] = None) -> "PluginPage":
+                 menu: Optional[Union[dict, "PageMenu"]] = None) -> "PluginPage":
         """Redirect the iframe to an external URL.
 
         Args:
@@ -116,7 +143,7 @@ class PluginPage:
 
     @classmethod
     def from_html(cls, html: str, auth: bool = True,
-                  menu: Optional[dict] = None) -> "PluginPage":
+                  menu: Optional[Union[dict, "PageMenu"]] = None) -> "PluginPage":
         """Serve a static HTML string.
 
         Args:
@@ -169,9 +196,11 @@ class PluginComponents:
         self.hooks.append(eh)
 
     def register_page(self, route: str, func: Callable, auth: bool = True,
-                      menu: Optional[dict] = None,
+                      menu: Optional[Union[dict, "PageMenu"]] = None,
                       page_obj: Optional["PluginPage"] = None,
                       returns_plugin_page: bool = False):
+        if isinstance(menu, dict):
+            menu = PageMenu(**menu)
         self.pages.append({
             "route": route,
             "func": func,
@@ -299,12 +328,12 @@ class RegisterDeco:
         return decorator
 
     @staticmethod
-    def page(route: str, auth: bool = True, menu: Optional[dict] = None):
+    def page(route: str, auth: bool = True, menu: Optional[Union[dict, "PageMenu"]] = None):
         """Register a plugin page endpoint.
 
         Accepts a ``PluginPage`` object or a function that returns one::
 
-            @register.page("/dashboard", menu={"label": "Dashboard", "icon": "Monitor"})
+            @register.page("/dashboard", menu=PageMenu(label={"zh": "仪表盘", "en": "Dashboard"}, icon="Monitor"))
             def dashboard(self):
                 return PluginPage.from_folder("./web")
 
@@ -312,7 +341,8 @@ class RegisterDeco:
             route: URL path relative to plugin prefix, e.g. ``"/dashboard"``.
                    Final route: ``/page/plugin/{plugin_id}{route}``
             auth:  Require JWT auth (default ``True``).
-            menu:  Optional sidebar menu config dict.
+            menu:  Optional sidebar menu config — a ``PageMenu`` object or a dict
+                   with keys ``label`` (str or locale dict), ``icon``, ``order``.
         """
         def decorator(obj):
             plugin_id = get_obj_plugin_id(obj)
