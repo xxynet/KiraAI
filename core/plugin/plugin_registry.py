@@ -302,19 +302,11 @@ class RegisterDeco:
     def page(route: str, auth: bool = True, menu: Optional[dict] = None):
         """Register a plugin page endpoint.
 
-        Accepts either a ``PluginPage`` object or a callable that returns one.
-
-        **Object-based** (recommended — required for ``from_folder``)::
+        Accepts a ``PluginPage`` object or a function that returns one::
 
             @register.page("/dashboard", menu={"label": "Dashboard", "icon": "Monitor"})
-            def dashboard():
+            def dashboard(self):
                 return PluginPage.from_folder("./web")
-
-        **Function-based** (legacy, still supported)::
-
-            @register.page("/legacy")
-            async def legacy_page(self):
-                return HTMLResponse("<h1>Hello</h1>")
 
         Args:
             route: URL path relative to plugin prefix, e.g. ``"/dashboard"``.
@@ -333,22 +325,9 @@ class RegisterDeco:
                 comp.register_page(route, None, obj.auth, obj.menu, page_obj=obj)
                 return obj
 
-            # Check if the function's return annotation indicates PluginPage.
-            # For class methods, we can't call them at decoration time (no
-            # instance yet), so we mark it and defer to _register_plugin_pages_for
-            # where the instance is available.
-            import typing
-            returns_plugin_page = False
-            try:
-                hints = typing.get_type_hints(obj)
-                rt = hints.get("return")
-                if rt is PluginPage or (isinstance(rt, str) and rt == "PluginPage"):
-                    returns_plugin_page = True
-            except Exception:
-                pass
-
-            comp.register_page(route, obj, auth, menu,
-                               returns_plugin_page=returns_plugin_page)
+            # Function that returns PluginPage — defer call to init time
+            # where the plugin instance is available.
+            comp.register_page(route, obj, auth, menu, returns_plugin_page=True)
             comp.page_funcs[obj.__name__] = obj
             return obj
         return decorator
@@ -1126,64 +1105,6 @@ class PluginManager:
                     registered.append(f"{full_path} (html)")
 
                 continue
-
-            # ── Legacy function-based pages ────────────────────────────────
-            func = page["func"]
-            func_name = func.__name__
-
-            # Resolve annotations eagerly using the plugin module's own globals
-            try:
-                resolved_hints = typing.get_type_hints(func, globalns=func.__globals__)
-            except Exception:
-                resolved_hints = {}
-
-            params = [
-                p.replace(annotation=resolved_hints.get(name, p.annotation))
-                for name, p in inspect.signature(func).parameters.items()
-                if name != "self"
-            ]
-
-            # Capture loop variables via default args to avoid closure issues
-            async def dynamic_page_endpoint(
-                _pid=plugin_id, _fname=func_name, _mgr=mgr, **kwargs
-            ):
-                inst = _mgr.plugin_instances.get(_pid)
-                if inst is None:
-                    raise HTTPException(status_code=503, detail="Plugin not available")
-                raw = getattr(inst, _fname)(**kwargs)
-                import asyncio
-                if asyncio.iscoroutine(raw) or asyncio.isfuture(raw):
-                    result = await raw
-                else:
-                    result = raw
-                # Support legacy functions that return a PluginPage at request time
-                if isinstance(result, PluginPage):
-                    if result.source == PluginPageSource.URL:
-                        return RedirectResponse(url=result.source_value)
-                    elif result.source == PluginPageSource.HTML:
-                        return HTMLResponse(content=result.source_value)
-                    else:
-                        raise HTTPException(
-                            status_code=500,
-                            detail="PluginPage.from_folder() must be used with "
-                                   "@register.page(), not returned from a function",
-                        )
-                return result
-
-            dynamic_page_endpoint.__signature__ = inspect.Signature(params)
-
-            dependencies = []
-            if page["auth"]:
-                dependencies.append(Depends(require_auth))
-
-            self._web_app.add_api_route(
-                path=full_path,
-                endpoint=dynamic_page_endpoint,
-                methods=["GET"],
-                dependencies=dependencies,
-                tags=[f"plugin:{plugin_id}"],
-            )
-            registered.append(full_path)
 
         if registered:
             logger.info(f"Registered {len(registered)} page routes from {plugin_id}: {registered}")
