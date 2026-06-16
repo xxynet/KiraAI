@@ -713,15 +713,6 @@ textarea:focus:hover,
 .dark .border-gray-700,
 .dark .border-gray-800 { border-color: rgba(148, 163, 184, 0.22) !important; }
 
-/* ==================== Element Plus Overrides ==================== */
-.el-dialog {
-  backdrop-filter: blur(16px);
-}
-
-.dark .el-dialog {
-  background-color: rgba(31, 41, 55, 0.95) !important;
-}
-
 /* ==================== Responsive ==================== */
 @media (max-width: 768px) {
   .monaco-container {
