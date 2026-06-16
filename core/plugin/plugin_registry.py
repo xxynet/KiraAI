@@ -60,6 +60,42 @@ _module_to_plugin: Dict[str, str] = {}
 _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
 
 
+class PageMenu:
+    """Sidebar menu configuration for a plugin page.
+
+    Args:
+        label: Display text — a plain string or a dict of locale→translation
+               (e.g. ``{"zh": "仪表盘", "en": "Dashboard"}``).
+        icon:  Element Plus icon component name (e.g. ``"Monitor"``).
+        order: Sort order in the sidebar (lower = higher, default 100).
+    """
+
+    def __init__(self, label: Union[str, Dict[str, str]], icon: Optional[str] = None,
+                 order: int = 100):
+        if not isinstance(label, (str, dict)):
+            raise TypeError(f"label must be a str or dict, got {type(label).__name__}")
+        if isinstance(label, str):
+            if not label.strip():
+                raise ValueError("label string must not be empty or whitespace")
+        if isinstance(label, dict):
+            for k, v in label.items():
+                if not isinstance(k, str) or not isinstance(v, str):
+                    raise TypeError(f"label dict keys and values must be strings, "
+                                    f"got {type(k).__name__}: {type(v).__name__}")
+                if not v.strip():
+                    raise ValueError(f"label dict value for '{k}' must not be empty or whitespace")
+        if icon is not None and not isinstance(icon, str):
+            raise TypeError(f"icon must be a string if provided, got {type(icon).__name__}")
+        if not isinstance(order, int) or isinstance(order, bool):
+            raise TypeError(f"order must be an integer, got {type(order).__name__}")
+        self.label: Union[str, Dict[str, str]] = label
+        self.icon: Optional[str] = icon
+        self.order: int = order
+
+    def dict(self) -> dict:
+        return {"label": self.label, "icon": self.icon, "order": self.order}
+
+
 class PluginPageSource(Enum):
     FOLDER = "folder"
     URL = "url"
@@ -76,20 +112,15 @@ class PluginPage:
     - ``PluginPage.from_url("https://example.com")`` — redirect to an external URL.
     - ``PluginPage.from_html("<h1>Hello</h1>")`` — serve inline HTML.
 
-    The *auth* and *menu* parameters can also be passed to ``@register.page()``
-    as decorator-level overrides.
+    Use ``@register.page()`` decorator parameters to control *auth* and *menu*.
     """
 
-    def __init__(self, source: PluginPageSource, source_value: str,
-                 auth: bool = True, menu: Optional[dict] = None):
+    def __init__(self, source: PluginPageSource, source_value: str):
         self.source = source
         self.source_value = source_value
-        self.auth = auth
-        self.menu = menu
 
     @classmethod
-    def from_folder(cls, path: str, auth: bool = True,
-                    menu: Optional[dict] = None) -> "PluginPage":
+    def from_folder(cls, path: str) -> "PluginPage":
         """Serve static files from a directory relative to the plugin root.
 
         Only files *inside* the plugin directory are accessible — any path
@@ -97,34 +128,26 @@ class PluginPage:
 
         Args:
             path: Directory path relative to the plugin root, e.g. ``"./web"``.
-            auth: Require JWT auth (default ``True``).
-            menu: Optional sidebar menu config dict.
         """
-        return cls(PluginPageSource.FOLDER, path, auth, menu)
+        return cls(PluginPageSource.FOLDER, path)
 
     @classmethod
-    def from_url(cls, url: str, auth: bool = True,
-                 menu: Optional[dict] = None) -> "PluginPage":
+    def from_url(cls, url: str) -> "PluginPage":
         """Redirect the iframe to an external URL.
 
         Args:
             url: Full URL to redirect to, e.g. ``"https://example.com"``.
-            auth: Require JWT auth (default ``True``).
-            menu: Optional sidebar menu config dict.
         """
-        return cls(PluginPageSource.URL, url, auth, menu)
+        return cls(PluginPageSource.URL, url)
 
     @classmethod
-    def from_html(cls, html: str, auth: bool = True,
-                  menu: Optional[dict] = None) -> "PluginPage":
+    def from_html(cls, html: str) -> "PluginPage":
         """Serve a static HTML string.
 
         Args:
             html: Raw HTML content.
-            auth: Require JWT auth (default ``True``).
-            menu: Optional sidebar menu config dict.
         """
-        return cls(PluginPageSource.HTML, html, auth, menu)
+        return cls(PluginPageSource.HTML, html)
 
 
 @dataclass
@@ -169,9 +192,11 @@ class PluginComponents:
         self.hooks.append(eh)
 
     def register_page(self, route: str, func: Callable, auth: bool = True,
-                      menu: Optional[dict] = None,
+                      menu: Optional[Union[dict, "PageMenu"]] = None,
                       page_obj: Optional["PluginPage"] = None,
                       returns_plugin_page: bool = False):
+        if isinstance(menu, dict):
+            menu = PageMenu(**menu)
         self.pages.append({
             "route": route,
             "func": func,
@@ -299,56 +324,33 @@ class RegisterDeco:
         return decorator
 
     @staticmethod
-    def page(route: str, auth: bool = True, menu: Optional[dict] = None):
+    def page(route: str, auth: bool = True, menu: Optional[Union[dict, "PageMenu"]] = None):
         """Register a plugin page endpoint.
 
-        Accepts either a ``PluginPage`` object or a callable that returns one.
+        Accepts a ``PluginPage`` object or a function that returns one::
 
-        **Object-based** (recommended — required for ``from_folder``)::
-
-            @register.page("/dashboard", menu={"label": "Dashboard", "icon": "Monitor"})
-            def dashboard():
+            @register.page("/dashboard", menu=PageMenu(label={"zh": "仪表盘", "en": "Dashboard"}, icon="Monitor"))
+            def dashboard(self):
                 return PluginPage.from_folder("./web")
-
-        **Function-based** (legacy, still supported)::
-
-            @register.page("/legacy")
-            async def legacy_page(self):
-                return HTMLResponse("<h1>Hello</h1>")
 
         Args:
             route: URL path relative to plugin prefix, e.g. ``"/dashboard"``.
                    Final route: ``/page/plugin/{plugin_id}{route}``
             auth:  Require JWT auth (default ``True``).
-            menu:  Optional sidebar menu config dict.
+            menu:  Optional sidebar menu config — a ``PageMenu`` object or a dict
+                   with keys ``label`` (str or locale dict), ``icon``, ``order``.
         """
         def decorator(obj):
             plugin_id = get_obj_plugin_id(obj)
             comp = _ensure_components(plugin_id)
 
             if isinstance(obj, PluginPage):
-                obj.auth = auth
-                if menu is not None:
-                    obj.menu = menu
-                comp.register_page(route, None, obj.auth, obj.menu, page_obj=obj)
+                comp.register_page(route, None, auth, menu, page_obj=obj)
                 return obj
 
-            # Check if the function's return annotation indicates PluginPage.
-            # For class methods, we can't call them at decoration time (no
-            # instance yet), so we mark it and defer to _register_plugin_pages_for
-            # where the instance is available.
-            import typing
-            returns_plugin_page = False
-            try:
-                hints = typing.get_type_hints(obj)
-                rt = hints.get("return")
-                if rt is PluginPage or (isinstance(rt, str) and rt == "PluginPage"):
-                    returns_plugin_page = True
-            except Exception:
-                pass
-
-            comp.register_page(route, obj, auth, menu,
-                               returns_plugin_page=returns_plugin_page)
+            # Function that returns PluginPage — defer call to init time
+            # where the plugin instance is available.
+            comp.register_page(route, obj, auth, menu, returns_plugin_page=True)
             comp.page_funcs[obj.__name__] = obj
             return obj
         return decorator
@@ -1003,11 +1005,7 @@ class PluginManager:
                     logger.error(f"Plugin {plugin_id}: {func.__name__}() did not return PluginPage")
                     continue
 
-                # Merge decorator-level overrides
-                if page["auth"] is not None:
-                    page_obj.auth = page["auth"]
-                if page.get("menu") is not None:
-                    page_obj.menu = page["menu"]
+                # Merge decorator-level overrides (menu already handled by register_page)
 
                 # Handle the PluginPage (same logic as object-based above)
                 if page_obj.source == PluginPageSource.FOLDER:
@@ -1126,64 +1124,6 @@ class PluginManager:
                     registered.append(f"{full_path} (html)")
 
                 continue
-
-            # ── Legacy function-based pages ────────────────────────────────
-            func = page["func"]
-            func_name = func.__name__
-
-            # Resolve annotations eagerly using the plugin module's own globals
-            try:
-                resolved_hints = typing.get_type_hints(func, globalns=func.__globals__)
-            except Exception:
-                resolved_hints = {}
-
-            params = [
-                p.replace(annotation=resolved_hints.get(name, p.annotation))
-                for name, p in inspect.signature(func).parameters.items()
-                if name != "self"
-            ]
-
-            # Capture loop variables via default args to avoid closure issues
-            async def dynamic_page_endpoint(
-                _pid=plugin_id, _fname=func_name, _mgr=mgr, **kwargs
-            ):
-                inst = _mgr.plugin_instances.get(_pid)
-                if inst is None:
-                    raise HTTPException(status_code=503, detail="Plugin not available")
-                raw = getattr(inst, _fname)(**kwargs)
-                import asyncio
-                if asyncio.iscoroutine(raw) or asyncio.isfuture(raw):
-                    result = await raw
-                else:
-                    result = raw
-                # Support legacy functions that return a PluginPage at request time
-                if isinstance(result, PluginPage):
-                    if result.source == PluginPageSource.URL:
-                        return RedirectResponse(url=result.source_value)
-                    elif result.source == PluginPageSource.HTML:
-                        return HTMLResponse(content=result.source_value)
-                    else:
-                        raise HTTPException(
-                            status_code=500,
-                            detail="PluginPage.from_folder() must be used with "
-                                   "@register.page(), not returned from a function",
-                        )
-                return result
-
-            dynamic_page_endpoint.__signature__ = inspect.Signature(params)
-
-            dependencies = []
-            if page["auth"]:
-                dependencies.append(Depends(require_auth))
-
-            self._web_app.add_api_route(
-                path=full_path,
-                endpoint=dynamic_page_endpoint,
-                methods=["GET"],
-                dependencies=dependencies,
-                tags=[f"plugin:{plugin_id}"],
-            )
-            registered.append(full_path)
 
         if registered:
             logger.info(f"Registered {len(registered)} page routes from {plugin_id}: {registered}")

@@ -102,7 +102,7 @@ export interface StickerUpdateRequest {
 
 export interface PageMenu {
   route: string
-  label: string
+  label: string | Record<string, string>
   icon: string | null
   order: number
 }

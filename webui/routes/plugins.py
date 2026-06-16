@@ -145,9 +145,9 @@ class PluginsRoutes(Routes):
                             continue
                         menus.append(PageMenu(
                             route=f"/page/plugin/{pid}/{page['route'].lstrip('/')}",
-                            label=menu_cfg.get("label", pid),
-                            icon=menu_cfg.get("icon"),
-                            order=menu_cfg.get("order", 100),
+                            label=menu_cfg.label,
+                            icon=menu_cfg.icon,
+                            order=menu_cfg.order,
                         ))
                     menus.sort(key=lambda m: m.order)
                 items.append(

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getPlugins } from '@/api/plugin'
 import router from '@/router'
 
@@ -8,20 +9,38 @@ export interface PluginMenuItem {
   pluginName: string
   route: string       // Vue Router path, e.g. /plugin-page/my-plugin/dashboard
   pageRoute: string   // The page route segment passed to PluginPageView
-  label: string
+  rawLabel: string | Record<string, string>  // Raw label from API (for i18n re-resolution)
+  label: string       // Resolved display text (re-computed on locale change)
   icon: string | null
   order: number
+}
+
+/**
+ * Resolve a label that may be a plain string or a locale dict.
+ * Falls back: requested locale → "en" → first available value → raw key.
+ */
+export function resolveLabel(label: string | Record<string, string>, locale: string): string {
+  if (typeof label === 'string') return label
+  if (typeof label === 'object' && label !== null) {
+    if (label[locale]) return label[locale]
+    if (label['en']) return label['en']
+    const first = Object.values(label)[0]
+    if (first) return first
+  }
+  return ''
 }
 
 export const usePluginMenuStore = defineStore('pluginMenu', () => {
   const menus = ref<PluginMenuItem[]>([])
   const loaded = ref(false)
+  const { locale } = useI18n()
 
   async function fetchAndRegisterMenus() {
     try {
       const { data } = await getPlugins()
       const newMenus: PluginMenuItem[] = []
       const seenRoutes = new Set<string>()
+      const currentLocale = locale.value
 
       for (const plugin of data) {
         if (!plugin.enabled || !plugin.menus?.length) continue
@@ -41,7 +60,8 @@ export const usePluginMenuStore = defineStore('pluginMenu', () => {
             pluginName: plugin.name,
             route: internalRoute,
             pageRoute,
-            label: menu.label,
+            rawLabel: menu.label,
+            label: resolveLabel(menu.label, currentLocale),
             icon: menu.icon,
             order: menu.order ?? 100,
           })
@@ -79,5 +99,13 @@ export const usePluginMenuStore = defineStore('pluginMenu', () => {
     }
   }
 
-  return { menus, loaded, fetchAndRegisterMenus }
+  /** Re-resolve all labels for a new locale (no API call). */
+  function reResolveLabels(newLocale: string) {
+    menus.value = menus.value.map(m => ({
+      ...m,
+      label: resolveLabel(m.rawLabel, newLocale),
+    }))
+  }
+
+  return { menus, loaded, fetchAndRegisterMenus, reResolveLabels }
 })

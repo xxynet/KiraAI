@@ -1,9 +1,9 @@
 """
 Pydantic models shared across WebUI routes.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -122,9 +122,26 @@ class StickerUpdateRequest(BaseModel):
 class PageMenu(BaseModel):
     """Menu entry for a plugin page, shown in sidebar."""
     route: str
-    label: str
+    label: Union[str, Dict[str, str]]
     icon: Optional[str] = None
     order: int = 100
+
+    @field_validator('label')
+    @classmethod
+    def validate_label(cls, v):
+        if isinstance(v, str):
+            if not v.strip():
+                raise ValueError("label string must not be empty or whitespace")
+            return v
+        if isinstance(v, dict):
+            for key, val in v.items():
+                if not isinstance(key, str) or not isinstance(val, str):
+                    raise ValueError(f"label dict keys and values must be strings, "
+                                     f"got {type(key).__name__}: {type(val).__name__}")
+                if not val.strip():
+                    raise ValueError(f"label dict value for '{key}' must not be empty or whitespace")
+            return v
+        raise ValueError(f"label must be a str or dict, got {type(v).__name__}")
 
 
 class PluginItem(BaseModel):
