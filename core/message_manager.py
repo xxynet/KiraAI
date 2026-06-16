@@ -243,10 +243,18 @@ class MessageProcessor:
                     if cached_desc:
                         img_desc = cached_desc
                     else:
-                        vlm_model = self.provider_mgr.get_default_vlm()
-                        img_desc = await desc_img(client=vlm_model, image=ele)
-                        if md5:
-                            await self.image_desc_cache.set(md5, img_desc)
+                        try:
+                            vlm_model = self.provider_mgr.get_default_vlm()
+                            img_desc = await desc_img(client=vlm_model, image=ele)
+                        except Exception as e:
+                            logger.error(f"Failed to get default VLM model for image description: {e}")
+                            img_desc = ""
+
+                        if md5 and img_desc:
+                            try:
+                                await self.image_desc_cache.set(md5, img_desc)
+                            except Exception as e:
+                                logger.warning(f"Failed to cache image desc: {e}")
                     ele.caption = img_desc
                 else:
                     try:
@@ -280,10 +288,18 @@ class MessageProcessor:
                     if cached_desc:
                         sticker_desc = cached_desc
                     else:
-                        vlm_model = self.provider_mgr.get_default_vlm()
-                        sticker_desc = await desc_img(client=vlm_model, image=ele)
-                        if md5:
-                            await self.image_desc_cache.set(md5, sticker_desc)
+                        try:
+                            vlm_model = self.provider_mgr.get_default_vlm()
+                            sticker_desc = await desc_img(client=vlm_model, image=ele)
+                        except Exception as e:
+                            logger.error(f"Failed to get default VLM model for sticker description: {e}")
+                            sticker_desc = ""
+
+                        if md5 and sticker_desc:
+                            try:
+                                await self.image_desc_cache.set(md5, sticker_desc)
+                            except Exception as e:
+                                logger.warning(f"Failed to cache sticker desc: {e}")
                     ele.caption = sticker_desc
                 else:
                     try:
