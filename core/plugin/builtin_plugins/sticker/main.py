@@ -1,7 +1,6 @@
 import os
 import asyncio
 
-from pathlib import Path
 from typing import Optional, Type
 
 from core.logging_manager import get_logger
@@ -13,6 +12,8 @@ from core.utils.path_utils import get_data_path
 from core.chat.message_elements import BaseMessageElement, Sticker
 
 message_logger = get_logger("message", "cyan")
+
+STICKER_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
 
 
 def build_sticker_tag(sticker_dict: dict) -> Type[BaseTag]:
@@ -41,6 +42,7 @@ def build_sticker_tag(sticker_dict: dict) -> Type[BaseTag]:
                 return [sticker_obj]
             except Exception as e:
                 message_logger.error(f"error while parsing sticker: {str(e)}")
+                return []
 
     return StickerTag
 
@@ -57,6 +59,8 @@ class DefaultStickerPlugin(BasePlugin):
         self.scan_interval = 120
         self.recognition_model = None
         self.recognition_prompt = self.DEFAULT_RECOGNITION_PROMPT
+        self.vlm_concurrency = 3
+        self._vlm_sem: Optional[asyncio.Semaphore] = None
         self.sticker_mgr = self.ctx.sticker_manager
         self._scan_task: Optional[asyncio.Task] = None
     
@@ -64,15 +68,23 @@ class DefaultStickerPlugin(BasePlugin):
         self.scan_interval = self.plugin_cfg.get("scan_interval", 120)
         self.recognition_model = self.plugin_cfg.get("recognition_model", None)
         self.recognition_prompt = self.plugin_cfg.get("recognition_prompt", "").strip() or self.DEFAULT_RECOGNITION_PROMPT
+        self.vlm_concurrency = max(self.plugin_cfg.get("vlm_concurrency", 3), 1)
+        self._vlm_sem = asyncio.Semaphore(self.vlm_concurrency)
         self.sticker_mgr.on_sticker_registered(self.on_sticker_registered)
 
         self._scan_task = asyncio.create_task(self._scan_loop())
+        logger.info(f"Default Sticker initialized (vlm_concurrency={self.vlm_concurrency})")
     
     async def terminate(self):
         self.sticker_mgr.off_sticker_registered(self.on_sticker_registered)
 
         if self._scan_task:
             self._scan_task.cancel()
+            try:
+                await self._scan_task
+            except asyncio.CancelledError:
+                pass
+            self._scan_task = None
 
     async def on_sticker_registered(self, sticker_id: str, sticker_info: dict):
         path = sticker_info.get("path")
@@ -80,12 +92,13 @@ class DefaultStickerPlugin(BasePlugin):
 
         if desc:
             return
-        try:
-            sticker_desc = await self.get_sticker_description(path)
-            await self.sticker_mgr.update_sticker_desc(sticker_id, sticker_desc)
-            logger.info(f"Sticker {sticker_id} description updated by VLM: {sticker_desc}")
-        except Exception as e:
-            logger.error(f"Failed to get description for sticker {sticker_id} by VLM: {e}")
+        async with self._vlm_sem:
+            try:
+                sticker_desc = await self.get_sticker_description(path)
+                await self.sticker_mgr.update_sticker_desc(sticker_id, sticker_desc)
+                logger.info(f"Sticker {sticker_id} description updated by VLM: {sticker_desc}")
+            except Exception as e:
+                logger.error(f"Failed to get description for sticker {sticker_id} by VLM: {e}")
 
     async def get_sticker_description(self, sticker_file):
         sticker_path = os.path.join(self.sticker_mgr.sticker_folder, sticker_file)
@@ -105,22 +118,50 @@ class DefaultStickerPlugin(BasePlugin):
 
         return sticker_desc
 
+    async def _scan_once(self):
+        logger.info("Scanning unregistered stickers")
+        sticker_files = [
+            f for f in os.listdir(self.sticker_mgr.sticker_folder)
+            if f.lower().endswith(STICKER_EXTENSIONS)
+        ]
+        pending = [
+            f for f in sticker_files
+            if f not in self.sticker_mgr.sticker_paths
+        ]
+
+        if pending:
+            logger.info(f"Found {len(pending)} unregistered stickers, describing (vlm_concurrency={self.vlm_concurrency})...")
+
+            async def _describe_one(file: str) -> tuple[str, str]:
+                async with self._vlm_sem:
+                    desc = await self.get_sticker_description(file)
+                    return file, desc
+
+            results = await asyncio.gather(
+                *[_describe_one(f) for f in pending],
+                return_exceptions=True,
+            )
+
+            for item in results:
+                if isinstance(item, Exception):
+                    logger.error(f"VLM description failed during scan: {item}")
+                    continue
+                file, desc = item
+                if desc:
+                    await self.sticker_mgr.register_sticker(file, desc)
+                    logger.info(f"Registered sticker: {desc[:60]}")
+        else:
+            logger.info("All stickers are already registered")
+
     async def _scan_loop(self):
         try:
             while True:
-                logger.info("Scanning unregistered stickers")
-                sticker_files = os.listdir(self.sticker_mgr.sticker_folder)
-                is_found = False
-                for sticker_file in sticker_files:
-                    if sticker_file not in self.sticker_mgr.sticker_paths:
-                        is_found = True
-                        logger.info(f"found sticker {sticker_file}")
-                        sticker_description = await self.get_sticker_description(sticker_file)
-                        logger.info(f"Registered sticker: {sticker_description}")
-                        await self.sticker_mgr.register_sticker(sticker_file, sticker_description)
-
-                if not is_found:
-                    logger.info("All stickers are already registered")
+                try:
+                    await self._scan_once()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error(f"Scan iteration failed, will retry next interval: {e}")
 
                 delay_minutes = self.scan_interval
                 if delay_minutes < 10:
