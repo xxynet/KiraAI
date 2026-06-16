@@ -84,6 +84,10 @@ class PageMenu:
                                     f"got {type(k).__name__}: {type(v).__name__}")
                 if not v.strip():
                     raise ValueError(f"label dict value for '{k}' must not be empty or whitespace")
+        if icon is not None and not isinstance(icon, str):
+            raise TypeError(f"icon must be a string if provided, got {type(icon).__name__}")
+        if not isinstance(order, int) or isinstance(order, bool):
+            raise TypeError(f"order must be an integer, got {type(order).__name__}")
         self.label: Union[str, Dict[str, str]] = label
         self.icon: Optional[str] = icon
         self.order: int = order
@@ -108,19 +112,15 @@ class PluginPage:
     - ``PluginPage.from_url("https://example.com")`` — redirect to an external URL.
     - ``PluginPage.from_html("<h1>Hello</h1>")`` — serve inline HTML.
 
-    The *menu* parameter can also be passed to ``@register.page()``
-    as a decorator-level override.
+    Use ``@register.page()`` decorator parameters to control *auth* and *menu*.
     """
 
-    def __init__(self, source: PluginPageSource, source_value: str,
-                 menu: Optional[Union[dict, "PageMenu"]] = None):
+    def __init__(self, source: PluginPageSource, source_value: str):
         self.source = source
         self.source_value = source_value
-        self.menu = menu
 
     @classmethod
-    def from_folder(cls, path: str,
-                    menu: Optional[Union[dict, "PageMenu"]] = None) -> "PluginPage":
+    def from_folder(cls, path: str) -> "PluginPage":
         """Serve static files from a directory relative to the plugin root.
 
         Only files *inside* the plugin directory are accessible — any path
@@ -128,31 +128,26 @@ class PluginPage:
 
         Args:
             path: Directory path relative to the plugin root, e.g. ``"./web"``.
-            menu: Optional sidebar menu config — a ``PageMenu`` object or a dict.
         """
-        return cls(PluginPageSource.FOLDER, path, menu)
+        return cls(PluginPageSource.FOLDER, path)
 
     @classmethod
-    def from_url(cls, url: str,
-                 menu: Optional[Union[dict, "PageMenu"]] = None) -> "PluginPage":
+    def from_url(cls, url: str) -> "PluginPage":
         """Redirect the iframe to an external URL.
 
         Args:
             url: Full URL to redirect to, e.g. ``"https://example.com"``.
-            menu: Optional sidebar menu config — a ``PageMenu`` object or a dict.
         """
-        return cls(PluginPageSource.URL, url, menu)
+        return cls(PluginPageSource.URL, url)
 
     @classmethod
-    def from_html(cls, html: str,
-                  menu: Optional[Union[dict, "PageMenu"]] = None) -> "PluginPage":
+    def from_html(cls, html: str) -> "PluginPage":
         """Serve a static HTML string.
 
         Args:
             html: Raw HTML content.
-            menu: Optional sidebar menu config — a ``PageMenu`` object or a dict.
         """
-        return cls(PluginPageSource.HTML, html, menu)
+        return cls(PluginPageSource.HTML, html)
 
 
 @dataclass
@@ -350,9 +345,7 @@ class RegisterDeco:
             comp = _ensure_components(plugin_id)
 
             if isinstance(obj, PluginPage):
-                if menu is not None:
-                    obj.menu = menu
-                comp.register_page(route, None, auth, obj.menu, page_obj=obj)
+                comp.register_page(route, None, auth, menu, page_obj=obj)
                 return obj
 
             # Function that returns PluginPage — defer call to init time
@@ -1012,9 +1005,7 @@ class PluginManager:
                     logger.error(f"Plugin {plugin_id}: {func.__name__}() did not return PluginPage")
                     continue
 
-                # Merge decorator-level overrides
-                if page.get("menu") is not None:
-                    page_obj.menu = page["menu"]
+                # Merge decorator-level overrides (menu already handled by register_page)
 
                 # Handle the PluginPage (same logic as object-based above)
                 if page_obj.source == PluginPageSource.FOLDER:
