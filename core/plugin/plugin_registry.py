@@ -74,11 +74,16 @@ class PageMenu:
                  order: int = 100):
         if not isinstance(label, (str, dict)):
             raise TypeError(f"label must be a str or dict, got {type(label).__name__}")
+        if isinstance(label, str):
+            if not label.strip():
+                raise ValueError("label string must not be empty or whitespace")
         if isinstance(label, dict):
             for k, v in label.items():
                 if not isinstance(k, str) or not isinstance(v, str):
                     raise TypeError(f"label dict keys and values must be strings, "
                                     f"got {type(k).__name__}: {type(v).__name__}")
+                if not v.strip():
+                    raise ValueError(f"label dict value for '{k}' must not be empty or whitespace")
         self.label: Union[str, Dict[str, str]] = label
         self.icon: Optional[str] = icon
         self.order: int = order
@@ -103,19 +108,18 @@ class PluginPage:
     - ``PluginPage.from_url("https://example.com")`` — redirect to an external URL.
     - ``PluginPage.from_html("<h1>Hello</h1>")`` — serve inline HTML.
 
-    The *auth* and *menu* parameters can also be passed to ``@register.page()``
-    as decorator-level overrides.
+    The *menu* parameter can also be passed to ``@register.page()``
+    as a decorator-level override.
     """
 
     def __init__(self, source: PluginPageSource, source_value: str,
-                 auth: bool = True, menu: Optional[Union[dict, "PageMenu"]] = None):
+                 menu: Optional[Union[dict, "PageMenu"]] = None):
         self.source = source
         self.source_value = source_value
-        self.auth = auth
         self.menu = menu
 
     @classmethod
-    def from_folder(cls, path: str, auth: bool = True,
+    def from_folder(cls, path: str,
                     menu: Optional[Union[dict, "PageMenu"]] = None) -> "PluginPage":
         """Serve static files from a directory relative to the plugin root.
 
@@ -124,34 +128,31 @@ class PluginPage:
 
         Args:
             path: Directory path relative to the plugin root, e.g. ``"./web"``.
-            auth: Require JWT auth (default ``True``).
-            menu: Optional sidebar menu config dict.
+            menu: Optional sidebar menu config — a ``PageMenu`` object or a dict.
         """
-        return cls(PluginPageSource.FOLDER, path, auth, menu)
+        return cls(PluginPageSource.FOLDER, path, menu)
 
     @classmethod
-    def from_url(cls, url: str, auth: bool = True,
+    def from_url(cls, url: str,
                  menu: Optional[Union[dict, "PageMenu"]] = None) -> "PluginPage":
         """Redirect the iframe to an external URL.
 
         Args:
             url: Full URL to redirect to, e.g. ``"https://example.com"``.
-            auth: Require JWT auth (default ``True``).
-            menu: Optional sidebar menu config dict.
+            menu: Optional sidebar menu config — a ``PageMenu`` object or a dict.
         """
-        return cls(PluginPageSource.URL, url, auth, menu)
+        return cls(PluginPageSource.URL, url, menu)
 
     @classmethod
-    def from_html(cls, html: str, auth: bool = True,
+    def from_html(cls, html: str,
                   menu: Optional[Union[dict, "PageMenu"]] = None) -> "PluginPage":
         """Serve a static HTML string.
 
         Args:
             html: Raw HTML content.
-            auth: Require JWT auth (default ``True``).
-            menu: Optional sidebar menu config dict.
+            menu: Optional sidebar menu config — a ``PageMenu`` object or a dict.
         """
-        return cls(PluginPageSource.HTML, html, auth, menu)
+        return cls(PluginPageSource.HTML, html, menu)
 
 
 @dataclass
@@ -349,10 +350,9 @@ class RegisterDeco:
             comp = _ensure_components(plugin_id)
 
             if isinstance(obj, PluginPage):
-                obj.auth = auth
                 if menu is not None:
                     obj.menu = menu
-                comp.register_page(route, None, obj.auth, obj.menu, page_obj=obj)
+                comp.register_page(route, None, auth, obj.menu, page_obj=obj)
                 return obj
 
             # Function that returns PluginPage — defer call to init time
@@ -1013,8 +1013,6 @@ class PluginManager:
                     continue
 
                 # Merge decorator-level overrides
-                if page["auth"] is not None:
-                    page_obj.auth = page["auth"]
                 if page.get("menu") is not None:
                     page_obj.menu = page["menu"]
 

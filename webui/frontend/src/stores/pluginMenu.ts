@@ -27,7 +27,7 @@ export function resolveLabel(label: string | Record<string, string>, locale: str
     const first = Object.values(label)[0]
     if (first) return first
   }
-  return String(label)
+  return ''
 }
 
 export const usePluginMenuStore = defineStore('pluginMenu', () => {

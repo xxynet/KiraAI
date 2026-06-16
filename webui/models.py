@@ -131,13 +131,15 @@ class PageMenu(BaseModel):
     def validate_label(cls, v):
         if isinstance(v, str):
             if not v.strip():
-                raise ValueError("label string must not be empty")
+                raise ValueError("label string must not be empty or whitespace")
             return v
         if isinstance(v, dict):
             for key, val in v.items():
                 if not isinstance(key, str) or not isinstance(val, str):
                     raise ValueError(f"label dict keys and values must be strings, "
                                      f"got {type(key).__name__}: {type(val).__name__}")
+                if not val.strip():
+                    raise ValueError(f"label dict value for '{key}' must not be empty or whitespace")
             return v
         raise ValueError(f"label must be a str or dict, got {type(v).__name__}")
 
