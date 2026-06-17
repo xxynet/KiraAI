@@ -1,0 +1,13 @@
+{
+    "name": "GPT-Sovits",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "GPT-Sovits TTS Provider",
+    "repo": null,
+    "locales": {
+        "zh": {
+            "name": "GPT-Sovits",
+            "description": "GPT-Sovits 文本转语音提供商"
+        }
+    }
+}
