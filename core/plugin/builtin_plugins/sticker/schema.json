@@ -5,7 +5,7 @@
     "default": 120,
     "hint": "Interval of scanning unregistered stickers (Unit: minutes)",
     "locales": {
-      "zh": { "name": "扫描间隔", "hint": "扫描未注册贴纸的间隔（单位：分钟）" }
+      "zh": { "name": "扫描间隔", "hint": "扫描未注册表情包的间隔（单位：分钟）" }
     }
   },
   "recognition_model": {
@@ -25,6 +25,15 @@
     "hint": "Prompt to guide the model in recognizing sticker expressions and emotions, leave empty to use the default prompt",
     "locales": {
       "zh": { "name": "表情包识别提示词", "hint": "引导模型识别表情包表情和情绪的提示词，留空使用默认提示词" }
+    }
+  },
+  "vlm_concurrency": {
+    "name": "VLM Concurrency",
+    "type": "integer",
+    "default": 3,
+    "hint": "Maximum concurrent VLM calls for sticker description",
+    "locales": {
+      "zh": { "name": "VLM 并发数", "hint": "表情包 VLM 描述的最大并发数（最小 1）" }
     }
   }
 }
