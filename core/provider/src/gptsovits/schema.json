@@ -51,7 +51,7 @@
       "ref_language": {
         "name": "参考音频语言",
         "type": "enum",
-        "default": "auto",
+        "default": "zh",
         "options": ["zh", "en", "ja", "yue", "ko"],
         "hint": "参考音频的语言",
         "locales": {
