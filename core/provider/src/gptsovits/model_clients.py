@@ -81,10 +81,10 @@ class GptSovitsTTSClient(TTSModelClient):
                     async for chunk in response.content.iter_any():
                         audio_bytes += chunk
                 else:
-                    logger.error(f"GptSovits TTS请求失败: {response.status}")
+                    logger.error(f"GPT-Sovits TTS Request failed: {response.status}")
                     try:
                         error_info = await response.json()
-                        logger.error(f"GSV服务器返回错误信息: {error_info}")
+                        logger.error(f"GPT-Sovits Error: {error_info}")
                     except:
                         pass
                     return None
