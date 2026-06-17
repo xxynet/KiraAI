@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import aiohttp
 
@@ -70,24 +71,31 @@ class GptSovitsTTSClient(TTSModelClient):
             connector=aiohttp.TCPConnector(limit_per_host=4),
             timeout=aiohttp.ClientTimeout(total=timeout)
         ) as session:
-            async with session.post(
-                tts_url,
-                headers={'Content-Type': 'application/json'},
-                json=payload
-            ) as response:
+            try:
+                async with session.post(
+                    tts_url,
+                    headers={'Content-Type': 'application/json'},
+                    json=payload
+                ) as response:
 
-                if response.status == 200:
-                    audio_bytes = b""
-                    async for chunk in response.content.iter_any():
-                        audio_bytes += chunk
-                else:
-                    logger.error(f"GPT-Sovits TTS Request failed: {response.status}")
-                    try:
-                        error_info = await response.json()
-                        logger.error(f"GPT-Sovits Error: {error_info}")
-                    except:
-                        pass
-                    return None
+                    if response.status == 200:
+                        audio_bytes = b""
+                        async for chunk in response.content.iter_any():
+                            audio_bytes += chunk
+                    else:
+                        logger.error(f"GPT-Sovits TTS Request failed: {response.status}")
+                        try:
+                            error_info = await response.json()
+                            logger.error(f"GPT-Sovits Error: {error_info}")
+                        except (aiohttp.ContentTypeError, ValueError):
+                            logger.error("GPT-Sovits error response was not valid JSON")
+                        return None
+            except asyncio.TimeoutError:
+                logger.error(f"GPT-Sovits TTS request timed out after {timeout}s")
+                return None
+            except aiohttp.ClientError as e:
+                logger.error(f"GPT-Sovits TTS network error: {e}")
+                return None
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str)
