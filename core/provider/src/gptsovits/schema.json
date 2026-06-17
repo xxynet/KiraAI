@@ -1,0 +1,138 @@
+{
+  "provider_config": {
+    "base_url": {
+      "name": "API 地址",
+      "type": "string",
+      "default": "http://127.0.0.1:9880/tts",
+      "hint": "GPT-SoVITS API 地址，默认本地 9880 端口",
+      "locales": {
+        "en": { "name": "API URL", "hint": "GPT-SoVITS API URL, default local port 9880" }
+      }
+    },
+    "ref_audio_path": {
+        "name": "参考音频路径",
+        "type": "string",
+        "default": "",
+        "hint": "参考音频文件路径，用于语气风格克隆(3-10s内)",
+        "locales": {
+          "en": { "name": "Reference Audio Path", "hint": "Path to reference audio file for voice cloning" }
+        }
+      },
+      "ref_text": {
+        "name": "参考音频文本",
+        "type": "string",
+        "default": "",
+        "hint": "参考音频对应的文字内容",
+        "locales": {
+          "en": { "name": "Reference Text", "hint": "Text content corresponding to the reference audio" }
+        }
+      }
+  },
+  "model_config": {
+    "tts": {
+      "ref_audio_path": {
+        "name": "参考音频路径",
+        "type": "string",
+        "default": "",
+        "hint": "参考音频文件路径，用于语气风格克隆(3-10s内)(为空时默认使用提供商配置中的参考音频路径)",
+        "locales": {
+          "en": { "name": "Reference Audio Path", "hint": "Path to reference audio file for voice cloning" }
+        }
+      },
+      "ref_text": {
+        "name": "参考音频文本",
+        "type": "string",
+        "default": "",
+        "hint": "参考音频对应的文字内容(为空时默认使用提供商配置中的参考音频文本)",
+        "locales": {
+          "en": { "name": "Reference Text", "hint": "Text content corresponding to the reference audio" }
+        }
+      },
+      "ref_language": {
+        "name": "参考音频语言",
+        "type": "enum",
+        "default": "auto",
+        "options": ["zh", "en", "ja", "yue", "ko"],
+        "hint": "参考音频的语言",
+        "locales": {
+          "en": { "name": "Reference Language", "hint": "Language of the reference audio" }
+        }
+      },
+      "text_language": {
+        "name": "合成文本语言",
+        "type": "enum",
+        "default": "auto",
+        "options": ["auto", "zh", "en", "ja", "yue", "ko"],
+        "hint": "待合成文本的语言",
+        "locales": {
+          "en": { "name": "Text Language", "hint": "Language of the text to synthesize" }
+        }
+      },
+      "speed": {
+        "name": "语速",
+        "type": "float",
+        "default": 1.0,
+        "min": 0.1,
+        "max": 5.0,
+        "hint": "合成语速，1.0 为正常速度",
+        "locales": {
+          "en": { "name": "Speed", "hint": "Speaking speed, 1.0 is normal speed" }
+        }
+      },
+      "top_k": {
+        "name": "Top-K",
+        "type": "integer",
+        "default": 15,
+        "min": 1,
+        "max": 100,
+        "hint": "采样参数 Top-K",
+        "locales": {
+          "en": { "name": "Top-K", "hint": "Sampling parameter Top-K" }
+        }
+      },
+      "top_p": {
+        "name": "Top-P",
+        "type": "float",
+        "default": 1.0,
+        "min": 0.0,
+        "max": 1.0,
+        "hint": "采样参数 Top-P",
+        "locales": {
+          "en": { "name": "Top-P", "hint": "Sampling parameter Top-P" }
+        }
+      },
+      "temperature": {
+        "name": "温度",
+        "type": "float",
+        "default": 1.0,
+        "min": 0.0,
+        "max": 2.0,
+        "hint": "采样温度参数",
+        "locales": {
+          "en": { "name": "Temperature", "hint": "Sampling temperature parameter" }
+        }
+      },
+      "section_advanced": {
+        "type": "section",
+        "name": "高级设置",
+        "hint": "高级模型配置选项",
+        "collapsed": true,
+        "locales": {
+          "en": { "name": "Advanced Settings", "hint": "Advanced model configuration options" }
+        },
+        "fields": {
+          "timeout": {
+            "name": "超时",
+            "type": "integer",
+            "default": 60,
+            "min": 1,
+            "hint": "请求超时时间（秒）",
+            "locales": {
+              "en": { "name": "Timeout", "hint": "Request timeout in seconds" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
