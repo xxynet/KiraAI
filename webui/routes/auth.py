@@ -122,6 +122,7 @@ class AuthRoutes(Routes):
         The middleware only intercepts 404 responses for browser GET requests.
         """
         dist_dir = self.dist_dir
+        sticker_dir = self._get_sticker_dir()
 
         class SPAStaticFallbackMiddleware(BaseHTTPMiddleware):
             async def dispatch(self, request, call_next):
@@ -133,8 +134,15 @@ class AuthRoutes(Routes):
                 if "text/html" not in request.headers.get("accept", ""):
                     return response
                 full_path = request.url.path.lstrip("/")
-                if full_path.startswith(("api/", "sticker/", "assets/", "monacoeditorwork/", "page/")):
+                if full_path.startswith(("api/", "assets/", "monacoeditorwork/", "page/")):
                     return response
+                # sticker mount: only exclude if the requested file actually exists
+                # /sticker/xxx.gif → file exists → let mount handle it
+                # /sticker/ or /sticker → SPA route → serve index.html
+                if full_path.startswith("sticker/"):
+                    remaining = full_path[len("sticker/"):]
+                    if remaining and ".." not in remaining and (sticker_dir / remaining).exists():
+                        return response
                 # Serve single-segment root files from dist (favicon.ico, etc.)
                 if full_path and "/" not in full_path and ".." not in full_path:
                     candidate = dist_dir / full_path
@@ -160,6 +168,11 @@ class AuthRoutes(Routes):
 
         self.app.add_middleware(SPAStaticFallbackMiddleware)
 
+    @staticmethod
+    def _get_sticker_dir() -> Path:
+        from core.utils.path_utils import get_data_path
+        return get_data_path() / "sticker"
+
     async def serve_spa(self, request: Request = None, full_path: str = ""):
         """Serve the Vue SPA.
 
@@ -170,8 +183,13 @@ class AuthRoutes(Routes):
         the build command.
         """
         # Don't serve SPA for paths handled by dedicated mounts.
-        if full_path.startswith(("api/", "sticker/", "assets/", "monacoeditorwork/", "page/")):
+        if full_path.startswith(("api/", "assets/", "monacoeditorwork/", "page/")):
             raise HTTPException(status_code=404)
+        # sticker mount: only exclude if the requested file actually exists
+        if full_path.startswith("sticker/"):
+            remaining = full_path[len("sticker/"):]
+            if remaining and ".." not in remaining and (self._get_sticker_dir() / remaining).exists():
+                raise HTTPException(status_code=404)
         # Serve single-segment root files from dist (favicon.ico, etc.).
         # Restrict to one path segment to avoid traversal.
         if full_path and "/" not in full_path and ".." not in full_path:

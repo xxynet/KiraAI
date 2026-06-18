@@ -123,7 +123,10 @@ const navItems = computed(() => {
 })
 
 function isActive(path: string): boolean {
-  return route.path === path
+  // Normalize trailing slashes so refresh (which Vue Router may canonicalise
+  // with a trailing slash) matches the nav item path written without one.
+  const norm = (p: string) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
+  return norm(route.path) === norm(path)
 }
 </script>
 
