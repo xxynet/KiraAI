@@ -36,10 +36,6 @@ export function listBackups() {
   return apiClient.get<BackupItem[]>('/settings/backup/list')
 }
 
-export function downloadBackup(filename: string) {
-  return apiClient.get(`/settings/backup/download/${filename}`, { responseType: 'blob' })
-}
-
 export function deleteBackup(filename: string) {
   return apiClient.delete(`/settings/backup/${filename}`)
 }

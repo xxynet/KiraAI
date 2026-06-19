@@ -442,7 +442,6 @@ import {
   getStorageInfo,
   createBackup,
   listBackups,
-  downloadBackup,
   deleteBackup,
   restoreBackup,
   restoreFromBackup,
@@ -614,20 +613,14 @@ async function handleCreateBackup() {
   }
 }
 
-async function handleDownloadBackup(filename: string) {
-  try {
-    const { data } = await downloadBackup(filename)
-    const url = URL.createObjectURL(data as Blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  } catch {
-    // silent
-  }
+function handleDownloadBackup(filename: string) {
+  const a = document.createElement('a')
+  a.href = `/api/settings/backup/download/${encodeURIComponent(filename)}`
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 async function handleDeleteBackup(filename: string) {
