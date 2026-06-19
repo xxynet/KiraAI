@@ -25,18 +25,26 @@ class KiraConfig(dict):
         self._load_config()
 
     def _load_config(self):
-        """Load config from JSON or create default file"""
+        """Load config from JSON. Raises ConfigError if file is missing or invalid."""
+        if not os.path.exists(CONFIG_PATH):
+            raise ConfigError(f"config file not found: {CONFIG_PATH}")
+
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in config file: {e}")
+            raise ConfigError(f"invalid JSON in config file: {e}")
+        except OSError as e:
+            logger.error(f"Cannot read config file: {e}")
+            raise ConfigError(f"cannot read config file: {e}")
+
+        if not isinstance(data, dict):
+            logger.error(f"Config file root must be a JSON object, got {type(data).__name__}")
+            raise ConfigError(f"config file root must be a JSON object, got {type(data).__name__}")
+
         self.update(self.default_config)
-
-        if os.path.exists(CONFIG_PATH):
-            try:
-                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                self._deep_update(self, data)
-            except Exception as e:
-                logger.error(f"Error loading JSON config: {e}")
-
-        self.save_config()
+        self._deep_update(self, data)
 
     def _deep_update(self, target: dict, source: dict):
         """Recursively update target dict with source dict"""
