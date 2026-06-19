@@ -40,7 +40,7 @@ docker-compose up
 ## Rules
 
 - WebUI changes must include corresponding i18n updates (sync both CN and EN translation files under `webui/frontend/src/i18n/`).
-- Always read and follow `.github/PULL_REQUEST_TEMPLATE.md` before submitting a PR.
+- PR body **must** strictly follow `.github/PULL_REQUEST_TEMPLATE.md` — read it before every `gh pr create`, fill every required section, and never freestyle the body.
 - Always check `core/utils/` for existing reusable interfaces before writing new ones.
 - All new code comments must be written in English.
 
