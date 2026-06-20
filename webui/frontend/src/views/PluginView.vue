@@ -69,6 +69,23 @@
           <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': refreshingPlugins }" />
           <span>{{ $t('common.refresh') }}</span>
         </button>
+        <button
+          type="button"
+          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ml-2"
+          :disabled="checkingUpdates"
+          @click="handleCheckUpdates"
+        >
+          <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': checkingUpdates }" />
+          <span>{{ $t('plugin.check_updates') }}</span>
+        </button>
+        <button
+          v-if="pluginUpdates.size > 0"
+          type="button"
+          class="inline-flex items-center px-3 py-1.5 border border-green-300 dark:border-green-600 rounded-md text-xs font-medium text-green-700 dark:text-green-200 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors ml-2"
+          @click="handleUpdateAll"
+        >
+          {{ $t('plugin.update_all', { count: pluginUpdates.size }) }}
+        </button>
         <div class="relative ml-auto">
           <input
             v-model="pluginsSearchTerm"
@@ -121,10 +138,14 @@
           :error="plugin.error"
           :status="plugin.status"
           :reloading="reloadingPlugins.has(plugin.id)"
+          :has-update="pluginUpdates.has(plugin.id)"
+          :latest-version="pluginUpdates.get(plugin.id)?.latest_version ?? null"
+          :updating="updatingPlugins.has(plugin.id)"
           @toggle="togglePlugin(plugin)"
           @configure="openPluginConfig(plugin)"
           @uninstall="handleDeletePlugin(plugin.id)"
           @reload="handleReloadPlugin(plugin)"
+          @update="handleUpdatePlugin(plugin)"
         />
       </div>
     </div>
@@ -828,6 +849,7 @@ import {
   togglePlugin as apiTogglePlugin, deletePlugin,
   installFromGithub, installFromUpload,
   reloadPlugin as apiReloadPlugin,
+  checkPluginUpdates, updatePlugin as apiUpdatePlugin,
 } from '@/api/plugin'
 import {
   getMcpServers, getMcpServerConfig, createMcpServer, updateMcpServerConfig,
@@ -845,7 +867,7 @@ import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
   IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch,
 } from '@/components/icons'
-import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem } from '@/types'
+import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
@@ -862,6 +884,9 @@ const installDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
 const installing = ref(false)
 const reloadingPlugins = ref(new Set<string>())
 const refreshingPlugins = ref(false)
+const pluginUpdates = ref<Map<string, PluginUpdateCheckItem>>(new Map())
+const checkingUpdates = ref(false)
+const updatingPlugins = ref(new Set<string>())
 
 // Proxy strategy
 const GH_PROXY_LIST = [
@@ -983,6 +1008,53 @@ async function refreshPlugins() {
     }
   } finally {
     refreshingPlugins.value = false
+  }
+}
+
+async function handleCheckUpdates() {
+  checkingUpdates.value = true
+  try {
+    const res = await checkPluginUpdates()
+    const map = new Map<string, PluginUpdateCheckItem>()
+    for (const item of res.data) {
+      if (item.has_update) {
+        map.set(item.plugin_id, item)
+      }
+    }
+    pluginUpdates.value = map
+    if (map.size > 0) {
+      notify(t('plugin.updates_found', { count: map.size }), 'success')
+    } else {
+      notify(t('plugin.no_updates'), 'success')
+    }
+  } catch {
+    notify(t('plugin.update_check_failed'), 'error')
+  } finally {
+    checkingUpdates.value = false
+  }
+}
+
+async function handleUpdatePlugin(plugin: PluginItem) {
+  updatingPlugins.value.add(plugin.id)
+  try {
+    await apiUpdatePlugin(plugin.id)
+    pluginUpdates.value.delete(plugin.id)
+    notify(t('plugin.update_success'), 'success')
+    await loadPlugins()
+  } catch {
+    notify(t('plugin.update_failed'), 'error')
+  } finally {
+    updatingPlugins.value.delete(plugin.id)
+  }
+}
+
+async function handleUpdateAll() {
+  const toUpdate = Array.from(pluginUpdates.value.keys())
+  for (const pid of toUpdate) {
+    const plugin = plugins.value.find(p => p.id === pid)
+    if (plugin && !updatingPlugins.value.has(pid)) {
+      await handleUpdatePlugin(plugin)
+    }
   }
 }
 

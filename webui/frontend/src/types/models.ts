@@ -185,6 +185,14 @@ export interface PluginStoreItem {
   installed?: boolean
 }
 
+export interface PluginUpdateCheckItem {
+  plugin_id: string
+  current_version: string
+  latest_version: string | null
+  has_update: boolean
+  error: string | null
+}
+
 // Configuration types — mirrors the shape returned by webui/routes/config.py
 export interface ConfigurationProvider {
   id: string

@@ -8,6 +8,9 @@
         <div class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ name || id }}</div>
         <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {{ version ? `v${version}` : '' }}{{ version && author ? ' · ' : '' }}{{ author || '' }}
+          <span v-if="hasUpdate" class="ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+            {{ $t('plugin.update_available') }}
+          </span>
         </div>
         <div v-if="coreVersion" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
           {{ $t('plugin.core_version') }}: {{ coreVersion }}
@@ -73,6 +76,22 @@
       <div v-if="mode === 'installed'" class="text-xs font-mono text-gray-400 dark:text-gray-500 break-all mb-3">{{ id }}</div>
       <!-- Installed mode: Configure / Reload / Uninstall buttons -->
       <div v-if="mode === 'installed'" class="flex items-center justify-end space-x-3">
+        <button
+          v-if="hasUpdate && !builtin"
+          type="button"
+          class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
+          :class="updating
+            ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
+            : 'border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30'"
+          :disabled="updating"
+          @click="!updating && emit('update')"
+        >
+          <span v-if="updating" class="flex items-center">
+            <IconSpinner class="animate-spin h-3 w-3 mr-1" />
+            {{ $t('plugin.updating') }}
+          </span>
+          <span v-else>{{ $t('plugin.update') }}</span>
+        </button>
         <button
           v-if="!error"
           type="button"
@@ -152,6 +171,10 @@ const props = withDefaults(defineProps<{
   error?: string | null
   status?: string
   reloading?: boolean
+  // update
+  hasUpdate?: boolean
+  latestVersion?: string | null
+  updating?: boolean
   // store mode
   installed?: boolean
   installing?: boolean
@@ -168,6 +191,9 @@ const props = withDefaults(defineProps<{
   error: null,
   status: 'ready',
   reloading: false,
+  hasUpdate: false,
+  latestVersion: null,
+  updating: false,
   installed: false,
   installing: false,
 })
@@ -178,6 +204,7 @@ const emit = defineEmits<{
   uninstall: []
   install: []
   reload: []
+  update: []
 }>()
 
 const safeRepo = computed(() => {

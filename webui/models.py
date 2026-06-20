@@ -188,6 +188,18 @@ class PluginStoreItemResponse(BaseModel):
     tags: List[str] = Field(default_factory=list)
 
 
+class PluginUpdateCheckItem(BaseModel):
+    plugin_id: str
+    current_version: str = ""
+    latest_version: Optional[str] = None
+    has_update: bool = False
+    error: Optional[str] = None
+
+
+class PluginUpdateRequest(BaseModel):
+    gh_proxy: Optional[str] = None
+
+
 class PluginStoreFetchRequest(BaseModel):
     url: Optional[str] = None
     source_id: Optional[str] = None
