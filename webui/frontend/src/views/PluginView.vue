@@ -539,7 +539,11 @@
           :repo="item.repo"
           :tags="item.tags"
           :installed="item.installed"
+          :has-update="item.installed && pluginUpdates.has(item.id)"
+          :latest-version="pluginUpdates.get(item.id)?.latest_version ?? null"
+          :updating="updatingPlugins.has(item.id)"
           @install="handleStoreInstall(item)"
+          @update="handleStoreUpdate(item)"
         />
       </div>
 
@@ -1662,6 +1666,12 @@ function handleStoreInstall(item: PluginStoreItem) {
   installTab.value = 'github'
   installForm.value.repo_url = item.repo || ''
   installDialogVisible.value = true
+}
+
+async function handleStoreUpdate(item: PluginStoreItem) {
+  const plugin = plugins.value.find(p => p.id === item.id)
+  if (!plugin) return
+  await handleUpdatePlugin(plugin)
 }
 
 onMounted(() => {

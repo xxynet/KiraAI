@@ -128,9 +128,26 @@
           {{ $t('plugin.uninstall') }}
         </button>
       </div>
-      <!-- Store mode: Install button -->
+      <!-- Store mode: Install / Update button -->
       <div v-if="mode === 'store'" class="flex items-center justify-end">
         <button
+          v-if="installed && hasUpdate"
+          type="button"
+          class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
+          :class="updating
+            ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
+            : 'border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30'"
+          :disabled="updating"
+          @click="!updating && emit('update')"
+        >
+          <span v-if="updating" class="flex items-center">
+            <IconSpinner class="animate-spin h-3 w-3 mr-1" />
+            {{ $t('plugin.updating') }}
+          </span>
+          <span v-else>{{ $t('plugin.update') }}</span>
+        </button>
+        <button
+          v-else
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
           :class="installed
