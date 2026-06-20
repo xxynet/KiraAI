@@ -406,6 +406,8 @@ export default {
     reload_failed: 'Failed to reload plugin',
     refresh_success: 'Plugins refreshed',
     refresh_failed: 'Failed to refresh plugins',
+    search_placeholder: 'Search plugins...',
+    no_search_results: 'No matching plugins found',
   },
   pluginStore: {
     title: 'Plugin Store',

@@ -406,6 +406,8 @@ export default {
     reload_failed: '插件重载失败',
     refresh_success: '插件已刷新',
     refresh_failed: '刷新插件失败',
+    search_placeholder: '搜索插件...',
+    no_search_results: '未找到匹配的插件',
   },
   pluginStore: {
     title: '插件商店',
