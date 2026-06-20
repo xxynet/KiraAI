@@ -78,11 +78,19 @@ class KiraWebUI:
         self.dist_dir = dist_dir or get_webui_dist_path()
         self.sticker_dir = get_data_path() / "sticker"
 
-        # Setup CORS
+        # Setup CORS.
+        # Auth is carried by the Authorization: Bearer header (and a
+        # same-origin, SameSite=Lax kira_token cookie for iframe/plugin pages),
+        # so cross-origin *credentialed* access is never needed. Combining
+        # allow_origins=["*"] with allow_credentials=True is the classic unsafe
+        # CORS misconfiguration (Starlette reflects the request Origin and sets
+        # Allow-Credentials: true, letting any site make credentialed calls and
+        # read the responses). Keep the wildcard for convenience but disable
+        # credentials so the wildcard stays a true, non-reflecting "*".
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
-            allow_credentials=True,
+            allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
         )

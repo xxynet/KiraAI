@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from core.logging_manager import get_logger, log_cache_manager
@@ -40,21 +40,39 @@ class LogsRoutes(Routes):
 
     async def live_log(
         self,
+        request: Request,
         authorization: Optional[str] = Header(None),
         token: Optional[str] = None,
     ):
-        """SSE endpoint for real-time log streaming."""
+        """SSE endpoint for real-time log streaming.
+
+        EventSource clients that cannot set an Authorization header may instead
+        pass the JWT via the ``token`` query parameter or the kira_token cookie.
+        Authentication is mandatory: an unauthenticated request is rejected
+        before any log data is streamed (logs may contain secrets / PII).
+        """
         jwt_token = None
         if authorization and authorization.startswith("Bearer "):
             jwt_token = authorization.split(" ", 1)[1]
         elif token:
             jwt_token = token
+        else:
+            jwt_token = request.cookies.get("kira_token")
 
-        if jwt_token:
-            try:
-                _verify_jwt_token(jwt_token)
-            except HTTPException:
-                raise
+        if not jwt_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+            )
+        # Verify signature/expiry, then reject JWTs issued under a different auth
+        # mode — mirrors require_auth so live-log is no weaker than other routes.
+        payload = _verify_jwt_token(jwt_token)
+        current_mode = "disabled" if getattr(request.app.state, "disable_auth", False) else "enabled"
+        if payload.get("auth_mode", "enabled") != current_mode:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token issued under a different auth mode, please re-login",
+            )
 
         async def event_generator():
             que = log_cache_manager.add_queue()
