@@ -74,6 +74,7 @@
             v-model="pluginsSearchTerm"
             type="text"
             :placeholder="$t('plugin.search_placeholder')"
+            :aria-label="$t('plugin.search_placeholder')"
             class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
           />
           <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -445,6 +446,7 @@
             v-model="storeSearchTerm"
             type="text"
             :placeholder="$t('plugin.search_placeholder')"
+            :aria-label="$t('plugin.search_placeholder')"
             class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
           />
           <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
