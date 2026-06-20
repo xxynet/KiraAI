@@ -1,7 +1,7 @@
 <template>
-  <div class="flex gap-6 h-[calc(100vh-8rem)]">
+  <div class="flex flex-col md:flex-row gap-6 md:h-[calc(100vh-8rem)]">
     <!-- Left: Provider List -->
-    <div class="w-1/3 bg-white rounded-lg shadow p-6 flex flex-col overflow-hidden">
+    <div class="w-full md:w-1/3 max-h-64 md:max-h-none bg-white rounded-lg shadow p-6 flex flex-col overflow-hidden">
       <div class="flex justify-between items-center mb-6 flex-shrink-0">
         <h3 class="text-lg font-semibold text-gray-800">
           {{ $t('pages.provider.title') }}
@@ -42,7 +42,7 @@
     </div>
 
     <!-- Right: Provider Config Panel -->
-    <div class="w-2/3 bg-white rounded-lg shadow p-6 flex flex-col">
+    <div class="w-full md:w-2/3 bg-white rounded-lg shadow p-6 flex flex-col">
       <div v-if="!selectedId" class="flex justify-center items-center flex-1">
         <div class="text-center">
           <IconCpu class="w-16 h-16 text-gray-400 mx-auto mb-4" />
