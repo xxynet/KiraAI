@@ -26,10 +26,13 @@ class KiraConfig(dict):
         self._load_config()
 
     def _load_config(self):
-        """Load config from JSON. Raises ConfigError if file is missing or invalid."""
+        """Load config from JSON. Raises ConfigError if file is corrupt or unreadable.
+        On first launch (file missing), creates a default config file."""
         if not os.path.exists(CONFIG_PATH):
-            logger.error(f"Config file not found: {CONFIG_PATH}")
-            raise ConfigError(f"config file not found: {CONFIG_PATH}")
+            logger.warning(f"Config file not found, creating default: {CONFIG_PATH}")
+            self.update(copy.deepcopy(self.default_config))
+            self.save_config()
+            return
 
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
