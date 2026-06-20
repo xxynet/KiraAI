@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional
+import copy
 import json
 import os
 
@@ -27,6 +28,7 @@ class KiraConfig(dict):
     def _load_config(self):
         """Load config from JSON. Raises ConfigError if file is missing or invalid."""
         if not os.path.exists(CONFIG_PATH):
+            logger.error(f"Config file not found: {CONFIG_PATH}")
             raise ConfigError(f"config file not found: {CONFIG_PATH}")
 
         try:
@@ -34,16 +36,16 @@ class KiraConfig(dict):
                 data = json.load(f)
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in config file: {e}")
-            raise ConfigError(f"invalid JSON in config file: {e}")
+            raise ConfigError(f"invalid JSON in config file: {e}") from e
         except OSError as e:
             logger.error(f"Cannot read config file: {e}")
-            raise ConfigError(f"cannot read config file: {e}")
+            raise ConfigError(f"cannot read config file: {e}") from e
 
         if not isinstance(data, dict):
             logger.error(f"Config file root must be a JSON object, got {type(data).__name__}")
             raise ConfigError(f"config file root must be a JSON object, got {type(data).__name__}")
 
-        self.update(self.default_config)
+        self.update(copy.deepcopy(self.default_config))
         self._deep_update(self, data)
 
     def _deep_update(self, target: dict, source: dict):
