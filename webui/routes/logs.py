@@ -1,14 +1,12 @@
 import asyncio
 import json
-from typing import Optional
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from core.logging_manager import get_logger, log_cache_manager
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
-from webui.utils import _verify_jwt_token
 
 logger = get_logger("webui", "blue")
 
@@ -21,6 +19,7 @@ class LogsRoutes(Routes):
                 methods=["GET"],
                 endpoint=self.live_log,
                 tags=["logs"],
+                dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
                 path="/api/log-history",
@@ -38,23 +37,8 @@ class LogsRoutes(Routes):
             ),
         ]
 
-    async def live_log(
-        self,
-        authorization: Optional[str] = Header(None),
-        token: Optional[str] = None,
-    ):
+    async def live_log(self):
         """SSE endpoint for real-time log streaming."""
-        jwt_token = None
-        if authorization and authorization.startswith("Bearer "):
-            jwt_token = authorization.split(" ", 1)[1]
-        elif token:
-            jwt_token = token
-
-        if jwt_token:
-            try:
-                _verify_jwt_token(jwt_token)
-            except HTTPException:
-                raise
 
         async def event_generator():
             que = log_cache_manager.add_queue()
