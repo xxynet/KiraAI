@@ -69,6 +69,16 @@
           <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': refreshingPlugins }" />
           <span>{{ $t('common.refresh') }}</span>
         </button>
+        <div class="relative ml-auto">
+          <input
+            v-model="pluginsSearchTerm"
+            type="text"
+            :placeholder="$t('plugin.search_placeholder')"
+            :aria-label="$t('plugin.search_placeholder')"
+            class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          />
+          <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        </div>
       </div>
 
       <div v-if="pluginsError" class="flex justify-center items-center py-12">
@@ -85,9 +95,16 @@
         </div>
       </div>
 
+      <div v-else-if="filteredPlugins.length === 0" class="flex justify-center items-center py-12">
+        <div class="text-center">
+          <IconSearch class="w-8 h-8 text-gray-400 mx-auto mb-2 opacity-50" />
+          <p class="text-sm text-gray-400 dark:text-gray-500">{{ $t('plugin.no_search_results') }}</p>
+        </div>
+      </div>
+
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <PluginCard
-          v-for="plugin in plugins"
+          v-for="plugin in filteredPlugins"
           :key="plugin.id"
           mode="installed"
           :id="plugin.id"
@@ -424,6 +441,16 @@
         <span v-if="currentStoreSource" class="ml-3 text-sm text-gray-500 dark:text-gray-400">
           {{ $t('pluginStore.current_source') }}: <span class="font-medium text-gray-700 dark:text-gray-300">{{ currentStoreSource.name }}</span>
         </span>
+        <div v-if="currentStoreSource && !storeLoading && storePlugins.length > 0" class="relative ml-auto">
+          <input
+            v-model="storeSearchTerm"
+            type="text"
+            :placeholder="$t('plugin.search_placeholder')"
+            :aria-label="$t('plugin.search_placeholder')"
+            class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          />
+          <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        </div>
       </div>
 
       <!-- Plugin Store Error -->
@@ -469,10 +496,18 @@
         </div>
       </div>
 
+      <!-- No Search Results -->
+      <div v-else-if="filteredStorePlugins.length === 0" class="flex justify-center items-center py-12">
+        <div class="text-center">
+          <IconSearch class="w-8 h-8 text-gray-400 mx-auto mb-2 opacity-50" />
+          <p class="text-sm text-gray-400 dark:text-gray-500">{{ $t('plugin.no_search_results') }}</p>
+        </div>
+      </div>
+
       <!-- Plugin Cards Grid -->
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <PluginCard
-          v-for="item in storePlugins"
+          v-for="item in filteredStorePlugins"
           :key="item.id"
           mode="store"
           :id="item.id"
@@ -808,7 +843,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import PluginCard from '@/components/common/PluginCard.vue'
 import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
-  IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose,
+  IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch,
 } from '@/components/icons'
 import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
@@ -1405,6 +1440,8 @@ async function saveScope() {
   }
 }
 
+const pluginsSearchTerm = ref('')
+
 // Plugin Store
 const pluginSources = ref<PluginStoreSource[]>([])
 const currentStoreSource = ref<PluginStoreSource | null>(null)
@@ -1414,6 +1451,33 @@ const storeError = ref<string | null>(null)
 const sourceManageVisible = ref(false)
 const newSourceName = ref('')
 const newSourceUrl = ref('')
+const storeSearchTerm = ref('')
+
+const filteredPlugins = computed(() => {
+  const q = pluginsSearchTerm.value.trim().toLowerCase()
+  if (!q) return plugins.value
+  return plugins.value.filter(p => {
+    const name = (localize(p, 'display_name', p.name) || '').toLowerCase()
+    const desc = (localize(p, 'description', p.description) || '').toLowerCase()
+    const author = (p.author || '').toLowerCase()
+    const id = p.id.toLowerCase()
+    const tags = (p.tags || []).join(' ').toLowerCase()
+    return name.includes(q) || desc.includes(q) || author.includes(q) || id.includes(q) || tags.includes(q)
+  })
+})
+
+const filteredStorePlugins = computed(() => {
+  const q = storeSearchTerm.value.trim().toLowerCase()
+  if (!q) return storePlugins.value
+  return storePlugins.value.filter(item => {
+    const name = (localize(item, 'display_name', item.name) || '').toLowerCase()
+    const desc = (localize(item, 'description', item.description) || '').toLowerCase()
+    const author = (item.author || '').toLowerCase()
+    const id = item.id.toLowerCase()
+    const tags = (item.tags || []).join(' ').toLowerCase()
+    return name.includes(q) || desc.includes(q) || author.includes(q) || id.includes(q) || tags.includes(q)
+  })
+})
 
 function isCurrentSource(src: PluginStoreSource): boolean {
   return currentStoreSource.value?.id === src.id
