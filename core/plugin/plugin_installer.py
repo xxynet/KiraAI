@@ -25,7 +25,7 @@ from typing import List, Optional
 from core.logging_manager import get_logger
 from core.utils.github_api import parse_github_url, pick_fastest_source
 from core.utils.network import download_file
-from core.utils.path_utils import get_data_path
+from core.utils.path_utils import get_data_path, is_within_directory
 
 logger = get_logger("plugin_installer", "cyan")
 
@@ -198,6 +198,11 @@ async def _extract_and_install(
                 if not rel_path or rel_path.endswith("/"):
                     continue
                 target = staging / rel_path
+                # Reject members whose path escapes the staging dir (Zip-Slip).
+                if not is_within_directory(staging, target):
+                    raise ValueError(
+                        f"Unsafe path in plugin archive (zip-slip blocked): {item.filename}"
+                    )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(zf.read(item.filename))
 

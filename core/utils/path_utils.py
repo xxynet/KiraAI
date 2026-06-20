@@ -1,3 +1,4 @@
+import zipfile
 from pathlib import Path
 from typing import Optional
 
@@ -41,3 +42,38 @@ def get_webui_dist_path() -> Path:
 
 def get_config_path() -> Path:
     return get_data_path() / "config"
+
+
+# ─── Archive extraction safety (Zip-Slip guard) ──────────────────────────────
+
+def is_within_directory(directory: Path, target: Path) -> bool:
+    """Return True if ``target`` resolves to a path inside ``directory``.
+
+    Guards against Zip-Slip / path traversal when extracting archives: a member
+    named e.g. ``../../etc/passwd`` resolves outside the extraction root and must
+    be rejected. Both paths are resolved (``..`` normalized) before comparison,
+    so it does not require the target to exist.
+    """
+    directory = Path(directory).resolve()
+    target = Path(target).resolve()
+    return target == directory or directory in target.parents
+
+
+def safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: Path) -> None:
+    """Extract every member of ``zip_file`` into ``dest_dir`` safely.
+
+    Validates each member with :func:`is_within_directory` before extracting and
+    raises ``ValueError`` on the first member whose resolved path would escape
+    ``dest_dir``. Use this instead of ``ZipFile.extractall`` on untrusted input.
+
+    Note: this validates member *names* only. It does not follow symlink
+    *targets*, but Python's ``zipfile`` does not materialize symlink members on
+    extraction (it writes the link target as regular file content), so no
+    symlink-based escape is possible via this path.
+    """
+    dest_dir = Path(dest_dir).resolve()
+    for member in zip_file.namelist():
+        target = dest_dir / member
+        if not is_within_directory(dest_dir, target):
+            raise ValueError(f"Unsafe path in archive (zip-slip blocked): {member}")
+    zip_file.extractall(dest_dir)

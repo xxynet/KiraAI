@@ -7,6 +7,7 @@ from fastapi import Depends, File, HTTPException, UploadFile
 
 from core.logging_manager import get_logger
 from core.agent.skills_mgr import SkillsManager
+from core.utils.path_utils import safe_extract_zip
 from webui.models import SkillItem
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -122,10 +123,11 @@ class SkillsRoutes(Routes):
                 with open(zip_path, "wb") as f:
                     shutil.copyfileobj(file.file, f)
 
-                # Extract the zip
+                # Extract the zip. safe_extract_zip rejects members whose paths
+                # escape extract_dir (Zip-Slip), unlike a bare extractall().
                 extract_dir = os.path.join(temp_dir, "extracted")
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(extract_dir)
+                    safe_extract_zip(zip_ref, extract_dir)
 
                 # Find the skill directory (should contain SKILL.md)
                 skill_dirs = []
