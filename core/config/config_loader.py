@@ -50,6 +50,7 @@ class KiraConfig(dict):
 
         self.update(copy.deepcopy(self.default_config))
         self._deep_update(self, data)
+        self.save_config()
 
     def _deep_update(self, target: dict, source: dict):
         """Recursively update target dict with source dict"""
