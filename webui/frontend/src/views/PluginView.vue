@@ -70,15 +70,6 @@
           <span>{{ $t('common.refresh') }}</span>
         </button>
         <button
-          type="button"
-          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ml-2"
-          :disabled="checkingUpdates"
-          @click="handleCheckUpdates"
-        >
-          <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': checkingUpdates }" />
-          <span>{{ $t('plugin.check_updates') }}</span>
-        </button>
-        <button
           v-if="pluginUpdates.size > 0"
           type="button"
           class="inline-flex items-center px-3 py-1.5 border border-green-300 dark:border-green-600 rounded-md text-xs font-medium text-green-700 dark:text-green-200 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors ml-2"
