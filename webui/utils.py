@@ -1,6 +1,7 @@
 """
 Shared utility functions for the WebUI.
 """
+import hashlib
 import json
 import os
 import secrets
@@ -121,6 +122,16 @@ def _update_access_token(new_token: str) -> None:
     config = _load_webui_config()
     config["access_token"] = new_token
     _save_webui_config(config)
+
+
+def _access_token_fingerprint(token: str) -> str:
+    """Derive a short, stable fingerprint of the current access token.
+
+    Embedding this in the JWT lets require_auth invalidate every existing
+    session the moment the access token is rotated — without any per-request
+    file I/O, since it is computed purely from the in-memory token value.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
 def _create_jwt_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
