@@ -1345,10 +1345,7 @@ class PluginManager:
         # and fall back to the error message when error_type was not stored.
         def _is_missing_dep_failure(err_info: Dict[str, Any]) -> bool:
             err_type = err_info.get("error_type")
-            if isinstance(err_type, type) and issubclass(err_type, ImportError):
-                return True
-            msg = str(err_info.get("error", "")).lower()
-            return "no module named" in msg or "modulenotfounderror" in msg
+            return isinstance(err_type, type) and issubclass(err_type, ImportError)
 
         import_failures = [
             pid for pid, err_info in _plugin_load_errors.items()
