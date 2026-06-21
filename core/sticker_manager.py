@@ -153,10 +153,7 @@ class StickerManager:
         if not original_filename:
             raise ValueError("File name is required")
         base_name = os.path.basename(original_filename)
-        try:
-            _, ext = os.path.splitext(base_name)
-        except Exception:
-            ext = ""
+        name_only, ext = os.path.splitext(base_name)
         if not ext:
             ext = ".png"
         final_desc = desc or ""
@@ -176,15 +173,16 @@ class StickerManager:
         else:
             self._sticker_index += 1
             sid = str(self._sticker_index)
-        # Prefix the stored filename with the unique sticker id so same-named
-        # uploads no longer overwrite each other (and deleting one no longer
-        # removes another's file).
-        # Sanitize the id used in the on-disk filename so a crafted sticker id
-        # (e.g. containing "/", "\\" or "..") cannot escape the sticker folder.
-        safe_sid = re.sub(r"[^A-Za-z0-9_-]", "_", sid)
-        filename = f"{safe_sid}_{uuid.uuid4().hex}{ext}"
+        # Sanitize the name to prevent path traversal (e.g. "../secret")
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", name_only)
+        if not safe_name or safe_name in (".", ".."):
+            safe_name = "file"
+        filename = f"{safe_name}{ext}"
         os.makedirs(self.sticker_folder, exist_ok=True)
         file_path = os.path.join(self.sticker_folder, filename)
+        if os.path.exists(file_path):
+            filename = f"{safe_name}_{uuid.uuid4().hex}{ext}"
+            file_path = os.path.join(self.sticker_folder, filename)
         with open(file_path, "wb") as f:
             f.write(file_bytes)
         await self.register_sticker(filename, final_desc, sid)
