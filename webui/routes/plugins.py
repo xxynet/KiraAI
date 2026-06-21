@@ -407,6 +407,7 @@ class PluginsRoutes(Routes):
 
         # Get store version map from the current store source (with 10-min cache)
         store_versions: Dict[str, str] = {}
+        store_fetch_error: Optional[str] = None
         if db_service:
             try:
                 sources = await db_service.list_plugin_store_sources()
@@ -445,7 +446,8 @@ class PluginsRoutes(Routes):
                         if v and pid:
                             store_versions[str(pid)] = str(v)
             except Exception as e:
-                logger.warning(f"Failed to fetch store data for update check: {e}")
+                store_fetch_error = f"Failed to fetch store data: {e}"
+                logger.warning(store_fetch_error)
 
         results: List[PluginUpdateCheckItem] = []
         for info in plugin_manager.list_plugins():
@@ -464,6 +466,8 @@ class PluginsRoutes(Routes):
                         latest_ver = store_ver
                 except Exception as e:
                     err = str(e)
+            elif store_fetch_error:
+                err = store_fetch_error
 
             results.append(PluginUpdateCheckItem(
                 plugin_id=pid,
@@ -505,6 +509,11 @@ class PluginsRoutes(Routes):
         new_plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
         if not new_plugin_id:
             raise HTTPException(status_code=500, detail="Plugin files were installed but failed to load after update")
+        if new_plugin_id != plugin_id:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Plugin identity changed after update: requested '{plugin_id}' but loaded '{new_plugin_id}'",
+            )
 
         return self._build_install_result(plugin_manager, new_plugin_id, warnings)
 

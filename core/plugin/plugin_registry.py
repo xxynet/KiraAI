@@ -499,7 +499,7 @@ def _compare_versions(current: str, latest: str) -> bool:
     try:
         return Version(latest.lstrip("v")) > Version(current.lstrip("v"))
     except InvalidVersion:
-        return latest.lstrip("v") != current.lstrip("v")
+        return False
 
 
 class PluginManager:
