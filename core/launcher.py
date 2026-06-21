@@ -67,8 +67,8 @@ class KiraLauncher:
         self.webui = KiraWebUI(lifecycle=self.lifecycle, disable_auth=self.disable_webui_auth)
 
         try:
-            host = webui_config.get("host", "0.0.0.0")
-            port = webui_config.get("port", 5267)
+            host = webui_config["host"]
+            port = webui_config["port"]
 
             if self.disable_webui_auth and host not in ("localhost", "127.0.0.1"):
                 self.logger.warning("Auth disabled — forcing host to 127.0.0.1 for security")
