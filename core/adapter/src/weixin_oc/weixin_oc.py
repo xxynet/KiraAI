@@ -757,7 +757,7 @@ class WeixinOCAdapter(IMAdapter):
             self.info.config["weixin_oc_account_id"] = self.account_id or ""
             self.info.config["weixin_oc_sync_buf"] = self._sync_buf
             self.info.config["weixin_oc_base_url"] = self.base_url
-            
+
             # 保存到配置文件
             from core.config.config_loader import KiraConfig
             kira_config = KiraConfig()

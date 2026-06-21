@@ -1,4 +1,5 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
+import asyncio
 import time
 import httpx
 from typing import Optional, Union
@@ -66,24 +67,37 @@ class VolcengineVideoClient(VideoModelClient):
         super().__init__(model)
 
     async def generate_video(self, prompt: str, ref: list[Image] = None, duration: int = 5, **kwargs) -> Video:
-        client = httpx.AsyncClient(timeout=5)
-        task_id = await self._create_task(client=client, text=prompt, ref=ref, duration=duration)
+        # Use a context-managed client so the connection is always closed.
+        async with httpx.AsyncClient(timeout=30) as client:
+            task_id = await self._create_task(client=client, text=prompt, ref=ref, duration=duration)
 
-        start_ts = time.time()
+            start_ts = time.time()
 
-        data = None
+            data = None
 
-        while time.time() - start_ts < 30:
-            data = await self._get_task(client=client, task_id=task_id)
+            while time.time() - start_ts < 30:
+                data = await self._get_task(client=client, task_id=task_id)
 
-            status = data.get("status")
+                status = data.get("status")
 
-            if status == "succeeded":
-                url = data.get("content", {}).get("video_url")
-                logger.info(f"火山方舟视频生成耗时：{time.time() - start_ts}")
-                return Video(file=url)
+                if status == "succeeded":
+                    url = data.get("content", {}).get("video_url")
+                    if not url:
+                        logger.error(f"Video generation succeeded but returned no video_url: {data}")
+                        raise RuntimeError("Volcengine video generation succeeded but returned no video_url")
+                    logger.info(f"火山方舟视频生成耗时：{time.time() - start_ts}")
+                    return Video(file=url)
 
-        logger.error(f"Timeout while generating video: {data}")
+                # Break out early on terminal failure statuses instead of busy-spinning.
+                if status in ("failed", "canceled", "expired"):
+                    logger.error(f"Video generation failed with status '{status}': {data}")
+                    raise RuntimeError(f"Volcengine video generation failed with status: {status}")
+
+                # Avoid busy-spinning: wait before polling the task status again.
+                await asyncio.sleep(2)
+
+            logger.error(f"Timeout while generating video: {data}")
+            raise TimeoutError("Volcengine video generation timed out")
 
     async def _create_task(self, client: httpx.AsyncClient, text: str, ref: list[Image] = None, duration: int = 5) -> str:
         url = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"

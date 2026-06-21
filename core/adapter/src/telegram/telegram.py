@@ -171,10 +171,20 @@ class TelegramAdapter(IMAdapter):
             # 2) Check if bot is mentioned by username or text_mention
             if not is_mentioned:
                 try:
-                    if getattr(msg, "entities", None):
-                        for ent in msg.entities:
+                    # Media messages carry their text in caption/caption_entities;
+                    # use parse_entity/parse_caption_entity so non-BMP characters
+                    # (whose UTF-16 offsets differ from Python str indices) are
+                    # handled correctly instead of slicing the string manually.
+                    using_caption = msg.text is None
+                    scan_entities = msg.caption_entities if using_caption else msg.entities
+                    if scan_entities:
+                        for ent in scan_entities:
                             if ent.type == "mention" and bot_username:
-                                mention_text = msg.text[ent.offset: ent.offset + ent.length]
+                                mention_text = (
+                                    msg.parse_caption_entity(ent)
+                                    if using_caption
+                                    else msg.parse_entity(ent)
+                                )
                                 if mention_text.lower() == f"@{bot_username.lower()}":
                                     is_mentioned = True
                                     break
@@ -249,14 +259,27 @@ class TelegramAdapter(IMAdapter):
             elements.append(Reply(str(tg_message.reply_to_message.id), replied_text))
 
         # Text + inline mentions
-        if tg_message.text:
+        # Media messages (photo/video/document) put their text in caption/caption_entities,
+        # so fall back to those when plain text is absent to avoid losing the caption.
+        message_text = tg_message.text if tg_message.text is not None else tg_message.caption
+        if message_text:
             try:
-                entities = getattr(tg_message, "entities", None) or []
+                entities = getattr(tg_message, "entities", None) or getattr(tg_message, "caption_entities", None) or []
+                # Telegram entity offset/length are in UTF-16 code units, which
+                # diverge from Python str indices once the text contains non-BMP
+                # characters (e.g. emoji). Slice on the UTF-16-LE encoding so the
+                # mention text and the surrounding text segments stay aligned.
+                text_u16 = message_text.encode("utf-16-le")
+
+                def _u16_slice(start_units: int, len_units: int) -> str:
+                    return text_u16[start_units * 2: (start_units + len_units) * 2].decode("utf-16-le", "ignore")
+
+                total_units = len(text_u16) // 2
                 # Collect mention entities with their positions
                 mentions = []
                 for ent in entities:
                     if ent.type == "mention":
-                        username = tg_message.text[ent.offset: ent.offset + ent.length].lstrip("@")
+                        username = _u16_slice(ent.offset, ent.length).lstrip("@")
                         # Resolve display name: bot self → full_name directly,
                         # others → use @username (avoid per-mention get_chat to prevent rate-limit issues)
                         display = username
@@ -272,22 +295,22 @@ class TelegramAdapter(IMAdapter):
                         mentions.append((ent.offset, ent.length, At(pid=str(user_obj.id), nickname=display)))
                 # Sort by position to interleave text and At in order
                 mentions.sort(key=lambda m: m[0])
-                # Build elements by splitting text around mention ranges
+                # Build elements by splitting text around mention ranges (UTF-16 units)
                 pos = 0
                 for offset, length, at_elem in mentions:
                     if offset > pos:
-                        plain = tg_message.text[pos:offset]
+                        plain = _u16_slice(pos, offset - pos)
                         if plain:
                             elements.append(Text(plain))
                     elements.append(at_elem)
                     pos = offset + length
-                # Remaining text after last mention
-                if pos < len(tg_message.text):
-                    trailing = tg_message.text[pos:]
+                # Remaining text after the last mention
+                if pos < total_units:
+                    trailing = _u16_slice(pos, total_units - pos)
                     if trailing:
                         elements.append(Text(trailing))
             except Exception:
-                elements.append(Text(tg_message.text))
+                elements.append(Text(message_text))
 
         # Photo
         if tg_message.photo:

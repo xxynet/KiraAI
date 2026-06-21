@@ -343,39 +343,42 @@ async def pick_fastest_source(
     return a list of download URLs ranked by latency (best first).
     Returns empty list if all fail.
     """
-    candidates: list[tuple[str, str]] = [("direct", direct_url)]
+    # Carry the original base URL alongside each label so the fastest source
+    # can be mapped back to the exact base it was derived from. Substring
+    # matching on the bare host (e.g. "gh-proxy.org") is ambiguous because it
+    # also matches "hk.gh-proxy.org" / "cdn.gh-proxy.org" / etc.
+    candidates: list[tuple[str, str, Optional[str]]] = [("direct", direct_url, None)]
     for base in GH_PROXY_LIST:
         label = base.rstrip("/").split("//", 1)[-1]
-        candidates.append((label, f"{base.rstrip('/')}/{direct_url}"))
+        candidates.append((label, f"{base.rstrip('/')}/{direct_url}", base))
 
     logger.info(f"Speed-testing {len(candidates)} GitHub sources ...")
 
-    async def _probe(label: str, url: str) -> tuple[str, Optional[float]]:
+    async def _probe(label: str, url: str, base: Optional[str]) -> tuple[str, Optional[str], Optional[float]]:
         try:
             result = await test_url_speed(url, proxy=proxy, timeout=timeout)
-            return label, result["latency"]
+            return label, base, result["latency"]
         except Exception:
-            return label, None
+            return label, base, None
 
-    results = await asyncio.gather(*[_probe(label, url) for label, url in candidates])
+    results = await asyncio.gather(
+        *[_probe(label, url, base) for label, url, base in candidates]
+    )
 
-    for label, latency in sorted(results, key=lambda x: x[1] or 999):
+    for label, _base, latency in sorted(results, key=lambda x: x[2] or 999):
         if latency is not None:
             logger.info(f"  {label}: {latency:.3f}s")
         else:
             logger.warning(f"  {label}: FAILED")
 
     ranked: list[str] = []
-    for label, latency in sorted(results, key=lambda x: x[1] or 999):
+    for label, base, latency in sorted(results, key=lambda x: x[2] or 999):
         if latency is None:
             continue
         if label == "direct":
             ranked.append(direct_url)
         else:
-            proxy_base = next((b for b in GH_PROXY_LIST if label in b), None)
-            if proxy_base is None:
-                continue
-            ranked.append(f"{proxy_base.rstrip('/')}/{direct_url}")
+            ranked.append(f"{base.rstrip('/')}/{direct_url}")
 
     if ranked:
         logger.info(f"Ranked {len(ranked)} usable source(s)")

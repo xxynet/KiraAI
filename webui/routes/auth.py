@@ -10,7 +10,7 @@ from starlette.responses import JSONResponse, Response
 from core.config.default import VERSION
 from webui.models import LoginResponse, TokenLoginRequest, VersionResponse
 from webui.routes.base import RouteDefinition, Routes
-from webui.utils import _create_jwt_token, _verify_jwt_token
+from webui.utils import _access_token_fingerprint, _create_jwt_token, verify_session_token
 
 
 async def require_auth(
@@ -42,15 +42,9 @@ async def require_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    payload = _verify_jwt_token(token)
-
-    current_mode = "disabled" if getattr(request.app.state, "disable_auth", False) else "enabled"
-    token_mode = payload.get("auth_mode", "enabled")
-    if token_mode != current_mode:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token issued under a different auth mode, please re-login",
-        )
+    # Signature/expiry + auth_mode + access-token (tv) binding, via the shared
+    # helper so plugin page/static auth enforces the exact same claims.
+    payload = verify_session_token(token, request.app.state)
     return payload.get("sub", "admin")
 
 
@@ -246,6 +240,9 @@ class AuthRoutes(Routes):
             data={
                 "sub": "admin",
                 "auth_mode": "disabled" if self.disable_auth else "enabled",
+                # Bind the session to the current access token; rotating the
+                # token changes this fingerprint and invalidates old JWTs.
+                "tv": _access_token_fingerprint(current_token),
             },
             expires_delta=timedelta(days=5),
         )

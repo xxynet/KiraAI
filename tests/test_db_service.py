@@ -304,6 +304,62 @@ async def test_telemetry_llm_usage_aggregation(svc):
 
 
 @pytest.mark.anyio
+async def test_telemetry_message_rows_and_mark_by_ids(svc):
+    h10 = 10 * HOUR
+    await svc.add_telemetry_message(h10 + 100, "QQ")
+    await svc.add_telemetry_message(h10 + 200, "QQ")
+    await svc.add_telemetry_message(h10 + 300, "Telegram")
+
+    rows = await svc.get_unreported_telemetry_message_rows(since_ts=0)
+    assert len(rows) == 3
+    assert all(r["id"] for r in rows)
+    # Per-row data aggregates to the same counts as the SQL aggregate query.
+    counts: dict = {}
+    for r in rows:
+        counts[(r["hour_ts"], r["platform"])] = counts.get((r["hour_ts"], r["platform"]), 0) + 1
+    assert counts[(h10, "QQ")] == 2
+    assert counts[(h10, "Telegram")] == 1
+
+    # Marking exactly those ids clears them (and only them).
+    await svc.mark_telemetry_messages_by_ids([r["id"] for r in rows])
+    assert await svc.get_unreported_telemetry_message_rows(since_ts=0) == []
+
+
+@pytest.mark.anyio
+async def test_telemetry_llm_usage_rows_fields(svc):
+    h10 = 10 * HOUR
+    await svc.add_telemetry_llm_usage(h10 + 100, "gpt-4o", 1000, 500, 100, 800, True)
+    await svc.add_telemetry_llm_usage(h10 + 300, "deepseek", 500, 0, None, 5000, False)
+
+    rows = await svc.get_unreported_telemetry_llm_usage_rows(since_ts=0)
+    assert len(rows) == 2
+    by_model = {r["model"]: r for r in rows}
+    assert by_model["gpt-4o"]["input_tokens"] == 1000
+    assert by_model["gpt-4o"]["cached_tokens"] == 100
+    assert by_model["gpt-4o"]["success"] in (True, 1)
+    # None cached_tokens is normalized to 0.
+    assert by_model["deepseek"]["cached_tokens"] == 0
+    assert by_model["deepseek"]["success"] in (False, 0)
+    assert all(r["id"] for r in rows)
+
+    await svc.mark_telemetry_llm_by_ids([r["id"] for r in rows])
+    assert await svc.get_unreported_telemetry_llm_usage_rows(since_ts=0) == []
+
+
+@pytest.mark.anyio
+async def test_mark_telemetry_messages_by_ids_chunks_over_limit(svc):
+    # More than SQLite's ~999 bound-parameter limit, to exercise the chunked
+    # WHERE id IN (...) marking and ensure it doesn't raise "too many SQL variables".
+    h10 = 10 * HOUR
+    for i in range(1100):
+        await svc.add_telemetry_message(h10 + i, "QQ")
+    rows = await svc.get_unreported_telemetry_message_rows(since_ts=0)
+    assert len(rows) == 1100
+    await svc.mark_telemetry_messages_by_ids([r["id"] for r in rows])
+    assert await svc.get_unreported_telemetry_message_rows(since_ts=0) == []
+
+
+@pytest.mark.anyio
 async def test_delete_telemetry_records_before(svc):
     h10 = 10 * HOUR
     h20 = 20 * HOUR

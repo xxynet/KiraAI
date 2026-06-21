@@ -315,12 +315,14 @@ class FilePlugin(BasePlugin):
         if os.name == 'nt':
             shell_command = f'chcp 65001 >nul && {shell_command}'
 
+        exec_timeout = 30  # seconds
+
         logger.info(f'Executing shell command: {shell_command} (cwd: {os.getcwd()})')
         try:
             result = subprocess.run(
                 shell_command, shell=True, capture_output=True,
                 stdin=subprocess.DEVNULL,
-                timeout=30, env=env, encoding='utf-8', errors='replace'
+                timeout=exec_timeout, env=env, encoding='utf-8', errors='replace'
             )
             output = (result.stdout or '') + (result.stderr or '')
             if result.returncode == 0:
@@ -328,6 +330,6 @@ class FilePlugin(BasePlugin):
             else:
                 return f'Shell command failed (exit {result.returncode}):\n{output}'
         except subprocess.TimeoutExpired:
-            return f'Shell command timed out after 120 seconds: {shell_command}'
+            return f'Shell command timed out after {exec_timeout} seconds: {shell_command}'
         except Exception as e:
             return f'Unexpected error while executing shell command: {e}'

@@ -1,6 +1,8 @@
 import asyncio
 import os
+import re
 import inspect
+import uuid
 
 from typing import Optional, Union, Any, Callable
 from copy import deepcopy
@@ -151,19 +153,12 @@ class StickerManager:
         if not original_filename:
             raise ValueError("File name is required")
         base_name = os.path.basename(original_filename)
-        try:
-            _, ext = os.path.splitext(base_name)
-        except Exception:
-            ext = ""
+        name_only, ext = os.path.splitext(base_name)
         if not ext:
             ext = ".png"
-            base_name = base_name + ext
-        filename = base_name
-        os.makedirs(self.sticker_folder, exist_ok=True)
-        file_path = os.path.join(self.sticker_folder, filename)
-        with open(file_path, "wb") as f:
-            f.write(file_bytes)
         final_desc = desc or ""
+        # Resolve the sticker id before building the stored filename so the id
+        # can be used to keep filenames unique.
         if sticker_id and str(sticker_id).strip():
             sid = str(sticker_id).strip()
             if sid in self._sticker_cache:
@@ -178,6 +173,18 @@ class StickerManager:
         else:
             self._sticker_index += 1
             sid = str(self._sticker_index)
+        # Sanitize the name to prevent path traversal (e.g. "../secret")
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", name_only)
+        if not safe_name or safe_name in (".", ".."):
+            safe_name = "file"
+        filename = f"{safe_name}{ext}"
+        os.makedirs(self.sticker_folder, exist_ok=True)
+        file_path = os.path.join(self.sticker_folder, filename)
+        if os.path.exists(file_path):
+            filename = f"{safe_name}_{uuid.uuid4().hex}{ext}"
+            file_path = os.path.join(self.sticker_folder, filename)
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
         await self.register_sticker(filename, final_desc, sid)
         return {
             "id": sid,

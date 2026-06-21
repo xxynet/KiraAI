@@ -70,11 +70,11 @@ class SessionsRoutes(Routes):
         if not self.lifecycle or not self.lifecycle.session_manager:
             raise HTTPException(status_code=404, detail="Memory manager not available")
 
-        memory = self.lifecycle.session_manager.read_memory(session_id)
-
         parts = session_id.split(":")
         if len(parts) < 3:
             raise HTTPException(status_code=400, detail="Invalid session id format")
+
+        memory = self.lifecycle.session_manager.read_memory(session_id)
 
         adapter_name, session_type, session_key = parts[0], parts[1], ":".join(parts[2:])
         session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})

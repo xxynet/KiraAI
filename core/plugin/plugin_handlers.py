@@ -34,7 +34,9 @@ class EventType(Enum):
     ...
 
 
-@dataclass
+# eq=False keeps identity-based equality/hash so that del_handler removes the
+# exact handler instance, not a different field-identical one.
+@dataclass(eq=False)
 class EventHandler:
     event_type: EventType
 

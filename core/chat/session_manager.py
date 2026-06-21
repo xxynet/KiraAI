@@ -187,6 +187,6 @@ class SessionManager:
 
     def delete_session(self, session: str):
         with self.memory_lock:
-            self.chat_memory.pop(session)
+            self.chat_memory.pop(session, None)
             self._save_memory(self.chat_memory, self.chat_memory_path)
         logger.info(f"Memory deleted for {session}")

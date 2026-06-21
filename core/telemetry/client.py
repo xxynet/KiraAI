@@ -454,49 +454,73 @@ class TelemetryClient:
             since_ts = int(time.time()) - 12 * 3600
             event_count = 0
 
-            # Message stats — combine all platforms per hour into one event
-            msg_rows = await self.db.get_unreported_telemetry_messages_by_hour(since_ts)
+            # Message stats — combine all platforms per hour into one event.
+            # Counts and the id set to mark are derived from a SINGLE per-row
+            # snapshot, so they cannot diverge (a row counted but never marked, or
+            # marked but never counted, as the prior two-query read allowed).
+            msg_rows = await self.db.get_unreported_telemetry_message_rows(since_ts)
             if msg_rows:
                 by_hour: dict[int, dict[str, int]] = {}
+                msg_ids_by_hour: dict[int, list[str]] = {}
                 for row in msg_rows:
-                    hour = by_hour.setdefault(row["hour_ts"], {})
-                    hour[row["platform"]] = hour.get(row["platform"], 0) + row["count"]
+                    platforms = by_hour.setdefault(row["hour_ts"], {})
+                    platforms[row["platform"]] = platforms.get(row["platform"], 0) + 1
+                    msg_ids_by_hour.setdefault(row["hour_ts"], []).append(row["id"])
                 for hour_ts, platforms in by_hour.items():
-                    h = hour_ts
+                    ids = msg_ids_by_hour.get(hour_ts, [])
+                    if not ids:
+                        continue
                     self.send_event(TelemetryEventType.MESSAGE_STATS, {
                         "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
                         "total_messages": sum(platforms.values()),
                         "messages_by_platform": platforms,
                         "time_window_minutes": 60,
-                    }, on_success=lambda h=h: self.db.mark_telemetry_messages_by_hours([h]))
+                    }, on_success=lambda ids=ids: self.db.mark_telemetry_messages_by_ids(ids))
                     event_count += 1
 
-            # LLM usage stats — one event per hour, models nested
-            llm_rows = await self.db.get_unreported_telemetry_llm_usage_by_hour(since_ts)
+            # LLM usage stats — one event per hour, models nested. Same single-snapshot
+            # approach: aggregate measures and collect ids from the same rows.
+            llm_rows = await self.db.get_unreported_telemetry_llm_usage_rows(since_ts)
             if llm_rows:
                 llm_by_hour: dict[int, list[dict]] = {}
+                llm_ids_by_hour: dict[int, list[str]] = {}
                 for row in llm_rows:
                     llm_by_hour.setdefault(row["hour_ts"], []).append(row)
+                    llm_ids_by_hour.setdefault(row["hour_ts"], []).append(row["id"])
                 for hour_ts, rows in llm_by_hour.items():
-                    total_calls = sum(r["call_count"] for r in rows)
-                    total_success = sum(r["success_count"] for r in rows)
-                    total_input = sum(r["total_input"] for r in rows)
-                    total_output = sum(r["total_output"] for r in rows)
-                    total_cached = sum(r["total_cached"] for r in rows)
-                    total_resp_ms = sum(r["total_response_ms"] for r in rows)
-                    models = {}
+                    ids = llm_ids_by_hour.get(hour_ts, [])
+                    if not ids:
+                        continue
+                    # Aggregate per model from the raw rows.
+                    per_model: dict[str, dict[str, int]] = {}
                     for r in rows:
-                        avg_resp = int(r["total_response_ms"] / r["call_count"]) if r["call_count"] else 0
-                        models[r["model"]] = {
-                            "total_calls": r["call_count"],
-                            "success_calls": r["success_count"],
-                            "failed_calls": r["call_count"] - r["success_count"],
-                            "total_input_tokens": r["total_input"],
-                            "total_output_tokens": r["total_output"],
-                            "total_cached_tokens": r["total_cached"],
-                            "avg_response_time_ms": avg_resp,
+                        m = per_model.setdefault(r["model"], {
+                            "calls": 0, "success": 0, "input": 0, "output": 0, "cached": 0, "resp_ms": 0,
+                        })
+                        m["calls"] += 1
+                        m["success"] += 1 if r["success"] else 0
+                        m["input"] += r["input_tokens"]
+                        m["output"] += r["output_tokens"]
+                        m["cached"] += r["cached_tokens"]
+                        m["resp_ms"] += r["response_time_ms"]
+                    total_calls = sum(m["calls"] for m in per_model.values())
+                    total_success = sum(m["success"] for m in per_model.values())
+                    total_input = sum(m["input"] for m in per_model.values())
+                    total_output = sum(m["output"] for m in per_model.values())
+                    total_cached = sum(m["cached"] for m in per_model.values())
+                    total_resp_ms = sum(m["resp_ms"] for m in per_model.values())
+                    models = {
+                        model: {
+                            "total_calls": m["calls"],
+                            "success_calls": m["success"],
+                            "failed_calls": m["calls"] - m["success"],
+                            "total_input_tokens": m["input"],
+                            "total_output_tokens": m["output"],
+                            "total_cached_tokens": m["cached"],
+                            "avg_response_time_ms": int(m["resp_ms"] / m["calls"]) if m["calls"] else 0,
                         }
-                    h = hour_ts
+                        for model, m in per_model.items()
+                    }
                     self.send_event(TelemetryEventType.LLM_USAGE, {
                         "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
                         "total_calls": total_calls,
@@ -507,7 +531,7 @@ class TelemetryClient:
                         "total_cached_tokens": total_cached,
                         "avg_response_time_ms": int(total_resp_ms / total_calls) if total_calls else 0,
                         "models": models,
-                    }, on_success=lambda h=h: self.db.mark_telemetry_llm_by_hours([h]))
+                    }, on_success=lambda ids=ids: self.db.mark_telemetry_llm_by_ids(ids))
                     event_count += 1
 
             if event_count:

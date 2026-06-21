@@ -1,6 +1,7 @@
 """
 Shared utility functions for the WebUI.
 """
+import hashlib
 import json
 import os
 import secrets
@@ -123,6 +124,16 @@ def _update_access_token(new_token: str) -> None:
     _save_webui_config(config)
 
 
+def _access_token_fingerprint(token: str) -> str:
+    """Derive a short, stable fingerprint of the current access token.
+
+    Embedding this in the JWT lets require_auth invalidate every existing
+    session the moment the access token is rotated — without any per-request
+    file I/O, since it is computed purely from the in-memory token value.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()[:16]
+
+
 def _create_jwt_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT token"""
     to_encode = data.copy()
@@ -150,6 +161,30 @@ def _verify_jwt_token(token: str) -> Dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
         )
+
+
+def verify_session_token(token: str, app_state) -> Dict:
+    """Verify a session JWT end to end: signature/expiry, auth_mode, and the
+    access-token (tv) binding.
+
+    Shared by require_auth and the plugin page/static auth checks so every
+    auth-required path enforces the same claims — in particular, rotating the
+    access token invalidates old sessions everywhere, not just on API routes.
+    Raises HTTPException(401) on any failure and returns the decoded payload.
+    """
+    payload = _verify_jwt_token(token)
+    current_mode = "disabled" if getattr(app_state, "disable_auth", False) else "enabled"
+    if payload.get("auth_mode", "enabled") != current_mode:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token issued under a different auth mode, please re-login",
+        )
+    if payload.get("tv") != _access_token_fingerprint(getattr(app_state, "access_token", "")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session invalidated by an access-token change, please re-login",
+        )
+    return payload
 
 
 def _generate_id() -> str:

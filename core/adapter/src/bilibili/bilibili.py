@@ -193,7 +193,7 @@ class BiliBiliAdapter(SocialMediaAdapter):
             commenter = cmt.get("user")
             commenter_id = cmt.get("uid")
             cmt_ts = int(cmt.get("ctime"))
-            if cmt_ts > self.last_process_ts and cmt.get("uid") != self.bot_uid:
+            if cmt_ts > self.last_process_ts and str(cmt.get("uid")) != str(self.bot_uid):
                 cmt_obj = KiraCommentEvent(
                     platform=self.info.platform,
                     adapter_name=self.info.name,
@@ -207,14 +207,14 @@ class BiliBiliAdapter(SocialMediaAdapter):
                 await self.event_bus.put(cmt_obj)
                 self.last_process_ts = int(cmt.get("ctime"))
                 await asyncio.sleep(self.config.get("message_process_interval"))
-            if cmt.get("uid") == self.bot_uid:
+            if str(cmt.get("uid")) == str(self.bot_uid):
                 for sub_cmt in cmt.get("sub_replies"):
                     sub_cmt_id = int(sub_cmt.get("comment_id"))
                     sub_cmt_content = sub_cmt.get("message")
                     sub_cmt_ts = int(sub_cmt.get("ctime"))
                     sub_commenter = sub_cmt.get("user")
                     sub_commenter_uid = sub_cmt.get("uid")
-                    if sub_cmt_ts > self.last_process_ts and sub_commenter_uid != self.bot_uid:
+                    if sub_cmt_ts > self.last_process_ts and str(sub_commenter_uid) != str(self.bot_uid):
                         cmt_obj = KiraCommentEvent(
                             platform=self.info.platform,
                             adapter_name=self.info.name,
