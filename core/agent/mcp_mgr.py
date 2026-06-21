@@ -458,8 +458,14 @@ class MCPManager:
                     )
                 logger.info(f"Registered {len(tool_names)} MCP tools from {server.name}: {tool_names}")
 
-        for server in self.servers:
-            asyncio.create_task(init_server(server))
+        # Launch registration concurrently, then await all so errors are not
+        # swallowed and tools are ready when init_mcp returns.
+        tasks = [asyncio.create_task(init_server(server)) for server in self.servers]
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for server, result in zip(self.servers, results):
+                if isinstance(result, Exception):
+                    logger.error(f"Failed to initialize MCP server {server.name}: {result}")
 
     @staticmethod
     async def _make_mcp_func(server: MCPServer, tool_name: str):

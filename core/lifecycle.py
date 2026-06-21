@@ -268,8 +268,10 @@ class KiraLifecycle:
             await self.plugin_manager.terminate()
 
         # terminate all running adapters
-        await self.adapter_manager.stop_adapters()
-        await self.event_bus.stop()
+        if self.adapter_manager:
+            await self.adapter_manager.stop_adapters()
+        if self.event_bus:
+            await self.event_bus.stop()
 
         # dispose database manager
         if self.db_manager:
