@@ -1,4 +1,5 @@
 import json
+import uuid
 from typing import List, Optional
 
 from fastapi import Depends, File, Form, HTTPException, UploadFile, status
@@ -149,8 +150,9 @@ class StickersRoutes(Routes):
             ext = ""
         if not ext:
             ext = ".png"
-            base_name = f"{base_name}{ext}"
-        filename = base_name
+        # Prefix the stored filename with the unique sticker id so same-named
+        # uploads no longer overwrite each other.
+        filename = f"{sid}_{uuid.uuid4().hex}{ext}"
         file_path = sticker_folder / filename
         try:
             with open(file_path, "wb") as f:

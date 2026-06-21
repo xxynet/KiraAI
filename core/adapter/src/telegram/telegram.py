@@ -171,10 +171,14 @@ class TelegramAdapter(IMAdapter):
             # 2) Check if bot is mentioned by username or text_mention
             if not is_mentioned:
                 try:
-                    if getattr(msg, "entities", None):
-                        for ent in msg.entities:
-                            if ent.type == "mention" and bot_username:
-                                mention_text = msg.text[ent.offset: ent.offset + ent.length]
+                    # Media messages carry their text in caption/caption_entities,
+                    # so fall back to those when plain text entities are absent.
+                    scan_text = msg.text if msg.text is not None else msg.caption
+                    scan_entities = getattr(msg, "entities", None) or getattr(msg, "caption_entities", None)
+                    if scan_entities:
+                        for ent in scan_entities:
+                            if ent.type == "mention" and bot_username and scan_text is not None:
+                                mention_text = scan_text[ent.offset: ent.offset + ent.length]
                                 if mention_text.lower() == f"@{bot_username.lower()}":
                                     is_mentioned = True
                                     break
@@ -249,14 +253,17 @@ class TelegramAdapter(IMAdapter):
             elements.append(Reply(str(tg_message.reply_to_message.id), replied_text))
 
         # Text + inline mentions
-        if tg_message.text:
+        # Media messages (photo/video/document) put their text in caption/caption_entities,
+        # so fall back to those when plain text is absent to avoid losing the caption.
+        message_text = tg_message.text if tg_message.text is not None else tg_message.caption
+        if message_text:
             try:
-                entities = getattr(tg_message, "entities", None) or []
+                entities = getattr(tg_message, "entities", None) or getattr(tg_message, "caption_entities", None) or []
                 # Collect mention entities with their positions
                 mentions = []
                 for ent in entities:
                     if ent.type == "mention":
-                        username = tg_message.text[ent.offset: ent.offset + ent.length].lstrip("@")
+                        username = message_text[ent.offset: ent.offset + ent.length].lstrip("@")
                         # Resolve display name: bot self → full_name directly,
                         # others → use @username (avoid per-mention get_chat to prevent rate-limit issues)
                         display = username
@@ -276,18 +283,18 @@ class TelegramAdapter(IMAdapter):
                 pos = 0
                 for offset, length, at_elem in mentions:
                     if offset > pos:
-                        plain = tg_message.text[pos:offset]
+                        plain = message_text[pos:offset]
                         if plain:
                             elements.append(Text(plain))
                     elements.append(at_elem)
                     pos = offset + length
                 # Remaining text after last mention
-                if pos < len(tg_message.text):
-                    trailing = tg_message.text[pos:]
+                if pos < len(message_text):
+                    trailing = message_text[pos:]
                     if trailing:
                         elements.append(Text(trailing))
             except Exception:
-                elements.append(Text(tg_message.text))
+                elements.append(Text(message_text))
 
         # Photo
         if tg_message.photo:

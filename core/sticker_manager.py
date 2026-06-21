@@ -1,6 +1,7 @@
 import asyncio
 import os
 import inspect
+import uuid
 
 from typing import Optional, Union, Any, Callable
 from copy import deepcopy
@@ -157,13 +158,9 @@ class StickerManager:
             ext = ""
         if not ext:
             ext = ".png"
-            base_name = base_name + ext
-        filename = base_name
-        os.makedirs(self.sticker_folder, exist_ok=True)
-        file_path = os.path.join(self.sticker_folder, filename)
-        with open(file_path, "wb") as f:
-            f.write(file_bytes)
         final_desc = desc or ""
+        # Resolve the sticker id before building the stored filename so the id
+        # can be used to keep filenames unique.
         if sticker_id and str(sticker_id).strip():
             sid = str(sticker_id).strip()
             if sid in self._sticker_cache:
@@ -178,6 +175,14 @@ class StickerManager:
         else:
             self._sticker_index += 1
             sid = str(self._sticker_index)
+        # Prefix the stored filename with the unique sticker id so same-named
+        # uploads no longer overwrite each other (and deleting one no longer
+        # removes another's file).
+        filename = f"{sid}_{uuid.uuid4().hex}{ext}"
+        os.makedirs(self.sticker_folder, exist_ok=True)
+        file_path = os.path.join(self.sticker_folder, filename)
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
         await self.register_sticker(filename, final_desc, sid)
         return {
             "id": sid,
