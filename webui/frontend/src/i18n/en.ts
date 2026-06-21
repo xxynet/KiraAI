@@ -418,6 +418,7 @@ export default {
     update_success: 'Plugin updated successfully',
     update_failed: 'Failed to update plugin',
     update_all: 'Update all ({count})',
+    update_confirm: 'Are you sure you want to update {name}?',
   },
   pluginStore: {
     title: 'Plugin Store',

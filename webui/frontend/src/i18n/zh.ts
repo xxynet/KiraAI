@@ -418,6 +418,7 @@ export default {
     update_success: '插件更新成功',
     update_failed: '插件更新失败',
     update_all: '全部更新 ({count})',
+    update_confirm: '确定要更新 {name} 吗？',
   },
   pluginStore: {
     title: '插件商店',

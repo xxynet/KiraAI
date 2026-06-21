@@ -720,6 +720,45 @@
       </div>
     </Modal>
 
+    <!-- Update Plugin Dialog -->
+    <Modal v-model="updateDialogVisible" content-class="max-w-md">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.update') }}</h3>
+          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="updateDialogVisible = false">
+            <IconClose class="w-6 h-6" />
+          </button>
+        </div>
+        <div class="px-6 py-5 flex-1 overflow-y-auto">
+          <p class="text-sm text-gray-600 dark:text-gray-300 mb-4">
+            {{ $t('plugin.update_confirm', { name: updateTargetPlugin?.name || updateTargetPlugin?.id }) }}
+          </p>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <span>{{ $t('plugin.install_gh_proxy_label') }}</span>
+              <span class="text-xs font-normal text-gray-400 dark:text-gray-500 ml-1">{{ $t('plugin.install_optional') }}</span>
+            </label>
+            <CustomSelect
+              v-model="proxyStrategy"
+              :options="proxyStrategyOptions"
+              :placeholder="$t('plugin.proxy_strategy_auto')"
+            />
+          </div>
+          <div v-if="proxyStrategy === 'specific'">
+            <CustomSelect
+              v-model="selectedProxyUrl"
+              :options="proxySelectOptions"
+              :placeholder="$t('plugin.proxy_select_placeholder')"
+            />
+          </div>
+        </div>
+        <div class="flex justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="updateDialogVisible = false">{{ $t('plugin.cancel') }}</button>
+          <button type="button" class="px-4 py-2 ml-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="updatingPlugins.has(updateTargetPlugin?.id ?? '')" @click="confirmUpdate">{{ $t('plugin.update') }}</button>
+        </div>
+      </div>
+    </Modal>
+
     <!-- Plugin Config Dialog -->
     <Modal v-model="pluginConfigVisible" content-class="max-w-md">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
@@ -891,6 +930,8 @@ const refreshingPlugins = ref(false)
 const pluginUpdates = ref<Map<string, PluginUpdateCheckItem>>(new Map())
 const checkingUpdates = ref(false)
 const updatingPlugins = ref(new Set<string>())
+const updateDialogVisible = ref(false)
+const updateTargetPlugin = ref<PluginItem | null>(null)
 
 // Proxy strategy
 const GH_PROXY_LIST = [
@@ -1039,9 +1080,23 @@ async function handleCheckUpdates() {
 }
 
 async function handleUpdatePlugin(plugin: PluginItem) {
+  updateTargetPlugin.value = plugin
+  updateDialogVisible.value = true
+}
+
+function resolveGhProxy(): string | undefined {
+  if (proxyStrategy.value === 'specific') return selectedProxyUrl.value
+  if (proxyStrategy.value === 'auto') return 'auto'
+  return undefined
+}
+
+async function confirmUpdate() {
+  const plugin = updateTargetPlugin.value
+  if (!plugin) return
+  updateDialogVisible.value = false
   updatingPlugins.value.add(plugin.id)
   try {
-    await apiUpdatePlugin(plugin.id)
+    await apiUpdatePlugin(plugin.id, { gh_proxy: resolveGhProxy() })
     pluginUpdates.value.delete(plugin.id)
     notify(t('plugin.update_success'), 'success')
     await loadPlugins()
@@ -1054,10 +1109,21 @@ async function handleUpdatePlugin(plugin: PluginItem) {
 
 async function handleUpdateAll() {
   const toUpdate = Array.from(pluginUpdates.value.keys())
+  const ghProxy = resolveGhProxy()
   for (const pid of toUpdate) {
     const plugin = plugins.value.find(p => p.id === pid)
     if (plugin && !updatingPlugins.value.has(pid)) {
-      await handleUpdatePlugin(plugin)
+      updatingPlugins.value.add(plugin.id)
+      try {
+        await apiUpdatePlugin(plugin.id, { gh_proxy: ghProxy })
+        pluginUpdates.value.delete(plugin.id)
+        notify(t('plugin.update_success'), 'success')
+        await loadPlugins()
+      } catch {
+        notify(t('plugin.update_failed'), 'error')
+      } finally {
+        updatingPlugins.value.delete(plugin.id)
+      }
     }
   }
 }
