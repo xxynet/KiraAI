@@ -363,10 +363,13 @@ class NapCatWebSocketClient:
             response = await asyncio.wait_for(future, timeout=timeout)
             return response
         except asyncio.TimeoutError:
-            await self.response_futures.pop(echo, None)
+            # Discard the pending Future entry; do not await it (awaiting a Future
+            # here would raise CancelledError and mask the intended TimeoutError).
+            self.response_futures.pop(echo, None)
             raise TimeoutError(f"请求 {action} 超时")
         except Exception:
-            await self.response_futures.pop(echo, None)
+            # Same as above: just drop the entry without awaiting it.
+            self.response_futures.pop(echo, None)
             raise
 
     async def get_login_info(self):

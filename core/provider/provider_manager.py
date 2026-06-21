@@ -196,8 +196,9 @@ class ProviderManager:
                 model_provider,
                 self.kira_config.get_config(f"providers.{model_provider}.name"),
                 self.kira_config.get_config(f"providers.{model_provider}.provider_config"),
-                # When the model ID has a dot, kira_config.get_config would return unexpected value
-                self.kira_config.get_config(f"providers.{model_provider}.model_config.{model_type}").get(model_id)
+                # When the model ID has a dot, kira_config.get_config would return unexpected value.
+                # Guard against a missing model_config section (get_config returns None).
+                (self.kira_config.get_config(f"providers.{model_provider}.model_config.{model_type}") or {}).get(model_id)
             )
             return model_info
 
