@@ -494,6 +494,14 @@ def _build_tag_inst(tag_name: str, tag_description: str, func: Callable, tag_par
     return TagInst()
 
 
+def _compare_versions(current: str, latest: str) -> bool:
+    """Return True if latest > current. Strips leading 'v'."""
+    try:
+        return Version(latest.lstrip("v")) > Version(current.lstrip("v"))
+    except InvalidVersion:
+        return False
+
+
 class PluginManager:
     """
     Plugin manager for KiraAI, detecting plugins automatically

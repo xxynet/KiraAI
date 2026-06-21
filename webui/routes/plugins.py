@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import Depends, File, HTTPException, Query, UploadFile
 
-from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR
+from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_from_github, install_from_zip, install_requirements
 from core.utils.path_utils import get_data_path
@@ -14,6 +14,7 @@ from webui.models import (
     PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem,
     PluginStoreItemResponse, PluginStoreFetchRequest,
     PluginStoreSourceItem, PluginStoreSourceCreateRequest, PluginStoreSourceUpdateRequest,
+    PluginUpdateCheckItem, PluginUpdateRequest,
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -120,6 +121,22 @@ class PluginsRoutes(Routes):
                 methods=["DELETE"],
                 endpoint=self.delete_plugin_source,
                 tags=["plugin-store"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/updates/check",
+                methods=["POST"],
+                endpoint=self.check_plugin_updates,
+                response_model=List[PluginUpdateCheckItem],
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/{plugin_id}/update",
+                methods=["POST"],
+                endpoint=self.update_plugin,
+                response_model=PluginInstallResult,
+                tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
         ]
@@ -380,6 +397,125 @@ class PluginsRoutes(Routes):
             status=info.status if info else "pending",
             warnings=warnings,
         )
+
+    async def check_plugin_updates(self) -> List[PluginUpdateCheckItem]:
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            return []
+
+        plugin_manager = self.lifecycle.plugin_manager
+        db_service = getattr(self.lifecycle, "db_service", None)
+
+        # Get store version map from the current store source (with 10-min cache)
+        store_versions: Dict[str, str] = {}
+        store_fetch_error: Optional[str] = None
+        if db_service:
+            try:
+                sources = await db_service.list_plugin_store_sources()
+                current = next((s for s in sources if s.get("is_current")), None)
+                if current and current.get("url"):
+                    now = int(time.time())
+                    updated_at = current.get("updated_at", 0)
+                    cache_file = current.get("cache_file")
+                    raw_data = None
+
+                    # Try reading from disk cache if fresh enough
+                    if cache_file and (now - updated_at) < 600:
+                        cache_path = get_data_path() / "plugin_src" / cache_file
+                        if cache_path.exists():
+                            raw_data = json.loads(cache_path.read_text(encoding="utf-8"))
+
+                    # Fetch fresh if cache miss or stale
+                    if raw_data is None:
+                        raw_data = await PluginManager.fetch_plugin_store_data(current["url"])
+                        # Update cache on disk
+                        plugin_src_dir = get_data_path() / "plugin_src"
+                        plugin_src_dir.mkdir(parents=True, exist_ok=True)
+                        if cache_file and (plugin_src_dir / cache_file).exists():
+                            filename = cache_file
+                        else:
+                            filename = f"plugins_{uuid4().hex}.json"
+                        cache_path = plugin_src_dir / filename
+                        cache_path.write_text(json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                        await db_service.update_plugin_store_source(
+                            current["id"], cache_file=filename, updated_at=now,
+                        )
+
+                    for item in self._extract_plugins(raw_data):
+                        v = item.get("version")
+                        pid = item.get("plugin_id")
+                        if v and pid:
+                            store_versions[str(pid)] = str(v)
+            except Exception as e:
+                store_fetch_error = f"Failed to fetch store data: {e}"
+                logger.warning(store_fetch_error)
+
+        results: List[PluginUpdateCheckItem] = []
+        for info in plugin_manager.list_plugins():
+            if info.builtin or info.hidden or info.status == "error":
+                continue
+
+            pid = info.plugin_id
+            installed_ver = info.version
+            latest_ver: Optional[str] = None
+            err: Optional[str] = None
+
+            if pid in store_versions:
+                store_ver = store_versions[pid]
+                try:
+                    if _compare_versions(installed_ver, store_ver):
+                        latest_ver = store_ver
+                except Exception as e:
+                    err = str(e)
+            elif store_fetch_error:
+                err = store_fetch_error
+
+            results.append(PluginUpdateCheckItem(
+                plugin_id=pid,
+                current_version=installed_ver,
+                latest_version=latest_ver,
+                has_update=latest_ver is not None,
+                error=err,
+            ))
+
+        return results
+
+    async def update_plugin(self, plugin_id: str, payload: PluginUpdateRequest) -> PluginInstallResult:
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+
+        plugin_manager = self.lifecycle.plugin_manager
+
+        info = plugin_manager.get_plugin_info(plugin_id)
+        if not info:
+            raise HTTPException(status_code=404, detail="Plugin not found")
+        if info.builtin:
+            raise HTTPException(status_code=400, detail="Built-in plugins cannot be updated")
+        if not info.repo:
+            raise HTTPException(status_code=400, detail="Plugin has no repo URL configured")
+
+        try:
+            plugin_dir = await install_from_github(
+                info.repo,
+                plugin_manager.plugin_dir,
+                gh_proxy=payload.gh_proxy,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except ConnectionError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        warnings = await install_requirements(plugin_dir, pypi_mirror=self._get_pypi_mirror())
+
+        new_plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
+        if not new_plugin_id:
+            raise HTTPException(status_code=500, detail="Plugin files were installed but failed to load after update")
+        if new_plugin_id != plugin_id:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Plugin identity changed after update: requested '{plugin_id}' but loaded '{new_plugin_id}'",
+            )
+
+        return self._build_install_result(plugin_manager, new_plugin_id, warnings)
 
     async def fetch_plugin_store(self, payload: PluginStoreFetchRequest) -> List[PluginStoreItemResponse]:
         url: Optional[str] = payload.url

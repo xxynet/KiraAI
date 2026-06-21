@@ -4,6 +4,7 @@ import type {
   PluginConfigUpdateRequest,
   PluginInstallGithubRequest,
   PluginInstallResult,
+  PluginUpdateCheckItem,
 } from '@/types'
 
 export function getPlugins() {
@@ -42,4 +43,12 @@ export function installFromUpload(file: File) {
   const formData = new FormData()
   formData.append('file', file)
   return apiClient.post<PluginInstallResult>('/plugins/install/upload', formData)
+}
+
+export function checkPluginUpdates() {
+  return apiClient.post<PluginUpdateCheckItem[]>('/plugins/updates/check')
+}
+
+export function updatePlugin(pluginId: string, data?: { gh_proxy?: string | null }) {
+  return apiClient.post<PluginInstallResult>(`/plugins/${encodeURIComponent(pluginId)}/update`, data || {})
 }

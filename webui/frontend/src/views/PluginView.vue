@@ -121,10 +121,14 @@
           :error="plugin.error"
           :status="plugin.status"
           :reloading="reloadingPlugins.has(plugin.id)"
+          :has-update="pluginUpdates.has(plugin.id)"
+          :latest-version="pluginUpdates.get(plugin.id)?.latest_version ?? null"
+          :updating="updatingPlugins.has(plugin.id)"
           @toggle="togglePlugin(plugin)"
           @configure="openPluginConfig(plugin)"
           @uninstall="handleDeletePlugin(plugin.id)"
           @reload="handleReloadPlugin(plugin)"
+          @update="handleUpdatePlugin(plugin)"
         />
       </div>
     </div>
@@ -518,7 +522,11 @@
           :repo="item.repo"
           :tags="item.tags"
           :installed="item.installed"
+          :has-update="item.installed && pluginUpdates.has(item.id)"
+          :latest-version="pluginUpdates.get(item.id)?.latest_version ?? null"
+          :updating="updatingPlugins.has(item.id)"
           @install="handleStoreInstall(item)"
+          @update="handleStoreUpdate(item)"
         />
       </div>
 
@@ -695,6 +703,45 @@
       </div>
     </Modal>
 
+    <!-- Update Plugin Dialog -->
+    <Modal v-model="updateDialogVisible" content-class="max-w-md">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.update') }}</h3>
+          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="updateDialogVisible = false">
+            <IconClose class="w-6 h-6" />
+          </button>
+        </div>
+        <div class="px-6 py-5 flex-1 overflow-y-auto">
+          <p class="text-sm text-gray-600 dark:text-gray-300 mb-4">
+            {{ $t('plugin.update_confirm', { name: updateTargetPlugin?.name || updateTargetPlugin?.id }) }}
+          </p>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <span>{{ $t('plugin.install_gh_proxy_label') }}</span>
+              <span class="text-xs font-normal text-gray-400 dark:text-gray-500 ml-1">{{ $t('plugin.install_optional') }}</span>
+            </label>
+            <CustomSelect
+              v-model="proxyStrategy"
+              :options="proxyStrategyOptions"
+              :placeholder="$t('plugin.proxy_strategy_auto')"
+            />
+          </div>
+          <div v-if="proxyStrategy === 'specific'">
+            <CustomSelect
+              v-model="selectedProxyUrl"
+              :options="proxySelectOptions"
+              :placeholder="$t('plugin.proxy_select_placeholder')"
+            />
+          </div>
+        </div>
+        <div class="flex justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="updateDialogVisible = false">{{ $t('plugin.cancel') }}</button>
+          <button type="button" class="px-4 py-2 ml-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="updatingPlugins.has(updateTargetPlugin?.id ?? '')" @click="confirmUpdate">{{ $t('plugin.update') }}</button>
+        </div>
+      </div>
+    </Modal>
+
     <!-- Plugin Config Dialog -->
     <Modal v-model="pluginConfigVisible" content-class="max-w-md">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
@@ -828,6 +875,7 @@ import {
   togglePlugin as apiTogglePlugin, deletePlugin,
   installFromGithub, installFromUpload,
   reloadPlugin as apiReloadPlugin,
+  checkPluginUpdates, updatePlugin as apiUpdatePlugin,
 } from '@/api/plugin'
 import {
   getMcpServers, getMcpServerConfig, createMcpServer, updateMcpServerConfig,
@@ -845,7 +893,7 @@ import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
   IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch,
 } from '@/components/icons'
-import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem } from '@/types'
+import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
@@ -862,6 +910,11 @@ const installDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
 const installing = ref(false)
 const reloadingPlugins = ref(new Set<string>())
 const refreshingPlugins = ref(false)
+const pluginUpdates = ref<Map<string, PluginUpdateCheckItem>>(new Map())
+const checkingUpdates = ref(false)
+const updatingPlugins = ref(new Set<string>())
+const updateDialogVisible = ref(false)
+const updateTargetPlugin = ref<PluginItem | null>(null)
 
 // Proxy strategy
 const GH_PROXY_LIST = [
@@ -983,6 +1036,61 @@ async function refreshPlugins() {
     }
   } finally {
     refreshingPlugins.value = false
+  }
+}
+
+async function handleCheckUpdates(silent = false) {
+  checkingUpdates.value = true
+  try {
+    const res = await checkPluginUpdates()
+    const map = new Map<string, PluginUpdateCheckItem>()
+    for (const item of res.data) {
+      if (item.has_update) {
+        map.set(item.plugin_id, item)
+      }
+    }
+    pluginUpdates.value = map
+    if (!silent) {
+      if (map.size > 0) {
+        notify(t('plugin.updates_found', { count: map.size }), 'success')
+      } else {
+        notify(t('plugin.no_updates'), 'success')
+      }
+    }
+  } catch {
+    if (!silent) {
+      notify(t('plugin.update_check_failed'), 'error')
+    }
+  } finally {
+    checkingUpdates.value = false
+  }
+}
+
+async function handleUpdatePlugin(plugin: PluginItem) {
+  updateTargetPlugin.value = plugin
+  updateDialogVisible.value = true
+}
+
+function resolveGhProxy(): string | undefined {
+  if (proxyStrategy.value === 'specific') return selectedProxyUrl.value
+  if (proxyStrategy.value === 'auto') return 'auto'
+  return undefined
+}
+
+async function confirmUpdate() {
+  const plugin = updateTargetPlugin.value
+  if (!plugin) return
+  updateDialogVisible.value = false
+  updatingPlugins.value.add(plugin.id)
+  try {
+    await apiUpdatePlugin(plugin.id, { gh_proxy: resolveGhProxy() })
+    pluginUpdates.value.delete(plugin.id)
+    notify(t('plugin.update_success'), 'success')
+    await loadPlugins()
+  } catch {
+    notify(t('plugin.update_failed'), 'error')
+  } finally {
+    updatingPlugins.value.delete(plugin.id)
   }
 }
 
@@ -1592,8 +1700,14 @@ function handleStoreInstall(item: PluginStoreItem) {
   installDialogVisible.value = true
 }
 
-onMounted(() => {
-  loadPlugins()
+async function handleStoreUpdate(item: PluginStoreItem) {
+  const plugin = plugins.value.find(p => p.id === item.id)
+  if (!plugin) return
+  await handleUpdatePlugin(plugin)
+}
+
+onMounted(async () => {
+  await loadPlugins()
   loadMcpServers()
   loadSkills()
   loadScope()
@@ -1603,5 +1717,7 @@ onMounted(() => {
       fetchStorePlugins()
     }
   })
+  // Auto-check for plugin updates on page load (silent: no notification if none)
+  handleCheckUpdates(true)
 })
 </script>
