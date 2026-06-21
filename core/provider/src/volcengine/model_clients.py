@@ -82,6 +82,9 @@ class VolcengineVideoClient(VideoModelClient):
 
                 if status == "succeeded":
                     url = data.get("content", {}).get("video_url")
+                    if not url:
+                        logger.error(f"Video generation succeeded but returned no video_url: {data}")
+                        raise RuntimeError("Volcengine video generation succeeded but returned no video_url")
                     logger.info(f"火山方舟视频生成耗时：{time.time() - start_ts}")
                     return Video(file=url)
 
@@ -94,6 +97,7 @@ class VolcengineVideoClient(VideoModelClient):
                 await asyncio.sleep(2)
 
             logger.error(f"Timeout while generating video: {data}")
+            raise TimeoutError("Volcengine video generation timed out")
 
     async def _create_task(self, client: httpx.AsyncClient, text: str, ref: list[Image] = None, duration: int = 5) -> str:
         url = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"

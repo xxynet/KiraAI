@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from typing import List, Optional
 
@@ -152,7 +153,10 @@ class StickersRoutes(Routes):
             ext = ".png"
         # Prefix the stored filename with the unique sticker id so same-named
         # uploads no longer overwrite each other.
-        filename = f"{sid}_{uuid.uuid4().hex}{ext}"
+        # Sanitize the id used in the on-disk filename to prevent path traversal
+        # via a crafted sticker id (e.g. one containing "/", "\\" or "..").
+        safe_sid = re.sub(r"[^A-Za-z0-9_-]", "_", sid)
+        filename = f"{safe_sid}_{uuid.uuid4().hex}{ext}"
         file_path = sticker_folder / filename
         try:
             with open(file_path, "wb") as f:

@@ -10,7 +10,7 @@ from starlette.responses import JSONResponse, Response
 from core.config.default import VERSION
 from webui.models import LoginResponse, TokenLoginRequest, VersionResponse
 from webui.routes.base import RouteDefinition, Routes
-from webui.utils import _access_token_fingerprint, _create_jwt_token, _verify_jwt_token
+from webui.utils import _access_token_fingerprint, _create_jwt_token, verify_session_token
 
 
 async def require_auth(
@@ -42,25 +42,9 @@ async def require_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    payload = _verify_jwt_token(token)
-
-    current_mode = "disabled" if getattr(request.app.state, "disable_auth", False) else "enabled"
-    token_mode = payload.get("auth_mode", "enabled")
-    if token_mode != current_mode:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token issued under a different auth mode, please re-login",
-        )
-
-    # tv claim binds the JWT to a fingerprint of the access token in effect at
-    # issue time. Rotating the access token changes the fingerprint, so every
-    # previously issued JWT (including any missing the claim) is rejected here.
-    current_token = getattr(request.app.state, "access_token", "")
-    if payload.get("tv") != _access_token_fingerprint(current_token):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session invalidated by an access-token change, please re-login",
-        )
+    # Signature/expiry + auth_mode + access-token (tv) binding, via the shared
+    # helper so plugin page/static auth enforces the exact same claims.
+    payload = verify_session_token(token, request.app.state)
     return payload.get("sub", "admin")
 
 

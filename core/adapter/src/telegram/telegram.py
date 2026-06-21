@@ -171,14 +171,20 @@ class TelegramAdapter(IMAdapter):
             # 2) Check if bot is mentioned by username or text_mention
             if not is_mentioned:
                 try:
-                    # Media messages carry their text in caption/caption_entities,
-                    # so fall back to those when plain text entities are absent.
-                    scan_text = msg.text if msg.text is not None else msg.caption
-                    scan_entities = getattr(msg, "entities", None) or getattr(msg, "caption_entities", None)
+                    # Media messages carry their text in caption/caption_entities;
+                    # use parse_entity/parse_caption_entity so non-BMP characters
+                    # (whose UTF-16 offsets differ from Python str indices) are
+                    # handled correctly instead of slicing the string manually.
+                    using_caption = msg.text is None
+                    scan_entities = msg.caption_entities if using_caption else msg.entities
                     if scan_entities:
                         for ent in scan_entities:
-                            if ent.type == "mention" and bot_username and scan_text is not None:
-                                mention_text = scan_text[ent.offset: ent.offset + ent.length]
+                            if ent.type == "mention" and bot_username:
+                                mention_text = (
+                                    msg.parse_caption_entity(ent)
+                                    if using_caption
+                                    else msg.parse_entity(ent)
+                                )
                                 if mention_text.lower() == f"@{bot_username.lower()}":
                                     is_mentioned = True
                                     break

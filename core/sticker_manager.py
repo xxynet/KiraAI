@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import inspect
 import uuid
 
@@ -178,7 +179,10 @@ class StickerManager:
         # Prefix the stored filename with the unique sticker id so same-named
         # uploads no longer overwrite each other (and deleting one no longer
         # removes another's file).
-        filename = f"{sid}_{uuid.uuid4().hex}{ext}"
+        # Sanitize the id used in the on-disk filename so a crafted sticker id
+        # (e.g. containing "/", "\\" or "..") cannot escape the sticker folder.
+        safe_sid = re.sub(r"[^A-Za-z0-9_-]", "_", sid)
+        filename = f"{safe_sid}_{uuid.uuid4().hex}{ext}"
         os.makedirs(self.sticker_folder, exist_ok=True)
         file_path = os.path.join(self.sticker_folder, filename)
         with open(file_path, "wb") as f:

@@ -163,6 +163,30 @@ def _verify_jwt_token(token: str) -> Dict:
         )
 
 
+def verify_session_token(token: str, app_state) -> Dict:
+    """Verify a session JWT end to end: signature/expiry, auth_mode, and the
+    access-token (tv) binding.
+
+    Shared by require_auth and the plugin page/static auth checks so every
+    auth-required path enforces the same claims — in particular, rotating the
+    access token invalidates old sessions everywhere, not just on API routes.
+    Raises HTTPException(401) on any failure and returns the decoded payload.
+    """
+    payload = _verify_jwt_token(token)
+    current_mode = "disabled" if getattr(app_state, "disable_auth", False) else "enabled"
+    if payload.get("auth_mode", "enabled") != current_mode:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token issued under a different auth mode, please re-login",
+        )
+    if payload.get("tv") != _access_token_fingerprint(getattr(app_state, "access_token", "")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session invalidated by an access-token change, please re-login",
+        )
+    return payload
+
+
 def _generate_id() -> str:
     """Generate a short unique identifier."""
     return uuid.uuid4().hex[:12]

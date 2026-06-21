@@ -886,7 +886,7 @@ class PluginManager:
                         async def __call__(self, scope, receive, send):
                             if scope["type"] == "http":
                                 from starlette.requests import Request as StarletteRequest
-                                from webui.utils import _verify_jwt_token
+                                from webui.utils import verify_session_token
 
                                 request = StarletteRequest(scope)
                                 # Plugin-enabled check
@@ -914,7 +914,7 @@ class PluginManager:
                                         return
                                     # Validate token
                                     try:
-                                        _verify_jwt_token(token)
+                                        verify_session_token(token, request.app.state)
                                     except Exception:
                                         response = HTMLResponse(
                                             content='{"detail":"Invalid token"}',
@@ -1039,7 +1039,7 @@ class PluginManager:
                         async def __call__(self, scope, receive, send):
                             if scope["type"] == "http":
                                 from starlette.requests import Request as StarletteRequest
-                                from webui.utils import _verify_jwt_token
+                                from webui.utils import verify_session_token
 
                                 request = StarletteRequest(scope)
                                 if not mgr.is_plugin_enabled(plugin_id):
@@ -1064,7 +1064,7 @@ class PluginManager:
                                         await response(scope, receive, send)
                                         return
                                     try:
-                                        _verify_jwt_token(token)
+                                        verify_session_token(token, request.app.state)
                                     except Exception:
                                         response = HTMLResponse(
                                             content='{"detail":"Invalid token"}',
