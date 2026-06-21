@@ -405,14 +405,40 @@ class PluginsRoutes(Routes):
         plugin_manager = self.lifecycle.plugin_manager
         db_service = getattr(self.lifecycle, "db_service", None)
 
-        # Get store version map from the current store source
+        # Get store version map from the current store source (with 10-min cache)
         store_versions: Dict[str, str] = {}
         if db_service:
             try:
                 sources = await db_service.list_plugin_store_sources()
                 current = next((s for s in sources if s.get("is_current")), None)
                 if current and current.get("url"):
-                    raw_data = await PluginManager.fetch_plugin_store_data(current["url"])
+                    now = int(time.time())
+                    updated_at = current.get("updated_at", 0)
+                    cache_file = current.get("cache_file")
+                    raw_data = None
+
+                    # Try reading from disk cache if fresh enough
+                    if cache_file and (now - updated_at) < 600:
+                        cache_path = get_data_path() / "plugin_src" / cache_file
+                        if cache_path.exists():
+                            raw_data = json.loads(cache_path.read_text(encoding="utf-8"))
+
+                    # Fetch fresh if cache miss or stale
+                    if raw_data is None:
+                        raw_data = await PluginManager.fetch_plugin_store_data(current["url"])
+                        # Update cache on disk
+                        plugin_src_dir = get_data_path() / "plugin_src"
+                        plugin_src_dir.mkdir(parents=True, exist_ok=True)
+                        if cache_file and (plugin_src_dir / cache_file).exists():
+                            filename = cache_file
+                        else:
+                            filename = f"plugins_{uuid4().hex}.json"
+                        cache_path = plugin_src_dir / filename
+                        cache_path.write_text(json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                        await db_service.update_plugin_store_source(
+                            current["id"], cache_file=filename, updated_at=now,
+                        )
+
                     for item in self._extract_plugins(raw_data):
                         v = item.get("version")
                         pid = item.get("plugin_id")

@@ -1056,7 +1056,7 @@ async function refreshPlugins() {
   }
 }
 
-async function handleCheckUpdates() {
+async function handleCheckUpdates(silent = false) {
   checkingUpdates.value = true
   try {
     const res = await checkPluginUpdates()
@@ -1067,13 +1067,17 @@ async function handleCheckUpdates() {
       }
     }
     pluginUpdates.value = map
-    if (map.size > 0) {
-      notify(t('plugin.updates_found', { count: map.size }), 'success')
-    } else {
-      notify(t('plugin.no_updates'), 'success')
+    if (!silent) {
+      if (map.size > 0) {
+        notify(t('plugin.updates_found', { count: map.size }), 'success')
+      } else {
+        notify(t('plugin.no_updates'), 'success')
+      }
     }
   } catch {
-    notify(t('plugin.update_check_failed'), 'error')
+    if (!silent) {
+      notify(t('plugin.update_check_failed'), 'error')
+    }
   } finally {
     checkingUpdates.value = false
   }
@@ -1740,8 +1744,8 @@ async function handleStoreUpdate(item: PluginStoreItem) {
   await handleUpdatePlugin(plugin)
 }
 
-onMounted(() => {
-  loadPlugins()
+onMounted(async () => {
+  await loadPlugins()
   loadMcpServers()
   loadSkills()
   loadScope()
@@ -1751,5 +1755,7 @@ onMounted(() => {
       fetchStorePlugins()
     }
   })
+  // Auto-check for plugin updates on page load (silent: no notification if none)
+  handleCheckUpdates(true)
 })
 </script>
