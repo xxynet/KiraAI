@@ -32,3 +32,10 @@ export async function getLogHistory(limit?: number) {
 export function getLogConfig() {
   return apiClient.get<LogConfig>('/log-config')
 }
+
+export async function installPackages(packages: string, pypiMirror?: string) {
+  return apiClient.post('/install-packages', {
+    packages,
+    pypi_mirror: pypiMirror || undefined,
+  })
+}
