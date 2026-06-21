@@ -162,10 +162,19 @@ class AgentExecutor:
             reasoning = llm_resp.reasoning_content or ""
 
             await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
+            # An ON_TOOL_RESULT handler may stop the event mid multi-tool-call turn,
+            # leaving execute_tool to produce only partial tool_results. Keep the
+            # assistant message's tool_calls consistent with the tool_results actually
+            # produced (matched by id), so history never contains an assistant message
+            # with unanswered tool_calls (which would 400 the next OpenAI request).
+            answered_ids = {r.get("tool_call_id") for r in llm_resp.tool_results}
+            answered_tool_calls = [
+                tc for tc in llm_resp.tool_calls if tc.get("id") in answered_ids
+            ]
             msg = OpenAIMessage(
                 role="assistant",
                 content=assistant_content,
-                tool_calls=llm_resp.tool_calls,
+                tool_calls=answered_tool_calls,
                 reasoning_content=reasoning
             )
             request.messages.append(msg)
