@@ -463,7 +463,7 @@ class MCPManager:
         tasks = [asyncio.create_task(init_server(server)) for server in self.servers]
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            for server, result in zip(self.servers, results):
+            for server, result in zip(self.servers, results, strict=True):
                 if isinstance(result, Exception):
                     logger.error(f"Failed to initialize MCP server {server.name}: {result}")
 
