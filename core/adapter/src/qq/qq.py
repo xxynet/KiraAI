@@ -118,6 +118,9 @@ class QQAdapter(IMAdapter):
     async def send_group_message(self, group_id, send_message_obj):
         try:
             message_chain = await self._process_outgoing_message(send_message_obj)
+            if not message_chain:
+                self.logger.warning("处理后的消息链为空，跳过群消息发送")
+                return KiraIMSentResult(None, ok=False, err="Empty message chain after processing")
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid, group_id=group_id)
@@ -268,6 +271,11 @@ class QQAdapter(IMAdapter):
         msg_res = KiraIMSentResult(None)
         try:
             message_chain = await self._process_outgoing_message(send_message_obj)
+            if not message_chain:
+                self.logger.warning("处理后的消息链为空，跳过私聊消息发送")
+                msg_res.ok = False
+                msg_res.err = "Empty message chain after processing"
+                return msg_res
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid)
@@ -439,10 +447,10 @@ class QQAdapter(IMAdapter):
                 emoji_desc = self.emoji_dict.get(emoji_id)
                 message_content.append(Emoji(emoji_id, emoji_desc))
             elif ele.get("type") == "image":
-                img_url = ele.get("data", "").get("url", "")
+                img_url = ele.get("data", {}).get("url", "")
 
-                summary = ele.get("data", "").get("summary", "")
-                sub_type = ele.get("data", "").get("sub_type", 0)
+                summary = ele.get("data", {}).get("summary", "")
+                sub_type = ele.get("data", {}).get("sub_type", 0)
 
                 if sub_type == 1 or summary == "[动画表情]":
                     from core.utils.common_utils import image_to_base64
@@ -461,7 +469,7 @@ class QQAdapter(IMAdapter):
                     import traceback
                     self.logger.error(traceback.format_exc())
             elif ele.get("type") == "json":
-                json_card_info = ele.get("data", "").get("data", "")
+                json_card_info = ele.get("data", {}).get("data", "")
                 card_data = extract_card_info(json_card_info)
                 message_content.append(Json(card_data))
             elif ele.get("type") == "file":

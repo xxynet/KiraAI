@@ -74,6 +74,8 @@ class OpenAIImageClient(ImageModelClient):
                 response_format="url",
                 extra_body={"watermark": False},
             )
+            if not images_response.data:
+                raise ValueError("Image generation API returned empty data")
             return Image(image=images_response.data[0].url)
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Image generation API error: {e}")
@@ -254,6 +256,8 @@ class OpenAIImageClient(ImageModelClient):
                 response_format="url",
                 extra_body={"watermark": False, "image": image_data_urls},
             )
+            if not images_response.data:
+                raise ValueError("Image-to-image generation API returned empty data")
             return Image(image=images_response.data[0].url)
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Image-to-image generation API error: {e}")
