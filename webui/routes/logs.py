@@ -19,6 +19,7 @@ class InstallPackagesRequest(BaseModel):
 
 
 class LogsRoutes(Routes):
+    _install_task: asyncio.Task | None = None
     def get_routes(self):
         return [
             RouteDefinition(
@@ -116,7 +117,9 @@ class LogsRoutes(Routes):
         packages = body.packages.strip()
         if not packages:
             raise HTTPException(status_code=400, detail="No packages specified")
-        asyncio.create_task(self._run_pip_install(packages, body.pypi_mirror))
+        if self._install_task and not self._install_task.done():
+            raise HTTPException(status_code=409, detail="Another installation is already in progress")
+        self._install_task = asyncio.create_task(self._run_pip_install(packages, body.pypi_mirror))
         return {"status": "started"}
 
     async def _run_pip_install(self, packages: str, pypi_mirror: str | None = None):

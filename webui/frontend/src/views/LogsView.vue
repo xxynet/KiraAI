@@ -244,9 +244,13 @@ async function handleInstall() {
     notify(t('logs.install_started'), 'success')
     showInstallPanel.value = false
     installPackagesInput.value = ''
-  } catch (e) {
+  } catch (e: any) {
     console.error('Failed to start package installation:', e)
-    notify(t('logs.install_failed'), 'error')
+    if (e?.response?.status === 409) {
+      notify(t('logs.install_already_running'), 'warning')
+    } else {
+      notify(t('logs.install_failed'), 'error')
+    }
   } finally {
     isInstalling.value = false
   }

@@ -689,6 +689,7 @@ export default {
     install_started: '安装已启动，请查看日志了解进度',
     install_failed: '启动安装失败',
     install_no_packages: '请输入至少一个包名',
+    install_already_running: '已有安装任务正在运行中',
   },
   settings: {
     title: '系统设置',

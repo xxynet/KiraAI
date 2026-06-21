@@ -689,6 +689,7 @@ export default {
     install_started: 'Installation started, check logs for progress',
     install_failed: 'Failed to start installation',
     install_no_packages: 'Please enter at least one package name',
+    install_already_running: 'Another installation is already in progress',
   },
   settings: {
     title: 'System Settings',
