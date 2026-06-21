@@ -69,14 +69,6 @@
           <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': refreshingPlugins }" />
           <span>{{ $t('common.refresh') }}</span>
         </button>
-        <button
-          v-if="pluginUpdates.size > 0"
-          type="button"
-          class="inline-flex items-center px-3 py-1.5 border border-green-300 dark:border-green-600 rounded-md text-xs font-medium text-green-700 dark:text-green-200 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors ml-2"
-          @click="handleUpdateAll"
-        >
-          {{ $t('plugin.update_all', { count: pluginUpdates.size }) }}
-        </button>
         <div class="relative ml-auto">
           <input
             v-model="pluginsSearchTerm"
@@ -1099,27 +1091,6 @@ async function confirmUpdate() {
     notify(t('plugin.update_failed'), 'error')
   } finally {
     updatingPlugins.value.delete(plugin.id)
-  }
-}
-
-async function handleUpdateAll() {
-  const toUpdate = Array.from(pluginUpdates.value.keys())
-  const ghProxy = resolveGhProxy()
-  for (const pid of toUpdate) {
-    const plugin = plugins.value.find(p => p.id === pid)
-    if (plugin && !updatingPlugins.value.has(pid)) {
-      updatingPlugins.value.add(plugin.id)
-      try {
-        await apiUpdatePlugin(plugin.id, { gh_proxy: ghProxy })
-        pluginUpdates.value.delete(plugin.id)
-        notify(t('plugin.update_success'), 'success')
-        await loadPlugins()
-      } catch {
-        notify(t('plugin.update_failed'), 'error')
-      } finally {
-        updatingPlugins.value.delete(plugin.id)
-      }
-    }
   }
 }
 
