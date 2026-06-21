@@ -50,7 +50,11 @@ class KiraConfig(dict):
 
         self.update(copy.deepcopy(self.default_config))
         self._deep_update(self, data)
-        self.save_config()
+        # Only persist when merging defaults actually changed the config (e.g.
+        # newly-added default keys). An unchanged config must not be rewritten
+        # on every boot.
+        if dict(self) != data:
+            self.save_config()
 
     def _deep_update(self, target: dict, source: dict):
         """Recursively update target dict with source dict"""

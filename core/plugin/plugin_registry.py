@@ -1339,10 +1339,20 @@ class PluginManager:
             if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
                 _plugin_infos[plugin_id].status = "ready"
 
-        # Phase 2: Recover plugins that failed with import errors
+        # Phase 2: Recover plugins that failed with import errors.
+        # Detect missing-dependency failures reliably: accept any error_type that
+        # is an ImportError subclass (covers ModuleNotFoundError and ImportError),
+        # and fall back to the error message when error_type was not stored.
+        def _is_missing_dep_failure(err_info: Dict[str, Any]) -> bool:
+            err_type = err_info.get("error_type")
+            if isinstance(err_type, type) and issubclass(err_type, ImportError):
+                return True
+            msg = str(err_info.get("error", "")).lower()
+            return "no module named" in msg or "modulenotfounderror" in msg
+
         import_failures = [
             pid for pid, err_info in _plugin_load_errors.items()
-            if err_info.get("error_type") is ModuleNotFoundError and pid in _plugin_module_paths
+            if _is_missing_dep_failure(err_info) and pid in _plugin_module_paths
         ]
         if import_failures:
             logger.info(f"Plugins with import errors, will attempt dependency install: {import_failures}")
@@ -1851,6 +1861,7 @@ class PluginManager:
                     _plugin_load_errors[plugin_id] = {
                         "manifest": _plugin_manifests.get(plugin_id, {}),
                         "error": f"Import error (after retry): {retry_e}",
+                        "error_type": type(retry_e),
                     }
                     if plugin_id in _plugin_infos:
                         _plugin_infos[plugin_id].error = f"Import error (after retry): {retry_e}"

@@ -752,19 +752,34 @@ class WeixinOCAdapter(IMAdapter):
     async def _save_account_state(self) -> None:
         """保存登录状态到配置文件"""
         try:
-            # 更新内存中的配置
+            # 更新内存中的配置。self.info.config 是共享配置树中本适配器
+            # config 子树的实时引用，原地修改即同步到全局内存配置。
             self.info.config["weixin_oc_token"] = self.token or ""
             self.info.config["weixin_oc_account_id"] = self.account_id or ""
             self.info.config["weixin_oc_sync_buf"] = self._sync_buf
             self.info.config["weixin_oc_base_url"] = self.base_url
-            
-            # 保存到配置文件
-            from core.config.config_loader import KiraConfig
-            kira_config = KiraConfig()
-            adapters = kira_config.get("adapters", {})
+
+            # Persist by updating only this adapter's config subtree on disk.
+            # Constructing a fresh KiraConfig() would reload defaults and rewrite
+            # the whole file, clobbering unsaved in-memory edits to other sections.
+            import json
+            import os
+            from core.config.config_loader import CONFIG_PATH
+
+            if not os.path.exists(CONFIG_PATH):
+                self.logger.warning(
+                    "weixin_oc(%s): config file not found, skip saving state",
+                    self.info.name,
+                )
+                return
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            adapters = data.get("adapters", {})
             if self.info.adapter_id in adapters:
                 adapters[self.info.adapter_id]["config"] = dict(self.info.config)
-                kira_config.save_config()
+                os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+                with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                    f.write(json.dumps(data, indent=4, ensure_ascii=False))
                 self.logger.info("weixin_oc(%s): account state saved", self.info.name)
             else:
                 self.logger.warning("weixin_oc(%s): adapter not found in config", self.info.name)

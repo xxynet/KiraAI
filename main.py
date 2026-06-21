@@ -210,7 +210,10 @@ def _run_supervisor(args: argparse.Namespace):
             print(f"[supervisor] Exceeded {MAX_RESTARTS} rapid restarts, exiting.")
             break
 
-        backoff = min(RESTART_BACKOFF_BASE * restart_count, 60)
+        # Exponential backoff capped at 60s. restart_count is already 1 on the
+        # first restart, so 2 ** (restart_count - 1) makes the first backoff
+        # equal to RESTART_BACKOFF_BASE.
+        backoff = min(RESTART_BACKOFF_BASE * (2 ** (restart_count - 1)), 60)
         print(f"[supervisor] Restart {restart_count}/{MAX_RESTARTS} in {backoff}s ...")
         time.sleep(backoff)
 
