@@ -31,7 +31,7 @@ class BiliBiliAdapter(SocialMediaAdapter):
         self.listening_task = None
         self.bot_uid = self.config.get("bot_uid")
         self._credential = Credential(
-            sessdata=self.config.get("sessdata") or self.config.get("sesdata", ""),
+            sessdata=self.config.get("sessdata", ""),
             bili_jct=self.config.get("bili_jct", ""),
             buvid3=self.config.get("buvid3", ""),
             dedeuserid=self.config.get("dedeuserid", ""),
