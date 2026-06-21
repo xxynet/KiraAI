@@ -457,23 +457,35 @@ class TelemetryClient:
             # Message stats — combine all platforms per hour into one event
             msg_rows = await self.db.get_unreported_telemetry_messages_by_hour(since_ts)
             if msg_rows:
+                # Collect the exact row ids aggregated into each hour bucket so that on
+                # success we mark only those rows — never rows inserted into the still-filling
+                # current hour between this read and the deferred on-success mark.
+                msg_ids_by_hour: dict[int, list[str]] = {}
+                for id_row in await self.db.get_unreported_telemetry_message_ids_by_hour(since_ts):
+                    msg_ids_by_hour.setdefault(id_row["hour_ts"], []).append(id_row["id"])
+
                 by_hour: dict[int, dict[str, int]] = {}
                 for row in msg_rows:
                     hour = by_hour.setdefault(row["hour_ts"], {})
                     hour[row["platform"]] = hour.get(row["platform"], 0) + row["count"]
                 for hour_ts, platforms in by_hour.items():
-                    h = hour_ts
+                    ids = msg_ids_by_hour.get(hour_ts, [])
                     self.send_event(TelemetryEventType.MESSAGE_STATS, {
                         "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
                         "total_messages": sum(platforms.values()),
                         "messages_by_platform": platforms,
                         "time_window_minutes": 60,
-                    }, on_success=lambda h=h: self.db.mark_telemetry_messages_by_hours([h]))
+                    }, on_success=lambda ids=ids: self.db.mark_telemetry_messages_by_ids(ids))
                     event_count += 1
 
             # LLM usage stats — one event per hour, models nested
             llm_rows = await self.db.get_unreported_telemetry_llm_usage_by_hour(since_ts)
             if llm_rows:
+                # Collect the exact row ids aggregated into each hour bucket (see note above).
+                llm_ids_by_hour: dict[int, list[str]] = {}
+                for id_row in await self.db.get_unreported_telemetry_llm_usage_ids_by_hour(since_ts):
+                    llm_ids_by_hour.setdefault(id_row["hour_ts"], []).append(id_row["id"])
+
                 llm_by_hour: dict[int, list[dict]] = {}
                 for row in llm_rows:
                     llm_by_hour.setdefault(row["hour_ts"], []).append(row)
@@ -496,7 +508,7 @@ class TelemetryClient:
                             "total_cached_tokens": r["total_cached"],
                             "avg_response_time_ms": avg_resp,
                         }
-                    h = hour_ts
+                    ids = llm_ids_by_hour.get(hour_ts, [])
                     self.send_event(TelemetryEventType.LLM_USAGE, {
                         "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
                         "total_calls": total_calls,
@@ -507,7 +519,7 @@ class TelemetryClient:
                         "total_cached_tokens": total_cached,
                         "avg_response_time_ms": int(total_resp_ms / total_calls) if total_calls else 0,
                         "models": models,
-                    }, on_success=lambda h=h: self.db.mark_telemetry_llm_by_hours([h]))
+                    }, on_success=lambda ids=ids: self.db.mark_telemetry_llm_by_ids(ids))
                     event_count += 1
 
             if event_count:

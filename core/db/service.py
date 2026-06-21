@@ -387,6 +387,21 @@ class DatabaseService:
         rows = await self.db.fetch_all(stmt)
         return [{"hour_ts": r["hour_ts"], "platform": r["platform"], "count": r["count"]} for r in rows]
 
+    async def get_unreported_telemetry_message_ids_by_hour(self, since_ts: int) -> list[dict]:
+        """Return the primary-key id of every unreported message row tagged with its hour bucket.
+
+        Used to mark only the exact rows that were aggregated into a report, avoiding the
+        race where rows inserted into the still-filling hour after aggregation get marked
+        reported without ever being sent.
+        """
+        hour_bucket = cast(TelemetryMessage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(hour_bucket.label("hour_ts"), TelemetryMessage.id)
+            .where(and_(TelemetryMessage.reported.is_(False), TelemetryMessage.timestamp >= since_ts))
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [{"hour_ts": r["hour_ts"], "id": r["id"]} for r in rows]
+
     async def get_unreported_telemetry_llm_usage_by_hour(self, since_ts: int) -> list[dict]:
         """Return per-(hour, model) rows for building aggregated hourly reports."""
         hour_bucket = cast(TelemetryLLMUsage.timestamp / 3600, Integer) * 3600
@@ -415,6 +430,21 @@ class DatabaseService:
             for r in rows
         ]
 
+    async def get_unreported_telemetry_llm_usage_ids_by_hour(self, since_ts: int) -> list[dict]:
+        """Return the primary-key id of every unreported LLM-usage row tagged with its hour bucket.
+
+        Used to mark only the exact rows that were aggregated into a report, avoiding the
+        race where rows inserted into the still-filling hour after aggregation get marked
+        reported without ever being sent.
+        """
+        hour_bucket = cast(TelemetryLLMUsage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(hour_bucket.label("hour_ts"), TelemetryLLMUsage.id)
+            .where(and_(TelemetryLLMUsage.reported.is_(False), TelemetryLLMUsage.timestamp >= since_ts))
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [{"hour_ts": r["hour_ts"], "id": r["id"]} for r in rows]
+
     async def mark_telemetry_reported(self) -> None:
         async with self.db.transaction() as session:
             await session.execute(
@@ -428,31 +458,33 @@ class DatabaseService:
                 .values(reported=True)
             )
 
-    async def mark_telemetry_messages_by_hours(self, hour_ts_list: list[int]) -> None:
-        if not hour_ts_list:
+    async def mark_telemetry_messages_by_ids(self, ids: list[str]) -> None:
+        """Mark only the specific message rows (by primary key) as reported.
+
+        Marking exact ids — instead of an hour window — guarantees rows inserted into the
+        still-filling hour after aggregation are never marked reported without being sent.
+        """
+        if not ids:
             return
         async with self.db.transaction() as session:
-            conditions = [
-                and_(TelemetryMessage.timestamp >= h, TelemetryMessage.timestamp < h + 3600)
-                for h in hour_ts_list
-            ]
             await session.execute(
                 TelemetryMessage.__table__.update()
-                .where(and_(TelemetryMessage.reported.is_(False), or_(*conditions)))
+                .where(TelemetryMessage.id.in_(ids))
                 .values(reported=True)
             )
 
-    async def mark_telemetry_llm_by_hours(self, hour_ts_list: list[int]) -> None:
-        if not hour_ts_list:
+    async def mark_telemetry_llm_by_ids(self, ids: list[str]) -> None:
+        """Mark only the specific LLM-usage rows (by primary key) as reported.
+
+        Marking exact ids — instead of an hour window — guarantees rows inserted into the
+        still-filling hour after aggregation are never marked reported without being sent.
+        """
+        if not ids:
             return
         async with self.db.transaction() as session:
-            conditions = [
-                and_(TelemetryLLMUsage.timestamp >= h, TelemetryLLMUsage.timestamp < h + 3600)
-                for h in hour_ts_list
-            ]
             await session.execute(
                 TelemetryLLMUsage.__table__.update()
-                .where(and_(TelemetryLLMUsage.reported.is_(False), or_(*conditions)))
+                .where(TelemetryLLMUsage.id.in_(ids))
                 .values(reported=True)
             )
 

@@ -120,12 +120,18 @@ class ImageDescCache:
         return None
 
     async def set(self, md5: str, description: str):
+        # Never cache an empty/failed description: an empty string would otherwise be
+        # stored permanently as the caption for this md5 and served to every later hit.
+        if not description:
+            return
         existing = await self.db.get_image_desc_cache(md5)
         if existing:
+            # Preserve the accumulated hit count that cleanup relies on; resetting it to 1
+            # on every update would prevent frequently-seen entries from being retained.
             await self.db.update_image_desc_cache(
                 md5,
                 description=description,
-                count=1,
+                count=existing["count"],
                 last_seen=int(time.time()),
             )
         else:
