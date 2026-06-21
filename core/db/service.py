@@ -387,20 +387,21 @@ class DatabaseService:
         rows = await self.db.fetch_all(stmt)
         return [{"hour_ts": r["hour_ts"], "platform": r["platform"], "count": r["count"]} for r in rows]
 
-    async def get_unreported_telemetry_message_ids_by_hour(self, since_ts: int) -> list[dict]:
-        """Return the primary-key id of every unreported message row tagged with its hour bucket.
+    async def get_unreported_telemetry_message_rows(self, since_ts: int) -> list[dict]:
+        """Return every unreported message row (id + hour bucket + platform) in one query.
 
-        Used to mark only the exact rows that were aggregated into a report, avoiding the
-        race where rows inserted into the still-filling hour after aggregation get marked
-        reported without ever being sent.
+        Deriving BOTH the per-platform counts and the id set to mark from this single
+        snapshot keeps them exactly consistent: no row can be counted without being
+        marked reported, or marked without being counted (which the previous two-query
+        approach allowed when a row was inserted between the two reads).
         """
         hour_bucket = cast(TelemetryMessage.timestamp / 3600, Integer) * 3600
         stmt = (
-            select(hour_bucket.label("hour_ts"), TelemetryMessage.id)
+            select(hour_bucket.label("hour_ts"), TelemetryMessage.platform, TelemetryMessage.id)
             .where(and_(TelemetryMessage.reported.is_(False), TelemetryMessage.timestamp >= since_ts))
         )
         rows = await self.db.fetch_all(stmt)
-        return [{"hour_ts": r["hour_ts"], "id": r["id"]} for r in rows]
+        return [{"hour_ts": r["hour_ts"], "platform": r["platform"], "id": r["id"]} for r in rows]
 
     async def get_unreported_telemetry_llm_usage_by_hour(self, since_ts: int) -> list[dict]:
         """Return per-(hour, model) rows for building aggregated hourly reports."""
@@ -430,20 +431,39 @@ class DatabaseService:
             for r in rows
         ]
 
-    async def get_unreported_telemetry_llm_usage_ids_by_hour(self, since_ts: int) -> list[dict]:
-        """Return the primary-key id of every unreported LLM-usage row tagged with its hour bucket.
+    async def get_unreported_telemetry_llm_usage_rows(self, since_ts: int) -> list[dict]:
+        """Return every unreported LLM-usage row (id + hour bucket + measures) in one query.
 
-        Used to mark only the exact rows that were aggregated into a report, avoiding the
-        race where rows inserted into the still-filling hour after aggregation get marked
-        reported without ever being sent.
+        Counts and the id set to mark are aggregated in Python from this single
+        snapshot (see get_unreported_telemetry_message_rows for the consistency
+        rationale).
         """
         hour_bucket = cast(TelemetryLLMUsage.timestamp / 3600, Integer) * 3600
         stmt = (
-            select(hour_bucket.label("hour_ts"), TelemetryLLMUsage.id)
+            select(
+                hour_bucket.label("hour_ts"),
+                TelemetryLLMUsage.id,
+                TelemetryLLMUsage.model,
+                TelemetryLLMUsage.success,
+                TelemetryLLMUsage.input_tokens,
+                TelemetryLLMUsage.output_tokens,
+                TelemetryLLMUsage.cached_tokens,
+                TelemetryLLMUsage.response_time_ms,
+            )
             .where(and_(TelemetryLLMUsage.reported.is_(False), TelemetryLLMUsage.timestamp >= since_ts))
         )
         rows = await self.db.fetch_all(stmt)
-        return [{"hour_ts": r["hour_ts"], "id": r["id"]} for r in rows]
+        return [
+            {
+                "hour_ts": r["hour_ts"], "id": r["id"], "model": r["model"],
+                "success": r["success"],
+                "input_tokens": r["input_tokens"] or 0,
+                "output_tokens": r["output_tokens"] or 0,
+                "cached_tokens": r["cached_tokens"] or 0,
+                "response_time_ms": r["response_time_ms"] or 0,
+            }
+            for r in rows
+        ]
 
     async def mark_telemetry_reported(self) -> None:
         async with self.db.transaction() as session:
@@ -467,11 +487,15 @@ class DatabaseService:
         if not ids:
             return
         async with self.db.transaction() as session:
-            await session.execute(
-                TelemetryMessage.__table__.update()
-                .where(TelemetryMessage.id.in_(ids))
-                .values(reported=True)
-            )
+            # Chunk so the bound-parameter count stays well under SQLite's
+            # SQLITE_MAX_VARIABLE_NUMBER (999 on older builds) no matter how many
+            # rows accumulated in an hour bucket.
+            for i in range(0, len(ids), 500):
+                await session.execute(
+                    TelemetryMessage.__table__.update()
+                    .where(TelemetryMessage.id.in_(ids[i:i + 500]))
+                    .values(reported=True)
+                )
 
     async def mark_telemetry_llm_by_ids(self, ids: list[str]) -> None:
         """Mark only the specific LLM-usage rows (by primary key) as reported.
@@ -482,11 +506,14 @@ class DatabaseService:
         if not ids:
             return
         async with self.db.transaction() as session:
-            await session.execute(
-                TelemetryLLMUsage.__table__.update()
-                .where(TelemetryLLMUsage.id.in_(ids))
-                .values(reported=True)
-            )
+            # Chunk to stay under SQLite's bound-parameter limit (see
+            # mark_telemetry_messages_by_ids).
+            for i in range(0, len(ids), 500):
+                await session.execute(
+                    TelemetryLLMUsage.__table__.update()
+                    .where(TelemetryLLMUsage.id.in_(ids[i:i + 500]))
+                    .values(reported=True)
+                )
 
     async def delete_telemetry_records_before(self, cutoff_ts: int) -> None:
         async with self.db.transaction() as session:

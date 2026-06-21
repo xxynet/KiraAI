@@ -112,7 +112,14 @@ class VideoTag(BaseTag):
         model_id = video_client.model.model_id
         provider_logger.info(f"Generating video using {model_id} ({provider_name})")
 
-        video_obj = await video_client.generate_video(prompt=value)
+        try:
+            video_obj = await video_client.generate_video(prompt=value)
+        except Exception as e:
+            # generate_video may raise (timeout / failed status / no url). Drop
+            # only this element instead of letting the exception abort the whole
+            # message turn, mirroring RecordTag's handling.
+            provider_logger.error(f"an error occurred while generating video: {e}")
+            return []
         if video_obj:
             provider_logger.info(f"Generated video from text {value}")
             return [video_obj]
