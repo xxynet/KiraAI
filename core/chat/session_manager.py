@@ -33,6 +33,20 @@ class SessionManager:
         self.chat_memory = self._load_memory(self.chat_memory_path)
         self._ensure_memory_format()
 
+        # === SubAgent router ===
+        self._subagent_router = None
+
+    def register_subagent_router(self, router):
+        self._subagent_router = router
+
+    def _is_subagent_session(self, session: str) -> bool:
+        return isinstance(session, str) and session.startswith("sub:dm:")
+
+    def _route_to_subagent(self, session: str):
+        if self._subagent_router and self._is_subagent_session(session):
+            return self._subagent_router
+        return None
+
     @staticmethod
     def _load_memory(path: str) -> Dict[str, dict]:
         """加载会话记忆文件"""
@@ -70,6 +84,8 @@ class SessionManager:
         self._save_memory(self.chat_memory, self.chat_memory_path)
 
     def _ensure_session_data(self, session: str):
+        if self._is_subagent_session(session):
+            return
         with self.memory_lock:
             if session not in self.chat_memory:
                 self.chat_memory[session] = {
@@ -124,6 +140,29 @@ class SessionManager:
                 ))
             return session_info_list
 
+        if self._is_subagent_session(session):
+            parts = session.split(":", maxsplit=3)
+            if len(parts) >= 4:
+                parent_session = parts[2]
+                subagent_id = parts[3]
+                return Session(
+                    adapter_name=parts[0],
+                    session_type=parts[1],
+                    session_id=f"{parent_session}:{subagent_id}",
+                    session_title="",
+                    session_description="",
+                    timestamp=None
+                )
+            parts = session.split(":", maxsplit=2)
+            return Session(
+                adapter_name=parts[0],
+                session_type=parts[1],
+                session_id=parts[2] if len(parts) >= 3 else "",
+                session_title="",
+                session_description="",
+                timestamp=None
+            )
+
         parts = session.split(":", maxsplit=2)
 
         self._ensure_session_data(session)
@@ -148,11 +187,17 @@ class SessionManager:
             self._save_memory()
 
     def get_memory_count(self, session: str) -> int:
+        router = self._route_to_subagent(session)
+        if router:
+            return len(router.fetch_memory(session))
         if session not in self.chat_memory:
             return 0
         return len(self.chat_memory[session].get("memory", []))
 
     def fetch_memory(self, session: str):
+        router = self._route_to_subagent(session)
+        if router:
+            return router.fetch_memory(session)
         self._ensure_session_data(session)
         mem_list = self.chat_memory[session].get("memory", [])
         messages = []
@@ -162,16 +207,29 @@ class SessionManager:
         return messages
 
     def read_memory(self, session: str):
+        router = self._route_to_subagent(session)
+        if router:
+            return router.fetch_memory(session)
         self._ensure_session_data(session)
         return self.chat_memory[session].get("memory", [])
 
     def write_memory(self, session: str, memory: list[list[dict]]):
+        router = self._route_to_subagent(session)
+        if router:
+            router.write_memory(session, memory)
+            logger.info(f"Memory written for subagent session {session}")
+            return
         with self.memory_lock:
             self.chat_memory[session]["memory"] = memory
             self._save_memory(self.chat_memory, self.chat_memory_path)
         logger.info(f"Memory written for {session}")
 
     def update_memory(self, session: str, new_chunk):
+        router = self._route_to_subagent(session)
+        if router:
+            router.update_memory(session, new_chunk)
+            logger.info(f"Memory updated for subagent session {session}")
+            return
         self._ensure_session_data(session)
         from core.agent.message import OpenAIMessage
         new_chunk = [m.to_dict() if isinstance(m, OpenAIMessage) else m for m in new_chunk]
@@ -186,6 +244,11 @@ class SessionManager:
         logger.info(f"Memory updated for {session}")
 
     def delete_session(self, session: str):
+        router = self._route_to_subagent(session)
+        if router:
+            router.delete_session(session)
+            logger.info(f"Memory deleted for subagent session {session}")
+            return
         with self.memory_lock:
             self.chat_memory.pop(session, None)
             self._save_memory(self.chat_memory, self.chat_memory_path)

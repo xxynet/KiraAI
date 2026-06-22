@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import inspect
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING, Literal
+from typing import Any, Optional, TYPE_CHECKING, Literal
 
 from ..provider import ProviderManager, LLMModelClient, EmbeddingModelClient
 from core.chat.session_manager import SessionManager
@@ -46,6 +46,8 @@ class PluginContext:
     message_processor: MessageProcessor
 
     plugin_mgr: Optional[PluginManager] = None
+
+    subagent_registry: Optional[Any] = None
 
     def get_plugin_data_dir(self):
         base_dir = get_data_path() / "plugin_data"
@@ -132,6 +134,13 @@ class PluginContext:
         if isinstance(client, EmbeddingModelClient):
             return client
         return
+
+    def register_subagent(self, config):
+        from core.subagent import SubAgentConfig
+        if self.subagent_registry and isinstance(config, SubAgentConfig):
+            self.subagent_registry.register(config)
+            return True
+        return False
 
     async def publish_notice(self, session: str, chain: MessageChain, is_mentioned: bool = True):
         import time

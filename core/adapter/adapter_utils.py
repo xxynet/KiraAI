@@ -7,6 +7,9 @@ from typing import Union, Optional, List, TYPE_CHECKING
 from core.adapter.adapter_info import AdapterInfo
 
 if TYPE_CHECKING:
+    from core.llm_client import LLMClient
+
+if TYPE_CHECKING:
     from core.chat.message_utils import KiraMessageEvent, MessageChain
     from core.chat.message_utils import KiraIMSentResult
 

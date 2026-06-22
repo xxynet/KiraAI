@@ -201,6 +201,41 @@ class KiraLifecycle:
         self.message_processor.event_bus = self.event_bus
 
         # ====== init plugin system ======
+        # ====== init SubAgent registry & router ======
+        from core.subagent import SubAgentRegistry, SubAgentRouter
+
+        self.subagent_registry = SubAgentRegistry()
+        self.subagent_router = SubAgentRouter(
+            registry=self.subagent_registry,
+            provider_mgr=self.provider_manager,
+            llm_api=self.llm_api,
+            prompt_manager=self.prompt_manager,
+        )
+        self.session_manager.register_subagent_router(self.subagent_router)
+
+        # ====== register SubAgent tools (call_subagent / create_subagent) ======
+        from core.subagent.client import SubAgentClient
+        from core.subagent.tools import CallSubAgentTool, CreateSubAgentTool
+
+        subagent_client = SubAgentClient(self.subagent_router)
+
+        call_tool = CallSubAgentTool(subagent_client, self.subagent_registry)
+        self.llm_api.register_tool(
+            name=call_tool.name,
+            description=call_tool.description,
+            parameters=call_tool.parameters,
+            func=call_tool.execute,
+        )
+
+        available_tools = list(self.llm_api.tools_functions.keys())
+        create_tool = CreateSubAgentTool(self.subagent_registry, available_tools)
+        self.llm_api.register_tool(
+            name=create_tool.name,
+            description=create_tool.description,
+            parameters=create_tool.parameters,
+            func=create_tool.execute,
+        )
+
         self.plugin_context = PluginContext(
             db=self.db_service,
             config=self.kira_config,
@@ -211,7 +246,8 @@ class KiraLifecycle:
             persona_mgr=self.persona_manager,
             sticker_manager=self.sticker_manager,
             session_mgr=self.session_manager,
-            message_processor=self.message_processor
+            message_processor=self.message_processor,
+            subagent_registry=self.subagent_registry,
         )
 
         self.plugin_manager = PluginManager(self.plugin_context)
