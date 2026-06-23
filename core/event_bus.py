@@ -95,7 +95,9 @@ class EventBus:
         if isinstance(event, KiraCustomEvent):
             from core.plugin.plugin_handlers import event_handler_reg, EventType as PluginEventType
             for handler in event_handler_reg.get_handlers(PluginEventType.ON_CUSTOM_EVENT):
-                await handler.exec_handler(event)
+                filter_name = getattr(handler.handler, '_custom_event_name', None)
+                if filter_name is None or filter_name == event.event_name:
+                    await handler.exec_handler(event)
             return
         async with self.message_processing_semaphore:
             if isinstance(event, KiraMessageEvent):
