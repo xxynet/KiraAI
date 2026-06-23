@@ -58,6 +58,33 @@
       </div>
     </div>
 
+    <!-- Plugin Widgets: Small Cards -->
+    <div v-if="smallWidgets.length"
+         class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <div v-for="w in smallWidgets" :key="w.widget_id" class="glass-card rounded-lg p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-gray-600">{{ resolveWidgetLabel(w.label) }}</p>
+            <p class="text-2xl font-bold text-gray-900 mt-2">{{ w.value }}</p>
+          </div>
+          <div class="rounded-full p-3" :style="widgetBgStyle(w.color)">
+            <component :is="resolveWidgetIcon(w.icon)"
+                       class="w-6 h-6" :style="widgetFgStyle(w.color)" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plugin Widgets: Wide Cards -->
+    <template v-for="w in wideWidgets" :key="w.widget_id">
+      <div class="glass-card rounded-lg p-6 mb-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+          {{ resolveWidgetLabel(w.label) }}
+        </h3>
+        <div v-html="w.html"></div>
+      </div>
+    </template>
+
     <!-- System Status -->
     <div class="glass-card rounded-lg p-6">
       <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.system_status') }}</h3>
@@ -74,9 +101,11 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { IconClock, IconChat, IconTerminal, IconCpu } from '@/components/icons'
 import { getOverview } from '@/api/overview'
-import type { OverviewResponse } from '@/types'
+import type { OverviewResponse, OverviewWidget } from '@/types'
+import { Box } from '@element-plus/icons-vue'
+import { iconMap } from '@/utils/iconMap'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const overview = ref<OverviewResponse | null>(null)
 const runtimeSeconds = ref(0)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
@@ -111,6 +140,49 @@ const statusText = computed(() => {
   if (!status || !validStatuses.includes(status)) return t('overview.status_unknown')
   return t(`overview.status_${status}`)
 })
+
+/* ---- Plugin widget helpers ---- */
+
+function resolveWidgetLabel(label: string | Record<string, string>): string {
+  if (typeof label === 'string') return label
+  const loc = locale.value
+  return label[loc] || label['en'] || Object.values(label)[0] || ''
+}
+
+function resolveWidgetIcon(iconName: string) {
+  return iconMap[iconName] || Box
+}
+
+/** Map widget color names to hex values for inline styles.
+ *  Tailwind dynamic classes like `bg-${color}-100` are purged at build time,
+ *  so we use inline styles instead. */
+const widgetColorMap: Record<string, { bg: string; fg: string }> = {
+  blue:   { bg: '#dbeafe', fg: '#2563eb' },
+  green:  { bg: '#dcfce7', fg: '#16a34a' },
+  purple: { bg: '#f3e8ff', fg: '#9333ea' },
+  yellow: { bg: '#fef9c3', fg: '#ca8a04' },
+  red:    { bg: '#fee2e2', fg: '#dc2626' },
+  gray:   { bg: '#f3f4f6', fg: '#4b5563' },
+}
+
+function widgetBgStyle(color: string) {
+  return { backgroundColor: widgetColorMap[color]?.bg || widgetColorMap.blue.bg }
+}
+function widgetFgStyle(color: string) {
+  return { color: widgetColorMap[color]?.fg || widgetColorMap.blue.fg }
+}
+
+const smallWidgets = computed(() =>
+  (overview.value?.widgets || [])
+    .filter(w => w.size === 'small')
+    .sort((a, b) => a.order - b.order),
+)
+
+const wideWidgets = computed(() =>
+  (overview.value?.widgets || [])
+    .filter(w => w.size === 'wide')
+    .sort((a, b) => a.order - b.order),
+)
 
 async function fetchOverview() {
   if (inFlight || disposed) return

@@ -16,6 +16,17 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class OverviewWidget(BaseModel):
+    widget_id: str
+    label: Union[str, Dict[str, str]]
+    value: str = ""
+    html: str = ""
+    icon: str = "Box"
+    color: str = "blue"
+    order: int = 100
+    size: str = "small"
+
+
 class OverviewResponse(BaseModel):
     total_adapters: int = 0
     active_adapters: int = 0
@@ -26,6 +37,7 @@ class OverviewResponse(BaseModel):
     runtime_duration: int = 0  # System uptime in seconds
     memory_usage: int = 0  # Process memory usage in MB
     total_memory: int = 0  # Total system memory in MB
+    widgets: List[OverviewWidget] = Field(default_factory=list)
 
 
 class VersionResponse(BaseModel):
