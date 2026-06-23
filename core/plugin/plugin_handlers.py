@@ -31,6 +31,7 @@ class EventType(Enum):
     ON_LOADED = "on_loaded"            # 所有插件加载完成后
     ON_SHUTDOWN = "on_shutdown"        # 系统即将关闭
     ON_EXCEPTION = "on_exception"  # 异常发生时
+    ON_CUSTOM_EVENT = "on_custom_event"  # 插件自定义事件
     ...
 
 

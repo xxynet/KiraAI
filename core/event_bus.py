@@ -12,7 +12,7 @@ from .statistics import Statistics
 from .logging_manager import get_logger
 
 from core.chat import KiraMessageEvent, KiraCommentEvent
-from core.chat.message_utils import KiraMessageBatchEvent
+from core.chat.message_utils import KiraMessageBatchEvent, KiraCustomEvent
 
 
 class EventType(Enum):
@@ -91,6 +91,13 @@ class EventBus:
     async def _dispatch_event(self, event):
         if isinstance(event, KiraMessageBatchEvent):
             await self.message_processor.handle_im_batch_message(event)
+            return
+        if isinstance(event, KiraCustomEvent):
+            from core.plugin.plugin_handlers import event_handler_reg, EventType as PluginEventType
+            for handler in event_handler_reg.get_handlers(PluginEventType.ON_CUSTOM_EVENT):
+                filter_name = getattr(handler.handler, '_custom_event_name', None)
+                if filter_name is None or filter_name == event.event_name:
+                    await handler.exec_handler(event)
             return
         async with self.message_processing_semaphore:
             if isinstance(event, KiraMessageEvent):

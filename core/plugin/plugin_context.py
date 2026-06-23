@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import inspect
+import time
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING, Literal
 
@@ -132,6 +133,25 @@ class PluginContext:
         if isinstance(client, EmbeddingModelClient):
             return client
         return
+
+    async def emit_custom_event(self, event_name: str, payload: dict = None):
+        from core.chat.message_utils import KiraCustomEvent
+
+        plugin_id = None
+        frame = inspect.currentframe().f_back
+        if frame and self.plugin_mgr:
+            module_name = frame.f_globals.get("__name__", "")
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(module_name)
+
+        event = KiraCustomEvent(
+            event_name=event_name,
+            source_plugin=plugin_id or "unknown",
+            payload=payload or {},
+            timestamp=int(time.time()),
+        )
+
+        await self.event_bus.publish(event)
+        return event
 
     async def publish_notice(self, session: str, chain: MessageChain, is_mentioned: bool = True):
         import time

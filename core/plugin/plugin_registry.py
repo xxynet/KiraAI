@@ -474,6 +474,14 @@ class OnEventDeco:
             return func
         return decorator
 
+    def custom_event(self, priority: Union[Priority, int] = Priority.MEDIUM, event_name: Optional[str] = None):
+        def decorator(func: Callable):
+            if event_name is not None:
+                func._custom_event_name = event_name
+            self._register_hook(func, priority, EventType.ON_CUSTOM_EVENT)
+            return func
+        return decorator
+
 
 register = RegisterDeco()
 on = OnEventDeco()
