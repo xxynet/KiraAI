@@ -474,6 +474,18 @@ class OnEventDeco:
             return func
         return decorator
 
+    def custom_event(self, priority: Union[Priority, int] = Priority.MEDIUM, event_name: Optional[str] = None):
+        def decorator(func: Callable):
+            handler = func
+            if event_name is not None:
+                async def _filtered(event, *args, **kwargs):
+                    if event.event_name == event_name:
+                        return await func(event, *args, **kwargs)
+                handler = _filtered
+            self._register_hook(handler, priority, EventType.ON_CUSTOM_EVENT)
+            return func
+        return decorator
+
 
 register = RegisterDeco()
 on = OnEventDeco()

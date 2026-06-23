@@ -243,6 +243,14 @@ class KiraExceptionEvent:
         pass
 
 
+@dataclass
+class KiraCustomEvent:
+    event_name: str
+    source_plugin: str
+    payload: dict = field(default_factory=dict)
+    timestamp: int = 0
+
+
 class MessageChain:
     def __init__(self, message_list: list[BaseMessageElement] = None):
         self.message_list: list = message_list or []
