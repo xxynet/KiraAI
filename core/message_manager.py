@@ -334,7 +334,11 @@ class MessageProcessor:
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
-                record_text = await self.llm_api.speech_to_text(record=ele)
+                try:
+                    record_text = await self.llm_api.speech_to_text(record=ele)
+                except Exception as e:
+                    logger.error(f"Failed to get STT model for speech recognition: {e}")
+                    record_text = "[Speech recognition unavailable]"
                 ele.transcript = record_text
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, Notice):
@@ -512,11 +516,11 @@ class MessageProcessor:
             try:
                 default_llm = self.provider_mgr.get_default_llm()
                 if not default_llm:
-                    llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+                    llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
                     return
                 model_group = [default_llm]
             except Exception as _:
-                llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+                llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
                 return
 
         # Filter tools by scope
@@ -674,7 +678,7 @@ class MessageProcessor:
 
         client = self.provider_mgr.get_default_llm()
         if not client:
-            llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+            llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
             return
 
         llm_req = LLMRequest(messages=[OpenAIMessage(role="user", content=cmt_prompt)])

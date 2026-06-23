@@ -124,7 +124,11 @@ class ProviderManager:
         return model_client
 
     def get_default_stt(self) -> STTModelClient:
-        model_info = self.get_default_model_info("default_stt")
+        try:
+            model_info = self.get_default_model_info("default_stt")
+        except ValueError:
+            logger.error("default_stt not configured, please configure it in Configuration")
+            raise
         model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
         if not isinstance(model_client, STTModelClient):
             raise TypeError(
