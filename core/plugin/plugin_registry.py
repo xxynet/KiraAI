@@ -9,7 +9,7 @@ import httpx
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable, Union
+from typing import Optional, Dict, Any, List, Callable, Literal, Union
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from packaging.version import Version, InvalidVersion
 from core.utils.path_utils import get_data_path, get_config_path
@@ -229,7 +229,10 @@ class PluginComponents:
         self.api_route_funcs[func.__name__] = func
 
     def register_widget(self, widget_id: str, label: Union[str, Dict[str, str]],
-                        icon: str, color: str, order: int, size: str,
+                        icon: str,
+                        color: Literal["blue", "green", "purple", "yellow", "red", "gray"],
+                        order: int,
+                        size: Literal["small", "wide"],
                         func: Callable):
         self.widgets.append({
             "widget_id": widget_id,
@@ -403,7 +406,9 @@ class RegisterDeco:
 
     @staticmethod
     def widget(label: Union[str, Dict[str, str]], icon: str = "Box",
-               color: str = "blue", order: int = 100, size: str = "small"):
+               color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue",
+               order: int = 100,
+               size: Literal["small", "wide"] = "small"):
         """Register a widget on the Overview dashboard page.
 
         The decorated function is called on each ``GET /api/overview`` request

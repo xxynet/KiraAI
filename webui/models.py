@@ -1,7 +1,7 @@
 """
 Pydantic models shared across WebUI routes.
 """
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -21,9 +21,9 @@ class OverviewWidget(BaseModel):
     label: Union[str, Dict[str, str]]
     content: str = ""
     icon: str = "Box"
-    color: str = "blue"
+    color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue"
     order: int = 100
-    size: str = "small"
+    size: Literal["small", "wide"] = "small"
 
 
 class OverviewResponse(BaseModel):
