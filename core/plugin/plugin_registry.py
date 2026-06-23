@@ -1,3 +1,4 @@
+import functools
 import importlib
 import importlib.util
 import inspect
@@ -478,6 +479,7 @@ class OnEventDeco:
         def decorator(func: Callable):
             handler = func
             if event_name is not None:
+                @functools.wraps(func)
                 async def _filtered(event, *args, **kwargs):
                     if event.event_name == event_name:
                         return await func(event, *args, **kwargs)
