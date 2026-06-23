@@ -19,8 +19,7 @@ class LoginResponse(BaseModel):
 class OverviewWidget(BaseModel):
     widget_id: str
     label: Union[str, Dict[str, str]]
-    value: str = ""
-    html: str = ""
+    content: str = ""
     icon: str = "Box"
     color: str = "blue"
     order: int = 100

@@ -65,7 +65,7 @@
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm text-gray-600">{{ resolveWidgetLabel(w.label) }}</p>
-            <p class="text-2xl font-bold text-gray-900 mt-2">{{ w.value }}</p>
+            <p class="text-2xl font-bold text-gray-900 mt-2">{{ w.content }}</p>
           </div>
           <div class="rounded-full p-3" :class="widgetBgClass(w.color)">
             <component :is="resolveWidgetIcon(w.icon)"
@@ -81,7 +81,7 @@
         <h3 class="text-lg font-semibold text-gray-800 mb-4">
           {{ resolveWidgetLabel(w.label) }}
         </h3>
-        <div class="widget-html-content" v-html="w.html"></div>
+        <div class="widget-html-content" v-html="w.content"></div>
       </div>
     </template>
 

@@ -407,9 +407,9 @@ class RegisterDeco:
         """Register a widget on the Overview dashboard page.
 
         The decorated function is called on each ``GET /api/overview`` request
-        and should return a dict with:
-        - ``{"value": "42"}`` for small (stat-card) widgets
-        - ``{"html": "<div>...</div>"}`` for wide (full-width) widgets
+        and should return a plain string:
+        - For small widgets: the display value (e.g. ``"42"``)
+        - For wide widgets: HTML content (e.g. ``"<table>...</table>"``)
 
         Args:
             label: Widget title — plain string or locale dict
@@ -1287,13 +1287,11 @@ class PluginManager:
                     continue
                 try:
                     result = getattr(inst, func.__name__)()
-                    if result is None:
-                        result = {}
+                    content = str(result) if result is not None else ""
                     widgets.append(OverviewWidget(
                         widget_id=wid,
                         label=meta["label"],
-                        value=str(result.get("value", "")),
-                        html=str(result.get("html", "")),
+                        content=content,
                         icon=meta["icon"],
                         color=meta["color"],
                         order=meta["order"],

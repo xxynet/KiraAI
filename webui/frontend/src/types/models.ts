@@ -21,8 +21,7 @@ export interface AuthConfigResponse {
 export interface OverviewWidget {
   widget_id: string
   label: string | Record<string, string>
-  value: string
-  html: string
+  content: string
   icon: string
   color: string
   order: number
