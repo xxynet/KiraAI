@@ -67,9 +67,9 @@
             <p class="text-sm text-gray-600">{{ resolveWidgetLabel(w.label) }}</p>
             <p class="text-2xl font-bold text-gray-900 mt-2">{{ w.value }}</p>
           </div>
-          <div class="rounded-full p-3" :style="widgetBgStyle(w.color)">
+          <div class="rounded-full p-3" :class="widgetBgClass(w.color)">
             <component :is="resolveWidgetIcon(w.icon)"
-                       class="w-6 h-6" :style="widgetFgStyle(w.color)" />
+                       class="w-6 h-6" :class="widgetFgClass(w.color)" />
           </div>
         </div>
       </div>
@@ -81,7 +81,7 @@
         <h3 class="text-lg font-semibold text-gray-800 mb-4">
           {{ resolveWidgetLabel(w.label) }}
         </h3>
-        <div v-html="w.html"></div>
+        <div class="widget-html-content" v-html="w.html"></div>
       </div>
     </template>
 
@@ -153,23 +153,31 @@ function resolveWidgetIcon(iconName: string) {
   return iconMap[iconName] || Box
 }
 
-/** Map widget color names to hex values for inline styles.
- *  Tailwind dynamic classes like `bg-${color}-100` are purged at build time,
- *  so we use inline styles instead. */
-const widgetColorMap: Record<string, { bg: string; fg: string }> = {
-  blue:   { bg: '#dbeafe', fg: '#2563eb' },
-  green:  { bg: '#dcfce7', fg: '#16a34a' },
-  purple: { bg: '#f3e8ff', fg: '#9333ea' },
-  yellow: { bg: '#fef9c3', fg: '#ca8a04' },
-  red:    { bg: '#fee2e2', fg: '#dc2626' },
-  gray:   { bg: '#f3f4f6', fg: '#4b5563' },
+/** Map widget color names to Tailwind classes.
+ *  Using Tailwind class names (not inline styles) so the global dark-mode
+ *  overrides in main.css (.dark .text-blue-600, etc.) take effect. */
+const widgetBgClasses: Record<string, string> = {
+  blue:   'bg-blue-100',
+  green:  'bg-green-100',
+  purple: 'bg-purple-100',
+  yellow: 'bg-yellow-100',
+  red:    'bg-red-100',
+  gray:   'bg-gray-100',
+}
+const widgetFgClasses: Record<string, string> = {
+  blue:   'text-blue-600',
+  green:  'text-green-600',
+  purple: 'text-purple-600',
+  yellow: 'text-yellow-600',
+  red:    'text-red-600',
+  gray:   'text-gray-600',
 }
 
-function widgetBgStyle(color: string) {
-  return { backgroundColor: widgetColorMap[color]?.bg || widgetColorMap.blue.bg }
+function widgetBgClass(color: string) {
+  return widgetBgClasses[color] || widgetBgClasses.blue
 }
-function widgetFgStyle(color: string) {
-  return { color: widgetColorMap[color]?.fg || widgetColorMap.blue.fg }
+function widgetFgClass(color: string) {
+  return widgetFgClasses[color] || widgetFgClasses.blue
 }
 
 const smallWidgets = computed(() =>
@@ -220,3 +228,12 @@ onUnmounted(() => {
   runtimeTimer = null
 })
 </script>
+
+<style scoped>
+.dark .widget-html-content :deep(td),
+.dark .widget-html-content :deep(th),
+.dark .widget-html-content :deep(p),
+.dark .widget-html-content :deep(span) {
+  color: #e5e7eb;
+}
+</style>
