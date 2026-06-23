@@ -230,10 +230,19 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* Dark-mode defaults for unstyled elements inside v-html widget content.
+   Gives bare <td>, <p>, etc. a readable light text colour.
+   Elements with explicit Tailwind classes (e.g. dark:text-gray-100)
+   will override this via the global dark-mode rules in main.css. */
 .dark .widget-html-content :deep(td),
 .dark .widget-html-content :deep(th),
 .dark .widget-html-content :deep(p),
-.dark .widget-html-content :deep(span) {
+.dark .widget-html-content :deep(span),
+.dark .widget-html-content :deep(li),
+.dark .widget-html-content :deep(label) {
   color: #e5e7eb;
+}
+.dark .widget-html-content :deep(a:not([class])) {
+  color: #60a5fa;
 }
 </style>
