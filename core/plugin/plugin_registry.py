@@ -9,7 +9,7 @@ import httpx
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable, Union
+from typing import Optional, Dict, Any, List, Callable, Literal, Union
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from packaging.version import Version, InvalidVersion
 from core.utils.path_utils import get_data_path, get_config_path
@@ -163,10 +163,12 @@ class PluginComponents:
     api_routes: List[dict] = field(default_factory=list)
     api_route_funcs: Dict[str, Callable] = field(default_factory=dict)
     static_dirs: List[dict] = field(default_factory=list)
+    widgets: List[dict] = field(default_factory=list)
+    widget_funcs: Dict[str, Callable] = field(default_factory=dict)
 
     def has_any(self) -> bool:
         return bool(self.tools or self.tags or self.hooks or self.pages
-                    or self.api_routes or self.static_dirs)
+                    or self.api_routes or self.static_dirs or self.widgets)
 
     def register_tool(self, name: str, description: str, params: dict, func: Callable):
         self.tools[name] = {
@@ -225,6 +227,22 @@ class PluginComponents:
             "kwargs": kwargs,
         })
         self.api_route_funcs[func.__name__] = func
+
+    def register_widget(self, widget_id: str, label: Union[str, Dict[str, str]],
+                        icon: str,
+                        color: Literal["blue", "green", "purple", "yellow", "red", "gray"],
+                        order: int,
+                        size: Literal["small", "wide"],
+                        func: Callable):
+        self.widgets.append({
+            "widget_id": widget_id,
+            "label": label,
+            "icon": icon,
+            "color": color,
+            "order": order,
+            "size": size,
+        })
+        self.widget_funcs[widget_id] = func
 
 
 _plugin_components: Dict[str, PluginComponents] = {}
@@ -383,6 +401,35 @@ class RegisterDeco:
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
             _ensure_components(plugin_id).register_api(method, path, func, auth, **kwargs)
+            return func
+        return decorator
+
+    @staticmethod
+    def widget(label: Union[str, Dict[str, str]], icon: str = "Box",
+               color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue",
+               order: int = 100,
+               size: Literal["small", "wide"] = "small"):
+        """Register a widget on the Overview dashboard page.
+
+        The decorated function is called on each ``GET /api/overview`` request
+        and should return a plain string:
+        - For small widgets: the display value (e.g. ``"42"``)
+        - For wide widgets: HTML content (e.g. ``"<table>...</table>"``)
+
+        Args:
+            label: Widget title — plain string or locale dict
+                   (e.g. ``{"zh": "消息数", "en": "Messages"}``).
+            icon:  Element Plus icon name (e.g. ``"ChatDotRound"``).
+                   Ignored for wide widgets.
+            color: Theme color — one of blue/green/purple/yellow/red/gray.
+            order: Sort position in the widget grid (lower = higher).
+            size:  ``"small"`` (default, stat card) or ``"wide"`` (full-width).
+        """
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            widget_id = f"{plugin_id}:{func.__name__}"
+            _ensure_components(plugin_id).register_widget(
+                widget_id, label, icon, color, order, size, func)
             return func
         return decorator
 
@@ -1220,6 +1267,46 @@ class PluginManager:
         for plugin_id in _plugin_components.keys():
             self._register_plugin_tools_for(plugin_id)
 
+    def _register_plugin_widgets_for(self, plugin_id: str) -> None:
+        """Log registered widgets for a plugin. Data is collected lazily."""
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.widgets:
+            return
+        widget_ids = [w["widget_id"] for w in comp.widgets]
+        logger.info(f"Registered {len(widget_ids)} widget(s) from {plugin_id}: {widget_ids}")
+
+    def get_all_widgets(self) -> list:
+        """Collect widget data from all enabled plugins (called per API request)."""
+        from webui.models import OverviewWidget
+        widgets = []
+        for pid, comp in _plugin_components.items():
+            if not self.is_plugin_enabled(pid):
+                continue
+            inst = self.plugin_instances.get(pid)
+            if not inst:
+                continue
+            for meta in comp.widgets:
+                wid = meta["widget_id"]
+                func = comp.widget_funcs.get(wid)
+                if not func:
+                    continue
+                try:
+                    result = getattr(inst, func.__name__)()
+                    content = str(result) if result is not None else ""
+                    widgets.append(OverviewWidget(
+                        widget_id=wid,
+                        label=meta["label"],
+                        content=content,
+                        icon=meta["icon"],
+                        color=meta["color"],
+                        order=meta["order"],
+                        size=meta["size"],
+                    ))
+                except Exception as e:
+                    logger.error(f"Widget {wid} failed: {e}")
+        widgets.sort(key=lambda w: w.order)
+        return widgets
+
     def _remove_plugin_routes(self, plugin_id: str) -> None:
         """Remove all FastAPI routes and mounts registered by a plugin.
 
@@ -1287,6 +1374,10 @@ class PluginManager:
         # clean up tag registration
         for tag in comp.tags:
             tag_registry.unregister(tag.get("name"))
+
+        # clean up widget registration
+        comp.widgets.clear()
+        comp.widget_funcs.clear()
 
         # clean up FastAPI routes (API routes, page routes, static mounts)
         self._remove_plugin_routes(plugin_id)
@@ -1452,6 +1543,7 @@ class PluginManager:
             self._register_plugin_apis_for(plugin_id)
             self._register_plugin_pages_for(plugin_id)
             self._register_plugin_static_for(plugin_id)
+            self._register_plugin_widgets_for(plugin_id)
 
     async def terminate(self, plugin_id: Optional[str] = None):
         """Terminate a specific plugin if plugin_id is given, terminate all if not given"""

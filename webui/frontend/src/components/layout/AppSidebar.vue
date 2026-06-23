@@ -44,24 +44,10 @@ import { usePluginMenuStore } from '@/stores/pluginMenu'
 import { getVersion } from '@/api/overview'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import {
-  DataAnalysis,
-  Connection,
-  Link,
-  User,
-  SetUp,
-  Picture,
-  Setting,
-  ChatDotRound,
-  Document,
-  Tools,
-  Box,
-} from '@element-plus/icons-vue'
-
-// Icon name -> component map for plugin-contributed menu icons
-const iconMap: Record<string, any> = {
   DataAnalysis, Connection, Link, User, SetUp, Picture,
   Setting, ChatDotRound, Document, Tools, Box,
-}
+} from '@element-plus/icons-vue'
+import { iconMap } from '@/utils/iconMap'
 
 defineProps<{ open: boolean }>()
 
@@ -96,7 +82,7 @@ const languageOptions = [
   { value: 'zh', label: '中文' },
 ]
 
-const staticNavItems = [
+const staticNavItems: { route: string; label: string; icon: any; isPlugin: boolean }[] = [
   { route: '/overview', label: 'nav.overview', icon: DataAnalysis, isPlugin: false },
   { route: '/provider', label: 'nav.provider', icon: Connection, isPlugin: false },
   { route: '/adapter', label: 'nav.adapter', icon: Link, isPlugin: false },

@@ -18,6 +18,16 @@ export interface AuthConfigResponse {
   auth_enabled: boolean
 }
 
+export interface OverviewWidget {
+  widget_id: string
+  label: string | Record<string, string>
+  content: string
+  icon: string
+  color: string
+  order: number
+  size: 'small' | 'wide'
+}
+
 export interface OverviewResponse {
   total_adapters: number
   active_adapters: number
@@ -28,6 +38,7 @@ export interface OverviewResponse {
   runtime_duration: number
   memory_usage: number
   total_memory: number
+  widgets: OverviewWidget[]
 }
 
 export interface VersionResponse {

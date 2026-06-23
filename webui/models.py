@@ -1,7 +1,7 @@
 """
 Pydantic models shared across WebUI routes.
 """
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -16,6 +16,16 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class OverviewWidget(BaseModel):
+    widget_id: str
+    label: Union[str, Dict[str, str]]
+    content: str = ""
+    icon: str = "Box"
+    color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue"
+    order: int = 100
+    size: Literal["small", "wide"] = "small"
+
+
 class OverviewResponse(BaseModel):
     total_adapters: int = 0
     active_adapters: int = 0
@@ -26,6 +36,7 @@ class OverviewResponse(BaseModel):
     runtime_duration: int = 0  # System uptime in seconds
     memory_usage: int = 0  # Process memory usage in MB
     total_memory: int = 0  # Total system memory in MB
+    widgets: List[OverviewWidget] = Field(default_factory=list)
 
 
 class VersionResponse(BaseModel):

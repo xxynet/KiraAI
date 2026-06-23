@@ -58,6 +58,33 @@
       </div>
     </div>
 
+    <!-- Plugin Widgets: Small Cards -->
+    <div v-if="smallWidgets.length"
+         class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <div v-for="w in smallWidgets" :key="w.widget_id" class="glass-card rounded-lg p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-gray-600">{{ resolveWidgetLabel(w.label) }}</p>
+            <p class="text-2xl font-bold text-gray-900 mt-2">{{ w.content }}</p>
+          </div>
+          <div class="rounded-full p-3" :class="widgetBgClass(w.color)">
+            <component :is="resolveWidgetIcon(w.icon)"
+                       class="w-6 h-6" :class="widgetFgClass(w.color)" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plugin Widgets: Wide Cards -->
+    <template v-for="w in wideWidgets" :key="w.widget_id">
+      <div class="glass-card rounded-lg p-6 mb-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+          {{ resolveWidgetLabel(w.label) }}
+        </h3>
+        <div class="widget-html-content" v-html="w.content"></div>
+      </div>
+    </template>
+
     <!-- System Status -->
     <div class="glass-card rounded-lg p-6">
       <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.system_status') }}</h3>
@@ -74,9 +101,11 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { IconClock, IconChat, IconTerminal, IconCpu } from '@/components/icons'
 import { getOverview } from '@/api/overview'
-import type { OverviewResponse } from '@/types'
+import type { OverviewResponse, OverviewWidget } from '@/types'
+import { Box } from '@element-plus/icons-vue'
+import { iconMap } from '@/utils/iconMap'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const overview = ref<OverviewResponse | null>(null)
 const runtimeSeconds = ref(0)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
@@ -111,6 +140,57 @@ const statusText = computed(() => {
   if (!status || !validStatuses.includes(status)) return t('overview.status_unknown')
   return t(`overview.status_${status}`)
 })
+
+/* ---- Plugin widget helpers ---- */
+
+function resolveWidgetLabel(label: string | Record<string, string>): string {
+  if (typeof label === 'string') return label
+  const loc = locale.value
+  return label[loc] || label['en'] || Object.values(label)[0] || ''
+}
+
+function resolveWidgetIcon(iconName: string) {
+  return iconMap[iconName] || Box
+}
+
+/** Map widget color names to Tailwind classes.
+ *  Using Tailwind class names (not inline styles) so the global dark-mode
+ *  overrides in main.css (.dark .text-blue-600, etc.) take effect. */
+const widgetBgClasses: Record<string, string> = {
+  blue:   'bg-blue-100',
+  green:  'bg-green-100',
+  purple: 'bg-purple-100',
+  yellow: 'bg-yellow-100',
+  red:    'bg-red-100',
+  gray:   'bg-gray-100',
+}
+const widgetFgClasses: Record<string, string> = {
+  blue:   'text-blue-600',
+  green:  'text-green-600',
+  purple: 'text-purple-600',
+  yellow: 'text-yellow-600',
+  red:    'text-red-600',
+  gray:   'text-gray-600',
+}
+
+function widgetBgClass(color: string) {
+  return widgetBgClasses[color] || widgetBgClasses.blue
+}
+function widgetFgClass(color: string) {
+  return widgetFgClasses[color] || widgetFgClasses.blue
+}
+
+const smallWidgets = computed(() =>
+  (overview.value?.widgets || [])
+    .filter(w => w.size === 'small')
+    .sort((a, b) => a.order - b.order),
+)
+
+const wideWidgets = computed(() =>
+  (overview.value?.widgets || [])
+    .filter(w => w.size === 'wide')
+    .sort((a, b) => a.order - b.order),
+)
 
 async function fetchOverview() {
   if (inFlight || disposed) return
@@ -148,3 +228,21 @@ onUnmounted(() => {
   runtimeTimer = null
 })
 </script>
+
+<style scoped>
+/* Dark-mode defaults for unstyled elements inside v-html widget content.
+   Gives bare <td>, <p>, etc. a readable light text colour.
+   Elements with explicit Tailwind classes (e.g. dark:text-gray-100)
+   will override this via the global dark-mode rules in main.css. */
+.dark .widget-html-content :deep(td),
+.dark .widget-html-content :deep(th),
+.dark .widget-html-content :deep(p),
+.dark .widget-html-content :deep(span),
+.dark .widget-html-content :deep(li),
+.dark .widget-html-content :deep(label) {
+  color: #e5e7eb;
+}
+.dark .widget-html-content :deep(a:not([class])) {
+  color: #60a5fa;
+}
+</style>
