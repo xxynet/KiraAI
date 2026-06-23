@@ -136,7 +136,6 @@ class PluginContext:
 
     async def emit_custom_event(self, event_name: str, payload: dict = None):
         from core.chat.message_utils import KiraCustomEvent
-        from core.plugin.plugin_handlers import event_handler_reg, EventType
 
         plugin_id = None
         frame = inspect.currentframe().f_back
@@ -151,8 +150,7 @@ class PluginContext:
             timestamp=int(time.time()),
         )
 
-        for handler in event_handler_reg.get_handlers(EventType.ON_CUSTOM_EVENT):
-            await handler.exec_handler(event)
+        await self.event_bus.publish(event)
         return event
 
     async def publish_notice(self, session: str, chain: MessageChain, is_mentioned: bool = True):
