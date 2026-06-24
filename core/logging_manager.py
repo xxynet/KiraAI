@@ -156,7 +156,7 @@ def setup_logging(log_level: str = "INFO", log_file_path: str = None, log_file_m
 
     for name in _created_by_get_logger:
         logger = logging.getLogger(name)
-        for handler in logger.handlers:
+        for handler in logger.handlers[:]:
             # Remove any per-logger RotatingFileHandler from the old pattern
             if isinstance(handler, RotatingFileHandler) and handler is not _shared_file_handler:
                 handler.close()
