@@ -87,6 +87,10 @@ class LogQueueHandler(logging.Handler):
 
 log_cache_manager = LogCacheManager()
 
+# Shared file handler — one RotatingFileHandler for all loggers to avoid
+# multiple handlers rotating the same file independently and losing logs.
+_shared_file_handler = None
+
 
 class GetLoggerFilter(logging.Filter):
     """过滤器：只允许通过get_logger创建的logger的日志通过"""
@@ -103,9 +107,25 @@ class GetLoggerFilter(logging.Filter):
 _created_by_get_logger = set()
 
 
+def _get_shared_file_handler() -> RotatingFileHandler:
+    """Return the singleton RotatingFileHandler, creating it on first call."""
+    global _shared_file_handler
+    if _shared_file_handler is None:
+        log_file = _log_file_path or f"{get_data_path()}/log.log"
+        _shared_file_handler = RotatingFileHandler(
+            filename=log_file, maxBytes=_log_file_max_size * 1024 * 1024, backupCount=5, encoding='utf-8'
+        )
+        _shared_file_handler.setLevel(logging.DEBUG)
+        _shared_file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s %(levelname)-8s [%(name)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+    return _shared_file_handler
+
+
 def setup_logging(log_level: str = "INFO", log_file_path: str = None, log_file_max_size: int = 10):
     """Called once after config is loaded to apply logging settings."""
-    global _log_level, _log_file_path, _log_file_max_size
+    global _log_level, _log_file_path, _log_file_max_size, _shared_file_handler
 
     log_level = str(log_level) if log_level else "INFO"
     if log_level.upper() not in _LEVEL_MAP:
@@ -123,22 +143,30 @@ def setup_logging(log_level: str = "INFO", log_file_path: str = None, log_file_m
     log_file = _log_file_path or f"{get_data_path()}/log.log"
     max_bytes = _log_file_max_size * 1024 * 1024
 
+    # Replace shared file handler if path or size changed
+    if _shared_file_handler is not None:
+        if _shared_file_handler.baseFilename != log_file or _shared_file_handler.maxBytes != max_bytes:
+            old = _shared_file_handler
+            old.close()
+            _shared_file_handler = RotatingFileHandler(
+                filename=log_file, maxBytes=max_bytes, backupCount=5, encoding='utf-8'
+            )
+            _shared_file_handler.setLevel(logging.DEBUG)
+            _shared_file_handler.setFormatter(old.formatter)
+
     for name in _created_by_get_logger:
         logger = logging.getLogger(name)
-        for i, handler in enumerate(logger.handlers):
-            if isinstance(handler, RotatingFileHandler):
-                if handler.baseFilename == log_file and handler.maxBytes == max_bytes:
-                    continue
-                formatter = handler.formatter
+        for handler in logger.handlers:
+            # Remove any per-logger RotatingFileHandler from the old pattern
+            if isinstance(handler, RotatingFileHandler) and handler is not _shared_file_handler:
                 handler.close()
-                new_fh = RotatingFileHandler(
-                    filename=log_file, maxBytes=max_bytes, backupCount=1, encoding='utf-8'
-                )
-                new_fh.setLevel(logging.DEBUG)
-                new_fh.setFormatter(formatter)
-                logger.handlers[i] = new_fh
+                logger.removeHandler(handler)
             elif isinstance(handler, logging.StreamHandler) and not isinstance(handler, LogQueueHandler):
                 handler.setLevel(level)
+
+        # Ensure the shared handler is attached
+        if _shared_file_handler not in logger.handlers:
+            logger.addHandler(_shared_file_handler)
 
 
 def get_logger(name: str, color: str):
@@ -168,21 +196,13 @@ def get_logger(name: str, color: str):
         style='%'
     )
 
-    file_formatter = logging.Formatter(
-        '%(asctime)s %(levelname)-8s [%(name)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-
     level = _LEVEL_MAP.get(_log_level.upper(), logging.INFO)
 
     ch = logging.StreamHandler()
     ch.setLevel(level)
     ch.setFormatter(console_formatter)
 
-    log_file = _log_file_path or f"{get_data_path()}/log.log"
-    fh = RotatingFileHandler(filename=log_file, maxBytes=_log_file_max_size * 1024 * 1024, backupCount=1, encoding='utf-8')
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(file_formatter)
+    fh = _get_shared_file_handler()
 
     qh = LogQueueHandler(log_cache_manager)
     qh.setLevel(logging.DEBUG)
