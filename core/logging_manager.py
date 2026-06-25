@@ -2,6 +2,7 @@ import logging
 import colorlog
 from asyncio import Queue
 from collections import deque
+from pathlib import Path
 import sys
 from colorlog.escape_codes import escape_codes
 from logging.handlers import RotatingFileHandler
@@ -140,7 +141,7 @@ def setup_logging(log_level: str = "INFO", log_file_path: str = None, log_file_m
     _log_file_max_size = log_file_max_size
 
     level = _LEVEL_MAP.get(log_level.upper(), logging.INFO)
-    log_file = _log_file_path or f"{get_data_path()}/log.log"
+    log_file = str(Path(_log_file_path or f"{get_data_path()}/log.log").resolve())
     max_bytes = _log_file_max_size * 1024 * 1024
 
     # Replace shared file handler if path or size changed
