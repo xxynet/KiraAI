@@ -77,6 +77,7 @@ class LogQueueHandler(logging.Handler):
         self.log_cache_mgr = log_cache_mgr
 
     def emit(self, record) -> None:
+        self.format(record)
         self.log_cache_mgr.emit(
             record.asctime,
             record.levelname,
