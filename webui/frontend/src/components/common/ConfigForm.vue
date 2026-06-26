@@ -1,278 +1,266 @@
 <template>
   <div>
-    <!-- Ungrouped fields (before any section) -->
-    <template v-for="(field, key) in groupedSchema.ungrouped" :key="key">
-      <div v-if="field" class="mb-4">
+    <template v-for="entry in groupedSchema.entries" :key="entry.key">
+      <!-- Section group -->
+      <div v-if="entry.type === 'section'" class="mb-4">
+        <CollapsibleSection
+          :title="labelFor(entry.field, entry.key)"
+          :description="hintFor(entry.field)"
+          v-model:collapsed="sectionCollapsed[entry.key]"
+        >
+          <div class="flex flex-col gap-4">
+            <template v-for="(field, key) in entry.fields" :key="key">
+              <div v-if="field" class="mb-0">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {{ labelFor(field, key as string) }}
+                </label>
+
+                <CustomMultiSelect
+                  v-if="isMultiSelectLike(field.type)"
+                  :modelValue="(sectionFieldValue(entry.key, key as string, field) as string[]) ?? []"
+                  :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
+                  :placeholder="hintFor(field) || 'Select...'"
+                  @update:modelValue="updateSectionField(entry.key, key as string, $event)"
+                />
+
+                <CustomSelect
+                  v-else-if="hasOptions(field)"
+                  :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
+                  :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
+                  :placeholder="hintFor(field) || 'Select...'"
+                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
+                />
+
+                <CustomSelect
+                  v-else-if="isModelSelectLike(field.type)"
+                  :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
+                  :options="modelSelectOptions[field.model_type || 'llm'] || []"
+                  :placeholder="t('configuration.select_model')"
+                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
+                />
+
+                <div v-else-if="isBoolLike(field.type)" class="flex items-center">
+                  <input
+                    :id="'config-switch-' + entry.key + '-' + key"
+                    type="checkbox"
+                    class="sr-only"
+                    :checked="!!sectionFieldValue(entry.key, key as string, field)"
+                    @change="updateSectionField(entry.key, key as string, ($event.target as HTMLInputElement).checked)"
+                  >
+                  <label
+                    :for="'config-switch-' + entry.key + '-' + key"
+                    class="relative inline-flex items-center h-5 w-9 rounded-full cursor-pointer transition-colors"
+                    :class="sectionFieldValue(entry.key, key as string, field) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'"
+                    @click.prevent="updateSectionField(entry.key, key as string, !sectionFieldValue(entry.key, key as string, field))"
+                  >
+                    <span
+                      class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition-transform"
+                      :class="sectionFieldValue(entry.key, key as string, field) ? 'translate-x-5' : 'translate-x-0'"
+                    />
+                  </label>
+                </div>
+
+                <input
+                  v-else-if="isNumberLike(field.type)"
+                  type="number"
+                  :value="drafts[entry.key + '.' + key] ?? ''"
+                  :step="field.type === 'integer' ? '1' : '0.01'"
+                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  :placeholder="hintFor(field)"
+                  @input="drafts[entry.key + '.' + key] = ($event.target as HTMLInputElement).value"
+                  @blur="commitSectionNumberDraft(entry.key, key as string, field)"
+                >
+
+                <div v-else-if="field.type === 'sensitive'" class="relative">
+                  <input
+                    :type="sensitiveVisible[entry.key + '.' + key] ? 'text' : 'password'"
+                    :value="sectionFieldValue(entry.key, key as string, field) ?? ''"
+                    class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 pr-10 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                    :placeholder="hintFor(field)"
+                    @input="updateSectionField(entry.key, key as string, ($event.target as HTMLInputElement).value)"
+                  >
+                  <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" @click="toggleSensitive(entry.key + '.' + key)">
+                    <IconEye v-if="!sensitiveVisible[entry.key + '.' + key]" class="w-4 h-4" />
+                    <IconEyeOff v-else class="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div v-else-if="isMonacoLike(field.type)" style="height: 200px;">
+                  <MonacoEditor
+                    :modelValue="drafts[entry.key + '.' + key] ?? ''"
+                    :language="monacoLang(field)"
+                    :height="200"
+                    @update:modelValue="updateSectionMonacoDraft(entry.key, key as string, $event, field.type)"
+                  />
+                </div>
+
+                <TagInput
+                  v-else-if="isListLike(field.type)"
+                  :modelValue="(sectionFieldValue(entry.key, key as string, field) as string[]) ?? []"
+                  :placeholder="hintFor(field)"
+                  @update:modelValue="updateSectionField(entry.key, key as string, $event)"
+                />
+
+                <textarea
+                  v-else-if="isTextareaLike(field.type)"
+                  :value="sectionFieldValue(entry.key, key as string, field) ?? ''"
+                  rows="4"
+                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  :placeholder="hintFor(field)"
+                  @input="updateSectionField(entry.key, key as string, ($event.target as HTMLTextAreaElement).value)"
+                />
+
+                <div v-else-if="isJsonLike(field.type)">
+                  <textarea
+                    :value="drafts[entry.key + '.' + key]"
+                    rows="5"
+                    class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                    :placeholder="hintFor(field)"
+                    @input="onSectionDraftInput(entry.key, key as string, ($event.target as HTMLTextAreaElement).value, field)"
+                    @blur="onSectionDraftBlur(entry.key, key as string, field)"
+                  />
+                </div>
+
+                <input
+                  v-else
+                  type="text"
+                  :value="stringValue(sectionFieldValue(entry.key, key as string, field))"
+                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  :placeholder="hintFor(field)"
+                  @input="updateSectionField(entry.key, key as string, ($event.target as HTMLInputElement).value)"
+                >
+
+                <p v-if="hintFor(field)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(field) }}</p>
+              </div>
+            </template>
+          </div>
+        </CollapsibleSection>
+      </div>
+
+      <!-- Ungrouped field -->
+      <div v-else class="mb-4">
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          {{ labelFor(field, key as string) }}
+          {{ labelFor(entry.field, entry.key) }}
         </label>
 
-        <!-- Multi-select with options -->
         <CustomMultiSelect
-          v-if="isMultiSelectLike(field.type)"
-          :modelValue="(fieldValue(key, field) as string[]) ?? []"
-          :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
-          :placeholder="hintFor(field) || 'Select...'"
-          @update:modelValue="updateField(key as string, $event)"
+          v-if="isMultiSelectLike(entry.field.type)"
+          :modelValue="(fieldValue(entry.key, entry.field) as string[]) ?? []"
+          :options="optionsFor(entry.field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
+          :placeholder="hintFor(entry.field) || 'Select...'"
+          @update:modelValue="updateField(entry.key, $event)"
         />
 
-        <!-- Select with options -->
         <CustomSelect
-          v-else-if="hasOptions(field)"
-          :model-value="fieldValue(key, field) ?? ''"
-          :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
-          :placeholder="hintFor(field) || 'Select...'"
-          @update:model-value="updateField(key as string, $event)"
+          v-else-if="hasOptions(entry.field)"
+          :model-value="fieldValue(entry.key, entry.field) ?? ''"
+          :options="optionsFor(entry.field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
+          :placeholder="hintFor(entry.field) || 'Select...'"
+          @update:model-value="updateField(entry.key, $event)"
         />
 
-        <!-- Model select -->
         <CustomSelect
-          v-else-if="isModelSelectLike(field.type)"
-          :model-value="fieldValue(key, field) ?? ''"
-          :options="modelSelectOptions[field.model_type || 'llm'] || []"
+          v-else-if="isModelSelectLike(entry.field.type)"
+          :model-value="fieldValue(entry.key, entry.field) ?? ''"
+          :options="modelSelectOptions[entry.field.model_type || 'llm'] || []"
           :placeholder="t('configuration.select_model')"
-          @update:model-value="updateField(key as string, $event)"
+          @update:model-value="updateField(entry.key, $event)"
         />
 
-        <!-- Boolean / switch -->
-        <div v-else-if="isBoolLike(field.type)" class="flex items-center">
+        <div v-else-if="isBoolLike(entry.field.type)" class="flex items-center">
           <input
-            :id="'config-switch-' + key"
+            :id="'config-switch-' + entry.key"
             type="checkbox"
             class="sr-only"
-            :checked="!!fieldValue(key, field)"
-            @change="updateField(key as string, ($event.target as HTMLInputElement).checked)"
+            :checked="!!fieldValue(entry.key, entry.field)"
+            @change="updateField(entry.key, ($event.target as HTMLInputElement).checked)"
           >
           <label
-            :for="'config-switch-' + key"
+            :for="'config-switch-' + entry.key"
             class="relative inline-flex items-center h-5 w-9 rounded-full cursor-pointer transition-colors"
-            :class="fieldValue(key, field) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'"
-            @click.prevent="updateField(key as string, !fieldValue(key, field))"
+            :class="fieldValue(entry.key, entry.field) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'"
+            @click.prevent="updateField(entry.key, !fieldValue(entry.key, entry.field))"
           >
             <span
               class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition-transform"
-              :class="fieldValue(key, field) ? 'translate-x-5' : 'translate-x-0'"
+              :class="fieldValue(entry.key, entry.field) ? 'translate-x-5' : 'translate-x-0'"
             />
           </label>
         </div>
 
-        <!-- Number / integer / float -->
         <input
-          v-else-if="isNumberLike(field.type)"
+          v-else-if="isNumberLike(entry.field.type)"
           type="number"
-          :value="drafts[key as string] ?? ''"
-          :step="field.type === 'integer' ? '1' : '0.01'"
+          :value="drafts[entry.key] ?? ''"
+          :step="entry.field.type === 'integer' ? '1' : '0.01'"
           class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-          :placeholder="hintFor(field)"
-          @input="drafts[key as string] = ($event.target as HTMLInputElement).value"
-          @blur="commitNumberDraft(key as string, field)"
+          :placeholder="hintFor(entry.field)"
+          @input="drafts[entry.key] = ($event.target as HTMLInputElement).value"
+          @blur="commitNumberDraft(entry.key, entry.field)"
         >
 
-        <!-- Sensitive: password with reveal -->
-        <div v-else-if="field.type === 'sensitive'" class="relative">
+        <div v-else-if="entry.field.type === 'sensitive'" class="relative">
           <input
-            :type="sensitiveVisible[key as string] ? 'text' : 'password'"
-            :value="fieldValue(key, field) ?? ''"
+            :type="sensitiveVisible[entry.key] ? 'text' : 'password'"
+            :value="fieldValue(entry.key, entry.field) ?? ''"
             class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 pr-10 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-            :placeholder="hintFor(field)"
-            @input="updateField(key as string, ($event.target as HTMLInputElement).value)"
+            :placeholder="hintFor(entry.field)"
+            @input="updateField(entry.key, ($event.target as HTMLInputElement).value)"
           >
-          <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" @click="toggleSensitive(key as string)">
-            <IconEye v-if="!sensitiveVisible[key as string]" class="w-4 h-4" />
+          <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" @click="toggleSensitive(entry.key)">
+            <IconEye v-if="!sensitiveVisible[entry.key]" class="w-4 h-4" />
             <IconEyeOff v-else class="w-4 h-4" />
           </button>
         </div>
 
-        <!-- Monaco Editor for json/markdown/yaml/editor -->
-        <div v-else-if="isMonacoLike(field.type)" style="height: 200px;">
+        <div v-else-if="isMonacoLike(entry.field.type)" style="height: 200px;">
           <MonacoEditor
-            :modelValue="drafts[key as string] ?? ''"
-            :language="monacoLang(field)"
+            :modelValue="drafts[entry.key] ?? ''"
+            :language="monacoLang(entry.field)"
             :height="200"
-            @update:modelValue="updateMonacoDraft(key as string, $event, field.type)"
+            @update:modelValue="updateMonacoDraft(entry.key, $event, entry.field.type)"
           />
         </div>
 
-        <!-- List type: tag input -->
         <TagInput
-          v-else-if="isListLike(field.type)"
-          :modelValue="(fieldValue(key, field) as string[]) ?? []"
-          :placeholder="hintFor(field)"
-          @update:modelValue="updateField(key as string, $event)"
+          v-else-if="isListLike(entry.field.type)"
+          :modelValue="(fieldValue(entry.key, entry.field) as string[]) ?? []"
+          :placeholder="hintFor(entry.field)"
+          @update:modelValue="updateField(entry.key, $event)"
         />
 
-        <!-- Textarea-like (textarea) -->
         <textarea
-          v-else-if="isTextareaLike(field.type)"
-          :value="fieldValue(key, field) ?? ''"
+          v-else-if="isTextareaLike(entry.field.type)"
+          :value="fieldValue(entry.key, entry.field) ?? ''"
           rows="4"
           class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-          :placeholder="hintFor(field)"
-          @input="updateField(key as string, ($event.target as HTMLTextAreaElement).value)"
+          :placeholder="hintFor(entry.field)"
+          @input="updateField(entry.key, ($event.target as HTMLTextAreaElement).value)"
         />
 
-        <!-- JSON Schema object/array: local draft textarea -->
-        <div v-else-if="isJsonLike(field.type)">
+        <div v-else-if="isJsonLike(entry.field.type)">
           <textarea
-            :value="drafts[key as string]"
+            :value="drafts[entry.key]"
             rows="5"
             class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-            :placeholder="hintFor(field)"
-            @input="onDraftInput(key as string, ($event.target as HTMLTextAreaElement).value, field)"
-            @blur="onDraftBlur(key as string, field)"
+            :placeholder="hintFor(entry.field)"
+            @input="onDraftInput(entry.key, ($event.target as HTMLTextAreaElement).value, entry.field)"
+            @blur="onDraftBlur(entry.key, entry.field)"
           />
         </div>
 
-        <!-- String fallback -->
         <input
           v-else
           type="text"
-          :value="stringValue(fieldValue(key, field))"
+          :value="stringValue(fieldValue(entry.key, entry.field))"
           class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-          :placeholder="hintFor(field)"
-          @input="updateField(key as string, ($event.target as HTMLInputElement).value)"
+          :placeholder="hintFor(entry.field)"
+          @input="updateField(entry.key, ($event.target as HTMLInputElement).value)"
         >
 
-        <!-- Hint text below input -->
-        <p v-if="hintFor(field)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(field) }}</p>
+        <p v-if="hintFor(entry.field)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(entry.field) }}</p>
       </div>
     </template>
-
-    <!-- Section groups -->
-    <div v-for="group in groupedSchema.sections" :key="group.sectionKey" class="mb-4">
-      <CollapsibleSection
-        :title="labelFor(group.section, group.sectionKey)"
-        :description="hintFor(group.section)"
-        v-model:collapsed="sectionCollapsed[group.sectionKey]"
-      >
-        <div class="flex flex-col gap-4">
-          <template v-for="(field, key) in group.fields" :key="key">
-            <div v-if="field" class="mb-0">
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                {{ labelFor(field, key as string) }}
-              </label>
-
-              <CustomMultiSelect
-                v-if="isMultiSelectLike(field.type)"
-                :modelValue="(sectionFieldValue(group.sectionKey, key as string, field) as string[]) ?? []"
-                :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
-                :placeholder="hintFor(field) || 'Select...'"
-                @update:modelValue="updateSectionField(group.sectionKey, key as string, $event)"
-              />
-
-              <CustomSelect
-                v-else-if="hasOptions(field)"
-                :model-value="sectionFieldValue(group.sectionKey, key as string, field) ?? ''"
-                :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
-                :placeholder="hintFor(field) || 'Select...'"
-                @update:model-value="updateSectionField(group.sectionKey, key as string, $event)"
-              />
-
-              <CustomSelect
-                v-else-if="isModelSelectLike(field.type)"
-                :model-value="sectionFieldValue(group.sectionKey, key as string, field) ?? ''"
-                :options="modelSelectOptions[field.model_type || 'llm'] || []"
-                :placeholder="t('configuration.select_model')"
-                @update:model-value="updateSectionField(group.sectionKey, key as string, $event)"
-              />
-
-              <div v-else-if="isBoolLike(field.type)" class="flex items-center">
-                <input
-                  :id="'config-switch-' + group.sectionKey + '-' + key"
-                  type="checkbox"
-                  class="sr-only"
-                  :checked="!!sectionFieldValue(group.sectionKey, key as string, field)"
-                  @change="updateSectionField(group.sectionKey, key as string, ($event.target as HTMLInputElement).checked)"
-                >
-                <label
-                  :for="'config-switch-' + group.sectionKey + '-' + key"
-                  class="relative inline-flex items-center h-5 w-9 rounded-full cursor-pointer transition-colors"
-                  :class="sectionFieldValue(group.sectionKey, key as string, field) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'"
-                  @click.prevent="updateSectionField(group.sectionKey, key as string, !sectionFieldValue(group.sectionKey, key as string, field))"
-                >
-                  <span
-                    class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition-transform"
-                    :class="sectionFieldValue(group.sectionKey, key as string, field) ? 'translate-x-5' : 'translate-x-0'"
-                  />
-                </label>
-              </div>
-
-              <input
-                v-else-if="isNumberLike(field.type)"
-                type="number"
-                :value="drafts[group.sectionKey + '.' + key] ?? ''"
-                :step="field.type === 'integer' ? '1' : '0.01'"
-                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                :placeholder="hintFor(field)"
-                @input="drafts[group.sectionKey + '.' + key] = ($event.target as HTMLInputElement).value"
-                @blur="commitSectionNumberDraft(group.sectionKey, key as string, field)"
-              >
-
-              <div v-else-if="field.type === 'sensitive'" class="relative">
-                <input
-                  :type="sensitiveVisible[group.sectionKey + '.' + key] ? 'text' : 'password'"
-                  :value="sectionFieldValue(group.sectionKey, key as string, field) ?? ''"
-                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 pr-10 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                  :placeholder="hintFor(field)"
-                  @input="updateSectionField(group.sectionKey, key as string, ($event.target as HTMLInputElement).value)"
-                >
-                <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" @click="toggleSensitive(group.sectionKey + '.' + key)">
-                  <IconEye v-if="!sensitiveVisible[group.sectionKey + '.' + key]" class="w-4 h-4" />
-                  <IconEyeOff v-else class="w-4 h-4" />
-                </button>
-              </div>
-
-              <div v-else-if="isMonacoLike(field.type)" style="height: 200px;">
-                <MonacoEditor
-                  :modelValue="drafts[group.sectionKey + '.' + key] ?? ''"
-                  :language="monacoLang(field)"
-                  :height="200"
-                  @update:modelValue="updateSectionMonacoDraft(group.sectionKey, key as string, $event, field.type)"
-                />
-              </div>
-
-              <TagInput
-                v-else-if="isListLike(field.type)"
-                :modelValue="(sectionFieldValue(group.sectionKey, key as string, field) as string[]) ?? []"
-                :placeholder="hintFor(field)"
-                @update:modelValue="updateSectionField(group.sectionKey, key as string, $event)"
-              />
-
-              <textarea
-                v-else-if="isTextareaLike(field.type)"
-                :value="sectionFieldValue(group.sectionKey, key as string, field) ?? ''"
-                rows="4"
-                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                :placeholder="hintFor(field)"
-                @input="updateSectionField(group.sectionKey, key as string, ($event.target as HTMLTextAreaElement).value)"
-              />
-
-              <div v-else-if="isJsonLike(field.type)">
-                <textarea
-                  :value="drafts[group.sectionKey + '.' + key]"
-                  rows="5"
-                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                  :placeholder="hintFor(field)"
-                  @input="onSectionDraftInput(group.sectionKey, key as string, ($event.target as HTMLTextAreaElement).value, field)"
-                  @blur="onSectionDraftBlur(group.sectionKey, key as string, field)"
-                />
-              </div>
-
-              <input
-                v-else
-                type="text"
-                :value="stringValue(sectionFieldValue(group.sectionKey, key as string, field))"
-                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                :placeholder="hintFor(field)"
-                @input="updateSectionField(group.sectionKey, key as string, ($event.target as HTMLInputElement).value)"
-              >
-
-              <p v-if="hintFor(field)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(field) }}</p>
-            </div>
-          </template>
-        </div>
-      </CollapsibleSection>
-    </div>
   </div>
 </template>
 
@@ -310,28 +298,21 @@ const effectiveSchema = computed<Record<string, any>>(() => {
   return (s && s.provider_config) ? s.provider_config : s
 })
 
-interface SectionGroup {
-  sectionKey: string
-  section: any
-  fields: Record<string, any>
-}
-
 const groupedSchema = computed(() => {
   const schema = effectiveSchema.value
-  const ungrouped: Record<string, any> = {}
-  const sections: SectionGroup[] = []
+  const entries: { key: string; type: 'field' | 'section'; field: any; fields?: Record<string, any> }[] = []
 
   for (const key in schema) {
     const field = schema[key]
     if (!field) continue
     if (isSectionLike(field.type)) {
-      sections.push({ sectionKey: key, section: field, fields: field.fields || {} })
+      entries.push({ key, type: 'section', field, fields: field.fields || {} })
     } else {
-      ungrouped[key] = field
+      entries.push({ key, type: 'field', field })
     }
   }
 
-  return { ungrouped, sections }
+  return { entries }
 })
 
 interface DataFieldEntry {
@@ -342,15 +323,16 @@ interface DataFieldEntry {
 
 /** Map keyed by draftKey: "fieldKey" for ungrouped, "sectionKey.fieldKey" for section fields */
 const allDataFields = computed(() => {
-  const { ungrouped, sections } = groupedSchema.value
+  const { entries } = groupedSchema.value
   const all: Record<string, DataFieldEntry> = {}
-  for (const key in ungrouped) {
-    all[key] = { field: ungrouped[key], sectionKey: null, fieldKey: key }
-  }
-  for (const group of sections) {
-    for (const key in group.fields) {
-      const dk = group.sectionKey + '.' + key
-      all[dk] = { field: group.fields[key], sectionKey: group.sectionKey, fieldKey: key }
+  for (const entry of entries) {
+    if (entry.type === 'section' && entry.fields) {
+      for (const key in entry.fields) {
+        const dk = entry.key + '.' + key
+        all[dk] = { field: entry.fields[key], sectionKey: entry.key, fieldKey: key }
+      }
+    } else {
+      all[entry.key] = { field: entry.field, sectionKey: null, fieldKey: entry.key }
     }
   }
   return all
@@ -723,9 +705,9 @@ function validate(): { valid: boolean; message?: string } {
   const schema = allDataFields.value
   const result = { ...props.modelValue }
   // Deep-copy section dicts so nested writes don't mutate props
-  for (const group of groupedSchema.value.sections) {
-    if (result[group.sectionKey] && typeof result[group.sectionKey] === 'object') {
-      result[group.sectionKey] = { ...result[group.sectionKey] }
+  for (const entry of groupedSchema.value.entries) {
+    if (entry.type === 'section' && result[entry.key] && typeof result[entry.key] === 'object') {
+      result[entry.key] = { ...result[entry.key] }
     }
   }
 
