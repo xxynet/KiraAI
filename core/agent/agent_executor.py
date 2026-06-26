@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional, TYPE_CHECKING, Literal
 
@@ -10,6 +11,7 @@ from core.llm_client import LLMClient
 from core.provider import LLMRequest, LLMResponse, LLMModelClient
 from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage
+from core.chat.message_utils import KiraExceptionEvent
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 
 if TYPE_CHECKING:
@@ -106,6 +108,20 @@ class AgentExecutor:
                         state = "error"
                         err = f"All models failed. Last error: {type(last_exc).__name__}: {last_exc}"
                         is_final = True
+                        exc_event = KiraExceptionEvent(
+                            name=type(last_exc).__name__,
+                            message=str(last_exc),
+                            traceback=traceback.format_exc(),
+                            stage="agent_loop",
+                            source="provider",
+                            comp_id=model.model.provider_name,
+                            e=last_exc,
+                        )
+                        for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
+                            try:
+                                await h.handler(event, exc_event)
+                            except Exception:
+                                logger.error(traceback.format_exc())
 
             has_tool_calls = bool(llm_resp.tool_calls)
 
@@ -161,7 +177,25 @@ class AgentExecutor:
             assistant_content = llm_resp.text_response or ""
             reasoning = llm_resp.reasoning_content or ""
 
-            await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
+            try:
+                await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
+            except Exception as e:
+                logger.error(f"[{sid}] Tool execution failed: {e}")
+                exc_event = KiraExceptionEvent(
+                    name=type(e).__name__,
+                    message=str(e),
+                    traceback=traceback.format_exc(),
+                    stage="agent_loop",
+                    source="tool",
+                    comp_id=None,
+                    e=e,
+                )
+                for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
+                    try:
+                        await h.handler(event, exc_event)
+                    except Exception:
+                        logger.error(traceback.format_exc())
+                raise
             # An ON_TOOL_RESULT handler may stop the event mid multi-tool-call turn,
             # leaving execute_tool to produce only partial tool_results. Keep the
             # assistant message's tool_calls consistent with the tool_results actually
