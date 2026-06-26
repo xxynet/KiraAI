@@ -114,7 +114,7 @@ class AgentExecutor:
                             traceback=traceback.format_exc(),
                             stage="agent_loop",
                             source="provider",
-                            comp_id=llm_model.model.provider_name,
+                            comp_id=model.model.provider_name,
                             e=last_exc,
                         )
                         for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
