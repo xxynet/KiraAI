@@ -89,6 +89,7 @@ export interface PersonaBase {
 export interface PersonaResponse extends PersonaBase {
   id: string
   created_at?: number
+  is_active?: boolean
 }
 
 export interface PersonaContentResponse {

@@ -264,6 +264,10 @@ export default {
     delete_failed: '删除人设失败',
     load_failed: '加载人设列表失败',
     form_incomplete: '请填写人设名称',
+    set_active: '切换',
+    active: '已激活',
+    set_active_success: '人设切换成功',
+    set_active_failed: '切换人设失败',
   },
   plugin: {
     title: '附加功能',

@@ -172,11 +172,12 @@ class DatabaseService:
         content: str,
         format: str = "text",
         created_at: Optional[int] = None,
+        is_active: bool = False,
     ) -> None:
         if created_at is None:
             created_at = int(time.time())
         async with self.db.transaction() as session:
-            session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at))
+            session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at, is_active=is_active))
 
     async def get_persona(self, persona_id: str) -> Optional[dict]:
         stmt = select(Persona).where(Persona.id == persona_id)
@@ -184,7 +185,7 @@ class DatabaseService:
         if row is None:
             return None
         item = row["Persona"]
-        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at}
+        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active}
 
     async def update_persona(
         self,
@@ -193,6 +194,11 @@ class DatabaseService:
         content: Optional[str] = None,
         format: Optional[str] = None,
     ) -> bool:
+        """Update non-activation fields of a persona.
+
+        Activation changes must go through set_active_persona() to maintain
+        the single-active-persona invariant.
+        """
         async with self.db.transaction() as session:
             result = await session.execute(
                 select(Persona).where(Persona.id == persona_id)
@@ -207,6 +213,37 @@ class DatabaseService:
             if format is not None:
                 item.format = format
             return True
+
+    async def set_active_persona(self, persona_id: str) -> bool:
+        """Set a persona as the active one and deactivate all others."""
+        async with self.db.transaction() as session:
+            # Confirm the target persona exists before touching anything
+            result = await session.execute(
+                select(Persona).where(Persona.id == persona_id)
+            )
+            item = result.scalar_one_or_none()
+            if item is None:
+                return False
+
+            # Deactivate all personas (including the target, for a clean reset)
+            result = await session.execute(
+                select(Persona).where(Persona.is_active)
+            )
+            for row in result.scalars().all():
+                row.is_active = False
+
+            # Activate the target persona
+            item.is_active = True
+            return True
+
+    async def get_active_persona(self) -> Optional[dict]:
+        """Get the currently active persona."""
+        stmt = select(Persona).where(Persona.is_active)
+        row = await self.db.fetch_one(stmt)
+        if row is None:
+            return None
+        item = row["Persona"]
+        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active}
 
     async def delete_persona(self, persona_id: str) -> bool:
         async with self.db.transaction() as session:
@@ -223,7 +260,7 @@ class DatabaseService:
         stmt = select(Persona).order_by(Persona.id)
         rows = await self.db.fetch_all(stmt)
         return [
-            {"id": r["Persona"].id, "name": r["Persona"].name, "format": r["Persona"].format, "content": r["Persona"].content, "created_at": r["Persona"].created_at}
+            {"id": r["Persona"].id, "name": r["Persona"].name, "format": r["Persona"].format, "content": r["Persona"].content, "created_at": r["Persona"].created_at, "is_active": r["Persona"].is_active}
             for r in rows
         ]
 

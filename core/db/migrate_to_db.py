@@ -91,12 +91,56 @@ async def migrate_persona(db_service: DatabaseService) -> None:
         logger.error(f"Failed to read persona text: {e}")
         return
 
-    await db_service.add_persona("default", "default", content, format="text")
+    await db_service.add_persona("default", "default", content, format="text", is_active=True)
     logger.info("Migrated default persona to database")
+
+
+async def migrate_persona_is_active(db_service: DatabaseService) -> None:
+    """Add is_active column to personas table if it doesn't exist."""
+    logger.info("Checking if is_active column needs to be added to personas table")
+    try:
+        # Use raw connection for DDL operations
+        async with db_service.db.engine.begin() as conn:
+            # Check if is_active column exists
+            result = await conn.execute(
+                text("PRAGMA table_info(personas)")
+            )
+            columns = [row.name for row in result.fetchall()]
+            logger.info(f"Current persona columns: {columns}")
+
+            if 'is_active' not in columns:
+                logger.info("Adding is_active column to personas table")
+                await conn.execute(
+                    text("ALTER TABLE personas ADD COLUMN is_active BOOLEAN DEFAULT 0")
+                )
+
+                # Check if any persona is already active (won't be the case for new column)
+                # Since this is a new column, all values default to 0
+                # Set the first persona as active only if none are active
+                result = await conn.execute(
+                    text("SELECT COUNT(*) FROM personas WHERE is_active = 1")
+                )
+                if result.scalar() == 0:
+                    # No active persona, set the first one as active
+                    logger.info("No active persona found, setting first persona as active")
+                    await conn.execute(
+                        text("UPDATE personas SET is_active = 1 WHERE id = (SELECT id FROM personas ORDER BY created_at LIMIT 1)")
+                    )
+                else:
+                    logger.info("Active persona already exists, skipping activation")
+
+                logger.info("Successfully added is_active column to personas table")
+            else:
+                logger.info("is_active column already exists, skipping")
+    except Exception as e:
+        logger.error(f"Failed to add is_active column: {e}")
+        raise
 
 
 async def run_migrations(db_service: DatabaseService) -> None:
     """Run all data migrations."""
     await migrate_stickers(db_service)
     await migrate_image_desc_cache(db_service)
+    # Ensure the is_active column exists before migrate_persona reads the table
+    await migrate_persona_is_active(db_service)
     await migrate_persona(db_service)

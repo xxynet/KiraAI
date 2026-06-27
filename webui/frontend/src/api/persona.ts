@@ -28,3 +28,11 @@ export function getCurrentPersonaContent() {
 export function updateCurrentPersonaContent(data: PersonaContentUpdateRequest) {
   return apiClient.put<PersonaContentResponse>('/personas/current/content', data)
 }
+
+export function getActivePersona() {
+  return apiClient.get<PersonaResponse>('/personas/active')
+}
+
+export function setActivePersona(personaId: string) {
+  return apiClient.put('/personas/active', { persona_id: personaId })
+}

@@ -32,6 +32,7 @@ class Persona(Base):
     format = Column(String, nullable=False, default="text")
     content = Column(Text, nullable=False)
     created_at = Column(BigInteger, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=False)
 
 
 class TelemetryMessage(Base):
