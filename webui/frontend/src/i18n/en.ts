@@ -264,6 +264,10 @@ export default {
     delete_failed: 'Failed to delete persona',
     load_failed: 'Failed to load personas',
     form_incomplete: 'Please fill in persona name',
+    set_active: 'Switch',
+    active: 'Active',
+    set_active_success: 'Persona switched successfully',
+    set_active_failed: 'Failed to switch persona',
   },
   plugin: {
     title: 'Add-ons',

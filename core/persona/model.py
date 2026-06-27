@@ -9,3 +9,4 @@ class PersonaInfo:
     format: Optional[Literal["text", "yaml", "markdown", "xml"]] = None
     content: Optional[str] = None
     created_at: Optional[int] = None
+    is_active: Optional[bool] = False

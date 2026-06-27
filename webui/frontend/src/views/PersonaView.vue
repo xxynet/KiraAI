@@ -52,7 +52,20 @@
             {{ $t('persona.edit') }}
           </button>
           <button
-            v-if="persona.id !== 'default'"
+            v-if="!persona.is_active"
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30 transition-colors"
+            @click="handleSetActive(persona.id)"
+          >
+            {{ $t('persona.set_active') }}
+          </button>
+          <span
+            v-else
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-green-300 bg-green-100 text-green-700 dark:border-green-600 dark:bg-green-900/30 dark:text-green-300"
+          >
+            {{ $t('persona.active') }}
+          </span>
+          <button
+            v-if="!persona.is_active"
             class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
             @click="handleDelete(persona.id)"
           >
@@ -140,7 +153,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import {
-  getPersonas, createPersona, updatePersona, deletePersona,
+  getPersonas, createPersona, updatePersona, deletePersona, setActivePersona,
 } from '@/api/persona'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -270,6 +283,16 @@ async function onConfirmDelete() {
     await loadPersonas()
   } catch (error: any) {
     notify(t('persona.delete_failed') + (error?.message ? ': ' + error.message : ''), 'error')
+  }
+}
+
+async function handleSetActive(personaId: string) {
+  try {
+    await setActivePersona(personaId)
+    notify(t('persona.set_active_success'), 'success')
+    await loadPersonas()
+  } catch (error: any) {
+    notify(t('persona.set_active_failed') + (error?.message ? ': ' + error.message : ''), 'error')
   }
 }
 
