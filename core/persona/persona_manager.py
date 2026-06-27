@@ -25,14 +25,7 @@ class PersonaManager:
             return self.wrap_persona(persona_dict)
         else:
             # Get the currently active persona
-            active_persona = await self.get_active_persona()
-            if active_persona:
-                return active_persona
-            # Fallback to default persona if no active persona
-            persona_dict = await self.db.get_persona("default")
-            if not persona_dict:
-                return None
-            return self.wrap_persona(persona_dict)
+            return await self.get_active_persona()
 
     @staticmethod
     def wrap_persona(persona_dict: dict) -> PersonaInfo:
