@@ -250,16 +250,15 @@ async def test_init_persona(persona_manager):
 
 
 @pytest.mark.anyio
-async def test_get_persona_fallback_to_default(persona_manager):
-    """Test that get_persona falls back to default if no active persona."""
-    # Create default persona
+async def test_get_persona_returns_none_when_no_active(persona_manager):
+    """Test that get_persona returns None when no persona is active."""
+    # Create default persona but do not activate it
     default = PersonaInfo(id="default", name="Default", content="Default content")
     await persona_manager.create_persona(default)
 
-    # No active persona, should return default
+    # No active persona, should return None
     persona = await persona_manager.get_persona()
-    assert persona is not None
-    assert persona.id == "default"
+    assert persona is None
 
 
 @pytest.mark.anyio
