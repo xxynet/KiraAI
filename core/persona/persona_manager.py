@@ -46,13 +46,16 @@ class PersonaManager:
         )
 
     async def update_persona(self, persona: PersonaInfo):
+        # Activation changes are routed through set_active_persona to maintain
+        # the single-active-persona invariant in the database.
+        if persona.is_active is True:
+            await self.set_active_persona(persona.id)
 
         success = await self.db.update_persona(
             persona_id=persona.id,
             name=persona.name,
             content=persona.content,
             format=persona.format,
-            is_active=persona.is_active if persona.is_active is not None else None
         )
         return success
 

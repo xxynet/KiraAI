@@ -141,5 +141,6 @@ async def run_migrations(db_service: DatabaseService) -> None:
     """Run all data migrations."""
     await migrate_stickers(db_service)
     await migrate_image_desc_cache(db_service)
-    await migrate_persona(db_service)
+    # Ensure the is_active column exists before migrate_persona reads the table
     await migrate_persona_is_active(db_service)
+    await migrate_persona(db_service)

@@ -266,8 +266,8 @@ export default {
     form_incomplete: '请填写人设名称',
     set_active: '切换',
     active: '已激活',
-    set_active_success: '人格切换成功',
-    set_active_failed: '切换人格失败',
+    set_active_success: '人设切换成功',
+    set_active_failed: '切换人设失败',
   },
   plugin: {
     title: '附加功能',

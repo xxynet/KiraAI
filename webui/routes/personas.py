@@ -170,7 +170,7 @@ class PersonasRoutes(Routes):
         created = await self.lifecycle.persona_manager.get_persona(persona_id)
         if not created:
             raise HTTPException(status_code=500, detail="Failed to create persona")
-        return PersonaResponse(id=created.id, name=created.name, format=created.format, content=created.content, created_at=created.created_at or 0)
+        return PersonaResponse(id=created.id, name=created.name, format=created.format, content=created.content, created_at=created.created_at or 0, is_active=created.is_active or False)
 
     async def get_persona(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -193,7 +193,7 @@ class PersonasRoutes(Routes):
         if not success:
             raise HTTPException(status_code=404, detail="Persona not found")
         updated = await self.lifecycle.persona_manager.get_persona(persona_id)
-        return PersonaResponse(id=persona_id, name=updated.name, format=updated.format, content=updated.content, created_at=updated.created_at or 0)
+        return PersonaResponse(id=persona_id, name=updated.name, format=updated.format, content=updated.content, created_at=updated.created_at or 0, is_active=updated.is_active or False)
 
     async def delete_persona(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -204,4 +204,4 @@ class PersonasRoutes(Routes):
                 raise HTTPException(status_code=404, detail="Persona not found")
             return None
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
