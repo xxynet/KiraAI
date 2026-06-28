@@ -802,6 +802,7 @@ export default {
     module_unavailable: '配置模块不可用',
     load_error: '加载配置失败',
     select_model: '— 请选择模型 —',
+    select_persona: '选择人设',
     json_invalid: '字段"{field}"包含无效的 JSON：{error}',
   },
   login: {

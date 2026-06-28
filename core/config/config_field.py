@@ -16,6 +16,7 @@ class ConfigType(Enum):
     Textarea = "textarea"
     ModelSelect = "model_select"
     MultiSelect = "multi_select"
+    PersonaSelect = "persona_select"
     Section = "section"
 
 
@@ -165,6 +166,13 @@ class MultiSelectField(BaseConfigField):
         self.options = list(options)
 
 
+class PersonaSelectField(BaseConfigField):
+    type = ConfigType.PersonaSelect
+
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+        super().__init__(key, name, hint, default, locales)
+
+
 class SectionField(BaseConfigField):
     type = ConfigType.Section
 
@@ -227,6 +235,9 @@ def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
 
     if field_type == "multi_select":
         return MultiSelectField(key=key, name=name, hint=hint, options=options or [], default=default, locales=locales)
+
+    if field_type == "persona_select":
+        return PersonaSelectField(key=key, name=name, hint=hint, default=default, locales=locales)
 
     if field_type == "section":
         collapsed = schema.get("collapsed", False)
