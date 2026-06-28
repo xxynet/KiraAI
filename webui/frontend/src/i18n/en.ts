@@ -266,6 +266,8 @@ export default {
     form_incomplete: 'Please fill in persona name',
     set_active: 'Switch',
     active: 'Active',
+    set_active_confirm_title: 'Switch Persona',
+    set_active_confirm_message: 'Switching persona may cause existing memory and conversations to become inconsistent. Please make sure you have handled relevant data before proceeding.',
     set_active_success: 'Persona switched successfully',
     set_active_failed: 'Failed to switch persona',
   },
