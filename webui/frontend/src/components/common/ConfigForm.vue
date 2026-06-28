@@ -39,6 +39,14 @@
                   @update:model-value="updateSectionField(entry.key, key as string, $event)"
                 />
 
+                <CustomSelect
+                  v-else-if="isPersonaSelectLike(field.type)"
+                  :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
+                  :options="personaSelectOptions"
+                  :placeholder="t('config.select_persona')"
+                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
+                />
+
                 <div v-else-if="isBoolLike(field.type)" class="flex items-center">
                   <input
                     :id="'config-switch-' + entry.key + '-' + key"
@@ -167,6 +175,14 @@
           @update:model-value="updateField(entry.key, $event)"
         />
 
+        <CustomSelect
+          v-else-if="isPersonaSelectLike(entry.field.type)"
+          :model-value="fieldValue(entry.key, entry.field) ?? ''"
+          :options="personaSelectOptions"
+          :placeholder="t('config.select_persona')"
+          @update:model-value="updateField(entry.key, $event)"
+        />
+
         <div v-else-if="isBoolLike(entry.field.type)" class="flex items-center">
           <input
             :id="'config-switch-' + entry.key"
@@ -275,6 +291,7 @@ import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import { IconEye, IconEyeOff } from '@/components/icons'
 import { getProviders, getModels } from '@/api/provider'
+import { getPersonas } from '@/api/persona'
 
 const props = defineProps<{
   modelValue: Record<string, any>
@@ -291,6 +308,7 @@ const { localize } = useLocalized()
 const drafts = reactive<Record<string, string>>({})
 const sensitiveVisible = reactive<Record<string, boolean>>({})
 const modelSelectOptions = reactive<Record<string, { value: string; label: string }[]>>({})
+const personaSelectOptions = reactive<{ value: string; label: string }[]>([])
 const sectionCollapsed = reactive<Record<string, boolean>>({})
 
 const effectiveSchema = computed<Record<string, any>>(() => {
@@ -395,6 +413,10 @@ function isModelSelectLike(type: string): boolean {
   return type === 'model_select'
 }
 
+function isPersonaSelectLike(type: string): boolean {
+  return type === 'persona_select'
+}
+
 function isMultiSelectLike(type: string): boolean {
   return type === 'multi_select'
 }
@@ -443,6 +465,24 @@ async function loadModelSelectOptions() {
     }
   } catch (e) {
     console.warn('Failed to load model options:', e)
+  }
+}
+
+async function loadPersonaSelectOptions() {
+  const schema = allDataFields.value
+  const hasPersonaSelect = Object.values(schema).some(({ field }) => field && isPersonaSelectLike(field.type))
+  if (!hasPersonaSelect || personaSelectOptions.length > 0) return
+
+  try {
+    const res = await getPersonas()
+    const personas = res.data || []
+    personaSelectOptions.length = 0
+    personaSelectOptions.push({ value: '', label: t('config.select_persona') })
+    for (const p of personas) {
+      personaSelectOptions.push({ value: p.id, label: p.name || p.id })
+    }
+  } catch (e) {
+    console.warn('Failed to load persona options:', e)
   }
 }
 
@@ -524,6 +564,7 @@ watch(() => effectiveSchema.value, () => {
   initDrafts()
   applyDefaults()
   loadModelSelectOptions()
+  loadPersonaSelectOptions()
   const schema = effectiveSchema.value
   for (const key in schema) {
     const field = schema[key]

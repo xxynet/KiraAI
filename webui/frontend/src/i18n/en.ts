@@ -802,6 +802,7 @@ export default {
     module_unavailable: 'Configuration module unavailable',
     load_error: 'Failed to load configuration',
     select_model: '— Select model —',
+    select_persona: 'Select Persona',
     json_invalid: 'Invalid JSON in field "{field}": {error}',
   },
   login: {
