@@ -145,6 +145,16 @@
       :confirm-text="t('common.delete')"
       @confirm="onConfirmDelete"
     />
+
+    <ConfirmModal
+      ref="switchConfirmModalRef"
+      variant="info"
+      :title="t('persona.set_active_confirm_title')"
+      :message="t('persona.set_active_confirm_message')"
+      :cancel-text="t('persona.modal_cancel')"
+      :confirm-text="t('persona.set_active')"
+      @confirm="onConfirmSwitch"
+    />
   </div>
 </template>
 
@@ -165,6 +175,7 @@ import type { PersonaResponse } from '@/types'
 const { t } = useI18n()
 
 const confirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
+const switchConfirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
 
 const personas = ref<PersonaResponse[]>([])
 const dialogVisible = ref(false)
@@ -175,6 +186,7 @@ const saving = ref(false)
 const confirmTitle = ref('')
 const confirmMessage = ref('')
 let deleteTargetId: string | null = null
+let switchTargetId: string | null = null
 
 const formatOptions = computed(() => [
   { value: 'text', label: t('persona.format_text') },
@@ -287,8 +299,16 @@ async function onConfirmDelete() {
 }
 
 async function handleSetActive(personaId: string) {
+  switchTargetId = personaId
+  switchConfirmModalRef.value?.open()
+}
+
+async function onConfirmSwitch() {
+  if (!switchTargetId) return
+  const id = switchTargetId
+  switchTargetId = null
   try {
-    await setActivePersona(personaId)
+    await setActivePersona(id)
     notify(t('persona.set_active_success'), 'success')
     await loadPersonas()
   } catch (error: any) {

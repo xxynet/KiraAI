@@ -266,6 +266,8 @@ export default {
     form_incomplete: '请填写人设名称',
     set_active: '切换',
     active: '已激活',
+    set_active_confirm_title: '切换人设',
+    set_active_confirm_message: '切换人设可能导致已有的记忆、对话等内容出现不匹配，请确保自行处理完成后再切换。',
     set_active_success: '人设切换成功',
     set_active_failed: '切换人设失败',
   },
