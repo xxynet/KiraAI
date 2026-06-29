@@ -22,6 +22,7 @@
         </PageContainer>
       </main>
     </div>
+    <ChangeTokenModal />
   </div>
 </template>
 
@@ -33,6 +34,7 @@ import { usePluginMenuStore } from '@/stores/pluginMenu'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
+import ChangeTokenModal from '@/components/common/ChangeTokenModal.vue'
 
 const route = useRoute()
 const router = useRouter()
