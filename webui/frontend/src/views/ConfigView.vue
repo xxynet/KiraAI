@@ -411,11 +411,11 @@ interface ConfigGroup {
 
 const allGroups: ConfigGroup[] = [
   {
-    id: 'bot',
-    labelKey: 'configuration.groups.bot',
-    labelFallback: 'Bot Settings',
-    descKey: 'configuration.groups.bot_desc',
-    descFallback: 'Core bot behavior parameters',
+    id: 'chat',
+    labelKey: 'configuration.groups.chat',
+    labelFallback: 'Chat Settings',
+    descKey: 'configuration.groups.chat_desc',
+    descFallback: 'Core chat behavior parameters',
     icon: IconMonitor,
     fields: [
       { key: 'bot_config.bot.max_memory_length', labelKey: 'configuration.message.max_memory_length', labelFallback: 'Max Memory Length', hintKey: 'configuration.hints.max_memory_length', hintFallback: 'Maximum number of messages retained in context window', type: 'integer', default: 50, validation: { min: 1, max: 9999, required: true } },
@@ -524,7 +524,7 @@ interface CategoryTab {
 }
 
 const categoryTabs: CategoryTab[] = [
-  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['bot', 'agent', 'selfie'] },
+  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'agent', 'selfie'] },
   { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['network', 'cache', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
