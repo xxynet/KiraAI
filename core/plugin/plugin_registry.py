@@ -607,6 +607,10 @@ class PluginManager:
         Also registers routes for any plugins that were already initialized before this call.
         """
         self._web_app = app
+        # Store reference so WS endpoints can access the manager without
+        # capturing it in closures (which breaks FastAPI's deepcopy during
+        # dependency resolution for WebSocket routes).
+        app.state.plugin_manager = self
         for plugin_id in list(self.plugin_instances.keys()):
             self._register_plugin_apis_for(plugin_id)
             self._register_plugin_ws_for(plugin_id)
@@ -906,7 +910,13 @@ class PluginManager:
             logger.info(f"Registered {len(registered)} API routes from {plugin_id}: {registered}")
 
     def _register_plugin_ws_for(self, plugin_id: str) -> None:
-        """Register plugin WebSocket routes on the FastAPI app."""
+        """Register plugin WebSocket routes on the FastAPI app.
+
+        Note: unlike HTTP endpoints, WS endpoints cannot use Depends with
+        closures that capture non-picklable objects (e.g. PluginManager),
+        because FastAPI deepcopies dependencies during WS dependency resolution.
+        Instead, the manager is accessed via ``ws.app.state.plugin_manager``.
+        """
         if self._web_app is None:
             return
         comp = _plugin_components.get(plugin_id)
@@ -919,32 +929,27 @@ class PluginManager:
         from webui.routes.auth import require_ws_auth
 
         _plugin_ws_registered.add(plugin_id)
-        mgr = self
-
-        def _make_plugin_check(pid: str):
-            async def check():
-                if not mgr.is_plugin_enabled(pid):
-                    from fastapi import WebSocketException
-                    raise WebSocketException(code=1011, reason="Plugin disabled")
-            return check
 
         registered: List[str] = []
 
         for route in comp.ws_routes:
             func = route["func"]
             func_name = func.__name__
+            pid = plugin_id
             full_path = f"/ws/plugin/{plugin_id}/{route['path'].lstrip('/')}"
 
-            async def dynamic_endpoint(
-                ws: WebSocket, _pid=plugin_id, _fname=func_name, _mgr=mgr
-            ):
-                inst = _mgr.plugin_instances.get(_pid)
+            async def dynamic_endpoint(ws: WebSocket, _pid=pid, _fname=func_name):
+                mgr = ws.app.state.plugin_manager
+                if not mgr.is_plugin_enabled(_pid):
+                    await ws.close(code=1011, reason="Plugin disabled")
+                    return
+                inst = mgr.plugin_instances.get(_pid)
                 if inst is None:
                     await ws.close(code=1011, reason="Plugin not available")
                     return
                 await getattr(inst, _fname)(ws)
 
-            dependencies = [Depends(_make_plugin_check(plugin_id))]
+            dependencies = []
             if route["auth"]:
                 dependencies.append(Depends(require_ws_auth))
 
