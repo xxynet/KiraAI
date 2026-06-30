@@ -142,7 +142,7 @@ class Reply(BaseMessageElement):
 class Forward(BaseMessageElement):
     type = ElementType.Forward
 
-    def __init__(self, chains: list[MessageChain] = None, message_id: Optional[str, list] = None, merge: bool = True):
+    def __init__(self, chains: list[MessageChain] = None, message_id: Optional[Union[str, list]] = None, merge: bool = True):
         self.chains: list[MessageChain] = chains or []
         self.message_id = message_id
         self.merge: bool = merge
