@@ -162,13 +162,15 @@ class PluginComponents:
     page_funcs: Dict[str, Callable] = field(default_factory=dict)
     api_routes: List[dict] = field(default_factory=list)
     api_route_funcs: Dict[str, Callable] = field(default_factory=dict)
+    ws_routes: List[dict] = field(default_factory=list)
+    ws_route_funcs: Dict[str, Callable] = field(default_factory=dict)
     static_dirs: List[dict] = field(default_factory=list)
     widgets: List[dict] = field(default_factory=list)
     widget_funcs: Dict[str, Callable] = field(default_factory=dict)
 
     def has_any(self) -> bool:
         return bool(self.tools or self.tags or self.hooks or self.pages
-                    or self.api_routes or self.static_dirs or self.widgets)
+                    or self.api_routes or self.ws_routes or self.static_dirs or self.widgets)
 
     def register_tool(self, name: str, description: str, params: dict, func: Callable):
         self.tools[name] = {
@@ -228,6 +230,14 @@ class PluginComponents:
         })
         self.api_route_funcs[func.__name__] = func
 
+    def register_ws(self, path: str, func: Callable, auth: bool = True):
+        self.ws_routes.append({
+            "path": path,
+            "func": func,
+            "auth": auth,
+        })
+        self.ws_route_funcs[func.__name__] = func
+
     def register_widget(self, widget_id: str, label: Union[str, Dict[str, str]],
                         icon: str,
                         color: Literal["blue", "green", "purple", "yellow", "red", "gray"],
@@ -256,6 +266,9 @@ _plugin_load_errors: Dict[str, Dict[str, Any]] = {}
 
 """plugin_ids whose API routes have already been added to FastAPI."""
 _plugin_api_registered: set[str] = set()
+
+"""plugin_ids whose WS routes have already been added to FastAPI."""
+_plugin_ws_registered: set[str] = set()
 
 """Discovered plugin metadata: {plugin_id: PluginInfo}"""
 _plugin_infos: Dict[str, PluginInfo] = {}
@@ -401,6 +414,21 @@ class RegisterDeco:
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
             _ensure_components(plugin_id).register_api(method, path, func, auth, **kwargs)
+            return func
+        return decorator
+
+    @staticmethod
+    def ws(path: str, auth: bool = True):
+        """Register a plugin WebSocket endpoint.
+
+        path: Path relative to the plugin prefix, e.g. "/stream"
+              Final route: /ws/plugin/{plugin_id}{path}
+        auth: Require JWT auth during the WS handshake (default True).
+              When enabled, ``ws.state.user`` is set before the endpoint runs.
+        """
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            _ensure_components(plugin_id).register_ws(path, func, auth)
             return func
         return decorator
 
@@ -579,8 +607,13 @@ class PluginManager:
         Also registers routes for any plugins that were already initialized before this call.
         """
         self._web_app = app
+        # Store reference so WS endpoints can access the manager without
+        # capturing it in closures (which breaks FastAPI's deepcopy during
+        # dependency resolution for WebSocket routes).
+        app.state.plugin_manager = self
         for plugin_id in list(self.plugin_instances.keys()):
             self._register_plugin_apis_for(plugin_id)
+            self._register_plugin_ws_for(plugin_id)
             self._register_plugin_pages_for(plugin_id)
             self._register_plugin_static_for(plugin_id)
 
@@ -875,6 +908,60 @@ class PluginManager:
 
         if registered:
             logger.info(f"Registered {len(registered)} API routes from {plugin_id}: {registered}")
+
+    def _register_plugin_ws_for(self, plugin_id: str) -> None:
+        """Register plugin WebSocket routes on the FastAPI app.
+
+        Note: unlike HTTP endpoints, WS endpoints cannot use Depends with
+        closures that capture non-picklable objects (e.g. PluginManager),
+        because FastAPI deepcopies dependencies during WS dependency resolution.
+        Instead, the manager is accessed via ``ws.app.state.plugin_manager``.
+        """
+        if self._web_app is None:
+            return
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.ws_routes:
+            return
+        if plugin_id in _plugin_ws_registered:
+            return
+
+        from fastapi import Depends, WebSocket
+        from webui.routes.auth import require_ws_auth
+
+        _plugin_ws_registered.add(plugin_id)
+
+        registered: List[str] = []
+
+        for route in comp.ws_routes:
+            func = route["func"]
+            func_name = func.__name__
+            pid = plugin_id
+            full_path = f"/ws/plugin/{plugin_id}/{route['path'].lstrip('/')}"
+
+            async def dynamic_endpoint(ws: WebSocket, _pid=pid, _fname=func_name):
+                mgr = ws.app.state.plugin_manager
+                if not mgr.is_plugin_enabled(_pid):
+                    await ws.close(code=1011, reason="Plugin disabled")
+                    return
+                inst = mgr.plugin_instances.get(_pid)
+                if inst is None:
+                    await ws.close(code=1011, reason="Plugin not available")
+                    return
+                await getattr(inst, _fname)(ws)
+
+            dependencies = []
+            if route["auth"]:
+                dependencies.append(Depends(require_ws_auth))
+
+            self._web_app.add_api_websocket_route(
+                path=full_path,
+                endpoint=dynamic_endpoint,
+                dependencies=dependencies,
+            )
+            registered.append(full_path)
+
+        if registered:
+            logger.info(f"Registered {len(registered)} WS routes from {plugin_id}: {registered}")
 
     def _register_plugin_pages_for(self, plugin_id: str) -> None:
         """Register plugin page routes for URL access."""
@@ -1315,6 +1402,7 @@ class PluginManager:
         """
         # Reset tracking sets so init_plugin can re-register
         _plugin_api_registered.discard(plugin_id)
+        _plugin_ws_registered.discard(plugin_id)
         if hasattr(self, '_plugin_pages_registered'):
             self._plugin_pages_registered.discard(plugin_id)
         if hasattr(self, '_plugin_static_registered'):
@@ -1326,6 +1414,7 @@ class PluginManager:
         tag_prefix = f"plugin:{plugin_id}"
         page_prefix = f"/page/plugin/{plugin_id}/"
         static_prefix = f"/static/plugin/{plugin_id}/"
+        ws_prefix = f"/ws/plugin/{plugin_id}/"
 
         routes = self._web_app.routes
         filtered_routes = []
@@ -1336,9 +1425,11 @@ class PluginManager:
             # API / page routes registered via add_api_route
             if hasattr(route, 'tags') and tag_prefix in (route.tags or []):
                 should_remove = True
-            # Page catch-all routes or static mounts
+            # Page catch-all routes, static mounts, or WS routes
             elif hasattr(route, 'path') and (
-                route.path.startswith(page_prefix) or route.path.startswith(static_prefix)
+                route.path.startswith(page_prefix)
+                or route.path.startswith(static_prefix)
+                or route.path.startswith(ws_prefix)
             ):
                 should_remove = True
 
@@ -1541,6 +1632,7 @@ class PluginManager:
             self._register_plugin_hooks_for(plugin_id)
             self._register_plugin_tags_for(plugin_id)
             self._register_plugin_apis_for(plugin_id)
+            self._register_plugin_ws_for(plugin_id)
             self._register_plugin_pages_for(plugin_id)
             self._register_plugin_static_for(plugin_id)
             self._register_plugin_widgets_for(plugin_id)

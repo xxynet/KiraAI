@@ -2,7 +2,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, WebSocket, WebSocketException, status
 from fastapi.responses import FileResponse, HTMLResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
@@ -46,6 +46,37 @@ async def require_auth(
     # helper so plugin page/static auth enforces the exact same claims.
     payload = verify_session_token(token, request.app.state)
     return payload.get("sub", "admin")
+
+
+async def require_ws_auth(
+    ws: WebSocket,
+) -> str:
+    """WebSocket auth dependency — validates token during the WS handshake.
+
+    Token source (checked in order):
+      1. ``?token=…`` query parameter  (most common for browser WS clients)
+      2. ``Authorization: Bearer …`` header
+
+    On failure the connection is accepted then immediately closed with
+    code 4003 so the client sees a meaningful close code instead of a
+    raw HTTP 403/401 that the browser cannot inspect.
+    """
+    token = ws.query_params.get("token")
+    if not token:
+        auth_header = ws.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1]
+
+    if not token:
+        raise WebSocketException(code=4003, reason="Missing token")
+
+    try:
+        payload = verify_session_token(token, ws.app.state)
+    except HTTPException:
+        raise WebSocketException(code=4003, reason="Invalid token") from None
+    user = payload.get("sub", "admin")
+    ws.state.user = user
+    return user
 
 
 class AuthRoutes(Routes):
