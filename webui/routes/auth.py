@@ -73,7 +73,7 @@ async def require_ws_auth(
     try:
         payload = verify_session_token(token, ws.app.state)
     except HTTPException:
-        raise WebSocketException(code=4003, reason="Invalid token")
+        raise WebSocketException(code=4003, reason="Invalid token") from None
     user = payload.get("sub", "admin")
     ws.state.user = user
     return user

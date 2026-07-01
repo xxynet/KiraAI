@@ -1470,10 +1470,6 @@ class PluginManager:
         comp.widgets.clear()
         comp.widget_funcs.clear()
 
-        # clean up WS route registration
-        comp.ws_routes.clear()
-        comp.ws_route_funcs.clear()
-
         # clean up FastAPI routes (API routes, page routes, static mounts)
         self._remove_plugin_routes(plugin_id)
 
