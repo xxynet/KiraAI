@@ -556,6 +556,7 @@ export default {
       network_desc: '网络和包源配置',
     },
     hints: {
+      chat_info: '更多聊天设置位于「附加功能 → 插件」中已启用的消息插件配置中',
       max_memory_length: '上下文窗口中保留的最大消息数',
       message_merge_interval: '收到消息后等待合并的秒数，期间新消息会被合并后统一处理',
       max_buffer_messages: '处理前缓冲的最大消息数',
@@ -584,6 +585,7 @@ export default {
       url_invalid: '请输入有效的 URL，以 http:// 或 https:// 开头',
     },
     message: {
+      chat_info: '更多聊天设置',
       max_memory_length: '最大上下文长度',
       message_merge_interval: '消息合并间隔',
       max_buffer_messages: '最大缓冲消息数',

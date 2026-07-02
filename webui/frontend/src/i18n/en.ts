@@ -556,6 +556,7 @@ export default {
       network_desc: 'Network and package source configuration',
     },
     hints: {
+      chat_info: 'More chat settings are available in the active message plugin config under Add-ons → Plugins',
       max_memory_length: 'Maximum number of messages retained in context window',
       message_merge_interval: 'Seconds to wait after receiving a message; new messages during this window are merged and processed together',
       max_buffer_messages: 'Maximum number of messages to buffer before processing',
@@ -584,6 +585,7 @@ export default {
       url_invalid: 'Please enter a valid URL starting with http:// or https://',
     },
     message: {
+      chat_info: 'More Chat Settings',
       max_memory_length: 'Max Context Length',
       message_merge_interval: 'Message Merge Interval',
       max_buffer_messages: 'Max Buffer Messages',

@@ -233,6 +233,7 @@
             :class="{ 'config-field-modified': modifiedFields.has(field.key) }"
           >
             <label
+              v-if="field.type !== 'info'"
               class="block text-sm font-medium mb-1"
               :class="validationErrors[field.key] ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'"
               :title="field.key"
@@ -298,6 +299,22 @@
               @update:modelValue="(v: string) => setFieldValue(field.key, v)"
             />
 
+            <!-- Info -->
+            <div
+              v-else-if="field.type === 'info'"
+              class="flex items-start gap-3 rounded-lg px-4 py-3 text-sm"
+              :class="field.level === 'warning'
+                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'
+                : 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'"
+            >
+              <IconWarning v-if="field.level === 'warning'" class="w-5 h-5 mt-0.5 shrink-0" />
+              <IconInfo v-else class="w-5 h-5 mt-0.5 shrink-0" />
+              <div>
+                <p v-if="field.labelKey || field.labelFallback" class="font-medium">{{ $t(field.labelKey, field.labelFallback) }}</p>
+                <p v-if="field.hintKey || field.hintFallback" class="mt-1 opacity-80 whitespace-pre-line">{{ $t(field.hintKey, field.hintFallback) }}</p>
+              </div>
+            </div>
+
             <!-- String -->
             <input
               v-else
@@ -311,7 +328,7 @@
             >
 
             <p
-              v-if="field.hintKey && !validationErrors[field.key]"
+              v-if="field.hintKey && !validationErrors[field.key] && field.type !== 'info'"
               class="text-xs mt-1 text-gray-500 dark:text-gray-400"
               v-html="highlightSearch($t(field.hintKey, field.hintFallback))"
             />
@@ -357,6 +374,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import {
   IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
   IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
+  IconInfo, IconWarning,
 } from '@/components/icons'
 
 const { t, locale } = useI18n()
@@ -392,6 +410,7 @@ interface ConfigField {
   hintKey: string
   hintFallback: string
   type: string
+  level?: string
   default?: any
   modelType?: string
   selectOptions?: { value: string; label: string }[]
@@ -423,6 +442,7 @@ const allGroups: ConfigGroup[] = [
       { key: 'bot_config.bot.max_buffer_messages', labelKey: 'configuration.message.max_buffer_messages', labelFallback: 'Max Buffer Messages', hintKey: 'configuration.hints.max_buffer_messages', hintFallback: 'Maximum number of messages to buffer before processing', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
       { key: 'bot_config.bot.min_message_delay', labelKey: 'configuration.message.min_message_interval', labelFallback: 'Min Message Interval', hintKey: 'configuration.hints.min_message_interval', hintFallback: 'Minimum interval in seconds between messages', type: 'float', default: 1, validation: { min: 0, max: 60, required: true } },
       { key: 'bot_config.bot.max_message_delay', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum interval in seconds between messages', type: 'float', default: 5, validation: { min: 0, max: 60, required: true } },
+      { key: 'chat_info', labelKey: 'configuration.message.chat_info', labelFallback: 'More Chat Settings', hintKey: 'configuration.hints.chat_info', hintFallback: 'More chat settings are available in the active message plugin config under Add-ons → Plugins', type: 'info' },
     ],
   },
   {
@@ -699,7 +719,7 @@ function redo() {
 function validateField(key: string) {
   const allFields = allGroups.flatMap(g => g.fields)
   const field = allFields.find(f => f.key === key)
-  if (!field?.validation) {
+  if (!field?.validation || field.type === 'info') {
     delete validationErrors.value[key]
     return
   }
