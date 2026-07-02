@@ -11,7 +11,7 @@
           <div class="flex flex-col gap-4">
             <template v-for="(field, key) in entry.fields" :key="key">
               <div v-if="field" class="mb-0">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label v-if="!isInfoLike(field.type)" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   {{ labelFor(field, key as string) }}
                 </label>
 
@@ -129,6 +129,21 @@
                   />
                 </div>
 
+                <div
+                  v-else-if="isInfoLike(field.type)"
+                  class="flex items-start gap-3 rounded-lg px-4 py-3 text-sm"
+                  :class="field.level === 'warning'
+                    ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'
+                    : 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'"
+                >
+                  <IconWarning v-if="field.level === 'warning'" class="w-5 h-5 mt-0.5 shrink-0" />
+                  <IconInfo v-else class="w-5 h-5 mt-0.5 shrink-0" />
+                  <div>
+                    <p class="font-medium">{{ labelFor(field, key as string) }}</p>
+                    <p v-if="hintFor(field)" class="mt-1 opacity-80 whitespace-pre-line">{{ hintFor(field) }}</p>
+                  </div>
+                </div>
+
                 <input
                   v-else
                   type="text"
@@ -138,7 +153,7 @@
                   @input="updateSectionField(entry.key, key as string, ($event.target as HTMLInputElement).value)"
                 >
 
-                <p v-if="hintFor(field)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(field) }}</p>
+                <p v-if="hintFor(field) && !isInfoLike(field.type)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(field) }}</p>
               </div>
             </template>
           </div>
@@ -147,7 +162,7 @@
 
       <!-- Ungrouped field -->
       <div v-else class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        <label v-if="!isInfoLike(entry.field.type)" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           {{ labelFor(entry.field, entry.key) }}
         </label>
 
@@ -265,6 +280,21 @@
           />
         </div>
 
+        <div
+          v-else-if="isInfoLike(entry.field.type)"
+          class="flex items-start gap-3 rounded-lg px-4 py-3 text-sm"
+          :class="entry.field.level === 'warning'
+            ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'
+            : 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'"
+        >
+          <IconWarning v-if="entry.field.level === 'warning'" class="w-5 h-5 mt-0.5 shrink-0" />
+          <IconInfo v-else class="w-5 h-5 mt-0.5 shrink-0" />
+          <div>
+            <p class="font-medium">{{ labelFor(entry.field, entry.key) }}</p>
+            <p v-if="hintFor(entry.field)" class="mt-1 opacity-80 whitespace-pre-line">{{ hintFor(entry.field) }}</p>
+          </div>
+        </div>
+
         <input
           v-else
           type="text"
@@ -274,7 +304,7 @@
           @input="updateField(entry.key, ($event.target as HTMLInputElement).value)"
         >
 
-        <p v-if="hintFor(entry.field)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(entry.field) }}</p>
+        <p v-if="hintFor(entry.field) && !isInfoLike(entry.field.type)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(entry.field) }}</p>
       </div>
     </template>
   </div>
@@ -289,7 +319,7 @@ import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
 import TagInput from '@/components/common/TagInput.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
-import { IconEye, IconEyeOff } from '@/components/icons'
+import { IconEye, IconEyeOff, IconInfo, IconWarning } from '@/components/icons'
 import { getProviders, getModels } from '@/api/provider'
 import { getPersonas } from '@/api/persona'
 
@@ -346,10 +376,12 @@ const allDataFields = computed(() => {
   for (const entry of entries) {
     if (entry.type === 'section' && entry.fields) {
       for (const key in entry.fields) {
+        const field = entry.fields[key]
+        if (field && isInfoLike(field.type)) continue
         const dk = entry.key + '.' + key
-        all[dk] = { field: entry.fields[key], sectionKey: entry.key, fieldKey: key }
+        all[dk] = { field, sectionKey: entry.key, fieldKey: key }
       }
-    } else {
+    } else if (!isInfoLike(entry.field.type)) {
       all[entry.key] = { field: entry.field, sectionKey: null, fieldKey: entry.key }
     }
   }
@@ -423,6 +455,10 @@ function isMultiSelectLike(type: string): boolean {
 
 function isSectionLike(type: string): boolean {
   return type === 'section'
+}
+
+function isInfoLike(type: string): boolean {
+  return type === 'info'
 }
 
 async function loadModelSelectOptions() {
