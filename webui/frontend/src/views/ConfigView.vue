@@ -355,7 +355,7 @@ import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import {
-  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe,
+  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
   IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
 } from '@/components/icons'
 
@@ -416,13 +416,13 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Chat Settings',
     descKey: 'configuration.groups.chat_desc',
     descFallback: 'Core chat behavior parameters',
-    icon: IconMonitor,
+    icon: IconChat,
     fields: [
-      { key: 'bot_config.bot.max_memory_length', labelKey: 'configuration.message.max_memory_length', labelFallback: 'Max Memory Length', hintKey: 'configuration.hints.max_memory_length', hintFallback: 'Maximum number of messages retained in context window', type: 'integer', default: 50, validation: { min: 1, max: 9999, required: true } },
-      { key: 'bot_config.bot.max_message_interval', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum seconds to wait before processing buffered messages', type: 'float', default: 5, validation: { min: 0.1, max: 300, required: true } },
+      { key: 'bot_config.bot.max_memory_length', labelKey: 'configuration.message.max_memory_length', labelFallback: 'Max Context Length', hintKey: 'configuration.hints.max_memory_length', hintFallback: 'Maximum number of messages retained in context window', type: 'integer', default: 50, validation: { min: 1, max: 9999, required: true } },
+      { key: 'bot_config.bot.max_message_interval', labelKey: 'configuration.message.message_merge_interval', labelFallback: 'Message Merge Interval', hintKey: 'configuration.hints.message_merge_interval', hintFallback: 'Seconds to wait after receiving a message; new messages during this window are merged and processed together', type: 'float', default: 5, validation: { min: 0.1, max: 300, required: true } },
       { key: 'bot_config.bot.max_buffer_messages', labelKey: 'configuration.message.max_buffer_messages', labelFallback: 'Max Buffer Messages', hintKey: 'configuration.hints.max_buffer_messages', hintFallback: 'Maximum number of messages to buffer before processing', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
-      { key: 'bot_config.bot.min_message_delay', labelKey: 'configuration.message.min_message_delay', labelFallback: 'Min Message Delay', hintKey: 'configuration.hints.min_message_delay', hintFallback: 'Minimum delay in seconds before sending a reply', type: 'float', default: 1, validation: { min: 0, max: 60, required: true } },
-      { key: 'bot_config.bot.max_message_delay', labelKey: 'configuration.message.max_message_delay', labelFallback: 'Max Message Delay', hintKey: 'configuration.hints.max_message_delay', hintFallback: 'Maximum delay in seconds before sending a reply', type: 'float', default: 5, validation: { min: 0, max: 60, required: true } },
+      { key: 'bot_config.bot.min_message_delay', labelKey: 'configuration.message.min_message_interval', labelFallback: 'Min Message Interval', hintKey: 'configuration.hints.min_message_interval', hintFallback: 'Minimum interval in seconds between messages', type: 'float', default: 1, validation: { min: 0, max: 60, required: true } },
+      { key: 'bot_config.bot.max_message_delay', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum interval in seconds between messages', type: 'float', default: 5, validation: { min: 0, max: 60, required: true } },
     ],
   },
   {
