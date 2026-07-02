@@ -18,6 +18,7 @@ class ConfigType(Enum):
     MultiSelect = "multi_select"
     PersonaSelect = "persona_select"
     Section = "section"
+    Info = "info"
 
 
 class BaseConfigField:
@@ -60,6 +61,8 @@ class BaseConfigField:
             data["language"] = self.language
         if isinstance(self, ModelSelectField) and getattr(self, "model_type", None):
             data["model_type"] = self.model_type
+        if isinstance(self, InfoField):
+            data["level"] = self.level
         return data
 
 
@@ -182,6 +185,15 @@ class SectionField(BaseConfigField):
         self.collapsed = collapsed
 
 
+class InfoField(BaseConfigField):
+    """Read-only informational field, no data storage."""
+    type = ConfigType.Info
+
+    def __init__(self, key: str, name: str, hint: str, level: str = "info", locales: dict = None):
+        super().__init__(key, name, hint, default=None, locales=locales)
+        self.level = level
+
+
 def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     field_type = schema.get("type", "string")
     name = schema.get("name") or key
@@ -244,6 +256,10 @@ def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
         nested = schema.get("fields", {})
         child_fields = build_fields(nested) if isinstance(nested, dict) else []
         return SectionField(key=key, name=name, hint=hint, fields=child_fields, collapsed=collapsed, locales=locales)
+
+    if field_type == "info":
+        level = schema.get("level", "info")
+        return InfoField(key=key, name=name, hint=hint, level=level, locales=locales)
 
     return StringField(key=key, name=name, hint=hint, default=default, locales=locales)
 

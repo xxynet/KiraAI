@@ -233,6 +233,7 @@
             :class="{ 'config-field-modified': modifiedFields.has(field.key) }"
           >
             <label
+              v-if="field.type !== 'info'"
               class="block text-sm font-medium mb-1"
               :class="validationErrors[field.key] ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'"
               :title="field.key"
@@ -298,6 +299,14 @@
               @update:modelValue="(v: string) => setFieldValue(field.key, v)"
             />
 
+            <!-- Info -->
+            <InfoCallout
+              v-else-if="field.type === 'info'"
+              :level="field.level"
+              :label="field.labelKey || field.labelFallback ? $t(field.labelKey, field.labelFallback) : undefined"
+              :hint="field.hintKey || field.hintFallback ? $t(field.hintKey, field.hintFallback) : undefined"
+            />
+
             <!-- String -->
             <input
               v-else
@@ -311,7 +320,7 @@
             >
 
             <p
-              v-if="field.hintKey && !validationErrors[field.key]"
+              v-if="field.hintKey && !validationErrors[field.key] && field.type !== 'info'"
               class="text-xs mt-1 text-gray-500 dark:text-gray-400"
               v-html="highlightSearch($t(field.hintKey, field.hintFallback))"
             />
@@ -354,8 +363,9 @@ import { useRoute } from 'vue-router'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import InfoCallout from '@/components/common/InfoCallout.vue'
 import {
-  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe,
+  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
   IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
 } from '@/components/icons'
 
@@ -392,6 +402,7 @@ interface ConfigField {
   hintKey: string
   hintFallback: string
   type: string
+  level?: string
   default?: any
   modelType?: string
   selectOptions?: { value: string; label: string }[]
@@ -411,18 +422,19 @@ interface ConfigGroup {
 
 const allGroups: ConfigGroup[] = [
   {
-    id: 'bot',
-    labelKey: 'configuration.groups.bot',
-    labelFallback: 'Bot Settings',
-    descKey: 'configuration.groups.bot_desc',
-    descFallback: 'Core bot behavior parameters',
-    icon: IconMonitor,
+    id: 'chat',
+    labelKey: 'configuration.groups.chat',
+    labelFallback: 'Chat Settings',
+    descKey: 'configuration.groups.chat_desc',
+    descFallback: 'Core chat behavior parameters',
+    icon: IconChat,
     fields: [
-      { key: 'bot_config.bot.max_memory_length', labelKey: 'configuration.message.max_memory_length', labelFallback: 'Max Memory Length', hintKey: 'configuration.hints.max_memory_length', hintFallback: 'Maximum number of messages retained in context window', type: 'integer', default: 50, validation: { min: 1, max: 9999, required: true } },
-      { key: 'bot_config.bot.max_message_interval', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum seconds to wait before processing buffered messages', type: 'float', default: 5, validation: { min: 0.1, max: 300, required: true } },
+      { key: 'bot_config.bot.max_memory_length', labelKey: 'configuration.message.max_memory_length', labelFallback: 'Max Context Length', hintKey: 'configuration.hints.max_memory_length', hintFallback: 'Maximum number of messages retained in context window', type: 'integer', default: 50, validation: { min: 1, max: 9999, required: true } },
+      { key: 'bot_config.bot.max_message_interval', labelKey: 'configuration.message.message_merge_interval', labelFallback: 'Message Merge Interval', hintKey: 'configuration.hints.message_merge_interval', hintFallback: 'Seconds to wait after receiving a message; new messages during this window are merged and processed together', type: 'float', default: 5, validation: { min: 0.1, max: 300, required: true } },
       { key: 'bot_config.bot.max_buffer_messages', labelKey: 'configuration.message.max_buffer_messages', labelFallback: 'Max Buffer Messages', hintKey: 'configuration.hints.max_buffer_messages', hintFallback: 'Maximum number of messages to buffer before processing', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
-      { key: 'bot_config.bot.min_message_delay', labelKey: 'configuration.message.min_message_delay', labelFallback: 'Min Message Delay', hintKey: 'configuration.hints.min_message_delay', hintFallback: 'Minimum delay in seconds before sending a reply', type: 'float', default: 1, validation: { min: 0, max: 60, required: true } },
-      { key: 'bot_config.bot.max_message_delay', labelKey: 'configuration.message.max_message_delay', labelFallback: 'Max Message Delay', hintKey: 'configuration.hints.max_message_delay', hintFallback: 'Maximum delay in seconds before sending a reply', type: 'float', default: 5, validation: { min: 0, max: 60, required: true } },
+      { key: 'bot_config.bot.min_message_delay', labelKey: 'configuration.message.min_message_interval', labelFallback: 'Min Message Interval', hintKey: 'configuration.hints.min_message_interval', hintFallback: 'Minimum interval in seconds between messages', type: 'float', default: 1, validation: { min: 0, max: 60, required: true } },
+      { key: 'bot_config.bot.max_message_delay', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum interval in seconds between messages', type: 'float', default: 5, validation: { min: 0, max: 60, required: true } },
+      { key: 'chat_info', labelKey: 'configuration.message.chat_info', labelFallback: 'More Chat Settings', hintKey: 'configuration.hints.chat_info', hintFallback: 'More chat settings are available in the active message plugin config under Add-ons → Plugins', type: 'info' },
     ],
   },
   {
@@ -441,12 +453,12 @@ const allGroups: ConfigGroup[] = [
   {
     id: 'selfie',
     labelKey: 'configuration.groups.selfie',
-    labelFallback: 'Appearance',
+    labelFallback: 'Digital Life Appearance',
     descKey: 'configuration.groups.selfie_desc',
-    descFallback: 'Bot appearance reference settings',
+    descFallback: 'Digital life appearance reference settings',
     icon: IconImage,
     fields: [
-      { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the bot appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
+      { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the digital life appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
     ],
   },
   {
@@ -524,7 +536,7 @@ interface CategoryTab {
 }
 
 const categoryTabs: CategoryTab[] = [
-  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['bot', 'agent', 'selfie'] },
+  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'agent', 'selfie'] },
   { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['network', 'cache', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
@@ -699,7 +711,7 @@ function redo() {
 function validateField(key: string) {
   const allFields = allGroups.flatMap(g => g.fields)
   const field = allFields.find(f => f.key === key)
-  if (!field?.validation) {
+  if (!field?.validation || field.type === 'info') {
     delete validationErrors.value[key]
     return
   }
