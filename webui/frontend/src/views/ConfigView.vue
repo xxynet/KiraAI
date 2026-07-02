@@ -300,20 +300,12 @@
             />
 
             <!-- Info -->
-            <div
+            <InfoCallout
               v-else-if="field.type === 'info'"
-              class="flex items-start gap-3 rounded-lg px-4 py-3 text-sm"
-              :class="field.level === 'warning'
-                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'
-                : 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'"
-            >
-              <IconWarning v-if="field.level === 'warning'" class="w-5 h-5 mt-0.5 shrink-0" />
-              <IconInfo v-else class="w-5 h-5 mt-0.5 shrink-0" />
-              <div>
-                <p v-if="field.labelKey || field.labelFallback" class="font-medium">{{ $t(field.labelKey, field.labelFallback) }}</p>
-                <p v-if="field.hintKey || field.hintFallback" class="mt-1 opacity-80 whitespace-pre-line">{{ $t(field.hintKey, field.hintFallback) }}</p>
-              </div>
-            </div>
+              :level="field.level"
+              :label="field.labelKey || field.labelFallback ? $t(field.labelKey, field.labelFallback) : undefined"
+              :hint="field.hintKey || field.hintFallback ? $t(field.hintKey, field.hintFallback) : undefined"
+            />
 
             <!-- String -->
             <input
@@ -371,10 +363,10 @@ import { useRoute } from 'vue-router'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import InfoCallout from '@/components/common/InfoCallout.vue'
 import {
   IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
   IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
-  IconInfo, IconWarning,
 } from '@/components/icons'
 
 const { t, locale } = useI18n()

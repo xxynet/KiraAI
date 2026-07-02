@@ -129,20 +129,12 @@
                   />
                 </div>
 
-                <div
+                <InfoCallout
                   v-else-if="isInfoLike(field.type)"
-                  class="flex items-start gap-3 rounded-lg px-4 py-3 text-sm"
-                  :class="field.level === 'warning'
-                    ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'
-                    : 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'"
-                >
-                  <IconWarning v-if="field.level === 'warning'" class="w-5 h-5 mt-0.5 shrink-0" />
-                  <IconInfo v-else class="w-5 h-5 mt-0.5 shrink-0" />
-                  <div>
-                    <p class="font-medium">{{ labelFor(field, key as string) }}</p>
-                    <p v-if="hintFor(field)" class="mt-1 opacity-80 whitespace-pre-line">{{ hintFor(field) }}</p>
-                  </div>
-                </div>
+                  :level="field.level"
+                  :label="labelFor(field, key as string)"
+                  :hint="hintFor(field)"
+                />
 
                 <input
                   v-else
@@ -280,20 +272,12 @@
           />
         </div>
 
-        <div
+        <InfoCallout
           v-else-if="isInfoLike(entry.field.type)"
-          class="flex items-start gap-3 rounded-lg px-4 py-3 text-sm"
-          :class="entry.field.level === 'warning'
-            ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'
-            : 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'"
-        >
-          <IconWarning v-if="entry.field.level === 'warning'" class="w-5 h-5 mt-0.5 shrink-0" />
-          <IconInfo v-else class="w-5 h-5 mt-0.5 shrink-0" />
-          <div>
-            <p class="font-medium">{{ labelFor(entry.field, entry.key) }}</p>
-            <p v-if="hintFor(entry.field)" class="mt-1 opacity-80 whitespace-pre-line">{{ hintFor(entry.field) }}</p>
-          </div>
-        </div>
+          :level="entry.field.level"
+          :label="labelFor(entry.field, entry.key)"
+          :hint="hintFor(entry.field)"
+        />
 
         <input
           v-else
@@ -319,7 +303,8 @@ import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
 import TagInput from '@/components/common/TagInput.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
-import { IconEye, IconEyeOff, IconInfo, IconWarning } from '@/components/icons'
+import InfoCallout from '@/components/common/InfoCallout.vue'
+import { IconEye, IconEyeOff } from '@/components/icons'
 import { getProviders, getModels } from '@/api/provider'
 import { getPersonas } from '@/api/persona'
 
