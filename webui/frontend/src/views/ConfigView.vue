@@ -441,12 +441,12 @@ const allGroups: ConfigGroup[] = [
   {
     id: 'selfie',
     labelKey: 'configuration.groups.selfie',
-    labelFallback: 'Appearance',
+    labelFallback: 'Digital Life Appearance',
     descKey: 'configuration.groups.selfie_desc',
-    descFallback: 'Bot appearance reference settings',
+    descFallback: 'Digital life appearance reference settings',
     icon: IconImage,
     fields: [
-      { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the bot appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
+      { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the digital life appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
     ],
   },
   {
