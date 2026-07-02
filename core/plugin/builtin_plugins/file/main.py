@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import asyncio
 import posixpath
 import subprocess
 
@@ -53,8 +54,8 @@ class FilePlugin(BasePlugin):
     @on.llm_request(priority=Priority.LOW)
     async def filter_tools(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
         enabled = self.plugin_cfg.get("enabled_tools")
-        if not enabled:
-            return
+        if enabled is None:
+            enabled = ALL_TOOL_NAMES
         disabled = set(ALL_TOOL_NAMES) - set(enabled)
         if disabled:
             req.tool_set.remove(*disabled)
@@ -218,10 +219,13 @@ class FilePlugin(BasePlugin):
             with open(abs_path, 'r', encoding="utf-8") as f:
                 content = f.read()
 
-            if old_text not in content:
-                return f"Error: old_text not found in file. Please check the content and try again."
+            if old_text == "":
+                return "Error: old_text must not be empty."
 
-            replacements = len(re.findall(re.escape(old_text), content))
+            if old_text not in content:
+                return "Error: old_text not found in file. Please check the content and try again."
+
+            replacements = content.count(old_text)
 
             new_content = content.replace(old_text, new_text)
 
@@ -317,7 +321,7 @@ class FilePlugin(BasePlugin):
         if limit > 0 and len(lines) > limit:
             lines = lines[:limit]
             result = "\n".join(lines)
-            result += f"\n\n[Showing first {limit} results. Adjust limit or use offset to see more.]"
+            result += f"\n\n[Showing first {limit} results. Increase limit or narrow the search to see more.]"
             return result
         return "\n".join(lines) if lines else "No matches found."
 
@@ -351,7 +355,7 @@ class FilePlugin(BasePlugin):
         if glob:
             cmd.extend(["--glob", glob])
 
-        cmd.extend([pattern, search_path])
+        cmd.extend(["--", pattern, search_path])
 
         try:
             result = subprocess.run(
@@ -375,6 +379,7 @@ class FilePlugin(BasePlugin):
         self,
         pattern: str,
         search_path: str,
+        original_path: str,
         output_mode: str = "files_with_matches",
         context: int = 0,
         case_insensitive: bool = False,
@@ -383,6 +388,9 @@ class FilePlugin(BasePlugin):
         limit: int = 200,
     ) -> str:
         """Search file contents using pure-Python re module."""
+        if glob and ".." in glob:
+            return "Error: glob pattern must not contain '..'"
+
         flags = re.IGNORECASE if case_insensitive else 0
         if multiline:
             flags |= re.DOTALL
@@ -402,32 +410,62 @@ class FilePlugin(BasePlugin):
         else:
             return f"Path not found: {search_path}"
 
+        def _to_allowed_prefix(fp: Path) -> str:
+            """Convert an absolute file path back to the user-facing allowed-prefix path."""
+            rel_suffix = str(fp.relative_to(root)).replace("\\", "/")
+            return f"{original_path.rstrip('/')}/{rel_suffix}"
+
+        def _scan_file(fp: Path):
+            """Scan a single file, returning (allowed_path, match_indices, total_matches) or None."""
+            if not fp.is_file():
+                return None
+            if fp.suffix.lower() in blocked_extensions:
+                return None
+            try:
+                content = fp.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                return None
+
+            if multiline:
+                found = list(regex.finditer(content))
+                if not found:
+                    return None
+                line_offsets = [0]
+                for i, ch in enumerate(content):
+                    if ch == "\n":
+                        line_offsets.append(i + 1)
+                indices = set()
+                for m in found:
+                    line_no = 0
+                    for li, start in enumerate(line_offsets):
+                        if start <= m.start():
+                            line_no = li
+                        else:
+                            break
+                    indices.add(line_no)
+                return _to_allowed_prefix(fp), sorted(indices), len(found)
+            else:
+                file_lines = content.splitlines(keepends=True)
+                indices = [i for i, line in enumerate(file_lines) if regex.search(line)]
+                if not indices:
+                    return None
+                return _to_allowed_prefix(fp), indices, len(indices)
+
         lines: list[str] = []
         matched_files: list[str] = []
         file_count_map: dict[str, int] = {}
 
         for fp in files:
-            if not fp.is_file():
+            scan_result = _scan_file(fp)
+            if scan_result is None:
                 continue
-            if fp.suffix.lower() in blocked_extensions:
-                continue
-            try:
-                content = fp.read_text(encoding="utf-8", errors="replace")
-            except Exception:
-                continue
-
-            file_lines = content.splitlines(keepends=True)
-            match_indices = [
-                i for i, line in enumerate(file_lines) if regex.search(line)
-            ]
-            if not match_indices:
-                continue
-
-            rel = str(fp).replace("\\", "/")
+            rel, match_indices, count = scan_result
             matched_files.append(rel)
-            file_count_map[rel] = len(match_indices)
+            file_count_map[rel] = count
 
             if output_mode == "content":
+                content = fp.read_text(encoding="utf-8", errors="replace")
+                file_lines = content.splitlines(keepends=True)
                 shown: set[int] = set()
                 for mi in match_indices:
                     start = max(0, mi - context)
@@ -533,10 +571,17 @@ class FilePlugin(BasePlugin):
                 case_insensitive, glob, multiline, limit,
             )
         else:
-            return self._grep_with_python(
-                pattern, abs_path, output_mode, context,
-                case_insensitive, glob, multiline, limit,
-            )
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._grep_with_python,
+                        pattern, abs_path, path, output_mode, context,
+                        case_insensitive, glob, multiline, limit,
+                    ),
+                    timeout=30,
+                )
+            except asyncio.TimeoutError:
+                return "Search timed out after 30 seconds."
 
     @register.tool(
         "search_files",
@@ -567,6 +612,9 @@ class FilePlugin(BasePlugin):
     async def search_files(self, event: KiraMessageBatchEvent, pattern: str, path: str = None, limit: int = 100) -> str:
         if event.sid not in self.allowed_sessions:
             return "Permission denied: current session not allowed to access local files"
+
+        if ".." in pattern:
+            return "Error: glob pattern must not contain '..'"
 
         # Default to first allowed read path
         if path is None:
@@ -609,7 +657,8 @@ class FilePlugin(BasePlugin):
 
             rel_paths = []
             for f in files:
-                rel = str(f.relative_to(abs_path)).replace("\\", "/")
+                rel_suffix = str(f.relative_to(abs_path)).replace("\\", "/")
+                rel = f"{path.rstrip('/')}/{rel_suffix}"
                 rel_paths.append(rel)
 
             result = "\n".join(rel_paths)
