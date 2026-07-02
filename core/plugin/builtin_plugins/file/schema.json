@@ -1,4 +1,14 @@
 {
+  "enabled_tools": {
+    "name": "Enabled Tools",
+    "type": "multi_select",
+    "default": ["read_file", "write_file", "edit_file", "list_files", "grep", "search_files", "exec"],
+    "options": ["read_file", "write_file", "edit_file", "list_files", "grep", "search_files", "exec"],
+    "hint": "Select which tools to expose to the AI. Deselect to disable.",
+    "locales": {
+      "zh": { "name": "启用的工具", "hint": "选择要提供给 AI 的工具，留空则启用全部工具" }
+    }
+  },
   "allowed_sessions": {
     "name": "Allowed Sessions",
     "type": "list",
