@@ -677,7 +677,7 @@ textarea:focus:hover,
   width: 0;
   height: 2px;
   z-index: 9999;
-  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  background: #60a5fa;
   border-radius: 0 2px 2px 0;
   /* transition only set on .loading and .completing — idle snaps instantly */
 }
@@ -693,7 +693,7 @@ textarea:focus:hover,
 }
 
 .dark .route-loading-bar {
-  background: linear-gradient(90deg, #4395f9, #88befc);
+  background: #3b82f6;
 }
 
 /* ==================== Loading Spinner ==================== */
