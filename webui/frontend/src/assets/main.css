@@ -683,8 +683,8 @@ textarea:focus:hover,
 }
 
 .route-loading-bar.loading {
-  width: 70%;
-  transition: width 30s cubic-bezier(0.08, 0.07, 0, 1);
+  width: 90%;
+  transition: width 10s ease-out;
 }
 
 .route-loading-bar.completing {
