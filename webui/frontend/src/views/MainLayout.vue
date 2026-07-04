@@ -6,6 +6,10 @@
       :class="{ open: sidebarOpen }"
       @click="closeSidebar"
     ></div>
+    <div
+      class="route-loading-bar"
+      :class="routePhase"
+    ></div>
     <AppSidebar :open="sidebarOpen" />
     <div class="flex-1 flex flex-col overflow-hidden">
       <main class="flex-1 flex flex-col" :class="route.meta.pluginPage ? 'overflow-hidden' : 'overflow-auto'">
@@ -29,6 +33,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useRouteLoading } from '@/composables/useRouteLoading'
 import { useI18n } from 'vue-i18n'
 import { usePluginMenuStore } from '@/stores/pluginMenu'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
@@ -40,6 +45,8 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const pluginMenuStore = usePluginMenuStore()
+
+const { phase: routePhase } = useRouteLoading()
 
 const sidebarOpen = ref(false)
 

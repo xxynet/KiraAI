@@ -669,6 +669,33 @@ textarea:focus:hover,
   overflow: hidden;
 }
 
+/* ==================== Route Loading Bar ==================== */
+.route-loading-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 2px;
+  z-index: 9999;
+  background: #60a5fa;
+  border-radius: 0 2px 2px 0;
+  /* transition only set on .loading and .completing — idle snaps instantly */
+}
+
+.route-loading-bar.loading {
+  width: 90%;
+  transition: width 10s ease-out;
+}
+
+.route-loading-bar.completing {
+  width: 100%;
+  transition: width 0.3s ease;
+}
+
+.dark .route-loading-bar {
+  background: #3b82f6;
+}
+
 /* ==================== Loading Spinner ==================== */
 .loading-spinner {
   border: 3px solid #f3f3f3;
