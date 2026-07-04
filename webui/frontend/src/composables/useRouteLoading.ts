@@ -26,6 +26,7 @@ export function useRouteLoading() {
 
       // Wait a tick — if navigation resolves within SHOW_DELAY, bar never appears
       showTimeout = setTimeout(() => {
+        showTimeout = null // tell finish() the bar is now visible
         phase.value = 'loading'
         stuckTimeout = setTimeout(reset, 15000)
       }, SHOW_DELAY)
