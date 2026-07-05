@@ -35,8 +35,11 @@ class DeepSeekLLMClient(LLMModelClient):
             default_headers=default_headers,
         )
 
-    def _build_request_kwargs(self, request: LLMRequest) -> dict:
-        """Build DeepSeek-specific kwargs with thinking mode support."""
+    def _build_request_kwargs(self, request: LLMRequest, **overrides) -> dict:
+        """Build DeepSeek-specific kwargs with thinking mode support.
+        **overrides are merged on top, allowing callers to set/override
+        parameters like temperature, timeout, stream, etc.
+        """
         model_config = self.model.model_config or {}
         thinking_enabled = model_config.get("thinking_enabled", True)
         reasoning_effort = model_config.get("reasoning_effort", "high")
@@ -69,11 +72,12 @@ class DeepSeekLLMClient(LLMModelClient):
         if extra_body:
             kwargs["extra_body"] = extra_body
 
+        kwargs.update(overrides)
         return kwargs
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
         client = self._build_client()
-        request_kwargs = self._build_request_kwargs(request)
+        request_kwargs = self._build_request_kwargs(request, **kwargs)
 
         try:
             start_time = time.perf_counter()
@@ -124,8 +128,7 @@ class DeepSeekLLMClient(LLMModelClient):
 
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
         client = self._build_client()
-        request_kwargs = self._build_request_kwargs(request)
-        request_kwargs["stream"] = True
+        request_kwargs = self._build_request_kwargs(request, stream=True, **kwargs)
 
         # Accumulated tool calls by index
         collected_tool_calls: dict[int, dict] = {}
