@@ -105,8 +105,11 @@ class LLMStreamChunk:
     """Incremental reasoning content for reasoning models"""
     delta_reasoning: str = ""
 
-    """Incremental tool call fragments accumulated in this chunk"""
+    """Incremental tool call fragments in this chunk only (never contains full assembled calls)"""
     tool_calls_delta: list[dict] = field(default_factory=list)
+
+    """Complete assembled tool calls — only populated on the final chunk when finish_reason is tool_calls"""
+    tool_calls: list[dict] = field(default_factory=list)
 
     """Whether this is the final chunk in the stream"""
     is_final: bool = False

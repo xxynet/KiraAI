@@ -88,7 +88,7 @@ class LLMModelClient(BaseModelClient):
         yield LLMStreamChunk(
             delta_text=resp.text_response,
             delta_reasoning=resp.reasoning_content,
-            tool_calls_delta=resp.tool_calls,
+            tool_calls=resp.tool_calls,
             is_final=True,
             finish_reason="tool_calls" if resp.tool_calls else "stop",
             usage=usage,

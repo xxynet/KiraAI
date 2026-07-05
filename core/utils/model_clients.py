@@ -158,10 +158,10 @@ class OpenAICompatibleLLMClient(LLMModelClient):
                 if finish_reason:
                     chunk.is_final = True
                     chunk.finish_reason = finish_reason
-                    # Assemble full tool calls on the final chunk
+                    # Assemble complete tool calls (only on final chunk)
                     for idx in sorted(collected_tool_calls):
                         tc = collected_tool_calls[idx]
-                        chunk.tool_calls_delta.append({
+                        chunk.tool_calls.append({
                             "id": tc["id"],
                             "type": "function",
                             "function": {"name": tc["name"], "arguments": tc["arguments"]},

@@ -184,7 +184,7 @@ class DeepSeekLLMClient(LLMModelClient):
                     chunk.finish_reason = finish_reason
                     for idx in sorted(collected_tool_calls):
                         tc = collected_tool_calls[idx]
-                        chunk.tool_calls_delta.append({
+                        chunk.tool_calls.append({
                             "id": tc["id"],
                             "type": "function",
                             "function": {"name": tc["name"], "arguments": tc["arguments"]},
