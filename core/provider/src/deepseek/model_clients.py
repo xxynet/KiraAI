@@ -131,9 +131,6 @@ class DeepSeekLLMClient(LLMModelClient):
         request_kwargs = self._build_request_kwargs(request, stream=True, **kwargs)
         request_kwargs["stream_options"] = {"include_usage": True}
 
-        # Accumulated tool calls by index
-        collected_tool_calls: dict[int, dict] = {}
-
         try:
             stream = await client.chat.completions.create(**request_kwargs)
             async for event in stream:
@@ -164,31 +161,25 @@ class DeepSeekLLMClient(LLMModelClient):
                 if reasoning:
                     chunk.delta_reasoning = reasoning
 
-                # Tool calls — incremental fragments
+                # Tool calls — pass through raw incremental deltas from SDK
                 if delta.tool_calls:
                     for tc in delta.tool_calls:
-                        idx = tc.index
-                        if idx not in collected_tool_calls:
-                            collected_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
-                        if tc.id:
-                            collected_tool_calls[idx]["id"] = tc.id
-                        if tc.function and tc.function.name:
-                            collected_tool_calls[idx]["name"] = tc.function.name
-                        if tc.function and tc.function.arguments:
-                            collected_tool_calls[idx]["arguments"] += tc.function.arguments
+                        fragment = {
+                            "index": tc.index,
+                            "id": tc.id or "",
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name if tc.function and tc.function.name else "",
+                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
+                            },
+                        }
+                        chunk.tool_calls_delta.append(fragment)
 
                 # Finish reason
                 finish_reason = choice.finish_reason
                 if finish_reason:
                     chunk.is_final = True
                     chunk.finish_reason = finish_reason
-                    for idx in sorted(collected_tool_calls):
-                        tc = collected_tool_calls[idx]
-                        chunk.tool_calls.append({
-                            "id": tc["id"],
-                            "type": "function",
-                            "function": {"name": tc["name"], "arguments": tc["arguments"]},
-                        })
 
                 yield chunk
 
