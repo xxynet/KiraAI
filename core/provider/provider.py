@@ -1,10 +1,10 @@
 from abc import abstractmethod, ABC
 from enum import Enum, auto
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from typing import AsyncGenerator, List, Optional, Union
 import asyncio
 
-from .llm_model import LLMRequest, LLMResponse, RerankResult
+from .llm_model import LLMRequest, LLMResponse, LLMStreamChunk, RerankResult
 
 from core.chat.message_elements import Record, Image, Video
 
@@ -74,6 +74,25 @@ class LLMModelClient(BaseModelClient):
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
         pass
+
+    async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Default fallback: wraps the non-streaming chat() as a single-chunk stream."""
+        resp = await self.chat(request, **kwargs)
+        usage = None
+        if resp.input_tokens is not None:
+            usage = {
+                "input_tokens": resp.input_tokens,
+                "output_tokens": resp.output_tokens,
+                "cached_tokens": resp.cached_tokens,
+            }
+        yield LLMStreamChunk(
+            delta_text=resp.text_response,
+            delta_reasoning=resp.reasoning_content,
+            tool_calls_delta=resp.tool_calls,
+            is_final=True,
+            finish_reason="tool_calls" if resp.tool_calls else "stop",
+            usage=usage,
+        )
 
 
 class TTSModelClient(BaseModelClient):

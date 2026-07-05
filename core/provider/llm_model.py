@@ -96,6 +96,29 @@ class LLMResponse:
 
 
 @dataclass
+class LLMStreamChunk:
+    """A single chunk from a streaming LLM response."""
+
+    """Incremental text content for this chunk"""
+    delta_text: str = ""
+
+    """Incremental reasoning content for reasoning models"""
+    delta_reasoning: str = ""
+
+    """Incremental tool call fragments in this chunk only"""
+    tool_calls_delta: list[dict] = field(default_factory=list)
+
+    """Whether this is the final chunk in the stream"""
+    is_final: bool = False
+
+    """Finish reason on the final chunk: stop / tool_calls / content_filter"""
+    finish_reason: str = ""
+
+    """Token usage — only populated on the final chunk"""
+    usage: Optional[dict] = None
+
+
+@dataclass
 class RerankResult:
     index: int
 
