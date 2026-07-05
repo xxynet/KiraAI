@@ -11,7 +11,7 @@ from core.chat.session_manager import SessionManager
 from ..adapter import AdapterManager
 from core.event_bus import EventBus
 from core.llm_client import LLMClient
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group
+from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group, KiraIMSentResult
 from core.config import KiraConfig
 from core.persona import PersonaManager
 from core.sticker_manager import StickerManager
@@ -154,6 +154,12 @@ class PluginContext:
         return event
 
     async def publish_notice(self, session: str, chain: MessageChain, is_mentioned: bool = True):
+        """
+        Publish a notice message to the event bus.
+        :param session: session string in the format of "adapter_name:session_type:session_id"
+        :param chain: MessageChain object
+        :param is_mentioned: whether the AI is mentioned
+        """
         import time
         cur_time = int(time.time())
         parts = session.split(":")
@@ -185,3 +191,12 @@ class PluginContext:
             timestamp=cur_time,
         )
         await self.event_bus.publish(message_obj)
+    
+    async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
+        """
+        Send a message chain to the specified session.
+        :param session: session string in the format of "adapter_name:session_type:session_id"
+        :param chain: MessageChain object
+        :return: KiraIMSentResult object
+        """
+        return await self.message_processor.send_message_chain(session, chain)

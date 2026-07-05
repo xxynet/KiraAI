@@ -769,7 +769,7 @@ class MessageProcessor:
 
         :param session: adapter_name:dm|gm:session_id
         :param chain: MessageChain instance
-        :return: message_id (empty string if failed)
+        :return: KiraIMSentResult instance
         """
         parts = session.split(":")
         if len(parts) != 3:
