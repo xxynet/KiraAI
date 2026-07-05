@@ -129,6 +129,7 @@ class DeepSeekLLMClient(LLMModelClient):
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
         client = self._build_client()
         request_kwargs = self._build_request_kwargs(request, stream=True, **kwargs)
+        request_kwargs["stream_options"] = {"include_usage": True}
 
         # Accumulated tool calls by index
         collected_tool_calls: dict[int, dict] = {}
@@ -136,8 +137,19 @@ class DeepSeekLLMClient(LLMModelClient):
         try:
             stream = await client.chat.completions.create(**request_kwargs)
             async for event in stream:
+                # Usage-only event (sent by OpenAI API after the final choice chunk)
                 if not event.choices:
+                    if event.usage:
+                        yield LLMStreamChunk(
+                            is_final=True,
+                            usage={
+                                "input_tokens": event.usage.prompt_tokens,
+                                "output_tokens": event.usage.completion_tokens,
+                                "cached_tokens": getattr(event.usage, "prompt_cache_hit_tokens", None),
+                            },
+                        )
                     continue
+
                 choice = event.choices[0]
                 delta = choice.delta
 
@@ -177,12 +189,6 @@ class DeepSeekLLMClient(LLMModelClient):
                             "type": "function",
                             "function": {"name": tc["name"], "arguments": tc["arguments"]},
                         })
-                    if event.usage:
-                        chunk.usage = {
-                            "input_tokens": event.usage.prompt_tokens,
-                            "output_tokens": event.usage.completion_tokens,
-                            "cached_tokens": getattr(event.usage, "prompt_cache_hit_tokens", None),
-                        }
 
                 yield chunk
 

@@ -103,6 +103,7 @@ class OpenAICompatibleLLMClient(LLMModelClient):
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
         client = self._build_client()
         request_kwargs = self._build_request_kwargs(request, stream=True, **kwargs)
+        request_kwargs["stream_options"] = {"include_usage": True}
 
         # Accumulated tool calls by index
         collected_tool_calls: dict[int, dict] = {}
@@ -110,8 +111,21 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         try:
             stream = await client.chat.completions.create(**request_kwargs)
             async for event in stream:
+                # Usage-only event (sent by OpenAI API after the final choice chunk)
                 if not event.choices:
+                    if event.usage:
+                        prompt_details = getattr(event.usage, "prompt_tokens_details", None)
+                        cached = getattr(prompt_details, "cached_tokens", None) if prompt_details else None
+                        yield LLMStreamChunk(
+                            is_final=True,
+                            usage={
+                                "input_tokens": event.usage.prompt_tokens,
+                                "output_tokens": event.usage.completion_tokens,
+                                "cached_tokens": cached,
+                            },
+                        )
                     continue
+
                 choice = event.choices[0]
                 delta = choice.delta
 
@@ -152,15 +166,6 @@ class OpenAICompatibleLLMClient(LLMModelClient):
                             "type": "function",
                             "function": {"name": tc["name"], "arguments": tc["arguments"]},
                         })
-                    # Usage on final chunk
-                    if event.usage:
-                        prompt_details = getattr(event.usage, "prompt_tokens_details", None)
-                        cached = getattr(prompt_details, "cached_tokens", None) if prompt_details else None
-                        chunk.usage = {
-                            "input_tokens": event.usage.prompt_tokens,
-                            "output_tokens": event.usage.completion_tokens,
-                            "cached_tokens": cached,
-                        }
 
                 yield chunk
 
