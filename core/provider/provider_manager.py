@@ -13,6 +13,7 @@ from .provider import (
     VideoModelClient, EmbeddingModelClient, RerankModelClient
 )
 from .llm_model import LLMRequest
+from core.agent.message import OpenAIMessage
 
 from core.utils.path_utils import get_config_path
 from core.logging_manager import get_logger
@@ -123,7 +124,11 @@ class ProviderManager:
         return model_client
 
     def get_default_stt(self) -> STTModelClient:
-        model_info = self.get_default_model_info("default_stt")
+        try:
+            model_info = self.get_default_model_info("default_stt")
+        except ValueError:
+            logger.error("default_stt not configured, please configure it in Configuration")
+            raise
         model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
         if not isinstance(model_client, STTModelClient):
             raise TypeError(
@@ -195,8 +200,9 @@ class ProviderManager:
                 model_provider,
                 self.kira_config.get_config(f"providers.{model_provider}.name"),
                 self.kira_config.get_config(f"providers.{model_provider}.provider_config"),
-                # When the model ID has a dot, kira_config.get_config would return unexpected value
-                self.kira_config.get_config(f"providers.{model_provider}.model_config.{model_type}").get(model_id)
+                # When the model ID has a dot, kira_config.get_config would return unexpected value.
+                # Guard against a missing model_config section (get_config returns None).
+                (self.kira_config.get_config(f"providers.{model_provider}.model_config.{model_type}") or {}).get(model_id)
             )
             return model_info
 
@@ -482,7 +488,7 @@ class ProviderManager:
 
             if isinstance(model_client, LLMModelClient):
                 request = LLMRequest(
-                    messages=[{"role": "user", "content": "Say 'pong'"}],
+                    messages=[OpenAIMessage(role="user", content="Say 'pong'")],
                     tools=None,
                     tool_choice="none",
                 )

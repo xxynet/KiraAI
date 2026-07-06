@@ -36,10 +36,6 @@ export function listBackups() {
   return apiClient.get<BackupItem[]>('/settings/backup/list')
 }
 
-export function downloadBackup(filename: string) {
-  return apiClient.get(`/settings/backup/download/${filename}`, { responseType: 'blob' })
-}
-
 export function deleteBackup(filename: string) {
   return apiClient.delete(`/settings/backup/${filename}`)
 }
@@ -52,4 +48,8 @@ export function restoreBackup(file: File) {
   const formData = new FormData()
   formData.append('file', file)
   return apiClient.post('/settings/restore', formData)
+}
+
+export function changeAccessToken(oldToken: string, newToken: string) {
+  return apiClient.post('/settings/change-token', { old_token: oldToken, new_token: newToken })
 }

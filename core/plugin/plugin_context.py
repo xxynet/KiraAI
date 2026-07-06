@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import inspect
+import time
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING, Literal
 
@@ -10,7 +11,7 @@ from core.chat.session_manager import SessionManager
 from ..adapter import AdapterManager
 from core.event_bus import EventBus
 from core.llm_client import LLMClient
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group
+from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group, KiraIMSentResult
 from core.config import KiraConfig
 from core.persona import PersonaManager
 from core.sticker_manager import StickerManager
@@ -141,8 +142,32 @@ class PluginContext:
             self.subagent_registry.register(config)
             return True
         return False
+    async def emit_custom_event(self, event_name: str, payload: dict = None):
+        from core.chat.message_utils import KiraCustomEvent
+
+        plugin_id = None
+        frame = inspect.currentframe().f_back
+        if frame and self.plugin_mgr:
+            module_name = frame.f_globals.get("__name__", "")
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(module_name)
+
+        event = KiraCustomEvent(
+            event_name=event_name,
+            source_plugin=plugin_id or "unknown",
+            payload=payload or {},
+            timestamp=int(time.time()),
+        )
+
+        await self.event_bus.publish(event)
+        return event
 
     async def publish_notice(self, session: str, chain: MessageChain, is_mentioned: bool = True):
+        """
+        Publish a notice message to the event bus.
+        :param session: session string in the format of "adapter_name:session_type:session_id"
+        :param chain: MessageChain object
+        :param is_mentioned: whether the AI is mentioned
+        """
         import time
         cur_time = int(time.time())
         parts = session.split(":")
@@ -174,3 +199,12 @@ class PluginContext:
             timestamp=cur_time,
         )
         await self.event_bus.publish(message_obj)
+    
+    async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
+        """
+        Send a message chain to the specified session.
+        :param session: session string in the format of "adapter_name:session_type:session_id"
+        :param chain: MessageChain object
+        :return: KiraIMSentResult object
+        """
+        return await self.message_processor.send_message_chain(session, chain)

@@ -1,9 +1,15 @@
 import os
+import re
+import shutil
+import asyncio
+import posixpath
+import subprocess
 
 from pathlib import Path
 
-from core.plugin import BasePlugin, logger, register
+from core.plugin import BasePlugin, logger, on, Priority, register
 from core.chat import KiraMessageBatchEvent
+from core.provider import LLMRequest
 
 from core.utils.path_utils import get_data_path
 
@@ -17,6 +23,8 @@ blocked_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg',
                       '.dll', '.so', '.dylib', '.pdf', '.doc', '.docx', '.xls', '.xlsx',
                       '.ppt', '.pptx', '.iso', '.img', '.dmg'}
 
+ALL_TOOL_NAMES = ["read_file", "write_file", "edit_file", "list_files", "grep", "search_files", "exec"]
+
 
 class FilePlugin(BasePlugin):
     """
@@ -28,22 +36,65 @@ class FilePlugin(BasePlugin):
         self.allowed_sessions = list()
         self.allowed_exec_sessions = list()
         self.exec_deny_list = list()
-    
+        self.allowed_read_paths = tuple()
+        self.allowed_write_paths = tuple()
+
     async def initialize(self):
         self.allowed_sessions = self.plugin_cfg.get("allowed_sessions", [])
         self.allowed_exec_sessions = self.plugin_cfg.get("allowed_exec_sessions", [])
         self.exec_deny_list = self.plugin_cfg.get("exec_deny_list", [])
-    
+        base_read = ["data/files", "data/temp", "data/skills"]
+        base_write = ["data/files", "data/temp"]
+        extra_paths_cfg = self.plugin_cfg.get("extra_paths", {})
+        extra_read = extra_paths_cfg.get("extra_read_paths", [])
+        extra_write = extra_paths_cfg.get("extra_write_paths", [])
+        self.allowed_read_paths = tuple(base_read + extra_read)
+        self.allowed_write_paths = tuple(base_write + extra_write)
+
+    @on.llm_request(priority=Priority.LOW)
+    async def filter_tools(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
+        enabled = self.plugin_cfg.get("enabled_tools")
+        if enabled is None:
+            enabled = ALL_TOOL_NAMES
+        disabled = set(ALL_TOOL_NAMES) - set(enabled)
+        if disabled:
+            req.tool_set.remove(*disabled)
+
     async def terminate(self):
         pass
 
+    def _is_path_allowed(self, path: str, allowed_prefixes: tuple) -> bool:
+        """Check if path starts with an allowed prefix directory."""
+        for prefix in allowed_prefixes:
+            prefix = self._normalize_path(prefix)
+            if prefix is None:
+                continue
+            prefix = prefix.rstrip('/')
+            if path == prefix or path.startswith(prefix + '/'):
+                return True
+        return False
+
+    @staticmethod
+    def _resolve_path(path: str) -> Path:
+        if path.startswith("data/"):
+            return get_data_path() / path.removeprefix("data/")
+        return Path(path)
+
+    @staticmethod
+    def _normalize_path(path: str) -> str:
+        normalized = path.replace("\\", "/")
+        normalized = posixpath.normpath(normalized)
+        if normalized.startswith("../") or normalized == "..":
+            return None
+        return normalized
+
     @register.tool(
         "read_file",
-        "Read a plain text file (txt, html, py, etc..) in `data/files` `data/temp` or `data/skills`",
+        "Read a plain text file (txt, html, py, etc..) in allowed read paths",
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path, must start with `data/`"},
+                "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
                 "offset": {"type": "integer", "description": "Which line to start reading, defaults to 1"},
                 "limit": {"type": "integer", "description": "Maximum lines to read, defaults to 200"},
             },
@@ -54,22 +105,23 @@ class FilePlugin(BasePlugin):
         if event.sid not in self.allowed_sessions:
             return "Permission denied: current session not allowed to access local files"
 
+        path = self._normalize_path(path)
+        if path is None:
+            return "Permission denied: Path traversal detected"
+
         for rp in restricted_paths:
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
 
-        if "../" in path:
-            return "Permission denied: Path traversal detected"
-
-        if not path.startswith(("data/files", "data/temp", "data/skills")):
-            return "Permission denied: Path must start with data/files, data/temp or data/skills"
+        if not self._is_path_allowed(path, self.allowed_read_paths):
+            return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
             return "Multimedia and binary files are not allowed"
 
         try:
-            abs_path = get_data_path() / path.removeprefix("data/")
+            abs_path = self._resolve_path(path)
             with open(abs_path, 'r', encoding="utf-8") as f:
                 file_lines = f.readlines()
             if offset > len(file_lines) or offset < 1:
@@ -91,11 +143,11 @@ class FilePlugin(BasePlugin):
 
     @register.tool(
         "write_file",
-        "Write content to a plain text file in `data/files` or `data/temp`. Creates the file if it doesn't exist, overwrites if it does.",
+        "Write content to a plain text file in allowed write paths. Creates the file if it doesn't exist, overwrites if it does.",
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path, must start with `data/`"},
+                "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
                 "content": {"type": "string", "description": "Content to write to the file"},
             },
             "required": ["path", "content"]
@@ -105,22 +157,23 @@ class FilePlugin(BasePlugin):
         if event.sid not in self.allowed_sessions:
             return "Permission denied: current session not allowed to access local files"
 
+        path = self._normalize_path(path)
+        if path is None:
+            return "Permission denied: Path traversal detected"
+
         for rp in restricted_paths:
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
 
-        if "../" in path:
-            return "Permission denied: Path traversal detected"
-
-        if not path.startswith(("data/files", "data/temp")):
-            return "Permission denied: Path must start with data/files or data/temp"
+        if not self._is_path_allowed(path, self.allowed_write_paths):
+            return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
             return "Multimedia and binary files are not allowed"
 
         try:
-            abs_path = get_data_path() / path.removeprefix("data/")
+            abs_path = self._resolve_path(path)
             with open(abs_path, 'w', encoding="utf-8") as f:
                 f.write(content)
             return "File written successfully"
@@ -133,7 +186,7 @@ class FilePlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path, must start with `data/`"},
+                "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
                 "old_text": {"type": "string",
                              "description": "Exact text to find and replace (must match exactly, including whitespace)"},
                 "new_text": {"type": "string", "description": "New text to replace the old text with"},
@@ -145,32 +198,34 @@ class FilePlugin(BasePlugin):
         if event.sid not in self.allowed_sessions:
             return "Permission denied: current session not allowed to access local files"
 
+        path = self._normalize_path(path)
+        if path is None:
+            return "Permission denied: Path traversal detected"
+
         for rp in restricted_paths:
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
 
-        if "../" in path:
-            return "Permission denied: Path traversal detected"
-
-        if not path.startswith(("data/files", "data/temp")):
-            return "Permission denied: Path must start with data/files or data/temp"
+        if not self._is_path_allowed(path, self.allowed_write_paths):
+            return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
             return "Permission denied: Multimedia and binary files are not allowed"
 
         try:
-            abs_path = get_data_path() / path.removeprefix("data/")
+            abs_path = self._resolve_path(path)
 
             with open(abs_path, 'r', encoding="utf-8") as f:
                 content = f.read()
 
+            if old_text == "":
+                return "Error: old_text must not be empty."
+
             if old_text not in content:
-                return f"Error: old_text not found in file. Please check the content and try again."
+                return "Error: old_text not found in file. Please check the content and try again."
 
-            import re
-
-            replacements = len(re.findall(re.escape(old_text), content))
+            replacements = content.count(old_text)
 
             new_content = content.replace(old_text, new_text)
 
@@ -184,11 +239,11 @@ class FilePlugin(BasePlugin):
 
     @register.tool(
         "list_files",
-        "List files in a specified directory, could be `data/files` `data/temp` `data/skills` or their sub directories",
+        "List files in a specified directory within allowed read paths",
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Directory path, must start with `data/`"},
+                "path": {"type": "string", "description": "Directory path, must start with an allowed path prefix"},
                 "offset": {"type": "integer", "description": "Which index to start displaying file or folder name, defaults to 1"},
                 "limit": {"type": "integer", "description": "Maximum file count to display, defaults to 20"},
             },
@@ -199,18 +254,19 @@ class FilePlugin(BasePlugin):
         if event.sid not in self.allowed_sessions:
             return "Permission denied: current session not allowed to access local files"
 
+        path = self._normalize_path(path)
+        if path is None:
+            return "Permission denied: Path traversal detected"
+
         for rp in restricted_paths:
             if rp in path:
                 return "Permission denied: Path contains restricted keywords"
 
-        if "../" in path:
-            return "Permission denied: Path traversal detected"
-
-        if not path.startswith(("data/files", "data/temp", "data/skills")):
-            return "Permission denied: Path must start with data/files, data/temp or data/skills"
+        if not self._is_path_allowed(path, self.allowed_read_paths):
+            return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
 
         try:
-            abs_path = get_data_path() / path.removeprefix("data/")
+            abs_path = self._resolve_path(path)
 
             files = sorted(os.listdir(abs_path))
 
@@ -230,6 +286,390 @@ class FilePlugin(BasePlugin):
             return list_result
         except Exception as e:
             return f"[Failed to list files: {e}]"
+
+    # ------------------------------------------------------------------
+    # grep / search_files helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _has_ripgrep() -> bool:
+        return shutil.which("rg") is not None
+
+    def _grep_guard(self, event: KiraMessageBatchEvent, path: str) -> tuple[str | None, str | None]:
+        """Common permission guard for grep-like tools.
+
+        Returns (normalized_path, None) on success or (None, error_message) on failure.
+        """
+        if event.sid not in self.allowed_sessions:
+            return None, "Permission denied: current session not allowed to access local files"
+
+        normalized = self._normalize_path(path)
+        if normalized is None:
+            return None, "Permission denied: Path traversal detected"
+
+        for rp in restricted_paths:
+            if rp in normalized:
+                return None, "Permission denied: Path contains restricted keywords"
+
+        if not self._is_path_allowed(normalized, self.allowed_read_paths):
+            return None, f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
+
+        return normalized, None
+
+    def _format_grep_results(self, lines: list[str], limit: int) -> str:
+        """Trim results to limit and append truncation hint."""
+        if limit > 0 and len(lines) > limit:
+            lines = lines[:limit]
+            result = "\n".join(lines)
+            result += f"\n\n[Showing first {limit} results. Increase limit or narrow the search to see more.]"
+            return result
+        return "\n".join(lines) if lines else "No matches found."
+
+    def _grep_with_rg(
+        self,
+        pattern: str,
+        search_path: str,
+        output_mode: str = "files_with_matches",
+        context: int = 0,
+        case_insensitive: bool = False,
+        glob: str | None = None,
+        multiline: bool = False,
+        limit: int = 200,
+    ) -> str:
+        """Search file contents using ripgrep."""
+        cmd = ["rg", "--no-heading", "--no-binary"]
+
+        if output_mode == "files_with_matches":
+            cmd.append("-l")
+        elif output_mode == "count":
+            cmd.append("--count")
+        else:
+            cmd.append("-n")
+            if context > 0:
+                cmd.extend(["-C", str(context)])
+
+        if case_insensitive:
+            cmd.append("-i")
+        if multiline:
+            cmd.extend(["-U", "--multiline-dotall"])
+        if glob:
+            cmd.extend(["--glob", glob])
+
+        cmd.extend(["--", pattern, search_path])
+
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, timeout=30,
+                encoding="utf-8", errors="replace"
+            )
+            # rg exits 1 when no matches, 2 on error
+            if result.returncode == 2:
+                return f"ripgrep error: {result.stderr.strip()}"
+            output = result.stdout.strip()
+            if not output:
+                return "No matches found."
+            lines = output.splitlines()
+            return self._format_grep_results(lines, limit)
+        except subprocess.TimeoutExpired:
+            return "Search timed out after 30 seconds."
+        except Exception as e:
+            return f"ripgrep execution failed: {e}"
+
+    def _grep_with_python(
+        self,
+        pattern: str,
+        search_path: str,
+        original_path: str,
+        output_mode: str = "files_with_matches",
+        context: int = 0,
+        case_insensitive: bool = False,
+        glob: str | None = None,
+        multiline: bool = False,
+        limit: int = 200,
+    ) -> str:
+        """Search file contents using pure-Python re module."""
+        if glob and ".." in glob:
+            return "Error: glob pattern must not contain '..'"
+
+        flags = re.IGNORECASE if case_insensitive else 0
+        if multiline:
+            flags |= re.DOTALL
+        try:
+            regex = re.compile(pattern, flags)
+        except re.error as e:
+            return f"Invalid regex pattern: {e}"
+
+        root = Path(search_path)
+        if root.is_file():
+            files = [root]
+        elif root.is_dir():
+            if glob:
+                files = sorted(root.glob(glob), key=lambda p: p.stat().st_mtime, reverse=True)
+            else:
+                files = sorted(root.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        else:
+            return f"Path not found: {search_path}"
+
+        def _to_allowed_prefix(fp: Path) -> str:
+            """Convert an absolute file path back to the user-facing allowed-prefix path."""
+            rel_suffix = str(fp.relative_to(root)).replace("\\", "/")
+            return f"{original_path.rstrip('/')}/{rel_suffix}"
+
+        def _scan_file(fp: Path):
+            """Scan a single file, returning (allowed_path, match_indices, total_matches) or None."""
+            if not fp.is_file():
+                return None
+            if fp.suffix.lower() in blocked_extensions:
+                return None
+            try:
+                content = fp.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                return None
+
+            if multiline:
+                found = list(regex.finditer(content))
+                if not found:
+                    return None
+                line_offsets = [0]
+                for i, ch in enumerate(content):
+                    if ch == "\n":
+                        line_offsets.append(i + 1)
+                indices = set()
+                for m in found:
+                    line_no = 0
+                    for li, start in enumerate(line_offsets):
+                        if start <= m.start():
+                            line_no = li
+                        else:
+                            break
+                    indices.add(line_no)
+                return _to_allowed_prefix(fp), sorted(indices), len(found)
+            else:
+                file_lines = content.splitlines(keepends=True)
+                indices = [i for i, line in enumerate(file_lines) if regex.search(line)]
+                if not indices:
+                    return None
+                return _to_allowed_prefix(fp), indices, len(indices)
+
+        lines: list[str] = []
+        matched_files: list[str] = []
+        file_count_map: dict[str, int] = {}
+
+        for fp in files:
+            scan_result = _scan_file(fp)
+            if scan_result is None:
+                continue
+            rel, match_indices, count = scan_result
+            matched_files.append(rel)
+            file_count_map[rel] = count
+
+            if output_mode == "content":
+                content = fp.read_text(encoding="utf-8", errors="replace")
+                file_lines = content.splitlines(keepends=True)
+                shown: set[int] = set()
+                for mi in match_indices:
+                    start = max(0, mi - context)
+                    end = min(len(file_lines), mi + context + 1)
+                    for ci in range(start, end):
+                        if ci not in shown:
+                            shown.add(ci)
+                            line_text = file_lines[ci].rstrip("\n\r")
+                            marker = ":" if ci == mi else "-"
+                            lines.append(f"{rel}:{ci + 1}{marker} {line_text}")
+
+        if output_mode == "files_with_matches":
+            lines = matched_files
+            if not lines:
+                return "No matches found."
+            result = self._format_grep_results(lines, limit)
+            if limit == 0 or len(matched_files) <= limit:
+                result += f"\n\n[{len(matched_files)} files matched. Use output_mode=\"content\" to see matching lines.]"
+            return result
+
+        if output_mode == "count":
+            lines = [f"{f}: {c}" for f, c in file_count_map.items()]
+            if not lines:
+                return "No matches found."
+            return self._format_grep_results(lines, limit)
+
+        # content mode
+        if not lines:
+            return "No matches found."
+        total_matches = sum(file_count_map.values())
+        result = self._format_grep_results(lines, limit)
+        result += f"\n\n[{total_matches} matches across {len(matched_files)} files.]"
+        return result
+
+    # ------------------------------------------------------------------
+    # Tools
+    # ------------------------------------------------------------------
+
+    @register.tool(
+        "grep",
+        (
+            "Fast content search powered by ripgrep (with pure-Python fallback). "
+            "Prefer this over reading files then searching manually. "
+            "Supports regex patterns, glob filtering, context lines, and multiple output modes."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "The regex pattern to search for in file contents. Uses Python re syntax (ripgrep when available)."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "File or directory path to search in. Must start with an allowed path prefix."
+                },
+                "output_mode": {
+                    "type": "string",
+                    "enum": ["files_with_matches", "content", "count"],
+                    "description": "Output format. 'files_with_matches' (default) returns file paths only. 'content' returns matching lines with line numbers. 'count' returns match counts per file."
+                },
+                "context": {
+                    "type": "integer",
+                    "description": "Number of lines of context before and after each match. Only applies in 'content' mode. Defaults to 0."
+                },
+                "case_insensitive": {
+                    "type": "boolean",
+                    "description": "If true, perform case-insensitive matching. Defaults to false."
+                },
+                "glob": {
+                    "type": "string",
+                    "description": "Glob pattern to filter which files to search (e.g. '*.py', '**/*.ts'). Searches all files if omitted."
+                },
+                "multiline": {
+                    "type": "boolean",
+                    "description": "If true, '.' in the pattern matches newlines and patterns can span multiple lines. Defaults to false."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of result lines to return. Defaults to 200. Use 0 for unlimited."
+                },
+            },
+            "required": ["pattern", "path"]
+        }
+    )
+    async def grep(
+        self, event: KiraMessageBatchEvent, pattern: str, path: str,
+        output_mode: str = "files_with_matches", context: int = 0,
+        case_insensitive: bool = False, glob: str = None,
+        multiline: bool = False, limit: int = 200,
+    ) -> str:
+        path, err = self._grep_guard(event, path)
+        if err:
+            return err
+
+        abs_path = str(self._resolve_path(path))
+        if not os.path.exists(abs_path):
+            return f"Path not found: {path}"
+
+        if self._has_ripgrep():
+            return self._grep_with_rg(
+                pattern, abs_path, output_mode, context,
+                case_insensitive, glob, multiline, limit,
+            )
+        else:
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._grep_with_python,
+                        pattern, abs_path, path, output_mode, context,
+                        case_insensitive, glob, multiline, limit,
+                    ),
+                    timeout=30,
+                )
+            except asyncio.TimeoutError:
+                return "Search timed out after 30 seconds."
+
+    @register.tool(
+        "search_files",
+        (
+            "Fast file search by glob pattern. Returns matching file paths sorted by modification time (most recent first). "
+            "Use this to find files by name or extension, e.g. '**/*.py' or 'src/**/*.ts'. "
+            "For searching file contents, use the grep tool instead."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern to match files. Examples: '**/*.py', 'src/**/*.ts', '*.json'. Use '**' to match any depth."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Directory path to search in. Must start with an allowed path prefix. Defaults to the first allowed read path."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of file paths to return. Defaults to 100."
+                },
+            },
+            "required": ["pattern"]
+        }
+    )
+    async def search_files(self, event: KiraMessageBatchEvent, pattern: str, path: str = None, limit: int = 100) -> str:
+        if event.sid not in self.allowed_sessions:
+            return "Permission denied: current session not allowed to access local files"
+
+        if ".." in pattern:
+            return "Error: glob pattern must not contain '..'"
+
+        # Default to first allowed read path
+        if path is None:
+            if self.allowed_read_paths:
+                path = self.allowed_read_paths[0]
+            else:
+                return "No allowed read paths configured"
+
+        path = self._normalize_path(path)
+        if path is None:
+            return "Permission denied: Path traversal detected"
+
+        for rp in restricted_paths:
+            if rp in path:
+                return "Permission denied: Path contains restricted keywords"
+
+        if not self._is_path_allowed(path, self.allowed_read_paths):
+            return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
+
+        try:
+            abs_path = self._resolve_path(path)
+            if not abs_path.is_dir():
+                return f"Not a directory: {path}"
+
+            matches = sorted(
+                abs_path.glob(pattern),
+                key=lambda p: p.stat().st_mtime if p.is_file() else 0,
+                reverse=True,
+            )
+
+            # Filter to files only
+            files = [m for m in matches if m.is_file()]
+
+            if not files:
+                return "No files found."
+
+            total = len(files)
+            if limit > 0:
+                files = files[:limit]
+
+            rel_paths = []
+            for f in files:
+                rel_suffix = str(f.relative_to(abs_path)).replace("\\", "/")
+                rel = f"{path.rstrip('/')}/{rel_suffix}"
+                rel_paths.append(rel)
+
+            result = "\n".join(rel_paths)
+            if limit > 0 and total > limit:
+                result += f"\n\n[Showing first {limit} of {total} files. Adjust limit to see more.]"
+            else:
+                result += f"\n\n[{total} files found.]"
+
+            return result
+        except Exception as e:
+            return f"Failed to search files: {e}"
 
     @register.tool(
         "exec",
@@ -276,12 +716,14 @@ class FilePlugin(BasePlugin):
         if os.name == 'nt':
             shell_command = f'chcp 65001 >nul && {shell_command}'
 
+        exec_timeout = 30  # seconds
+
         logger.info(f'Executing shell command: {shell_command} (cwd: {os.getcwd()})')
         try:
             result = subprocess.run(
                 shell_command, shell=True, capture_output=True,
                 stdin=subprocess.DEVNULL,
-                timeout=30, env=env, encoding='utf-8', errors='replace'
+                timeout=exec_timeout, env=env, encoding='utf-8', errors='replace'
             )
             output = (result.stdout or '') + (result.stderr or '')
             if result.returncode == 0:
@@ -289,6 +731,6 @@ class FilePlugin(BasePlugin):
             else:
                 return f'Shell command failed (exit {result.returncode}):\n{output}'
         except subprocess.TimeoutExpired:
-            return f'Shell command timed out after 120 seconds: {shell_command}'
+            return f'Shell command timed out after {exec_timeout} seconds: {shell_command}'
         except Exception as e:
             return f'Unexpected error while executing shell command: {e}'

@@ -2,13 +2,15 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, WebSocket, WebSocketException, status
 from fastapi.responses import FileResponse, HTMLResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse, Response
 
 from core.config.default import VERSION
 from webui.models import LoginResponse, TokenLoginRequest, VersionResponse
 from webui.routes.base import RouteDefinition, Routes
-from webui.utils import _create_jwt_token, _verify_jwt_token
+from webui.utils import _access_token_fingerprint, _create_jwt_token, verify_session_token
 
 
 async def require_auth(
@@ -22,23 +24,59 @@ async def require_auth(
     --disable-webui-auth becomes invalid the moment the server restarts with
     auth enabled (and vice versa). Truth lives in the JWT, not in a client-side
     marker.
+
+    Accepts kira_token cookie as a fallback for iframe/plugin page requests
+    that cannot send Authorization headers.
     """
-    if not authorization or not authorization.startswith("Bearer "):
+    token = None
+
+    # 1. Try Authorization header (standard path for API calls)
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+    else:
+        # 2. Fallback: try kira_token cookie (for iframe/plugin page requests)
+        token = request.cookies.get("kira_token")
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    token = authorization.split(" ", 1)[1]
-    payload = _verify_jwt_token(token)
-
-    current_mode = "disabled" if getattr(request.app.state, "disable_auth", False) else "enabled"
-    token_mode = payload.get("auth_mode", "enabled")
-    if token_mode != current_mode:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token issued under a different auth mode, please re-login",
-        )
+    # Signature/expiry + auth_mode + access-token (tv) binding, via the shared
+    # helper so plugin page/static auth enforces the exact same claims.
+    payload = verify_session_token(token, request.app.state)
     return payload.get("sub", "admin")
+
+
+async def require_ws_auth(
+    ws: WebSocket,
+) -> str:
+    """WebSocket auth dependency — validates token during the WS handshake.
+
+    Token source (checked in order):
+      1. ``?token=…`` query parameter  (most common for browser WS clients)
+      2. ``Authorization: Bearer …`` header
+
+    On failure the connection is accepted then immediately closed with
+    code 4003 so the client sees a meaningful close code instead of a
+    raw HTTP 403/401 that the browser cannot inspect.
+    """
+    token = ws.query_params.get("token")
+    if not token:
+        auth_header = ws.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1]
+
+    if not token:
+        raise WebSocketException(code=4003, reason="Missing token")
+
+    try:
+        payload = verify_session_token(token, ws.app.state)
+    except HTTPException:
+        raise WebSocketException(code=4003, reason="Invalid token") from None
+    user = payload.get("sub", "admin")
+    ws.state.user = user
+    return user
 
 
 class AuthRoutes(Routes):
@@ -102,15 +140,63 @@ class AuthRoutes(Routes):
         ]
 
     def register_spa_fallback(self):
-        """Register SPA catch-all route. Must be called AFTER all other routes."""
-        self.app.add_api_route(
-            "/{full_path:path}",
-            self.serve_spa,
-            methods=["GET"],
-            response_class=HTMLResponse,
-            tags=["web"],
-            include_in_schema=False,
-        )
+        """Register SPA fallback middleware. Must be called AFTER all other routes.
+
+        Uses middleware instead of a catch-all route so that dynamically added
+        routes (e.g. plugin pages registered via set_web_app) are tried first.
+        The middleware only intercepts 404 responses for browser GET requests.
+        """
+        dist_dir = self.dist_dir
+        sticker_dir = self._get_sticker_dir()
+
+        class SPAStaticFallbackMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                response = await call_next(request)
+                if response.status_code != 404:
+                    return response
+                if request.method != "GET":
+                    return response
+                if "text/html" not in request.headers.get("accept", ""):
+                    return response
+                full_path = request.url.path.lstrip("/")
+                if full_path.startswith(("api/", "assets/", "monacoeditorwork/", "page/")):
+                    return response
+                # sticker mount: only exclude if the requested file actually exists
+                # /sticker/xxx.gif → file exists → let mount handle it
+                # /sticker/ or /sticker → SPA route → serve index.html
+                if full_path.startswith("sticker/"):
+                    remaining = full_path[len("sticker/"):]
+                    if remaining and ".." not in remaining and (sticker_dir / remaining).exists():
+                        return response
+                # Serve single-segment root files from dist (favicon.ico, etc.)
+                if full_path and "/" not in full_path and ".." not in full_path:
+                    candidate = dist_dir / full_path
+                    try:
+                        resolved = candidate.resolve()
+                        dist_resolved = dist_dir.resolve()
+                        if resolved.is_file() and resolved.is_relative_to(dist_resolved):
+                            return FileResponse(resolved)
+                    except (OSError, ValueError):
+                        pass
+                no_cache_headers = {
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                }
+                spa_index = dist_dir / "index.html"
+                if spa_index.exists():
+                    return FileResponse(spa_index, media_type="text/html", headers=no_cache_headers)
+                return HTMLResponse(
+                    content="<h1>Frontend not built. Run <code>npm install &amp;&amp; npm run build</code> inside <code>webui/frontend/</code>.</h1>",
+                    status_code=503,
+                )
+
+        self.app.add_middleware(SPAStaticFallbackMiddleware)
+
+    @staticmethod
+    def _get_sticker_dir() -> Path:
+        from core.utils.path_utils import get_data_path
+        return get_data_path() / "sticker"
 
     async def serve_spa(self, request: Request = None, full_path: str = ""):
         """Serve the Vue SPA.
@@ -122,8 +208,13 @@ class AuthRoutes(Routes):
         the build command.
         """
         # Don't serve SPA for paths handled by dedicated mounts.
-        if full_path.startswith(("api/", "sticker/", "assets/", "monacoeditorwork/")):
+        if full_path.startswith(("api/", "assets/", "monacoeditorwork/", "page/")):
             raise HTTPException(status_code=404)
+        # sticker mount: only exclude if the requested file actually exists
+        if full_path.startswith("sticker/"):
+            remaining = full_path[len("sticker/"):]
+            if remaining and ".." not in remaining and (self._get_sticker_dir() / remaining).exists():
+                raise HTTPException(status_code=404)
         # Serve single-segment root files from dist (favicon.ico, etc.).
         # Restrict to one path segment to avoid traversal.
         if full_path and "/" not in full_path and ".." not in full_path:
@@ -166,8 +257,9 @@ class AuthRoutes(Routes):
     async def get_version(self):
         return VersionResponse(version=VERSION)
 
-    async def token_login(self, payload: TokenLoginRequest):
-        if payload.access_token != self.access_token:
+    async def token_login(self, payload: TokenLoginRequest, request: Request):
+        current_token = request.app.state.access_token
+        if payload.access_token != current_token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid access token",
@@ -179,10 +271,25 @@ class AuthRoutes(Routes):
             data={
                 "sub": "admin",
                 "auth_mode": "disabled" if self.disable_auth else "enabled",
+                # Bind the session to the current access token; rotating the
+                # token changes this fingerprint and invalidates old JWTs.
+                "tv": _access_token_fingerprint(current_token),
             },
             expires_delta=timedelta(days=5),
         )
-        return LoginResponse(access_token=access_token)
+        response = LoginResponse(access_token=access_token)
+        resp = JSONResponse(content=response.model_dump())
+        resp.set_cookie(
+            key="kira_token",
+            value=access_token,
+            path="/",
+            httponly=True,
+            samesite="lax",
+            max_age=5 * 24 * 3600,  # 5 days, matches JWT expiry
+        )
+        return resp
 
     async def logout(self):
-        return None
+        resp = Response(status_code=204)
+        resp.delete_cookie("kira_token", path="/")
+        return resp

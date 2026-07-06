@@ -8,15 +8,28 @@
         <div class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ name || id }}</div>
         <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {{ version ? `v${version}` : '' }}{{ version && author ? ' · ' : '' }}{{ author || '' }}
+          <span v-if="hasUpdate" class="ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+            {{ $t('plugin.update_available') }}
+          </span>
         </div>
         <div v-if="coreVersion" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
           {{ $t('plugin.core_version') }}: {{ coreVersion }}
         </div>
-        <div v-if="error" class="mt-2 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
-          <svg class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>{{ error }}</span>
+        <div v-if="status === 'installing'" class="mt-2 flex items-center gap-1.5 text-xs">
+          <IconSpinner class="animate-spin h-3.5 w-3.5 text-yellow-500" />
+          <span class="text-yellow-600 dark:text-yellow-400">{{ $t('plugin.status_installing') }}</span>
+        </div>
+        <div v-else-if="status === 'loading'" class="mt-2 flex items-center gap-1.5 text-xs">
+          <IconSpinner class="animate-spin h-3.5 w-3.5 text-blue-500" />
+          <span class="text-blue-600 dark:text-blue-400">{{ $t('plugin.status_loading') }}</span>
+        </div>
+        <div v-else-if="status === 'pending'" class="mt-2 flex items-center gap-1.5 text-xs">
+          <span class="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
+          <span class="text-gray-500 dark:text-gray-400">{{ $t('plugin.status_pending') }}</span>
+        </div>
+        <div v-if="error" class="mt-2 min-w-0 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400 overflow-hidden">
+          <IconInfo class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+          <span class="min-w-0 break-all line-clamp-6">{{ error }}</span>
         </div>
       </div>
       <div class="flex items-start space-x-2">
@@ -29,9 +42,7 @@
           class="inline-flex items-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors mt-1"
           :title="$t('plugin.repo_link')"
         >
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.726-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.835 2.807 1.305 3.492.998.108-.776.42-1.305.762-1.605-2.665-.305-5.467-1.334-5.467-5.93 0-1.31.468-2.382 1.235-3.22-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.3 1.23A11.51 11.51 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.652.242 2.873.118 3.176.77.838 1.233 1.91 1.233 3.22 0 4.61-2.807 5.624-5.479 5.92.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 21.795 24 17.298 24 12c0-6.63-5.37-12-12-12z" />
-          </svg>
+          <IconGithub class="w-4 h-4" />
         </a>
         <!-- Enable/disable toggle (installed mode) -->
         <button
@@ -66,6 +77,22 @@
       <!-- Installed mode: Configure / Reload / Uninstall buttons -->
       <div v-if="mode === 'installed'" class="flex items-center justify-end space-x-3">
         <button
+          v-if="hasUpdate && !builtin"
+          type="button"
+          class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
+          :class="updating
+            ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
+            : 'border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30'"
+          :disabled="updating"
+          @click="!updating && emit('update')"
+        >
+          <span v-if="updating" class="flex items-center">
+            <IconSpinner class="animate-spin h-3 w-3 mr-1" />
+            {{ $t('plugin.updating') }}
+          </span>
+          <span v-else>{{ $t('plugin.update') }}</span>
+        </button>
+        <button
           v-if="!error"
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
@@ -84,10 +111,7 @@
           @click="!reloading && emit('reload')"
         >
           <span v-if="reloading" class="flex items-center">
-            <svg class="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+            <IconSpinner class="animate-spin h-3 w-3 mr-1" />
             {{ $t('plugin.reloading') }}
           </span>
           <span v-else>{{ $t('plugin.reload') }}</span>
@@ -104,9 +128,26 @@
           {{ $t('plugin.uninstall') }}
         </button>
       </div>
-      <!-- Store mode: Install button -->
+      <!-- Store mode: Install / Update button -->
       <div v-if="mode === 'store'" class="flex items-center justify-end">
         <button
+          v-if="installed && hasUpdate"
+          type="button"
+          class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
+          :class="updating
+            ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
+            : 'border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30'"
+          :disabled="updating"
+          @click="!updating && emit('update')"
+        >
+          <span v-if="updating" class="flex items-center">
+            <IconSpinner class="animate-spin h-3 w-3 mr-1" />
+            {{ $t('plugin.updating') }}
+          </span>
+          <span v-else>{{ $t('plugin.update') }}</span>
+        </button>
+        <button
+          v-else
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
           :class="installed
@@ -116,10 +157,7 @@
           @click="!installed && !installing && emit('install')"
         >
           <span v-if="installing" class="flex items-center">
-            <svg class="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+            <IconSpinner class="animate-spin h-3 w-3 mr-1" />
             {{ $t('pluginStore.installing') }}
           </span>
           <span v-else>{{ installed ? $t('pluginStore.installed') : $t('pluginStore.install') }}</span>
@@ -131,6 +169,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { IconInfo, IconGithub, IconSpinner } from '@/components/icons'
 
 const props = withDefaults(defineProps<{
   id: string
@@ -147,7 +186,12 @@ const props = withDefaults(defineProps<{
   tags?: string[]
   coreVersion?: string | null
   error?: string | null
+  status?: string
   reloading?: boolean
+  // update
+  hasUpdate?: boolean
+  latestVersion?: string | null
+  updating?: boolean
   // store mode
   installed?: boolean
   installing?: boolean
@@ -162,7 +206,11 @@ const props = withDefaults(defineProps<{
   tags: () => [],
   coreVersion: null,
   error: null,
+  status: 'ready',
   reloading: false,
+  hasUpdate: false,
+  latestVersion: null,
+  updating: false,
   installed: false,
   installing: false,
 })
@@ -173,6 +221,7 @@ const emit = defineEmits<{
   uninstall: []
   install: []
   reload: []
+  update: []
 }>()
 
 const safeRepo = computed(() => {

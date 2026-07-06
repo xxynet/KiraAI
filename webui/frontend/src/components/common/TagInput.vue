@@ -1,6 +1,6 @@
 <template>
   <div class="tag-input" ref="containerRef">
-    <div class="tag-input-wrapper" @click="focusInput">
+    <form class="tag-input-wrapper" @click="focusInput" @submit.prevent="addItem" @keydown.enter.prevent>
       <template v-for="(item, idx) in modelValue" :key="idx">
         <span
           v-if="editingIndex !== idx"
@@ -9,15 +9,15 @@
         >
           {{ item }}
           <span class="tag-input-tag-remove" @click.stop="removeItem(idx)">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
+            <IconX width="12" height="12" />
           </span>
         </span>
         <input
           v-else
           ref="editInputRef"
           :value="editDraft"
+          inputmode="text"
+          enterkeyhint="enter"
           class="tag-input-edit"
           @input="editDraft = ($event.target as HTMLInputElement).value"
           @keydown.enter.prevent="commitEdit"
@@ -29,17 +29,20 @@
         ref="inputRef"
         v-model="draft"
         type="text"
+        inputmode="text"
+        enterkeyhint="enter"
         class="tag-input-field"
         :placeholder="modelValue.length === 0 ? (placeholder || '') : ''"
         @keydown.enter.prevent="addItem"
         @keydown.backspace="onBackspace"
       />
-    </div>
+    </form>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
+import { IconX } from '@/components/icons'
 
 const props = defineProps<{
   modelValue: string[]

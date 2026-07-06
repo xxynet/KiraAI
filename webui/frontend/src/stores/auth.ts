@@ -13,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
     const response = await authApi.login(data)
     token.value = response.data.access_token
     localStorage.setItem('jwt_token', response.data.access_token)
+    // Cookie is set server-side via Set-Cookie header (HttpOnly)
   }
 
   async function logout() {
@@ -21,6 +22,7 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       token.value = null
       localStorage.removeItem('jwt_token')
+      // Cookie is cleared server-side via Set-Cookie header
     }
   }
 

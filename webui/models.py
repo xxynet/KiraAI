@@ -1,9 +1,9 @@
 """
 Pydantic models shared across WebUI routes.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -16,6 +16,16 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class OverviewWidget(BaseModel):
+    widget_id: str
+    label: Union[str, Dict[str, str]]
+    content: str = ""
+    icon: str = "Box"
+    color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue"
+    order: int = 100
+    size: Literal["small", "wide"] = "small"
+
+
 class OverviewResponse(BaseModel):
     total_adapters: int = 0
     active_adapters: int = 0
@@ -26,6 +36,7 @@ class OverviewResponse(BaseModel):
     runtime_duration: int = 0  # System uptime in seconds
     memory_usage: int = 0  # Process memory usage in MB
     total_memory: int = 0  # Total system memory in MB
+    widgets: List[OverviewWidget] = Field(default_factory=list)
 
 
 class VersionResponse(BaseModel):
@@ -98,10 +109,16 @@ class PersonaBase(BaseModel):
 class PersonaResponse(PersonaBase):
     id: str
     created_at: int = 0
+    is_active: bool = False
 
 
 class TokenLoginRequest(BaseModel):
     access_token: str
+
+
+class ChangeTokenRequest(BaseModel):
+    old_token: str
+    new_token: str
 
 
 class StickerItem(BaseModel):
@@ -112,6 +129,31 @@ class StickerItem(BaseModel):
 
 class StickerUpdateRequest(BaseModel):
     desc: str = ""
+
+
+class PageMenu(BaseModel):
+    """Menu entry for a plugin page, shown in sidebar."""
+    route: str
+    label: Union[str, Dict[str, str]]
+    icon: Optional[str] = None
+    order: int = 100
+
+    @field_validator('label')
+    @classmethod
+    def validate_label(cls, v):
+        if isinstance(v, str):
+            if not v.strip():
+                raise ValueError("label string must not be empty or whitespace")
+            return v
+        if isinstance(v, dict):
+            for key, val in v.items():
+                if not isinstance(key, str) or not isinstance(val, str):
+                    raise ValueError(f"label dict keys and values must be strings, "
+                                     f"got {type(key).__name__}: {type(val).__name__}")
+                if not val.strip():
+                    raise ValueError(f"label dict value for '{key}' must not be empty or whitespace")
+            return v
+        raise ValueError(f"label must be a str or dict, got {type(v).__name__}")
 
 
 class PluginItem(BaseModel):
@@ -128,6 +170,8 @@ class PluginItem(BaseModel):
     tags: List[str] = Field(default_factory=list)
     core_version: Optional[str] = None
     error: Optional[str] = None
+    status: str = "pending"
+    menus: List[PageMenu] = Field(default_factory=list)
 
 
 class PluginConfigUpdateRequest(BaseModel):
@@ -154,6 +198,18 @@ class PluginStoreItemResponse(BaseModel):
     repo: Optional[str] = None
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
+
+
+class PluginUpdateCheckItem(BaseModel):
+    plugin_id: str
+    current_version: str = ""
+    latest_version: Optional[str] = None
+    has_update: bool = False
+    error: Optional[str] = None
+
+
+class PluginUpdateRequest(BaseModel):
+    gh_proxy: Optional[str] = None
 
 
 class PluginStoreFetchRequest(BaseModel):

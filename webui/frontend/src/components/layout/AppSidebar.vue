@@ -17,7 +17,7 @@
       >
         <div class="flex items-center gap-3">
           <component :is="item.icon" class="w-5 h-5" />
-          <span>{{ $t(item.label) }}</span>
+          <span>{{ item.isPlugin ? item.label : $t(item.label) }}</span>
         </div>
         <span class="nav-dot"></span>
       </router-link>
@@ -36,27 +36,31 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { usePluginMenuStore } from '@/stores/pluginMenu'
 import { getVersion } from '@/api/overview'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import {
-  DataAnalysis,
-  Connection,
-  Link,
-  User,
-  SetUp,
-  Picture,
-  Setting,
-  ChatDotRound,
-  Document,
-  Tools,
+  DataAnalysis, Connection, Link, User, SetUp, Picture,
+  Setting, ChatDotRound, Document, Tools, Box,
 } from '@element-plus/icons-vue'
+import { iconMap } from '@/utils/iconMap'
 
 defineProps<{ open: boolean }>()
 
 const appVersion = ref('-')
+const route = useRoute()
+const appStore = useAppStore()
+const pluginMenuStore = usePluginMenuStore()
+const { locale } = useI18n()
+
+// Re-resolve plugin page labels when UI language changes
+watch(locale, (newLocale) => {
+  pluginMenuStore.reResolveLabels(newLocale)
+})
 
 onMounted(async () => {
   try {
@@ -65,10 +69,8 @@ onMounted(async () => {
   } catch (error) {
     console.error('Error loading version:', error)
   }
+  pluginMenuStore.fetchAndRegisterMenus()
 })
-
-const route = useRoute()
-const appStore = useAppStore()
 
 const currentLanguage = computed({
   get: () => appStore.language,
@@ -80,21 +82,37 @@ const languageOptions = [
   { value: 'zh', label: '中文' },
 ]
 
-const navItems = [
-  { route: '/overview', label: 'nav.overview', icon: DataAnalysis },
-  { route: '/provider', label: 'nav.provider', icon: Connection },
-  { route: '/adapter', label: 'nav.adapter', icon: Link },
-  { route: '/persona', label: 'nav.persona', icon: User },
-  { route: '/sticker', label: 'nav.sticker', icon: Picture },
-  { route: '/configuration', label: 'nav.configuration', icon: Tools },
-  { route: '/plugin', label: 'nav.plugin', icon: SetUp },
-  { route: '/sessions', label: 'nav.sessions', icon: ChatDotRound },
-  { route: '/logs', label: 'nav.logs', icon: Document },
-  { route: '/settings', label: 'nav.settings', icon: Setting },
+const staticNavItems: { route: string; label: string; icon: any; isPlugin: boolean }[] = [
+  { route: '/overview', label: 'nav.overview', icon: DataAnalysis, isPlugin: false },
+  { route: '/provider', label: 'nav.provider', icon: Connection, isPlugin: false },
+  { route: '/adapter', label: 'nav.adapter', icon: Link, isPlugin: false },
+  { route: '/persona', label: 'nav.persona', icon: User, isPlugin: false },
+  { route: '/sticker', label: 'nav.sticker', icon: Picture, isPlugin: false },
+  { route: '/configuration', label: 'nav.configuration', icon: Tools, isPlugin: false },
+  { route: '/plugin', label: 'nav.plugin', icon: SetUp, isPlugin: false },
+  { route: '/sessions', label: 'nav.sessions', icon: ChatDotRound, isPlugin: false },
+  { route: '/logs', label: 'nav.logs', icon: Document, isPlugin: false },
+  { route: '/settings', label: 'nav.settings', icon: Setting, isPlugin: false },
 ]
 
+const navItems = computed(() => {
+  const items = [...staticNavItems]
+  for (const menu of pluginMenuStore.menus) {
+    items.push({
+      route: menu.route,
+      label: menu.label,
+      icon: iconMap[menu.icon || ''] || Box,
+      isPlugin: true,
+    })
+  }
+  return items
+})
+
 function isActive(path: string): boolean {
-  return route.path === path
+  // Normalize trailing slashes so refresh (which Vue Router may canonicalise
+  // with a trailing slash) matches the nav item path written without one.
+  const norm = (p: string) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
+  return norm(route.path) === norm(path)
 }
 </script>
 

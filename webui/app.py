@@ -3,12 +3,15 @@ KiraAI WebUI Application
 Provides a web-based admin panel for managing KiraAI system
 """
 import mimetypes
+import os
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 import uvicorn
 
 from core.lifecycle import KiraLifecycle
@@ -28,6 +31,7 @@ from webui.routes.config import ConfigRoutes
 from webui.routes.stickers import StickersRoutes
 from webui.routes.settings import SettingsRoutes
 from webui.routes.skills import SkillsRoutes
+from webui.routes.scope import ScopeRoutes
 from webui.routes.system import SystemRoutes
 
 
@@ -51,29 +55,98 @@ class KiraWebUI:
             self.access_token = "disabled"
         else:
             self.access_token = _get_or_generate_access_token()
-        self.app = FastAPI(
-            title="KiraAI Admin Panel",
-            description="Administration panel for KiraAI system",
-            version="1.0.0",
-            openapi_url="/api/openapi.json",
-            docs_url="/api/docs",
-        )
+        self.is_prod = os.environ.get("KIRA_ENV", "prod").lower() == "prod"
+        fastapi_kwargs: dict = {
+            "title": "KiraAI Admin Panel",
+            "description": "Administration panel for KiraAI system",
+            "version": "1.0.0",
+        }
+        if not self.is_prod:
+            fastapi_kwargs["openapi_url"] = "/api/openapi.json"
+            fastapi_kwargs["docs_url"] = "/api/docs"
+        else:
+            fastapi_kwargs["openapi_url"] = None
+            fastapi_kwargs["docs_url"] = None
+            fastapi_kwargs["redoc_url"] = None
+        self.app = FastAPI(**fastapi_kwargs)
         # require_auth reads this to detect mode-mismatched JWTs.
         self.app.state.disable_auth = disable_auth
+        self.app.state.access_token = self.access_token
 
         # Paths
         self.webui_dir = Path(__file__).parent
         self.dist_dir = dist_dir or get_webui_dist_path()
         self.sticker_dir = get_data_path() / "sticker"
 
-        # Setup CORS
+        # Setup CORS.
+        # Auth is carried by the Authorization: Bearer header (and a
+        # same-origin, SameSite=Lax kira_token cookie for iframe/plugin pages),
+        # so cross-origin *credentialed* access is never needed. Combining
+        # allow_origins=["*"] with allow_credentials=True is the classic unsafe
+        # CORS misconfiguration (Starlette reflects the request Origin and sets
+        # Allow-Credentials: true, letting any site make credentialed calls and
+        # read the responses). Keep the wildcard for convenience but disable
+        # credentials so the wildcard stays a true, non-reflecting "*".
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
-            allow_credentials=True,
+            allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+        # Inject plugin-bridge.js into HTML responses served under /page/plugin/
+        _BRIDGE_TAG = '<script src="/plugin-bridge.js"></script>'
+        _BRIDGE_MARKER = '/plugin-bridge.js'
+
+        class PluginBridgeInjectionMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                response = await call_next(request)
+                path = request.url.path
+                if not path.startswith('/page/plugin/') or request.method != 'GET':
+                    return response
+                ct = response.headers.get('content-type', '')
+                if 'text/html' not in ct:
+                    return response
+                body = b''
+                async for chunk in response.body_iterator:
+                    body += chunk if isinstance(chunk, bytes) else chunk.encode()
+                try:
+                    html = body.decode('utf-8')
+                except UnicodeDecodeError:
+                    return Response(content=body, status_code=response.status_code,
+                                   headers=dict(response.headers))
+                if _BRIDGE_MARKER in html:
+                    return Response(content=html.encode('utf-8'), status_code=response.status_code,
+                                   headers={k: v for k, v in response.headers.items()
+                                            if k.lower() != 'content-length'},
+                                   media_type='text/html')
+                if '</head>' in html:
+                    html = html.replace('</head>', _BRIDGE_TAG + '</head>', 1)
+                elif '<body' in html:
+                    idx = html.index('<body')
+                    end = html.index('>', idx) + 1
+                    html = html[:end] + _BRIDGE_TAG + html[end:]
+                else:
+                    html = _BRIDGE_TAG + html
+                # Strip content-length + caching headers — body changed,
+                # and stale cached copies would miss the bridge injection.
+                strip = {'content-length', 'etag', 'last-modified'}
+                hdrs = {k: v for k, v in response.headers.items()
+                        if k.lower() not in strip}
+                hdrs['cache-control'] = 'no-store'
+                return Response(content=html.encode('utf-8'), status_code=response.status_code,
+                               headers=hdrs, media_type='text/html')
+
+        self.app.add_middleware(PluginBridgeInjectionMiddleware)
+
+        # Serve the plugin bridge SDK directly so it works before frontend is built
+        bridge_js_path = self.webui_dir / 'frontend' / 'public' / 'plugin-bridge.js'
+        if bridge_js_path.exists():
+            from fastapi.responses import FileResponse as _FileResponse
+            @self.app.get('/plugin-bridge.js', include_in_schema=False)
+            async def serve_bridge_js():
+                return _FileResponse(bridge_js_path, media_type='application/javascript')
 
         # Mount user sticker library
         if self.sticker_dir.exists():
@@ -115,6 +188,7 @@ class KiraWebUI:
         ConfigRoutes(self.app, self.lifecycle).register()
         StickersRoutes(self.app, self.lifecycle).register()
         SkillsRoutes(self.app, self.lifecycle).register()
+        ScopeRoutes(self.app, self.lifecycle).register()
         SettingsRoutes(self.app, self.lifecycle).register()
         SystemRoutes(self.app, self.lifecycle).register()
         ReleasesRoutes(self.app, self.lifecycle).register()
@@ -127,8 +201,9 @@ class KiraWebUI:
             self.app,
             host=host,
             port=port,
-            log_level="info",
+            log_level="warning" if self.is_prod else "info",
             loop="asyncio",
+            access_log=not self.is_prod,
         )
         self.server = uvicorn.Server(config)
         self.lifecycle.uvicorn_server = self.server

@@ -16,7 +16,9 @@ class ConfigType(Enum):
     Textarea = "textarea"
     ModelSelect = "model_select"
     MultiSelect = "multi_select"
+    PersonaSelect = "persona_select"
     Section = "section"
+    Info = "info"
 
 
 class BaseConfigField:
@@ -59,6 +61,8 @@ class BaseConfigField:
             data["language"] = self.language
         if isinstance(self, ModelSelectField) and getattr(self, "model_type", None):
             data["model_type"] = self.model_type
+        if isinstance(self, InfoField):
+            data["level"] = self.level
         return data
 
 
@@ -165,6 +169,13 @@ class MultiSelectField(BaseConfigField):
         self.options = list(options)
 
 
+class PersonaSelectField(BaseConfigField):
+    type = ConfigType.PersonaSelect
+
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+        super().__init__(key, name, hint, default, locales)
+
+
 class SectionField(BaseConfigField):
     type = ConfigType.Section
 
@@ -172,6 +183,15 @@ class SectionField(BaseConfigField):
         super().__init__(key, name, hint, default=None, locales=locales)
         self.fields = fields or []
         self.collapsed = collapsed
+
+
+class InfoField(BaseConfigField):
+    """Read-only informational field, no data storage."""
+    type = ConfigType.Info
+
+    def __init__(self, key: str, name: str, hint: str, level: str = "info", locales: dict = None):
+        super().__init__(key, name, hint, default=None, locales=locales)
+        self.level = level
 
 
 def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
@@ -228,11 +248,18 @@ def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     if field_type == "multi_select":
         return MultiSelectField(key=key, name=name, hint=hint, options=options or [], default=default, locales=locales)
 
+    if field_type == "persona_select":
+        return PersonaSelectField(key=key, name=name, hint=hint, default=default, locales=locales)
+
     if field_type == "section":
         collapsed = schema.get("collapsed", False)
         nested = schema.get("fields", {})
         child_fields = build_fields(nested) if isinstance(nested, dict) else []
         return SectionField(key=key, name=name, hint=hint, fields=child_fields, collapsed=collapsed, locales=locales)
+
+    if field_type == "info":
+        level = schema.get("level", "info")
+        return InfoField(key=key, name=name, hint=hint, level=level, locales=locales)
 
     return StringField(key=key, name=name, hint=hint, default=default, locales=locales)
 

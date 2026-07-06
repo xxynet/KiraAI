@@ -1,10 +1,12 @@
 import asyncio
 import json
 import time
-from copy import deepcopy
 from asyncio import Lock
 import xml.etree.ElementTree as ET
-from typing import Union, Any, List, Optional
+from typing import Union, Any, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.event_bus import EventBus
 from pathlib import Path
 from asyncio import Semaphore
 import random
@@ -29,6 +31,7 @@ from core.chat.message_elements import (
     Record,
     Notice,
     Poke,
+    Json,
     File,
     Video
 )
@@ -38,14 +41,16 @@ from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager
 from .agent.skills_mgr import SkillsManager
+from .agent.mcp_mgr import MCPManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
 from core.plugin.plugin_handlers import event_handler_reg, EventType
-from core.agent.agent_executor import AgentExecutor, AgentExecutionContext, NewMemory
-from core.agent.tool import ToolSet
-from core.tag import tag_registry, TagSet
+from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
+from core.agent.message import OpenAIMessage
+from core.tag import tag_registry, TagSet, BaseTag, RootTagAction
 from core.db.service import DatabaseService
 
 from core.provider import LLMModelClient
+
 
 logger = get_logger("message", "cyan")
 llm_logger = get_logger("llm", "purple")
@@ -115,12 +120,18 @@ class ImageDescCache:
         return None
 
     async def set(self, md5: str, description: str):
+        # Never cache an empty/failed description: an empty string would otherwise be
+        # stored permanently as the caption for this md5 and served to every later hit.
+        if not description:
+            return
         existing = await self.db.get_image_desc_cache(md5)
         if existing:
+            # Preserve the accumulated hit count that cleanup relies on; resetting it to 1
+            # on every update would prevent frequently-seen entries from being retained.
             await self.db.update_image_desc_cache(
                 md5,
                 description=description,
-                count=1,
+                count=existing["count"],
                 last_seen=int(time.time()),
             )
         else:
@@ -144,6 +155,7 @@ class MessageProcessor:
                  adapter_manager: AdapterManager,
                  session_manager: SessionManager,
                  prompt_manager: PromptManager,
+                 mcp_manager: MCPManager,
                  max_concurrent_messages: int = 3):
         self.db = db
         self.kira_config = kira_config
@@ -154,6 +166,7 @@ class MessageProcessor:
         self.max_message_delay = float(self.bot_config.get("max_message_delay", "1.5"))
 
         self.llm_api = llm_api
+        self.event_bus: Optional[EventBus] = None
 
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
 
@@ -163,6 +176,7 @@ class MessageProcessor:
         self.provider_mgr = provider_manager
         self.adapter_mgr = adapter_manager
         self.skills_manager = skills_manager
+        self.mcp_manager = mcp_manager
 
         # message buffer
         self.session_locks: dict[str, asyncio.Lock] = {}
@@ -204,7 +218,7 @@ class MessageProcessor:
             session=last_event.session,
             messages=[m.message for m in pending_messages]
         )
-        await self.handle_im_batch_message(batch_msg)
+        await self.event_bus.publish(batch_msg)
         return True
 
     async def message_format_to_text(self, message_chain: MessageChain):
@@ -235,10 +249,18 @@ class MessageProcessor:
                     if cached_desc:
                         img_desc = cached_desc
                     else:
-                        vlm_model = self.provider_mgr.get_default_vlm()
-                        img_desc = await desc_img(client=vlm_model, image=ele)
-                        if md5:
-                            await self.image_desc_cache.set(md5, img_desc)
+                        try:
+                            vlm_model = self.provider_mgr.get_default_vlm()
+                            img_desc = await desc_img(client=vlm_model, image=ele)
+                        except Exception as e:
+                            logger.error(f"Failed to get default VLM model for image description: {e}")
+                            img_desc = ""
+
+                        if md5 and img_desc:
+                            try:
+                                await self.image_desc_cache.set(md5, img_desc)
+                            except Exception as e:
+                                logger.warning(f"Failed to cache image desc: {e}")
                     ele.caption = img_desc
                 else:
                     try:
@@ -272,10 +294,18 @@ class MessageProcessor:
                     if cached_desc:
                         sticker_desc = cached_desc
                     else:
-                        vlm_model = self.provider_mgr.get_default_vlm()
-                        sticker_desc = await desc_img(client=vlm_model, image=ele)
-                        if md5:
-                            await self.image_desc_cache.set(md5, sticker_desc)
+                        try:
+                            vlm_model = self.provider_mgr.get_default_vlm()
+                            sticker_desc = await desc_img(client=vlm_model, image=ele)
+                        except Exception as e:
+                            logger.error(f"Failed to get default VLM model for sticker description: {e}")
+                            sticker_desc = ""
+
+                        if md5 and sticker_desc:
+                            try:
+                                await self.image_desc_cache.set(md5, sticker_desc)
+                            except Exception as e:
+                                logger.warning(f"Failed to cache sticker desc: {e}")
                     ele.caption = sticker_desc
                 else:
                     try:
@@ -304,11 +334,21 @@ class MessageProcessor:
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
-                record_text = await self.llm_api.speech_to_text(record=ele)
+                try:
+                    record_text = await self.llm_api.speech_to_text(record=ele)
+                except Exception as e:
+                    logger.error(f"Failed to get STT model for speech recognition: {e}")
+                    record_text = "[Speech recognition unavailable]"
                 ele.transcript = record_text
                 message_str += f"[Record {record_text}]"
             elif isinstance(ele, Notice):
                 message_str += f"{ele.text}"
+            elif isinstance(ele, Json):
+                try:
+                    card_str = json.dumps(ele.data, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    card_str = json.dumps(str(ele.data), ensure_ascii=False)
+                message_str += f"[Json card {card_str}]"
             elif isinstance(ele, File):
                 try:
                     file_size = int(ele.size)
@@ -397,7 +437,7 @@ class MessageProcessor:
                 session=event.session,
                 messages=[event.message]
             )
-            await self.handle_im_batch_message(batch_msg)
+            await self.event_bus.publish(batch_msg)
             return
 
         if event.process_strategy == "buffer":
@@ -431,7 +471,7 @@ class MessageProcessor:
         for handler in im_batch_handlers:
             await handler.exec_handler(event)
             if event.is_stopped:
-                logger.info("Event stopped")
+                logger.info(f"[ON_IM_BATCH_MESSAGE] Event {event.event_id} stopped")
                 return
 
         # Set session title
@@ -455,11 +495,17 @@ class MessageProcessor:
         # Generate agent prompt
         agent_prompt_list = await self.prompt_manager.get_agent_prompt(chat_env)
 
-        # Inject skills prompt
-        if len(self.skills_manager.skills_info) > 0:
+        # Inject skills prompt (filtered by scope)
+        allowed_skills = []
+        for s in self.skills_manager.skills_info:
+            if not s.enabled:
+                continue
+            if self.skills_manager.is_skill_allowed(s.name, sid):
+                allowed_skills.append(s)
+        if allowed_skills:
             for i, p in enumerate(agent_prompt_list):
                 if p.name == "tools":
-                    agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt())
+                    agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt(allowed_skills))
                     break
         
         model_group: list[LLMModelClient] = []
@@ -470,14 +516,25 @@ class MessageProcessor:
             try:
                 default_llm = self.provider_mgr.get_default_llm()
                 if not default_llm:
-                    llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+                    llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
                     return
                 model_group = [default_llm]
             except Exception as _:
-                llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+                llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
                 return
 
-        request = LLMRequest(messages=session_memory[:], tools=deepcopy(self.llm_api.tools_definitions), tool_funcs=self.llm_api.tools_functions, tool_set=ToolSet())
+        # Filter tools by scope
+        tool_server_map = self.mcp_manager.get_tool_server_map()
+
+        tool_set = self.llm_api.build_tool_set()
+        # Remove tools blocked by MCP server scope
+        tool_set.tools = [
+            t for t in tool_set.tools
+            if not (tool_server_map.get(t.name)
+                    and not self.mcp_manager.is_server_allowed(tool_server_map[t.name], sid))
+        ]
+
+        request = LLMRequest(messages=session_memory[:], tool_set=tool_set)
         request.system_prompt.extend(agent_prompt_list)
 
         # Add received im messages
@@ -492,71 +549,86 @@ class MessageProcessor:
         for handler in llm_handlers:
             await handler.exec_handler(event, request, tag_set)
             if event.is_stopped:
-                logger.info("Event stopped while llm request stage")
+                logger.info(f"Event {event.event_id} stopped while llm request stage")
                 return
 
         # Register persistent tags registered by user plugins
         tag_set.register(*tag_registry.get_all())
+        tag_set.register(*tag_registry.get_all_root())
 
         # Assemble messages
+        root_prompt = tag_set.to_root_prompt()
         for sp in request.system_prompt:
             if sp.name == "format":
                 sp.content = sp.content.replace("<|message_types|>", tag_set.to_prompt())
+                sp.content = sp.content.replace("<|root_tags|>",
+                    f"此外，你可以在<msg>标签外使用以下控制标签（与<msg>同级）：\n{root_prompt}" if root_prompt else "")
                 break
         request.assemble_prompt()
 
-        # TODO: migrate tools & tool_func params to tool_set
-        request.tools.extend(request.tool_set.to_list())
+        # Re-derive tools list after plugins may have added to tool_set
+        request.tools = request.tool_set.to_list()
+        # Recompute tool_choice if it was auto-derived (not explicitly set by a plugin)
+        if request.tool_choice in ("auto", "none"):
+            request.tool_choice = "auto" if request.tools else "none"
 
-        # Print user message info
-        user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt))
+        # Print user message info (skip persist=False prompts to avoid log spam)
+        user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
         logger.info(f"processing message(s) from {sid}:\n{user_message}")
 
-        # 把收到的消息放到新收到的消息内容中
-        new_memory = NewMemory()
-        new_memory.user(user_message)
+        # 把收到的消息放到新收到的消息内容中（仅持久化 persist=True 的 Prompt）
+        persist_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
+        new_messages: list[OpenAIMessage] = []
+        new_messages.append(OpenAIMessage(role="user", content=persist_message))
 
         # Get max tool loop config, defaults to 2 if not a valid integer
+        # Note: This variable represents the total agent loop iterations (not just tool calls),
+        # but the name is kept as-is for backward compatibility with existing config files.
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
         try:
             max_tool_loop = int(max_tool_loop)
         except ValueError:
             max_tool_loop = 2
 
-        max_agent_steps = max_tool_loop + 1
+        max_agent_steps = max_tool_loop
 
         agent_executor = AgentExecutor(self.llm_api, request.tool_set)
         agent_ctx = AgentExecutionContext(
             event=event,
             request=request,
-            new_memory=new_memory,
+            new_messages=new_messages,
             model_group=model_group,
         )
 
-        async def send_llm_text(resp: LLMResponse):
+        async def send_llm_text(resp: LLMResponse) -> bool:
+            """Process and send LLM text response. Returns False if stopped, True to continue."""
             text = resp.text_response
-            session_lock = self.get_session_lock(sid)
-            async with session_lock:
-                message_results = await self.send_xml_messages(event, text.strip(), tag_set)
-                if message_results is None:
-                    return
-                response_with_ids = self._add_message_ids(text, message_results)
-                step_result = KiraStepResult(message_results=message_results, raw_output=response_with_ids)
-                # EventType.ON_STEP_RESULT
-                step_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_STEP_RESULT)
-                for step_handler in step_handlers:
-                    await step_handler.exec_handler(event, step_result)
-                    if event.is_stopped:
-                        logger.info("Event stopped while ON_STEP_RESULT stage")
-                        return
-                logger.info(f"LLM -> {sid}: {step_result.raw_output}")
+            message_results = []
+            raw_output = ""
+            if text:
+                session_lock = self.get_session_lock(sid)
+                async with session_lock:
+                    message_results = await self.send_xml_messages(event, text.strip(), tag_set)
+                    if message_results is None:
+                        return False
+                    raw_output = self._add_message_ids(text, message_results)
+                    logger.info(f"LLM -> {sid}: {raw_output}")
+            step_result = KiraStepResult(message_results=message_results, raw_output=raw_output)
+            # EventType.ON_STEP_RESULT
+            step_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_STEP_RESULT)
+            for step_handler in step_handlers:
+                await step_handler.exec_handler(event, step_result)
+                if event.is_stopped:
+                    logger.info(f"Event {event.event_id} stopped while ON_STEP_RESULT stage")
+                    return False
+            if raw_output:
                 llm_resp.text_response = step_result.raw_output
-
-                for idx in range(-1, -len(new_memory.memory_list), -1):
-                    if new_memory.memory_list[idx]["role"] == "assistant":
-                        new_memory.memory_list[idx]["content"] = step_result.raw_output
-                        request.messages[idx]["content"] = step_result.raw_output
+                for idx in range(-1, -len(new_messages), -1):
+                    if new_messages[idx].role == "assistant":
+                        new_messages[idx].content = step_result.raw_output
+                        request.messages[idx].content = step_result.raw_output
                         break
+            return True
 
         # Iter agent executor to get LLMResponse
         # TODO use llm_semaphore to restrict concurrent LLM requests
@@ -565,8 +637,22 @@ class MessageProcessor:
             if not llm_resp:
                 break
 
-            if llm_resp.text_response:
-                await send_llm_text(llm_resp)
+            # Record LLM usage telemetry per step
+            try:
+                await self.db.add_telemetry_llm_usage(
+                    timestamp=int(time.time()),
+                    model=step.model_id,
+                    input_tokens=llm_resp.input_tokens or 0,
+                    output_tokens=llm_resp.output_tokens or 0,
+                    cached_tokens=llm_resp.cached_tokens,
+                    response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
+                    success=(step.state != "error"),
+                )
+            except Exception as e:
+                logger.debug(f"Failed to record telemetry LLM usage: {e}")
+
+            if not await send_llm_text(llm_resp):
+                break
 
             if not step.has_tool_calls or step.is_final:
                 break
@@ -574,7 +660,7 @@ class MessageProcessor:
             # Process tool calls if existed
 
         # Save new memory
-        self.session_manager.update_memory(sid, new_memory.memory_list)
+        self.session_manager.update_memory(sid, new_messages)
 
     async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
@@ -592,12 +678,25 @@ class MessageProcessor:
 
         client = self.provider_mgr.get_default_llm()
         if not client:
-            llm_logger.error(f"Default LLM model not set, please set it in Configuration")
+            llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
             return
 
-        llm_req = LLMRequest(messages=[{"role": "user", "content": cmt_prompt}])
+        llm_req = LLMRequest(messages=[OpenAIMessage(role="user", content=cmt_prompt)])
 
         llm_resp = await client.chat(llm_req)
+
+        try:
+            await self.db.add_telemetry_llm_usage(
+                timestamp=int(time.time()),
+                model=client.model.model_id,
+                input_tokens=llm_resp.input_tokens or 0,
+                output_tokens=llm_resp.output_tokens or 0,
+                cached_tokens=llm_resp.cached_tokens,
+                response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
+                success=True,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to record telemetry LLM usage: {e}")
 
         response = llm_resp.text_response.strip()
 
@@ -626,30 +725,42 @@ class MessageProcessor:
 
         message_results = []
         try:
-            message_chains = await self._parse_xml_msg(xml_data, tag_set)
+            actions = await self._parse_xml_msg(xml_data, tag_set)
 
             # EventType.AFTER_XML_PARSE
             llm_handlers = event_handler_reg.get_handlers(event_type=EventType.AFTER_XML_PARSE)
             for handler in llm_handlers:
-                await handler.exec_handler(event, message_chains)
+                await handler.exec_handler(event, actions)
                 if event.is_stopped:
-                    logger.info("Event stopped while AFTER_XML_PARSE stage")
+                    logger.info(f"Event {event.event_id} stopped while AFTER_XML_PARSE stage")
                     return None
         except Exception as e:
             logger.error(f"Error parsing message: {str(e)}")
             return []
 
-        for message_chain in message_chains:
-            if not message_chain.is_empty():
-                result = await self.send_message_chain(event.sid, message_chain)
-                if not result.ok and result.err:
-                    logger.error(result.err)
+        for action in actions:
+            if isinstance(action, MessageChain):
+                if not action.is_empty():
+                    result = await self.send_message_chain(event.sid, action)
+                    if not result.ok and result.err:
+                        logger.error(result.err)
+                else:
+                    result = KiraIMSentResult(ok=False, err="Blank message list detected")
                 message_results.append(result)
-
-                # add random message delay
+                # EventType.ON_MESSAGE_SENT
+                sent_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_MESSAGE_SENT)
+                for handler in sent_handlers:
+                    await handler.exec_handler(event, action, result)
+                    if event.is_stopped:
+                        logger.info(f"Event {event.event_id} stopped while ON_MESSAGE_SENT stage")
+                        return message_results
                 await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
-            else:
-                message_results.append(KiraIMSentResult(ok=False, err="Blank message list detected"))
+            elif isinstance(action, RootTagAction):
+                try:
+                    await action.tag.handle(action.value, **action.attrs)
+                except Exception as e:
+                    logger.error(f"Error executing root tag <{action.tag.name}>{action.value}: {e}")
+
         return message_results
 
     async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
@@ -658,7 +769,7 @@ class MessageProcessor:
 
         :param session: adapter_name:dm|gm:session_id
         :param chain: MessageChain instance
-        :return: message_id (empty string if failed)
+        :return: KiraIMSentResult instance
         """
         parts = session.split(":")
         if len(parts) != 3:
@@ -680,31 +791,37 @@ class MessageProcessor:
         return result
 
     @staticmethod
-    async def _parse_xml_msg(xml_data, tag_set: TagSet) -> list[MessageChain]:
-        """Parse xml to list[MessageChain]"""
+    async def _parse_xml_msg(xml_data, tag_set: TagSet) -> list[Union[MessageChain, RootTagAction]]:
+        """Parse xml into an ordered list of MessageChain and RootTagAction."""
         root = ET.fromstring(f"<root>{xml_data}</root>")
-        message_chains = []
+        actions: list[Union[MessageChain, RootTagAction]] = []
 
-        for msg in root.findall("msg"):
-            message_elements = []
-            for child in msg:
-                tag = child.tag
-                value = child.text.strip() if child.text else ""
-                attrs = child.attrib
+        for element in root:
+            if element.tag == "msg":
+                message_elements = []
+                for child in element:
+                    tag = child.tag
+                    value = child.text.strip() if child.text else ""
+                    attrs = child.attrib
 
-                if tag in tag_set:
-                    tag_inst = tag_set.get(name=tag)
-                    tag_res = await tag_inst.handle(value, **attrs)
+                    if tag in tag_set:
+                        tag_inst = tag_set.get(name=tag)
+                        tag_res = await tag_inst.handle(value, **attrs)
 
-                    if isinstance(tag_res, BaseMessageElement):
-                        message_elements.append(tag_res)
-                    elif isinstance(tag_res, list):
-                        message_elements.extend(tag_res)
+                        if isinstance(tag_res, BaseMessageElement):
+                            message_elements.append(tag_res)
+                        elif isinstance(tag_res, list):
+                            message_elements.extend(tag_res)
 
-            if message_elements:
-                message_chains.append(MessageChain(message_elements))
+                if message_elements:
+                    actions.append(MessageChain(message_elements))
+            elif element.tag in tag_set:
+                root_tag = tag_set.get(name=element.tag)
+                if root_tag and root_tag.parent is None:
+                    value = element.text.strip() if element.text else ""
+                    actions.append(RootTagAction(tag=root_tag, value=value, attrs=element.attrib))
 
-        return message_chains
+        return actions
 
     @staticmethod
     def _add_message_ids(xml_data: str, message_results: List[KiraIMSentResult]) -> str:

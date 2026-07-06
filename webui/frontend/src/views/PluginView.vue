@@ -39,6 +39,14 @@
       >
         {{ $t('plugin.skills') }}
       </button>
+      <button
+        type="button"
+        class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
+        :class="activeTab === 'scope' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'"
+        @click="activeTab = 'scope'"
+      >
+        {{ $t('plugin.scope') }}
+      </button>
     </div>
 
     <!-- Plugins Tab Content -->
@@ -52,29 +60,51 @@
           <span class="mr-1">+</span>
           <span>{{ $t('plugin.install_add') }}</span>
         </button>
+        <button
+          type="button"
+          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ml-2"
+          :disabled="refreshingPlugins"
+          @click="refreshPlugins"
+        >
+          <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': refreshingPlugins }" />
+          <span>{{ $t('common.refresh') }}</span>
+        </button>
+        <div class="relative ml-auto">
+          <input
+            v-model="pluginsSearchTerm"
+            type="text"
+            :placeholder="$t('plugin.search_placeholder')"
+            :aria-label="$t('plugin.search_placeholder')"
+            class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          />
+          <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        </div>
       </div>
 
       <div v-if="pluginsError" class="flex justify-center items-center py-12">
         <div class="text-center">
-          <svg class="w-16 h-16 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
-          </svg>
+          <IconPuzzle class="w-16 h-16 text-red-400 mx-auto mb-4" />
           <p class="text-red-500">{{ pluginsError }}</p>
         </div>
       </div>
 
       <div v-else-if="plugins.length === 0" class="flex justify-center items-center py-12">
         <div class="text-center">
-          <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
-          </svg>
+          <IconPuzzle class="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p class="text-gray-500">{{ $t('plugin.no_plugins') }}</p>
+        </div>
+      </div>
+
+      <div v-else-if="filteredPlugins.length === 0" class="flex justify-center items-center py-12">
+        <div class="text-center">
+          <IconSearch class="w-8 h-8 text-gray-400 mx-auto mb-2 opacity-50" />
+          <p class="text-sm text-gray-400 dark:text-gray-500">{{ $t('plugin.no_search_results') }}</p>
         </div>
       </div>
 
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <PluginCard
-          v-for="plugin in plugins"
+          v-for="plugin in filteredPlugins"
           :key="plugin.id"
           mode="installed"
           :id="plugin.id"
@@ -89,11 +119,16 @@
           :tags="plugin.tags"
           :core-version="plugin.core_version"
           :error="plugin.error"
+          :status="plugin.status"
           :reloading="reloadingPlugins.has(plugin.id)"
+          :has-update="pluginUpdates.has(plugin.id)"
+          :latest-version="pluginUpdates.get(plugin.id)?.latest_version ?? null"
+          :updating="updatingPlugins.has(plugin.id)"
           @toggle="togglePlugin(plugin)"
           @configure="openPluginConfig(plugin)"
           @uninstall="handleDeletePlugin(plugin.id)"
           @reload="handleReloadPlugin(plugin)"
+          @update="handleUpdatePlugin(plugin)"
         />
       </div>
     </div>
@@ -113,18 +148,14 @@
 
       <div v-if="mcpServersError" class="flex justify-center items-center py-12">
         <div class="text-center">
-          <svg class="w-16 h-16 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 6a9 9 0 11-9 9 9 9 0 019-9z" />
-          </svg>
+          <IconInfoCircle class="w-16 h-16 text-red-400 mx-auto mb-4" />
           <p class="text-red-500">{{ mcpServersError }}</p>
         </div>
       </div>
 
       <div v-else-if="mcpServers.length === 0" class="flex justify-center items-center py-12">
         <div class="text-center">
-          <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-          </svg>
+          <IconServer class="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p class="text-gray-500">{{ $t('plugin.no_mcp_servers') }}</p>
         </div>
       </div>
@@ -192,9 +223,7 @@
           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors mr-2"
           @click="openSkillsUploadDialog"
         >
-          <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
+          <IconUpload class="w-4 h-4 mr-1" />
           <span>{{ $t('plugin.skills_upload') }}</span>
         </button>
         <button
@@ -202,27 +231,21 @@
           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           @click="refreshSkillList"
         >
-          <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          <span>{{ $t('plugin.skills_refresh') }}</span>
+          <IconRefresh class="w-4 h-4 mr-1" />
+          <span>{{ $t('common.refresh') }}</span>
         </button>
       </div>
 
       <div v-if="skillsError" class="flex justify-center items-center py-12">
         <div class="text-center">
-          <svg class="w-16 h-16 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-          </svg>
+          <IconLightbulb class="w-16 h-16 text-red-400 mx-auto mb-4" />
           <p class="text-red-500">{{ skillsError }}</p>
         </div>
       </div>
 
       <div v-else-if="skills.length === 0" class="flex justify-center items-center py-12">
         <div class="text-center">
-          <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-          </svg>
+          <IconLightbulb class="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p class="text-gray-500">{{ $t('plugin.no_skills') }}</p>
         </div>
       </div>
@@ -260,6 +283,143 @@
       </div>
     </div>
 
+    <!-- Scope Tab Content -->
+    <div v-show="activeTab === 'scope'">
+      <!-- Warning hint -->
+      <AlertHint type="warning">{{ $t('plugin.scope_warning') }}</AlertHint>
+
+      <!-- Loading -->
+      <div v-if="scopeLoading" class="flex justify-center items-center py-12">
+        <IconSpinner class="w-8 h-8 text-blue-500 animate-spin" />
+      </div>
+
+      <!-- Error -->
+      <div v-else-if="scopeError" class="flex justify-center items-center py-12">
+        <div class="text-center">
+          <IconInfoCircle class="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <p class="text-red-500">{{ scopeError }}</p>
+        </div>
+      </div>
+
+      <template v-else>
+        <!-- MCP Servers section -->
+        <div class="mb-6">
+          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('plugin.scope_mcp_section') }}</h4>
+          <div v-if="scopeMcpServers.length === 0" class="text-xs text-gray-400 dark:text-gray-500">-</div>
+          <div v-for="mcp in scopeMcpServers" :key="mcp.id" class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 mb-3">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ mcp.name }}</span>
+              <div class="flex items-center space-x-0.5 flex-shrink-0">
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs rounded-l-md border transition-colors"
+                  :class="scopeEditMcp[mcp.id]?.mode === 'global' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="onScopeModeChange(mcp.id, 'mcp', 'global')"
+                >{{ $t('plugin.scope_global') }}</button>
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs border-t border-b transition-colors"
+                  :class="scopeEditMcp[mcp.id]?.mode === 'allow' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="onScopeModeChange(mcp.id, 'mcp', 'allow')"
+                >{{ $t('plugin.scope_mode_allow') }}</button>
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs rounded-r-md border transition-colors"
+                  :class="scopeEditMcp[mcp.id]?.mode === 'deny' ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="onScopeModeChange(mcp.id, 'mcp', 'deny')"
+                >{{ $t('plugin.scope_mode_deny') }}</button>
+              </div>
+            </div>
+            <div v-if="scopeEditMcp[mcp.id]?.mode !== 'global'" class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+              <p class="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+                {{ scopeEditMcp[mcp.id]?.mode === 'allow' ? $t('plugin.scope_mode_allow_hint') : $t('plugin.scope_mode_deny_hint') }}
+              </p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
+                <div v-for="s in scopeSessions" :key="s.id" class="flex items-center justify-between py-0.5">
+                  <span class="text-xs text-gray-600 dark:text-gray-400 truncate mr-2">{{ s.title ? `${s.title} | ${s.id}` : s.id }}</span>
+                  <button
+                    type="button"
+                    class="ml-2 relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
+                    :class="scopeEditMcp[mcp.id]?.sessions.has(s.id) ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
+                    @click="onScopeSessionToggle(mcp.id, 'mcp', s.id)"
+                  >
+                    <span
+                      class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                      :class="scopeEditMcp[mcp.id]?.sessions.has(s.id) ? 'translate-x-3.5' : 'translate-x-0'"
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Skills section -->
+        <div class="mb-6">
+          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('plugin.scope_skills_section') }}</h4>
+          <div v-if="scopeSkills.length === 0" class="text-xs text-gray-400 dark:text-gray-500">-</div>
+          <div v-for="skill in scopeSkills" :key="skill.name" class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 mb-3">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ skill.name }}</span>
+              <div class="flex items-center space-x-0.5 flex-shrink-0">
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs rounded-l-md border transition-colors"
+                  :class="scopeEditSkill[skill.name]?.mode === 'global' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="onScopeModeChange(skill.name, 'skill', 'global')"
+                >{{ $t('plugin.scope_global') }}</button>
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs border-t border-b transition-colors"
+                  :class="scopeEditSkill[skill.name]?.mode === 'allow' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="onScopeModeChange(skill.name, 'skill', 'allow')"
+                >{{ $t('plugin.scope_mode_allow') }}</button>
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs rounded-r-md border transition-colors"
+                  :class="scopeEditSkill[skill.name]?.mode === 'deny' ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="onScopeModeChange(skill.name, 'skill', 'deny')"
+                >{{ $t('plugin.scope_mode_deny') }}</button>
+              </div>
+            </div>
+            <div v-if="scopeEditSkill[skill.name]?.mode !== 'global'" class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+              <p class="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+                {{ scopeEditSkill[skill.name]?.mode === 'allow' ? $t('plugin.scope_mode_allow_hint') : $t('plugin.scope_mode_deny_hint') }}
+              </p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
+                <div v-for="s in scopeSessions" :key="s.id" class="flex items-center justify-between py-0.5">
+                  <span class="text-xs text-gray-600 dark:text-gray-400 truncate mr-2">{{ s.title ? `${s.title} | ${s.id}` : s.id }}</span>
+                  <button
+                    type="button"
+                    class="ml-2 relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
+                    :class="scopeEditSkill[skill.name]?.sessions.has(s.id) ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
+                    @click="onScopeSessionToggle(skill.name, 'skill', s.id)"
+                  >
+                    <span
+                      class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                      :class="scopeEditSkill[skill.name]?.sessions.has(s.id) ? 'translate-x-3.5' : 'translate-x-0'"
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Save button -->
+        <div class="flex justify-end">
+          <button
+            type="button"
+            class="px-5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
+            :disabled="savingScope"
+            @click="saveScope"
+          >
+            {{ $t('plugin.save') }}
+          </button>
+        </div>
+      </template>
+    </div>
+
     <!-- Plugin Store Tab Content -->
     <div v-show="activeTab === 'pluginStore'">
       <!-- Plugin Sources Button -->
@@ -269,10 +429,7 @@
           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           @click="openSourceManage"
         >
-          <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+          <IconCog class="w-4 h-4 mr-1" />
           <span>{{ $t('pluginStore.sources') }}</span>
         </button>
         <button
@@ -282,33 +439,35 @@
           :disabled="storeLoading"
           @click="() => fetchStorePlugins(true)"
         >
-          <svg
-            class="w-4 h-4 mr-1"
-            :class="{ 'animate-spin': storeLoading }"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          <span>{{ $t('pluginStore.refresh') }}</span>
+          <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': storeLoading }" />
+          <span>{{ $t('common.refresh') }}</span>
         </button>
         <span v-if="currentStoreSource" class="ml-3 text-sm text-gray-500 dark:text-gray-400">
           {{ $t('pluginStore.current_source') }}: <span class="font-medium text-gray-700 dark:text-gray-300">{{ currentStoreSource.name }}</span>
         </span>
+        <div v-if="currentStoreSource && !storeLoading && storePlugins.length > 0" class="relative ml-auto">
+          <input
+            v-model="storeSearchTerm"
+            type="text"
+            :placeholder="$t('plugin.search_placeholder')"
+            :aria-label="$t('plugin.search_placeholder')"
+            class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          />
+          <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        </div>
       </div>
 
       <!-- Plugin Store Error -->
       <div v-if="storeError" class="flex justify-center items-center py-12">
         <div class="text-center">
-          <svg class="w-16 h-16 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <IconInfo class="w-16 h-16 text-red-400 mx-auto mb-4" />
           <p class="text-red-500">{{ storeError }}</p>
           <button
             type="button"
             class="mt-3 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             @click="() => fetchStorePlugins()"
           >
-            {{ $t('plugin.skills_refresh') }}
+            {{ $t('common.refresh') }}
           </button>
         </div>
       </div>
@@ -316,9 +475,7 @@
       <!-- No Source Configured -->
       <div v-else-if="!currentStoreSource" class="flex justify-center items-center py-12">
         <div class="text-center">
-          <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
+          <IconPackage class="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p class="text-gray-500 mb-3">{{ $t('pluginStore.no_sources') }}</p>
           <button
             type="button"
@@ -332,26 +489,29 @@
 
       <!-- Loading -->
       <div v-else-if="storeLoading" class="flex justify-center items-center py-12">
-        <svg class="animate-spin h-8 w-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-        </svg>
+        <IconSpinner class="animate-spin h-8 w-8 text-blue-600 dark:text-blue-400" />
       </div>
 
       <!-- No Plugins Available -->
       <div v-else-if="storePlugins.length === 0" class="flex justify-center items-center py-12">
         <div class="text-center">
-          <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-          </svg>
+          <IconBox class="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p class="text-gray-500">{{ $t('pluginStore.no_plugins') }}</p>
+        </div>
+      </div>
+
+      <!-- No Search Results -->
+      <div v-else-if="filteredStorePlugins.length === 0" class="flex justify-center items-center py-12">
+        <div class="text-center">
+          <IconSearch class="w-8 h-8 text-gray-400 mx-auto mb-2 opacity-50" />
+          <p class="text-sm text-gray-400 dark:text-gray-500">{{ $t('plugin.no_search_results') }}</p>
         </div>
       </div>
 
       <!-- Plugin Cards Grid -->
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <PluginCard
-          v-for="item in storePlugins"
+          v-for="item in filteredStorePlugins"
           :key="item.id"
           mode="store"
           :id="item.id"
@@ -362,7 +522,11 @@
           :repo="item.repo"
           :tags="item.tags"
           :installed="item.installed"
+          :has-update="item.installed && pluginUpdates.has(item.id)"
+          :latest-version="pluginUpdates.get(item.id)?.latest_version ?? null"
+          :updating="updatingPlugins.has(item.id)"
           @install="handleStoreInstall(item)"
+          @update="handleStoreUpdate(item)"
         />
       </div>
 
@@ -372,9 +536,7 @@
           <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('pluginStore.source_manage') }}</h3>
             <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="sourceManageVisible = false">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <IconClose class="w-6 h-6" />
             </button>
           </div>
           <div class="px-6 py-5 flex-1 overflow-y-auto space-y-4">
@@ -472,9 +634,7 @@
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.install_add') }}</h3>
           <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="installDialogVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="flex border-b border-gray-200 dark:border-gray-700 px-6">
@@ -511,12 +671,18 @@
                 <span>{{ $t('plugin.install_gh_proxy_label') }}</span>
                 <span class="text-xs font-normal text-gray-400 dark:text-gray-500 ml-1">{{ $t('plugin.install_optional') }}</span>
               </label>
-              <input
-                v-model="installForm.gh_proxy"
-                type="text"
-                placeholder="https://ghproxy.com/"
-                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-              >
+              <CustomSelect
+                v-model="proxyStrategy"
+                :options="proxyStrategyOptions"
+                :placeholder="$t('plugin.proxy_strategy_auto')"
+              />
+            </div>
+            <div v-if="proxyStrategy === 'specific'" class="mt-3">
+              <CustomSelect
+                v-model="selectedProxyUrl"
+                :options="proxySelectOptions"
+                :placeholder="$t('plugin.proxy_select_placeholder')"
+              />
             </div>
           </div>
           <div v-show="installTab === 'upload'">
@@ -537,6 +703,45 @@
       </div>
     </Modal>
 
+    <!-- Update Plugin Dialog -->
+    <Modal v-model="updateDialogVisible" content-class="max-w-md">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.update') }}</h3>
+          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="updateDialogVisible = false">
+            <IconClose class="w-6 h-6" />
+          </button>
+        </div>
+        <div class="px-6 py-5 flex-1 overflow-y-auto">
+          <p class="text-sm text-gray-600 dark:text-gray-300 mb-4">
+            {{ $t('plugin.update_confirm', { name: updateTargetPlugin?.name || updateTargetPlugin?.id }) }}
+          </p>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <span>{{ $t('plugin.install_gh_proxy_label') }}</span>
+              <span class="text-xs font-normal text-gray-400 dark:text-gray-500 ml-1">{{ $t('plugin.install_optional') }}</span>
+            </label>
+            <CustomSelect
+              v-model="proxyStrategy"
+              :options="proxyStrategyOptions"
+              :placeholder="$t('plugin.proxy_strategy_auto')"
+            />
+          </div>
+          <div v-if="proxyStrategy === 'specific'">
+            <CustomSelect
+              v-model="selectedProxyUrl"
+              :options="proxySelectOptions"
+              :placeholder="$t('plugin.proxy_select_placeholder')"
+            />
+          </div>
+        </div>
+        <div class="flex justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="updateDialogVisible = false">{{ $t('plugin.cancel') }}</button>
+          <button type="button" class="px-4 py-2 ml-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="updatingPlugins.has(updateTargetPlugin?.id ?? '')" @click="confirmUpdate">{{ $t('plugin.update') }}</button>
+        </div>
+      </div>
+    </Modal>
+
     <!-- Plugin Config Dialog -->
     <Modal v-model="pluginConfigVisible" content-class="max-w-md">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
@@ -546,17 +751,12 @@
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ configPluginName }}</p>
           </div>
           <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="pluginConfigVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
           <div v-if="configLoading" class="flex justify-center items-center py-12">
-            <svg class="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+            <IconSpinner class="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" />
           </div>
           <div v-else-if="pluginConfigSchema">
             <ConfigForm ref="configFormRef" v-model="pluginConfigValues" :schema="pluginConfigSchema" />
@@ -578,9 +778,7 @@
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.skills_upload') }}</h3>
           <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="skillsUploadVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-5 flex-1 overflow-y-auto">
@@ -606,9 +804,7 @@
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ mcpEditMode ? $t('plugin.mcp_edit') : $t('plugin.mcp_add') }}</h3>
           <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="mcpDialogVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto space-y-4">
@@ -665,19 +861,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
+import AlertHint from '@/components/common/AlertHint.vue'
 
 import {
   getPlugins, getPluginConfig, updatePluginConfig,
   togglePlugin as apiTogglePlugin, deletePlugin,
   installFromGithub, installFromUpload,
   reloadPlugin as apiReloadPlugin,
+  checkPluginUpdates, updatePlugin as apiUpdatePlugin,
 } from '@/api/plugin'
 import {
   getMcpServers, getMcpServerConfig, createMcpServer, updateMcpServerConfig,
@@ -686,10 +884,16 @@ import {
 import {
   getSkills, toggleSkill as apiToggleSkill, refreshSkills as apiRefreshSkills, uploadSkill as apiUploadSkill,
 } from '@/api/skills'
+import { getScope, updateScope } from '@/api/scope'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfigForm from '@/components/common/ConfigForm.vue'
+import CustomSelect from '@/components/common/CustomSelect.vue'
 import PluginCard from '@/components/common/PluginCard.vue'
-import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem } from '@/types'
+import {
+  IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
+  IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch,
+} from '@/components/icons'
+import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
@@ -700,11 +904,38 @@ const activeTab = ref('plugins')
 const plugins = ref<PluginItem[]>([])
 const installDialogVisible = ref(false)
 const installTab = ref('github')
-const installForm = ref({ repo_url: '', gh_proxy: '' })
+const installForm = ref({ repo_url: '' })
 const uploadFile = ref<File | null>(null)
 const installDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
 const installing = ref(false)
 const reloadingPlugins = ref(new Set<string>())
+const refreshingPlugins = ref(false)
+const pluginUpdates = ref<Map<string, PluginUpdateCheckItem>>(new Map())
+const checkingUpdates = ref(false)
+const updatingPlugins = ref(new Set<string>())
+const updateDialogVisible = ref(false)
+const updateTargetPlugin = ref<PluginItem | null>(null)
+
+// Proxy strategy
+const GH_PROXY_LIST = [
+  'https://gh-proxy.com/',
+  'https://gh-proxy.org/',
+  'https://hk.gh-proxy.org/',
+  'https://cdn.gh-proxy.org/',
+  'https://edgeone.gh-proxy.org/',
+]
+const proxyStrategy = ref<'auto' | 'none' | 'specific'>('auto')
+const selectedProxyUrl = ref(GH_PROXY_LIST[0])
+
+const proxyStrategyOptions = computed(() => [
+  { value: 'auto', label: t('plugin.proxy_strategy_auto') },
+  { value: 'none', label: t('plugin.proxy_strategy_none') },
+  { value: 'specific', label: t('plugin.proxy_strategy_specific') },
+])
+
+const proxySelectOptions = computed(() =>
+  GH_PROXY_LIST.map(url => ({ value: url, label: url }))
+)
 
 // Plugin Config
 const pluginConfigVisible = ref(false)
@@ -732,6 +963,19 @@ const skillsUploadVisible = ref(false)
 const skillUploadFile = ref<File | null>(null)
 const uploadingSkill = ref(false)
 const skillsDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
+
+// Scope state
+const scopeLoading = ref(false)
+const scopeError = ref<string | null>(null)
+const scopeSessions = ref<{ id: string; adapter: string; type: string; session_id: string; title: string }[]>([])
+const scopeMcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
+const scopeSkills = ref<{ name: string; enabled: boolean }[]>([])
+const mcpScopes = ref<Record<string, any>>({})
+const skillScopes = ref<Record<string, any>>({})
+// Per-resource edit state: { resourceId: { mode: 'global'|'allow'|'deny', sessions: Set<string> } }
+const scopeEditMcp = ref<Record<string, { mode: string; sessions: Set<string> }>>({})
+const scopeEditSkill = ref<Record<string, { mode: string; sessions: Set<string> }>>({})
+const savingScope = ref(false)
 
 // Confirm modal state
 const confirmModalRef = ref<InstanceType<typeof ConfirmModal> | null>(null)
@@ -770,19 +1014,112 @@ function onCancelAction() {
 const pluginsError = ref<string | null>(null)
 const mcpServersError = ref<string | null>(null)
 
-async function loadPlugins() {
+async function loadPlugins(): Promise<boolean> {
   try {
     const res = await getPlugins()
     plugins.value = Array.isArray(res.data) ? res.data : []
     pluginsError.value = null
+    return true
   } catch (e: any) {
     plugins.value = []
-    // Prefer backend detail when useful; always default to the localized
-    // message so Chinese users don't see an English fallback.
     pluginsError.value = e?.message || t('plugin.load_failed')
     notify(pluginsError.value!, 'error')
+    return false
   }
 }
+
+async function refreshPlugins() {
+  refreshingPlugins.value = true
+  try {
+    if (await loadPlugins()) {
+      notify(t('plugin.refresh_success'), 'success')
+    }
+  } finally {
+    refreshingPlugins.value = false
+  }
+}
+
+async function handleCheckUpdates(silent = false) {
+  checkingUpdates.value = true
+  try {
+    const res = await checkPluginUpdates()
+    const map = new Map<string, PluginUpdateCheckItem>()
+    for (const item of res.data) {
+      if (item.has_update) {
+        map.set(item.plugin_id, item)
+      }
+    }
+    pluginUpdates.value = map
+    if (!silent) {
+      if (map.size > 0) {
+        notify(t('plugin.updates_found', { count: map.size }), 'success')
+      } else {
+        notify(t('plugin.no_updates'), 'success')
+      }
+    }
+  } catch {
+    if (!silent) {
+      notify(t('plugin.update_check_failed'), 'error')
+    }
+  } finally {
+    checkingUpdates.value = false
+  }
+}
+
+async function handleUpdatePlugin(plugin: PluginItem) {
+  updateTargetPlugin.value = plugin
+  updateDialogVisible.value = true
+}
+
+function resolveGhProxy(): string | undefined {
+  if (proxyStrategy.value === 'specific') return selectedProxyUrl.value
+  if (proxyStrategy.value === 'auto') return 'auto'
+  return undefined
+}
+
+async function confirmUpdate() {
+  const plugin = updateTargetPlugin.value
+  if (!plugin) return
+  updateDialogVisible.value = false
+  updatingPlugins.value.add(plugin.id)
+  try {
+    await apiUpdatePlugin(plugin.id, { gh_proxy: resolveGhProxy() })
+    pluginUpdates.value.delete(plugin.id)
+    notify(t('plugin.update_success'), 'success')
+    await loadPlugins()
+  } catch {
+    notify(t('plugin.update_failed'), 'error')
+  } finally {
+    updatingPlugins.value.delete(plugin.id)
+  }
+}
+
+// Auto-poll while any enabled plugin is in a transient state
+const hasTransientPlugins = computed(() =>
+  plugins.value.some(p => p.enabled && ['installing', 'loading'].includes(p.status || ''))
+)
+let pluginPollTimer: ReturnType<typeof setInterval> | null = null
+
+watch(hasTransientPlugins, (hasTransient) => {
+  if (hasTransient && !pluginPollTimer) {
+    pluginPollTimer = setInterval(async () => {
+      try {
+        const res = await getPlugins()
+        plugins.value = Array.isArray(res.data) ? res.data : plugins.value
+      } catch { /* keep stale data during poll */ }
+    }, 5000)
+  } else if (!hasTransient && pluginPollTimer) {
+    clearInterval(pluginPollTimer)
+    pluginPollTimer = null
+  }
+})
+
+onUnmounted(() => {
+  if (pluginPollTimer) {
+    clearInterval(pluginPollTimer)
+    pluginPollTimer = null
+  }
+})
 
 async function loadMcpServers() {
   try {
@@ -852,7 +1189,7 @@ async function handleReloadPlugin(plugin: PluginItem) {
 
 async function openPluginConfig(plugin: PluginItem) {
   configPluginId.value = plugin.id
-  configPluginName.value = plugin.name || plugin.id
+  configPluginName.value = localize(plugin, 'display_name', plugin.name || plugin.id)
   pluginConfigSchema.value = null
   pluginConfigValues.value = {}
   configLoading.value = true
@@ -898,10 +1235,12 @@ async function savePluginConfig() {
 // Modal preserves its child state across closes; reset the form before
 // opening so the user never sees stale data.
 function resetInstallForm() {
-  installForm.value = { repo_url: '', gh_proxy: '' }
+  installForm.value = { repo_url: '' }
   uploadFile.value = null
   installDropzoneRef.value?.reset()
   installTab.value = 'github'
+  proxyStrategy.value = 'auto'
+  selectedProxyUrl.value = GH_PROXY_LIST[0]
 }
 
 function openInstallDialog() {
@@ -925,7 +1264,11 @@ async function handleInstall() {
         installing.value = false
         return
       }
-      const ghProxy = installForm.value.gh_proxy?.trim() || undefined
+      const ghProxy = proxyStrategy.value === 'specific'
+        ? selectedProxyUrl.value
+        : proxyStrategy.value === 'auto'
+          ? 'auto'
+          : null
       await installFromGithub({ repo_url: repoUrl, gh_proxy: ghProxy })
     } else {
       if (!uploadFile.value) {
@@ -1104,6 +1447,109 @@ async function handleSkillUpload() {
   }
 }
 
+// Scope
+async function loadScope() {
+  scopeLoading.value = true
+  scopeError.value = null
+  try {
+    const res = await getScope()
+    const data = res.data
+    scopeSessions.value = Array.isArray(data.sessions) ? data.sessions : []
+    scopeMcpServers.value = Array.isArray(data.mcp_servers) ? data.mcp_servers : []
+    scopeSkills.value = Array.isArray(data.skills) ? data.skills : []
+    mcpScopes.value = data.mcp_scopes || {}
+    skillScopes.value = data.skill_scopes || {}
+    initScopeEditState()
+  } catch (e: any) {
+    scopeError.value = t('plugin.scope_load_failed')
+  } finally {
+    scopeLoading.value = false
+  }
+}
+
+function initScopeEditState() {
+  const mcpState: Record<string, { mode: string; sessions: Set<string> }> = {}
+  for (const mcp of scopeMcpServers.value) {
+    const entry = mcpScopes.value[mcp.id]
+    if (!entry) {
+      mcpState[mcp.id] = { mode: 'global', sessions: new Set() }
+    } else if ('allow' in entry) {
+      mcpState[mcp.id] = { mode: 'allow', sessions: new Set((entry as any).allow) }
+    } else if ('deny' in entry) {
+      mcpState[mcp.id] = { mode: 'deny', sessions: new Set((entry as any).deny) }
+    } else {
+      mcpState[mcp.id] = { mode: 'global', sessions: new Set() }
+    }
+  }
+  scopeEditMcp.value = mcpState
+
+  const skillState: Record<string, { mode: string; sessions: Set<string> }> = {}
+  for (const skill of scopeSkills.value) {
+    const entry = skillScopes.value[skill.name]
+    if (!entry) {
+      skillState[skill.name] = { mode: 'global', sessions: new Set() }
+    } else if ('allow' in entry) {
+      skillState[skill.name] = { mode: 'allow', sessions: new Set((entry as any).allow) }
+    } else if ('deny' in entry) {
+      skillState[skill.name] = { mode: 'deny', sessions: new Set((entry as any).deny) }
+    } else {
+      skillState[skill.name] = { mode: 'global', sessions: new Set() }
+    }
+  }
+  scopeEditSkill.value = skillState
+}
+
+function onScopeModeChange(resourceId: string, type: 'mcp' | 'skill', newMode: string) {
+  const state = type === 'mcp' ? scopeEditMcp : scopeEditSkill
+  if (state.value[resourceId]) {
+    state.value[resourceId].mode = newMode
+    if (newMode === 'global') {
+      state.value[resourceId].sessions = new Set()
+    }
+  }
+}
+
+function onScopeSessionToggle(resourceId: string, type: 'mcp' | 'skill', sessionId: string) {
+  const state = type === 'mcp' ? scopeEditMcp : scopeEditSkill
+  if (!state.value[resourceId]) return
+  const sessions = state.value[resourceId].sessions
+  if (sessions.has(sessionId)) {
+    sessions.delete(sessionId)
+  } else {
+    sessions.add(sessionId)
+  }
+}
+
+async function saveScope() {
+  savingScope.value = true
+  try {
+    const newMcpScopes: Record<string, any> = {}
+    for (const [serverId, state] of Object.entries(scopeEditMcp.value)) {
+      if (state.mode !== 'global' && state.sessions.size > 0) {
+        newMcpScopes[serverId] = { [state.mode]: Array.from(state.sessions) }
+      }
+    }
+
+    const newSkillScopes: Record<string, any> = {}
+    for (const [skillName, state] of Object.entries(scopeEditSkill.value)) {
+      if (state.mode !== 'global' && state.sessions.size > 0) {
+        newSkillScopes[skillName] = { [state.mode]: Array.from(state.sessions) }
+      }
+    }
+
+    await updateScope({ mcp_scopes: newMcpScopes, skill_scopes: newSkillScopes })
+    notify(t('plugin.scope_save_success'), 'success')
+    await loadScope()
+  } catch (e: any) {
+    const msg = e?.response?.data?.detail || e?.message || ''
+    notify(`${t('plugin.scope_save_failed')}${msg ? ': ' + msg : ''}`, 'error')
+  } finally {
+    savingScope.value = false
+  }
+}
+
+const pluginsSearchTerm = ref('')
+
 // Plugin Store
 const pluginSources = ref<PluginStoreSource[]>([])
 const currentStoreSource = ref<PluginStoreSource | null>(null)
@@ -1113,6 +1559,33 @@ const storeError = ref<string | null>(null)
 const sourceManageVisible = ref(false)
 const newSourceName = ref('')
 const newSourceUrl = ref('')
+const storeSearchTerm = ref('')
+
+const filteredPlugins = computed(() => {
+  const q = pluginsSearchTerm.value.trim().toLowerCase()
+  if (!q) return plugins.value
+  return plugins.value.filter(p => {
+    const name = (localize(p, 'display_name', p.name) || '').toLowerCase()
+    const desc = (localize(p, 'description', p.description) || '').toLowerCase()
+    const author = (p.author || '').toLowerCase()
+    const id = p.id.toLowerCase()
+    const tags = (p.tags || []).join(' ').toLowerCase()
+    return name.includes(q) || desc.includes(q) || author.includes(q) || id.includes(q) || tags.includes(q)
+  })
+})
+
+const filteredStorePlugins = computed(() => {
+  const q = storeSearchTerm.value.trim().toLowerCase()
+  if (!q) return storePlugins.value
+  return storePlugins.value.filter(item => {
+    const name = (localize(item, 'display_name', item.name) || '').toLowerCase()
+    const desc = (localize(item, 'description', item.description) || '').toLowerCase()
+    const author = (item.author || '').toLowerCase()
+    const id = item.id.toLowerCase()
+    const tags = (item.tags || []).join(' ').toLowerCase()
+    return name.includes(q) || desc.includes(q) || author.includes(q) || id.includes(q) || tags.includes(q)
+  })
+})
 
 function isCurrentSource(src: PluginStoreSource): boolean {
   return currentStoreSource.value?.id === src.id
@@ -1227,15 +1700,24 @@ function handleStoreInstall(item: PluginStoreItem) {
   installDialogVisible.value = true
 }
 
-onMounted(() => {
-  loadPlugins()
+async function handleStoreUpdate(item: PluginStoreItem) {
+  const plugin = plugins.value.find(p => p.id === item.id)
+  if (!plugin) return
+  await handleUpdatePlugin(plugin)
+}
+
+onMounted(async () => {
+  await loadPlugins()
   loadMcpServers()
   loadSkills()
+  loadScope()
   // Plugin Store: load saved sources and current source from backend
   loadSourcesFromBackend().then(() => {
     if (currentStoreSource.value) {
       fetchStorePlugins()
     }
   })
+  // Auto-check for plugin updates on page load (silent: no notification if none)
+  handleCheckUpdates(true)
 })
 </script>

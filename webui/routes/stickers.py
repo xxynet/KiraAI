@@ -1,4 +1,6 @@
 import json
+import re
+import uuid
 from typing import List, Optional
 
 from fastapi import Depends, File, Form, HTTPException, UploadFile, status
@@ -143,15 +145,19 @@ class StickersRoutes(Routes):
             raise HTTPException(status_code=500, detail="Failed to prepare sticker folder")
         from pathlib import Path as _Path
         base_name = _Path(file.filename).name
-        try:
-            ext = _Path(base_name).suffix
-        except Exception:
-            ext = ""
+        name_only = _Path(base_name).stem
+        ext = _Path(base_name).suffix
         if not ext:
             ext = ".png"
-            base_name = f"{base_name}{ext}"
-        filename = base_name
+        # Sanitize the name to prevent path traversal (e.g. "../secret")
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", name_only)
+        if not safe_name or safe_name in (".", ".."):
+            safe_name = "file"
+        filename = f"{safe_name}{ext}"
         file_path = sticker_folder / filename
+        if file_path.exists():
+            filename = f"{safe_name}_{uuid.uuid4().hex}{ext}"
+            file_path = sticker_folder / filename
         try:
             with open(file_path, "wb") as f:
                 f.write(file_bytes)

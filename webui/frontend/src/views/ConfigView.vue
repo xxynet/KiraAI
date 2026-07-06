@@ -25,9 +25,7 @@
             :aria-label="$t('configuration.search_aria_label')"
             class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
           />
-          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         </div>
 
         <!-- Actions -->
@@ -40,9 +38,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             @click="undo"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2M3 10l4-4m-4 4l4 4" />
-            </svg>
+            <IconUndo class="w-4 h-4" />
           </button>
           <button
             type="button"
@@ -52,9 +48,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             @click="redo"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a5 5 0 00-5 5v2m15-7l-4-4m4 4l-4 4" />
-            </svg>
+            <IconRedo class="w-4 h-4" />
           </button>
           <button
             type="button"
@@ -63,9 +57,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             @click="loadConfig"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
+            <IconRefresh class="w-4 h-4" />
           </button>
           <div class="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
           <button
@@ -75,9 +67,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             @click="expandAll"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-            </svg>
+            <IconExpand class="w-4 h-4" />
           </button>
           <button
             type="button"
@@ -86,9 +76,7 @@
             class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             @click="collapseAll"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M15 15h4.5m-4.5 0v4.5m0-4.5l5.5 5.5" />
-            </svg>
+            <IconCollapse class="w-4 h-4" />
           </button>
           <div class="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
           <button
@@ -97,18 +85,42 @@
             class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
             @click="handleSave"
           >
-            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-            </svg>
+            <IconCheck class="w-4 h-4 mr-1.5" />
             {{ $t('configuration.save') }}
           </button>
         </div>
       </div>
     </div>
 
+    <!-- Category Tabs -->
+    <div class="mb-4 border-b border-gray-200 dark:border-gray-700">
+      <nav class="flex space-x-0 -mb-px" role="tablist" :aria-label="$t('configuration.categories_aria', 'Configuration categories')">
+        <button
+          v-for="(tab, index) in visibleCategoryTabs"
+          :key="tab.id"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === tab.id"
+          class="relative flex items-center space-x-2 px-4 py-2.5 text-sm font-medium transition-colors duration-150 whitespace-nowrap border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          :class="activeTab === tab.id
+            ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+            : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'"
+          @click="switchTab(tab.id)"
+        >
+          <component :is="tab.icon" class="w-4 h-4" />
+          <span>{{ $t(tab.labelKey, tab.labelFallback) }}</span>
+          <span
+            v-if="tabHasModified(tab)"
+            class="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full ml-1"
+            aria-hidden="true"
+          ></span>
+        </button>
+      </nav>
+    </div>
+
     <!-- Groups -->
     <div
-      v-for="group in filteredAllGroups"
+      v-for="group in currentTabGroups"
       :key="group.id"
       class="mb-4"
     >
@@ -124,7 +136,7 @@
         @keydown.space.prevent="toggleGroup(group.id)"
       >
         <div class="flex items-center space-x-3 min-w-0">
-          <span class="text-gray-500 dark:text-gray-400 shrink-0" v-html="group.iconSvg" />
+          <component :is="group.icon" class="w-5 h-5 text-gray-500 dark:text-gray-400 shrink-0" />
           <div class="min-w-0">
             <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center">
               <span v-html="highlightSearch($t(group.labelKey, group.labelFallback))" />
@@ -139,15 +151,10 @@
             <p class="text-xs text-gray-500 dark:text-gray-400 truncate" v-html="highlightSearch($t(group.descKey, group.descFallback))" />
           </div>
         </div>
-        <svg
+        <IconChevronDown
           class="w-5 h-5 text-gray-400 dark:text-gray-500 transform transition-transform duration-200 shrink-0 ml-2"
           :class="{ 'rotate-180': !collapsedGroups.has(group.id) }"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </div>
 
       <!-- Horizontal layout (model selects) -->
@@ -226,6 +233,7 @@
             :class="{ 'config-field-modified': modifiedFields.has(field.key) }"
           >
             <label
+              v-if="field.type !== 'info'"
               class="block text-sm font-medium mb-1"
               :class="validationErrors[field.key] ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'"
               :title="field.key"
@@ -291,6 +299,14 @@
               @update:modelValue="(v: string) => setFieldValue(field.key, v)"
             />
 
+            <!-- Info -->
+            <InfoCallout
+              v-else-if="field.type === 'info'"
+              :level="field.level"
+              :label="field.labelKey || field.labelFallback ? $t(field.labelKey, field.labelFallback) : undefined"
+              :hint="field.hintKey || field.hintFallback ? $t(field.hintKey, field.hintFallback) : undefined"
+            />
+
             <!-- String -->
             <input
               v-else
@@ -304,7 +320,7 @@
             >
 
             <p
-              v-if="field.hintKey && !validationErrors[field.key]"
+              v-if="field.hintKey && !validationErrors[field.key] && field.type !== 'info'"
               class="text-xs mt-1 text-gray-500 dark:text-gray-400"
               v-html="highlightSearch($t(field.hintKey, field.hintFallback))"
             />
@@ -317,6 +333,15 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- No results for search -->
+    <div
+      v-if="searchTerm && currentTabGroups.length === 0"
+      class="text-center py-12 text-gray-400 dark:text-gray-500"
+    >
+      <IconSearch class="w-8 h-8 mx-auto mb-2 opacity-50" />
+      <p class="text-sm">{{ $t('configuration.no_results', 'No matching settings found') }}</p>
     </div>
 
     <!-- Bottom keyboard hints -->
@@ -332,18 +357,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, reactive } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import InfoCallout from '@/components/common/InfoCallout.vue'
+import {
+  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
+  IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
+} from '@/components/icons'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const route = useRoute()
 
 const searchTerm = ref('')
 const saving = ref(false)
 const loading = ref(false)
 const searchInputRef = ref<HTMLInputElement | null>(null)
+const activeTab = ref('life')
 
 // Data
 const originalData = ref<Record<string, any>>({})
@@ -369,10 +402,11 @@ interface ConfigField {
   hintKey: string
   hintFallback: string
   type: string
+  level?: string
   default?: any
   modelType?: string
   selectOptions?: { value: string; label: string }[]
-  validation?: { min?: number; max?: number; required?: boolean }
+  validation?: { min?: number; max?: number; required?: boolean; pattern?: RegExp; patternMessageKey?: string }
 }
 
 interface ConfigGroup {
@@ -381,25 +415,26 @@ interface ConfigGroup {
   labelFallback: string
   descKey: string
   descFallback: string
-  iconSvg: string
+  icon: Component
   layout?: 'grid' | 'horizontal'
   fields: ConfigField[]
 }
 
 const allGroups: ConfigGroup[] = [
   {
-    id: 'bot',
-    labelKey: 'configuration.groups.bot',
-    labelFallback: 'Bot Settings',
-    descKey: 'configuration.groups.bot_desc',
-    descFallback: 'Core bot behavior parameters',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>',
+    id: 'chat',
+    labelKey: 'configuration.groups.chat',
+    labelFallback: 'Chat Settings',
+    descKey: 'configuration.groups.chat_desc',
+    descFallback: 'Core chat behavior parameters',
+    icon: IconChat,
     fields: [
-      { key: 'bot_config.bot.max_memory_length', labelKey: 'configuration.message.max_memory_length', labelFallback: 'Max Memory Length', hintKey: 'configuration.hints.max_memory_length', hintFallback: 'Maximum number of messages retained in context window', type: 'integer', default: 50, validation: { min: 1, max: 9999, required: true } },
-      { key: 'bot_config.bot.max_message_interval', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum seconds to wait before processing buffered messages', type: 'float', default: 5, validation: { min: 0.1, max: 300, required: true } },
+      { key: 'bot_config.bot.max_memory_length', labelKey: 'configuration.message.max_memory_length', labelFallback: 'Max Context Length', hintKey: 'configuration.hints.max_memory_length', hintFallback: 'Maximum number of messages retained in context window', type: 'integer', default: 50, validation: { min: 1, max: 9999, required: true } },
+      { key: 'bot_config.bot.max_message_interval', labelKey: 'configuration.message.message_merge_interval', labelFallback: 'Message Merge Interval', hintKey: 'configuration.hints.message_merge_interval', hintFallback: 'Seconds to wait after receiving a message; new messages during this window are merged and processed together', type: 'float', default: 5, validation: { min: 0.1, max: 300, required: true } },
       { key: 'bot_config.bot.max_buffer_messages', labelKey: 'configuration.message.max_buffer_messages', labelFallback: 'Max Buffer Messages', hintKey: 'configuration.hints.max_buffer_messages', hintFallback: 'Maximum number of messages to buffer before processing', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
-      { key: 'bot_config.bot.min_message_delay', labelKey: 'configuration.message.min_message_delay', labelFallback: 'Min Message Delay', hintKey: 'configuration.hints.min_message_delay', hintFallback: 'Minimum delay in seconds before sending a reply', type: 'float', default: 1, validation: { min: 0, max: 60, required: true } },
-      { key: 'bot_config.bot.max_message_delay', labelKey: 'configuration.message.max_message_delay', labelFallback: 'Max Message Delay', hintKey: 'configuration.hints.max_message_delay', hintFallback: 'Maximum delay in seconds before sending a reply', type: 'float', default: 5, validation: { min: 0, max: 60, required: true } },
+      { key: 'bot_config.bot.min_message_delay', labelKey: 'configuration.message.min_message_interval', labelFallback: 'Min Message Interval', hintKey: 'configuration.hints.min_message_interval', hintFallback: 'Minimum interval in seconds between messages', type: 'float', default: 1, validation: { min: 0, max: 60, required: true } },
+      { key: 'bot_config.bot.max_message_delay', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum interval in seconds between messages', type: 'float', default: 5, validation: { min: 0, max: 60, required: true } },
+      { key: 'chat_info', labelKey: 'configuration.message.chat_info', labelFallback: 'More Chat Settings', hintKey: 'configuration.hints.chat_info', hintFallback: 'More chat settings are available in the active message plugin config under Add-ons → Plugins', type: 'info' },
     ],
   },
   {
@@ -408,21 +443,34 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Agent Settings',
     descKey: 'configuration.groups.agent_desc',
     descFallback: 'Agent and tool execution parameters',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>',
+    icon: IconCog,
     fields: [
       { key: 'bot_config.agent.max_tool_loop', labelKey: 'configuration.message.max_tool_loop', labelFallback: 'Max Agent Loop', hintKey: 'configuration.hints.max_tool_loop', hintFallback: 'Maximum number of agent loop iterations per response', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
       { key: 'bot_config.agent.max_tool_calls_per_turn', labelKey: 'configuration.message.max_tool_calls_per_turn', labelFallback: 'Max Tool Calls Per Turn', hintKey: 'configuration.hints.max_tool_calls_per_turn', hintFallback: 'Maximum number of tool calls allowed in a single turn', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
+      { key: 'bot_config.agent.tool_call_timeout', labelKey: 'configuration.message.tool_call_timeout', labelFallback: 'Tool Call Timeout (s)', hintKey: 'configuration.hints.tool_call_timeout', hintFallback: 'Maximum seconds to wait for a single tool call to complete, 0 means no timeout', type: 'float', default: 60, validation: { min: 0, max: 600, required: true } },
     ],
   },
   {
     id: 'selfie',
     labelKey: 'configuration.groups.selfie',
-    labelFallback: 'Appearance',
+    labelFallback: 'Digital Life Appearance',
     descKey: 'configuration.groups.selfie_desc',
-    descFallback: 'Bot appearance reference settings',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>',
+    descFallback: 'Digital life appearance reference settings',
+    icon: IconImage,
     fields: [
-      { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the bot appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
+      { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the digital life appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
+    ],
+  },
+  {
+    id: 'network',
+    labelKey: 'configuration.groups.network',
+    labelFallback: 'Network Settings',
+    descKey: 'configuration.groups.network_desc',
+    descFallback: 'Network and package source configuration',
+    icon: IconGlobe,
+    fields: [
+      { key: 'network.pypi_mirror', labelKey: 'configuration.message.pypi_mirror', labelFallback: 'PyPI Mirror', hintKey: 'configuration.hints.pypi_mirror', hintFallback: 'Custom PyPI package index URL for plugin dependency installation. Leave empty to use the default', type: 'string', default: '', validation: { pattern: /^https?:\/\/.+/, patternMessageKey: 'configuration.validation.url_invalid' } },
+      { key: 'network.http_proxy', labelKey: 'configuration.message.http_proxy', labelFallback: 'HTTP Proxy', hintKey: 'configuration.hints.http_proxy', hintFallback: 'HTTP proxy address, sets HTTP_PROXY and HTTPS_PROXY environment variables. Restart required to take effect. Leave empty to use system default', type: 'string', default: '', validation: { pattern: /^https?:\/\/.+/, patternMessageKey: 'configuration.validation.url_invalid' } },
     ],
   },
   {
@@ -431,7 +479,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Cache Settings',
     descKey: 'configuration.groups.cache_desc',
     descFallback: 'Temporary file cache management parameters',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>',
+    icon: IconDatabase,
     fields: [
       { key: 'bot_config.cache.max_size_mb', labelKey: 'configuration.message.max_size_mb', labelFallback: 'Max Storage (MB)', hintKey: 'configuration.hints.max_size_mb', hintFallback: 'Maximum disk space allowed for the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 10240, required: true } },
       { key: 'bot_config.cache.max_files', labelKey: 'configuration.message.max_files', labelFallback: 'Max Files', hintKey: 'configuration.hints.max_files', hintFallback: 'Maximum number of files allowed in the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 100000, required: true } },
@@ -444,7 +492,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Logging Settings',
     descKey: 'configuration.groups.logging_desc',
     descFallback: 'Terminal and file logging configuration',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>',
+    icon: IconFileText,
     fields: [
       { key: 'logging.log_level', labelKey: 'configuration.message.log_level', labelFallback: 'Log Level', hintKey: 'configuration.hints.log_level', hintFallback: 'Minimum log level displayed in the terminal', type: 'select', default: 'INFO', selectOptions: [
         { value: 'DEBUG', label: 'DEBUG' },
@@ -463,7 +511,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Default Models',
     descKey: 'configuration.groups.models_desc',
     descFallback: 'Select default provider and model for each capability',
-    iconSvg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>',
+    icon: IconFlask,
     layout: 'horizontal',
     fields: [
       { key: 'models.default_llm', labelKey: 'configuration.model.default_llm', labelFallback: 'Default LLM', hintKey: 'configuration.model.default_llm_desc', hintFallback: 'Main chat model.', type: 'model_select', modelType: 'llm' },
@@ -477,6 +525,20 @@ const allGroups: ConfigGroup[] = [
       { key: 'models.default_video', labelKey: 'configuration.model.default_video', labelFallback: 'Default Video', hintKey: 'configuration.model.default_video_desc', hintFallback: 'Video generation.', type: 'model_select', modelType: 'video' },
     ],
   },
+]
+
+interface CategoryTab {
+  id: string
+  labelKey: string
+  labelFallback: string
+  icon: Component
+  groupIds: string[]
+}
+
+const categoryTabs: CategoryTab[] = [
+  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'agent', 'selfie'] },
+  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['network', 'cache', 'logging'] },
+  { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
 
 function escapeHtml(str: string): string {
@@ -649,7 +711,7 @@ function redo() {
 function validateField(key: string) {
   const allFields = allGroups.flatMap(g => g.fields)
   const field = allFields.find(f => f.key === key)
-  if (!field?.validation) {
+  if (!field?.validation || field.type === 'info') {
     delete validationErrors.value[key]
     return
   }
@@ -665,6 +727,10 @@ function validateField(key: string) {
   }
   if (v.max !== undefined && typeof value === 'number' && value > v.max) {
     validationErrors.value[key] = t('configuration.validation.max', { max: v.max })
+    return
+  }
+  if (v.pattern && value && !v.pattern.test(String(value))) {
+    validationErrors.value[key] = v.patternMessageKey ? t(v.patternMessageKey) : t('configuration.validation.url_invalid')
     return
   }
   delete validationErrors.value[key]
@@ -690,6 +756,65 @@ const filteredAllGroups = computed(() => {
   )
 })
 
+// Category tabs
+const visibleCategoryTabs = computed(() => {
+  const tabs = [...categoryTabs]
+  if (searchTerm.value) {
+    const allFiltered = filteredAllGroups.value
+    const hasResultsOutsideCurrentTab = allFiltered.some(
+      g => !categoryTabs.find(t => t.id === activeTab.value)?.groupIds.includes(g.id)
+    )
+    if (hasResultsOutsideCurrentTab || currentTabGroups.value.length === 0) {
+      tabs.push({ id: 'all', labelKey: 'config_tab.all', labelFallback: '全部', icon: IconSearch, groupIds: allGroups.map(g => g.id) })
+    }
+  }
+  return tabs
+})
+
+const currentTabGroups = computed(() => {
+  if (activeTab.value === 'all') return filteredAllGroups.value
+  const tab = categoryTabs.find(t => t.id === activeTab.value)
+  if (!tab) return []
+  const groups = allGroups.filter(g => tab.groupIds.includes(g.id))
+  if (!searchTerm.value) return groups
+  return groups.filter(g => g.fields.some(f => fieldMatchesSearch(f)))
+})
+
+function switchTab(tabId: string) {
+  activeTab.value = tabId
+}
+
+function tabHasModified(tab: CategoryTab): boolean {
+  return allGroups
+    .filter(g => tab.groupIds.includes(g.id))
+    .some(g => g.fields.some(f => modifiedFields.has(f.key)))
+}
+
+// Auto-switch tab when searching if current tab has no results
+watch(searchTerm, (term) => {
+  if (!term) {
+    if (activeTab.value === 'all') activeTab.value = categoryTabs[0]?.id ?? 'life'
+    return
+  }
+  if (activeTab.value === 'all') return
+  const hasResults = currentTabGroups.value.length > 0
+  if (!hasResults) {
+    const firstMatch = categoryTabs.find(tab =>
+      allGroups
+        .filter(g => tab.groupIds.includes(g.id))
+        .some(g => g.fields.some(f => fieldMatchesSearch(f)))
+    )
+    if (firstMatch) activeTab.value = firstMatch.id
+  }
+})
+
+// Re-validate fields with errors when locale changes
+watch(locale, () => {
+  for (const key of Object.keys(validationErrors.value)) {
+    validateField(key)
+  }
+})
+
 function getVisibleFields(group: ConfigGroup): ConfigField[] {
   if (!searchTerm.value) return group.fields
   return group.fields.filter(f => fieldMatchesSearch(f))
@@ -708,12 +833,11 @@ function toggleGroup(id: string) {
 }
 
 function expandAll() {
-  collapsedGroups.clear()
+  currentTabGroups.value.forEach(g => collapsedGroups.delete(g.id))
 }
 
 function collapseAll() {
-  collapsedGroups.clear()
-  allGroups.forEach(g => collapsedGroups.add(g.id))
+  currentTabGroups.value.forEach(g => collapsedGroups.add(g.id))
 }
 
 // Save
@@ -849,6 +973,11 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
+  // Support ?tab= query parameter to switch to a specific category tab
+  const queryTab = route.query.tab as string | undefined
+  if (queryTab && categoryTabs.some(t => t.id === queryTab)) {
+    activeTab.value = queryTab
+  }
   await loadConfig()
 })
 

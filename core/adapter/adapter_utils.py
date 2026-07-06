@@ -18,17 +18,13 @@ class IMAdapter(ABC):
     def __init__(
         self,
         info: AdapterInfo,
-        loop: asyncio.AbstractEventLoop,
-        event_bus: asyncio.Queue,
-        llm_api: LLMClient,
+        event_queue: asyncio.Queue,
     ):
         self.info = info
         self.config = info.config
         self.emoji_dict: Optional[dict] = None
         self.message_types: list = []
-        self.loop = loop
-        self.event_bus = event_bus
-        self.llm_api = llm_api
+        self._event_queue = event_queue
 
         self.permission_mode = None
 
@@ -79,7 +75,7 @@ class IMAdapter(ABC):
 
     def publish(self, message: Union[KiraMessageEvent]):
         """把消息放到事件总线"""
-        asyncio.run_coroutine_threadsafe(self.event_bus.put(message), self.loop)
+        self._event_queue.put_nowait(message)
 
     @abstractmethod
     async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain) -> Optional[KiraIMSentResult]:
@@ -106,13 +102,11 @@ class SocialMediaAdapter(ABC):
     def __init__(
         self,
         info: AdapterInfo,
-        loop: asyncio.AbstractEventLoop,
         event_bus: asyncio.Queue,
     ):
         self.info = info
         self.config = info.config
         self.emoji_dict: Optional[dict] = None
-        self.loop = loop
         self.event_bus = event_bus
 
     @abstractmethod

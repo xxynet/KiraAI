@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Optional, TYPE_CHECKING, Union, Literal
+import traceback
+from dataclasses import dataclass
+from typing import AsyncIterator, Optional, TYPE_CHECKING, Literal
 
 from openai import APIStatusError, APITimeoutError, APIConnectionError
 
@@ -9,6 +10,8 @@ from core.logging_manager import get_logger
 from core.llm_client import LLMClient
 from core.provider import LLMRequest, LLMResponse, LLMModelClient
 from core.agent.tool import ToolSet
+from core.agent.message import OpenAIMessage
+from core.chat.message_utils import KiraExceptionEvent
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 
 if TYPE_CHECKING:
@@ -23,7 +26,7 @@ llm_logger = get_logger("llm", "purple")
 class AgentExecutionContext:
     event: KiraMessageBatchEvent
     request: LLMRequest
-    new_memory: NewMemory
+    new_messages: list[OpenAIMessage]
     model_group: list[LLMModelClient]
 
 
@@ -32,52 +35,11 @@ class AgentStepResult:
     state: Literal["success", "stopped", "error"]
     step_index: int
     llm_response: Optional[LLMResponse]
-    new_memory: NewMemory
+    new_messages: list[OpenAIMessage]
     is_final: bool
     has_tool_calls: bool
+    model_id: str = ""
     err: Optional[str] = None
-
-
-@dataclass
-class NewMemory:
-    memory_list: list = field(default_factory=list)
-
-    def user(self, content: Union[str, dict]):
-        self.memory_list.append(
-            {
-                "role": "user",
-                "content": content
-            }
-        )
-
-    # Add reasoning_content param, defaults to blank string，to satisfy the requirements of Kimi API
-    def assistant(self, content: str, tool_calls: Optional[list[dict]] = None, reasoning_content: str = ""):
-        if not tool_calls:
-            self.memory_list.append(
-                {
-                    "role": "assistant",
-                    "content": content,
-                    "reasoning_content": reasoning_content
-                }
-            )
-        else:
-            self.memory_list.append(
-                {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": tool_calls,
-                    "reasoning_content": reasoning_content
-                }
-            )
-
-    def tool(self, tool_results: list[dict]):
-        self.memory_list.extend(tool_results)
-        # self.memory_list.append({
-        #     "role": "tool",
-        #     "tool_call_id": tool_call_id,
-        #     "name": name,
-        #     "content": str(result)
-        # })
 
 
 class AgentExecutor:
@@ -113,6 +75,13 @@ class AgentExecutor:
             err = ""
             is_final = step_index == max_steps
 
+            # Inject last-step hint so the LLM knows to wrap up
+            if is_final:
+                request.messages.append(OpenAIMessage(
+                    role="system",
+                    content="⚠️ This is your last response opportunity in this turn. There will be no more conversation turns after this. If you need to communicate anything to the user, output it directly in this response. If you choose to end silently (<msg/>), no output is needed."
+                ))
+
             # Try models in order, failover to next on provider/API errors.
             # Only catch provider-level exceptions (network, timeout, API status).
             # Programming errors (TypeError, ValueError, etc.) should propagate.
@@ -139,6 +108,20 @@ class AgentExecutor:
                         state = "error"
                         err = f"All models failed. Last error: {type(last_exc).__name__}: {last_exc}"
                         is_final = True
+                        exc_event = KiraExceptionEvent(
+                            name=type(last_exc).__name__,
+                            message=str(last_exc),
+                            traceback=traceback.format_exc(),
+                            stage="agent_loop",
+                            source="provider",
+                            comp_id=model.model.provider_name,
+                            e=last_exc,
+                        )
+                        for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
+                            try:
+                                await h.handler(event, exc_event)
+                            except Exception:
+                                logger.error(traceback.format_exc())
 
             has_tool_calls = bool(llm_resp.tool_calls)
 
@@ -161,9 +144,10 @@ class AgentExecutor:
                         state="stopped",
                         step_index=step_index,
                         llm_response=llm_resp,
-                        new_memory=ctx.new_memory,
+                        new_messages=ctx.new_messages,
                         is_final=is_final,
                         has_tool_calls=has_tool_calls,
+                        model_id=model_id,
                     )
                     return
 
@@ -171,51 +155,77 @@ class AgentExecutor:
                 is_final = True
                 assistant_content = llm_resp.text_response or ""
                 reasoning = llm_resp.reasoning_content or ""
-                # Add reasoning_content
-                request.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": assistant_content,
-                        "reasoning_content": reasoning
-                    }
+                msg = OpenAIMessage(
+                    role="assistant",
+                    content=assistant_content,
+                    reasoning_content=reasoning
                 )
-                ctx.new_memory.assistant(assistant_content, reasoning_content=reasoning)
+                request.messages.append(msg)
+                ctx.new_messages.append(msg)
                 yield AgentStepResult(
                     state=state,
                     err=err,
                     step_index=step_index,
                     llm_response=llm_resp,
-                    new_memory=ctx.new_memory,
+                    new_messages=ctx.new_messages,
                     is_final=is_final,
                     has_tool_calls=has_tool_calls,
+                    model_id=model_id,
                 )
                 return
 
             assistant_content = llm_resp.text_response or ""
             reasoning = llm_resp.reasoning_content or ""
 
-            await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
-            # Add reasoning_content
-            request.messages.append(
-                {
-                    "role": "assistant",
-                    "content": assistant_content,
-                    "tool_calls": llm_resp.tool_calls,
-                    "reasoning_content": reasoning
-                }
+            try:
+                await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
+            except Exception as e:
+                logger.error(f"[{sid}] Tool execution failed: {e}")
+                exc_event = KiraExceptionEvent(
+                    name=type(e).__name__,
+                    message=str(e),
+                    traceback=traceback.format_exc(),
+                    stage="agent_loop",
+                    source="tool",
+                    comp_id=None,
+                    e=e,
+                )
+                for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
+                    try:
+                        await h.handler(event, exc_event)
+                    except Exception:
+                        logger.error(traceback.format_exc())
+                raise
+            # An ON_TOOL_RESULT handler may stop the event mid multi-tool-call turn,
+            # leaving execute_tool to produce only partial tool_results. Keep the
+            # assistant message's tool_calls consistent with the tool_results actually
+            # produced (matched by id), so history never contains an assistant message
+            # with unanswered tool_calls (which would 400 the next OpenAI request).
+            answered_ids = {r.get("tool_call_id") for r in llm_resp.tool_results}
+            answered_tool_calls = [
+                tc for tc in llm_resp.tool_calls if tc.get("id") in answered_ids
+            ]
+            msg = OpenAIMessage(
+                role="assistant",
+                content=assistant_content,
+                tool_calls=answered_tool_calls,
+                reasoning_content=reasoning
             )
-            ctx.new_memory.assistant(assistant_content, llm_resp.tool_calls, reasoning_content=reasoning)
-            request.messages.extend(llm_resp.tool_results)
-            ctx.new_memory.tool(llm_resp.tool_results)
+            request.messages.append(msg)
+            ctx.new_messages.append(msg)
+            tool_msgs = [OpenAIMessage(**r) for r in llm_resp.tool_results]
+            request.messages.extend(tool_msgs)
+            ctx.new_messages.extend(tool_msgs)
 
             yield AgentStepResult(
                 state=state,
                 err=err,
                 step_index=step_index,
                 llm_response=llm_resp,
-                new_memory=ctx.new_memory,
+                new_messages=ctx.new_messages,
                 is_final=is_final,
                 has_tool_calls=has_tool_calls,
+                model_id=model_id,
             )
             if is_final:
                 return

@@ -317,6 +317,68 @@ class MCPManager:
         self.save_server_config()
         self.load_servers()
 
+    # ====== Scope methods ======
+
+    def get_tool_server_map(self) -> dict[str, str]:
+        """Map tool_name -> server_id for all enabled servers."""
+        mapping = {}
+        for server in self.servers:
+            if server.enabled:
+                for tool in server.tools:
+                    mapping[tool.get("name")] = server.id
+        return mapping
+
+    def get_server_scope(self, server_id: str) -> Optional[dict]:
+        """Return scope entry for a server. None = global.
+        Format: {"allow": [sids]} or {"deny": [sids]}"""
+        return self.mcp_config.get("_scope", {}).get(server_id)
+
+    def is_server_allowed(self, server_id: str, session_id: str) -> bool:
+        """Check if a session is allowed to use a server."""
+        scope = self.get_server_scope(server_id)
+        if not scope:
+            return True  # global
+        if "allow" in scope:
+            return session_id in scope["allow"]
+        if "deny" in scope:
+            return session_id not in scope["deny"]
+        return True
+
+    def set_server_scope(self, server_id: str, mode: Optional[str], sessions: list[str]):
+        """Set scope for a server. mode='allow'|'deny', or None to clear."""
+        scope = self.mcp_config.get("_scope", {})
+        if mode and sessions:
+            scope[server_id] = {mode: sessions}
+        else:
+            scope.pop(server_id, None)
+        if scope:
+            self.mcp_config["_scope"] = scope
+        else:
+            self.mcp_config.pop("_scope", None)
+        self.save_server_config()
+
+    def remove_session_from_scopes(self, session_id: str):
+        """Remove a session from all MCP scope entries (cleanup on session delete)."""
+        scope = self.mcp_config.get("_scope", {})
+        changed = False
+        for sid in list(scope.keys()):
+            entry = scope[sid]
+            for mode_key in ("allow", "deny"):
+                if mode_key in entry and session_id in entry[mode_key]:
+                    entry[mode_key].remove(session_id)
+                    if not entry[mode_key]:
+                        del scope[sid]
+                    changed = True
+                    break
+        if changed:
+            if scope:
+                self.mcp_config["_scope"] = scope
+            else:
+                self.mcp_config.pop("_scope", None)
+            self.save_server_config()
+
+    # ====== End scope methods ======
+
     async def enable_server(self, server_id: str):
         target_server = None
         for server in self.servers:

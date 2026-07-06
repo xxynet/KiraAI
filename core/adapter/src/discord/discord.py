@@ -96,8 +96,8 @@ class DiscordAdapter(IMAdapter):
     Install via: pip install py-cord
     """
 
-    def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
-        super().__init__(info, loop, event_bus, llm_api)
+    def __init__(self, info, event_bus: asyncio.Queue):
+        super().__init__(info, event_bus)
 
         # config
         self.bot_token: str = self.config.get("bot_token", "")

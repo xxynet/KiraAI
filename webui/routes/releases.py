@@ -1,7 +1,9 @@
 import asyncio
+import os
 import re
 import shutil
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from fastapi import Depends, HTTPException, status
 
 from core.config.default import VERSION
 from core.logging_manager import get_logger
+from core.plugin.plugin_installer import install_requirements
 from core.utils.github_api import download_asset, get_all_releases, pick_fastest_source
 from core.utils.path_utils import get_data_path, get_root_path
 from webui.models import DownloadReleaseRequest, ReleasesResponse
@@ -17,7 +20,13 @@ from webui.routes.base import RouteDefinition, Routes
 
 logger = get_logger("releases", "green")
 
+RESTART_EXIT_CODE = 42
+RESTART_DELAY_SECONDS = 0.5  # Allow HTTP response to flush before hard exit
 _install_lock = asyncio.Lock()
+
+_RELEASES_CACHE_TTL = 300  # 5 minutes
+_releases_cache: list[dict] | None = None
+_releases_cache_time: float = 0
 
 
 class ReleasesRoutes(Routes):
@@ -41,14 +50,26 @@ class ReleasesRoutes(Routes):
         ]
 
     async def get_releases(self):
-        try:
-            releases = await get_all_releases("xxynet", "KiraAI")
-        except Exception as e:
-            logger.error(f"Failed to fetch releases: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Failed to fetch releases: {e}",
-            ) from e
+        global _releases_cache, _releases_cache_time
+        now = time.monotonic()
+        if _releases_cache is not None and now - _releases_cache_time < _RELEASES_CACHE_TTL:
+            releases = _releases_cache
+        else:
+            try:
+                releases = await get_all_releases("xxynet", "KiraAI")
+            except Exception as e:
+                if _releases_cache is not None:
+                    logger.warning(f"Failed to fetch releases, using stale cache: {e}")
+                    releases = _releases_cache
+                else:
+                    logger.error(f"Failed to fetch releases: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Failed to fetch releases: {e}",
+                    ) from e
+            else:
+                _releases_cache = releases
+                _releases_cache_time = now
         return ReleasesResponse(
             current_version=VERSION,
             releases=[r for r in releases if not r.get("draft")],
@@ -105,7 +126,21 @@ class ReleasesRoutes(Routes):
                 ) from e
             logger.info(f"Update {tag} applied successfully")
 
-        return {"status": "ok"}
+            # Install any new dependencies from the updated requirements.txt
+            logger.info("Installing dependencies...")
+            config = getattr(self.lifecycle, "kira_config", None)
+            pypi_mirror = ((config.get("network") or {}).get("pypi_mirror") if config else None)
+            warnings = await install_requirements(get_root_path(), pypi_mirror=pypi_mirror)
+            for w in warnings:
+                logger.warning(f"Dependency install warning: {w}")
+
+        # Trigger restart — let the response be sent first, then exit
+        logger.info("Scheduling restart after update...")
+        await self.lifecycle.stop()
+        if self.lifecycle.uvicorn_server:
+            self.lifecycle.uvicorn_server.should_exit = True
+        asyncio.get_running_loop().call_later(RESTART_DELAY_SECONDS, os._exit, RESTART_EXIT_CODE)
+        return {"status": "restarting"}
 
     @staticmethod
     def _apply_update(zip_path: Path) -> None:

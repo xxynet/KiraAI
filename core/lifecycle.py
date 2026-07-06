@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 from typing import Optional
 
@@ -11,11 +12,11 @@ from core.chat.session_manager import SessionManager
 from .adapter import AdapterManager
 from .statistics import Statistics
 from .llm_client import LLMClient
-from .tool_manager import register_all_tools
 from .event_bus import EventBus
 from .persona import PersonaManager
 from .provider import ProviderManager
 from .plugin import PluginContext, PluginManager
+from .plugin.plugin_handlers import event_handler_reg, EventType
 from core.agent.mcp_mgr import MCPManager
 from core.agent.skills_mgr import SkillsManager
 from core.config import VERSION
@@ -84,16 +85,32 @@ class KiraLifecycle:
                 task = self.tasks[i]
                 logger.error(f"Scheduled task '{task.get_name()}' failed: {result}")
 
+    def _apply_network_env(self):
+        network = self.kira_config.get("network") or {}
+        proxy = network.get("http_proxy")
+        if proxy:
+            if not proxy.startswith(("http://", "https://")):
+                logger.warning(f"Ignoring invalid http_proxy (must start with http:// or https://): {proxy}")
+            else:
+                os.environ["HTTP_PROXY"] = proxy
+                os.environ["HTTPS_PROXY"] = proxy
+                logger.info(f"HTTP proxy set from config: {proxy}")
+        mirror = network.get("pypi_mirror")
+        if mirror and not mirror.startswith(("http://", "https://")):
+            logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {mirror}")
+
     async def init_and_run_system(self):
         """主函数：负责启动和初始化各个模块"""
         logger.info(f"✨ Starting KiraAI {VERSION}...")
 
         # ====== event bus ======
         event_queue: asyncio.Queue = asyncio.Queue()
-        loop = asyncio.get_running_loop()
 
         # ====== init KiraAI config ======
         self.kira_config = KiraConfig()
+
+        # ====== apply network proxy config ======
+        self._apply_network_env()
 
         # ====== apply logging config ======
         setup_logging(
@@ -120,18 +137,19 @@ class KiraLifecycle:
 
         # ====== record startup time and init telemetry ======
         self.stats.set_stats("started_ts", int(time.time()))
-        # self.telemetry_client = TelemetryClient(self.db_service, self.kira_config, self.stats)
-        # await self.telemetry_client.initialize()
+        self.telemetry_client = TelemetryClient(self.db_service, self.kira_config, self.stats)
+        try:
+            await self.telemetry_client.initialize()
+        except Exception as e:
+            logger.debug(f"Telemetry client initialization failed: {e}")
 
         # ====== init ProviderManager config ======
         self.provider_manager = ProviderManager(self.db_service, self.kira_config)
 
         # ====== init LLMClient ======
         self.llm_api = LLMClient(self.kira_config, self.provider_manager)
-        await register_all_tools(self.llm_api)  # Legacy tools
-
         # ====== init adapter manager ======
-        self.adapter_manager = AdapterManager(self.kira_config, loop, event_queue, self.llm_api)
+        self.adapter_manager = AdapterManager(self.kira_config, event_queue)
         await self.adapter_manager.initialize()
 
         # ====== init session manager ======
@@ -169,7 +187,8 @@ class KiraLifecycle:
             skills_manager=self.skills_manager,
             adapter_manager=self.adapter_manager,
             session_manager=self.session_manager,
-            prompt_manager=self.prompt_manager)
+            prompt_manager=self.prompt_manager,
+            mcp_manager=self.mcp_manager)
 
         self.tasks.append(
             asyncio.create_task(
@@ -178,7 +197,8 @@ class KiraLifecycle:
             )
         )
 
-        self.event_bus = EventBus(self.stats, event_queue, self.message_processor)
+        self.event_bus = EventBus(self.stats, event_queue, self.message_processor, db=self.db_service)
+        self.message_processor.event_bus = self.event_bus
 
         # ====== init plugin system ======
         # ====== init SubAgent registry & router ======
@@ -237,6 +257,11 @@ class KiraLifecycle:
         if webui_app is not None:
             self.plugin_manager.set_web_app(webui_app)
 
+        # Fire ON_LOADED lifecycle event (all plugins are initialized)
+        loaded_handlers = event_handler_reg.get_handlers(EventType.ON_LOADED)
+        for handler in loaded_handlers:
+            await handler.exec_handler()
+
         # ====== init temp folder monitor ======
         temp_folder = get_data_path() / "temp"
 
@@ -262,13 +287,27 @@ class KiraLifecycle:
         await self.event_bus.dispatch()
 
     async def stop(self):
+        # Fire ON_SHUTDOWN lifecycle event (before any teardown)
+        shutdown_handlers = event_handler_reg.get_handlers(EventType.ON_SHUTDOWN)
+        for handler in shutdown_handlers:
+            await handler.exec_handler()
+
         # shutdown telemetry client
         if self.telemetry_client:
-            await self.telemetry_client.shutdown()
+            try:
+                await self.telemetry_client.shutdown()
+            except Exception as e:
+                logger.error(f"Telemetry shutdown error: {e}")
+
+        # terminate all plugins
+        if self.plugin_manager:
+            await self.plugin_manager.terminate()
 
         # terminate all running adapters
-        await self.adapter_manager.stop_adapters()
-        await self.event_bus.stop()
+        if self.adapter_manager:
+            await self.adapter_manager.stop_adapters()
+        if self.event_bus:
+            await self.event_bus.stop()
 
         # dispose database manager
         if self.db_manager:

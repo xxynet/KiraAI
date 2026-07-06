@@ -78,8 +78,8 @@ class WeixinOCAdapter(IMAdapter):
     VIDEO_UPLOAD_TYPE = 2
     FILE_UPLOAD_TYPE = 3
 
-    def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
-        super().__init__(info, loop, event_bus, llm_api)
+    def __init__(self, info, event_bus: asyncio.Queue):
+        super().__init__(info, event_bus)
         self.message_types = ["text", "image", "video", "file", "record"]
         self.logger = get_logger(info.name, "green")
         
@@ -757,7 +757,7 @@ class WeixinOCAdapter(IMAdapter):
             self.info.config["weixin_oc_account_id"] = self.account_id or ""
             self.info.config["weixin_oc_sync_buf"] = self._sync_buf
             self.info.config["weixin_oc_base_url"] = self.base_url
-            
+
             # 保存到配置文件
             from core.config.config_loader import KiraConfig
             kira_config = KiraConfig()

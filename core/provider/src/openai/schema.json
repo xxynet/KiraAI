@@ -51,15 +51,35 @@
           "zh": { "name": "超时", "hint": "超时秒数" }
         }
       },
-      "temperature": {
-        "name": "Temperature",
-        "type": "float",
-        "default": null,
-        "min": 0,
-        "max": 2,
-        "hint": "Model temperature",
+      "section_advanced": {
+        "type": "section",
+        "name": "Advanced Settings",
+        "hint": "Advanced model configuration options",
+        "collapsed": true,
         "locales": {
-          "zh": { "name": "温度", "hint": "模型温度" }
+          "zh": { "name": "高级设置", "hint": "高级模型配置选项" }
+        },
+        "fields": {
+          "temperature": {
+            "name": "Temperature",
+            "type": "float",
+            "default": null,
+            "min": 0,
+            "max": 2,
+            "hint": "Model temperature",
+            "locales": {
+              "zh": { "name": "温度", "hint": "模型温度" }
+            }
+          },
+          "extra_body": {
+            "name": "Extra Body",
+            "type": "json",
+            "default": {},
+            "hint": "Additional fields merged into the request body (JSON object)",
+            "locales": {
+              "zh": { "name": "自定义请求体", "hint": "合并到请求体中的额外字段（JSON 对象）" }
+            }
+          }
         }
       }
     },

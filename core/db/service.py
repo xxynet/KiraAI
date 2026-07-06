@@ -1,9 +1,10 @@
 import time
+import uuid
 from typing import Optional
-from sqlalchemy import select, delete, or_, and_
+from sqlalchemy import select, delete, or_, and_, func, cast, Integer
 
 from .db_mgr import DatabaseManager
-from .models import Sticker, ImageDescCache, Persona, PluginStoreSource
+from .models import Sticker, ImageDescCache, Persona, PluginStoreSource, TelemetryMessage, TelemetryLLMUsage
 
 
 class DatabaseService:
@@ -171,11 +172,12 @@ class DatabaseService:
         content: str,
         format: str = "text",
         created_at: Optional[int] = None,
+        is_active: bool = False,
     ) -> None:
         if created_at is None:
             created_at = int(time.time())
         async with self.db.transaction() as session:
-            session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at))
+            session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at, is_active=is_active))
 
     async def get_persona(self, persona_id: str) -> Optional[dict]:
         stmt = select(Persona).where(Persona.id == persona_id)
@@ -183,7 +185,7 @@ class DatabaseService:
         if row is None:
             return None
         item = row["Persona"]
-        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at}
+        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active}
 
     async def update_persona(
         self,
@@ -192,6 +194,11 @@ class DatabaseService:
         content: Optional[str] = None,
         format: Optional[str] = None,
     ) -> bool:
+        """Update non-activation fields of a persona.
+
+        Activation changes must go through set_active_persona() to maintain
+        the single-active-persona invariant.
+        """
         async with self.db.transaction() as session:
             result = await session.execute(
                 select(Persona).where(Persona.id == persona_id)
@@ -206,6 +213,37 @@ class DatabaseService:
             if format is not None:
                 item.format = format
             return True
+
+    async def set_active_persona(self, persona_id: str) -> bool:
+        """Set a persona as the active one and deactivate all others."""
+        async with self.db.transaction() as session:
+            # Confirm the target persona exists before touching anything
+            result = await session.execute(
+                select(Persona).where(Persona.id == persona_id)
+            )
+            item = result.scalar_one_or_none()
+            if item is None:
+                return False
+
+            # Deactivate all personas (including the target, for a clean reset)
+            result = await session.execute(
+                select(Persona).where(Persona.is_active)
+            )
+            for row in result.scalars().all():
+                row.is_active = False
+
+            # Activate the target persona
+            item.is_active = True
+            return True
+
+    async def get_active_persona(self) -> Optional[dict]:
+        """Get the currently active persona."""
+        stmt = select(Persona).where(Persona.is_active)
+        row = await self.db.fetch_one(stmt)
+        if row is None:
+            return None
+        item = row["Persona"]
+        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active}
 
     async def delete_persona(self, persona_id: str) -> bool:
         async with self.db.transaction() as session:
@@ -222,7 +260,7 @@ class DatabaseService:
         stmt = select(Persona).order_by(Persona.id)
         rows = await self.db.fetch_all(stmt)
         return [
-            {"id": r["Persona"].id, "name": r["Persona"].name, "format": r["Persona"].format, "content": r["Persona"].content, "created_at": r["Persona"].created_at}
+            {"id": r["Persona"].id, "name": r["Persona"].name, "format": r["Persona"].format, "content": r["Persona"].content, "created_at": r["Persona"].created_at, "is_active": r["Persona"].is_active}
             for r in rows
         ]
 
@@ -355,3 +393,166 @@ class DatabaseService:
                 return False
             await session.delete(item)
             return True
+
+    # ------------------------------------------------------------------
+    # Telemetry raw records
+    # ------------------------------------------------------------------
+
+    async def add_telemetry_message(self, timestamp: int, platform: str) -> None:
+        async with self.db.transaction() as session:
+            session.add(TelemetryMessage(id=str(uuid.uuid4()), timestamp=timestamp, platform=platform))
+
+    async def add_telemetry_llm_usage(
+        self, timestamp: int, model: str,
+        input_tokens: int, output_tokens: int,
+        cached_tokens: Optional[int], response_time_ms: int, success: bool
+    ) -> None:
+        async with self.db.transaction() as session:
+            session.add(TelemetryLLMUsage(
+                id=str(uuid.uuid4()), timestamp=timestamp, model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                cached_tokens=cached_tokens, response_time_ms=response_time_ms, success=success,
+            ))
+
+    async def get_unreported_telemetry_messages_by_hour(self, since_ts: int) -> list[dict]:
+        hour_bucket = cast(TelemetryMessage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(hour_bucket.label("hour_ts"), TelemetryMessage.platform, func.count().label("count"))
+            .where(and_(TelemetryMessage.reported.is_(False), TelemetryMessage.timestamp >= since_ts))
+            .group_by(hour_bucket, TelemetryMessage.platform)
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [{"hour_ts": r["hour_ts"], "platform": r["platform"], "count": r["count"]} for r in rows]
+
+    async def get_unreported_telemetry_message_rows(self, since_ts: int) -> list[dict]:
+        """Return every unreported message row (id + hour bucket + platform) in one query.
+
+        Deriving BOTH the per-platform counts and the id set to mark from this single
+        snapshot keeps them exactly consistent: no row can be counted without being
+        marked reported, or marked without being counted (which the previous two-query
+        approach allowed when a row was inserted between the two reads).
+        """
+        hour_bucket = cast(TelemetryMessage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(hour_bucket.label("hour_ts"), TelemetryMessage.platform, TelemetryMessage.id)
+            .where(and_(TelemetryMessage.reported.is_(False), TelemetryMessage.timestamp >= since_ts))
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [{"hour_ts": r["hour_ts"], "platform": r["platform"], "id": r["id"]} for r in rows]
+
+    async def get_unreported_telemetry_llm_usage_by_hour(self, since_ts: int) -> list[dict]:
+        """Return per-(hour, model) rows for building aggregated hourly reports."""
+        hour_bucket = cast(TelemetryLLMUsage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(
+                hour_bucket.label("hour_ts"),
+                TelemetryLLMUsage.model,
+                func.count().label("call_count"),
+                func.sum(func.cast(TelemetryLLMUsage.success, Integer)).label("success_count"),
+                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label("total_input"),
+                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label("total_output"),
+                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label("total_cached"),
+                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label("total_response_ms"),
+            )
+            .where(and_(TelemetryLLMUsage.reported.is_(False), TelemetryLLMUsage.timestamp >= since_ts))
+            .group_by(hour_bucket, TelemetryLLMUsage.model)
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [
+            {
+                "hour_ts": r["hour_ts"], "model": r["model"],
+                "call_count": r["call_count"], "success_count": r["success_count"] or 0,
+                "total_input": r["total_input"], "total_output": r["total_output"],
+                "total_cached": r["total_cached"], "total_response_ms": r["total_response_ms"],
+            }
+            for r in rows
+        ]
+
+    async def get_unreported_telemetry_llm_usage_rows(self, since_ts: int) -> list[dict]:
+        """Return every unreported LLM-usage row (id + hour bucket + measures) in one query.
+
+        Counts and the id set to mark are aggregated in Python from this single
+        snapshot (see get_unreported_telemetry_message_rows for the consistency
+        rationale).
+        """
+        hour_bucket = cast(TelemetryLLMUsage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(
+                hour_bucket.label("hour_ts"),
+                TelemetryLLMUsage.id,
+                TelemetryLLMUsage.model,
+                TelemetryLLMUsage.success,
+                TelemetryLLMUsage.input_tokens,
+                TelemetryLLMUsage.output_tokens,
+                TelemetryLLMUsage.cached_tokens,
+                TelemetryLLMUsage.response_time_ms,
+            )
+            .where(and_(TelemetryLLMUsage.reported.is_(False), TelemetryLLMUsage.timestamp >= since_ts))
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [
+            {
+                "hour_ts": r["hour_ts"], "id": r["id"], "model": r["model"],
+                "success": r["success"],
+                "input_tokens": r["input_tokens"] or 0,
+                "output_tokens": r["output_tokens"] or 0,
+                "cached_tokens": r["cached_tokens"] or 0,
+                "response_time_ms": r["response_time_ms"] or 0,
+            }
+            for r in rows
+        ]
+
+    async def mark_telemetry_reported(self) -> None:
+        async with self.db.transaction() as session:
+            await session.execute(
+                TelemetryMessage.__table__.update()
+                .where(TelemetryMessage.reported.is_(False))
+                .values(reported=True)
+            )
+            await session.execute(
+                TelemetryLLMUsage.__table__.update()
+                .where(TelemetryLLMUsage.reported.is_(False))
+                .values(reported=True)
+            )
+
+    async def mark_telemetry_messages_by_ids(self, ids: list[str]) -> None:
+        """Mark only the specific message rows (by primary key) as reported.
+
+        Marking exact ids — instead of an hour window — guarantees rows inserted into the
+        still-filling hour after aggregation are never marked reported without being sent.
+        """
+        if not ids:
+            return
+        async with self.db.transaction() as session:
+            # Chunk so the bound-parameter count stays well under SQLite's
+            # SQLITE_MAX_VARIABLE_NUMBER (999 on older builds) no matter how many
+            # rows accumulated in an hour bucket.
+            for i in range(0, len(ids), 500):
+                await session.execute(
+                    TelemetryMessage.__table__.update()
+                    .where(TelemetryMessage.id.in_(ids[i:i + 500]))
+                    .values(reported=True)
+                )
+
+    async def mark_telemetry_llm_by_ids(self, ids: list[str]) -> None:
+        """Mark only the specific LLM-usage rows (by primary key) as reported.
+
+        Marking exact ids — instead of an hour window — guarantees rows inserted into the
+        still-filling hour after aggregation are never marked reported without being sent.
+        """
+        if not ids:
+            return
+        async with self.db.transaction() as session:
+            # Chunk to stay under SQLite's bound-parameter limit (see
+            # mark_telemetry_messages_by_ids).
+            for i in range(0, len(ids), 500):
+                await session.execute(
+                    TelemetryLLMUsage.__table__.update()
+                    .where(TelemetryLLMUsage.id.in_(ids[i:i + 500]))
+                    .values(reported=True)
+                )
+
+    async def delete_telemetry_records_before(self, cutoff_ts: int) -> None:
+        async with self.db.transaction() as session:
+            await session.execute(delete(TelemetryMessage).where(TelemetryMessage.timestamp < cutoff_ts))
+            await session.execute(delete(TelemetryLLMUsage).where(TelemetryLLMUsage.timestamp < cutoff_ts))

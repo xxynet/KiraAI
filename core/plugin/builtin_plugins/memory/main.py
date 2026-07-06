@@ -153,6 +153,8 @@ class MemoryPlugin(BasePlugin):
                 p.content += self.get_core_memory()
                 p.content += "\n"
                 p.content += MEM_RULE_PROMPT
-                break
+                # Do not break here: the 'tools' prompt comes after 'memory',
+                # so we must keep iterating to also inject the tools few-shot.
+                continue
             if p.name == "tools":
                 p.content += MEM_TOOL_FEW_SHOT

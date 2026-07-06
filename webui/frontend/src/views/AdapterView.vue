@@ -9,9 +9,7 @@
         class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
         @click="openCreateDialog"
       >
-        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-        </svg>
+        <IconPlus class="w-5 h-5 mr-2" />
         <span>{{ $t('adapter.add') }}</span>
       </button>
     </div>
@@ -19,9 +17,7 @@
     <!-- Empty State -->
     <div v-if="adapters.length === 0" class="flex justify-center items-center py-12">
       <div class="text-center">
-        <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-        </svg>
+        <IconTerminal class="w-16 h-16 text-gray-400 mx-auto mb-4" />
         <p class="text-gray-500">{{ $t('adapter.no_adapters') }}</p>
       </div>
     </div>
@@ -81,9 +77,7 @@
             {{ editMode ? $t('adapter.edit_title') : $t('adapter.add') }}
           </h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="dialogVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
@@ -177,6 +171,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
+import { IconPlus, IconTerminal, IconClose } from '@/components/icons'
 import type { AdapterResponse } from '@/types'
 
 const { t } = useI18n()

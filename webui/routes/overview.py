@@ -47,7 +47,7 @@ class OverviewRoutes(Routes):
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
             try:
                 adapter_mgr = self.lifecycle.adapter_manager
-                adapter_infos = adapter_mgr.get_adapter_infos()
+                adapter_infos = adapter_mgr.get_adapters_info()
                 total_adapters = len(adapter_infos)
                 running_adapters = set(adapter_mgr.get_adapters().keys())
                 active_adapters = len(
@@ -84,6 +84,13 @@ class OverviewRoutes(Routes):
             except Exception as e:
                 logger.error(f"Failed to collect message stats for overview: {e}")
 
+        widgets = []
+        if self.lifecycle and getattr(self.lifecycle, "plugin_manager", None):
+            try:
+                widgets = self.lifecycle.plugin_manager.get_all_widgets()
+            except Exception as e:
+                logger.error(f"Failed to collect plugin widgets for overview: {e}")
+
         return OverviewResponse(
             total_adapters=total_adapters,
             active_adapters=active_adapters,
@@ -94,4 +101,5 @@ class OverviewRoutes(Routes):
             runtime_duration=runtime_duration,
             memory_usage=memory_usage,
             total_memory=total_memory,
+            widgets=widgets,
         )

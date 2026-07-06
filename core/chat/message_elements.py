@@ -7,6 +7,7 @@ import hashlib
 import uuid
 import base64
 import binascii
+import json
 import os
 import re
 import mimetypes
@@ -49,7 +50,16 @@ def _build_temp_file_path(name: Optional[str], mime: Optional[str]) -> str:
         guessed = mimetypes.guess_extension(mime)
         if guessed:
             base_name = base_name + guessed
-    return os.path.join(base_dir, base_name)
+            root, ext = os.path.splitext(base_name)
+    candidate = os.path.join(base_dir, base_name)
+    if not os.path.exists(candidate):
+        return candidate
+    counter = 1
+    while True:
+        candidate = os.path.join(base_dir, f"{root}_{counter}{ext}")
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
 
 
 class ElementType(Enum):
@@ -65,6 +75,7 @@ class ElementType(Enum):
     Poke = "poke"
     File = "file"
     Video = "video"
+    Json = "json"
 
 
 def check_base64(s: str) -> bool:
@@ -131,7 +142,7 @@ class Reply(BaseMessageElement):
 class Forward(BaseMessageElement):
     type = ElementType.Forward
 
-    def __init__(self, chains: list[MessageChain] = None, message_id: Optional[str, list] = None, merge: bool = True):
+    def __init__(self, chains: list[MessageChain] = None, message_id: Optional[Union[str, list]] = None, merge: bool = True):
         self.chains: list[MessageChain] = chains or []
         self.message_id = message_id
         self.merge: bool = merge
@@ -538,6 +549,22 @@ class Poke(BaseMessageElement):
     @property
     def repr(self) -> str:
         return f"[Poke {self.pid}]"
+
+
+class Json(BaseMessageElement):
+    type = ElementType.Json
+
+    def __init__(self, data: dict):
+        if not isinstance(data, dict):
+            raise TypeError(f"Json expects a dict, got {type(data).__name__}")
+        self.data = data
+
+    @property
+    def repr(self) -> str:
+        try:
+            return json.dumps(self.data, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return json.dumps(str(self.data), ensure_ascii=False)
 
 
 class File(BaseMediaElement):

@@ -66,7 +66,7 @@
               </div>
               <div class="flex justify-between text-sm">
                 <span class="text-gray-500 dark:text-gray-400">{{ $t('settings.storage_disk_free') }}</span>
-                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.disk_free_bytes) }}</span>
+                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(diskFreeBytes) }}</span>
               </div>
               <!-- Progress bar -->
               <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3 mt-2">
@@ -191,6 +191,19 @@
           @click="restartConfirmRef?.open()"
         >
           {{ restarting ? $t('header.restarting') : $t('settings.system_restart') }}
+        </button>
+      </div>
+
+      <!-- Change Access Token -->
+      <div v-if="authEnabled">
+        <h4 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ $t('settings.token_title') }}</h4>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{{ $t('settings.token_desc') }}</p>
+        <button
+          type="button"
+          class="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          @click="openChangeTokenModal()"
+        >
+          {{ $t('settings.token_submit') }}
         </button>
       </div>
     </div>
@@ -373,8 +386,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { notify } from '@/composables/useNotification'
+import { openChangeTokenModal } from '@/composables/useChangeTokenModal'
 import apiClient from '@/api/client'
+import { getAuthConfig } from '@/api/auth'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
@@ -383,7 +399,6 @@ import {
   getStorageInfo,
   createBackup,
   listBackups,
-  downloadBackup,
   deleteBackup,
   restoreBackup,
   restoreFromBackup,
@@ -393,8 +408,10 @@ import {
 import { restartAndWait } from '@/composables/useRestart'
 
 const { t } = useI18n()
+const router = useRouter()
 const saving = ref(false)
 const activeTab = ref('storage')
+const authEnabled = ref(true)
 
 const projectVersion = ref('dev')
 
@@ -418,11 +435,20 @@ const diskUsagePercent = computed(() => {
   return (storageInfo.value.disk_used_bytes / storageInfo.value.disk_total_bytes) * 100
 })
 
+// Compute free from total - used instead of using the API's disk_free_bytes
+// (shutil.disk_usage().free). On Linux the OS-reported free can be 0 when ext4
+// reserved blocks fill the remaining space, causing a mismatch with the
+// used/total progress bar. Clamped to 0 to guard against negative deltas.
+const diskFreeBytes = computed(() => {
+  if (!storageInfo.value) return 0
+  return Math.max(0, storageInfo.value.disk_total_bytes - storageInfo.value.disk_used_bytes)
+})
+
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  const i = Math.min(Math.max(0, Math.floor(Math.log(bytes) / Math.log(k))), sizes.length - 1)
   return (bytes / Math.pow(k, i)).toFixed(i > 0 ? 2 : 0) + ' ' + sizes[i]
 }
 
@@ -460,6 +486,7 @@ const restoreFile = ref<File | null>(null)
 const listAction = ref<{ type: 'delete' | 'restore'; filename: string }>({ type: 'delete', filename: '' })
 
 const restarting = ref(false)
+
 
 async function triggerRestart() {
   try {
@@ -503,20 +530,14 @@ async function handleCreateBackup() {
   }
 }
 
-async function handleDownloadBackup(filename: string) {
-  try {
-    const { data } = await downloadBackup(filename)
-    const url = URL.createObjectURL(data as Blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  } catch {
-    // silent
-  }
+function handleDownloadBackup(filename: string) {
+  const a = document.createElement('a')
+  a.href = `/api/settings/backup/download/${encodeURIComponent(filename)}`
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 async function handleDeleteBackup(filename: string) {
@@ -592,6 +613,10 @@ onMounted(() => {
 
   apiClient.get('/version').then(({ data }) => {
     if (data?.version) projectVersion.value = data.version
+  }).catch(() => {})
+
+  getAuthConfig().then(({ data }) => {
+    authEnabled.value = data.auth_enabled
   }).catch(() => {})
 
   fetchStorageInfo()

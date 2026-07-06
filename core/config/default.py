@@ -1,4 +1,4 @@
-VERSION = "v2.18.0"
+VERSION = "v2.26.0"
 
 DEFAULT_CONFIG = {
     "bot_config": {
@@ -11,7 +11,8 @@ DEFAULT_CONFIG = {
         },
         "agent": {
             "max_tool_loop": 5,
-            "max_tool_calls_per_turn": 5
+            "max_tool_calls_per_turn": 5,
+            "tool_call_timeout": 60
         },
         "selfie": {
             "path": None
@@ -39,6 +40,10 @@ DEFAULT_CONFIG = {
         "default_video": None
     },
     "adapters": {},  # ID: Adapter config dict
+    "network": {
+        "pypi_mirror": None,
+        "http_proxy": None
+    },
     "telemetry": {
         "enabled": True,
         "client_uuid": None,

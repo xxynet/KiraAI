@@ -9,9 +9,7 @@
             <p class="text-2xl font-bold text-gray-900 mt-2">{{ formattedUptime }}</p>
           </div>
           <div class="bg-blue-100 rounded-full p-3">
-            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
+            <IconClock class="w-6 h-6 text-blue-600" />
           </div>
         </div>
       </div>
@@ -24,9 +22,7 @@
             <p class="text-2xl font-bold text-gray-900 mt-2">{{ overview?.total_messages ?? 0 }}</p>
           </div>
           <div class="bg-green-100 rounded-full p-3">
-            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-            </svg>
+            <IconChat class="w-6 h-6 text-green-600" />
           </div>
         </div>
       </div>
@@ -41,9 +37,7 @@
             </p>
           </div>
           <div class="bg-purple-100 rounded-full p-3">
-            <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-            </svg>
+            <IconTerminal class="w-6 h-6 text-purple-600" />
           </div>
         </div>
       </div>
@@ -58,13 +52,38 @@
             </p>
           </div>
           <div class="bg-yellow-100 rounded-full p-3">
-            <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-            </svg>
+            <IconCpu class="w-6 h-6 text-yellow-600" />
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Plugin Widgets: Small Cards -->
+    <div v-if="smallWidgets.length"
+         class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <div v-for="w in smallWidgets" :key="w.widget_id" class="glass-card rounded-lg p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-gray-600">{{ resolveWidgetLabel(w.label) }}</p>
+            <p class="text-2xl font-bold text-gray-900 mt-2">{{ w.content }}</p>
+          </div>
+          <div class="rounded-full p-3" :class="widgetBgClass(w.color)">
+            <component :is="resolveWidgetIcon(w.icon)"
+                       class="w-6 h-6" :class="widgetFgClass(w.color)" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plugin Widgets: Wide Cards -->
+    <template v-for="w in wideWidgets" :key="w.widget_id">
+      <div class="glass-card rounded-lg p-6 mb-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+          {{ resolveWidgetLabel(w.label) }}
+        </h3>
+        <div class="widget-html-content" v-html="w.content"></div>
+      </div>
+    </template>
 
     <!-- System Status -->
     <div class="glass-card rounded-lg p-6">
@@ -80,11 +99,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-// Inline SVG icons used in cards to match original design
+import { IconClock, IconChat, IconTerminal, IconCpu } from '@/components/icons'
 import { getOverview } from '@/api/overview'
-import type { OverviewResponse } from '@/types'
+import type { OverviewResponse, OverviewWidget } from '@/types'
+import { Box } from '@element-plus/icons-vue'
+import { iconMap } from '@/utils/iconMap'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const overview = ref<OverviewResponse | null>(null)
 const runtimeSeconds = ref(0)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
@@ -119,6 +140,57 @@ const statusText = computed(() => {
   if (!status || !validStatuses.includes(status)) return t('overview.status_unknown')
   return t(`overview.status_${status}`)
 })
+
+/* ---- Plugin widget helpers ---- */
+
+function resolveWidgetLabel(label: string | Record<string, string>): string {
+  if (typeof label === 'string') return label
+  const loc = locale.value
+  return label[loc] || label['en'] || Object.values(label)[0] || ''
+}
+
+function resolveWidgetIcon(iconName: string) {
+  return iconMap[iconName] || Box
+}
+
+/** Map widget color names to Tailwind classes.
+ *  Using Tailwind class names (not inline styles) so the global dark-mode
+ *  overrides in main.css (.dark .text-blue-600, etc.) take effect. */
+const widgetBgClasses: Record<string, string> = {
+  blue:   'bg-blue-100',
+  green:  'bg-green-100',
+  purple: 'bg-purple-100',
+  yellow: 'bg-yellow-100',
+  red:    'bg-red-100',
+  gray:   'bg-gray-100',
+}
+const widgetFgClasses: Record<string, string> = {
+  blue:   'text-blue-600',
+  green:  'text-green-600',
+  purple: 'text-purple-600',
+  yellow: 'text-yellow-600',
+  red:    'text-red-600',
+  gray:   'text-gray-600',
+}
+
+function widgetBgClass(color: string) {
+  return widgetBgClasses[color] || widgetBgClasses.blue
+}
+function widgetFgClass(color: string) {
+  return widgetFgClasses[color] || widgetFgClasses.blue
+}
+
+const smallWidgets = computed(() =>
+  (overview.value?.widgets || [])
+    .filter(w => w.size === 'small')
+    .sort((a, b) => a.order - b.order),
+)
+
+const wideWidgets = computed(() =>
+  (overview.value?.widgets || [])
+    .filter(w => w.size === 'wide')
+    .sort((a, b) => a.order - b.order),
+)
 
 async function fetchOverview() {
   if (inFlight || disposed) return
@@ -156,3 +228,21 @@ onUnmounted(() => {
   runtimeTimer = null
 })
 </script>
+
+<style scoped>
+/* Dark-mode defaults for unstyled elements inside v-html widget content.
+   Gives bare <td>, <p>, etc. a readable light text colour.
+   Elements with explicit Tailwind classes (e.g. dark:text-gray-100)
+   will override this via the global dark-mode rules in main.css. */
+.dark .widget-html-content :deep(td),
+.dark .widget-html-content :deep(th),
+.dark .widget-html-content :deep(p),
+.dark .widget-html-content :deep(span),
+.dark .widget-html-content :deep(li),
+.dark .widget-html-content :deep(label) {
+  color: #e5e7eb;
+}
+.dark .widget-html-content :deep(a:not([class])) {
+  color: #60a5fa;
+}
+</style>

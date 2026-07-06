@@ -6,14 +6,15 @@ from uuid import uuid4
 
 from fastapi import Depends, File, HTTPException, Query, UploadFile
 
-from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR
+from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_from_github, install_from_zip, install_requirements
 from core.utils.path_utils import get_data_path
 from webui.models import (
-    PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem,
+    PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem,
     PluginStoreItemResponse, PluginStoreFetchRequest,
     PluginStoreSourceItem, PluginStoreSourceCreateRequest, PluginStoreSourceUpdateRequest,
+    PluginUpdateCheckItem, PluginUpdateRequest,
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -122,6 +123,22 @@ class PluginsRoutes(Routes):
                 tags=["plugin-store"],
                 dependencies=[Depends(require_auth)],
             ),
+            RouteDefinition(
+                path="/api/plugins/updates/check",
+                methods=["POST"],
+                endpoint=self.check_plugin_updates,
+                response_model=List[PluginUpdateCheckItem],
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/{plugin_id}/update",
+                methods=["POST"],
+                endpoint=self.update_plugin,
+                response_model=PluginInstallResult,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
         ]
 
     async def list_plugins(self):
@@ -129,73 +146,46 @@ class PluginsRoutes(Routes):
             return []
         try:
             plugin_manager = self.lifecycle.plugin_manager
-            registered = plugin_manager.get_registered_plugins()
+            all_components = plugin_manager.get_plugin_components()
             items: List[PluginItem] = []
-            for plugin_id, _ in registered.items():
-                if plugin_manager.is_plugin_hidden(plugin_id):
+            for info in plugin_manager.list_plugins():
+                if info.hidden:
                     continue
-                manifest = plugin_manager.get_plugin_manifest(plugin_id) or {}
-                display_name = manifest.get("display_name") or plugin_id
-                version = str(manifest.get("version") or "")
-                author = str(manifest.get("author") or "")
-                desc = str(manifest.get("description") or "")
-                repo = manifest.get("repo")
-                locales = manifest.get("locales") or {}
-                tags = manifest.get("tags") or []
-                core_version = manifest.get("core_version")
-                enabled = plugin_manager.is_plugin_enabled(plugin_id)
-                is_builtin = plugin_manager.is_builtin_plugin(plugin_id)
-                uninstallable = plugin_manager.is_plugin_uninstallable(plugin_id)
+                pid = info.plugin_id
+                # Collect menu entries from registered pages
+                menus: List[PageMenu] = []
+                comp = all_components.get(pid)
+                if comp:
+                    for page in comp.pages:
+                        menu_cfg = page.get("menu")
+                        if not menu_cfg:
+                            continue
+                        menus.append(PageMenu(
+                            route=f"/page/plugin/{pid}/{page['route'].lstrip('/')}",
+                            label=menu_cfg.label,
+                            icon=menu_cfg.icon,
+                            order=menu_cfg.order,
+                        ))
+                    menus.sort(key=lambda m: m.order)
                 items.append(
                     PluginItem(
-                        id=str(plugin_id),
-                        name=str(display_name),
-                        version=version,
-                        author=author,
-                        description=desc,
-                        repo=repo if isinstance(repo, str) and repo else None,
-                        enabled=enabled,
-                        builtin=is_builtin,
-                        uninstallable=uninstallable,
-                        locales=locales,
-                        tags=[str(t) for t in tags if t],
-                        core_version=str(core_version) if core_version else None,
+                        id=pid,
+                        name=info.display_name,
+                        version=info.version,
+                        author=info.author,
+                        description=info.description,
+                        repo=info.repo,
+                        enabled=plugin_manager.is_plugin_enabled(pid),
+                        builtin=info.builtin,
+                        uninstallable=info.uninstallable,
+                        locales=info.locales,
+                        tags=info.tags,
+                        core_version=info.core_version,
+                        error=info.error,
+                        status=info.status,
+                        menus=menus,
                     )
                 )
-
-            # Include plugins that failed to load (e.g. version mismatch)
-            for plugin_id, error_info in plugin_manager.get_plugin_load_errors().items():
-                if plugin_manager.is_plugin_hidden(plugin_id):
-                    continue
-                manifest = error_info.get("manifest") or {}
-                display_name = manifest.get("display_name") or plugin_id
-                version = str(manifest.get("version") or "")
-                author = str(manifest.get("author") or "")
-                desc = str(manifest.get("description") or "")
-                repo = manifest.get("repo")
-                locales = manifest.get("locales") or {}
-                tags = manifest.get("tags") or []
-                core_version = manifest.get("core_version")
-                is_builtin = plugin_manager.is_builtin_plugin(plugin_id)
-                uninstallable = plugin_manager.is_plugin_uninstallable(plugin_id)
-                items.append(
-                    PluginItem(
-                        id=str(plugin_id),
-                        name=str(display_name),
-                        version=version,
-                        author=author,
-                        description=desc,
-                        repo=repo if isinstance(repo, str) and repo else None,
-                        enabled=False,
-                        builtin=is_builtin,
-                        uninstallable=uninstallable,
-                        locales=locales,
-                        tags=[str(t) for t in tags if t],
-                        core_version=str(core_version) if core_version else None,
-                        error=str(error_info.get("error", "")),
-                    )
-                )
-
             return items
         except Exception as e:
             logger.error(f"Failed to list plugins: {e}")
@@ -206,8 +196,7 @@ class PluginsRoutes(Routes):
             raise HTTPException(status_code=503, detail="Plugin manager not available")
         try:
             plugin_manager = self.lifecycle.plugin_manager
-            registered = plugin_manager.get_registered_plugins()
-            if plugin_id not in registered:
+            if not plugin_manager.has_plugin(plugin_id):
                 raise HTTPException(status_code=404, detail="Plugin not found")
             schema_fields = plugin_manager.get_plugin_schema(plugin_id) or []
             config = plugin_manager.get_plugin_config(plugin_id)
@@ -227,8 +216,7 @@ class PluginsRoutes(Routes):
             raise HTTPException(status_code=503, detail="Plugin manager not available")
         try:
             plugin_manager = self.lifecycle.plugin_manager
-            registered = plugin_manager.get_registered_plugins()
-            if plugin_id not in registered:
+            if not plugin_manager.has_plugin(plugin_id):
                 raise HTTPException(status_code=404, detail="Plugin not found")
             updated_config = await plugin_manager.update_plugin_config(plugin_id, payload.config or {})
             schema_fields = plugin_manager.get_plugin_schema(plugin_id) or []
@@ -248,11 +236,10 @@ class PluginsRoutes(Routes):
             raise HTTPException(status_code=400, detail="Invalid payload")
         try:
             plugin_manager = self.lifecycle.plugin_manager
-            registered = plugin_manager.get_registered_plugins()
-            if plugin_id not in registered:
-                if plugin_id in plugin_manager.get_plugin_load_errors():
-                    raise HTTPException(status_code=400, detail="Cannot enable a plugin that failed to load")
+            if not plugin_manager.has_plugin(plugin_id):
                 raise HTTPException(status_code=404, detail="Plugin not found")
+            if enabled and plugin_id in plugin_manager.get_plugin_load_errors():
+                raise HTTPException(status_code=400, detail="Cannot enable a plugin that failed to load")
             await plugin_manager.set_plugin_enabled(plugin_id, enabled)
             return {"plugin_id": plugin_id, "enabled": enabled}
         except HTTPException:
@@ -266,16 +253,13 @@ class PluginsRoutes(Routes):
             raise HTTPException(status_code=503, detail="Plugin manager not available")
         try:
             plugin_manager = self.lifecycle.plugin_manager
-            registered = plugin_manager.get_registered_plugins()
-            errors = plugin_manager.get_plugin_load_errors()
-            if plugin_id not in registered and plugin_id not in errors:
+            if not plugin_manager.has_plugin(plugin_id):
                 raise HTTPException(status_code=404, detail="Plugin not found")
             if plugin_manager.is_builtin_plugin(plugin_id):
                 raise HTTPException(status_code=400, detail="Built-in plugins cannot be reloaded")
             await plugin_manager.reload(plugin_id)
             # Check if the plugin reloaded successfully
-            new_registered = plugin_manager.get_registered_plugins()
-            if plugin_id in new_registered:
+            if plugin_id in plugin_manager.get_registered_plugins():
                 return {"plugin_id": plugin_id, "reloaded": True}
             # Plugin failed to reload — get the error
             errors = plugin_manager.get_plugin_load_errors()
@@ -298,10 +282,7 @@ class PluginsRoutes(Routes):
 
         plugin_manager = self.lifecycle.plugin_manager
 
-        is_registered = plugin_id in plugin_manager.get_registered_plugins()
-        is_failed = plugin_id in plugin_manager.get_plugin_load_errors()
-
-        if not is_registered and not is_failed:
+        if not plugin_manager.has_plugin(plugin_id):
             raise HTTPException(status_code=404, detail="Plugin not found")
 
         if not plugin_manager.is_plugin_uninstallable(plugin_id):
@@ -362,7 +343,7 @@ class PluginsRoutes(Routes):
         except ConnectionError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
-        warnings = await install_requirements(plugin_dir)
+        warnings = await install_requirements(plugin_dir, pypi_mirror=self._get_pypi_mirror())
 
         plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
         if not plugin_id:
@@ -385,7 +366,7 @@ class PluginsRoutes(Routes):
         except (ValueError, IOError) as e:
             raise HTTPException(status_code=422, detail=str(e))
 
-        warnings = await install_requirements(plugin_dir)
+        warnings = await install_requirements(plugin_dir, pypi_mirror=self._get_pypi_mirror())
 
         plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
         if not plugin_id:
@@ -393,21 +374,148 @@ class PluginsRoutes(Routes):
 
         return self._build_install_result(plugin_manager, plugin_id, warnings)
 
+    def _get_pypi_mirror(self) -> Optional[str]:
+        config = getattr(self.lifecycle, "kira_config", None)
+        if not config:
+            return None
+        return (config.get("network") or {}).get("pypi_mirror") or None
+
     @staticmethod
     def _build_install_result(plugin_manager, plugin_id: str, warnings: List[str]) -> PluginInstallResult:
-        manifest = plugin_manager.get_plugin_manifest(plugin_id) or {}
-        tags = manifest.get("tags") or []
+        info = plugin_manager.get_plugin_info(plugin_id)
         return PluginInstallResult(
             id=plugin_id,
-            name=str(manifest.get("display_name") or plugin_id),
-            version=str(manifest.get("version") or ""),
-            author=str(manifest.get("author") or ""),
-            description=str(manifest.get("description") or ""),
-            repo=manifest.get("repo") if isinstance(manifest.get("repo"), str) else None,
+            name=info.display_name if info else plugin_id,
+            version=info.version if info else "",
+            author=info.author if info else "",
+            description=info.description if info else "",
+            repo=info.repo if info else None,
             enabled=plugin_manager.is_plugin_enabled(plugin_id),
-            tags=[str(t) for t in tags if t],
+            tags=info.tags if info else [],
+            core_version=info.core_version if info else None,
+            error=info.error if info else None,
+            status=info.status if info else "pending",
             warnings=warnings,
         )
+
+    async def check_plugin_updates(self) -> List[PluginUpdateCheckItem]:
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            return []
+
+        plugin_manager = self.lifecycle.plugin_manager
+        db_service = getattr(self.lifecycle, "db_service", None)
+
+        # Get store version map from the current store source (with 10-min cache)
+        store_versions: Dict[str, str] = {}
+        store_fetch_error: Optional[str] = None
+        if db_service:
+            try:
+                sources = await db_service.list_plugin_store_sources()
+                current = next((s for s in sources if s.get("is_current")), None)
+                if current and current.get("url"):
+                    now = int(time.time())
+                    updated_at = current.get("updated_at", 0)
+                    cache_file = current.get("cache_file")
+                    raw_data = None
+
+                    # Try reading from disk cache if fresh enough
+                    if cache_file and (now - updated_at) < 600:
+                        cache_path = get_data_path() / "plugin_src" / cache_file
+                        if cache_path.exists():
+                            raw_data = json.loads(cache_path.read_text(encoding="utf-8"))
+
+                    # Fetch fresh if cache miss or stale
+                    if raw_data is None:
+                        raw_data = await PluginManager.fetch_plugin_store_data(current["url"])
+                        # Update cache on disk
+                        plugin_src_dir = get_data_path() / "plugin_src"
+                        plugin_src_dir.mkdir(parents=True, exist_ok=True)
+                        if cache_file and (plugin_src_dir / cache_file).exists():
+                            filename = cache_file
+                        else:
+                            filename = f"plugins_{uuid4().hex}.json"
+                        cache_path = plugin_src_dir / filename
+                        cache_path.write_text(json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                        await db_service.update_plugin_store_source(
+                            current["id"], cache_file=filename, updated_at=now,
+                        )
+
+                    for item in self._extract_plugins(raw_data):
+                        v = item.get("version")
+                        pid = item.get("plugin_id")
+                        if v and pid:
+                            store_versions[str(pid)] = str(v)
+            except Exception as e:
+                store_fetch_error = f"Failed to fetch store data: {e}"
+                logger.warning(store_fetch_error)
+
+        results: List[PluginUpdateCheckItem] = []
+        for info in plugin_manager.list_plugins():
+            if info.builtin or info.hidden or info.status == "error":
+                continue
+
+            pid = info.plugin_id
+            installed_ver = info.version
+            latest_ver: Optional[str] = None
+            err: Optional[str] = None
+
+            if pid in store_versions:
+                store_ver = store_versions[pid]
+                try:
+                    if _compare_versions(installed_ver, store_ver):
+                        latest_ver = store_ver
+                except Exception as e:
+                    err = str(e)
+            elif store_fetch_error:
+                err = store_fetch_error
+
+            results.append(PluginUpdateCheckItem(
+                plugin_id=pid,
+                current_version=installed_ver,
+                latest_version=latest_ver,
+                has_update=latest_ver is not None,
+                error=err,
+            ))
+
+        return results
+
+    async def update_plugin(self, plugin_id: str, payload: PluginUpdateRequest) -> PluginInstallResult:
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+
+        plugin_manager = self.lifecycle.plugin_manager
+
+        info = plugin_manager.get_plugin_info(plugin_id)
+        if not info:
+            raise HTTPException(status_code=404, detail="Plugin not found")
+        if info.builtin:
+            raise HTTPException(status_code=400, detail="Built-in plugins cannot be updated")
+        if not info.repo:
+            raise HTTPException(status_code=400, detail="Plugin has no repo URL configured")
+
+        try:
+            plugin_dir = await install_from_github(
+                info.repo,
+                plugin_manager.plugin_dir,
+                gh_proxy=payload.gh_proxy,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except ConnectionError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        warnings = await install_requirements(plugin_dir, pypi_mirror=self._get_pypi_mirror())
+
+        new_plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
+        if not new_plugin_id:
+            raise HTTPException(status_code=500, detail="Plugin files were installed but failed to load after update")
+        if new_plugin_id != plugin_id:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Plugin identity changed after update: requested '{plugin_id}' but loaded '{new_plugin_id}'",
+            )
+
+        return self._build_install_result(plugin_manager, new_plugin_id, warnings)
 
     async def fetch_plugin_store(self, payload: PluginStoreFetchRequest) -> List[PluginStoreItemResponse]:
         url: Optional[str] = payload.url

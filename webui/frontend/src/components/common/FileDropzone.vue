@@ -13,14 +13,10 @@
     @drop.prevent="onDrop"
   >
     <div v-if="hasFile">
-      <svg class="w-10 h-10 text-green-500 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-      </svg>
+      <IconCheck class="w-10 h-10 text-green-500 dark:text-green-400" />
     </div>
     <div v-else>
-      <svg class="w-10 h-10 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-      </svg>
+      <IconUpload class="w-10 h-10 text-gray-400 dark:text-gray-500" />
     </div>
     <p
       class="text-sm"
@@ -44,6 +40,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { IconCheck, IconUpload } from '@/components/icons'
 
 const props = defineProps<{
   modelValue?: File | null

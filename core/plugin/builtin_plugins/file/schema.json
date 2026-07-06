@@ -1,4 +1,14 @@
 {
+  "enabled_tools": {
+    "name": "Enabled Tools",
+    "type": "multi_select",
+    "default": ["read_file", "write_file", "edit_file", "list_files", "grep", "search_files", "exec"],
+    "options": ["read_file", "write_file", "edit_file", "list_files", "grep", "search_files", "exec"],
+    "hint": "Select which tools to expose to the AI. Deselect to disable.",
+    "locales": {
+      "zh": { "name": "启用的工具", "hint": "选择要提供给 AI 的工具；取消选择即可禁用对应工具" }
+    }
+  },
   "allowed_sessions": {
     "name": "Allowed Sessions",
     "type": "list",
@@ -24,6 +34,35 @@
     "hint": "Denied commands",
     "locales": {
       "zh": { "name": "命令黑名单", "hint": "禁止执行的命令列表" }
+    }
+  },
+  "extra_paths": {
+    "type": "section",
+    "name": "Extra Allowed Paths",
+    "hint": "Configure additional allowed path prefixes",
+    "collapsed": true,
+    "locales": {
+      "zh": { "name": "额外允许的路径", "hint": "配置额外允许的路径前缀" }
+    },
+    "fields": {
+      "extra_read_paths": {
+        "name": "Extra Read Paths",
+        "type": "list",
+        "default": [],
+        "hint": "Additional allowed path prefixes for read_file and list_files",
+        "locales": {
+          "zh": { "name": "额外允许读取的路径", "hint": "read_file 和 list_files 额外允许的路径前缀" }
+        }
+      },
+      "extra_write_paths": {
+        "name": "Extra Write Paths",
+        "type": "list",
+        "default": [],
+        "hint": "Additional allowed path prefixes for write_file and edit_file",
+        "locales": {
+          "zh": { "name": "额外允许写入的路径", "hint": "write_file 和 edit_file 额外允许的路径前缀" }
+        }
+      }
     }
   }
 }

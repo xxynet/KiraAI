@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 from enum import Enum, auto
 from dataclasses import dataclass, field
@@ -11,6 +12,7 @@ from .statistics import Statistics
 from .logging_manager import get_logger
 
 from core.chat import KiraMessageEvent, KiraCommentEvent
+from core.chat.message_utils import KiraMessageBatchEvent, KiraCustomEvent
 
 
 class EventType(Enum):
@@ -39,11 +41,18 @@ class EventType(Enum):
 #     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+if TYPE_CHECKING:
+    from core.message_manager import MessageProcessor
+    from core.db.service import DatabaseService
+
+
 class EventBus:
     """事件总线"""
 
-    def __init__(self, stats: Statistics, event_queue: asyncio.Queue, message_processor: "MessageProcessor"):
+    def __init__(self, stats: Statistics, event_queue: asyncio.Queue, message_processor: MessageProcessor,
+                 db: DatabaseService = None):
         self.stats = stats
+        self.db = db
 
         self.event_queue: asyncio.Queue = event_queue
 
@@ -80,6 +89,16 @@ class EventBus:
         self.logger = get_logger("event_bus", "blue")
 
     async def _dispatch_event(self, event):
+        if isinstance(event, KiraMessageBatchEvent):
+            await self.message_processor.handle_im_batch_message(event)
+            return
+        if isinstance(event, KiraCustomEvent):
+            from core.plugin.plugin_handlers import event_handler_reg, EventType as PluginEventType
+            for handler in event_handler_reg.get_handlers(PluginEventType.ON_CUSTOM_EVENT):
+                filter_name = getattr(handler.handler, '_custom_event_name', None)
+                if filter_name is None or filter_name == event.event_name:
+                    await handler.exec_handler(event)
+            return
         async with self.message_processing_semaphore:
             if isinstance(event, KiraMessageEvent):
                 await self.message_processor.handle_im_message(event)
@@ -163,6 +182,12 @@ class EventBus:
             if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
                 self.total_messages_stats["total_messages"] += 1
                 self.stats.set_stats("messages", self.total_messages_stats)
+                if self.db:
+                    platform = getattr(getattr(event, "adapter", None), "platform", None) or getattr(event, "platform", "unknown")
+                    try:
+                        await self.db.add_telemetry_message(int(time.time()), platform)
+                    except Exception as e:
+                        self.logger.debug(f"Failed to record telemetry message: {e}")
             task = asyncio.create_task(self._dispatch_event(event))
 
             def _log_task_error(t: asyncio.Task):

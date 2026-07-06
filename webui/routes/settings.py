@@ -5,17 +5,19 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, File, HTTPException, UploadFile
+from fastapi import Depends, File, HTTPException, Request, UploadFile
 
 from core.utils.path_utils import get_data_path
 from webui.models import (
     BackupCreateResponse,
+    ChangeTokenRequest,
     DirectoryEntry,
     RestoreResponse,
     StorageInfoResponse,
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
+from webui.utils import _update_access_token
 
 # Backup directory lives inside the data directory
 BACKUP_DIR_NAME = "backups"
@@ -97,6 +99,13 @@ class SettingsRoutes(Routes):
                 tags=["settings"],
                 dependencies=[Depends(require_auth)],
             ),
+            RouteDefinition(
+                path="/api/settings/change-token",
+                methods=["POST"],
+                endpoint=self.change_access_token,
+                tags=["settings"],
+                dependencies=[Depends(require_auth)],
+            ),
         ]
 
     # ── Storage ──────────────────────────────────────────────────────────────
@@ -142,8 +151,8 @@ class SettingsRoutes(Routes):
         filename = f"backup_{timestamp}.zip"
         zip_path = backup_dir / filename
 
-        # Directories to exclude from backup (backups themselves, dist builds)
-        exclude_dirs = {BACKUP_DIR_NAME, "dist", "__pycache__"}
+        # Directories to exclude from backup (backups themselves, dist builds, transient data)
+        exclude_dirs = {BACKUP_DIR_NAME, "dist", "__pycache__", "updates", "temp"}
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(data_path):
@@ -218,7 +227,7 @@ class SettingsRoutes(Routes):
     def _do_restore(self, zip_source) -> RestoreResponse:
         """Extract a zip into a staging dir, validate, then copy to data directory."""
         data_path = get_data_path()
-        exclude_dirs = {BACKUP_DIR_NAME, "__pycache__"}
+        exclude_dirs = {BACKUP_DIR_NAME, "__pycache__", "updates", "temp"}
 
         try:
             with tempfile.TemporaryDirectory() as staging_dir:
@@ -266,3 +275,19 @@ class SettingsRoutes(Routes):
 
         file.file.seek(0)
         return self._do_restore(file.file)
+
+    # ── Access Token ────────────────────────────────────────────────────────
+
+    async def change_access_token(self, body: ChangeTokenRequest, request: Request):
+        if request.app.state.disable_auth:
+            raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
+        current_token = request.app.state.access_token
+        if body.old_token != current_token:
+            raise HTTPException(status_code=400, detail="Old token is incorrect")
+        if not body.new_token or len(body.new_token) < 6:
+            raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
+        if body.new_token == "disabled":
+            raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
+        _update_access_token(body.new_token)
+        request.app.state.access_token = body.new_token
+        return {"success": True}

@@ -12,24 +12,8 @@
       :aria-label="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')"
       @click="toggleTheme"
     >
-      <svg
-        v-if="appStore.isDark"
-        class="w-6 h-6 text-yellow-500"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-      </svg>
-      <svg
-        v-else
-        class="w-6 h-6 text-gray-700"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-      </svg>
+      <IconSun v-if="appStore.isDark" class="w-6 h-6 text-yellow-500" />
+      <IconMoon v-else class="w-6 h-6 text-gray-700" />
     </button>
 
     <!-- Login Container -->
@@ -39,9 +23,7 @@
         <!-- Logo and Title -->
         <div class="text-center mb-8">
           <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4 shadow-lg">
-            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+            <IconLightning class="w-8 h-8 text-white" />
           </div>
           <h1 class="text-3xl font-bold text-gray-900 mb-2 dark:text-white">{{ $t('login.title') }}</h1>
           <p class="text-gray-600 dark:text-gray-400">{{ $t('login.subtitle') }}</p>
@@ -56,9 +38,7 @@
             </label>
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg class="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                </svg>
+                <IconKey class="h-5 w-5 text-gray-400 dark:text-gray-500" />
               </div>
               <input
                 v-model="accessToken"
@@ -81,15 +61,7 @@
             :disabled="loading"
           >
             <span>{{ loading ? '...' : $t('login.submit') }}</span>
-            <svg
-              v-if="loading"
-              class="animate-spin ml-2 h-5 w-5 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+            <IconSpinner v-if="loading" class="animate-spin ml-2 h-5 w-5 text-white" />
           </button>
         </form>
 
@@ -99,9 +71,7 @@
           class="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl dark:bg-red-900/20 dark:border-red-800/30"
         >
           <div class="flex items-center">
-            <svg class="w-5 h-5 text-red-600 mr-2 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <IconInfo class="w-5 h-5 text-red-600 mr-2 dark:text-red-400" />
             <span class="text-sm text-red-700 dark:text-red-300">{{ errorMsg }}</span>
           </div>
         </div>
@@ -123,6 +93,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from 'vue-i18n'
+import { IconSun, IconMoon, IconLightning, IconKey, IconSpinner, IconInfo } from '@/components/icons'
 
 const { t } = useI18n()
 const router = useRouter()

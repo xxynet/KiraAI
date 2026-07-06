@@ -23,15 +23,21 @@ class EventType(Enum):
     ON_IM_BATCH_MESSAGE = "on_im_batch_message"  # 消息合并后
     ON_LLM_REQUEST = "on_llm_request"  # LLM请求前
     ON_LLM_RESPONSE = "on_llm_response"  # LLM 原始输出
-    AFTER_XML_PARSE = "after_xml_parse"  # XML 解析后 (MessageChain)
+    AFTER_XML_PARSE = "after_xml_parse"  # XML 解析后 (list[MessageChain | RootTagAction])
     ON_TOOL_RESULT = "on_tool_result"  # 工具调用结果
+    ON_MESSAGE_SENT = "on_message_sent"  # 单条消息发送后
     ON_STEP_RESULT = "on_step_result"  # Agent 步骤结果
     ON_FINAL_RESULT = "on_final_result"  # 最终消息结果
+    ON_LOADED = "on_loaded"            # 所有插件加载完成后
+    ON_SHUTDOWN = "on_shutdown"        # 系统即将关闭
     ON_EXCEPTION = "on_exception"  # 异常发生时
+    ON_CUSTOM_EVENT = "on_custom_event"  # 插件自定义事件
     ...
 
 
-@dataclass
+# eq=False keeps identity-based equality/hash so that del_handler removes the
+# exact handler instance, not a different field-identical one.
+@dataclass(eq=False)
 class EventHandler:
     event_type: EventType
 
@@ -47,9 +53,10 @@ class EventHandler:
     def __gt__(self, other):
         return self.priority > other.priority
 
-    async def exec_handler(self, event, *args, **kwargs):
+    async def exec_handler(self, *args, **kwargs):
+        event = args[0] if args else None
         try:
-            await self.handler(event, *args, **kwargs)
+            await self.handler(*args, **kwargs)
         except Exception as e:
             import traceback as tb
             logger.error(tb.format_exc())

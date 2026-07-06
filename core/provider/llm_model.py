@@ -4,6 +4,7 @@ from typing import Optional, Callable, Literal
 from dataclasses import dataclass, field
 
 from core.agent.tool import ToolSet
+from core.agent.message import OpenAIMessage
 from core.prompt_manager import Prompt
 
 
@@ -33,6 +34,13 @@ class LLMRequest:
     tool_choice: Optional[Literal["auto", "none", "required"]] = None
 
     def __post_init__(self):
+        self.messages = [
+            m if isinstance(m, OpenAIMessage) else OpenAIMessage(**m)
+            for m in self.messages
+        ]
+        # Derive tools list from tool_set when present
+        if self.tool_set:
+            self.tools = self.tool_set.to_list()
         if not self.tool_choice:
             if self.tools:
                 self.tool_choice = "auto"
@@ -41,14 +49,14 @@ class LLMRequest:
 
     def assemble_prompt(self):
         if self.system_prompt:
-            if self.messages and self.messages[0].get("role") == "system":
+            if self.messages and self.messages[0].role == "system":
                 self.messages.pop(0)
             system_prompt = "".join(p.to_string() for p in self.system_prompt if isinstance(p, Prompt))
-            self.messages.insert(0, {"role": "system", "content": system_prompt})
+            self.messages.insert(0, OpenAIMessage(role="system", content=system_prompt))
 
         if self.user_prompt:
             user_prompt = "".join(p.to_string() for p in self.user_prompt if isinstance(p, Prompt))
-            self.messages.append({"role": "user", "content": user_prompt})
+            self.messages.append(OpenAIMessage(role="user", content=user_prompt))
 
 
 @dataclass
@@ -85,6 +93,29 @@ class LLMResponse:
         # Make sure reasoning_content is always string
         if self.reasoning_content is None:
             self.reasoning_content = ""
+
+
+@dataclass
+class LLMStreamChunk:
+    """A single chunk from a streaming LLM response."""
+
+    """Incremental text content for this chunk"""
+    delta_text: str = ""
+
+    """Incremental reasoning content for reasoning models"""
+    delta_reasoning: str = ""
+
+    """Incremental tool call fragments in this chunk only"""
+    tool_calls_delta: list[dict] = field(default_factory=list)
+
+    """Whether this is the final chunk in the stream"""
+    is_final: bool = False
+
+    """Finish reason on the final chunk: stop / tool_calls / content_filter"""
+    finish_reason: str = ""
+
+    """Token usage — only populated on the final chunk"""
+    usage: Optional[dict] = None
 
 
 @dataclass

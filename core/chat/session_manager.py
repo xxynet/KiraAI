@@ -231,6 +231,8 @@ class SessionManager:
             logger.info(f"Memory updated for subagent session {session}")
             return
         self._ensure_session_data(session)
+        from core.agent.message import OpenAIMessage
+        new_chunk = [m.to_dict() if isinstance(m, OpenAIMessage) else m for m in new_chunk]
         with self.memory_lock:
             session_data = self.chat_memory[session]
 
@@ -248,6 +250,6 @@ class SessionManager:
             logger.info(f"Memory deleted for subagent session {session}")
             return
         with self.memory_lock:
-            self.chat_memory.pop(session)
+            self.chat_memory.pop(session, None)
             self._save_memory(self.chat_memory, self.chat_memory_path)
         logger.info(f"Memory deleted for {session}")

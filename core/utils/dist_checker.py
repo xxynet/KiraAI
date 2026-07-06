@@ -23,7 +23,7 @@ import httpx
 
 from core.config import VERSION
 from core.logging_manager import get_logger
-from core.utils.path_utils import get_webui_dist_path
+from core.utils.path_utils import get_webui_dist_path, is_within_directory
 from core.utils.network import get_file_content
 from core.utils.github_api import get_release_assets, pick_fastest_source, verify_sha256
 
@@ -146,6 +146,9 @@ def _extract_dist(zip_bytes: bytes, dist_dir: Path) -> None:
                 continue
 
             out_path = dist_dir / out_name
+            # Reject members whose path escapes dist_dir (Zip-Slip).
+            if not is_within_directory(dist_dir, out_path):
+                raise ValueError(f"Unsafe path in dist archive (zip-slip blocked): {member.filename}")
             out_path.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(member) as src, open(out_path, "wb") as dst:
                 dst.write(src.read())

@@ -3,9 +3,7 @@
     <div class="flex justify-between items-center mb-6">
       <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('sessions.title') }}</h3>
       <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" @click="handleNewSession">
-        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-        </svg>
+        <IconPlus class="w-5 h-5 mr-2" />
         <span>{{ $t('sessions.new') }}</span>
       </button>
     </div>
@@ -71,9 +69,7 @@
           <p class="text-sm text-gray-500 dark:text-gray-400 truncate mt-1">{{ currentSessionId }}</p>
         </div>
         <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-4" @click="editorVisible = false">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-          </svg>
+          <IconClose class="w-6 h-6" />
         </button>
       </div>
       <div class="px-6 py-4 flex-1 overflow-y-auto">
@@ -129,6 +125,7 @@ import { getSessions, getSession, updateSession, deleteSession } from '@/api/ses
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import { IconPlus, IconClose } from '@/components/icons'
 import type { SessionItem } from '@/types'
 
 const { t } = useI18n()

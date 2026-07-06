@@ -6,14 +6,18 @@
       :class="{ open: sidebarOpen }"
       @click="closeSidebar"
     ></div>
+    <div
+      class="route-loading-bar"
+      :class="routePhase"
+    ></div>
     <AppSidebar :open="sidebarOpen" />
     <div class="flex-1 flex flex-col overflow-hidden">
-      <main class="flex-1 overflow-auto">
+      <main class="flex-1 flex flex-col" :class="route.meta.pluginPage ? 'overflow-hidden' : 'overflow-auto'">
         <AppHeader
           :title="pageTitle"
           @toggle-sidebar="toggleSidebar"
         />
-        <PageContainer>
+        <PageContainer :class="{ 'flex-1 min-h-0 !p-0': route.meta.pluginPage }">
           <router-view v-slot="{ Component, route: r }">
             <transition name="page-fade">
               <component :is="Component" :key="r.fullPath" />
@@ -22,20 +26,27 @@
         </PageContainer>
       </main>
     </div>
+    <ChangeTokenModal />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useRouteLoading } from '@/composables/useRouteLoading'
 import { useI18n } from 'vue-i18n'
+import { usePluginMenuStore } from '@/stores/pluginMenu'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
+import ChangeTokenModal from '@/components/common/ChangeTokenModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const pluginMenuStore = usePluginMenuStore()
+
+const { phase: routePhase } = useRouteLoading()
 
 const sidebarOpen = ref(false)
 
@@ -55,6 +66,14 @@ watch(() => route.path, () => {
 })
 
 const pageTitle = computed(() => {
+  // Plugin pages: look up label from store (reactively updates when menus load)
+  if (route.meta.pluginPage) {
+    const pluginId = route.params.pluginId as string
+    const pageRoute = route.params.pageRoute as string
+    const menu = pluginMenuStore.menus.find(m => m.pluginId === pluginId && m.pageRoute === pageRoute)
+    if (menu) return menu.label
+    return route.meta.title as string || t('pluginPage.title')
+  }
   const name = route.name as string | undefined
   if (!name) return ''
   const key = `pages.${name.toLowerCase()}.title`

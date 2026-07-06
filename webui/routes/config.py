@@ -61,6 +61,8 @@ class ConfigRoutes(Routes):
                 "bot_config": bot_config,
                 "models": models,
                 "logging": config.get("logging", {}),
+                "adapters": config.get("adapters", {}),
+                "network": config.get("network", {}),
             },
             "providers": providers,
             "provider_models": provider_models,
@@ -70,18 +72,32 @@ class ConfigRoutes(Routes):
         if not self.lifecycle or not getattr(self.lifecycle, "kira_config", None):
             raise HTTPException(status_code=500, detail="Configuration not available")
         config = self.lifecycle.kira_config
+        # Replace-on-send semantics are intentional: each section sent by the
+        # client fully replaces the stored section so the WebUI can delete items
+        # (e.g. remove an adapter) by omitting them. To avoid type-confusion
+        # corruption, validate that every section *present* in the payload is an
+        # object/dict and reject with HTTP 400 otherwise; sections the client did
+        # not send are left untouched (present-only assignment).
+        for section in ("bot_config", "models", "logging", "adapters", "network"):
+            if section in payload and not isinstance(payload[section], dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid configuration: '{section}' must be an object",
+                )
         bot_config = payload.get("bot_config")
         models = payload.get("models")
         logging_config = payload.get("logging")
+        adapters_config = payload.get("adapters")
+        network_config = payload.get("network")
         updated = False
-        if isinstance(bot_config, dict):
+        if "bot_config" in payload:
             config["bot_config"] = bot_config
             updated = True
-        if isinstance(models, dict):
+        if "models" in payload:
             config["models"] = models
             updated = True
         logging_changed = False
-        if isinstance(logging_config, dict):
+        if "logging" in payload:
             old_logging = deepcopy(config.get("logging", {}))
             logging_changed = logging_config != old_logging
             if logging_changed:
@@ -96,8 +112,16 @@ class ConfigRoutes(Routes):
                     logger.info("Logging configuration applied")
                 except Exception as e:
                     logger.error(f"Failed to apply logging config, not saving: {e}")
+        if "adapters" in payload:
+            config["adapters"] = adapters_config
+            updated = True
+        if "network" in payload:
+            config["network"] = network_config
+            updated = True
         if updated:
             config.save_config()
+            if isinstance(network_config, dict) and self.lifecycle:
+                self.lifecycle._apply_network_env()
             logger.info("Configuration saved")
         return {
             "status": "ok",
@@ -105,5 +129,7 @@ class ConfigRoutes(Routes):
                 "bot_config": config.get("bot_config", {}),
                 "models": config.get("models", {}),
                 "logging": config.get("logging", {}),
+                "adapters": config.get("adapters", {}),
+                "network": config.get("network", {}),
             },
         }

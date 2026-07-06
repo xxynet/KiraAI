@@ -19,6 +19,7 @@ from core.chat.message_elements import (
     Sticker,
     Record,
     Poke,
+    Json,
     File,
     Video
 )
@@ -28,27 +29,41 @@ from core.chat import Session, Group, User
 from .napcat_client import NapCatWebSocketClient, QQMessageChain, QQMessageType
 
 
-def extract_card_info(card_json: str) -> str:
-    card_json = json.loads(card_json)
-    detail = card_json.get("meta", {}).get("detail_1", {})
-    card_json_dic = {
-        "title": detail.get("title", ""),
-        "desc": detail.get("desc", ""),
-        # "icon": detail.get("icon", ""),
-        # "preview": detail.get("preview", ""),
-        # "url": detail.get("url", ""),
-        # "qqdocurl": detail.get("qqdocurl", ""),
-        "appid": detail.get("appid", ""),
-        "nick": detail.get("host", {}).get("nick", ""),
-        "prompt": card_json.get("prompt", ""),
-        "app": card_json.get("app", "")
-    }
-    return json.dumps(card_json_dic, ensure_ascii=False)
+def extract_card_info(card_json: str) -> dict:
+    try:
+        card_json = json.loads(card_json)
+    except (json.JSONDecodeError, TypeError):
+        return {"raw": card_json} if isinstance(card_json, str) else {}
+
+    meta = card_json.get("meta", {})
+    content = (
+        meta.get("detail_1")
+        or meta.get("news")
+        or meta.get("music")
+        or meta
+    )
+
+    result = {}
+
+    # 顶层字段
+    for key in ("app", "prompt", "bizsrc", "view"):
+        val = card_json.get(key, "")
+        if val:
+            result[key] = val
+
+    # 内容字段 (detail_1 / news / music 或 fallback meta)
+    if isinstance(content, dict):
+        for key in ("title", "desc", "jumpUrl", "qqdocurl", "tag"):
+            val = content.get(key, "")
+            if val:
+                result[key] = val
+
+    return result
 
 
 class QQAdapter(IMAdapter):
-    def __init__(self, info, loop: asyncio.AbstractEventLoop, event_bus: asyncio.Queue, llm_api):
-        super().__init__(info, loop, event_bus, llm_api)
+    def __init__(self, info, event_bus: asyncio.Queue):
+        super().__init__(info, event_bus)
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
         self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file", "video", "forward"]
         self.bot: NapCatWebSocketClient = NapCatWebSocketClient()
@@ -103,6 +118,9 @@ class QQAdapter(IMAdapter):
     async def send_group_message(self, group_id, send_message_obj):
         try:
             message_chain = await self._process_outgoing_message(send_message_obj)
+            if not message_chain:
+                self.logger.warning("处理后的消息链为空，跳过群消息发送")
+                return KiraIMSentResult(None, ok=False, err="Empty message chain after processing")
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid, group_id=group_id)
@@ -253,6 +271,11 @@ class QQAdapter(IMAdapter):
         msg_res = KiraIMSentResult(None)
         try:
             message_chain = await self._process_outgoing_message(send_message_obj)
+            if not message_chain:
+                self.logger.warning("处理后的消息链为空，跳过私聊消息发送")
+                msg_res.ok = False
+                msg_res.err = "Empty message chain after processing"
+                return msg_res
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid)
@@ -424,10 +447,10 @@ class QQAdapter(IMAdapter):
                 emoji_desc = self.emoji_dict.get(emoji_id)
                 message_content.append(Emoji(emoji_id, emoji_desc))
             elif ele.get("type") == "image":
-                img_url = ele.get("data", "").get("url", "")
+                img_url = ele.get("data", {}).get("url", "")
 
-                summary = ele.get("data", "").get("summary", "")
-                sub_type = ele.get("data", "").get("sub_type", 0)
+                summary = ele.get("data", {}).get("summary", "")
+                sub_type = ele.get("data", {}).get("sub_type", 0)
 
                 if sub_type == 1 or summary == "[动画表情]":
                     from core.utils.common_utils import image_to_base64
@@ -446,9 +469,9 @@ class QQAdapter(IMAdapter):
                     import traceback
                     self.logger.error(traceback.format_exc())
             elif ele.get("type") == "json":
-                json_card_info = ele.get("data", "").get("data", "")
-                cleaned_card_info = extract_card_info(json_card_info)
-                message_content.append(Text(f"[Json {cleaned_card_info}]"))
+                json_card_info = ele.get("data", {}).get("data", "")
+                card_data = extract_card_info(json_card_info)
+                message_content.append(Json(card_data))
             elif ele.get("type") == "file":
                 try:
                     file_name = ele.get("data").get("file")

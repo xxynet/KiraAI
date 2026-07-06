@@ -35,11 +35,11 @@
       "zh": { "name": "消息处理间隔", "hint": "消息处理间隔，防止操作过快" }
     }
   },
-  "sesdata": {
-    "name": "sesdata",
+  "sessdata": {
+    "name": "sessdata",
     "type": "string",
     "default": "",
-    "hint": "sesdata（From Cookie）",
+    "hint": "sessdata（From Cookie）",
     "locales": {
       "zh": { "name": "SESSDATA", "hint": "SESSDATA（从 Cookie 获取）" }
     }

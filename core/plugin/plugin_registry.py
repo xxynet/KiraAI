@@ -6,8 +6,10 @@ import json
 import sys
 import types
 import httpx
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable, Union
+from typing import Optional, Dict, Any, List, Callable, Literal, Union
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from packaging.version import Version, InvalidVersion
 from core.utils.path_utils import get_data_path, get_config_path
@@ -17,8 +19,28 @@ from core.config import VERSION
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
 from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
+from .plugin_installer import install_requirements
 
 from core.tag import tag_registry, BaseTag
+
+
+@dataclass
+class PluginInfo:
+    plugin_id: str
+    display_name: str
+    version: str = ""
+    author: str = ""
+    description: str = ""
+    repo: Optional[str] = None
+    locales: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    tags: List[str] = field(default_factory=list)
+    core_version: Optional[str] = None
+    builtin: bool = False
+    uninstallable: bool = False
+    hidden: bool = False
+    error: Optional[str] = None
+    status: str = "pending"  # "pending" | "installing" | "loading" | "ready" | "disabled" | "error"
+
 
 logger = get_logger("plugin_manager", "cyan")
 
@@ -36,7 +58,208 @@ _plugin_module_paths: Dict[str, Path] = {}
 """key: module name, value: plugin id"""
 _module_to_plugin: Dict[str, str] = {}
 _plugin_schemas: Dict[str, List[BaseConfigField]] = {}
-_plugin_components: Dict[str, dict] = {}
+
+
+class PageMenu:
+    """Sidebar menu configuration for a plugin page.
+
+    Args:
+        label: Display text — a plain string or a dict of locale→translation
+               (e.g. ``{"zh": "仪表盘", "en": "Dashboard"}``).
+        icon:  Element Plus icon component name (e.g. ``"Monitor"``).
+        order: Sort order in the sidebar (lower = higher, default 100).
+    """
+
+    def __init__(self, label: Union[str, Dict[str, str]], icon: Optional[str] = None,
+                 order: int = 100):
+        if not isinstance(label, (str, dict)):
+            raise TypeError(f"label must be a str or dict, got {type(label).__name__}")
+        if isinstance(label, str):
+            if not label.strip():
+                raise ValueError("label string must not be empty or whitespace")
+        if isinstance(label, dict):
+            for k, v in label.items():
+                if not isinstance(k, str) or not isinstance(v, str):
+                    raise TypeError(f"label dict keys and values must be strings, "
+                                    f"got {type(k).__name__}: {type(v).__name__}")
+                if not v.strip():
+                    raise ValueError(f"label dict value for '{k}' must not be empty or whitespace")
+        if icon is not None and not isinstance(icon, str):
+            raise TypeError(f"icon must be a string if provided, got {type(icon).__name__}")
+        if not isinstance(order, int) or isinstance(order, bool):
+            raise TypeError(f"order must be an integer, got {type(order).__name__}")
+        self.label: Union[str, Dict[str, str]] = label
+        self.icon: Optional[str] = icon
+        self.order: int = order
+
+    def dict(self) -> dict:
+        return {"label": self.label, "icon": self.icon, "order": self.order}
+
+
+class PluginPageSource(Enum):
+    FOLDER = "folder"
+    URL = "url"
+    HTML = "html"
+
+
+class PluginPage:
+    """Flexible plugin page descriptor.
+
+    Use factory methods to create instances:
+
+    - ``PluginPage.from_folder("./web")`` — serve a directory of static files
+      (recommended for pre-built SPAs or plain HTML).
+    - ``PluginPage.from_url("https://example.com")`` — redirect to an external URL.
+    - ``PluginPage.from_html("<h1>Hello</h1>")`` — serve inline HTML.
+
+    Use ``@register.page()`` decorator parameters to control *auth* and *menu*.
+    """
+
+    def __init__(self, source: PluginPageSource, source_value: str):
+        self.source = source
+        self.source_value = source_value
+
+    @classmethod
+    def from_folder(cls, path: str) -> "PluginPage":
+        """Serve static files from a directory relative to the plugin root.
+
+        Only files *inside* the plugin directory are accessible — any path
+        that resolves outside the plugin root is rejected at registration time.
+
+        Args:
+            path: Directory path relative to the plugin root, e.g. ``"./web"``.
+        """
+        return cls(PluginPageSource.FOLDER, path)
+
+    @classmethod
+    def from_url(cls, url: str) -> "PluginPage":
+        """Redirect the iframe to an external URL.
+
+        Args:
+            url: Full URL to redirect to, e.g. ``"https://example.com"``.
+        """
+        return cls(PluginPageSource.URL, url)
+
+    @classmethod
+    def from_html(cls, html: str) -> "PluginPage":
+        """Serve a static HTML string.
+
+        Args:
+            html: Raw HTML content.
+        """
+        return cls(PluginPageSource.HTML, html)
+
+
+@dataclass
+class PluginComponents:
+    """Typed container for all components registered by a single plugin."""
+    tools: Dict[str, dict] = field(default_factory=dict)
+    tool_funcs: Dict[str, Callable] = field(default_factory=dict)
+    tags: List[dict] = field(default_factory=list)
+    tag_funcs: Dict[str, Callable] = field(default_factory=dict)
+    hooks: List[EventHandler] = field(default_factory=list)
+    pages: List[dict] = field(default_factory=list)
+    page_funcs: Dict[str, Callable] = field(default_factory=dict)
+    api_routes: List[dict] = field(default_factory=list)
+    api_route_funcs: Dict[str, Callable] = field(default_factory=dict)
+    ws_routes: List[dict] = field(default_factory=list)
+    ws_route_funcs: Dict[str, Callable] = field(default_factory=dict)
+    static_dirs: List[dict] = field(default_factory=list)
+    widgets: List[dict] = field(default_factory=list)
+    widget_funcs: Dict[str, Callable] = field(default_factory=dict)
+
+    def has_any(self) -> bool:
+        return bool(self.tools or self.tags or self.hooks or self.pages
+                    or self.api_routes or self.ws_routes or self.static_dirs or self.widgets)
+
+    def register_tool(self, name: str, description: str, params: dict, func: Callable):
+        self.tools[name] = {
+            "name": name,
+            "description": description,
+            "parameters": params,
+            "func": func,
+        }
+        self.tool_funcs[name] = func
+
+    def register_tag(self, name: str, description: str, func: Callable, parent: Optional[str] = "msg"):
+        self.tags.append({"name": name, "description": description, "parent": parent})
+        self.tag_funcs[name] = func
+
+    def register_hook(self, handler: Callable, priority: Union[Priority, int],
+                      event_type: EventType):
+        eh = EventHandler(
+            event_type=event_type,
+            priority=priority,
+            handler=handler,
+            desc=handler.__doc__,
+        )
+        self.hooks.append(eh)
+
+    def register_page(self, route: str, func: Callable, auth: bool = True,
+                      menu: Optional[Union[dict, "PageMenu"]] = None,
+                      page_obj: Optional["PluginPage"] = None,
+                      returns_plugin_page: bool = False):
+        if isinstance(menu, dict):
+            menu = PageMenu(**menu)
+        self.pages.append({
+            "route": route,
+            "func": func,
+            "auth": auth,
+            "menu": menu,
+            "page": page_obj,
+            "returns_plugin_page": returns_plugin_page,
+        })
+        if func is not None:
+            self.page_funcs[func.__name__] = func
+
+    def register_static(self, path: str, directory: str, html: bool = False):
+        self.static_dirs.append({
+            "path": path,
+            "directory": directory,
+            "html": html,
+        })
+
+    def register_api(self, method: str, path: str, func: Callable,
+                     auth: bool = True, **kwargs):
+        self.api_routes.append({
+            "method": method.upper(),
+            "path": path,
+            "func": func,
+            "auth": auth,
+            "kwargs": kwargs,
+        })
+        self.api_route_funcs[func.__name__] = func
+
+    def register_ws(self, path: str, func: Callable, auth: bool = True):
+        self.ws_routes.append({
+            "path": path,
+            "func": func,
+            "auth": auth,
+        })
+        self.ws_route_funcs[func.__name__] = func
+
+    def register_widget(self, widget_id: str, label: Union[str, Dict[str, str]],
+                        icon: str,
+                        color: Literal["blue", "green", "purple", "yellow", "red", "gray"],
+                        order: int,
+                        size: Literal["small", "wide"],
+                        func: Callable):
+        self.widgets.append({
+            "widget_id": widget_id,
+            "label": label,
+            "icon": icon,
+            "color": color,
+            "order": order,
+            "size": size,
+        })
+        self.widget_funcs[widget_id] = func
+
+
+_plugin_components: Dict[str, PluginComponents] = {}
+
+
+def _ensure_components(plugin_id: str) -> PluginComponents:
+    return _plugin_components.setdefault(plugin_id, PluginComponents())
 
 """Plugins that failed to load: {plugin_id: {"manifest": {...}, "error": "..."}}"""
 _plugin_load_errors: Dict[str, Dict[str, Any]] = {}
@@ -44,12 +267,20 @@ _plugin_load_errors: Dict[str, Dict[str, Any]] = {}
 """plugin_ids whose API routes have already been added to FastAPI."""
 _plugin_api_registered: set[str] = set()
 
+"""plugin_ids whose WS routes have already been added to FastAPI."""
+_plugin_ws_registered: set[str] = set()
+
+"""Discovered plugin metadata: {plugin_id: PluginInfo}"""
+_plugin_infos: Dict[str, PluginInfo] = {}
+
 
 def get_obj_plugin_id(obj: Any):
+    # 1. Try the module where obj is defined (works for functions/classes)
     module = inspect.getmodule(obj)
     module_name = module.__name__ if module else ""
     plugin_id = _module_to_plugin.get(module_name, "")
 
+    # 2. Try manifest.json next to the module file
     if not plugin_id and module and getattr(module, "__file__", None):
         module_path = Path(module.__file__).resolve()
         plugin_root = module_path.parent
@@ -65,6 +296,43 @@ def get_obj_plugin_id(obj: Any):
                 _module_to_plugin[module_name] = plugin_id
             except Exception:
                 plugin_id = plugin_root.name
+
+    # 3. Walk the call stack to find the caller's module.
+    #    Needed when obj is an instance of a framework class (e.g. PluginPage)
+    #    whose __module__ points to the framework, not the plugin.
+    if not plugin_id:
+        for depth in range(1, 10):
+            frame = inspect.currentframe()
+            for _ in range(depth):
+                if frame is None:
+                    break
+                frame = frame.f_back
+            if frame is None:
+                break
+            caller_module = inspect.getmodule(frame)
+            if caller_module is None:
+                continue
+            caller_name = caller_module.__name__
+            if caller_name in _module_to_plugin:
+                plugin_id = _module_to_plugin[caller_name]
+                break
+            if caller_module.__file__ and "plugin_registry" not in (caller_module.__file__ or ""):
+                caller_path = Path(caller_module.__file__).resolve()
+                caller_root = caller_path.parent
+                manifest_path = caller_root / "manifest.json"
+                if manifest_path.exists():
+                    try:
+                        with manifest_path.open("r", encoding="utf-8") as f:
+                            manifest = json.load(f)
+                        plugin_id = manifest.get("plugin_id") or caller_root.name
+                        _plugin_manifests.setdefault(plugin_id, manifest)
+                        _plugin_module_dirs.setdefault(plugin_id, caller_root.name)
+                        _plugin_module_paths.setdefault(plugin_id, caller_root)
+                        _module_to_plugin[caller_name] = plugin_id
+                        break
+                    except Exception:
+                        pass
+
     return plugin_id
 
 
@@ -74,78 +342,62 @@ class RegisterDeco:
     def tool(name: str, description: str, params: dict):
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            tools = plugin_entry.setdefault("tools", {})
-            tool_funcs = plugin_entry.setdefault("tool_funcs", {})
-            tools[name] = {
-                "name": name,
-                "description": description,
-                "parameters": params,
-                "func": func,
-            }
-            tool_funcs[name] = func
-
+            _ensure_components(plugin_id).register_tool(name, description, params, func)
             return func
-
         return decorator
 
     @staticmethod
-    def tag(name: str, description: str):
+    def tag(name: str, description: str, parent: Optional[str] = "msg"):
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            tags = plugin_entry.setdefault("tags", [])
-            tag_funcs = plugin_entry.setdefault("tag_funcs", {})
-            tags.append({
-                "name": name,
-                "description": description
-            })
-            tag_funcs[name] = func
+            _ensure_components(plugin_id).register_tag(name, description, func, parent)
             return func
         return decorator
 
     @staticmethod
-    def page(route: str, auth: bool = True, menu: Optional[dict] = None):
+    def page(route: str, auth: bool = True, menu: Optional[Union[dict, "PageMenu"]] = None):
         """Register a plugin page endpoint.
 
-        route: URL path relative to plugin prefix, e.g., "/dashboard"
-               Final route: /page/plugin/{plugin_id}{route}
-        auth:  Require JWT auth (default True)
-        menu:  Optional menu configuration for sidebar integration
+        Accepts a ``PluginPage`` object or a function that returns one::
+
+            @register.page("/dashboard", menu=PageMenu(label={"zh": "仪表盘", "en": "Dashboard"}, icon="Monitor"))
+            def dashboard(self):
+                return PluginPage.from_folder("./web")
+
+        Args:
+            route: URL path relative to plugin prefix, e.g. ``"/dashboard"``.
+                   Final route: ``/page/plugin/{plugin_id}{route}``
+            auth:  Require JWT auth (default ``True``).
+            menu:  Optional sidebar menu config — a ``PageMenu`` object or a dict
+                   with keys ``label`` (str or locale dict), ``icon``, ``order``.
         """
-        def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            pages = plugin_entry.setdefault("pages", [])
-            page_funcs = plugin_entry.setdefault("page_funcs", {})
-            pages.append({
-                "route": route,
-                "func": func,
-                "auth": auth,
-                "menu": menu,
-            })
-            page_funcs[func.__name__] = func
-            return func
+        def decorator(obj):
+            plugin_id = get_obj_plugin_id(obj)
+            comp = _ensure_components(plugin_id)
+
+            if isinstance(obj, PluginPage):
+                comp.register_page(route, None, auth, menu, page_obj=obj)
+                return obj
+
+            # Function that returns PluginPage — defer call to init time
+            # where the plugin instance is available.
+            comp.register_page(route, obj, auth, menu, returns_plugin_page=True)
+            comp.page_funcs[obj.__name__] = obj
+            return obj
         return decorator
 
     @staticmethod
     def static(path: str, directory: str, html: bool = False):
         """Register a static file directory.
 
-        path:      URL path prefix relative to plugin, e.g., "/static"
-                   Final URL: /page/plugin/{plugin_id}{path}
+        path:      URL path prefix relative to plugin, e.g., "/assets"
+                   Final URL: /static/plugin/{plugin_id}{path}
         directory: Local directory path relative to plugin root
         html:      Try to serve index.html for directory requests
         """
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            static_dirs = plugin_entry.setdefault("static_dirs", [])
-            static_dirs.append({
-                "path": path,
-                "directory": directory,
-                "html": html,
-            })
+            _ensure_components(plugin_id).register_static(path, directory, html)
             return func
         return decorator
 
@@ -161,17 +413,51 @@ class RegisterDeco:
         """
         def decorator(func: Callable):
             plugin_id = get_obj_plugin_id(func)
-            plugin_entry = _plugin_components.setdefault(plugin_id, {})
-            api_routes = plugin_entry.setdefault("api_routes", [])
-            api_funcs = plugin_entry.setdefault("api_route_funcs", {})
-            api_routes.append({
-                "method": method.upper(),
-                "path":   path,
-                "func":   func,
-                "auth":   auth,
-                "kwargs": kwargs,
-            })
-            api_funcs[func.__name__] = func
+            _ensure_components(plugin_id).register_api(method, path, func, auth, **kwargs)
+            return func
+        return decorator
+
+    @staticmethod
+    def ws(path: str, auth: bool = True):
+        """Register a plugin WebSocket endpoint.
+
+        path: Path relative to the plugin prefix, e.g. "/stream"
+              Final route: /ws/plugin/{plugin_id}{path}
+        auth: Require JWT auth during the WS handshake (default True).
+              When enabled, ``ws.state.user`` is set before the endpoint runs.
+        """
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            _ensure_components(plugin_id).register_ws(path, func, auth)
+            return func
+        return decorator
+
+    @staticmethod
+    def widget(label: Union[str, Dict[str, str]], icon: str = "Box",
+               color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue",
+               order: int = 100,
+               size: Literal["small", "wide"] = "small"):
+        """Register a widget on the Overview dashboard page.
+
+        The decorated function is called on each ``GET /api/overview`` request
+        and should return a plain string:
+        - For small widgets: the display value (e.g. ``"42"``)
+        - For wide widgets: HTML content (e.g. ``"<table>...</table>"``)
+
+        Args:
+            label: Widget title — plain string or locale dict
+                   (e.g. ``{"zh": "消息数", "en": "Messages"}``).
+            icon:  Element Plus icon name (e.g. ``"ChatDotRound"``).
+                   Ignored for wide widgets.
+            color: Theme color — one of blue/green/purple/yellow/red/gray.
+            order: Sort position in the widget grid (lower = higher).
+            size:  ``"small"`` (default, stat card) or ``"wide"`` (full-width).
+        """
+        def decorator(func: Callable):
+            plugin_id = get_obj_plugin_id(func)
+            widget_id = f"{plugin_id}:{func.__name__}"
+            _ensure_components(plugin_id).register_widget(
+                widget_id, label, icon, color, order, size, func)
             return func
         return decorator
 
@@ -221,16 +507,7 @@ class OnEventDeco:
     @staticmethod
     def _register_hook(func: Callable, priority: Union[Priority, int], event_type: EventType):
         plugin_id = get_obj_plugin_id(func)
-        eh = EventHandler(
-            event_type=event_type,
-            priority=priority,
-            handler=func,
-            desc=func.__doc__
-        )
-
-        plugin_entry = _plugin_components.setdefault(plugin_id, {})
-        hooks = plugin_entry.setdefault("hooks", [])
-        hooks.append(eh)
+        _ensure_components(plugin_id).register_hook(func, priority, event_type)
 
     def im_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
@@ -274,6 +551,12 @@ class OnEventDeco:
             return func
         return decorator
 
+    def message_sent(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_MESSAGE_SENT)
+            return func
+        return decorator
+
     def step_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_STEP_RESULT)
@@ -286,9 +569,31 @@ class OnEventDeco:
             return func
         return decorator
 
+    def loaded(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        """Fired once after ALL plugins have been loaded (system-level lifecycle)."""
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_LOADED)
+            return func
+        return decorator
+
+    def shutdown(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        """Fired once before system shutdown begins (system-level lifecycle)."""
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_SHUTDOWN)
+            return func
+        return decorator
+
     def exception(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_EXCEPTION)
+            return func
+        return decorator
+
+    def custom_event(self, priority: Union[Priority, int] = Priority.MEDIUM, event_name: Optional[str] = None):
+        def decorator(func: Callable):
+            if event_name is not None:
+                func._custom_event_name = event_name
+            self._register_hook(func, priority, EventType.ON_CUSTOM_EVENT)
             return func
         return decorator
 
@@ -299,16 +604,25 @@ on = OnEventDeco()
 register_tool = register.tool
 
 
-def _build_tag_inst(tag_name: str, tag_description: str, func: Callable):
+def _build_tag_inst(tag_name: str, tag_description: str, func: Callable, tag_parent: Optional[str] = "msg"):
     class TagInst(BaseTag):
         name = tag_name
         description = tag_description
+        parent = tag_parent
 
         async def handle(self, value: str, **kwargs):
             res = await func(value, **kwargs)
             return res
 
     return TagInst()
+
+
+def _compare_versions(current: str, latest: str) -> bool:
+    """Return True if latest > current. Strips leading 'v'."""
+    try:
+        return Version(latest.lstrip("v")) > Version(current.lstrip("v"))
+    except InvalidVersion:
+        return False
 
 
 class PluginManager:
@@ -333,8 +647,13 @@ class PluginManager:
         Also registers routes for any plugins that were already initialized before this call.
         """
         self._web_app = app
+        # Store reference so WS endpoints can access the manager without
+        # capturing it in closures (which breaks FastAPI's deepcopy during
+        # dependency resolution for WebSocket routes).
+        app.state.plugin_manager = self
         for plugin_id in list(self.plugin_instances.keys()):
             self._register_plugin_apis_for(plugin_id)
+            self._register_plugin_ws_for(plugin_id)
             self._register_plugin_pages_for(plugin_id)
             self._register_plugin_static_for(plugin_id)
 
@@ -380,37 +699,41 @@ class PluginManager:
         self.plugin_enabled[plugin_id] = bool(enabled)
         self._save_plugin_state()
 
-        is_builtin = self.is_builtin_plugin(plugin_id)
-
         if enabled and not previous:
-            if is_builtin:
-                await self.init_plugin(plugin_id)
-            else:
-                # User plugin: always re-import from disk for fresh code
-                plugin_dir = _plugin_module_paths.get(plugin_id)
-                if plugin_dir and plugin_dir.exists():
-                    await self.load_plugin_from_dir(plugin_dir)
-                else:
-                    await self.init_plugin(plugin_id)
+            # Toggle: plugin code unchanged, just re-initialize from existing class
+            await self.init_plugin(plugin_id)
+            if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "ready"
         elif not enabled and previous:
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "disabled"
             try:
                 await self.terminate(plugin_id)
-                if not is_builtin:
-                    # User plugin: purge class & modules so next enable re-imports fresh
-                    _plugin_classes.pop(plugin_id, None)
-                    _plugin_schemas.pop(plugin_id, None)
-                    self._cleanup_plugin_modules(plugin_id)
             except Exception as e:
                 logger.error(f"Failed to terminate plugin {plugin_id} when disabling: {e}")
 
     def get_registered_plugins(self) -> Dict[str, type[BasePlugin]]:
         return dict(_plugin_classes)
 
+    def has_plugin(self, plugin_id: str) -> bool:
+        return plugin_id in _plugin_infos
+
+    def list_plugins(self) -> List[PluginInfo]:
+        return list(_plugin_infos.values())
+
+    def get_plugin_info(self, plugin_id: str) -> Optional[PluginInfo]:
+        return _plugin_infos.get(plugin_id)
+
     def get_plugin_manifest(self, name: str) -> Dict[str, Any]:
         return _plugin_manifests.get(name, {})
 
     def get_plugin_load_errors(self) -> Dict[str, Dict[str, Any]]:
         return dict(_plugin_load_errors)
+
+    def _get_pypi_mirror(self) -> Optional[str]:
+        if self.ctx and hasattr(self.ctx, "config"):
+            return (self.ctx.config.get("network") or {}).get("pypi_mirror") or None
+        return None
 
     def get_plugin_module_dir(self, name: str) -> str:
         return _plugin_module_dirs.get(name, "")
@@ -479,25 +802,23 @@ class PluginManager:
             await self.init_plugin(plugin_name)
         return dict(current_cfg)
 
-    def get_plugin_components(self) -> Dict[str, dict]:
+    def get_plugin_components(self) -> Dict[str, PluginComponents]:
         return dict(_plugin_components)
 
     def get_plugin_tools(self, plugin_name: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         if plugin_name is None:
-            return {name: comp.get("tools", {}) for name, comp in _plugin_components.items()}
-        entry = _plugin_components.get(plugin_name, {})
-        return entry.get("tools", {})
+            return {pid: dict(comp.tools) for pid, comp in _plugin_components.items()}
+        comp = _plugin_components.get(plugin_name)
+        return dict(comp.tools) if comp else {}
 
     def _register_plugin_tools_for(self, plugin_id: str) -> None:
-        comp = _plugin_components.get(plugin_id, {})
+        comp = _plugin_components.get(plugin_id)
         if not comp:
             return
-        tools = comp.get("tools", {})
-        tool_funcs = comp.get("tool_funcs", {})
         plugin_instance = self.plugin_instances.get(plugin_id)
         tool_names: list[str] = []
-        for tool_name, meta in tools.items():
-            func = tool_funcs.get(tool_name)
+        for tool_name, meta in comp.tools.items():
+            func = comp.tool_funcs.get(tool_name)
             if not func:
                 continue
             bound_func = func
@@ -514,12 +835,11 @@ class PluginManager:
             logger.info(f"Registered {len(tool_names)} tools from {plugin_id}: {tool_names}")
 
     def _register_plugin_hooks_for(self, plugin_id: str):
-        comp = _plugin_components.get(plugin_id, {})
+        comp = _plugin_components.get(plugin_id)
         if not comp:
             return
-        hooks = comp.get("hooks", [])
         plugin_instance = self.plugin_instances.get(plugin_id)
-        for hook in hooks:
+        for hook in comp.hooks:
             bound_handler = hook.handler
             if plugin_instance is not None and bound_handler is not None and hasattr(
                 plugin_instance, bound_handler.__name__
@@ -529,20 +849,18 @@ class PluginManager:
                     bound_handler = candidate
             hook.handler = bound_handler
             event_handler_reg.register(hook)
-        if hooks:
-            logger.info(f"Registered {len(hooks)} hooks from {plugin_id}")
+        if comp.hooks:
+            logger.info(f"Registered {len(comp.hooks)} hooks from {plugin_id}")
 
     def _register_plugin_tags_for(self, plugin_id: str):
-        comp = _plugin_components.get(plugin_id, {})
+        comp = _plugin_components.get(plugin_id)
         if not comp:
             return
-        tags = comp.get("tags", [])
-        tag_funcs = comp.get("tag_funcs", {})
         plugin_instance = self.plugin_instances.get(plugin_id)
         tag_names: list[str] = []
-        for tag_meta in tags:
+        for tag_meta in comp.tags:
             tag_name = tag_meta["name"]
-            func = tag_funcs.get(tag_name)
+            func = comp.tag_funcs.get(tag_name)
             if not func:
                 continue
             bound_func = func
@@ -551,7 +869,8 @@ class PluginManager:
             tag_registry.register(_build_tag_inst(
                 tag_name,
                 tag_meta["description"],
-                bound_func
+                bound_func,
+                tag_meta.get("parent", "msg")
             ))
             tag_names.append(tag_name)
         if tag_names:
@@ -600,9 +919,8 @@ class PluginManager:
     def _register_plugin_apis_for(self, plugin_id: str) -> None:
         if self._web_app is None:
             return
-        comp = _plugin_components.get(plugin_id, {})
-        api_routes = comp.get("api_routes", [])
-        if not api_routes:
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.api_routes:
             return
 
         # Routes already in FastAPI: the dynamic_endpoint always looks up the
@@ -625,7 +943,7 @@ class PluginManager:
 
         registered: List[str] = []
 
-        for route in api_routes:
+        for route in comp.api_routes:
             func = route["func"]
             func_name = func.__name__
             full_path = f"/api/plugin/{plugin_id}/{route['path'].lstrip('/')}"
@@ -671,14 +989,67 @@ class PluginManager:
         if registered:
             logger.info(f"Registered {len(registered)} API routes from {plugin_id}: {registered}")
 
+    def _register_plugin_ws_for(self, plugin_id: str) -> None:
+        """Register plugin WebSocket routes on the FastAPI app.
+
+        Note: unlike HTTP endpoints, WS endpoints cannot use Depends with
+        closures that capture non-picklable objects (e.g. PluginManager),
+        because FastAPI deepcopies dependencies during WS dependency resolution.
+        Instead, the manager is accessed via ``ws.app.state.plugin_manager``.
+        """
+        if self._web_app is None:
+            return
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.ws_routes:
+            return
+        if plugin_id in _plugin_ws_registered:
+            return
+
+        from fastapi import Depends, WebSocket
+        from webui.routes.auth import require_ws_auth
+
+        _plugin_ws_registered.add(plugin_id)
+
+        registered: List[str] = []
+
+        for route in comp.ws_routes:
+            func = route["func"]
+            func_name = func.__name__
+            pid = plugin_id
+            full_path = f"/ws/plugin/{plugin_id}/{route['path'].lstrip('/')}"
+
+            async def dynamic_endpoint(ws: WebSocket, _pid=pid, _fname=func_name):
+                mgr = ws.app.state.plugin_manager
+                if not mgr.is_plugin_enabled(_pid):
+                    await ws.close(code=1011, reason="Plugin disabled")
+                    return
+                inst = mgr.plugin_instances.get(_pid)
+                if inst is None:
+                    await ws.close(code=1011, reason="Plugin not available")
+                    return
+                await getattr(inst, _fname)(ws)
+
+            dependencies = []
+            if route["auth"]:
+                dependencies.append(Depends(require_ws_auth))
+
+            self._web_app.add_api_websocket_route(
+                path=full_path,
+                endpoint=dynamic_endpoint,
+                dependencies=dependencies,
+            )
+            registered.append(full_path)
+
+        if registered:
+            logger.info(f"Registered {len(registered)} WS routes from {plugin_id}: {registered}")
+
     def _register_plugin_pages_for(self, plugin_id: str) -> None:
         """Register plugin page routes for URL access."""
         if self._web_app is None:
             return
 
-        comp = _plugin_components.get(plugin_id, {})
-        pages = comp.get("pages", [])
-        if not pages:
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.pages:
             return
 
         # Track registered pages to avoid duplicates
@@ -691,56 +1062,298 @@ class PluginManager:
 
         import typing
         from fastapi import Depends, HTTPException
+        from fastapi.responses import HTMLResponse
+        from starlette.responses import RedirectResponse
         from webui.routes.auth import require_auth
 
         mgr = self
+        plugin_root = _plugin_module_paths.get(plugin_id)
         registered: List[str] = []
 
-        for page in pages:
-            func = page["func"]
-            func_name = func.__name__
+        for page in comp.pages:
+            page_obj = page.get("page")
             route_path = page["route"].lstrip('/')
             full_path = f"/page/plugin/{plugin_id}/{route_path}"
+            need_auth = page["auth"]
 
             # Handle catch-all routes (e.g., /{path:path})
             if '{' in route_path and ':path}' in route_path:
                 full_path = f"/page/plugin/{plugin_id}/" + "{path:path}"
 
-            # Resolve annotations eagerly using the plugin module's own globals
-            try:
-                resolved_hints = typing.get_type_hints(func, globalns=func.__globals__)
-            except Exception:
-                resolved_hints = {}
+            # ── PluginPage object-based pages ──────────────────────────────
+            if page_obj is not None:
+                if page_obj.source == PluginPageSource.FOLDER:
+                    # Validate path: must stay within plugin root
+                    if plugin_root is None:
+                        logger.error(f"Plugin {plugin_id}: no plugin root, cannot serve folder page")
+                        continue
+                    try:
+                        folder_path = (plugin_root / page_obj.source_value).resolve()
+                        plugin_root_resolved = plugin_root.resolve()
+                    except (OSError, ValueError) as e:
+                        logger.error(f"Plugin {plugin_id}: invalid folder path: {e}")
+                        continue
+                    if not folder_path.is_relative_to(plugin_root_resolved):
+                        logger.error(
+                            f"Plugin {plugin_id}: folder path '{page_obj.source_value}' "
+                            f"escapes plugin root — rejected"
+                        )
+                        continue
+                    if not folder_path.is_dir():
+                        logger.error(
+                            f"Plugin {plugin_id}: folder not found: {page_obj.source_value}"
+                        )
+                        continue
 
-            params = [
-                p.replace(annotation=resolved_hints.get(name, p.annotation))
-                for name, p in inspect.signature(func).parameters.items()
-                if name != "self"
-            ]
+                    # Mount using PluginPageStaticFiles with integrated auth check
+                    from fastapi.staticfiles import StaticFiles
 
-            # Capture loop variables via default args to avoid closure issues
-            async def dynamic_page_endpoint(
-                _pid=plugin_id, _fname=func_name, _mgr=mgr, **kwargs
-            ):
-                inst = _mgr.plugin_instances.get(_pid)
+                    class PluginPageStaticFiles(StaticFiles):
+                        """StaticFiles with plugin-enabled + optional auth gating."""
+                        def __init__(self, directory: str, html: bool = True):
+                            super().__init__(directory=directory, html=html)
+
+                        async def __call__(self, scope, receive, send):
+                            if scope["type"] == "http":
+                                from starlette.requests import Request as StarletteRequest
+                                from webui.utils import verify_session_token
+
+                                request = StarletteRequest(scope)
+                                # Plugin-enabled check
+                                if not mgr.is_plugin_enabled(plugin_id):
+                                    response = HTMLResponse(
+                                        content='{"detail":"Plugin disabled"}',
+                                        status_code=404,
+                                    )
+                                    await response(scope, receive, send)
+                                    return
+                                # Auth check
+                                if need_auth:
+                                    token = None
+                                    auth_header = request.headers.get("authorization", "")
+                                    if auth_header.startswith("Bearer "):
+                                        token = auth_header.split(" ", 1)[1]
+                                    if not token:
+                                        token = request.cookies.get("kira_token")
+                                    if not token:
+                                        response = HTMLResponse(
+                                            content='{"detail":"Not authenticated"}',
+                                            status_code=401,
+                                        )
+                                        await response(scope, receive, send)
+                                        return
+                                    # Validate token
+                                    try:
+                                        verify_session_token(token, request.app.state)
+                                    except Exception:
+                                        response = HTMLResponse(
+                                            content='{"detail":"Invalid token"}',
+                                            status_code=401,
+                                        )
+                                        await response(scope, receive, send)
+                                        return
+                            await super().__call__(scope, receive, send)
+
+                    try:
+                        self._web_app.mount(
+                            full_path,
+                            PluginPageStaticFiles(
+                                directory=str(folder_path),
+                                html=True,
+                            ),
+                            name=f"plugin:{plugin_id}:page:{route_path}",
+                        )
+                        registered.append(f"{full_path} (folder: {page_obj.source_value})")
+                    except Exception as e:
+                        logger.error(f"Plugin {plugin_id}: failed to mount folder page: {e}")
+
+                elif page_obj.source == PluginPageSource.URL:
+                    url = page_obj.source_value
+                    dependencies = []
+                    if need_auth:
+                        dependencies.append(Depends(require_auth))
+
+                    async def redirect_endpoint(_url=url):
+                        return RedirectResponse(url=_url)
+
+                    self._web_app.add_api_route(
+                        path=full_path,
+                        endpoint=redirect_endpoint,
+                        methods=["GET"],
+                        dependencies=dependencies,
+                        tags=[f"plugin:{plugin_id}"],
+                    )
+                    registered.append(f"{full_path} (url: {url})")
+
+                elif page_obj.source == PluginPageSource.HTML:
+                    html_content = page_obj.source_value
+                    dependencies = []
+                    if need_auth:
+                        dependencies.append(Depends(require_auth))
+
+                    async def html_endpoint(_html=html_content):
+                        return HTMLResponse(content=_html)
+
+                    self._web_app.add_api_route(
+                        path=full_path,
+                        endpoint=html_endpoint,
+                        methods=["GET"],
+                        dependencies=dependencies,
+                        tags=[f"plugin:{plugin_id}"],
+                    )
+                    registered.append(f"{full_path} (html)")
+
+                continue
+
+            # ── Function annotated -> PluginPage (deferred call) ─────────
+            func = page["func"]
+            if page.get("returns_plugin_page"):
+                # The function returns PluginPage but was registered as a
+                # function (e.g. a class method). Call it now that the
+                # plugin instance is available to get the PluginPage object.
+                inst = mgr.plugin_instances.get(plugin_id)
                 if inst is None:
-                    raise HTTPException(status_code=503, detail="Plugin not available")
-                return await getattr(inst, _fname)(**kwargs)
+                    logger.error(f"Plugin {plugin_id}: instance not available for {func.__name__}")
+                    continue
+                try:
+                    raw = getattr(inst, func.__name__)()
+                    import asyncio
+                    if asyncio.iscoroutine(raw) or asyncio.isfuture(raw):
+                        # Async functions that return PluginPage can't be
+                        # awaited here (sync context). Use sync def instead.
+                        logger.error(
+                            f"Plugin {plugin_id}: {func.__name__}() is async but "
+                            f"returns PluginPage — use sync def for from_folder"
+                        )
+                        continue
+                    page_obj = raw
+                except Exception as e:
+                    logger.error(f"Plugin {plugin_id}: failed to call {func.__name__}(): {e}")
+                    continue
 
-            dynamic_page_endpoint.__signature__ = inspect.Signature(params)
+                if not isinstance(page_obj, PluginPage):
+                    logger.error(f"Plugin {plugin_id}: {func.__name__}() did not return PluginPage")
+                    continue
 
-            dependencies = []
-            if page["auth"]:
-                dependencies.append(Depends(require_auth))
+                # Merge decorator-level overrides (menu already handled by register_page)
 
-            self._web_app.add_api_route(
-                path=full_path,
-                endpoint=dynamic_page_endpoint,
-                methods=["GET"],
-                dependencies=dependencies,
-                tags=[f"plugin:{plugin_id}"],
-            )
-            registered.append(full_path)
+                # Handle the PluginPage (same logic as object-based above)
+                if page_obj.source == PluginPageSource.FOLDER:
+                    if plugin_root is None:
+                        logger.error(f"Plugin {plugin_id}: no plugin root, cannot serve folder page")
+                        continue
+                    try:
+                        folder_path = (plugin_root / page_obj.source_value).resolve()
+                        plugin_root_resolved = plugin_root.resolve()
+                    except (OSError, ValueError) as e:
+                        logger.error(f"Plugin {plugin_id}: invalid folder path: {e}")
+                        continue
+                    if not folder_path.is_relative_to(plugin_root_resolved):
+                        logger.error(
+                            f"Plugin {plugin_id}: folder path '{page_obj.source_value}' "
+                            f"escapes plugin root — rejected"
+                        )
+                        continue
+                    if not folder_path.is_dir():
+                        logger.error(
+                            f"Plugin {plugin_id}: folder not found: {page_obj.source_value}"
+                        )
+                        continue
+
+                    from fastapi.staticfiles import StaticFiles
+
+                    class DeferredPluginPageStaticFiles(StaticFiles):
+                        def __init__(self, directory: str, html: bool = True):
+                            super().__init__(directory=directory, html=html)
+
+                        async def __call__(self, scope, receive, send):
+                            if scope["type"] == "http":
+                                from starlette.requests import Request as StarletteRequest
+                                from webui.utils import verify_session_token
+
+                                request = StarletteRequest(scope)
+                                if not mgr.is_plugin_enabled(plugin_id):
+                                    response = HTMLResponse(
+                                        content='{"detail":"Plugin disabled"}',
+                                        status_code=404,
+                                    )
+                                    await response(scope, receive, send)
+                                    return
+                                if need_auth:
+                                    token = None
+                                    auth_header = request.headers.get("authorization", "")
+                                    if auth_header.startswith("Bearer "):
+                                        token = auth_header.split(" ", 1)[1]
+                                    if not token:
+                                        token = request.cookies.get("kira_token")
+                                    if not token:
+                                        response = HTMLResponse(
+                                            content='{"detail":"Not authenticated"}',
+                                            status_code=401,
+                                        )
+                                        await response(scope, receive, send)
+                                        return
+                                    try:
+                                        verify_session_token(token, request.app.state)
+                                    except Exception:
+                                        response = HTMLResponse(
+                                            content='{"detail":"Invalid token"}',
+                                            status_code=401,
+                                        )
+                                        await response(scope, receive, send)
+                                        return
+                            await super().__call__(scope, receive, send)
+
+                    try:
+                        self._web_app.mount(
+                            full_path,
+                            DeferredPluginPageStaticFiles(
+                                directory=str(folder_path),
+                                html=True,
+                            ),
+                            name=f"plugin:{plugin_id}:page:{route_path}",
+                        )
+                        registered.append(f"{full_path} (folder: {page_obj.source_value})")
+                    except Exception as e:
+                        logger.error(f"Plugin {plugin_id}: failed to mount folder page: {e}")
+
+                elif page_obj.source == PluginPageSource.URL:
+                    url = page_obj.source_value
+                    dependencies = []
+                    if need_auth:
+                        dependencies.append(Depends(require_auth))
+
+                    async def deferred_redirect_endpoint(_url=url):
+                        return RedirectResponse(url=_url)
+
+                    self._web_app.add_api_route(
+                        path=full_path,
+                        endpoint=deferred_redirect_endpoint,
+                        methods=["GET"],
+                        dependencies=dependencies,
+                        tags=[f"plugin:{plugin_id}"],
+                    )
+                    registered.append(f"{full_path} (url: {url})")
+
+                elif page_obj.source == PluginPageSource.HTML:
+                    html_content = page_obj.source_value
+                    dependencies = []
+                    if need_auth:
+                        dependencies.append(Depends(require_auth))
+
+                    async def deferred_html_endpoint(_html=html_content):
+                        return HTMLResponse(content=_html)
+
+                    self._web_app.add_api_route(
+                        path=full_path,
+                        endpoint=deferred_html_endpoint,
+                        methods=["GET"],
+                        dependencies=dependencies,
+                        tags=[f"plugin:{plugin_id}"],
+                    )
+                    registered.append(f"{full_path} (html)")
+
+                continue
 
         if registered:
             logger.info(f"Registered {len(registered)} page routes from {plugin_id}: {registered}")
@@ -750,9 +1363,8 @@ class PluginManager:
         if self._web_app is None:
             return
 
-        comp = _plugin_components.get(plugin_id, {})
-        static_dirs = comp.get("static_dirs", [])
-        if not static_dirs:
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.static_dirs:
             return
 
         # Track registered static dirs to avoid duplicates
@@ -782,9 +1394,9 @@ class PluginManager:
 
         registered: List[str] = []
 
-        for static in static_dirs:
+        for static in comp.static_dirs:
             path_prefix = static["path"].lstrip('/')
-            full_path = f"/page/plugin/{plugin_id}/{path_prefix}"
+            full_path = f"/static/plugin/{plugin_id}/{path_prefix}"
             dir_path = plugin_root / static["directory"]
 
             if not dir_path.exists() or not dir_path.is_dir():
@@ -822,6 +1434,46 @@ class PluginManager:
         for plugin_id in _plugin_components.keys():
             self._register_plugin_tools_for(plugin_id)
 
+    def _register_plugin_widgets_for(self, plugin_id: str) -> None:
+        """Log registered widgets for a plugin. Data is collected lazily."""
+        comp = _plugin_components.get(plugin_id)
+        if not comp or not comp.widgets:
+            return
+        widget_ids = [w["widget_id"] for w in comp.widgets]
+        logger.info(f"Registered {len(widget_ids)} widget(s) from {plugin_id}: {widget_ids}")
+
+    def get_all_widgets(self) -> list:
+        """Collect widget data from all enabled plugins (called per API request)."""
+        from webui.models import OverviewWidget
+        widgets = []
+        for pid, comp in _plugin_components.items():
+            if not self.is_plugin_enabled(pid):
+                continue
+            inst = self.plugin_instances.get(pid)
+            if not inst:
+                continue
+            for meta in comp.widgets:
+                wid = meta["widget_id"]
+                func = comp.widget_funcs.get(wid)
+                if not func:
+                    continue
+                try:
+                    result = getattr(inst, func.__name__)()
+                    content = str(result) if result is not None else ""
+                    widgets.append(OverviewWidget(
+                        widget_id=wid,
+                        label=meta["label"],
+                        content=content,
+                        icon=meta["icon"],
+                        color=meta["color"],
+                        order=meta["order"],
+                        size=meta["size"],
+                    ))
+                except Exception as e:
+                    logger.error(f"Widget {wid} failed: {e}")
+        widgets.sort(key=lambda w: w.order)
+        return widgets
+
     def _remove_plugin_routes(self, plugin_id: str) -> None:
         """Remove all FastAPI routes and mounts registered by a plugin.
 
@@ -830,6 +1482,7 @@ class PluginManager:
         """
         # Reset tracking sets so init_plugin can re-register
         _plugin_api_registered.discard(plugin_id)
+        _plugin_ws_registered.discard(plugin_id)
         if hasattr(self, '_plugin_pages_registered'):
             self._plugin_pages_registered.discard(plugin_id)
         if hasattr(self, '_plugin_static_registered'):
@@ -841,6 +1494,7 @@ class PluginManager:
         tag_prefix = f"plugin:{plugin_id}"
         page_prefix = f"/page/plugin/{plugin_id}/"
         static_prefix = f"/static/plugin/{plugin_id}/"
+        ws_prefix = f"/ws/plugin/{plugin_id}/"
 
         routes = self._web_app.routes
         filtered_routes = []
@@ -851,9 +1505,11 @@ class PluginManager:
             # API / page routes registered via add_api_route
             if hasattr(route, 'tags') and tag_prefix in (route.tags or []):
                 should_remove = True
-            # Page catch-all routes or static mounts
+            # Page catch-all routes, static mounts, or WS routes
             elif hasattr(route, 'path') and (
-                route.path.startswith(page_prefix) or route.path.startswith(static_prefix)
+                route.path.startswith(page_prefix)
+                or route.path.startswith(static_prefix)
+                or route.path.startswith(ws_prefix)
             ):
                 should_remove = True
 
@@ -875,22 +1531,19 @@ class PluginManager:
             return
 
         # clean up tool registration
-        tools = comp.get("tools", {})
         if self.ctx and getattr(self.ctx, "llm_api", None):
-            for tool_name in list(tools.keys()):
+            for tool_name in list(comp.tools.keys()):
                 try:
                     self.ctx.llm_api.unregister_tool(tool_name)
                 except Exception as e:
                     logger.error(f"Failed to unregister tool {tool_name} for plugin {plugin_id}: {e}")
 
         # clean up hook registration
-        hooks = comp.get("hooks", [])
-        for hook in hooks:
+        for hook in comp.hooks:
             event_handler_reg.del_handler(hook)
 
         # clean up tag registration
-        tags = comp.get("tags", [])
-        for tag in tags:
+        for tag in comp.tags:
             tag_registry.unregister(tag.get("name"))
 
         # clean up subagent registration - only unregister those that were successfully registered
@@ -902,6 +1555,9 @@ class PluginManager:
                     registry.unregister(sid)
                 except Exception as e:
                     logger.error(f"Failed to unregister SubAgent {sid} for plugin {plugin_id}: {e}")
+        # clean up widget registration
+        comp.widgets.clear()
+        comp.widget_funcs.clear()
 
         # clean up FastAPI routes (API routes, page routes, static mounts)
         self._remove_plugin_routes(plugin_id)
@@ -946,7 +1602,10 @@ class PluginManager:
 
     async def init(self):
         """
-        Initialize plugin manager and load all discovered plugins
+        Initialize plugin manager and load all discovered plugins.
+
+        Uses a two-phase approach: first attempt all loads, then install
+        dependencies for plugins that failed with import errors and retry.
         """
         self.plugin_dir.mkdir(parents=True, exist_ok=True)
         self.plugin_data_dir.mkdir(parents=True, exist_ok=True)
@@ -957,10 +1616,59 @@ class PluginManager:
         discovered = list(_plugin_classes.keys())
         logger.info(f"Discovered plugins: {discovered}")
 
+        # Phase 1: Attempt to initialize all discovered plugins
         for plugin_id in _plugin_classes.keys():
             if plugin_id in self.plugin_instances:
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "ready"
                 continue
             await self.init_plugin(plugin_id)
+            if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "ready"
+
+        # Phase 2: Recover plugins that failed with import errors.
+        # Detect missing-dependency failures reliably: accept any error_type that
+        # is an ImportError subclass (covers ModuleNotFoundError and ImportError),
+        # and fall back to the error message when error_type was not stored.
+        def _is_missing_dep_failure(err_info: Dict[str, Any]) -> bool:
+            err_type = err_info.get("error_type")
+            return isinstance(err_type, type) and issubclass(err_type, ImportError)
+
+        import_failures = [
+            pid for pid, err_info in _plugin_load_errors.items()
+            if _is_missing_dep_failure(err_info) and pid in _plugin_module_paths
+        ]
+        if import_failures:
+            logger.info(f"Plugins with import errors, will attempt dependency install: {import_failures}")
+
+        for plugin_id in import_failures:
+            plugin_path = _plugin_module_paths.get(plugin_id)
+            if not plugin_path:
+                continue
+
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "installing"
+
+            warnings = await install_requirements(plugin_path, pypi_mirror=self._get_pypi_mirror())
+            for w in warnings:
+                logger.warning(f"Dependency install warning for {plugin_id}: {w}")
+
+            # Clear old error and retry loading
+            _plugin_load_errors.pop(plugin_id, None)
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].error = None
+                _plugin_infos[plugin_id].status = "loading"
+
+            await self.load_plugin_from_dir(plugin_path, auto_install=False)
+
+            if plugin_id in self.plugin_instances:
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "ready"
+                logger.info(f"Successfully recovered plugin {plugin_id} after dependency install")
+            else:
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "error"
+                logger.warning(f"Plugin {plugin_id} still failed after dependency install")
 
     async def init_plugin(self, plugin_id: Optional[str] = None):
         if plugin_id is None:
@@ -976,6 +1684,8 @@ class PluginManager:
 
         if not self.is_plugin_enabled(plugin_id):
             logger.debug(f"Plugin {plugin_id} is disabled, skipping initialization")
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].status = "disabled"
             return
 
         existing = self.plugin_instances.get(plugin_id)
@@ -1005,14 +1715,17 @@ class PluginManager:
             initialized = True
         except Exception as e:
             logger.error(f"Failed to initialize plugin {plugin_id}: {e}")
+            self.plugin_instances.pop(plugin_id, None)
         if initialized:
             self._register_plugin_tools_for(plugin_id)
             self._register_plugin_hooks_for(plugin_id)
             self._register_plugin_tags_for(plugin_id)
             self._register_plugin_subagents_for(plugin_id)
             self._register_plugin_apis_for(plugin_id)
+            self._register_plugin_ws_for(plugin_id)
             self._register_plugin_pages_for(plugin_id)
             self._register_plugin_static_for(plugin_id)
+            self._register_plugin_widgets_for(plugin_id)
 
     async def terminate(self, plugin_id: Optional[str] = None):
         """Terminate a specific plugin if plugin_id is given, terminate all if not given"""
@@ -1050,6 +1763,7 @@ class PluginManager:
         if plugin_id in _plugin_load_errors:
             _plugin_load_errors.pop(plugin_id, None)
             _plugin_manifests.pop(plugin_id, None)
+            _plugin_infos.pop(plugin_id, None)
             self.plugin_enabled.pop(plugin_id, None)
             self._save_plugin_state()
             logger.info(f"Failed plugin '{plugin_id}' removed from records")
@@ -1061,6 +1775,9 @@ class PluginManager:
         # Stop the running instance and unregister tools / hooks / tags
         await self.terminate(plugin_id)
 
+        # Remove module-to-plugin mappings and evict from sys.modules
+        self._cleanup_plugin_modules(plugin_id)
+
         # Remove from global registries
         _plugin_classes.pop(plugin_id, None)
         _plugin_manifests.pop(plugin_id, None)
@@ -1069,12 +1786,7 @@ class PluginManager:
         _plugin_schemas.pop(plugin_id, None)
         _plugin_components.pop(plugin_id, None)
         _plugin_load_errors.pop(plugin_id, None)
-
-        # Remove module-to-plugin mappings and evict from sys.modules
-        stale_modules = [k for k, v in _module_to_plugin.items() if v == plugin_id]
-        for mod_name in stale_modules:
-            _module_to_plugin.pop(mod_name, None)
-            sys.modules.pop(mod_name, None)
+        _plugin_infos.pop(plugin_id, None)
 
         # Remove enabled state and persist
         self.plugin_enabled.pop(plugin_id, None)
@@ -1090,30 +1802,31 @@ class PluginManager:
         imported by the plugin are left untouched (they may be shared).
         """
         plugin_dir = _plugin_module_paths.get(plugin_id)
-        stale_names: list[str] = []
+        cleaned = 0
 
         for name, mod in list(sys.modules.items()):
+            matched = False
+
             # 1) Direct mapping from _register_plugin_class
             if _module_to_plugin.get(name) == plugin_id:
-                stale_names.append(name)
-                continue
+                matched = True
 
             # 2) Path-based: module file lives inside the plugin directory
-            if plugin_dir:
+            elif plugin_dir:
                 mod_file = getattr(mod, "__file__", None)
                 if mod_file:
                     try:
-                        if Path(mod_file).resolve().is_relative_to(plugin_dir):
-                            stale_names.append(name)
+                        matched = Path(mod_file).resolve().is_relative_to(plugin_dir)
                     except (ValueError, OSError):
                         pass
 
-        for name in stale_names:
-            sys.modules.pop(name, None)
-            _module_to_plugin.pop(name, None)
+            if matched:
+                sys.modules.pop(name, None)
+                _module_to_plugin.pop(name, None)
+                cleaned += 1
 
-        if stale_names:
-            logger.debug(f"Cleaned {len(stale_names)} module(s) for plugin {plugin_id}")
+        if cleaned:
+            logger.debug(f"Cleaned {cleaned} module(s) for plugin {plugin_id}")
 
     async def reload(self, plugin_id: Optional[str] = None):
         """
@@ -1154,7 +1867,7 @@ class PluginManager:
         Returns None if compatible, or an error message string if not.
         """
         try:
-            spec = SpecifierSet(core_version_spec)
+            spec = SpecifierSet(core_version_spec, prereleases=True)
         except InvalidSpecifier:
             return f"Invalid core_version specifier: {core_version_spec}"
 
@@ -1170,6 +1883,35 @@ class PluginManager:
                 f"but current version is {VERSION}"
             )
         return None
+
+    @staticmethod
+    def _build_plugin_info(plugin_id: str, manifest: dict, error: Optional[str] = None, status: str = "pending") -> PluginInfo:
+        if status == "pending" and error:
+            status = "error"
+        path = _plugin_module_paths.get(plugin_id)
+        is_builtin = path is not None and path.is_relative_to(BUILTIN_PLUGINS_DIR)
+        hidden = bool(manifest.get("hide", False)) if is_builtin else False
+        if is_builtin:
+            uninstallable = bool(manifest.get("uninstallable", False))
+        else:
+            uninstallable = True
+
+        return PluginInfo(
+            plugin_id=plugin_id,
+            display_name=manifest.get("display_name") or plugin_id,
+            version=str(manifest.get("version") or ""),
+            author=str(manifest.get("author") or ""),
+            description=str(manifest.get("description") or ""),
+            repo=manifest.get("repo") if isinstance(manifest.get("repo"), str) and manifest.get("repo") else None,
+            locales=manifest.get("locales") or {},
+            tags=[str(t) for t in (manifest.get("tags") or []) if t],
+            core_version=str(manifest["core_version"]) if manifest.get("core_version") else None,
+            builtin=is_builtin,
+            uninstallable=uninstallable,
+            hidden=hidden,
+            error=error,
+            status=status,
+        )
 
     def _load_plugin_meta(self, plugin_root: Path, entry: str):
         manifest = {}
@@ -1192,6 +1934,9 @@ class PluginManager:
         if manifest:
             _plugin_manifests[plugin_id] = manifest
 
+        # Build PluginInfo early — even if class loading later fails, we have metadata
+        _plugin_infos[plugin_id] = self._build_plugin_info(plugin_id, manifest)
+
         # Check core_version compatibility
         core_version_spec = manifest.get("core_version")
         if core_version_spec:
@@ -1201,6 +1946,8 @@ class PluginManager:
                     "manifest": manifest,
                     "error": error,
                 }
+                _plugin_infos[plugin_id].error = error
+                _plugin_infos[plugin_id].status = "error"
                 logger.warning(f"Plugin {plugin_id} skipped: {error}")
                 return None
 
@@ -1280,17 +2027,23 @@ class PluginManager:
                     "manifest": _plugin_manifests.get(plugin_id, {}),
                     "error": "No module found",
                 })
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].error = "No module found"
+                    _plugin_infos[plugin_id].status = "error"
                 continue
 
             self._register_plugin_class(plugin_id, module, plugin_dir)
 
-    async def load_plugin_from_dir(self, plugin_root: Path) -> Optional[str]:
+    async def load_plugin_from_dir(self, plugin_root: Path, auto_install: bool = True) -> Optional[str]:
         """
         Dynamically load and initialize a single plugin from the given directory.
 
         Safe to call at runtime (e.g. after installing a new plugin). If the
         plugin was already loaded, it is terminated and reloaded cleanly.
         Returns the plugin_id on success, or None if loading failed.
+
+        When *auto_install* is True and the import fails with ModuleNotFoundError,
+        the plugin's requirements.txt is installed and the import is retried once.
         """
         entry = plugin_root.name
         if entry.startswith("_") or not plugin_root.is_dir():
@@ -1337,11 +2090,14 @@ class PluginManager:
                 "manifest": _plugin_manifests.get(plugin_id, {}),
                 "error": "No entry script found (main.py / plugin.py / __init__.py)",
             }
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].error = "No entry script found (main.py / plugin.py / __init__.py)"
+                _plugin_infos[plugin_id].status = "error"
             return None
 
         # Clear decorator-registered components so re-import starts fresh
         if plugin_id in _plugin_components:
-            _plugin_components[plugin_id] = {}
+            _plugin_components[plugin_id] = PluginComponents()
 
         # Remove stale module from cache so exec_module re-runs the file
         sys.modules.pop(module_name, None)
@@ -1353,20 +2109,63 @@ class PluginManager:
                 "manifest": _plugin_manifests.get(plugin_id, {}),
                 "error": "Failed to create module spec",
             }
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].error = "Failed to create module spec"
+                _plugin_infos[plugin_id].status = "error"
             return None
+
+        if plugin_id in _plugin_infos:
+            _plugin_infos[plugin_id].status = "loading"
 
         try:
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
             spec.loader.exec_module(module)
         except Exception as e:
-            logger.error(f"Error loading plugin from {plugin_root}: {e}")
-            sys.modules.pop(module_name, None)
-            _plugin_load_errors[plugin_id] = {
-                "manifest": _plugin_manifests.get(plugin_id, {}),
-                "error": f"Import error: {e}",
-            }
-            return None
+            if auto_install and isinstance(e, ModuleNotFoundError):
+                logger.info(f"ModuleNotFoundError in {plugin_root}, attempting dependency install: {e}")
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "installing"
+                    _plugin_infos[plugin_id].error = None
+
+                warnings = await install_requirements(plugin_root, pypi_mirror=self._get_pypi_mirror())
+                for w in warnings:
+                    logger.warning(f"Dependency install warning for {plugin_id}: {w}")
+
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].status = "loading"
+
+                # Clean up and retry (once)
+                sys.modules.pop(module_name, None)
+                _plugin_load_errors.pop(plugin_id, None)
+                try:
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module
+                    spec.loader.exec_module(module)
+                except Exception as retry_e:
+                    logger.error(f"Retry after dep install also failed for {plugin_root}: {retry_e}")
+                    sys.modules.pop(module_name, None)
+                    _plugin_load_errors[plugin_id] = {
+                        "manifest": _plugin_manifests.get(plugin_id, {}),
+                        "error": f"Import error (after retry): {retry_e}",
+                        "error_type": type(retry_e),
+                    }
+                    if plugin_id in _plugin_infos:
+                        _plugin_infos[plugin_id].error = f"Import error (after retry): {retry_e}"
+                        _plugin_infos[plugin_id].status = "error"
+                    return None
+            else:
+                logger.error(f"Error loading plugin from {plugin_root}: {e}")
+                sys.modules.pop(module_name, None)
+                _plugin_load_errors[plugin_id] = {
+                    "manifest": _plugin_manifests.get(plugin_id, {}),
+                    "error": f"Import error: {e}",
+                    "error_type": type(e),
+                }
+                if plugin_id in _plugin_infos:
+                    _plugin_infos[plugin_id].error = f"Import error: {e}"
+                    _plugin_infos[plugin_id].status = "error"
+                return None
 
         registered = self._register_plugin_class(plugin_id, module, plugin_root)
         if not registered:
@@ -1375,9 +2174,14 @@ class PluginManager:
                 "manifest": _plugin_manifests.get(plugin_id, {}),
                 "error": "No BasePlugin subclass found",
             }
+            if plugin_id in _plugin_infos:
+                _plugin_infos[plugin_id].error = "No BasePlugin subclass found"
+                _plugin_infos[plugin_id].status = "error"
             return None
 
         await self.init_plugin(plugin_id)
+        if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
+            _plugin_infos[plugin_id].status = "ready"
         return plugin_id
 
     async def _discover_user_plugins(self):
@@ -1396,7 +2200,7 @@ class PluginManager:
             plugin_root = self.plugin_dir / entry
             if not plugin_root.is_dir():
                 continue
-            await self.load_plugin_from_dir(plugin_root)
+            await self.load_plugin_from_dir(plugin_root, auto_install=False)
 
     @staticmethod
     async def fetch_plugin_store_data(url: str) -> Any:

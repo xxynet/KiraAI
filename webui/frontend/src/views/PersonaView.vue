@@ -9,9 +9,7 @@
         class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
         @click="openCreateDialog"
       >
-        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-        </svg>
+        <IconPlus class="w-5 h-5 mr-2" />
         <span>{{ $t('persona.add') }}</span>
       </button>
     </div>
@@ -19,9 +17,7 @@
     <!-- Empty State -->
     <div v-if="personas.length === 0" class="flex justify-center items-center py-12">
       <div class="text-center">
-        <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-        </svg>
+        <IconUser class="w-16 h-16 text-gray-400 mx-auto mb-4" />
         <p class="text-gray-500">{{ $t('persona.no_personas') }}</p>
       </div>
     </div>
@@ -56,7 +52,20 @@
             {{ $t('persona.edit') }}
           </button>
           <button
-            v-if="persona.id !== 'default'"
+            v-if="!persona.is_active"
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30 transition-colors"
+            @click="handleSetActive(persona.id)"
+          >
+            {{ $t('persona.set_active') }}
+          </button>
+          <span
+            v-else
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-green-300 bg-green-100 text-green-700 dark:border-green-600 dark:bg-green-900/30 dark:text-green-300"
+          >
+            {{ $t('persona.active') }}
+          </span>
+          <button
+            v-if="!persona.is_active"
             class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
             @click="handleDelete(persona.id)"
           >
@@ -74,9 +83,7 @@
             {{ editMode ? $t('persona.edit_title') : $t('persona.modal_title') }}
           </h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="dialogVisible = false">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
+            <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
@@ -138,6 +145,16 @@
       :confirm-text="t('common.delete')"
       @confirm="onConfirmDelete"
     />
+
+    <ConfirmModal
+      ref="switchConfirmModalRef"
+      variant="info"
+      :title="t('persona.set_active_confirm_title')"
+      :message="t('persona.set_active_confirm_message')"
+      :cancel-text="t('persona.modal_cancel')"
+      :confirm-text="t('persona.set_active')"
+      @confirm="onConfirmSwitch"
+    />
   </div>
 </template>
 
@@ -146,17 +163,19 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import {
-  getPersonas, createPersona, updatePersona, deletePersona,
+  getPersonas, createPersona, updatePersona, deletePersona, setActivePersona,
 } from '@/api/persona'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
+import { IconPlus, IconUser, IconClose } from '@/components/icons'
 import type { PersonaResponse } from '@/types'
 
 const { t } = useI18n()
 
 const confirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
+const switchConfirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
 
 const personas = ref<PersonaResponse[]>([])
 const dialogVisible = ref(false)
@@ -167,6 +186,7 @@ const saving = ref(false)
 const confirmTitle = ref('')
 const confirmMessage = ref('')
 let deleteTargetId: string | null = null
+let switchTargetId: string | null = null
 
 const formatOptions = computed(() => [
   { value: 'text', label: t('persona.format_text') },
@@ -275,6 +295,24 @@ async function onConfirmDelete() {
     await loadPersonas()
   } catch (error: any) {
     notify(t('persona.delete_failed') + (error?.message ? ': ' + error.message : ''), 'error')
+  }
+}
+
+async function handleSetActive(personaId: string) {
+  switchTargetId = personaId
+  switchConfirmModalRef.value?.open()
+}
+
+async function onConfirmSwitch() {
+  if (!switchTargetId) return
+  const id = switchTargetId
+  switchTargetId = null
+  try {
+    await setActivePersona(id)
+    notify(t('persona.set_active_success'), 'success')
+    await loadPersonas()
+  } catch (error: any) {
+    notify(t('persona.set_active_failed') + (error?.message ? ': ' + error.message : ''), 'error')
   }
 }
 

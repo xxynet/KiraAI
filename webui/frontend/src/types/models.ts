@@ -18,6 +18,16 @@ export interface AuthConfigResponse {
   auth_enabled: boolean
 }
 
+export interface OverviewWidget {
+  widget_id: string
+  label: string | Record<string, string>
+  content: string
+  icon: string
+  color: string
+  order: number
+  size: 'small' | 'wide'
+}
+
 export interface OverviewResponse {
   total_adapters: number
   active_adapters: number
@@ -28,6 +38,7 @@ export interface OverviewResponse {
   runtime_duration: number
   memory_usage: number
   total_memory: number
+  widgets: OverviewWidget[]
 }
 
 export interface VersionResponse {
@@ -78,6 +89,7 @@ export interface PersonaBase {
 export interface PersonaResponse extends PersonaBase {
   id: string
   created_at?: number
+  is_active?: boolean
 }
 
 export interface PersonaContentResponse {
@@ -100,6 +112,13 @@ export interface StickerUpdateRequest {
   desc: string
 }
 
+export interface PageMenu {
+  route: string
+  label: string | Record<string, string>
+  icon: string | null
+  order: number
+}
+
 export interface PluginItem {
   id: string
   name: string
@@ -113,6 +132,8 @@ export interface PluginItem {
   tags: string[]
   core_version?: string | null
   error?: string | null
+  status?: string
+  menus?: PageMenu[]
 }
 
 export interface PluginConfigUpdateRequest {
@@ -174,6 +195,14 @@ export interface PluginStoreItem {
   downloads?: number
   tags?: string[]
   installed?: boolean
+}
+
+export interface PluginUpdateCheckItem {
+  plugin_id: string
+  current_version: string
+  latest_version: string | null
+  has_update: boolean
+  error: string | null
 }
 
 // Configuration types — mirrors the shape returned by webui/routes/config.py
@@ -244,4 +273,15 @@ export interface ReleaseItem {
 export interface ReleasesResponse {
   current_version: string
   releases: ReleaseItem[]
+}
+
+// Scope types — mirrors webui/routes/scope.py
+export type ScopeEntry = { allow: string[] } | { deny: string[] }
+
+export interface ScopeResponse {
+  mcp_scopes: Record<string, ScopeEntry>
+  skill_scopes: Record<string, ScopeEntry>
+  sessions: { id: string; adapter: string; type: string; session_id: string; title: string }[]
+  mcp_servers: { id: string; name: string; enabled: boolean }[]
+  skills: { name: string; enabled: boolean }[]
 }

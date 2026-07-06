@@ -332,11 +332,17 @@ textarea:hover,
 }
 
 input:not([type="checkbox"], [type="radio"]):focus,
+input:not([type="checkbox"], [type="radio"]):focus-visible,
 select:focus,
+select:focus-visible,
 textarea:focus,
+textarea:focus-visible,
 .dark input:not([type="checkbox"], [type="radio"]):focus,
+.dark input:not([type="checkbox"], [type="radio"]):focus-visible,
 .dark select:focus,
-.dark textarea:focus {
+.dark select:focus-visible,
+.dark textarea:focus,
+.dark textarea:focus-visible {
   outline: none;
   border-color: #3b82f6 !important;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
@@ -663,6 +669,33 @@ textarea:focus:hover,
   overflow: hidden;
 }
 
+/* ==================== Route Loading Bar ==================== */
+.route-loading-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 2px;
+  z-index: 9999;
+  background: #60a5fa;
+  border-radius: 0 2px 2px 0;
+  /* transition only set on .loading and .completing — idle snaps instantly */
+}
+
+.route-loading-bar.loading {
+  width: 90%;
+  transition: width 10s ease-out;
+}
+
+.route-loading-bar.completing {
+  width: 100%;
+  transition: width 0.3s ease;
+}
+
+.dark .route-loading-bar {
+  background: #3b82f6;
+}
+
 /* ==================== Loading Spinner ==================== */
 .loading-spinner {
   border: 3px solid #f3f3f3;
@@ -706,15 +739,6 @@ textarea:focus:hover,
 .dark .border-gray-200 { border-color: rgba(148, 163, 184, 0.24) !important; }
 .dark .border-gray-700,
 .dark .border-gray-800 { border-color: rgba(148, 163, 184, 0.22) !important; }
-
-/* ==================== Element Plus Overrides ==================== */
-.el-dialog {
-  backdrop-filter: blur(16px);
-}
-
-.dark .el-dialog {
-  background-color: rgba(31, 41, 55, 0.95) !important;
-}
 
 /* ==================== Responsive ==================== */
 @media (max-width: 768px) {

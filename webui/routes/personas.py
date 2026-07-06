@@ -31,6 +31,20 @@ class PersonasRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
+                path="/api/personas/active",
+                methods=["GET"],
+                endpoint=self.get_active_persona,
+                tags=["personas"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/personas/active",
+                methods=["PUT"],
+                endpoint=self.set_active_persona,
+                tags=["personas"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/personas",
                 methods=["GET"],
                 endpoint=self.list_personas,
@@ -119,7 +133,28 @@ class PersonasRoutes(Routes):
         if not self.lifecycle or not self.lifecycle.persona_manager:
             raise HTTPException(status_code=404, detail="Persona manager not available")
         items = await self.lifecycle.persona_manager.list_personas()
-        return [PersonaResponse(id=p.id, name=p.name, format=p.format, content=p.content, created_at=p.created_at or 0) for p in items]
+        return [PersonaResponse(id=p.id, name=p.name, format=p.format, content=p.content, created_at=p.created_at or 0, is_active=p.is_active or False) for p in items]
+
+    async def get_active_persona(self):
+        if not self.lifecycle or not self.lifecycle.persona_manager:
+            raise HTTPException(status_code=404, detail="Persona manager not available")
+        persona = await self.lifecycle.persona_manager.get_active_persona()
+        if not persona:
+            raise HTTPException(status_code=404, detail="No active persona found")
+        return PersonaResponse(id=persona.id, name=persona.name, format=persona.format, content=persona.content, created_at=persona.created_at or 0, is_active=True)
+
+    async def set_active_persona(self, payload: dict):
+        if not self.lifecycle or not self.lifecycle.persona_manager:
+            raise HTTPException(status_code=404, detail="Persona manager not available")
+        if "persona_id" not in payload:
+            raise HTTPException(status_code=422, detail="Missing persona_id field")
+        persona_id = payload["persona_id"]
+        if not isinstance(persona_id, str):
+            raise HTTPException(status_code=422, detail="Invalid persona_id value")
+        success = await self.lifecycle.persona_manager.set_active_persona(persona_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Persona not found")
+        return {"success": True, "active_persona_id": persona_id}
 
     async def create_persona(self, payload: PersonaBase):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -135,7 +170,7 @@ class PersonasRoutes(Routes):
         created = await self.lifecycle.persona_manager.get_persona(persona_id)
         if not created:
             raise HTTPException(status_code=500, detail="Failed to create persona")
-        return PersonaResponse(id=created.id, name=created.name, format=created.format, content=created.content, created_at=created.created_at or 0)
+        return PersonaResponse(id=created.id, name=created.name, format=created.format, content=created.content, created_at=created.created_at or 0, is_active=created.is_active or False)
 
     async def get_persona(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -143,7 +178,7 @@ class PersonasRoutes(Routes):
         persona = await self.lifecycle.persona_manager.get_persona(persona_id)
         if not persona:
             raise HTTPException(status_code=404, detail="Persona not found")
-        return PersonaResponse(id=persona.id, name=persona.name, format=persona.format, content=persona.content, created_at=persona.created_at or 0)
+        return PersonaResponse(id=persona.id, name=persona.name, format=persona.format, content=persona.content, created_at=persona.created_at or 0, is_active=persona.is_active or False)
 
     async def update_persona(self, persona_id: str, payload: PersonaBase):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -158,12 +193,15 @@ class PersonasRoutes(Routes):
         if not success:
             raise HTTPException(status_code=404, detail="Persona not found")
         updated = await self.lifecycle.persona_manager.get_persona(persona_id)
-        return PersonaResponse(id=persona_id, name=updated.name, format=updated.format, content=updated.content, created_at=updated.created_at or 0)
+        return PersonaResponse(id=persona_id, name=updated.name, format=updated.format, content=updated.content, created_at=updated.created_at or 0, is_active=updated.is_active or False)
 
     async def delete_persona(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:
             raise HTTPException(status_code=404, detail="Persona manager not available")
-        success = await self.lifecycle.persona_manager.delete_persona(persona_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Persona not found")
-        return None
+        try:
+            success = await self.lifecycle.persona_manager.delete_persona(persona_id)
+            if not success:
+                raise HTTPException(status_code=404, detail="Persona not found")
+            return None
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
