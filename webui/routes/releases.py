@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -22,6 +23,10 @@ logger = get_logger("releases", "green")
 RESTART_EXIT_CODE = 42
 RESTART_DELAY_SECONDS = 0.5  # Allow HTTP response to flush before hard exit
 _install_lock = asyncio.Lock()
+
+_RELEASES_CACHE_TTL = 300  # 5 minutes
+_releases_cache: list[dict] | None = None
+_releases_cache_time: float = 0
 
 
 class ReleasesRoutes(Routes):
@@ -45,14 +50,21 @@ class ReleasesRoutes(Routes):
         ]
 
     async def get_releases(self):
-        try:
-            releases = await get_all_releases("xxynet", "KiraAI")
-        except Exception as e:
-            logger.error(f"Failed to fetch releases: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Failed to fetch releases: {e}",
-            ) from e
+        global _releases_cache, _releases_cache_time
+        now = time.monotonic()
+        if _releases_cache is not None and now - _releases_cache_time < _RELEASES_CACHE_TTL:
+            releases = _releases_cache
+        else:
+            try:
+                releases = await get_all_releases("xxynet", "KiraAI")
+            except Exception as e:
+                logger.error(f"Failed to fetch releases: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Failed to fetch releases: {e}",
+                ) from e
+            _releases_cache = releases
+            _releases_cache_time = now
         return ReleasesResponse(
             current_version=VERSION,
             releases=[r for r in releases if not r.get("draft")],
