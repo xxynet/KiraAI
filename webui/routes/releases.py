@@ -58,13 +58,18 @@ class ReleasesRoutes(Routes):
             try:
                 releases = await get_all_releases("xxynet", "KiraAI")
             except Exception as e:
-                logger.error(f"Failed to fetch releases: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Failed to fetch releases: {e}",
-                ) from e
-            _releases_cache = releases
-            _releases_cache_time = now
+                if _releases_cache is not None:
+                    logger.warning(f"Failed to fetch releases, using stale cache: {e}")
+                    releases = _releases_cache
+                else:
+                    logger.error(f"Failed to fetch releases: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Failed to fetch releases: {e}",
+                    ) from e
+            else:
+                _releases_cache = releases
+                _releases_cache_time = now
         return ReleasesResponse(
             current_version=VERSION,
             releases=[r for r in releases if not r.get("draft")],
