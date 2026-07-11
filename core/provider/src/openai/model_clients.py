@@ -161,9 +161,6 @@ class OpenAIImageClient(ImageModelClient):
             md_match = self._MD_IMAGE_RE.search(stripped)
             if md_match:
                 url = md_match.group("url")
-                # Strip a stray closing paren that the prompt sometimes
-                # appends right after the URL.
-                url = url.rstrip(")")
                 if url.startswith("data:image/"):
                     url = re.sub(r"\s+", "", url)
                 return Image(image=url)
