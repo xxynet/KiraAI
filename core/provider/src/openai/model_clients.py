@@ -32,8 +32,11 @@ class OpenAIImageClient(ImageModelClient):
 
     # Markdown image regex: ![alt](url). Used only inside chat mode,
     # only when the entire content is a string AND no structured part
-    # was found. Greedy URL match capped at first whitespace.
-    _MD_IMAGE_RE = re.compile(r'!\[.*?\]\((https?://\S+?)\)')
+    # was found. Bare text URLs are still ignored.
+    _MD_IMAGE_RE = re.compile(
+        r'!\[.*?\]\((?P<url>https?://[^\s)]+|data:image/[^)]+)\)',
+        re.DOTALL,
+    )
 
     def __init__(self, model: ModelInfo):
         super().__init__(model)
@@ -157,10 +160,9 @@ class OpenAIImageClient(ImageModelClient):
             # syntax, never from random URLs in text content
             md_match = self._MD_IMAGE_RE.search(stripped)
             if md_match:
-                url = md_match.group(1)
-                # Strip a stray closing paren that the prompt sometimes
-                # appends right after the URL.
-                url = url.rstrip(")")
+                url = md_match.group("url")
+                if url.startswith("data:image/"):
+                    url = re.sub(r"\s+", "", url)
                 return Image(image=url)
 
         return None
