@@ -211,6 +211,19 @@
     <!-- Custom CSS/JS Tab -->
     <div v-show="activeTab === 'custom'" class="space-y-6">
       <div>
+        <label for="custom-webui-title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          {{ $t('settings.custom_webui_title') }}
+        </label>
+        <input
+          id="custom-webui-title"
+          v-model="customWebUITitle"
+          type="text"
+          class="w-full px-3 py-2 text-sm text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          :placeholder="$t('settings.custom_webui_title_placeholder')"
+        />
+      </div>
+
+      <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           {{ $t('settings.custom_css') }}
         </label>
@@ -395,6 +408,7 @@ import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
+import { applyWebUITitle, CUSTOM_WEBUI_TITLE_KEY } from '@/utils/customWebUI'
 import {
   getStorageInfo,
   createBackup,
@@ -424,6 +438,7 @@ const tabs = computed(() => [
 
 const customCSS = ref('')
 const customJS = ref('')
+const customWebUITitle = ref('')
 
 // ── Storage ─────────────────────────────────────────────────────────────
 
@@ -608,6 +623,7 @@ async function handleRestore() {
 // ── Init ────────────────────────────────────────────────────────────────
 
 onMounted(() => {
+  customWebUITitle.value = localStorage.getItem(CUSTOM_WEBUI_TITLE_KEY) || ''
   customCSS.value = localStorage.getItem('custom_css') || ''
   customJS.value = localStorage.getItem('custom_js') || ''
 
@@ -648,8 +664,10 @@ function applyCustomJS() {
 async function handleSave() {
   saving.value = true
   try {
+    localStorage.setItem(CUSTOM_WEBUI_TITLE_KEY, customWebUITitle.value)
     localStorage.setItem('custom_css', customCSS.value)
     localStorage.setItem('custom_js', customJS.value)
+    applyWebUITitle(customWebUITitle.value)
     applyCustomCSS()
     applyCustomJS()
 

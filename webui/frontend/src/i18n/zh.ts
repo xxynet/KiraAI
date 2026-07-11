@@ -697,6 +697,8 @@ export default {
     theme: '主题',
     theme_light: '浅色',
     theme_dark: '深色',
+    custom_webui_title: '自定义 WebUI 标题',
+    custom_webui_title_placeholder: '留空使用默认标题',
     custom_css: '自定义 CSS',
     custom_js: '自定义 JavaScript',
     save: '保存设置',
