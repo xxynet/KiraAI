@@ -6,8 +6,11 @@ import App from './App.vue'
 import router from './router'
 import i18n from './i18n'
 import './assets/main.css'
+import { applyWebUITitle, CUSTOM_WEBUI_TITLE_KEY } from './utils/customWebUI'
 
-// Apply custom CSS / JS from localStorage on app startup
+// Apply custom WebUI settings from localStorage on app startup
+applyWebUITitle(localStorage.getItem(CUSTOM_WEBUI_TITLE_KEY))
+
 const customCSS = localStorage.getItem('custom_css') || ''
 if (customCSS) {
   const tag = document.createElement('style')

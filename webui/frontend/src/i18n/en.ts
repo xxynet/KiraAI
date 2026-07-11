@@ -697,6 +697,8 @@ export default {
     theme: 'Theme',
     theme_light: 'Light',
     theme_dark: 'Dark',
+    custom_webui_title: 'Custom WebUI title',
+    custom_webui_title_placeholder: 'Leave blank to use the default title',
     custom_css: 'Custom CSS',
     custom_js: 'Custom JavaScript',
     save: 'Save Settings',
