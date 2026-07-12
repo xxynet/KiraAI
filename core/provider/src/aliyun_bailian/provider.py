@@ -332,7 +332,3 @@ class BailianProvider(BaseProvider):
             {"id": "deepseek-v3", "name": "DeepSeek V3", "description": "DeepSeek V3（百炼）"},
             {"id": "deepseek-r1", "name": "DeepSeek R1", "description": "DeepSeek R1（百炼）"},
         ]
-
-
-# 兼容旧类名（若外部有引用）
-BailianCosyVoiceProvider = BailianProvider

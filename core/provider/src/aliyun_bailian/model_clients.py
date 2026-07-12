@@ -104,26 +104,11 @@ def resolve_http_base_url(provider_config: dict) -> str:
     return _REGION_HTTP_URL.get(region, _REGION_HTTP_URL["beijing"])
 
 
-def _apply_dashscope_ws(api_key: str, region: str, workspace_id: str):
-    import dashscope
-
-    dashscope.api_key = api_key
+def _resolve_ws_url(region: str, workspace_id: str) -> str:
     if workspace_id:
         template = _REGION_WS_URL_WORKSPACE.get(region, _REGION_WS_URL_WORKSPACE["beijing"])
-        dashscope.base_websocket_api_url = template.format(workspace_id=workspace_id)
-    else:
-        dashscope.base_websocket_api_url = _REGION_WS_URL.get(region, _REGION_WS_URL["beijing"])
-
-
-def _apply_dashscope_http(api_key: str, region: str, workspace_id: str):
-    import dashscope
-
-    dashscope.api_key = api_key
-    if workspace_id:
-        template = _REGION_HTTP_URL_WORKSPACE.get(region, _REGION_HTTP_URL_WORKSPACE["beijing"])
-        dashscope.base_http_api_url = template.format(workspace_id=workspace_id)
-    else:
-        dashscope.base_http_api_url = _REGION_HTTP_URL.get(region, _REGION_HTTP_URL["beijing"])
+        return template.format(workspace_id=workspace_id)
+    return _REGION_WS_URL.get(region, _REGION_WS_URL["beijing"])
 
 
 # ───────────────────────────── LLM ─────────────────────────────
@@ -160,23 +145,23 @@ class BailianEmbeddingClient(EmbeddingModelClient):
         slow_threshold = mc.get("slow_request_threshold", 5.0)
         dimensions = mc.get("dimensions")
 
-        client = AsyncOpenAI(
-            api_key=self.model.provider_config.get("api_key", ""),
-            base_url=resolve_compatible_base_url(self.model.provider_config),
-            timeout=timeout_sec,
-        )
         try:
-            start_time = time.perf_counter()
-            kwargs = {
-                "model": self.model.model_id,
-                "input": texts,
-            }
-            # dimensions only for v3/v4
-            if dimensions:
-                kwargs["dimensions"] = int(dimensions)
-                kwargs["encoding_format"] = "float"
+            async with AsyncOpenAI(
+                api_key=self.model.provider_config.get("api_key", ""),
+                base_url=resolve_compatible_base_url(self.model.provider_config),
+                timeout=timeout_sec,
+            ) as client:
+                start_time = time.perf_counter()
+                kwargs = {
+                    "model": self.model.model_id,
+                    "input": texts,
+                }
+                # dimensions only for v3/v4
+                if dimensions:
+                    kwargs["dimensions"] = int(dimensions)
+                    kwargs["encoding_format"] = "float"
 
-            response = await client.embeddings.create(**kwargs)
+                response = await client.embeddings.create(**kwargs)
             elapsed = round(time.perf_counter() - start_time, 2)
             if elapsed > float(slow_threshold or 0):
                 logger.warning(
@@ -1174,39 +1159,39 @@ class BailianSTTClient(STTModelClient):
         from http import HTTPStatus
         from dashscope.audio.asr import Recognition
 
-        with _DASHSCOPE_LOCK:
-            _apply_dashscope_ws(api_key, region, workspace_id)
+        kwargs = {
+            "model": model_id,
+            "format": audio_format or "wav",
+            "sample_rate": sample_rate,
+            "callback": None,
+            "api_key": api_key,
+            "base_address": _resolve_ws_url(region, workspace_id),
+            "workspace": workspace_id or None,
+        }
+        # language_hints mainly for v2 multi-lang models
+        mid = (model_id or "").lower()
+        if language_hints and ("v2" in mid or "fun-asr" in mid or "fun_asr" in mid):
+            kwargs["language_hints"] = language_hints
 
-            kwargs = {
-                "model": model_id,
-                "format": audio_format or "wav",
-                "sample_rate": sample_rate,
-                "callback": None,
-            }
-            # language_hints mainly for v2 multi-lang models
-            mid = (model_id or "").lower()
-            if language_hints and ("v2" in mid or "fun-asr" in mid or "fun_asr" in mid):
-                kwargs["language_hints"] = language_hints
+        recognition = Recognition(**kwargs)
+        result = recognition.call(file_path)
 
-            recognition = Recognition(**kwargs)
-            result = recognition.call(file_path)
+        if result is None:
+            raise RuntimeError("STT returned empty result")
 
-            if result is None:
-                raise RuntimeError("STT returned empty result")
+        status = getattr(result, "status_code", None)
+        if status is not None and status != HTTPStatus.OK:
+            msg = getattr(result, "message", "") or str(result)
+            raise RuntimeError(f"STT error status={status}: {msg}")
 
-            status = getattr(result, "status_code", None)
-            if status is not None and status != HTTPStatus.OK:
-                msg = getattr(result, "message", "") or str(result)
-                raise RuntimeError(f"STT error status={status}: {msg}")
+        # get_sentence may return list[dict] or str depending on SDK version
+        sentence = None
+        if hasattr(result, "get_sentence"):
+            sentence = result.get_sentence()
+        elif hasattr(result, "output"):
+            sentence = result.output
 
-            # get_sentence may return list[dict] or str depending on SDK version
-            sentence = None
-            if hasattr(result, "get_sentence"):
-                sentence = result.get_sentence()
-            elif hasattr(result, "output"):
-                sentence = result.output
-
-            return self._extract_text(sentence)
+        return self._extract_text(sentence)
 
     @staticmethod
     def _extract_text(sentence) -> str:
@@ -1628,18 +1613,24 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
             kwargs["additional_params"] = additional_params
 
         with _DASHSCOPE_LOCK:
-            _apply_dashscope_ws(api_key, region, workspace_id)
+            import dashscope
 
-            synthesizer = SpeechSynthesizer(**kwargs)
-            audio = synthesizer.call(text)
+            dashscope.api_key = api_key
+            synthesizer = SpeechSynthesizer(
+                **kwargs,
+                workspace=workspace_id or None,
+                url=_resolve_ws_url(region, workspace_id),
+            )
 
-            if audio is None:
-                try:
-                    resp = synthesizer.get_response()
-                    logger.error(f"Bailian CosyVoice empty audio, response={resp}")
-                except Exception:
-                    pass
-                raise RuntimeError("CosyVoice returned empty audio")
+        audio = synthesizer.call(text)
+
+        if audio is None:
+            try:
+                resp = synthesizer.get_response()
+                logger.error(f"Bailian CosyVoice empty audio, response={resp}")
+            except Exception:
+                pass
+            raise RuntimeError("CosyVoice returned empty audio")
 
         if isinstance(audio, (bytes, bytearray)):
             return bytes(audio)
