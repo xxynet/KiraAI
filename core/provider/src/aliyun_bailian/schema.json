@@ -1,0 +1,527 @@
+{
+  "provider_config": {
+    "api_key": {
+      "name": "API 密钥",
+      "type": "sensitive",
+      "default": null,
+      "hint": "阿里云百炼 API Key，在 https://bailian.console.aliyun.com/ 获取",
+      "locales": {
+        "en": {
+          "name": "API Key",
+          "hint": "Alibaba Cloud Bailian API Key from https://bailian.console.aliyun.com/"
+        }
+      }
+    },
+    "region": {
+      "name": "地域",
+      "type": "enum",
+      "default": "beijing",
+      "options": [
+        "beijing",
+        "singapore"
+      ],
+      "hint": "API 地域：beijing（华北2）或 singapore（新加坡）。API Key 需与地域匹配",
+      "locales": {
+        "en": {
+          "name": "Region",
+          "hint": "API region: beijing or singapore. API Key must match the region"
+        }
+      }
+    },
+    "workspace_id": {
+      "name": "业务空间 ID",
+      "type": "string",
+      "default": "",
+      "hint": "可选。填写后使用业务空间专属域名；留空则使用默认 DashScope 公共端点",
+      "locales": {
+        "en": {
+          "name": "Workspace ID",
+          "hint": "Optional. Use workspace-scoped endpoint when set; leave empty for public DashScope endpoint"
+        }
+      }
+    },
+    "base_url": {
+      "name": "Base URL（可选覆盖）",
+      "type": "string",
+      "default": "",
+      "hint": "可选。手动覆盖 OpenAI 兼容 Base URL；留空则按地域/业务空间自动生成",
+      "locales": {
+        "en": {
+          "name": "Base URL Override",
+          "hint": "Optional. Override OpenAI-compatible base URL; leave empty to auto-resolve by region/workspace"
+        }
+      }
+    },
+    "section_advanced": {
+      "type": "section",
+      "name": "高级设置",
+      "hint": "高级配置选项",
+      "collapsed": true,
+      "locales": {
+        "en": {
+          "name": "Advanced Settings",
+          "hint": "Advanced configuration options"
+        }
+      },
+      "fields": {
+        "headers": {
+          "name": "自定义请求头",
+          "type": "json",
+          "default": {},
+          "hint": "传递给 OpenAI 兼容客户端的自定义请求头",
+          "locales": {
+            "en": {
+              "name": "Custom Headers",
+              "hint": "Custom headers for OpenAI-compatible client"
+            }
+          }
+        }
+      }
+    }
+  },
+  "model_config": {
+    "llm": {
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "超时秒数",
+        "locales": {
+          "en": {
+            "name": "Timeout",
+            "hint": "Timeout seconds"
+          }
+        }
+      },
+      "section_advanced": {
+        "type": "section",
+        "name": "高级设置",
+        "hint": "高级模型配置选项",
+        "collapsed": true,
+        "locales": {
+          "en": {
+            "name": "Advanced Settings",
+            "hint": "Advanced model configuration options"
+          }
+        },
+        "fields": {
+          "temperature": {
+            "name": "温度",
+            "type": "float",
+            "default": null,
+            "min": 0,
+            "max": 2,
+            "hint": "模型温度",
+            "locales": {
+              "en": {
+                "name": "Temperature",
+                "hint": "Model temperature"
+              }
+            }
+          },
+          "extra_body": {
+            "name": "自定义请求体",
+            "type": "json",
+            "default": {},
+            "hint": "合并到请求体中的额外字段（JSON 对象），如 enable_search",
+            "locales": {
+              "en": {
+                "name": "Extra Body",
+                "hint": "Additional fields merged into request body (e.g. enable_search)"
+              }
+            }
+          }
+        }
+      }
+    },
+    "tts": {
+      "voice": {
+        "name": "音色 ID",
+        "type": "string",
+        "default": "longanyang",
+        "hint": "系统音色（如 longanyang）或百炼控制台声音复刻完成后的音色 ID。注意：音色需与所选模型匹配，不可跨模型混用",
+        "locales": {
+          "en": {
+            "name": "Voice ID",
+            "hint": "System voice (e.g. longanyang) or cloned voice ID. Voice must match the selected model"
+          }
+        }
+      },
+      "volume": {
+        "name": "音量",
+        "type": "integer",
+        "default": 50,
+        "min": 0,
+        "max": 100,
+        "hint": "音量，范围 0-100，默认 50",
+        "locales": {
+          "en": {
+            "name": "Volume",
+            "hint": "Volume range 0-100, default 50"
+          }
+        }
+      },
+      "speech_rate": {
+        "name": "语速",
+        "type": "float",
+        "default": 1.0,
+        "min": 0.5,
+        "max": 2.0,
+        "hint": "语速，范围 0.5-2.0，默认 1.0",
+        "locales": {
+          "en": {
+            "name": "Speech Rate",
+            "hint": "Speech rate range 0.5-2.0, default 1.0"
+          }
+        }
+      },
+      "pitch_rate": {
+        "name": "音调",
+        "type": "float",
+        "default": 1.0,
+        "min": 0.5,
+        "max": 2.0,
+        "hint": "音调，范围 0.5-2.0，默认 1.0",
+        "locales": {
+          "en": {
+            "name": "Pitch Rate",
+            "hint": "Pitch rate range 0.5-2.0, default 1.0"
+          }
+        }
+      },
+      "audio_format": {
+        "name": "音频格式",
+        "type": "enum",
+        "default": "mp3",
+        "options": [
+          "mp3",
+          "wav",
+          "pcm"
+        ],
+        "hint": "输出音频格式。mp3 兼容性最好，推荐默认",
+        "locales": {
+          "en": {
+            "name": "Audio Format",
+            "hint": "Output audio format. mp3 is recommended"
+          }
+        }
+      },
+      "language_hints": {
+        "name": "语言提示",
+        "type": "string",
+        "default": "auto",
+        "hint": "目标合成语言。填 auto 则按文本自动检测（推荐）；也可固定 zh/ja/en/ko 等。中英文逗号均可，但官方当前只使用第一个。与复刻样本语种无关",
+        "locales": {
+          "en": {
+            "name": "Language Hints",
+            "hint": "Target language. Use auto to detect from text (recommended), or fix zh/ja/en/ko. Only first value is used by CosyVoice"
+          }
+        }
+      },
+      "dialect": {
+        "name": "方言",
+        "type": "string",
+        "default": "auto",
+        "hint": "中文方言（声音复刻音色，经 instruction 生效）。填 auto 不强制方言；也可填：普通话/广东话/东北话/四川话/上海话/河南话/山东话/陕西话/山西话/闽南话/天津话/湖北话/湖南话/江西话/甘肃话/贵州话/宁夏话/云南话。别名如 粤语=广东话",
+        "locales": {
+          "en": {
+            "name": "Dialect",
+            "hint": "Chinese dialect via instruction. auto = no force; or 普通话/广东话/东北话/四川话/... (voice-clone CosyVoice)"
+          }
+        }
+      },
+      "instruction": {
+        "name": "指令控制",
+        "type": "string",
+        "default": "",
+        "hint": "可选。额外 Instruct（情感/角色等）。方言请优先用上方「方言」项；若此处已写「请用X表达」则不会重复注入",
+        "locales": {
+          "en": {
+            "name": "Instruction",
+            "hint": "Optional Instruct control (supported by some voices/models)"
+          }
+        }
+      },
+      "section_advanced": {
+        "type": "section",
+        "name": "高级设置",
+        "hint": "高级模型配置选项",
+        "collapsed": true,
+        "locales": {
+          "en": {
+            "name": "Advanced Settings",
+            "hint": "Advanced model configuration options"
+          }
+        },
+        "fields": {
+          "timeout": {
+            "name": "超时",
+            "type": "integer",
+            "default": 60,
+            "min": 1,
+            "hint": "合成超时时间（秒）",
+            "locales": {
+              "en": {
+                "name": "Timeout",
+                "hint": "Synthesis timeout in seconds"
+              }
+            }
+          },
+          "enable_markdown_filter": {
+            "name": "过滤 Markdown",
+            "type": "switch",
+            "default": false,
+            "hint": "是否过滤 Markdown 标记。官方仅部分复刻音色支持，默认关闭",
+            "locales": {
+              "en": {
+                "name": "Markdown Filter",
+                "hint": "Filter Markdown markers; default off"
+              }
+            }
+          }
+        }
+      }
+    },
+    "stt": {
+      "sample_rate": {
+        "name": "采样率",
+        "type": "integer",
+        "default": 16000,
+        "min": 8000,
+        "hint": "音频采样率（Hz）。paraformer-realtime-v2 可任意；8k 模型用 8000",
+        "locales": {
+          "en": {
+            "name": "Sample Rate",
+            "hint": "Audio sample rate (Hz). Use 8000 for 8k models"
+          }
+        }
+      },
+      "audio_format": {
+        "name": "音频格式",
+        "type": "enum",
+        "default": "wav",
+        "options": [
+          "wav",
+          "mp3",
+          "pcm",
+          "opus",
+          "aac",
+          "amr"
+        ],
+        "hint": "输入音频格式，需与实际文件匹配",
+        "locales": {
+          "en": {
+            "name": "Audio Format",
+            "hint": "Input audio format, must match the actual file"
+          }
+        }
+      },
+      "language_hints": {
+        "name": "语言提示",
+        "type": "string",
+        "default": "zh,en",
+        "hint": "语种提示，如 zh,en,ja,ko。多个用逗号分隔",
+        "locales": {
+          "en": {
+            "name": "Language Hints",
+            "hint": "Language hints e.g. zh,en,ja,ko"
+          }
+        }
+      },
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "识别超时时间（秒）",
+        "locales": {
+          "en": {
+            "name": "Timeout",
+            "hint": "Recognition timeout in seconds"
+          }
+        }
+      }
+    },
+    "image": {
+      "size": {
+        "name": "图片尺寸",
+        "type": "string",
+        "default": "auto",
+        "hint": "默认 auto：不强制比例。可固定 1280*1280 / 2K / 16:9。auto 时从提示词识别（竖图/4k横屏/1920x1080）；1K-8K 按真实分辨率意图换算，并自动钳到当前模型上限",
+        "locales": {
+          "en": {
+            "name": "Image Size",
+            "hint": "Default auto. Or fix 1280*1280 / 2K / 16:9. Auto parses prompt (portrait/4k landscape/1920x1080); N K maps to real pixels and clamps to model max"
+          }
+        }
+      },
+      "n": {
+        "name": "生成数量",
+        "type": "integer",
+        "default": 1,
+        "min": 1,
+        "max": 4,
+        "hint": "生成图片数量 1-4，按张计费，建议 1",
+        "locales": {
+          "en": {
+            "name": "Count",
+            "hint": "Number of images 1-4, billed per image"
+          }
+        }
+      },
+      "negative_prompt": {
+        "name": "反向提示词",
+        "type": "string",
+        "default": "",
+        "hint": "不希望出现的内容（部分模型支持）",
+        "locales": {
+          "en": {
+            "name": "Negative Prompt",
+            "hint": "Content to avoid (supported by some models)"
+          }
+        }
+      },
+      "style": {
+        "name": "风格（wanx-v1）",
+        "type": "string",
+        "default": "",
+        "hint": "仅 wanx-v1：如 <auto>、<anime>、<oil painting> 等",
+        "locales": {
+          "en": {
+            "name": "Style (wanx-v1)",
+            "hint": "Only for wanx-v1, e.g. <auto>, <anime>"
+          }
+        }
+      },
+      "prompt_extend": {
+        "name": "智能改写 Prompt",
+        "type": "switch",
+        "default": true,
+        "hint": "是否开启 prompt 智能改写（部分模型支持）",
+        "locales": {
+          "en": {
+            "name": "Prompt Extend",
+            "hint": "Enable smart prompt rewrite when supported"
+          }
+        }
+      },
+      "watermark": {
+        "name": "水印",
+        "type": "switch",
+        "default": false,
+        "hint": "是否添加水印",
+        "locales": {
+          "en": {
+            "name": "Watermark",
+            "hint": "Add watermark"
+          }
+        }
+      },
+      "seed": {
+        "name": "随机种子",
+        "type": "integer",
+        "default": null,
+        "hint": "可选随机种子，便于复现",
+        "locales": {
+          "en": {
+            "name": "Seed",
+            "hint": "Optional seed for reproducibility"
+          }
+        }
+      },
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "异步任务轮询超时（秒）",
+        "locales": {
+          "en": {
+            "name": "Timeout",
+            "hint": "Async task poll timeout in seconds"
+          }
+        }
+      }
+    },
+    "embedding": {
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 60,
+        "min": 1,
+        "hint": "请求超时时间（秒）",
+        "locales": {
+          "en": {
+            "name": "Timeout",
+            "hint": "Request timeout in seconds"
+          }
+        }
+      },
+      "dimensions": {
+        "name": "向量维度",
+        "type": "integer",
+        "default": null,
+        "hint": "可选。仅 text-embedding-v3/v4 支持，如 1024",
+        "locales": {
+          "en": {
+            "name": "Dimensions",
+            "hint": "Optional. Supported by text-embedding-v3/v4, e.g. 1024"
+          }
+        }
+      },
+      "slow_request_threshold": {
+        "name": "慢请求阈值",
+        "type": "float",
+        "default": 5.0,
+        "min": 0,
+        "hint": "超过此阈值（秒）的请求将被记录为慢请求",
+        "locales": {
+          "en": {
+            "name": "Slow Request Threshold",
+            "hint": "Log slow requests above this threshold (seconds)"
+          }
+        }
+      }
+    },
+    "rerank": {
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 30,
+        "min": 1,
+        "hint": "请求超时时间（秒）",
+        "locales": {
+          "en": {
+            "name": "Timeout",
+            "hint": "Request timeout in seconds"
+          }
+        }
+      },
+      "return_documents": {
+        "name": "返回文档原文",
+        "type": "switch",
+        "default": true,
+        "hint": "是否在结果中返回文档原文",
+        "locales": {
+          "en": {
+            "name": "Return Documents",
+            "hint": "Whether to return document text in results"
+          }
+        }
+      },
+      "instruct": {
+        "name": "排序指令",
+        "type": "string",
+        "default": "",
+        "hint": "可选。自定义排序指令（qwen3-rerank 等支持）",
+        "locales": {
+          "en": {
+            "name": "Instruct",
+            "hint": "Optional ranking instruction (qwen3-rerank etc.)"
+          }
+        }
+      }
+    }
+  }
+}
