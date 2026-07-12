@@ -11,11 +11,11 @@ def test_apply_update_removes_stale_backup_paths(tmp_path: Path, monkeypatch) ->
     (root / "assets").mkdir()
     (root / "assets" / "old.txt").write_text("old asset", encoding="utf-8")
 
-    stale_file_backup = root / "config.json.bak"
-    stale_file_backup.mkdir()
-    (stale_file_backup / "stale.txt").write_text("stale", encoding="utf-8")
-    stale_dir_backup = root / "assets.bak"
-    stale_dir_backup.write_text("stale", encoding="utf-8")
+    stale_dir_artifact = root / "config.json.bak"
+    stale_dir_artifact.mkdir()
+    (stale_dir_artifact / "stale.txt").write_text("stale", encoding="utf-8")
+    stale_file_artifact = root / "assets.bak"
+    stale_file_artifact.write_text("stale", encoding="utf-8")
 
     archive = tmp_path / "update.zip"
     with zipfile.ZipFile(archive, "w") as zf:
@@ -28,5 +28,5 @@ def test_apply_update_removes_stale_backup_paths(tmp_path: Path, monkeypatch) ->
 
     assert (root / "config.json").read_text(encoding="utf-8") == "new config"
     assert (root / "assets" / "new.txt").read_text(encoding="utf-8") == "new asset"
-    assert not stale_file_backup.exists()
-    assert not stale_dir_backup.exists()
+    assert not stale_dir_artifact.exists()
+    assert not stale_file_artifact.exists()
