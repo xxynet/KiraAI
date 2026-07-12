@@ -194,6 +194,11 @@ class ReleasesRoutes(Routes):
                         bak_path: Path | None = None
                         if had_original:
                             bak_path = dst.with_suffix(dst.suffix + ".bak")
+                            if bak_path.exists():
+                                if bak_path.is_dir():
+                                    shutil.rmtree(bak_path)
+                                else:
+                                    bak_path.unlink()
                             dst.rename(bak_path)
                         src.rename(dst)
                         actions.append((dst, bak_path, not had_original))
