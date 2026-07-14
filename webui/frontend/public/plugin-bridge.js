@@ -164,6 +164,61 @@
     })
   }
 
+  // ── Token helper ──────────────────────────────────────────────────────────
+
+  /**
+   * Read the current JWT token from localStorage (if available).
+   * Returns null when auth is disabled or the user hasn't logged in yet.
+   */
+  function getToken() {
+    try { return localStorage.getItem('jwt_token') } catch (_) { return null }
+  }
+
+  // ── WebSocket helpers ─────────────────────────────────────────────────────
+
+  /**
+   * Build the full WebSocket URL for a plugin WS endpoint.
+   *
+   * @param {string} path — bare route path registered via @register.ws(path),
+   *   e.g. ``"/call"``.  Leading slash is optional.
+   * @returns {string} full URL, e.g. ``ws://localhost:5267/ws/plugin/my-plugin/call``
+   */
+  function buildWsUrl(path) {
+    var pluginId = context ? context.pluginId : ''
+    var normalized = path.replace(/^\/+/, '')
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return proto + '//' + location.host + '/ws/plugin/' + encodeURIComponent(pluginId) + '/' + normalized
+  }
+
+  /**
+   * Create an authenticated WebSocket to a plugin endpoint.
+   *
+   * Reads the JWT token from localStorage and appends it as a ``?token=``
+   * query parameter so the server can validate the auth before the handshake
+   * completes.  Plugins should use this instead of ``new WebSocket()``
+   * whenever ``@register.ws(..., auth=True)`` is set.
+   *
+   * @param {string} path — bare route path registered via @register.ws(path),
+   *   e.g. ``"/call"``.  Leading slash is optional.
+   * @param {string|string[]} [protocols] — optional sub-protocol(s)
+   * @returns {WebSocket}
+   *
+   * Usage inside a plugin page:
+   *
+   *   await window.PluginPageContext.ready()
+   *   const ws = window.PluginPageContext.createWebSocket('/call')
+   *   ws.onmessage = ...
+   */
+  function createWebSocket(path, protocols) {
+    var url = buildWsUrl(path)
+    var token = getToken()
+    // Append token query parameter — use & if the URL already has a query string
+    if (token) {
+      url += (url.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(token)
+    }
+    return protocols ? new WebSocket(url, protocols) : new WebSocket(url)
+  }
+
   // ── Expose global ───────────────────────────────────────────────────────
 
   window.PluginPageContext = {
@@ -171,6 +226,9 @@
     getContext: getContext,
     onContext: onContext,
     onThemeChange: onThemeChange,
+    getToken: getToken,
+    buildWsUrl: buildWsUrl,
+    createWebSocket: createWebSocket,
     api: {
       get: apiGet,
       post: apiPost,
