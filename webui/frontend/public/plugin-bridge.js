@@ -184,7 +184,13 @@
    * @returns {string} full URL, e.g. ``ws://localhost:5267/ws/plugin/my-plugin/call``
    */
   function buildWsUrl(path) {
-    var pluginId = context ? context.pluginId : ''
+    if (!context) {
+      throw new Error(
+        'PluginPageContext: context is not initialized. ' +
+        'Await PluginPageContext.ready() before calling buildWsUrl().'
+      )
+    }
+    var pluginId = context.pluginId
     var normalized = path.replace(/^\/+/, '')
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     return proto + '//' + location.host + '/ws/plugin/' + encodeURIComponent(pluginId) + '/' + normalized
