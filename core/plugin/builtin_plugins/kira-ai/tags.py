@@ -61,6 +61,11 @@ class ImgTag(BaseTag):
         super().__init__(ctx=ctx)
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
+        # Check if image generation is enabled
+        caps = self.ctx.config.get_config("bot_config.capabilities.image_generation", {})
+        if not caps.get("enabled", True):
+            message_logger.warning("Image generation is disabled in capabilities settings")
+            return []
         path = kwargs.get("path")
         if path:
             # image-to-image mode
@@ -144,6 +149,10 @@ class RecordTag(BaseTag):
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         try:
+            caps = self.ctx.config.get_config("bot_config.capabilities.tts", {})
+            if not caps.get("enabled", True):
+                message_logger.warning("TTS is disabled in capabilities settings")
+                return []
             record_obj = await self.ctx.llm_api.text_to_speech(value)
             return [record_obj]
         except Exception as e:

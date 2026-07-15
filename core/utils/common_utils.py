@@ -32,14 +32,16 @@ async def image_to_base64(image_path: str):
     return base64_data.decode('utf-8')
 
 
-async def desc_img(client: LLMModelClient, image: Union[Image, Sticker], prompt="描述这张图片的内容，如果有文字请将其输出") -> str:
+async def desc_img(client: LLMModelClient, image: Union[Image, Sticker], prompt: str | None = None) -> str:
     """
     describe an image
     :param client: LLMModelClient
     :param image: url or base64
-    :param prompt: prompt of VLM
+    :param prompt: prompt of VLM, uses a default English prompt if None
     :return: image description
     """
+    if prompt is None:
+        prompt = "描述这张图片的内容，如果有文字请将其输出"
     from core.provider import LLMRequest
     try:
 

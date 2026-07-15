@@ -251,7 +251,14 @@ class MessageProcessor:
                     else:
                         try:
                             vlm_model = self.provider_mgr.get_default_vlm()
-                            img_desc = await desc_img(client=vlm_model, image=ele)
+
+                            # Check if image recognition is enabled
+                            caps = self.kira_config.get_config("bot_config.capabilities.image_recognition", {})
+                            if caps.get("enabled", True):
+                                img_prompt = caps.get("desc_prompt", "").strip() or None
+                                img_desc = await desc_img(client=vlm_model, image=ele, prompt=img_prompt)
+                            else:
+                                img_desc = ""
                         except Exception as e:
                             logger.error(f"Failed to get default VLM model for image description: {e}")
                             img_desc = ""
@@ -296,7 +303,14 @@ class MessageProcessor:
                     else:
                         try:
                             vlm_model = self.provider_mgr.get_default_vlm()
-                            sticker_desc = await desc_img(client=vlm_model, image=ele)
+
+                            # Check if image recognition is enabled
+                            caps = self.kira_config.get_config("bot_config.capabilities.image_recognition", {})
+                            if caps.get("enabled", True):
+                                sticker_prompt = caps.get("desc_prompt", "").strip() or None
+                                sticker_desc = await desc_img(client=vlm_model, image=ele, prompt=sticker_prompt)
+                            else:
+                                sticker_desc = ""
                         except Exception as e:
                             logger.error(f"Failed to get default VLM model for sticker description: {e}")
                             sticker_desc = ""
@@ -335,7 +349,11 @@ class MessageProcessor:
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
                 try:
-                    record_text = await self.llm_api.speech_to_text(record=ele)
+                    caps = self.kira_config.get_config("bot_config.capabilities.stt", {})
+                    if caps.get("enabled", True):
+                        record_text = await self.llm_api.speech_to_text(record=ele)
+                    else:
+                        record_text = "[Speech recognition disabled]"
                 except Exception as e:
                     logger.error(f"Failed to get STT model for speech recognition: {e}")
                     record_text = "[Speech recognition unavailable]"
