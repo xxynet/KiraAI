@@ -156,8 +156,9 @@ class BailianEmbeddingClient(EmbeddingModelClient):
                     "model": self.model.model_id,
                     "input": texts,
                 }
-                # dimensions only for v3/v4
-                if dimensions:
+                # dimensions only for text-embedding-v3 / v4 (v2 rejects it)
+                mid = (self.model.model_id or "").lower()
+                if dimensions and ("v3" in mid or "v4" in mid):
                     kwargs["dimensions"] = int(dimensions)
                     kwargs["encoding_format"] = "float"
 
@@ -379,6 +380,18 @@ def _image_size_limits(model_id: str) -> _ImageSizeLimits:
             max_aspect=8 / 1,
             multiple=16,
             allow_k_tokens=("1K", "2K"),  # no 4K on standard
+        )
+    if mid.startswith("wan2.6") and "t2i" not in mid:
+        # wan2.6-image (edit): total [768^2, 2048^2], tokens 1K/2K
+        return _ImageSizeLimits(
+            min_total=768 * 768,
+            max_total=2048 * 2048,
+            min_side=256,
+            max_side=2048,
+            min_aspect=1 / 4,
+            max_aspect=4 / 1,
+            multiple=16,
+            allow_k_tokens=("1K", "2K"),
         )
     if mid.startswith("wan2.6") or mid.startswith("wan2.5"):
         # Pure t2i: total roughly [~1.2M, 1440^2]; official presets like
@@ -790,6 +803,130 @@ class BailianImageClient(ImageModelClient):
         return mid.startswith("wan2.6") or mid.startswith("wan2.7")
 
     @staticmethod
+    def _is_pure_t2i_model(model_id: str) -> bool:
+        """Pure text-to-image models that reject reference images."""
+        mid = (model_id or "").lower().replace("_", ".")
+        # wan2.6-t2i / wan2.5-t2i-* / wan2.2-t2i-* / wanx*-t2i-*
+        if "t2i" in mid:
+            return True
+        return False
+
+    @staticmethod
+    def _is_edit_image_model(model_id: str) -> bool:
+        """Models designed for image edit / multimodal (accept refs)."""
+        mid = (model_id or "").lower().replace("_", ".")
+        if mid.startswith("wan2.7"):
+            return True
+        if mid.startswith("wan2.6") and "t2i" not in mid:
+            return True
+        return False
+
+    @staticmethod
+    def _supports_legacy_ref_img(model_id: str) -> bool:
+        """Older models that accept input.ref_img on text2image endpoint."""
+        mid = (model_id or "").lower().replace("_", ".")
+        return mid in ("wanx-v1", "wanx_v1")
+
+    @staticmethod
+    def _supports_messages_img2img(model_id: str) -> bool:
+        """Models that accept reference images via messages content[].image."""
+        return BailianImageClient._is_edit_image_model(model_id)
+
+    @staticmethod
+    def _auto_route_enabled(mc: dict | None) -> bool:
+        """Whether model auto-routing is enabled (default: False)."""
+        if not mc:
+            return False
+        return bool(mc.get("auto_route", False))
+
+    @staticmethod
+    def _resolve_img2img_model(model_id: str, auto_route: bool = False) -> str:
+        """Optionally map pure t2i ids to an edit-capable model when ref is required.
+
+        Only remaps when auto_route=True. Default is off: always keep configured id.
+        """
+        if not auto_route:
+            return model_id
+        mid = (model_id or "").lower().replace("_", ".")
+        if BailianImageClient._supports_messages_img2img(model_id):
+            return model_id
+        if BailianImageClient._supports_legacy_ref_img(model_id):
+            return model_id
+        # Any pure t2i or unknown wan image model with refs → modern edit model
+        if "t2i" in mid or mid.startswith("wan"):
+            return "wan2.6-image"
+        return model_id
+
+    @staticmethod
+    def _resolve_t2i_model(model_id: str, auto_route: bool = False) -> str:
+        """Optionally prefer pure-t2i model for text-only generation.
+
+        Only remaps when auto_route=True. Default is off: always keep configured id.
+        """
+        if not auto_route:
+            return model_id
+        mid = (model_id or "").lower().replace("_", ".")
+        if mid.startswith("wan2.6") and "t2i" not in mid and "image" in mid:
+            return "wan2.6-t2i"
+        return model_id
+
+    async def _image_to_ref_uri(self, image: Image) -> str | None:
+        """Convert KiraAI Image to a DashScope-accepted image URI (url or data-url)."""
+        if image is None:
+            return None
+        file_type = getattr(image, "file_type", None) or getattr(image, "image_type", None)
+        file_val = getattr(image, "file", None) or getattr(image, "image", None)
+        if file_type == "url" and file_val:
+            return str(file_val)
+        # Prefer data URL for local/base64 images
+        if hasattr(image, "to_data_url"):
+            try:
+                return await image.to_data_url()
+            except Exception as e:
+                logger.warning(f"Bailian Image: to_data_url failed: {e}")
+        if file_val and str(file_val).startswith(("http://", "https://", "data:")):
+            return str(file_val)
+        if hasattr(image, "to_base64"):
+            try:
+                b64 = await image.to_base64()
+                mime = getattr(image, "mime", None) or "image/png"
+                return f"data:{mime};base64,{b64}"
+            except Exception as e:
+                logger.warning(f"Bailian Image: to_base64 failed: {e}")
+        return None
+
+    async def _poll_image_task(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        http_base: str,
+        api_key: str,
+        task_id: str,
+        timeout: int,
+        label: str = "Image",
+    ) -> Image:
+        task_url = f"{http_base}/tasks/{task_id}"
+        poll_headers = {"Authorization": f"Bearer {api_key}"}
+        start = time.time()
+        while time.time() - start < timeout:
+            tr = await client.get(task_url, headers=poll_headers)
+            tr.raise_for_status()
+            tdata = tr.json()
+            output = (tdata.get("output") or {}) if isinstance(tdata, dict) else {}
+            status = (output.get("task_status") or tdata.get("task_status") or "").upper()
+            if status == "SUCCEEDED":
+                url = self._extract_image_url(output, tdata)
+                if not url:
+                    raise RuntimeError(f"Bailian {label} succeeded but no url: {tdata}")
+                return Image(image=url)
+            if status in ("FAILED", "CANCELED", "UNKNOWN"):
+                msg = output.get("message") or tdata.get("message") or status
+                code = output.get("code") or tdata.get("code") or ""
+                raise RuntimeError(f"Bailian {label} failed: {code} {msg}".strip())
+            await asyncio.sleep(2)
+        raise TimeoutError(f"Bailian {label} timed out after {timeout}s")
+
+    @staticmethod
     def _extract_image_url(output: dict, tdata: dict | None = None) -> str | None:
         """Extract first image URL from async task success payload.
 
@@ -836,9 +973,9 @@ class BailianImageClient(ImageModelClient):
                     return tdata.get(key)
         return None
 
-    def _build_payload(self, prompt: str, size: str | None = None) -> dict:
+    def _build_payload(self, prompt: str, size: str | None = None, model_id: str | None = None) -> dict:
         mc = self.model.model_config or {}
-        model_id = self.model.model_id
+        model_id = model_id or self.model.model_id
         # size: None means omit (API model default); never force 1024*1024
         if size is None:
             size = _resolve_image_size(mc, prompt, model_id)
@@ -867,7 +1004,7 @@ class BailianImageClient(ImageModelClient):
                 except (TypeError, ValueError):
                     pass
             # wan2.7 supports thinking_mode; keep optional from config
-            if "thinking_mode" in mc:
+            if "thinking_mode" in mc and mid.startswith("wan2.7"):
                 parameters["thinking_mode"] = bool(mc.get("thinking_mode"))
             payload = {
                 "model": model_id,
@@ -919,24 +1056,38 @@ class BailianImageClient(ImageModelClient):
         if not api_key:
             raise RuntimeError("Bailian Image: api_key is not configured")
 
+        configured = self.model.model_id
+        auto_route = self._auto_route_enabled(mc)
+        model_id = self._resolve_t2i_model(configured, auto_route=auto_route)
+        if model_id != configured:
+            logger.info(
+                f"Bailian Image auto_route: pure-text {configured!r} → {model_id!r}"
+            )
+
         timeout = int(mc.get("timeout", 120) or 120)
         http_base = resolve_http_base_url(mp).rstrip("/")
-        create_url = self._create_url(http_base, self.model.model_id)
+        create_url = self._create_url(http_base, model_id)
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "X-DashScope-Async": "enable",
         }
-        size = _resolve_image_size(mc, prompt, self.model.model_id)
-        payload = self._build_payload(prompt, size=size)
+        size = _resolve_image_size(mc, prompt, model_id)
+        payload = self._build_payload(prompt, size=size, model_id=model_id)
         logger.info(
             f"Bailian Image size resolved: config={mc.get('size')!r} -> {size!r} "
-            f"(model={self.model.model_id})"
+            f"(model={model_id})"
         )
 
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(create_url, json=payload, headers=headers)
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                try:
+                    err_body = resp.text
+                except Exception:
+                    err_body = ""
+                logger.error(f"Bailian Image HTTP {resp.status_code}: {err_body[:800]}")
+                resp.raise_for_status()
             data = resp.json()
 
             task_id = None
@@ -946,34 +1097,25 @@ class BailianImageClient(ImageModelClient):
             if not task_id:
                 raise RuntimeError(f"Bailian Image: no task_id in response: {data}")
 
-            task_url = f"{http_base}/tasks/{task_id}"
-            poll_headers = {
-                "Authorization": f"Bearer {api_key}",
-            }
-            start = time.time()
-            while time.time() - start < timeout:
-                tr = await client.get(task_url, headers=poll_headers)
-                tr.raise_for_status()
-                tdata = tr.json()
-                output = (tdata.get("output") or {}) if isinstance(tdata, dict) else {}
-                status = (output.get("task_status") or tdata.get("task_status") or "").upper()
-
-                if status == "SUCCEEDED":
-                    url = self._extract_image_url(output, tdata)
-                    if not url:
-                        raise RuntimeError(f"Bailian Image succeeded but no url: {tdata}")
-                    return Image(image=url)
-
-                if status in ("FAILED", "CANCELED", "UNKNOWN"):
-                    msg = output.get("message") or tdata.get("message") or status
-                    raise RuntimeError(f"Bailian Image failed: {msg}")
-
-                await asyncio.sleep(2)
-
-        raise TimeoutError(f"Bailian Image timed out after {timeout}s")
+            return await self._poll_image_task(
+                client,
+                http_base=http_base,
+                api_key=api_key,
+                task_id=task_id,
+                timeout=timeout,
+                label="Image",
+            )
 
     async def image_to_image(self, prompt: str, image: Union[Image, list[Image]]) -> Image:
-        # Best-effort: wanx-v1 supports ref_img; others may not.
+        """Image-to-image / edit with reference image(s).
+
+        Protocol (always, independent of auto_route):
+          - wan2.6-image / wan2.7-image*: messages + content[].image
+          - wanx-v1: legacy text2image + ref_img
+          - pure t2i without auto_route: raise clear error (model cannot take refs)
+          - pure t2i with auto_route=True: remap to wan2.6-image
+          - if no usable ref URI: fall back to text_to_image(prompt)
+        """
         if isinstance(image, Image):
             images = [image]
         else:
@@ -985,39 +1127,136 @@ class BailianImageClient(ImageModelClient):
         if not api_key:
             raise RuntimeError("Bailian Image: api_key is not configured")
 
-        ref_url = None
-        if images:
-            # Prefer public URL if already url type
-            first = images[0]
-            if getattr(first, "file_type", None) == "url":
-                ref_url = first.file
-            else:
-                # Fall back to data url — may not be accepted by all models
-                ref_url = await first.to_data_url()
+        # Collect up to 4 reference URIs (official edit limit)
+        ref_uris: list[str] = []
+        for img in images[:4]:
+            uri = await self._image_to_ref_uri(img)
+            if uri:
+                ref_uris.append(uri)
+
+        configured_model = self.model.model_id
+        if not ref_uris:
+            logger.warning(
+                "Bailian Image2Image: no usable reference image, falling back to text_to_image "
+                f"(model={configured_model})"
+            )
+            return await self.text_to_image(prompt)
+
+        auto_route = self._auto_route_enabled(mc)
+        model_id = self._resolve_img2img_model(configured_model, auto_route=auto_route)
+        if model_id != configured_model:
+            logger.info(
+                f"Bailian Image2Image auto_route: {configured_model!r} → {model_id!r} "
+                f"(reference image requires an edit-capable model)"
+            )
+
+        # Configured model cannot take refs and auto_route is off
+        if (
+            not self._supports_messages_img2img(model_id)
+            and not self._supports_legacy_ref_img(model_id)
+        ):
+            raise RuntimeError(
+                f"Bailian Image2Image: model {model_id!r} does not support reference images. "
+                f"Use wan2.6-image / wan2.7-image, or enable model_config.auto_route "
+                f"(default is off)."
+            )
 
         timeout = int(mc.get("timeout", 120) or 120)
         http_base = resolve_http_base_url(mp).rstrip("/")
-        create_url = f"{http_base}/services/aigc/text2image/image-synthesis"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "X-DashScope-Async": "enable",
         }
 
-        size = _resolve_image_size(mc, prompt, self.model.model_id)
-        payload = {
-            "model": self.model.model_id,
-            "input": {
-                "prompt": prompt,
-            },
-            "parameters": {
+        # Size: resolve against the *actual* model we will call
+        size = _resolve_image_size(mc, prompt, model_id)
+        negative_prompt = (mc.get("negative_prompt") or "").strip()
+        prompt_extend = mc.get("prompt_extend", True)
+        watermark = mc.get("watermark", False)
+        seed = mc.get("seed")
+
+        # ── Path A: modern messages img2img (wan2.6-image / wan2.7-*) ──
+        if self._supports_messages_img2img(model_id):
+            create_url = f"{http_base}/services/aigc/image-generation/generation"
+            content: list[dict] = [{"text": prompt}]
+            for uri in ref_uris:
+                content.append({"image": uri})
+
+            parameters: dict = {
                 "n": 1,
-            },
-        }
-        if size:
-            payload["parameters"]["size"] = size
-        if ref_url:
-            payload["input"]["ref_img"] = ref_url
+                "prompt_extend": bool(prompt_extend),
+                "watermark": bool(watermark),
+                "enable_interleave": False,  # image edit mode (requires refs)
+            }
+            if size:
+                parameters["size"] = size
+            if negative_prompt:
+                parameters["negative_prompt"] = negative_prompt
+            if seed is not None and str(seed).strip() != "":
+                try:
+                    parameters["seed"] = int(seed)
+                except (TypeError, ValueError):
+                    pass
+            if "thinking_mode" in mc and str(model_id).lower().startswith("wan2.7"):
+                parameters["thinking_mode"] = bool(mc.get("thinking_mode"))
+
+            payload = {
+                "model": model_id,
+                "input": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": content,
+                        }
+                    ]
+                },
+                "parameters": parameters,
+            }
+            logger.info(
+                f"Bailian Image2Image (messages): model={model_id}, refs={len(ref_uris)}, size={size!r}"
+            )
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(create_url, json=payload, headers=headers)
+                if resp.status_code >= 400:
+                    try:
+                        err_body = resp.text
+                    except Exception:
+                        err_body = ""
+                    logger.error(
+                        f"Bailian Image2Image HTTP {resp.status_code}: {err_body[:800]}"
+                    )
+                    resp.raise_for_status()
+                data = resp.json()
+                output = data.get("output") or {}
+                task_id = output.get("task_id") or data.get("task_id")
+                if not task_id:
+                    raise RuntimeError(f"Bailian Image2Image: no task_id: {data}")
+                return await self._poll_image_task(
+                    client,
+                    http_base=http_base,
+                    api_key=api_key,
+                    task_id=task_id,
+                    timeout=timeout,
+                    label="Image2Image",
+                )
+
+        # ── Path B: legacy wanx-v1 style ref_img only ──
+        if self._supports_legacy_ref_img(model_id):
+            create_url = f"{http_base}/services/aigc/text2image/image-synthesis"
+            payload = {
+                "model": model_id,
+                "input": {
+                    "prompt": prompt,
+                    "ref_img": ref_uris[0],
+                },
+                "parameters": {
+                    "n": 1,
+                },
+            }
+            if size:
+                payload["parameters"]["size"] = size
             ref_mode = (mc.get("ref_mode") or "repaint").strip()
             payload["parameters"]["ref_mode"] = ref_mode
             if mc.get("ref_strength") is not None:
@@ -1025,35 +1264,41 @@ class BailianImageClient(ImageModelClient):
                     payload["parameters"]["ref_strength"] = float(mc.get("ref_strength"))
                 except (TypeError, ValueError):
                     pass
+            if negative_prompt:
+                payload["input"]["negative_prompt"] = negative_prompt
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(create_url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            output = data.get("output") or {}
-            task_id = output.get("task_id") or data.get("task_id")
-            if not task_id:
-                raise RuntimeError(f"Bailian Image2Image: no task_id: {data}")
+            logger.info(
+                f"Bailian Image2Image (legacy ref_img): model={model_id}, size={size!r}"
+            )
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(create_url, json=payload, headers=headers)
+                if resp.status_code >= 400:
+                    try:
+                        err_body = resp.text
+                    except Exception:
+                        err_body = ""
+                    logger.error(
+                        f"Bailian Image2Image HTTP {resp.status_code}: {err_body[:800]}"
+                    )
+                    resp.raise_for_status()
+                data = resp.json()
+                output = data.get("output") or {}
+                task_id = output.get("task_id") or data.get("task_id")
+                if not task_id:
+                    raise RuntimeError(f"Bailian Image2Image: no task_id: {data}")
+                return await self._poll_image_task(
+                    client,
+                    http_base=http_base,
+                    api_key=api_key,
+                    task_id=task_id,
+                    timeout=timeout,
+                    label="Image2Image",
+                )
 
-            task_url = f"{http_base}/tasks/{task_id}"
-            poll_headers = {"Authorization": f"Bearer {api_key}"}
-            start = time.time()
-            while time.time() - start < timeout:
-                tr = await client.get(task_url, headers=poll_headers)
-                tr.raise_for_status()
-                tdata = tr.json()
-                output = (tdata.get("output") or {}) if isinstance(tdata, dict) else {}
-                status = (output.get("task_status") or "").upper()
-                if status == "SUCCEEDED":
-                    url = self._extract_image_url(output, tdata)
-                    if not url:
-                        raise RuntimeError(f"Bailian Image2Image empty url: {tdata}")
-                    return Image(image=url)
-                if status in ("FAILED", "CANCELED", "UNKNOWN"):
-                    raise RuntimeError(f"Bailian Image2Image failed: {output.get('message') or status}")
-                await asyncio.sleep(2)
-
-        raise TimeoutError(f"Bailian Image2Image timed out after {timeout}s")
+        # Should be unreachable: unsupported models raise earlier
+        raise RuntimeError(
+            f"Bailian Image2Image: no protocol handler for model {model_id!r}"
+        )
 
 
 # ───────────────────────────── STT ─────────────────────────────
@@ -1612,6 +1857,7 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         if additional_params:
             kwargs["additional_params"] = additional_params
 
+        # Keep global api_key mutation + call under lock (dashscope is process-global)
         with _DASHSCOPE_LOCK:
             import dashscope
 
@@ -1621,23 +1867,22 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
                 workspace=workspace_id or None,
                 url=_resolve_ws_url(region, workspace_id),
             )
+            audio = synthesizer.call(text)
 
-        audio = synthesizer.call(text)
+            if audio is None:
+                try:
+                    resp = synthesizer.get_response()
+                    logger.error(f"Bailian CosyVoice empty audio, response={resp}")
+                except Exception:
+                    pass
+                raise RuntimeError("CosyVoice returned empty audio")
 
-        if audio is None:
-            try:
-                resp = synthesizer.get_response()
-                logger.error(f"Bailian CosyVoice empty audio, response={resp}")
-            except Exception:
-                pass
-            raise RuntimeError("CosyVoice returned empty audio")
+            if isinstance(audio, (bytes, bytearray)):
+                return bytes(audio)
 
-        if isinstance(audio, (bytes, bytearray)):
-            return bytes(audio)
+            if hasattr(audio, "get_audio_data"):
+                data = audio.get_audio_data()
+                if data:
+                    return bytes(data)
 
-        if hasattr(audio, "get_audio_data"):
-            data = audio.get_audio_data()
-            if data:
-                return bytes(data)
-
-        raise RuntimeError(f"Unexpected CosyVoice audio type: {type(audio)}")
+            raise RuntimeError(f"Unexpected CosyVoice audio type: {type(audio)}")
