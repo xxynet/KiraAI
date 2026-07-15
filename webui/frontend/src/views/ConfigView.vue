@@ -278,7 +278,7 @@
             <button
               v-else-if="field.type === 'boolean'"
               type="button"
-              class="relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200"
+              class="relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               :class="getFieldValue(field.key) ? 'bg-blue-600 dark:bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
               :aria-checked="getFieldValue(field.key) ? 'true' : 'false'"
               role="switch"

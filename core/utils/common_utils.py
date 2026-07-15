@@ -37,7 +37,7 @@ async def desc_img(client: LLMModelClient, image: Union[Image, Sticker], prompt:
     describe an image
     :param client: LLMModelClient
     :param image: url or base64
-    :param prompt: prompt of VLM, uses a default English prompt if None
+    :param prompt: prompt of VLM, uses a default Chinese prompt if None
     :return: image description
     """
     if prompt is None:
