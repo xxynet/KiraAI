@@ -79,7 +79,9 @@ class DefaultPlugin(BasePlugin):
         if "poke" in message_types:
             tag_set.register(PokeTag)
         if "selfie" in message_types:
-            tag_set.register(SelfieTag(ctx=self.ctx))
+            caps = self.ctx.config.get_config("bot_config.capabilities.image_generation", {})
+            if caps.get("enabled", True):
+                tag_set.register(SelfieTag(ctx=self.ctx))
         if "file" in message_types:
             tag_set.register(build_file_tag())
         if "video" in message_types:
