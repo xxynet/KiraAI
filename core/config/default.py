@@ -21,6 +21,24 @@ DEFAULT_CONFIG = {
             "max_size_mb": 50,
             "max_files": 50,
             "max_age_hours": 24
+        },
+        "capabilities": {
+            "image_recognition": {
+                "enabled": True,
+                "desc_prompt": ""
+            },
+            "tts": {
+                "enabled": True
+            },
+            "stt": {
+                "enabled": True
+            },
+            "image_generation": {
+                "enabled": True
+            },
+            "video_generation": {
+                "enabled": False
+            }
         }
     },
     "locale": {

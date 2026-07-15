@@ -57,7 +57,7 @@ class DefaultPlugin(BasePlugin):
 
     @on.llm_request(priority=Priority.SYS_HIGH)
     async def inject_builtin_tags(self, event: KiraMessageBatchEvent, _, tag_set: TagSet):
-        """Inject builtin tags"""
+        """Inject builtin tags, respecting capability toggles"""
         message_types = event.message_types
         if "text" in message_types:
             tag_set.register(TextTag)
@@ -66,20 +66,28 @@ class DefaultPlugin(BasePlugin):
         if "reply" in message_types:
             tag_set.register(ReplyTag)
         if "img" in message_types:
-            tag_set.register(ImgTag(ctx=self.ctx))
+            caps = self.ctx.config.get_config("bot_config.capabilities.image_generation", {})
+            if caps.get("enabled", True):
+                tag_set.register(ImgTag(ctx=self.ctx))
         if "record" in message_types:
-            tag_set.register(RecordTag(ctx=self.ctx))
+            caps = self.ctx.config.get_config("bot_config.capabilities.tts", {})
+            if caps.get("enabled", True):
+                tag_set.register(RecordTag(ctx=self.ctx))
         if "emoji" in message_types:
             emoji_dict = getattr(self.ctx.adapter_mgr.get_adapter(event.adapter.name), "emoji_dict", {})
             tag_set.register(build_emoji_tag(emoji_json=emoji_dict)())
         if "poke" in message_types:
             tag_set.register(PokeTag)
         if "selfie" in message_types:
-            tag_set.register(SelfieTag(ctx=self.ctx))
+            caps = self.ctx.config.get_config("bot_config.capabilities.image_generation", {})
+            if caps.get("enabled", True):
+                tag_set.register(SelfieTag(ctx=self.ctx))
         if "file" in message_types:
             tag_set.register(build_file_tag())
         if "video" in message_types:
-            tag_set.register(VideoTag(ctx=self.ctx))
+            caps = self.ctx.config.get_config("bot_config.capabilities.video_generation", {})
+            if caps.get("enabled", False):
+                tag_set.register(VideoTag(ctx=self.ctx))
         if "forward" in message_types:
             tag_set.register(ForwardTag())
 

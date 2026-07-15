@@ -278,7 +278,7 @@
             <button
               v-else-if="field.type === 'boolean'"
               type="button"
-              class="relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               :class="getFieldValue(field.key) ? 'bg-blue-600 dark:bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
               :aria-checked="getFieldValue(field.key) ? 'true' : 'false'"
               role="switch"
@@ -438,6 +438,22 @@ const allGroups: ConfigGroup[] = [
     ],
   },
   {
+    id: 'capabilities',
+    labelKey: 'configuration.groups.capabilities',
+    labelFallback: 'Capabilities Settings',
+    descKey: 'configuration.groups.capabilities_desc',
+    descFallback: 'Enable or disable AI capabilities and customize their behavior',
+    icon: IconFlask,
+    fields: [
+      { key: 'bot_config.capabilities.image_recognition.enabled', labelKey: 'configuration.message.image_recognition_enabled', labelFallback: 'Image Recognition', hintKey: 'configuration.hints.image_recognition_enabled', hintFallback: 'Automatically describe images and stickers in messages using VLM', type: 'boolean', default: true },
+      { key: 'bot_config.capabilities.image_recognition.desc_prompt', labelKey: 'configuration.message.desc_prompt', labelFallback: 'Custom Description Prompt', hintKey: 'configuration.hints.desc_prompt', hintFallback: 'Custom prompt for image description. Leave empty to use the default prompt. Setting this will override the default', type: 'string', default: '' },
+      { key: 'bot_config.capabilities.stt.enabled', labelKey: 'configuration.message.stt_enabled', labelFallback: 'Speech Recognition', hintKey: 'configuration.hints.stt_enabled', hintFallback: 'Transcribe incoming voice messages to text', type: 'boolean', default: true },
+      { key: 'bot_config.capabilities.tts.enabled', labelKey: 'configuration.message.tts_enabled', labelFallback: 'Voice Synthesis', hintKey: 'configuration.hints.tts_enabled', hintFallback: 'Allow sending voice messages in reply', type: 'boolean', default: true },
+      { key: 'bot_config.capabilities.image_generation.enabled', labelKey: 'configuration.message.image_generation_enabled', labelFallback: 'Image Generation', hintKey: 'configuration.hints.image_generation_enabled', hintFallback: 'Allow generating images via text-to-image and image-to-image', type: 'boolean', default: true },
+      { key: 'bot_config.capabilities.video_generation.enabled', labelKey: 'configuration.message.video_generation_enabled', labelFallback: 'Video Generation', hintKey: 'configuration.hints.video_generation_enabled', hintFallback: 'Allow generating videos via text-to-video', type: 'boolean', default: false },
+    ],
+  },
+  {
     id: 'agent',
     labelKey: 'configuration.groups.agent',
     labelFallback: 'Agent Settings',
@@ -536,7 +552,7 @@ interface CategoryTab {
 }
 
 const categoryTabs: CategoryTab[] = [
-  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'agent', 'selfie'] },
+  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'selfie'] },
   { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['network', 'cache', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
