@@ -31,6 +31,7 @@ def _infer_type(model_id: str) -> str:
     """
     Best-effort type inference from model id.
     Used only for display tags; never blocks listing unknown remote models.
+    Order matters: video/tts/stt before broad wan/image prefixes.
     """
     mid = (model_id or "").lower().strip()
     if not mid:
@@ -45,20 +46,32 @@ def _infer_type(model_id: str) -> str:
         or mid.startswith("sensevoice")
     ):
         return "stt"
+    # Video before image: wan2.x-i2v / t2v / *-video* must not be tagged as image
     if (
-        mid.startswith("wan")
-        or mid.startswith("wanx")
-        or "t2i" in mid
-        or "image" in mid
-        or mid.startswith("flux")
+        "video" in mid
+        or "i2v" in mid
+        or "t2v" in mid
+        or "i2i" in mid and "video" in mid
+        or mid.endswith("-vace")
     ):
-        return "image"
+        return "video"
     if "embedding" in mid or mid.startswith("text-embedding"):
         return "embedding"
     if "rerank" in mid:
         return "rerank"
-    if "video" in mid or mid.startswith("wan2") and "i2v" in mid:
-        return "video"
+    if (
+        mid.startswith("wanx")
+        or "t2i" in mid
+        or mid.startswith("flux")
+        or ("image" in mid and "video" not in mid)
+        or (
+            mid.startswith("wan")
+            and "i2v" not in mid
+            and "t2v" not in mid
+            and "video" not in mid
+        )
+    ):
+        return "image"
     return "llm"
 
 
@@ -144,9 +157,14 @@ IMAGE_MODELS = [
         "description": "万相 2.7 标准版（更快）",
     },
     {
+        "id": "wan2.6-image",
+        "name": "Wan 2.6 Image",
+        "description": "万相 2.6 图像生成与编辑（支持参考图/图生图）",
+    },
+    {
         "id": "wan2.6-t2i",
         "name": "Wan 2.6 T2I",
-        "description": "万相 2.6 文生图（推荐）",
+        "description": "万相 2.6 纯文生图（不支持参考图；selfie 请用 wan2.6-image，或开启 auto_route）",
     },
     {
         "id": "wan2.5-t2i-preview",
