@@ -32,15 +32,18 @@ class DefaultPlugin(BasePlugin):
     async def terminate(self):
         pass
 
-    @staticmethod
-    def _get_current_time_str(dt: Optional[datetime] = None) -> str:
-        t = dt or datetime.now()
-        return t.strftime("%b %d %Y %H:%M %a")
+    def _get_current_time_str(self, dt: Optional[datetime] = None) -> str:
+        tz = self.ctx.get_timezone()
+        if dt is not None:
+            return dt.strftime("%b %d %Y %H:%M %a")
+        now = datetime.now(tz) if tz else datetime.now()
+        return now.strftime("%b %d %Y %H:%M %a")
 
     def _format_user_message(self, msg: Union[KiraIMMessage]) -> str:
         """格式化用户消息"""
         ts = msg.timestamp
-        dt = datetime.fromtimestamp(ts)
+        tz = self.ctx.get_timezone()
+        dt = datetime.fromtimestamp(ts, tz=tz) if tz else datetime.fromtimestamp(ts)
         date_str = self._get_current_time_str(dt=dt)
         # TODO format it in message processor
         if isinstance(msg, KiraIMMessage):

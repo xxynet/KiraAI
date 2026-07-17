@@ -55,7 +55,7 @@ class PromptManager:
     def get_current_time_str(self) -> str:
         """获取当前时间字符串"""
         tz = self.kira_config.get_timezone()
-        now = datetime.now(tz)
+        now = datetime.now(tz) if tz else datetime.now()
         return now.strftime("%b %d %Y %H:%M %a")
 
     def load_ada_config_prompt(self):

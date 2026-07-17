@@ -84,23 +84,21 @@ class KiraConfig(dict):
                 return default
         return v
 
-    def get_timezone(self) -> ZoneInfo:
+    def get_timezone(self):
         """Read locale.TZ from config and return a ZoneInfo object.
 
-        Falls back to the system local timezone if the config value is
-        empty, invalid, or not set.
+        Returns a ZoneInfo for the configured IANA timezone when valid.
+        Returns None if the config value is empty, invalid, or not set
+        — callers should fall back to datetime.now() in that case.
         """
         tz_str = self.get_config("locale.TZ", "")
-        if tz_str:
-            try:
-                return ZoneInfo(tz_str)
-            except (KeyError, TypeError):
-                logger.warning(f"Invalid timezone in config: '{tz_str}', falling back to system timezone")
+        if not tz_str:
+            return None
         try:
-            return ZoneInfo("localtime")
+            return ZoneInfo(tz_str)
         except (KeyError, TypeError):
-            from datetime import timezone
-            return timezone.utc
+            logger.warning(f"Invalid timezone in config: '{tz_str}'")
+            return None
 
     def __setattr__(self, key: str, value: Any) -> None:
         """set an attribute"""

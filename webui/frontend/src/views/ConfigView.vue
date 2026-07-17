@@ -485,7 +485,7 @@ const allGroups: ConfigGroup[] = [
     descFallback: 'Language and timezone configuration',
     icon: IconClock,
     fields: [
-      { key: 'locale.lang', labelKey: 'configuration.message.locale_lang', labelFallback: 'Language', hintKey: 'configuration.hints.locale_lang', hintFallback: 'Application UI language. Requires restart to take effect', type: 'select', default: 'en', selectOptions: [
+      { key: 'locale.lang', labelKey: 'configuration.message.locale_lang', labelFallback: 'Language', hintKey: 'configuration.hints.locale_lang', hintFallback: 'Backend language, used for default prompts and similar scenarios', type: 'select', default: 'en', selectOptions: [
         { value: 'zh', label: '中文' },
         { value: 'en', label: 'English' },
       ]},

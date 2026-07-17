@@ -211,7 +211,7 @@ class PluginContext:
     def get_timezone(self):
         """Get the configured timezone object for the application.
 
-        Returns a ZoneInfo object read from locale.TZ config, falling
-        back to system local timezone if not set or invalid.
+        Returns a ZoneInfo object if locale.TZ is configured and valid,
+        or None otherwise — callers should fall back to datetime.now().
         """
         return self.config.get_timezone()
