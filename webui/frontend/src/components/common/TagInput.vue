@@ -35,6 +35,7 @@
         :placeholder="modelValue.length === 0 ? (placeholder || '') : ''"
         @keydown.enter.prevent="addItem"
         @keydown.backspace="onBackspace"
+        @blur="addItem"
       />
     </form>
   </div>
