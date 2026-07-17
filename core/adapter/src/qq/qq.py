@@ -430,9 +430,12 @@ class QQAdapter(IMAdapter):
             elif ele.get("type") == "at":
                 at_obj = At(str(ele.get("data").get("qq")))
                 if str(ele.get("data").get("qq")) != "all":
-                    at_user_info = await self.bot.get_user_info(user_id=str(ele.get("data").get("qq")))
-                    at_nickname = at_user_info["data"]["nickname"]
-                    at_obj.nickname = at_nickname
+                    try:
+                        at_user_info = await self.bot.get_user_info(user_id=str(ele.get("data").get("qq")))
+                        at_obj.nickname = at_user_info["data"]["nickname"]
+                    except Exception as e:
+                        import traceback
+                        self.logger.error(traceback.format_exc())
                 message_content.append(at_obj)
             elif ele.get("type") == "reply":
                 try:
