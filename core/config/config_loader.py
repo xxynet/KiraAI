@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional
 import copy
 import json
 import os
+from zoneinfo import ZoneInfo
 
 from core.utils.path_utils import get_config_path
 from core.logging_manager import get_logger
@@ -82,6 +83,24 @@ class KiraConfig(dict):
             else:
                 return default
         return v
+
+    def get_timezone(self) -> ZoneInfo:
+        """Read locale.TZ from config and return a ZoneInfo object.
+
+        Falls back to the system local timezone if the config value is
+        empty, invalid, or not set.
+        """
+        tz_str = self.get_config("locale.TZ", "")
+        if tz_str:
+            try:
+                return ZoneInfo(tz_str)
+            except (KeyError, TypeError):
+                logger.warning(f"Invalid timezone in config: '{tz_str}', falling back to system timezone")
+        try:
+            return ZoneInfo("localtime")
+        except (KeyError, TypeError):
+            from datetime import timezone
+            return timezone.utc
 
     def __setattr__(self, key: str, value: Any) -> None:
         """set an attribute"""

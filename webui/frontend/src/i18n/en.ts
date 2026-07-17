@@ -594,6 +594,7 @@ export default {
       max: 'Maximum value is',
       has_errors: 'Please fix validation errors',
       url_invalid: 'Please enter a valid URL starting with http:// or https://',
+      timezone_invalid: 'Please enter a valid timezone, e.g. Asia/Shanghai or UTC',
     },
     message: {
       chat_info: 'More Chat Settings',

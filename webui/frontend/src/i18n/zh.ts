@@ -595,6 +595,7 @@ export default {
       max: '最大值为',
       has_errors: '请先修复验证错误',
       url_invalid: '请输入有效的 URL，以 http:// 或 https:// 开头',
+      timezone_invalid: '请输入有效的时区，例如 Asia/Shanghai 或 UTC',
     },
     message: {
       chat_info: '更多聊天设置',

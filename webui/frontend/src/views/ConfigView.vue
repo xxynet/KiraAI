@@ -489,7 +489,7 @@ const allGroups: ConfigGroup[] = [
         { value: 'zh', label: '中文' },
         { value: 'en', label: 'English' },
       ]},
-      { key: 'locale.TZ', labelKey: 'configuration.message.locale_tz', labelFallback: 'Timezone', hintKey: 'configuration.hints.locale_tz', hintFallback: 'Timezone for the application, e.g. Asia/Shanghai or UTC. Leave empty to use system timezone', type: 'string', default: '' },
+      { key: 'locale.TZ', labelKey: 'configuration.message.locale_tz', labelFallback: 'Timezone', hintKey: 'configuration.hints.locale_tz', hintFallback: 'Timezone for the application, e.g. Asia/Shanghai or UTC. Leave empty to use system timezone', type: 'string', default: '', validation: { pattern: /^[A-Za-z][A-Za-z0-9_\-+.]*(\/[A-Za-z0-9_\-+.]+)*$/, patternMessageKey: 'configuration.validation.timezone_invalid' } },
     ],
   },
   {
