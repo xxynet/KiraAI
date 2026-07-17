@@ -366,7 +366,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import InfoCallout from '@/components/common/InfoCallout.vue'
 import {
   IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
-  IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
+  IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown, IconClock,
 } from '@/components/icons'
 
 const { t, locale } = useI18n()
@@ -483,7 +483,7 @@ const allGroups: ConfigGroup[] = [
     labelFallback: 'Locale Settings',
     descKey: 'configuration.groups.locale_desc',
     descFallback: 'Language and timezone configuration',
-    icon: IconGlobe,
+    icon: IconClock,
     fields: [
       { key: 'locale.lang', labelKey: 'configuration.message.locale_lang', labelFallback: 'Language', hintKey: 'configuration.hints.locale_lang', hintFallback: 'Application UI language. Requires restart to take effect', type: 'select', default: 'en', selectOptions: [
         { value: 'zh', label: '中文' },
