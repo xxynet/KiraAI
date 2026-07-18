@@ -117,7 +117,6 @@ class OverviewRoutes(Routes):
             total_providers=total_providers,
             active_providers=active_providers,
             total_messages=total_messages,
-            system_status="running" if self.lifecycle else "unknown",
             runtime_duration=runtime_duration,
             memory_usage=memory_usage,
             total_memory=total_memory,

@@ -67,7 +67,6 @@ class OverviewResponse(BaseModel):
     total_providers: int = 0
     active_providers: int = 0
     total_messages: int = 0
-    system_status: str = "unknown"
     runtime_duration: int = 0  # System uptime in seconds
     memory_usage: int = 0  # Process memory usage in MB
     total_memory: int = 0  # Total system memory in MB

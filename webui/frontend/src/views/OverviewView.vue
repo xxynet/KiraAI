@@ -133,14 +133,6 @@
       </div>
     </template>
 
-    <!-- System Status -->
-    <div class="glass-card rounded-lg p-6">
-      <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.system_status') }}</h3>
-      <div class="flex items-center">
-        <span class="w-3 h-3 rounded-full mr-2" :class="statusDotClass"></span>
-        <span class="text-gray-700">{{ statusText }}</span>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -180,23 +172,6 @@ const formattedUptime = computed(() => {
   const m = Math.floor((s % 3600) / 60)
   const sec = s % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-})
-
-const statusDotClass = computed(() => {
-  if (!overview.value) return 'bg-gray-400'
-  const s = overview.value.system_status
-  if (s === 'running') return 'bg-green-500'
-  if (s === 'starting' || s === 'degraded') return 'bg-yellow-500'
-  if (s === 'error' || s === 'failed') return 'bg-red-500'
-  return 'bg-gray-400'
-})
-
-const statusText = computed(() => {
-  if (!overview.value) return t('overview.status_unknown')
-  const validStatuses = ['running', 'stopped', 'degraded', 'starting', 'error', 'failed']
-  const status = overview.value.system_status
-  if (!status || !validStatuses.includes(status)) return t('overview.status_unknown')
-  return t(`overview.status_${status}`)
 })
 
 /* ---- LLM computed properties ---- */

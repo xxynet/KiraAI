@@ -34,7 +34,6 @@ export interface OverviewResponse {
   total_providers: number
   active_providers: number
   total_messages: number
-  system_status: string
   runtime_duration: number
   memory_usage: number
   total_memory: number
