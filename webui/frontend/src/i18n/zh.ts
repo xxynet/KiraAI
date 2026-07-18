@@ -845,8 +845,8 @@ export default {
   onboarding: {
     title: '欢迎使用 KiraAI',
     description: '继续前，请设置后端使用的语言以及可选的时区。',
-    backend_language: '后端语言',
-    backend_language_hint: '用于默认提示词及其他后端行为。',
+    system_language: '系统语言',
+    system_language_hint: '用于默认提示词及其他后端行为。',
     chinese: '中文',
     english: 'English',
     timezone: '时区（可选）',

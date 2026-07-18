@@ -844,8 +844,8 @@ export default {
   onboarding: {
     title: 'Welcome to KiraAI',
     description: 'Set the language used by the backend and your optional timezone before continuing.',
-    backend_language: 'Backend Language',
-    backend_language_hint: 'Used for default prompts and other backend behavior.',
+    system_language: 'System Language',
+    system_language_hint: 'Used for default prompts and other backend behavior.',
     chinese: 'Chinese',
     english: 'English',
     timezone: 'Timezone (optional)',

@@ -27,14 +27,14 @@
         <form class="space-y-6" @submit.prevent="handleSubmit">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300" for="backend-language">
-              {{ t('onboarding.backend_language') }}
+              {{ t('onboarding.system_language') }}
             </label>
             <CustomSelect
               id="backend-language"
               v-model="language"
               :options="languageOptions"
             />
-            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('onboarding.backend_language_hint') }}</p>
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('onboarding.system_language_hint') }}</p>
           </div>
 
           <div>
