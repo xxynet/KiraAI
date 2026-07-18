@@ -556,3 +556,36 @@ class DatabaseService:
         async with self.db.transaction() as session:
             await session.execute(delete(TelemetryMessage).where(TelemetryMessage.timestamp < cutoff_ts))
             await session.execute(delete(TelemetryLLMUsage).where(TelemetryLLMUsage.timestamp < cutoff_ts))
+
+    # ------------------------------------------------------------------
+    # Overview aggregation queries
+    # ------------------------------------------------------------------
+
+    async def get_message_hourly_counts(self, since_ts: int) -> list[dict]:
+        """Aggregate total message count per hour since since_ts.
+
+        Returns [{"hour_ts": int_unix, "count": int}, ...] ordered by hour.
+        """
+        hour_bucket = cast(TelemetryMessage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(hour_bucket.label("hour_ts"), func.count().label("count"))
+            .where(TelemetryMessage.timestamp >= since_ts)
+            .group_by(hour_bucket)
+            .order_by(hour_bucket)
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [{"hour_ts": r["hour_ts"], "count": r["count"]} for r in rows]
+
+    async def get_message_platform_counts(self, since_ts: int) -> list[dict]:
+        """Aggregate message count per platform since since_ts.
+
+        Returns [{"platform": str, "count": int}, ...] ordered by count desc.
+        """
+        stmt = (
+            select(TelemetryMessage.platform, func.count().label("count"))
+            .where(TelemetryMessage.timestamp >= since_ts)
+            .group_by(TelemetryMessage.platform)
+            .order_by(func.count().desc())
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [{"platform": r["platform"], "count": r["count"]} for r in rows]

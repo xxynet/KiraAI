@@ -90,6 +90,11 @@ export default {
     status_error: 'Error',
     status_failed: 'Failed',
     provider_stats: 'Providers:',
+    hourly_messages: 'Messages (Last 24h)',
+    platform_distribution: 'Platform Distribution (Last 24h)',
+    hourly_tooltip: 'Messages',
+    pie_tooltip_count: 'Count',
+    pie_tooltip_pct: 'Percent',
   },
   provider: {
     title: 'Providers',

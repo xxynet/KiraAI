@@ -39,6 +39,18 @@ export interface OverviewResponse {
   memory_usage: number
   total_memory: number
   widgets: OverviewWidget[]
+  message_hourly: HourlyMessageCount[]
+  message_by_platform: PlatformMessageCount[]
+}
+
+export interface HourlyMessageCount {
+  hour_ts: number
+  count: number
+}
+
+export interface PlatformMessageCount {
+  platform: string
+  count: number
 }
 
 export interface VersionResponse {

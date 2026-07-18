@@ -90,6 +90,11 @@ export default {
     status_error: '错误',
     status_failed: '失败',
     provider_stats: '提供商：',
+    hourly_messages: '消息趋势（近24小时）',
+    platform_distribution: '平台分布（近24小时）',
+    hourly_tooltip: '消息数',
+    pie_tooltip_count: '数量',
+    pie_tooltip_pct: '占比',
   },
   provider: {
     title: '提供商',

@@ -58,6 +58,20 @@
       </div>
     </div>
 
+    <!-- Message Distribution Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <!-- Line chart: hourly messages -->
+      <div class="glass-card rounded-lg p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.hourly_messages') }}</h3>
+        <div ref="lineChartRef" class="w-full" style="height: 300px"></div>
+      </div>
+      <!-- Pie chart: platform distribution -->
+      <div class="glass-card rounded-lg p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.platform_distribution') }}</h3>
+        <div ref="pieChartRef" class="w-full" style="height: 300px"></div>
+      </div>
+    </div>
+
     <!-- Plugin Widgets: Small Cards -->
     <div v-if="smallWidgets.length"
          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
@@ -97,8 +111,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import * as echarts from 'echarts'
 import { IconClock, IconChat, IconTerminal, IconCpu } from '@/components/icons'
 import { getOverview } from '@/api/overview'
 import type { OverviewResponse, OverviewWidget } from '@/types'
@@ -108,14 +123,16 @@ import { iconMap } from '@/utils/iconMap'
 const { t, locale } = useI18n()
 const overview = ref<OverviewResponse | null>(null)
 const runtimeSeconds = ref(0)
+const lineChartRef = ref<HTMLElement | null>(null)
+const pieChartRef = ref<HTMLElement | null>(null)
+let lineChart: echarts.ECharts | null = null
+let pieChart: echarts.ECharts | null = null
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let runtimeTimer: ReturnType<typeof setInterval> | null = null
 let inFlight = false
 let disposed = false
 
 const formattedUptime = computed(() => {
-  // Normalize against malformed / non-integer API values so the formatter
-  // can never produce `NaN:NaN:NaN` or fractional seconds.
   const raw = Number(runtimeSeconds.value)
   const s = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0
   const h = Math.floor(s / 3600)
@@ -153,9 +170,6 @@ function resolveWidgetIcon(iconName: string) {
   return iconMap[iconName] || Box
 }
 
-/** Map widget color names to Tailwind classes.
- *  Using Tailwind class names (not inline styles) so the global dark-mode
- *  overrides in main.css (.dark .text-blue-600, etc.) take effect. */
 const widgetBgClasses: Record<string, string> = {
   blue:   'bg-blue-100',
   green:  'bg-green-100',
@@ -192,22 +206,160 @@ const wideWidgets = computed(() =>
     .sort((a, b) => a.order - b.order),
 )
 
+/* ---- Charts ---- */
+
+function formatHourLabel(hourTs: number): string {
+  const d = new Date(hourTs * 1000)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+const platformColorMap: Record<string, string> = {
+  qq: '#e74c3c',
+  telegram: '#3498db',
+  discord: '#5865f2',
+  wechat: '#27ae60',
+  bilibili: '#fb7299',
+  slack: '#4a154b',
+  whatsapp: '#25d366',
+}
+
+function getPlatformColor(platform: string): string {
+  return platformColorMap[platform.toLowerCase()] || '#7f8c8d'
+}
+
+function buildLineOption(data: OverviewResponse['message_hourly']) {
+  return {
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(255,255,255,0.9)',
+      borderColor: '#e5e7eb',
+      borderWidth: 1,
+      textStyle: { color: '#1f2937', fontSize: 13 },
+      formatter: (params: any) => {
+        const p = params[0]
+        if (!p) return ''
+        const raw = new Date(data[p.dataIndex]?.hour_ts * 1000 || 0)
+        const dateStr = `${raw.getMonth() + 1}/${raw.getDate()} ${String(raw.getHours()).padStart(2, '0')}:00`
+        return `<strong>${dateStr}</strong><br/>${t('overview.hourly_tooltip')}: ${p.value}`
+      },
+    },
+    grid: { left: 50, right: 20, top: 20, bottom: 30 },
+    xAxis: {
+      type: 'category',
+      data: data.map(d => formatHourLabel(d.hour_ts)),
+      axisLabel: { color: '#6b7280', fontSize: 11 },
+      axisLine: { lineStyle: { color: '#e5e7eb' } },
+      axisTick: { alignWithLabel: true },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLabel: { color: '#6b7280', fontSize: 11 },
+      splitLine: { lineStyle: { color: '#f3f4f6' } },
+    },
+    series: [
+      {
+        type: 'line',
+        data: data.map(d => d.count),
+        smooth: true,
+        lineStyle: { color: '#3b82f6', width: 2 },
+        itemStyle: { color: '#3b82f6' },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(59,130,246,0.3)' },
+            { offset: 1, color: 'rgba(59,130,246,0.02)' },
+          ]),
+        },
+        symbol: 'circle',
+        symbolSize: 6,
+      },
+    ],
+  }
+}
+
+function buildPieOption(data: OverviewResponse['message_by_platform']) {
+  return {
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(255,255,255,0.9)',
+      borderColor: '#e5e7eb',
+      borderWidth: 1,
+      textStyle: { color: '#1f2937', fontSize: 13 },
+      formatter: (params: any) => {
+        return `<strong>${params.name}</strong><br/>${t('overview.pie_tooltip_count')}: ${params.value}<br/>${t('overview.pie_tooltip_pct')}: ${params.percent}%`
+      },
+    },
+    legend: {
+      orient: 'vertical',
+      right: '5%',
+      top: 'center',
+      textStyle: { color: '#6b7280', fontSize: 12 },
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['40%', '70%'],
+        center: ['35%', '50%'],
+        avoidLabelOverlap: true,
+        label: { show: false },
+        emphasis: {
+          label: { show: true, fontSize: 14, fontWeight: 'bold' },
+          itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.15)' },
+        },
+        data: data.map(d => ({
+          value: d.count,
+          name: d.platform,
+          itemStyle: { color: getPlatformColor(d.platform) },
+        })),
+      },
+    ],
+  }
+}
+
+function renderCharts() {
+  if (!overview.value || disposed) return
+
+  if (lineChartRef.value) {
+    if (!lineChart) {
+      lineChart = echarts.init(lineChartRef.value)
+    }
+    lineChart.setOption(buildLineOption(overview.value.message_hourly), true)
+  }
+
+  if (pieChartRef.value) {
+    if (!pieChart) {
+      pieChart = echarts.init(pieChartRef.value)
+    }
+    pieChart.setOption(buildPieOption(overview.value.message_by_platform), true)
+  }
+}
+
+watch(
+  [lineChartRef, pieChartRef],
+  () => {
+    if (lineChartRef.value || pieChartRef.value) {
+      nextTick(renderCharts)
+    }
+  },
+)
+
 async function fetchOverview() {
   if (inFlight || disposed) return
   inFlight = true
   try {
     const res = await getOverview()
-    // If the component unmounted while awaiting, bail without touching state
-    // or resurrecting the runtime timer.
     if (disposed) return
     overview.value = res.data
     const rawRuntime = Number(res.data.runtime_duration)
     runtimeSeconds.value = Number.isFinite(rawRuntime) ? Math.max(0, Math.floor(rawRuntime)) : 0
-    // Start or restart the 1s runtime tick after a successful fetch
     if (runtimeTimer) clearInterval(runtimeTimer)
     runtimeTimer = setInterval(() => {
       runtimeSeconds.value++
     }, 1000)
+    await nextTick()
+    renderCharts()
   } catch {
     // silent
   } finally {
@@ -222,6 +374,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   disposed = true
+  if (lineChart) { lineChart.dispose(); lineChart = null }
+  if (pieChart) { pieChart.dispose(); pieChart = null }
   if (refreshTimer) clearInterval(refreshTimer)
   if (runtimeTimer) clearInterval(runtimeTimer)
   refreshTimer = null
@@ -230,10 +384,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* Dark-mode defaults for unstyled elements inside v-html widget content.
-   Gives bare <td>, <p>, etc. a readable light text colour.
-   Elements with explicit Tailwind classes (e.g. dark:text-gray-100)
-   will override this via the global dark-mode rules in main.css. */
 .dark .widget-html-content :deep(td),
 .dark .widget-html-content :deep(th),
 .dark .widget-html-content :deep(p),
