@@ -86,6 +86,7 @@ export default {
     platform_distribution: '平台分布（近24小时）',
     hourly_tooltip: '消息数',
     pie_tooltip_count: '数量',
+    pie_tooltip_model_usage: '模型用量',
     pie_tooltip_pct: '占比',
     llm_title: 'LLM 统计',
     llm_calls: 'LLM 调用次数',

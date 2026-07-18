@@ -86,6 +86,7 @@ export default {
     platform_distribution: 'Platform Distribution (Last 24h)',
     hourly_tooltip: 'Messages',
     pie_tooltip_count: 'Count',
+    pie_tooltip_model_usage: 'Model Usage',
     pie_tooltip_pct: 'Percent',
     llm_title: 'LLM Statistics',
     llm_calls: 'LLM Calls',

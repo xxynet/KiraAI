@@ -96,7 +96,7 @@
       <!-- Model Usage Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4" v-if="llmShowModelChart">
         <div>
-          <p class="text-xs text-gray-500 mb-1">{{ $t('overview.pie_tooltip_count') }}</p>
+          <p class="text-xs text-gray-500 mb-1">{{ $t('overview.pie_tooltip_model_usage') }}</p>
           <div ref="modelChartRef" class="w-full" style="height: 200px"></div>
         </div>
         <div>
@@ -551,8 +551,8 @@ function renderCharts() {
   nextTick(observeResize)
 }
 
-// Re-render charts when dark mode toggles
-watch(isDark, () => { nextTick(renderCharts) })
+// Re-render charts when dark mode or locale changes
+watch([isDark, locale], () => { nextTick(renderCharts) })
 
 /* ---- Chart resize handling ---- */
 
@@ -573,6 +573,8 @@ function observeResize() {
 watch(
   [lineChartRef, pieChartRef, modelChartRef, tokenChartRef],
   () => {
+    if (!modelChartRef.value && modelChart) { modelChart.dispose(); modelChart = null }
+    if (!tokenChartRef.value && tokenChart) { tokenChart.dispose(); tokenChart = null }
     if (lineChartRef.value || pieChartRef.value || modelChartRef.value || tokenChartRef.value) {
       nextTick(renderCharts)
     }

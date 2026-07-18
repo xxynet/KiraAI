@@ -606,29 +606,6 @@ class DatabaseService:
                         "avg_response_ms": float}, ...],
         }
         """
-        total_stmt = (
-            select(
-                func.count().label("total_calls"),
-                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label("total_input_tokens"),
-                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label("total_output_tokens"),
-                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label("total_cached_tokens"),
-                func.coalesce(func.sum(func.cast(TelemetryLLMUsage.success, Integer)), 0).label("success_count"),
-                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label("total_response_ms"),
-            )
-            .where(TelemetryLLMUsage.timestamp >= since_ts)
-        )
-        row = await self.db.fetch_one(total_stmt)
-        if row is None:
-            return {
-                "total_calls": 0,
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "total_cached_tokens": 0,
-                "success_count": 0,
-                "total_response_ms": 0,
-                "by_model": [],
-            }
-
         by_model_stmt = (
             select(
                 TelemetryLLMUsage.model,
@@ -646,12 +623,12 @@ class DatabaseService:
         by_model = await self.db.fetch_all(by_model_stmt)
 
         return {
-            "total_calls": row["total_calls"],
-            "total_input_tokens": row["total_input_tokens"],
-            "total_output_tokens": row["total_output_tokens"],
-            "total_cached_tokens": row["total_cached_tokens"],
-            "success_count": row["success_count"],
-            "total_response_ms": row["total_response_ms"],
+            "total_calls": sum(r["calls"] for r in by_model),
+            "total_input_tokens": sum(r["input_tokens"] for r in by_model),
+            "total_output_tokens": sum(r["output_tokens"] for r in by_model),
+            "total_cached_tokens": sum(r["cached_tokens"] for r in by_model),
+            "success_count": sum(r["success"] for r in by_model),
+            "total_response_ms": sum(r["total_response_ms"] for r in by_model),
             "by_model": [
                 {
                     "model": r["model"],
