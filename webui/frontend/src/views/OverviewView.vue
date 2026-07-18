@@ -59,14 +59,14 @@
     </div>
 
     <!-- Message Distribution Charts -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-      <!-- Line chart: hourly messages -->
-      <div class="glass-card rounded-lg p-6">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
+      <!-- Line chart: hourly messages (wider) -->
+      <div class="glass-card rounded-lg p-6 lg:col-span-3">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.hourly_messages') }}</h3>
         <div ref="lineChartRef" class="w-full" style="height: 300px"></div>
       </div>
       <!-- Pie chart: platform distribution -->
-      <div class="glass-card rounded-lg p-6">
+      <div class="glass-card rounded-lg p-6 lg:col-span-2">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.platform_distribution') }}</h3>
         <div ref="pieChartRef" class="w-full" style="height: 300px"></div>
       </div>
@@ -208,6 +208,36 @@ const wideWidgets = computed(() =>
 
 /* ---- Charts ---- */
 
+/** Generate a complete 24-hour series filled with zeros, then merge
+ *  API data into it so empty hours still appear on the x-axis. */
+function fillMissingHours(hourly: OverviewResponse['message_hourly']): OverviewResponse['message_hourly'] {
+  const now = Date.now()
+  // Round current time down to the hour, then subtract 23 hours to get
+  // the start of a 24-bucket window (current hour is the 24th).
+  const currentHour = Math.floor(now / 3600000) * 3600
+  const startTs = currentHour - 23 * 3600
+
+  const buckets: OverviewResponse['message_hourly'] = []
+  for (let i = 0; i < 24; i++) {
+    const hourTs = startTs + i * 3600
+    buckets.push({ hour_ts: hourTs, count: 0 })
+  }
+
+  // Build a lookup keyed by hour_ts and overlay real data
+  const lookup = new Map<number, number>()
+  for (const d of hourly) {
+    lookup.set(d.hour_ts, d.count)
+  }
+  for (const b of buckets) {
+    b.count = lookup.get(b.hour_ts) ?? 0
+  }
+  return buckets
+}
+
+const filledHourly = computed(() =>
+  overview.value ? fillMissingHours(overview.value.message_hourly) : [],
+)
+
 function formatHourLabel(hourTs: number): string {
   const d = new Date(hourTs * 1000)
   const hh = String(d.getHours()).padStart(2, '0')
@@ -292,16 +322,17 @@ function buildPieOption(data: OverviewResponse['message_by_platform']) {
       },
     },
     legend: {
-      orient: 'vertical',
-      right: '5%',
-      top: 'center',
+      orient: 'horizontal',
+      bottom: 0,
+      left: 'center',
       textStyle: { color: '#6b7280', fontSize: 12 },
     },
+    grid: { left: 0, right: 0, top: 0, bottom: 40 },
     series: [
       {
         type: 'pie',
-        radius: ['40%', '70%'],
-        center: ['35%', '50%'],
+        radius: ['40%', '65%'],
+        center: ['50%', '45%'],
         avoidLabelOverlap: true,
         label: { show: false },
         emphasis: {
@@ -325,7 +356,7 @@ function renderCharts() {
     if (!lineChart) {
       lineChart = echarts.init(lineChartRef.value)
     }
-    lineChart.setOption(buildLineOption(overview.value.message_hourly), true)
+    lineChart.setOption(buildLineOption(filledHourly.value), true)
   }
 
   if (pieChartRef.value) {
