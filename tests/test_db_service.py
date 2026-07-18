@@ -304,6 +304,47 @@ async def test_telemetry_llm_usage_aggregation(svc):
 
 
 @pytest.mark.anyio
+async def test_llm_summary_derives_totals_from_model_rows():
+    model_rows = [
+        {
+            "model": "gpt-4o",
+            "calls": 2,
+            "success": 2,
+            "input_tokens": 3000,
+            "output_tokens": 1300,
+            "cached_tokens": 300,
+            "total_response_ms": 2000,
+        },
+        {
+            "model": "deepseek",
+            "calls": 1,
+            "success": 0,
+            "input_tokens": 500,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "total_response_ms": 5000,
+        },
+    ]
+
+    class SummaryDatabase:
+        async def fetch_all(self, _stmt):
+            return model_rows
+
+        async def fetch_one(self, _stmt):
+            raise AssertionError("LLM summary totals must use the per-model query snapshot")
+
+    summary = await DatabaseService(SummaryDatabase()).get_llm_summary(since_ts=0)
+
+    assert summary["total_calls"] == 3
+    assert summary["total_input_tokens"] == 3500
+    assert summary["total_output_tokens"] == 1300
+    assert summary["total_cached_tokens"] == 300
+    assert summary["success_count"] == 2
+    assert summary["total_response_ms"] == 7000
+    assert len(summary["by_model"]) == 2
+
+
+@pytest.mark.anyio
 async def test_telemetry_message_rows_and_mark_by_ids(svc):
     h10 = 10 * HOUR
     await svc.add_telemetry_message(h10 + 100, "QQ")

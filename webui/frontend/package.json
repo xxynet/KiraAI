@@ -12,11 +12,13 @@
     "@element-plus/icons-vue": "^2.3.1",
     "axios": "^1.7.9",
     "dompurify": "^3.4.2",
+    "echarts": "^6.1.0",
     "event-source-polyfill": "^1.0.31",
     "marked": "^18.0.3",
     "monaco-editor": "^0.52.2",
     "pinia": "^2.3.0",
     "vue": "^3.5.13",
+    "vue-echarts": "^8.0.1",
     "vue-i18n": "^9.14.0",
     "vue-router": "^4.5.0"
   },

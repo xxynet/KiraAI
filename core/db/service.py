@@ -556,3 +556,90 @@ class DatabaseService:
         async with self.db.transaction() as session:
             await session.execute(delete(TelemetryMessage).where(TelemetryMessage.timestamp < cutoff_ts))
             await session.execute(delete(TelemetryLLMUsage).where(TelemetryLLMUsage.timestamp < cutoff_ts))
+
+    # ------------------------------------------------------------------
+    # Overview aggregation queries
+    # ------------------------------------------------------------------
+
+    async def get_message_hourly_counts(self, since_ts: int) -> list[dict]:
+        """Aggregate total message count per hour since since_ts.
+
+        Returns [{"hour_ts": int_unix, "count": int}, ...] ordered by hour.
+        """
+        hour_bucket = cast(TelemetryMessage.timestamp / 3600, Integer) * 3600
+        stmt = (
+            select(hour_bucket.label("hour_ts"), func.count().label("count"))
+            .where(TelemetryMessage.timestamp >= since_ts)
+            .group_by(hour_bucket)
+            .order_by(hour_bucket)
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [{"hour_ts": r["hour_ts"], "count": r["count"]} for r in rows]
+
+    async def get_message_platform_counts(self, since_ts: int) -> list[dict]:
+        """Aggregate message count per platform since since_ts.
+
+        Returns [{"platform": str, "count": int}, ...] ordered by count desc.
+        """
+        stmt = (
+            select(TelemetryMessage.platform, func.count().label("count"))
+            .where(TelemetryMessage.timestamp >= since_ts)
+            .group_by(TelemetryMessage.platform)
+            .order_by(func.count().desc())
+        )
+        rows = await self.db.fetch_all(stmt)
+        return [{"platform": r["platform"], "count": r["count"]} for r in rows]
+
+    async def get_llm_summary(self, since_ts: int) -> dict:
+        """Aggregate LLM usage stats since since_ts.
+
+        Returns {
+          "total_calls": int,
+          "total_input_tokens": int,
+          "total_output_tokens": int,
+          "total_cached_tokens": int,
+          "success_count": int,
+          "total_response_ms": int,
+          "by_model": [{"model": str, "calls": int, "success": int,
+                        "input_tokens": int, "output_tokens": int,
+                        "cached_tokens": int, "total_response_ms": int,
+                        "avg_response_ms": float}, ...],
+        }
+        """
+        by_model_stmt = (
+            select(
+                TelemetryLLMUsage.model,
+                func.count().label("calls"),
+                func.coalesce(func.sum(func.cast(TelemetryLLMUsage.success, Integer)), 0).label("success"),
+                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label("input_tokens"),
+                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label("output_tokens"),
+                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label("cached_tokens"),
+                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label("total_response_ms"),
+            )
+            .where(TelemetryLLMUsage.timestamp >= since_ts)
+            .group_by(TelemetryLLMUsage.model)
+            .order_by(func.count().desc())
+        )
+        by_model = await self.db.fetch_all(by_model_stmt)
+
+        return {
+            "total_calls": sum(r["calls"] for r in by_model),
+            "total_input_tokens": sum(r["input_tokens"] for r in by_model),
+            "total_output_tokens": sum(r["output_tokens"] for r in by_model),
+            "total_cached_tokens": sum(r["cached_tokens"] for r in by_model),
+            "success_count": sum(r["success"] for r in by_model),
+            "total_response_ms": sum(r["total_response_ms"] for r in by_model),
+            "by_model": [
+                {
+                    "model": r["model"],
+                    "calls": r["calls"],
+                    "success": r["success"],
+                    "input_tokens": r["input_tokens"],
+                    "output_tokens": r["output_tokens"],
+                    "cached_tokens": r["cached_tokens"],
+                    "total_response_ms": r["total_response_ms"],
+                    "avg_response_ms": round(r["total_response_ms"] / r["calls"], 1) if r["calls"] > 0 else 0,
+                }
+                for r in by_model
+            ],
+        }

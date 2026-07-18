@@ -26,17 +26,54 @@ class OverviewWidget(BaseModel):
     size: Literal["small", "wide"] = "small"
 
 
+class HourlyMessageCount(BaseModel):
+    """One data point for the hourly message line chart."""
+    hour_ts: int = 0  # Unix timestamp of the hour bucket
+    count: int = 0
+
+
+class PlatformMessageCount(BaseModel):
+    """One data point for the platform distribution pie chart."""
+    platform: str = ""
+    count: int = 0
+
+
+class LLMModelStat(BaseModel):
+    """Per-model LLM usage summary."""
+    model: str = ""
+    calls: int = 0
+    success: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
+    total_response_ms: int = 0
+    avg_response_ms: float = 0
+
+
+class LLMSummary(BaseModel):
+    """Aggregated LLM usage statistics."""
+    total_calls: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cached_tokens: int = 0
+    success_count: int = 0
+    total_response_ms: int = 0
+    by_model: List[LLMModelStat] = Field(default_factory=list)
+
+
 class OverviewResponse(BaseModel):
     total_adapters: int = 0
     active_adapters: int = 0
     total_providers: int = 0
     active_providers: int = 0
     total_messages: int = 0
-    system_status: str = "unknown"
     runtime_duration: int = 0  # System uptime in seconds
     memory_usage: int = 0  # Process memory usage in MB
     total_memory: int = 0  # Total system memory in MB
     widgets: List[OverviewWidget] = Field(default_factory=list)
+    message_hourly: List[HourlyMessageCount] = Field(default_factory=list)
+    message_by_platform: List[PlatformMessageCount] = Field(default_factory=list)
+    llm_summary: LLMSummary = Field(default_factory=LLMSummary)
 
 
 class VersionResponse(BaseModel):
