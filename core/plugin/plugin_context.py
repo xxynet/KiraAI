@@ -200,3 +200,18 @@ class PluginContext:
         :return: KiraIMSentResult object
         """
         return await self.message_processor.send_message_chain(session, chain)
+
+    def get_lang(self) -> str:
+        """Get the configured backend language code (e.g. 'zh', 'en').
+
+        Returns 'en' as default if not set.
+        """
+        return self.config.get_config("locale.lang", "en")
+
+    def get_timezone(self):
+        """Get the configured timezone object for the application.
+
+        Returns a ZoneInfo object if locale.TZ is configured and valid,
+        or None otherwise — callers should fall back to datetime.now().
+        """
+        return self.config.get_timezone()

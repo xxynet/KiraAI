@@ -63,6 +63,7 @@ class ConfigRoutes(Routes):
                 "logging": config.get("logging", {}),
                 "adapters": config.get("adapters", {}),
                 "network": config.get("network", {}),
+                "locale": config.get("locale", {}),
             },
             "providers": providers,
             "provider_models": provider_models,
@@ -78,7 +79,7 @@ class ConfigRoutes(Routes):
         # corruption, validate that every section *present* in the payload is an
         # object/dict and reject with HTTP 400 otherwise; sections the client did
         # not send are left untouched (present-only assignment).
-        for section in ("bot_config", "models", "logging", "adapters", "network"):
+        for section in ("bot_config", "models", "logging", "adapters", "network", "locale"):
             if section in payload and not isinstance(payload[section], dict):
                 raise HTTPException(
                     status_code=400,
@@ -118,6 +119,9 @@ class ConfigRoutes(Routes):
         if "network" in payload:
             config["network"] = network_config
             updated = True
+        if "locale" in payload:
+            config["locale"] = payload["locale"]
+            updated = True
         if updated:
             config.save_config()
             if isinstance(network_config, dict) and self.lifecycle:
@@ -131,5 +135,6 @@ class ConfigRoutes(Routes):
                 "logging": config.get("logging", {}),
                 "adapters": config.get("adapters", {}),
                 "network": config.get("network", {}),
+                "locale": config.get("locale", {}),
             },
         }

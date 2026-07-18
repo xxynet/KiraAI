@@ -366,7 +366,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import InfoCallout from '@/components/common/InfoCallout.vue'
 import {
   IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
-  IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown,
+  IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown, IconClock,
 } from '@/components/icons'
 
 const { t, locale } = useI18n()
@@ -478,6 +478,21 @@ const allGroups: ConfigGroup[] = [
     ],
   },
   {
+    id: 'locale',
+    labelKey: 'configuration.groups.locale',
+    labelFallback: 'Locale Settings',
+    descKey: 'configuration.groups.locale_desc',
+    descFallback: 'Language and timezone configuration',
+    icon: IconClock,
+    fields: [
+      { key: 'locale.lang', labelKey: 'configuration.message.locale_lang', labelFallback: 'Language', hintKey: 'configuration.hints.locale_lang', hintFallback: 'Backend language, used for default prompts and similar scenarios', type: 'select', default: 'en', selectOptions: [
+        { value: 'zh', label: '中文' },
+        { value: 'en', label: 'English' },
+      ]},
+      { key: 'locale.TZ', labelKey: 'configuration.message.locale_tz', labelFallback: 'Timezone', hintKey: 'configuration.hints.locale_tz', hintFallback: 'Timezone for the application, e.g. Asia/Shanghai or UTC. Leave empty to use system timezone', type: 'string', default: '', validation: { pattern: /^[A-Za-z][A-Za-z0-9_\-+.]*(\/[A-Za-z0-9_\-+.]+)*$/, patternMessageKey: 'configuration.validation.timezone_invalid' } },
+    ],
+  },
+  {
     id: 'network',
     labelKey: 'configuration.groups.network',
     labelFallback: 'Network Settings',
@@ -553,7 +568,7 @@ interface CategoryTab {
 
 const categoryTabs: CategoryTab[] = [
   { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'selfie'] },
-  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['network', 'cache', 'logging'] },
+  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['locale', 'network', 'cache', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
 
