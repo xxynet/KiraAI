@@ -1,6 +1,6 @@
 import asyncio
 import base64
-import concurrent.futures
+import inspect
 import os
 import re
 import tempfile
@@ -1949,35 +1949,38 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         )
 
         try:
-            # Single overall deadline for lock wait + synthesis (not additive).
+            # Run blocking synthesis off the event loop. The sync path holds
+            # _DASHSCOPE_LOCK until the SDK call actually returns; timeout is
+            # enforced inside the SDK (timeout_millis), not by abandoning a
+            # future and unlocking early.
             loop = asyncio.get_running_loop()
-            audio_bytes = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda: self._synth_sync(
-                        text=text,
-                        api_key=api_key,
-                        model_id=model_id,
-                        voice=voice,
-                        region=region,
-                        workspace_id=workspace_id,
-                        volume=volume,
-                        speech_rate=speech_rate,
-                        pitch_rate=pitch_rate,
-                        audio_format=audio_format,
-                        language_hints=language_hints,
-                        instruction=instruction,
-                        enable_markdown_filter=enable_markdown_filter,
-                        timeout_sec=timeout,
-                    ),
+            audio_bytes = await loop.run_in_executor(
+                None,
+                lambda: self._synth_sync(
+                    text=text,
+                    api_key=api_key,
+                    model_id=model_id,
+                    voice=voice,
+                    region=region,
+                    workspace_id=workspace_id,
+                    volume=volume,
+                    speech_rate=speech_rate,
+                    pitch_rate=pitch_rate,
+                    audio_format=audio_format,
+                    language_hints=language_hints,
+                    instruction=instruction,
+                    enable_markdown_filter=enable_markdown_filter,
+                    timeout_sec=timeout,
                 ),
-                timeout=max(1, int(timeout or 60)) + 1,
             )
-        except asyncio.TimeoutError:
-            logger.error(f"Bailian CosyVoice TTS timed out after {timeout}s (model={model_id})")
-            return None
         except Exception as e:
-            logger.error(f"Bailian CosyVoice TTS failed: {e}")
+            # Surface SDK/timeout failures; do not invent silent empty audio.
+            if isinstance(e, TimeoutError) or "timed out" in str(e).lower():
+                logger.error(
+                    f"Bailian CosyVoice TTS timed out after {timeout}s (model={model_id})"
+                )
+            else:
+                logger.error(f"Bailian CosyVoice TTS failed: {e}")
             return None
 
         if not audio_bytes:
@@ -1986,6 +1989,23 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str, mime=_resolve_mime(audio_format))
+
+    @staticmethod
+    def _call_speech_synthesizer(synthesizer, text: str, timeout_ms: int):
+        """Invoke CosyVoice synthesizer.call with SDK-native timeout when available.
+
+        Must be called while holding `_DASHSCOPE_LOCK`. The call is synchronous:
+        we never unlock while synthesis may still be in flight.
+        """
+        try:
+            sig = inspect.signature(synthesizer.call)
+            if "timeout_millis" in sig.parameters:
+                return synthesizer.call(text, timeout_millis=timeout_ms)
+        except (TypeError, ValueError) as e:
+            logger.debug(f"Bailian CosyVoice: timeout_millis unavailable ({e})")
+        # Older SDKs without timeout_millis: block until the SDK returns.
+        # Premature unlock would race on process-global dashscope.api_key.
+        return synthesizer.call(text)
 
     def _synth_sync(
         self,
@@ -2007,8 +2027,9 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         """Synchronous CosyVoice synthesis via DashScope SDK (run in thread).
 
         Mutates process-global dashscope.api_key under `_DASHSCOPE_LOCK`.
-        Uses ONE shared deadline for lock acquisition + synthesis wait so total
-        wait cannot exceed the configured timeout (lock budget is not additive).
+        Uses ONE shared deadline for lock acquisition + synthesis. The lock is
+        held until the SDK call returns (success, error, or SDK-native timeout).
+        Never releases the lock based on a local future wait alone.
         """
         from dashscope.audio.tts_v2 import SpeechSynthesizer
 
@@ -2035,7 +2056,7 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         if additional_params:
             kwargs["additional_params"] = additional_params
 
-        # Single overall deadline shared by lock acquisition and synthesis call.
+        # Single overall deadline: lock wait budget + remaining synthesis budget.
         call_timeout = max(1, int(timeout_sec or 60))
         deadline = time.monotonic() + call_timeout
         synthesizer = None
@@ -2056,7 +2077,6 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
                 )
 
             import dashscope
-            import inspect
 
             dashscope.api_key = api_key
             synthesizer = SpeechSynthesizer(
@@ -2073,37 +2093,8 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
                 )
             timeout_ms = max(1, int(remaining * 1000))
 
-            def _do_call() -> object:
-                # Newer SDKs: call(text, timeout_millis=...)
-                try:
-                    sig = inspect.signature(synthesizer.call)
-                    if "timeout_millis" in sig.parameters:
-                        return synthesizer.call(text, timeout_millis=timeout_ms)
-                except (TypeError, ValueError):
-                    pass
-                return synthesizer.call(text)
-
-            pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            try:
-                future = pool.submit(_do_call)
-                try:
-                    audio = future.result(timeout=max(0.01, remaining))
-                except concurrent.futures.TimeoutError:
-                    for closer in ("close", "shutdown", "cancel"):
-                        try:
-                            fn = getattr(synthesizer, closer, None)
-                            if callable(fn):
-                                fn()
-                        except Exception:
-                            pass
-                    raise TimeoutError(
-                        f"CosyVoice SpeechSynthesizer.call timed out after {call_timeout}s"
-                    )
-            finally:
-                try:
-                    pool.shutdown(wait=False, cancel_futures=True)
-                except TypeError:
-                    pool.shutdown(wait=False)
+            # Blocking SDK call under the lock. Unlock only after this returns.
+            audio = self._call_speech_synthesizer(synthesizer, text, timeout_ms)
         finally:
             _DASHSCOPE_LOCK.release()
 
@@ -2112,8 +2103,8 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
                 if synthesizer is not None:
                     resp = synthesizer.get_response()
                     logger.error(f"Bailian CosyVoice empty audio, response={resp}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Bailian CosyVoice get_response after empty audio failed: {e}")
             raise RuntimeError("CosyVoice returned empty audio")
 
         if isinstance(audio, (bytes, bytearray)):
