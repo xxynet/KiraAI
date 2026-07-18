@@ -1,7 +1,7 @@
 {
     "name": "AliyunBailian",
-    "version": "2.3.4",
-    "author": "KiraAI",
+    "version": "2.3.9",
+    "author": "znq19",
     "description": "AliyunBailian (DashScope) full provider: LLM, CosyVoice TTS, STT, Image, Embedding, Rerank.",
     "repo": null,
     "locales": {
