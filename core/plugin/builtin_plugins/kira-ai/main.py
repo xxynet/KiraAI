@@ -1,5 +1,5 @@
 import xml.etree.ElementTree as ET
-from typing import Union, Optional
+from typing import Optional
 from datetime import datetime
 
 from core.plugin import BasePlugin, logger, on, Priority, PluginContext
@@ -33,13 +33,13 @@ class DefaultPlugin(BasePlugin):
         pass
 
     def _get_current_time_str(self, dt: Optional[datetime] = None) -> str:
-        tz = self.ctx.get_timezone()
         if dt is not None:
             return dt.strftime("%b %d %Y %H:%M %a")
+        tz = self.ctx.get_timezone()
         now = datetime.now(tz) if tz else datetime.now()
         return now.strftime("%b %d %Y %H:%M %a")
 
-    def _format_user_message(self, msg: Union[KiraIMMessage]) -> str:
+    def _format_user_message(self, msg: KiraIMMessage) -> str:
         """格式化用户消息"""
         ts = msg.timestamp
         tz = self.ctx.get_timezone()
