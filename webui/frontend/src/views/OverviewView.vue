@@ -119,8 +119,10 @@ import { getOverview } from '@/api/overview'
 import type { OverviewResponse, OverviewWidget } from '@/types'
 import { Box } from '@element-plus/icons-vue'
 import { iconMap } from '@/utils/iconMap'
+import { useTheme } from '@/composables/useTheme'
 
 const { t, locale } = useI18n()
+const { isDark } = useTheme()
 const overview = ref<OverviewResponse | null>(null)
 const runtimeSeconds = ref(0)
 const lineChartRef = ref<HTMLElement | null>(null)
@@ -208,12 +210,26 @@ const wideWidgets = computed(() =>
 
 /* ---- Charts ---- */
 
+/** Return color tokens for the current theme. */
+function themeTokens(dark: boolean) {
+  return {
+    tooltipBg: dark ? 'rgba(30,41,59,0.94)' : 'rgba(255,255,255,0.9)',
+    tooltipBorder: dark ? '#4b5563' : '#e5e7eb',
+    tooltipText: dark ? '#e5e7eb' : '#1f2937',
+    axisLabel: dark ? '#9ca3af' : '#6b7280',
+    axisLine: dark ? '#374151' : '#e5e7eb',
+    splitLine: dark ? '#1f2937' : '#f3f4f6',
+    legendText: dark ? '#9ca3af' : '#6b7280',
+    seriesBlue: '#3b82f6',
+    areaGradientTop: dark ? 'rgba(59,130,246,0.25)' : 'rgba(59,130,246,0.3)',
+    areaGradientBottom: dark ? 'rgba(59,130,246,0.01)' : 'rgba(59,130,246,0.02)',
+  }
+}
+
 /** Generate a complete 24-hour series filled with zeros, then merge
  *  API data into it so empty hours still appear on the x-axis. */
 function fillMissingHours(hourly: OverviewResponse['message_hourly']): OverviewResponse['message_hourly'] {
   const now = Date.now()
-  // Round current time down to the hour, then subtract 23 hours to get
-  // the start of a 24-bucket window (current hour is the 24th).
   const currentHour = Math.floor(now / 3600000) * 3600
   const startTs = currentHour - 23 * 3600
 
@@ -223,7 +239,6 @@ function fillMissingHours(hourly: OverviewResponse['message_hourly']): OverviewR
     buckets.push({ hour_ts: hourTs, count: 0 })
   }
 
-  // Build a lookup keyed by hour_ts and overlay real data
   const lookup = new Map<number, number>()
   for (const d of hourly) {
     lookup.set(d.hour_ts, d.count)
@@ -259,14 +274,16 @@ function getPlatformColor(platform: string): string {
   return platformColorMap[platform.toLowerCase()] || '#7f8c8d'
 }
 
-function buildLineOption(data: OverviewResponse['message_hourly']) {
+function buildLineOption(data: OverviewResponse['message_hourly'], dark: boolean) {
+  const tok = themeTokens(dark)
   return {
+    backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(255,255,255,0.9)',
-      borderColor: '#e5e7eb',
+      backgroundColor: tok.tooltipBg,
+      borderColor: tok.tooltipBorder,
       borderWidth: 1,
-      textStyle: { color: '#1f2937', fontSize: 13 },
+      textStyle: { color: tok.tooltipText, fontSize: 13 },
       formatter: (params: any) => {
         const p = params[0]
         if (!p) return ''
@@ -279,27 +296,27 @@ function buildLineOption(data: OverviewResponse['message_hourly']) {
     xAxis: {
       type: 'category',
       data: data.map(d => formatHourLabel(d.hour_ts)),
-      axisLabel: { color: '#6b7280', fontSize: 11 },
-      axisLine: { lineStyle: { color: '#e5e7eb' } },
+      axisLabel: { color: tok.axisLabel, fontSize: 11 },
+      axisLine: { lineStyle: { color: tok.axisLine } },
       axisTick: { alignWithLabel: true },
     },
     yAxis: {
       type: 'value',
       minInterval: 1,
-      axisLabel: { color: '#6b7280', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#f3f4f6' } },
+      axisLabel: { color: tok.axisLabel, fontSize: 11 },
+      splitLine: { lineStyle: { color: tok.splitLine } },
     },
     series: [
       {
         type: 'line',
         data: data.map(d => d.count),
         smooth: true,
-        lineStyle: { color: '#3b82f6', width: 2 },
-        itemStyle: { color: '#3b82f6' },
+        lineStyle: { color: tok.seriesBlue, width: 2 },
+        itemStyle: { color: tok.seriesBlue },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(59,130,246,0.3)' },
-            { offset: 1, color: 'rgba(59,130,246,0.02)' },
+            { offset: 0, color: tok.areaGradientTop },
+            { offset: 1, color: tok.areaGradientBottom },
           ]),
         },
         symbol: 'circle',
@@ -309,14 +326,16 @@ function buildLineOption(data: OverviewResponse['message_hourly']) {
   }
 }
 
-function buildPieOption(data: OverviewResponse['message_by_platform']) {
+function buildPieOption(data: OverviewResponse['message_by_platform'], dark: boolean) {
+  const tok = themeTokens(dark)
   return {
+    backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'rgba(255,255,255,0.9)',
-      borderColor: '#e5e7eb',
+      backgroundColor: tok.tooltipBg,
+      borderColor: tok.tooltipBorder,
       borderWidth: 1,
-      textStyle: { color: '#1f2937', fontSize: 13 },
+      textStyle: { color: tok.tooltipText, fontSize: 13 },
       formatter: (params: any) => {
         return `<strong>${params.name}</strong><br/>${t('overview.pie_tooltip_count')}: ${params.value}<br/>${t('overview.pie_tooltip_pct')}: ${params.percent}%`
       },
@@ -325,7 +344,7 @@ function buildPieOption(data: OverviewResponse['message_by_platform']) {
       orient: 'horizontal',
       bottom: 0,
       left: 'center',
-      textStyle: { color: '#6b7280', fontSize: 12 },
+      textStyle: { color: tok.legendText, fontSize: 12 },
     },
     grid: { left: 0, right: 0, top: 0, bottom: 40 },
     series: [
@@ -356,16 +375,19 @@ function renderCharts() {
     if (!lineChart) {
       lineChart = echarts.init(lineChartRef.value)
     }
-    lineChart.setOption(buildLineOption(filledHourly.value), true)
+    lineChart.setOption(buildLineOption(filledHourly.value, isDark.value), true)
   }
 
   if (pieChartRef.value) {
     if (!pieChart) {
       pieChart = echarts.init(pieChartRef.value)
     }
-    pieChart.setOption(buildPieOption(overview.value.message_by_platform), true)
+    pieChart.setOption(buildPieOption(overview.value.message_by_platform, isDark.value), true)
   }
 }
+
+// Re-render charts when dark mode toggles
+watch(isDark, () => { nextTick(renderCharts) })
 
 watch(
   [lineChartRef, pieChartRef],
