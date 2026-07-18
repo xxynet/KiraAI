@@ -41,6 +41,7 @@ export interface OverviewResponse {
   widgets: OverviewWidget[]
   message_hourly: HourlyMessageCount[]
   message_by_platform: PlatformMessageCount[]
+  llm_summary: LLMSummary
 }
 
 export interface HourlyMessageCount {
@@ -51,6 +52,27 @@ export interface HourlyMessageCount {
 export interface PlatformMessageCount {
   platform: string
   count: number
+}
+
+export interface LLMModelStat {
+  model: string
+  calls: number
+  success: number
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  total_response_ms: number
+  avg_response_ms: number
+}
+
+export interface LLMSummary {
+  total_calls: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cached_tokens: number
+  success_count: number
+  total_response_ms: number
+  by_model: LLMModelStat[]
 }
 
 export interface VersionResponse {

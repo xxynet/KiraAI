@@ -589,3 +589,80 @@ class DatabaseService:
         )
         rows = await self.db.fetch_all(stmt)
         return [{"platform": r["platform"], "count": r["count"]} for r in rows]
+
+    async def get_llm_summary(self, since_ts: int) -> dict:
+        """Aggregate LLM usage stats since since_ts.
+
+        Returns {
+          "total_calls": int,
+          "total_input_tokens": int,
+          "total_output_tokens": int,
+          "total_cached_tokens": int,
+          "success_count": int,
+          "total_response_ms": int,
+          "by_model": [{"model": str, "calls": int, "success": int,
+                        "input_tokens": int, "output_tokens": int,
+                        "cached_tokens": int, "total_response_ms": int,
+                        "avg_response_ms": float}, ...],
+        }
+        """
+        total_stmt = (
+            select(
+                func.count().label("total_calls"),
+                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label("total_input_tokens"),
+                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label("total_output_tokens"),
+                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label("total_cached_tokens"),
+                func.coalesce(func.sum(func.cast(TelemetryLLMUsage.success, Integer)), 0).label("success_count"),
+                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label("total_response_ms"),
+            )
+            .where(TelemetryLLMUsage.timestamp >= since_ts)
+        )
+        row = await self.db.fetch_one(total_stmt)
+        if row is None:
+            return {
+                "total_calls": 0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_cached_tokens": 0,
+                "success_count": 0,
+                "total_response_ms": 0,
+                "by_model": [],
+            }
+
+        by_model_stmt = (
+            select(
+                TelemetryLLMUsage.model,
+                func.count().label("calls"),
+                func.coalesce(func.sum(func.cast(TelemetryLLMUsage.success, Integer)), 0).label("success"),
+                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label("input_tokens"),
+                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label("output_tokens"),
+                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label("cached_tokens"),
+                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label("total_response_ms"),
+            )
+            .where(TelemetryLLMUsage.timestamp >= since_ts)
+            .group_by(TelemetryLLMUsage.model)
+            .order_by(func.count().desc())
+        )
+        by_model = await self.db.fetch_all(by_model_stmt)
+
+        return {
+            "total_calls": row["total_calls"],
+            "total_input_tokens": row["total_input_tokens"],
+            "total_output_tokens": row["total_output_tokens"],
+            "total_cached_tokens": row["total_cached_tokens"],
+            "success_count": row["success_count"],
+            "total_response_ms": row["total_response_ms"],
+            "by_model": [
+                {
+                    "model": r["model"],
+                    "calls": r["calls"],
+                    "success": r["success"],
+                    "input_tokens": r["input_tokens"],
+                    "output_tokens": r["output_tokens"],
+                    "cached_tokens": r["cached_tokens"],
+                    "total_response_ms": r["total_response_ms"],
+                    "avg_response_ms": round(r["total_response_ms"] / r["calls"], 1) if r["calls"] > 0 else 0,
+                }
+                for r in by_model
+            ],
+        }

@@ -102,6 +102,15 @@ class OverviewRoutes(Routes):
             except Exception as e:
                 logger.error(f"Failed to collect message distribution stats: {e}")
 
+        # --- LLM usage summary (last 24 hours) ---
+        llm_summary = {}
+        if self.lifecycle and getattr(self.lifecycle, "db_service", None):
+            try:
+                since_ts = int(time.time()) - 86400
+                llm_summary = await self.lifecycle.db_service.get_llm_summary(since_ts)
+            except Exception as e:
+                logger.error(f"Failed to collect LLM summary stats: {e}")
+
         return OverviewResponse(
             total_adapters=total_adapters,
             active_adapters=active_adapters,
@@ -115,4 +124,5 @@ class OverviewRoutes(Routes):
             widgets=widgets,
             message_hourly=message_hourly,
             message_by_platform=message_by_platform,
+            llm_summary=llm_summary,
         )

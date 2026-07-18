@@ -72,6 +72,40 @@
       </div>
     </div>
 
+    <!-- LLM Stats -->
+    <div class="glass-card rounded-lg p-6 mb-6">
+      <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.llm_title') }}</h3>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div>
+          <p class="text-xs text-gray-500">{{ $t('overview.llm_calls') }}</p>
+          <p class="text-xl font-bold text-gray-900">{{ llmCalls }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500">{{ $t('overview.llm_tokens') }}</p>
+          <p class="text-xl font-bold text-gray-900">{{ llmTokens }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500">{{ $t('overview.llm_success_rate') }}</p>
+          <p class="text-xl font-bold text-gray-900">{{ llmSuccessRate }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500">{{ $t('overview.llm_avg_response') }}</p>
+          <p class="text-xl font-bold text-gray-900">{{ llmAvgResponse }}</p>
+        </div>
+      </div>
+      <!-- Model Usage Charts -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4" v-if="llmShowModelChart">
+        <div>
+          <p class="text-xs text-gray-500 mb-1">{{ $t('overview.pie_tooltip_count') }}</p>
+          <div ref="modelChartRef" class="w-full" style="height: 200px"></div>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500 mb-1">{{ $t('overview.llm_tokens') }}</p>
+          <div ref="tokenChartRef" class="w-full" style="height: 200px"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Plugin Widgets: Small Cards -->
     <div v-if="smallWidgets.length"
          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
@@ -116,7 +150,7 @@ import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
 import { IconClock, IconChat, IconTerminal, IconCpu } from '@/components/icons'
 import { getOverview } from '@/api/overview'
-import type { OverviewResponse, OverviewWidget } from '@/types'
+import type { OverviewResponse, OverviewWidget, LLMModelStat } from '@/types'
 import { Box } from '@element-plus/icons-vue'
 import { iconMap } from '@/utils/iconMap'
 import { useTheme } from '@/composables/useTheme'
@@ -127,8 +161,12 @@ const overview = ref<OverviewResponse | null>(null)
 const runtimeSeconds = ref(0)
 const lineChartRef = ref<HTMLElement | null>(null)
 const pieChartRef = ref<HTMLElement | null>(null)
+const modelChartRef = ref<HTMLElement | null>(null)
+const tokenChartRef = ref<HTMLElement | null>(null)
 let lineChart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
+let modelChart: echarts.ECharts | null = null
+let tokenChart: echarts.ECharts | null = null
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let runtimeTimer: ReturnType<typeof setInterval> | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -160,6 +198,40 @@ const statusText = computed(() => {
   if (!status || !validStatuses.includes(status)) return t('overview.status_unknown')
   return t(`overview.status_${status}`)
 })
+
+/* ---- LLM computed properties ---- */
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
+  return String(n)
+}
+
+const llmSummary = computed(() => overview.value?.llm_summary)
+const llmCalls = computed(() => formatNumber(llmSummary.value?.total_calls ?? 0))
+
+const llmTokens = computed(() => {
+  const s = llmSummary.value
+  if (!s) return '0'
+  return formatNumber(s.total_input_tokens + s.total_output_tokens)
+})
+
+const llmSuccessRate = computed(() => {
+  const s = llmSummary.value
+  if (!s || s.total_calls === 0) return '-'
+  return (s.success_count / s.total_calls * 100).toFixed(1) + '%'
+})
+
+const llmAvgResponse = computed(() => {
+  const s = llmSummary.value
+  if (!s || s.total_calls === 0) return '-'
+  const avg = s.total_response_ms / s.total_calls
+  return avg < 1000 ? Math.round(avg) + ' ms' : (avg / 1000).toFixed(1) + ' s'
+})
+
+const llmShowModelChart = computed(() =>
+  (llmSummary.value?.by_model?.length ?? 0) > 0,
+)
 
 /* ---- Plugin widget helpers ---- */
 
@@ -369,6 +441,104 @@ function buildPieOption(data: OverviewResponse['message_by_platform'], dark: boo
   }
 }
 
+/** Generate a distinct colour per model so the bar chart looks organised. */
+const modelColors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#ec4899', '#14b8a6', '#f97316']
+
+function buildModelOption(models: LLMModelStat[], dark: boolean) {
+  const tok = themeTokens(dark)
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: tok.tooltipBg,
+      borderColor: tok.tooltipBorder,
+      borderWidth: 1,
+      textStyle: { color: tok.tooltipText, fontSize: 13 },
+      formatter: (params: any) => {
+        const p = params[0]
+        if (!p) return ''
+        const m = models[p.dataIndex]
+        const rate = m.calls > 0 ? (m.success / m.calls * 100).toFixed(1) : '-'
+        return `<strong>${m.model}</strong><br/>${t('overview.pie_tooltip_count')}: ${m.calls}<br/>${t('overview.llm_success_rate')}: ${rate}%<br/>${t('overview.llm_avg_response')}: ${m.avg_response_ms}${t('overview.llm_ms')}`
+      },
+    },
+    grid: { left: 30, right: 30, top: 10, bottom: 20 },
+    xAxis: {
+      type: 'category',
+      data: models.map(m => {
+        const parts = m.model.split('/')
+        return parts[parts.length - 1]  // short name after the last /
+      }),
+      axisLabel: { color: tok.axisLabel, fontSize: 10, rotate: models.length > 4 ? 25 : 0 },
+      axisLine: { lineStyle: { color: tok.axisLine } },
+      axisTick: { alignWithLabel: true },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLabel: { color: tok.axisLabel, fontSize: 10 },
+      splitLine: { lineStyle: { color: tok.splitLine } },
+    },
+    series: [
+      {
+        type: 'bar',
+        data: models.map((m, i) => ({
+          value: m.calls,
+          itemStyle: { color: modelColors[i % modelColors.length] },
+        })),
+        barMaxWidth: 48,
+      },
+    ],
+  }
+}
+
+function buildTokenOption(models: LLMModelStat[], dark: boolean) {
+  const tok = themeTokens(dark)
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: tok.tooltipBg,
+      borderColor: tok.tooltipBorder,
+      borderWidth: 1,
+      textStyle: { color: tok.tooltipText, fontSize: 13 },
+      formatter: (params: any) => {
+        const p = params[0]
+        if (!p) return ''
+        const m = models[p.dataIndex]
+        return `<strong>${m.model}</strong><br/>${t('overview.llm_tokens')}: ${(m.input_tokens + m.output_tokens).toLocaleString()}<br/>${t('overview.llm_tooltip_input')}: ${m.input_tokens.toLocaleString()}<br/>${t('overview.llm_tooltip_output')}: ${m.output_tokens.toLocaleString()}<br/>${t('overview.llm_tooltip_cached')}: ${m.cached_tokens.toLocaleString()}`
+      },
+    },
+    grid: { left: 30, right: 30, top: 10, bottom: 20 },
+    xAxis: {
+      type: 'category',
+      data: models.map(m => {
+        const parts = m.model.split('/')
+        return parts[parts.length - 1]
+      }),
+      axisLabel: { color: tok.axisLabel, fontSize: 10, rotate: models.length > 4 ? 25 : 0 },
+      axisLine: { lineStyle: { color: tok.axisLine } },
+      axisTick: { alignWithLabel: true },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLabel: { color: tok.axisLabel, fontSize: 10, formatter: (v: number) => v >= 1000 ? (v / 1000).toFixed(0) + 'K' : String(v) },
+      splitLine: { lineStyle: { color: tok.splitLine } },
+    },
+    series: [
+      {
+        type: 'bar',
+        data: models.map((m) => ({
+          value: m.input_tokens + m.output_tokens,
+          itemStyle: { color: '#10b981' },
+        })),
+        barMaxWidth: 48,
+      },
+    ],
+  }
+}
+
 function renderCharts() {
   if (!overview.value || disposed) return
 
@@ -386,6 +556,21 @@ function renderCharts() {
     pieChart.setOption(buildPieOption(overview.value.message_by_platform, isDark.value), true)
   }
 
+  const models = llmSummary.value?.by_model
+  if (models && models.length > 0 && modelChartRef.value) {
+    if (!modelChart) {
+      modelChart = echarts.init(modelChartRef.value)
+    }
+    modelChart.setOption(buildModelOption(models, isDark.value), true)
+  }
+
+  if (models && models.length > 0 && tokenChartRef.value) {
+    if (!tokenChart) {
+      tokenChart = echarts.init(tokenChartRef.value)
+    }
+    tokenChart.setOption(buildTokenOption(models, isDark.value), true)
+  }
+
   // Start observing after charts are initialised so resize() fires
   // on a live instance.
   nextTick(observeResize)
@@ -401,15 +586,19 @@ function observeResize() {
   resizeObserver = new ResizeObserver(() => {
     if (lineChart) lineChart.resize()
     if (pieChart) pieChart.resize()
+    if (modelChart) modelChart.resize()
+    if (tokenChart) tokenChart.resize()
   })
   if (lineChartRef.value) resizeObserver.observe(lineChartRef.value)
   if (pieChartRef.value) resizeObserver.observe(pieChartRef.value)
+  if (modelChartRef.value) resizeObserver.observe(modelChartRef.value)
+  if (tokenChartRef.value) resizeObserver.observe(tokenChartRef.value)
 }
 
 watch(
-  [lineChartRef, pieChartRef],
+  [lineChartRef, pieChartRef, modelChartRef, tokenChartRef],
   () => {
-    if (lineChartRef.value || pieChartRef.value) {
+    if (lineChartRef.value || pieChartRef.value || modelChartRef.value || tokenChartRef.value) {
       nextTick(renderCharts)
     }
   },
@@ -447,6 +636,8 @@ onUnmounted(() => {
   if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
   if (lineChart) { lineChart.dispose(); lineChart = null }
   if (pieChart) { pieChart.dispose(); pieChart = null }
+  if (modelChart) { modelChart.dispose(); modelChart = null }
+  if (tokenChart) { tokenChart.dispose(); tokenChart = null }
   if (refreshTimer) clearInterval(refreshTimer)
   if (runtimeTimer) clearInterval(runtimeTimer)
   refreshTimer = null
