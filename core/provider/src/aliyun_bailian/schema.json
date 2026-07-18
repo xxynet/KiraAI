@@ -348,11 +348,23 @@
         "name": "图片尺寸",
         "type": "string",
         "default": "auto",
-        "hint": "默认 auto：不强制比例。可固定 1280*1280 / 2K / 16:9。auto 时从提示词识别（竖图/4k横屏/1920x1080）；1K-8K 按真实分辨率意图换算，并自动钳到当前模型上限",
+        "hint": "默认 auto：不强制比例。可固定 1280*1280 / 2K / 16:9。auto 时从提示词识别（竖图/4k横屏/1920x1080）；1K-8K 按真实分辨率意图换算。自动钳制：图编辑最高 2K；wan2.6-image 纯文本/混排约 1280^2；文生图 pro 最高 4K",
         "locales": {
           "en": {
             "name": "Image Size",
-            "hint": "Default auto. Or fix 1280*1280 / 2K / 16:9. Auto parses prompt (portrait/4k landscape/1920x1080); N K maps to real pixels and clamps to model max"
+            "hint": "Default auto. Or fix 1280*1280 / 2K / 16:9. Auto parses prompt; clamps to edit<=2K, wan2.6-image interleave~1280^2, pro t2i up to 4K"
+          }
+        }
+      },
+      "auto_route": {
+        "name": "自动切换图像模型",
+        "type": "switch",
+        "default": false,
+        "hint": "默认关闭。开启后：纯文生图时 wan2.6-image→wan2.6-t2i；带参考图/selfie 时 wan2.6-t2i 等纯 t2i→wan2.6-image。关闭则始终使用你配置的模型（t2i 不支持参考图会报错）",
+        "locales": {
+          "en": {
+            "name": "Auto-route Image Model",
+            "hint": "Default off. When on: pure t2i may map edit models to t2i, and ref-image may map pure t2i to wan2.6-image. When off, always use the configured model id"
           }
         }
       },
