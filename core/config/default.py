@@ -45,6 +45,10 @@ DEFAULT_CONFIG = {
         "lang": None,
         "TZ": None
     },
+    "onboarding": {
+        "completed": False,
+        "version": 1,
+    },
     "providers": {},  # ID: Provider config dict
     "models": {
         "default_llm": None,  # Provider ID - Model ID

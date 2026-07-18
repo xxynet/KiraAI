@@ -8,7 +8,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from core.config.default import VERSION
-from webui.models import LoginResponse, TokenLoginRequest, VersionResponse
+from webui.models import (
+    LoginResponse,
+    OnboardingCompleteRequest,
+    OnboardingStatusResponse,
+    TokenLoginRequest,
+    VersionResponse,
+)
 from webui.routes.base import RouteDefinition, Routes
 from webui.utils import _access_token_fingerprint, _create_jwt_token, verify_session_token
 
@@ -137,6 +143,22 @@ class AuthRoutes(Routes):
                 tags=["auth"],
                 dependencies=[Depends(require_auth)],
             ),
+            RouteDefinition(
+                path="/api/onboarding/status",
+                methods=["GET"],
+                endpoint=self.get_onboarding_status,
+                response_model=OnboardingStatusResponse,
+                tags=["onboarding"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/onboarding/complete",
+                methods=["POST"],
+                endpoint=self.complete_onboarding,
+                response_model=OnboardingStatusResponse,
+                tags=["onboarding"],
+                dependencies=[Depends(require_auth)],
+            ),
         ]
 
     def register_spa_fallback(self):
@@ -250,6 +272,35 @@ class AuthRoutes(Routes):
 
     async def get_auth_config(self):
         return {"auth_enabled": not self.disable_auth}
+
+    def _get_onboarding_config(self) -> dict:
+        if not self.lifecycle or not getattr(self.lifecycle, "kira_config", None):
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Configuration not available")
+        onboarding = self.lifecycle.kira_config.get("onboarding", {})
+        return onboarding if isinstance(onboarding, dict) else {}
+
+    async def get_onboarding_status(self):
+        onboarding = self._get_onboarding_config()
+        return OnboardingStatusResponse(
+            completed=bool(onboarding.get("completed", False)),
+            version=onboarding.get("version", 1),
+        )
+
+    async def complete_onboarding(self, payload: OnboardingCompleteRequest):
+        onboarding = self._get_onboarding_config()
+        config = self.lifecycle.kira_config
+        locale = config.get("locale", {})
+        locale = dict(locale) if isinstance(locale, dict) else {}
+        locale["lang"] = payload.lang
+        locale["TZ"] = payload.timezone
+        config["locale"] = locale
+        config["onboarding"] = {
+            **onboarding,
+            "completed": True,
+            "version": onboarding.get("version", 1),
+        }
+        config.save_config()
+        return OnboardingStatusResponse(completed=True, version=config["onboarding"]["version"])
 
     async def health(self):
         return {"status": "ok", "lifecycle_available": self.lifecycle is not None}

@@ -18,6 +18,16 @@ export interface AuthConfigResponse {
   auth_enabled: boolean
 }
 
+export interface OnboardingStatusResponse {
+  completed: boolean
+  version: number
+}
+
+export interface OnboardingCompleteRequest {
+  lang: 'en' | 'zh'
+  timezone?: string | null
+}
+
 export interface OverviewWidget {
   widget_id: string
   label: string | Record<string, string>
