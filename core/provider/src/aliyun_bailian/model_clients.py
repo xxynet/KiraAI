@@ -378,6 +378,26 @@ def _image_size_limits(
             allow_k_tokens=("1K",),
         )
 
+    # Preserve legacy edit limits for wanx-v1 / older wanx & wan2.2 paths BEFORE
+    # the generic modern edit profile (which allows up to 2K). Otherwise
+    # image_to_image() with editing=True would send oversized sizes to wanx-v1.
+    if editing and (
+        mid in ("wanx-v1", "wanx.v1")
+        or mid.startswith("wan2.2")
+        or mid.startswith("wanx")
+        or mid.startswith("wan2.1")
+    ):
+        return _ImageSizeLimits(
+            min_total=512 * 512,
+            max_total=1440 * 1440,
+            min_side=512,
+            max_side=1440,
+            min_aspect=1 / 4,
+            max_aspect=4 / 1,
+            multiple=8,
+            allow_k_tokens=(),
+        )
+
     # Reference-image / edit mode never accepts 4K (including wan2.7-image-pro).
     if editing:
         return _ImageSizeLimits(
@@ -911,8 +931,9 @@ class BailianImageClient(ImageModelClient):
     @staticmethod
     def _supports_legacy_ref_img(model_id: str) -> bool:
         """Older models that accept input.ref_img on text2image endpoint."""
+        # Underscores are normalized to dots first, so wanx_v1 -> wanx.v1
         mid = (model_id or "").lower().replace("_", ".")
-        return mid in ("wanx-v1", "wanx_v1")
+        return mid in ("wanx-v1", "wanx.v1")
 
     @staticmethod
     def _supports_messages_img2img(model_id: str) -> bool:
@@ -957,6 +978,28 @@ class BailianImageClient(ImageModelClient):
             return "wan2.6-t2i"
         return model_id
 
+    @staticmethod
+    def _normalize_ref_uri(value: str | None) -> str | None:
+        """Normalize a candidate reference URI; reject empty/malformed data URLs."""
+        if not value:
+            return None
+        val = str(value).strip()
+        if not val:
+            return None
+        if val.startswith(("http://", "https://")):
+            return val
+        if val.startswith("data:"):
+            header, separator, payload = val.partition(",")
+            # Require a non-empty payload after the comma. Also require a base64
+            # marker in the header for DashScope data-url acceptance; bare
+            # data:image/png, / data:image/png;base64 (no payload) are invalid.
+            if not separator or not payload.strip():
+                return None
+            if ";base64" not in header.lower():
+                return None
+            return val
+        return None
+
     async def _image_to_ref_uri(self, image: Image) -> str | None:
         """Convert KiraAI Image to a DashScope-accepted image URI (url or data-url)."""
         if image is None:
@@ -964,33 +1007,25 @@ class BailianImageClient(ImageModelClient):
         file_type = getattr(image, "file_type", None) or getattr(image, "image_type", None)
         file_val = getattr(image, "file", None) or getattr(image, "image", None)
         if file_type == "url" and file_val:
-            return str(file_val)
+            return self._normalize_ref_uri(str(file_val))
         # Prefer data URL for local/base64 images
         if hasattr(image, "to_data_url"):
             try:
                 data_url = await image.to_data_url()
-                # Reject empty/invalid data URIs (e.g. "data:image/png;base64,")
-                if data_url and "base64," in str(data_url):
-                    b64_part = str(data_url).split("base64,", 1)[-1].strip()
-                    if b64_part:
-                        return str(data_url)
-                elif data_url and str(data_url).startswith(("http://", "https://")):
-                    return str(data_url)
+                normalized = self._normalize_ref_uri(str(data_url) if data_url else None)
+                if normalized:
+                    return normalized
             except Exception as e:
                 logger.warning(f"Bailian Image: to_data_url failed: {e}")
         if file_val and str(file_val).startswith(("http://", "https://", "data:")):
-            val = str(file_val)
-            if val.startswith("data:") and "base64," in val:
-                if not val.split("base64,", 1)[-1].strip():
-                    return None
-            return val
+            return self._normalize_ref_uri(str(file_val))
         if hasattr(image, "to_base64"):
             try:
                 b64 = await image.to_base64()
                 if not b64:
                     return None
                 mime = getattr(image, "mime", None) or "image/png"
-                return f"data:{mime};base64,{b64}"
+                return self._normalize_ref_uri(f"data:{mime};base64,{b64}")
             except Exception as e:
                 logger.warning(f"Bailian Image: to_base64 failed: {e}")
         return None
@@ -1008,8 +1043,18 @@ class BailianImageClient(ImageModelClient):
         task_url = f"{http_base}/tasks/{task_id}"
         poll_headers = {"Authorization": f"Bearer {api_key}"}
         start = time.time()
-        while time.time() - start < timeout:
-            tr = await client.get(task_url, headers=poll_headers)
+        total_timeout = max(1, int(timeout or 1))
+        while True:
+            remaining = total_timeout - (time.time() - start)
+            if remaining <= 0:
+                break
+            # Bound each poll HTTP request to the remaining overall deadline so a
+            # short configured timeout cannot be exceeded by the client default.
+            tr = await client.get(
+                task_url,
+                headers=poll_headers,
+                timeout=max(0.1, remaining),
+            )
             tr.raise_for_status()
             tdata = tr.json()
             output = (tdata.get("output") or {}) if isinstance(tdata, dict) else {}
@@ -1023,8 +1068,11 @@ class BailianImageClient(ImageModelClient):
                 msg = output.get("message") or tdata.get("message") or status
                 code = output.get("code") or tdata.get("code") or ""
                 raise RuntimeError(f"Bailian {label} failed: {code} {msg}".strip())
-            await asyncio.sleep(2)
-        raise TimeoutError(f"Bailian {label} timed out after {timeout}s")
+            remaining_after = total_timeout - (time.time() - start)
+            if remaining_after <= 0:
+                break
+            await asyncio.sleep(min(2.0, remaining_after))
+        raise TimeoutError(f"Bailian {label} timed out after {total_timeout}s")
 
     @staticmethod
     def _extract_image_url(output: dict, tdata: dict | None = None) -> str | None:
@@ -1155,9 +1203,9 @@ class BailianImageClient(ImageModelClient):
                 payload["parameters"]["seed"] = int(seed)
             except (TypeError, ValueError):
                 pass
-        # style only for wanx-v1
+        # style only for wanx-v1 (underscore already normalized to dot)
         style = (mc.get("style") or "").strip()
-        if style and mid in ("wanx-v1", "wanx_v1"):
+        if style and mid in ("wanx-v1", "wanx.v1"):
             payload["parameters"]["style"] = style
         if "prompt_extend" in mc:
             payload["parameters"]["prompt_extend"] = bool(prompt_extend)
@@ -1901,9 +1949,7 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         )
 
         try:
-            # Run synthesis on a dedicated executor so asyncio timeout can abandon
-            # the wait without leaving the process-wide DashScope lock held by
-            # an abandoned default worker forever in a queue.
+            # Single overall deadline for lock wait + synthesis (not additive).
             loop = asyncio.get_running_loop()
             audio_bytes = await asyncio.wait_for(
                 loop.run_in_executor(
@@ -1925,7 +1971,7 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
                         timeout_sec=timeout,
                     ),
                 ),
-                timeout=timeout + 5,
+                timeout=max(1, int(timeout or 60)) + 1,
             )
         except asyncio.TimeoutError:
             logger.error(f"Bailian CosyVoice TTS timed out after {timeout}s (model={model_id})")
@@ -1960,10 +2006,9 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
     ) -> bytes:
         """Synchronous CosyVoice synthesis via DashScope SDK (run in thread).
 
-        Mutates process-global dashscope.api_key under `_DASHSCOPE_LOCK` for the
-        whole call, and enforces a hard timeout (SDK timeout_millis when
-        available + ThreadPoolExecutor future timeout) so the lock is always
-        released even if the worker cannot be cancelled.
+        Mutates process-global dashscope.api_key under `_DASHSCOPE_LOCK`.
+        Uses ONE shared deadline for lock acquisition + synthesis wait so total
+        wait cannot exceed the configured timeout (lock budget is not additive).
         """
         from dashscope.audio.tts_v2 import SpeechSynthesizer
 
@@ -1990,20 +2035,26 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         if additional_params:
             kwargs["additional_params"] = additional_params
 
-        # Prefer SDK-native timeout_millis when available (DashScope CosyVoice call).
-        # Hold process-global api_key mutation under lock for the whole call
-        # (dashscope.api_key is process-global), but enforce a hard timeout so
-        # the lock is always released.
+        # Single overall deadline shared by lock acquisition and synthesis call.
         call_timeout = max(1, int(timeout_sec or 60))
-        timeout_ms = call_timeout * 1000
+        deadline = time.monotonic() + call_timeout
         synthesizer = None
         audio = None
-        acquired = _DASHSCOPE_LOCK.acquire(timeout=call_timeout)
+
+        lock_budget = max(0.01, deadline - time.monotonic())
+        acquired = _DASHSCOPE_LOCK.acquire(timeout=lock_budget)
         if not acquired:
             raise TimeoutError(
                 f"CosyVoice waiting for DashScope lock timed out after {call_timeout}s"
             )
         try:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"CosyVoice overall deadline exceeded after waiting for lock "
+                    f"({call_timeout}s)"
+                )
+
             import dashscope
             import inspect
 
@@ -2013,6 +2064,14 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
                 workspace=workspace_id or None,
                 url=_resolve_ws_url(region, workspace_id),
             )
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"CosyVoice overall deadline exceeded before synthesis "
+                    f"({call_timeout}s)"
+                )
+            timeout_ms = max(1, int(remaining * 1000))
 
             def _do_call() -> object:
                 # Newer SDKs: call(text, timeout_millis=...)
@@ -2028,7 +2087,7 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
             try:
                 future = pool.submit(_do_call)
                 try:
-                    audio = future.result(timeout=call_timeout)
+                    audio = future.result(timeout=max(0.01, remaining))
                 except concurrent.futures.TimeoutError:
                     for closer in ("close", "shutdown", "cancel"):
                         try:
