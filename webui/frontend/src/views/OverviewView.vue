@@ -131,6 +131,7 @@ let lineChart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let runtimeTimer: ReturnType<typeof setInterval> | null = null
+let resizeObserver: ResizeObserver | null = null
 let inFlight = false
 let disposed = false
 
@@ -384,10 +385,26 @@ function renderCharts() {
     }
     pieChart.setOption(buildPieOption(overview.value.message_by_platform, isDark.value), true)
   }
+
+  // Start observing after charts are initialised so resize() fires
+  // on a live instance.
+  nextTick(observeResize)
 }
 
 // Re-render charts when dark mode toggles
 watch(isDark, () => { nextTick(renderCharts) })
+
+/* ---- Chart resize handling ---- */
+
+function observeResize() {
+  if (resizeObserver) resizeObserver.disconnect()
+  resizeObserver = new ResizeObserver(() => {
+    if (lineChart) lineChart.resize()
+    if (pieChart) pieChart.resize()
+  })
+  if (lineChartRef.value) resizeObserver.observe(lineChartRef.value)
+  if (pieChartRef.value) resizeObserver.observe(pieChartRef.value)
+}
 
 watch(
   [lineChartRef, pieChartRef],
@@ -427,6 +444,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   disposed = true
+  if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
   if (lineChart) { lineChart.dispose(); lineChart = null }
   if (pieChart) { pieChart.dispose(); pieChart = null }
   if (refreshTimer) clearInterval(refreshTimer)
