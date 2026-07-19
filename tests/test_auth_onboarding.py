@@ -24,7 +24,7 @@ def make_routes(config=None, lifecycle=True):
     return AuthRoutes(FastAPI(), current_lifecycle, 'token', Path('.'))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_onboarding_requires_available_config():
     for routes in (make_routes(lifecycle=False), make_routes(config=None), make_routes(config='invalid')):
         with pytest.raises(HTTPException) as exc_info:
@@ -32,7 +32,7 @@ async def test_onboarding_requires_available_config():
         assert exc_info.value.status_code == 503
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_onboarding_status_and_completion_round_trip():
     config = Config({'onboarding': {'completed': False, 'version': 3}})
     routes = make_routes(config)
