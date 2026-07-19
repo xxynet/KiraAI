@@ -11,6 +11,15 @@ function sanitizeTheme(value: string | null): Theme {
   return (ALLOWED_THEMES as readonly string[]).includes(value ?? '') ? (value as Theme) : 'light'
 }
 
+function getInitialTheme(): Theme {
+  const storedTheme = localStorage.getItem('theme')
+  if ((ALLOWED_THEMES as readonly string[]).includes(storedTheme ?? '')) {
+    return storedTheme as Theme
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
 function sanitizeLanguage(value: string | null): Language {
   return (ALLOWED_LANGUAGES as readonly string[]).includes(value ?? '')
     ? (value as Language)
@@ -18,7 +27,7 @@ function sanitizeLanguage(value: string | null): Language {
 }
 
 export const useAppStore = defineStore('app', () => {
-  const theme = ref<Theme>(sanitizeTheme(localStorage.getItem('theme')))
+  const theme = ref<Theme>(getInitialTheme())
   const language = ref<Language>(sanitizeLanguage(localStorage.getItem('language')))
 
   const isDark = ref(theme.value === 'dark')
