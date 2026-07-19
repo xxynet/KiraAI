@@ -803,7 +803,7 @@
           </div>
 
           <section v-if="pluginReadmeLoading || pluginReadme" class="border-t border-gray-200 pt-5 dark:border-gray-700">
-            <h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">README</h4>
+            <h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ $t('plugin.readme_title') }}</h4>
             <div v-if="pluginReadmeLoading" class="mt-3 text-sm text-gray-500 dark:text-gray-400">{{ $t('common.loading') }}</div>
             <article v-else class="plugin-readme mt-3 text-sm leading-6 text-gray-700 dark:text-gray-300" v-html="renderMarkdown(pluginReadme!)" />
           </section>
@@ -1104,12 +1104,12 @@ async function openPluginDetails(plugin: PluginItem | PluginStoreItem) {
 
 function renderMarkdown(text: string): string {
   const sanitized = DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
-  const document = new DOMParser().parseFromString(sanitized, 'text/html')
-  document.querySelectorAll('a').forEach(link => {
+  const parsedDocument = new DOMParser().parseFromString(sanitized, 'text/html')
+  parsedDocument.querySelectorAll('a').forEach(link => {
     link.target = '_blank'
     link.rel = 'noopener noreferrer'
   })
-  return document.body.innerHTML
+  return parsedDocument.body.innerHTML
 }
 
 function onConfirmAction() {

@@ -5,8 +5,8 @@
     role="button"
     tabindex="0"
     @click="onCardClick"
-    @keydown.enter.prevent="onCardKeydown"
-    @keydown.space.prevent="onCardKeydown"
+    @keydown.enter="onCardKeydown"
+    @keydown.space="onCardKeydown"
   >
     <div class="flex items-start justify-between mb-3">
       <div>
@@ -237,7 +237,9 @@ function onCardClick(event: MouseEvent) {
 }
 
 function onCardKeydown(event: KeyboardEvent) {
-  if (event.target === event.currentTarget) emit('details')
+  if (event.target !== event.currentTarget) return
+  event.preventDefault()
+  emit('details')
 }
 
 const safeRepo = computed(() => {

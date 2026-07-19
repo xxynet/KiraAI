@@ -290,6 +290,7 @@ export default {
     tags: '标签',
     plugin_id: '插件 ID',
     details_title: '插件详情',
+    readme_title: 'README',
     no_description: '暂无描述',
     close: '关闭',
     version: '版本',

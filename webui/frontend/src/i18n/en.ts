@@ -290,6 +290,7 @@ export default {
     tags: 'Tags',
     plugin_id: 'Plugin ID',
     details_title: 'Plugin Details',
+    readme_title: 'README',
     no_description: 'No description available',
     close: 'Close',
     version: 'Version',
