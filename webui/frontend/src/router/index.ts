@@ -1,7 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getAuthConfig, login } from '@/api/auth'
+import { getOnboardingStatus } from '@/api/onboarding'
 
 let authEnabled: boolean | null = null
+let onboardingCompleted: boolean | null = null
+
+export function markOnboardingCompleted() {
+  onboardingCompleted = true
+}
+
+export function resetOnboardingStatus() {
+  onboardingCompleted = null
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -11,6 +21,11 @@ const router = createRouter({
       name: 'Login',
       component: () => import('@/views/LoginView.vue'),
       meta: { public: true },
+    },
+    {
+      path: '/onboarding',
+      name: 'Onboarding',
+      component: () => import('@/views/OnboardingView.vue'),
     },
     {
       path: '/',
@@ -69,15 +84,30 @@ router.beforeEach(async (to) => {
         // token we had (if any) so the user isn't blocked entirely.
       }
     }
-    return
+    // Continue to onboarding checks after a valid sentinel token is present.
+  } else {
+    // Auth enabled: trust whatever token we have. If it was issued under the
+    // wrong auth_mode (cached sentinel JWT) the next API call will 401 and the
+    // response interceptor will clear the token and route back to /login.
+    if (!token) {
+      if (to.meta.public) return
+      return '/login'
+    }
   }
 
-  // Auth enabled: trust whatever token we have. If it was issued under the
-  // wrong auth_mode (cached sentinel JWT) the next API call will 401 and the
-  // response interceptor will clear the token and route back to /login.
-  if (token) return
-  if (to.meta.public) return
-  return '/login'
+  if (to.meta.public) return '/'
+
+  try {
+    if (onboardingCompleted === null) {
+      const { data } = await getOnboardingStatus()
+      onboardingCompleted = data.completed
+    }
+    if (!onboardingCompleted && to.name !== 'Onboarding') return '/onboarding'
+    if (onboardingCompleted && to.name === 'Onboarding') return '/overview'
+  } catch {
+    // Let the destination render so existing API error handling can surface
+    // a backend availability problem instead of trapping the user in a loop.
+  }
 })
 
 export default router

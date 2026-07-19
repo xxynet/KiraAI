@@ -2,6 +2,7 @@
 Pydantic models shared across WebUI routes.
 """
 from typing import Any, Dict, List, Literal, Optional, Union
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -151,6 +152,30 @@ class PersonaResponse(PersonaBase):
 
 class TokenLoginRequest(BaseModel):
     access_token: str
+
+
+class OnboardingStatusResponse(BaseModel):
+    completed: bool
+    version: int
+
+
+class OnboardingCompleteRequest(BaseModel):
+    lang: Literal["en", "zh"]
+    timezone: Optional[str] = None
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            ZoneInfo(value)
+        except (OSError, ZoneInfoNotFoundError) as exc:
+            raise ValueError("Invalid IANA timezone") from exc
+        return value
 
 
 class ChangeTokenRequest(BaseModel):

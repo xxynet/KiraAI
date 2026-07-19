@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as authApi from '@/api/auth'
+import { resetOnboardingStatus } from '@/router'
 import type { TokenLoginRequest } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -22,6 +23,7 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       token.value = null
       localStorage.removeItem('jwt_token')
+      resetOnboardingStatus()
       // Cookie is cleared server-side via Set-Cookie header
     }
   }
@@ -29,6 +31,7 @@ export const useAuthStore = defineStore('auth', () => {
   function clearAuth() {
     token.value = null
     localStorage.removeItem('jwt_token')
+    resetOnboardingStatus()
   }
 
   return {
