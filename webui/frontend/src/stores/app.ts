@@ -17,7 +17,7 @@ function getInitialTheme(): Theme {
     return storedTheme as Theme
   }
 
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light'
 }
 
 function sanitizeLanguage(value: string | null): Language {
