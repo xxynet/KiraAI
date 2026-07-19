@@ -173,7 +173,7 @@ class OnboardingCompleteRequest(BaseModel):
             return None
         try:
             ZoneInfo(value)
-        except ZoneInfoNotFoundError as exc:
+        except (OSError, ZoneInfoNotFoundError) as exc:
             raise ValueError("Invalid IANA timezone") from exc
         return value
 

@@ -19,7 +19,7 @@
           <p class="text-gray-600 dark:text-gray-400">{{ step === 1 ? t('onboarding.description') : t('onboarding.configuration_description') }}</p>
         </div>
 
-        <div class="flex items-center justify-center gap-2 mb-8" aria-label="Onboarding progress">
+        <div class="flex items-center justify-center gap-2 mb-8" :aria-label="t('onboarding.progress')">
           <span class="w-8 h-1 rounded-full transition-colors" :class="step === 1 ? 'bg-blue-600' : 'bg-blue-200 dark:bg-blue-900'" />
           <span class="w-8 h-1 rounded-full transition-colors" :class="step === 2 ? 'bg-blue-600' : 'bg-blue-200 dark:bg-blue-900'" />
         </div>
@@ -78,8 +78,10 @@
 </template>
 
 <script setup lang="ts">
+import axios from 'axios'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { markOnboardingCompleted } from '@/router'
 import { useI18n } from 'vue-i18n'
 import { completeOnboarding } from '@/api/onboarding'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -110,7 +112,14 @@ const selectedConfigurationTitle = computed(() => {
   const item = configurationItems.find(({ key }) => key === selectedConfiguration.value)
   return item ? t(item.titleKey) : ''
 })
-const selectedConfigurationComponent = computed(() => ({ provider: ProviderView, adapter: AdapterView, persona: PersonaView })[selectedConfiguration.value || 'provider'])
+const configurationComponents = {
+  provider: ProviderView,
+  adapter: AdapterView,
+  persona: PersonaView,
+}
+const selectedConfigurationComponent = computed(() =>
+  selectedConfiguration.value ? configurationComponents[selectedConfiguration.value] : null,
+)
 
 function goToConfigurationStep() { step.value = 2 }
 function openConfiguration(key: 'provider' | 'adapter' | 'persona') { selectedConfiguration.value = key; configurationModalVisible.value = true }
@@ -120,9 +129,11 @@ async function handleSubmit() {
   errorMessage.value = ''
   try {
     await completeOnboarding({ lang: language.value, timezone: timezone.value || null })
+    markOnboardingCompleted()
     await router.push('/overview')
-  } catch {
-    errorMessage.value = t('onboarding.save_error')
+  } catch (error: unknown) {
+    const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null
+    errorMessage.value = typeof detail === 'string' && detail.trim() ? detail : t('onboarding.save_error')
   } finally { loading.value = false }
 }
 </script>

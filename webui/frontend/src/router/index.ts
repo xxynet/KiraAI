@@ -3,6 +3,15 @@ import { getAuthConfig, login } from '@/api/auth'
 import { getOnboardingStatus } from '@/api/onboarding'
 
 let authEnabled: boolean | null = null
+let onboardingCompleted: boolean | null = null
+
+export function markOnboardingCompleted() {
+  onboardingCompleted = true
+}
+
+export function resetOnboardingStatus() {
+  onboardingCompleted = null
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -89,9 +98,12 @@ router.beforeEach(async (to) => {
   if (to.meta.public) return '/'
 
   try {
-    const { data } = await getOnboardingStatus()
-    if (!data.completed && to.name !== 'Onboarding') return '/onboarding'
-    if (data.completed && to.name === 'Onboarding') return '/overview'
+    if (onboardingCompleted === null) {
+      const { data } = await getOnboardingStatus()
+      onboardingCompleted = data.completed
+    }
+    if (!onboardingCompleted && to.name !== 'Onboarding') return '/onboarding'
+    if (onboardingCompleted && to.name === 'Onboarding') return '/overview'
   } catch {
     // Let the destination render so existing API error handling can surface
     // a backend availability problem instead of trapping the user in a loop.

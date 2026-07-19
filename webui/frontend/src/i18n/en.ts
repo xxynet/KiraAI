@@ -842,6 +842,7 @@ export default {
     token_required: 'Please enter an access token.',
   },
   onboarding: {
+    progress: 'Onboarding progress',
     configuration_description: 'Follow these steps to set up KiraAI for your use case.',
     configuration_hint: 'You can open each page now and complete the setup at your own pace, or configure them later after entering KiraAI.',
     next: 'Next',

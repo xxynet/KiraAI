@@ -274,9 +274,10 @@ class AuthRoutes(Routes):
         return {"auth_enabled": not self.disable_auth}
 
     def _get_onboarding_config(self) -> dict:
-        if not self.lifecycle or not getattr(self.lifecycle, "kira_config", None):
+        config = getattr(self.lifecycle, "kira_config", None) if self.lifecycle else None
+        if not isinstance(config, dict) or not config:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Configuration not available")
-        onboarding = self.lifecycle.kira_config.get("onboarding", {})
+        onboarding = config.get("onboarding", {})
         return onboarding if isinstance(onboarding, dict) else {}
 
     async def get_onboarding_status(self):
