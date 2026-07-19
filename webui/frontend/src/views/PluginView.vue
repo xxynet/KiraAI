@@ -1829,46 +1829,46 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped>
-.plugin-readme :deep(h1),
-.plugin-readme :deep(h2),
-.plugin-readme :deep(h3) {
+<style>
+.plugin-readme h1,
+.plugin-readme h2,
+.plugin-readme h3 {
   margin: 1em 0 0.5em;
   font-weight: 600;
 }
 
-.plugin-readme :deep(h1) { font-size: 1.25em; }
-.plugin-readme :deep(h2) { font-size: 1.125em; }
-.plugin-readme :deep(h3) { font-size: 1em; }
+.plugin-readme h1 { font-size: 1.25em; }
+.plugin-readme h2 { font-size: 1.125em; }
+.plugin-readme h3 { font-size: 1em; }
 
-.plugin-readme :deep(p),
-.plugin-readme :deep(ul),
-.plugin-readme :deep(ol),
-.plugin-readme :deep(pre) {
+.plugin-readme p,
+.plugin-readme ul,
+.plugin-readme ol,
+.plugin-readme pre {
   margin: 0.75em 0;
 }
 
-.plugin-readme :deep(ul) { list-style: disc; padding-left: 1.5em; }
-.plugin-readme :deep(ol) { list-style: decimal; padding-left: 1.5em; }
-.plugin-readme :deep(pre) { overflow-x: auto; padding: 0.75em; border-radius: 0.375rem; background: rgb(243 244 246); color: rgb(31 41 55); }
-.plugin-readme :deep(code) { padding: 0.125em 0.25em; border-radius: 0.25rem; background: rgb(243 244 246); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-.plugin-readme :deep(pre code) { padding: 0; background: transparent; }
-.plugin-readme :deep(a) { color: rgb(37 99 235); text-decoration: underline; }
-.plugin-readme :deep(blockquote) { margin: 0.75em 0; border-left: 3px solid rgb(209 213 219); padding-left: 0.75em; color: rgb(75 85 99); }
-.plugin-readme :deep(hr) { margin: 1.25em 0; border-color: rgb(229 231 235); }
-.plugin-readme :deep(table) { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
-.plugin-readme :deep(th),
-.plugin-readme :deep(td) { border: 1px solid rgb(229 231 235); padding: 0.5em 0.75em; text-align: left; }
-.plugin-readme :deep(th) { background: rgb(249 250 251); font-weight: 600; }
-.plugin-readme :deep(img) { max-width: 100%; height: auto; }
+.plugin-readme ul { list-style: disc; padding-left: 1.5em; }
+.plugin-readme ol { list-style: decimal; padding-left: 1.5em; }
+.plugin-readme pre { overflow-x: auto; padding: 0.75em; border-radius: 0.375rem; background: rgb(243 244 246); color: rgb(31 41 55); }
+.plugin-readme code { padding: 0.125em 0.25em; border-radius: 0.25rem; background: rgb(243 244 246); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.plugin-readme pre code { padding: 0; background: transparent; }
+.plugin-readme a { color: rgb(37 99 235); text-decoration: underline; }
+.plugin-readme blockquote { margin: 0.75em 0; border-left: 3px solid rgb(209 213 219); padding-left: 0.75em; color: rgb(75 85 99); }
+.plugin-readme hr { margin: 1.25em 0; border-color: rgb(229 231 235); }
+.plugin-readme table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.plugin-readme th,
+.plugin-readme td { border: 1px solid rgb(229 231 235); padding: 0.5em 0.75em; text-align: left; }
+.plugin-readme th { background: rgb(249 250 251); font-weight: 600; }
+.plugin-readme img { max-width: 100%; height: auto; }
 
-:global(.dark) .plugin-readme :deep(pre) { background: rgb(31 41 55); color: rgb(229 231 235); }
-:global(.dark) .plugin-readme :deep(code) { background: rgb(31 41 55); }
-:global(.dark) .plugin-readme :deep(pre code) { background: transparent; }
-:global(.dark) .plugin-readme :deep(a) { color: rgb(96 165 250); }
-:global(.dark) .plugin-readme :deep(blockquote) { border-color: rgb(75 85 99); color: rgb(156 163 175); }
-:global(.dark) .plugin-readme :deep(hr) { border-color: rgb(55 65 81); }
-:global(.dark) .plugin-readme :deep(th),
-:global(.dark) .plugin-readme :deep(td) { border-color: rgb(55 65 81); }
-:global(.dark) .plugin-readme :deep(th) { background: rgb(31 41 55); }
+.dark .plugin-readme pre { background: rgb(31 41 55); color: rgb(229 231 235); }
+.dark .plugin-readme code { background: rgb(31 41 55); }
+.dark .plugin-readme pre code { background: transparent; }
+.dark .plugin-readme a { color: rgb(96 165 250); }
+.dark .plugin-readme blockquote { border-color: rgb(75 85 99); color: rgb(156 163 175); }
+.dark .plugin-readme hr { border-color: rgb(55 65 81); }
+.dark .plugin-readme th,
+.dark .plugin-readme td { border-color: rgb(55 65 81); }
+.dark .plugin-readme th { background: rgb(31 41 55); }
 </style>
