@@ -107,28 +107,19 @@ def _cosyvoice_synth_worker(payload: dict, result_queue: multiprocessing.Queue) 
                 result_queue.put(("err", "CosyVoice returned empty audio"))
         else:
             result_queue.put(("err", f"Unexpected CosyVoice audio type: {type(audio)}"))
-        # Avoid join-on-exit deadlock if parent dies after put but before get.
-        try:
-            result_queue.close()
-        except Exception:
-            pass
-        try:
-            result_queue.cancel_join_thread()
-        except Exception:
-            pass
     except Exception as e:
         try:
             result_queue.put(("err", f"{type(e).__name__}: {e}"))
-        except Exception:
-            pass
+        except Exception as put_err:
+            logger.debug(f"Bailian CosyVoice worker: failed to enqueue error: {put_err}")
+    finally:
+        # Close the queue; do NOT call cancel_join_thread() — we rely on the
+        # normal feeder-thread flush so the parent can drain the result before
+        # join(). cancel_join_thread would risk dropping synthesized audio.
         try:
             result_queue.close()
-        except Exception:
-            pass
-        try:
-            result_queue.cancel_join_thread()
-        except Exception:
-            pass
+        except Exception as close_err:
+            logger.debug(f"Bailian CosyVoice worker: queue close failed: {close_err}")
 
 # region -> OpenAI compatible base_url (default public endpoints)
 _REGION_COMPAT_URL = {
