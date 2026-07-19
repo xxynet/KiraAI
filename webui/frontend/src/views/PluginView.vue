@@ -749,10 +749,10 @@
       <div v-if="selectedPlugin" class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col overflow-hidden" style="max-height: 90vh;">
         <div class="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div class="min-w-0 pr-4">
-            <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ $t('plugin.details_title') }}</p>
-            <h3 class="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100 break-words">
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.details_title') }}</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 break-words">
               {{ localize(selectedPlugin, 'display_name', selectedPlugin.name || selectedPlugin.id) }}
-            </h3>
+            </p>
           </div>
           <button type="button" class="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :aria-label="$t('plugin.close')" @click="pluginDetailsVisible = false">
             <IconClose class="w-6 h-6" />
@@ -1099,7 +1099,13 @@ async function openPluginDetails(plugin: PluginItem | PluginStoreItem) {
 }
 
 function renderMarkdown(text: string): string {
-  return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
+  const sanitized = DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
+  const document = new DOMParser().parseFromString(sanitized, 'text/html')
+  document.querySelectorAll('a').forEach(link => {
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+  })
+  return document.body.innerHTML
 }
 
 function onConfirmAction() {
