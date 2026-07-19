@@ -53,7 +53,7 @@ def _infer_type(model_id: str) -> str:
         or "s2v" in mid
         or "kf2v" in mid
         or (("i2i" in mid) and ("video" in mid))
-        or mid.endswith("-vace")
+        or "-vace" in mid
     ):
         return "video"
     if "embedding" in mid or mid.startswith("text-embedding"):
@@ -72,6 +72,7 @@ def _infer_type(model_id: str) -> str:
             and "r2v" not in mid
             and "s2v" not in mid
             and "kf2v" not in mid
+            and "-vace" not in mid
             and "video" not in mid
         )
     ):
@@ -160,14 +161,24 @@ class BailianProvider(BaseProvider):
             if not isinstance(model_id, str) or not model_id.strip():
                 continue
             model_id = model_id.strip()
+            # Display metadata must be strings — list/dict description would
+            # crash _tag().strip() and abort the whole remote listing.
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                name = model_id
+            else:
+                name = name.strip()
+            description = item.get("description")
+            if not isinstance(description, str):
+                description = item.get("owned_by")
+            if not isinstance(description, str):
+                description = ""
             models.append(
                 _annotate(
                     {
                         "id": model_id,
-                        "name": item.get("name") or model_id,
-                        "description": item.get("description")
-                        or item.get("owned_by")
-                        or "",
+                        "name": name,
+                        "description": description,
                     }
                 )
             )
