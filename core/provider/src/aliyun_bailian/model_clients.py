@@ -365,12 +365,15 @@ def _image_size_limits(
     """
     mid = (model_id or "").lower().replace("_", ".")
 
-    # Official wan2.6-image interleave/text-only path: total [768^2, 1280^2]
+    # Official wan2.6-image interleave/text-only path.
+    # Keep min_total / min_side / max_side / 1:4–4:1 mutually satisfiable:
+    # extreme 4:1 at max_side 1280 → 1280*320 (total 409600).
+    # Old min_total=768^2 cannot coexist with max_side=1280 at 4:1.
     if interleave:
         return _ImageSizeLimits(
-            min_total=768 * 768,
+            min_total=640 * 640,  # 409600 == 1280*320 (4:1 @ max_side)
             max_total=1280 * 1280,
-            min_side=256,
+            min_side=320,  # short edge of 4:1 @ max_side 1280
             max_side=1280,
             min_aspect=1 / 4,
             max_aspect=4 / 1,
@@ -396,6 +399,20 @@ def _image_size_limits(
             max_aspect=4 / 1,
             multiple=8,
             allow_k_tokens=(),
+        )
+
+    # wan2.6-image edit profile BEFORE generic edit fallback (aspect 1:4–4:1,
+    # not the generic 1:8–8:1 used by wan2.7).
+    if editing and mid.startswith("wan2.6") and "t2i" not in mid:
+        return _ImageSizeLimits(
+            min_total=768 * 768,
+            max_total=2048 * 2048,
+            min_side=256,
+            max_side=2048,
+            min_aspect=1 / 4,
+            max_aspect=4 / 1,
+            multiple=16,
+            allow_k_tokens=("1K", "2K"),
         )
 
     # Reference-image / edit mode never accepts 4K (including wan2.7-image-pro).
@@ -434,7 +451,7 @@ def _image_size_limits(
             allow_k_tokens=("1K", "2K"),  # no 4K on standard
         )
     if mid.startswith("wan2.6") and "t2i" not in mid:
-        # wan2.6-image (edit): total [768^2, 2048^2], tokens 1K/2K
+        # wan2.6-image (non-edit path fallback): total [768^2, 2048^2], tokens 1K/2K
         return _ImageSizeLimits(
             min_total=768 * 768,
             max_total=2048 * 2048,
@@ -1042,10 +1059,12 @@ class BailianImageClient(ImageModelClient):
     ) -> Image:
         task_url = f"{http_base}/tasks/{task_id}"
         poll_headers = {"Authorization": f"Bearer {api_key}"}
-        start = time.time()
+        # Monotonic clock: immune to wall-clock jumps that would extend/shorten
+        # the configured timeout unexpectedly.
+        start = time.monotonic()
         total_timeout = max(1, int(timeout or 1))
         while True:
-            remaining = total_timeout - (time.time() - start)
+            remaining = total_timeout - (time.monotonic() - start)
             if remaining <= 0:
                 break
             # Bound each poll HTTP request to the remaining overall deadline so a
@@ -1068,7 +1087,7 @@ class BailianImageClient(ImageModelClient):
                 msg = output.get("message") or tdata.get("message") or status
                 code = output.get("code") or tdata.get("code") or ""
                 raise RuntimeError(f"Bailian {label} failed: {code} {msg}".strip())
-            remaining_after = total_timeout - (time.time() - start)
+            remaining_after = total_timeout - (time.monotonic() - start)
             if remaining_after <= 0:
                 break
             await asyncio.sleep(min(2.0, remaining_after))
@@ -1293,12 +1312,16 @@ class BailianImageClient(ImageModelClient):
         if not api_key:
             raise RuntimeError("Bailian Image: api_key is not configured")
 
-        # Collect up to 4 reference URIs (official edit limit)
+        # Collect up to 4 *valid* reference URIs (official edit limit).
+        # Validate first, then cap — so an invalid early image does not
+        # prevent a later valid one from being used.
         ref_uris: list[str] = []
-        for img in images[:4]:
+        for img in images:
             uri = await self._image_to_ref_uri(img)
             if uri:
                 ref_uris.append(uri)
+                if len(ref_uris) == 4:
+                    break
 
         configured_model = self.model.model_id
         if not ref_uris:
