@@ -155,8 +155,11 @@ class BailianProvider(BaseProvider):
                     )
                 continue
             model_id = item.get("id") or item.get("model") or item.get("model_id") or ""
-            if not model_id:
+            # Require a non-empty string id (strip whitespace); skip invalid types
+            # so _infer_type never sees non-str / blank ids.
+            if not isinstance(model_id, str) or not model_id.strip():
                 continue
+            model_id = model_id.strip()
             models.append(
                 _annotate(
                     {
