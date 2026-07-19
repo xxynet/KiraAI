@@ -2,6 +2,7 @@ import asyncio
 import base64
 import multiprocessing
 import os
+import queue as std_queue
 import re
 import tempfile
 import threading
@@ -96,18 +97,38 @@ def _cosyvoice_synth_worker(payload: dict, result_queue: multiprocessing.Queue) 
 
         if audio is None:
             result_queue.put(("err", "CosyVoice returned empty audio"))
-            return
-        if isinstance(audio, (bytes, bytearray)):
+        elif isinstance(audio, (bytes, bytearray)):
             result_queue.put(("ok", bytes(audio)))
-            return
-        if hasattr(audio, "get_audio_data"):
+        elif hasattr(audio, "get_audio_data"):
             data = audio.get_audio_data()
             if data:
                 result_queue.put(("ok", bytes(data)))
-                return
-        result_queue.put(("err", f"Unexpected CosyVoice audio type: {type(audio)}"))
+            else:
+                result_queue.put(("err", "CosyVoice returned empty audio"))
+        else:
+            result_queue.put(("err", f"Unexpected CosyVoice audio type: {type(audio)}"))
+        # Avoid join-on-exit deadlock if parent dies after put but before get.
+        try:
+            result_queue.close()
+        except Exception:
+            pass
+        try:
+            result_queue.cancel_join_thread()
+        except Exception:
+            pass
     except Exception as e:
-        result_queue.put(("err", f"{type(e).__name__}: {e}"))
+        try:
+            result_queue.put(("err", f"{type(e).__name__}: {e}"))
+        except Exception:
+            pass
+        try:
+            result_queue.close()
+        except Exception:
+            pass
+        try:
+            result_queue.cancel_join_thread()
+        except Exception:
+            pass
 
 # region -> OpenAI compatible base_url (default public endpoints)
 _REGION_COMPAT_URL = {
@@ -2184,29 +2205,26 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
             )
             proc.start()
 
-            # Hard wall-clock wait covering connect + startup + synthesis.
-            join_timeout = max(0.01, deadline - time.monotonic())
-            proc.join(timeout=join_timeout)
-            if proc.is_alive():
-                proc.terminate()
-                proc.join(timeout=2.0)
-                if proc.is_alive():
-                    try:
-                        proc.kill()
-                    except Exception as e:
-                        logger.debug(f"Bailian CosyVoice: kill worker failed: {e}")
-                    proc.join(timeout=1.0)
+            # IMPORTANT: drain the result queue BEFORE join().
+            # Large pickled audio in multiprocessing.Queue can keep the child
+            # feeder thread alive; joining first can deadlock and surface as
+            # a false TimeoutError after a successful synthesis.
+            get_timeout = max(0.01, deadline - time.monotonic())
+            try:
+                status, data = queue.get(timeout=get_timeout)
+            except std_queue.Empty:
+                self._terminate_cosyvoice_worker(proc)
                 raise TimeoutError(
                     f"CosyVoice SpeechSynthesizer.call timed out after {call_timeout}s "
                     f"(including connect/startup)"
                 )
 
-            try:
-                status, data = queue.get_nowait()
-            except Exception as e:
-                raise RuntimeError(
-                    f"CosyVoice worker exited without result (code={proc.exitcode}): {e}"
-                ) from e
+            # Result already received — wait briefly for clean worker exit.
+            join_timeout = max(0.01, min(5.0, deadline - time.monotonic() + 0.5))
+            if proc.is_alive():
+                proc.join(timeout=join_timeout)
+            if proc.is_alive():
+                self._terminate_cosyvoice_worker(proc)
 
             if status == "ok" and isinstance(data, (bytes, bytearray)):
                 return bytes(data)
@@ -2214,6 +2232,12 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         finally:
             try:
                 if queue is not None:
+                    # Drain any leftover item so feeder can exit, then close.
+                    try:
+                        while True:
+                            queue.get_nowait()
+                    except Exception:
+                        pass
                     try:
                         queue.close()
                     except Exception:
@@ -2224,8 +2248,22 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
                         pass
             finally:
                 if proc is not None and proc.is_alive():
-                    try:
-                        proc.terminate()
-                    except Exception:
-                        pass
+                    self._terminate_cosyvoice_worker(proc)
                 _DASHSCOPE_LOCK.release()
+
+    @staticmethod
+    def _terminate_cosyvoice_worker(proc: multiprocessing.Process | None) -> None:
+        """Best-effort terminate/kill for a CosyVoice child process."""
+        if proc is None or not proc.is_alive():
+            return
+        try:
+            proc.terminate()
+        except Exception as e:
+            logger.debug(f"Bailian CosyVoice: terminate worker failed: {e}")
+        proc.join(timeout=2.0)
+        if proc.is_alive():
+            try:
+                proc.kill()
+            except Exception as e:
+                logger.debug(f"Bailian CosyVoice: kill worker failed: {e}")
+            proc.join(timeout=1.0)
