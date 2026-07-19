@@ -777,6 +777,14 @@
               <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.author') }}</dt>
               <dd class="mt-1 text-gray-900 dark:text-gray-100">{{ selectedPlugin.author }}</dd>
             </div>
+            <div v-if="pluginDetailsRepo">
+              <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.repo_url') }}</dt>
+              <dd class="mt-1 break-all">
+                <a :href="pluginDetailsRepo" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300">
+                  {{ pluginDetailsRepo }}
+                </a>
+              </dd>
+            </div>
             <div v-if="'category' in selectedPlugin && selectedPlugin.category">
               <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.category') }}</dt>
               <dd class="mt-1 text-gray-900 dark:text-gray-100">{{ selectedPlugin.category }}</dd>
@@ -793,10 +801,6 @@
               <span v-for="tag in selectedPlugin.tags" :key="tag" class="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">{{ tag }}</span>
             </div>
           </div>
-
-          <a v-if="pluginDetailsRepo" :href="pluginDetailsRepo" target="_blank" rel="noopener noreferrer" class="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
-            {{ $t('plugin.repo_link') }}
-          </a>
 
           <section v-if="pluginReadmeLoading || pluginReadme" class="border-t border-gray-200 pt-5 dark:border-gray-700">
             <h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">README</h4>
