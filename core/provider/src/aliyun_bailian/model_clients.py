@@ -1,6 +1,6 @@
 import asyncio
 import base64
-import inspect
+import multiprocessing
 import os
 import re
 import tempfile
@@ -34,6 +34,80 @@ _MAX_TEXT_CHARS = 20000
 
 # Protect dashscope global api_key / websocket url mutation across concurrent calls
 _DASHSCOPE_LOCK = threading.Lock()
+
+
+def _cosyvoice_synth_worker(payload: dict, result_queue: multiprocessing.Queue) -> None:
+    """Child-process CosyVoice synthesis (process-isolated dashscope.api_key).
+
+    Isolation lets the parent enforce a hard wall-clock deadline (including SDK
+    connect/startup) by terminating this process. Parent process global api_key
+    is never mutated, so a timed-out worker cannot race later synthesis/STT.
+    """
+    try:
+        import inspect as _inspect
+
+        import dashscope
+        from dashscope.audio.tts_v2 import AudioFormat, SpeechSynthesizer
+
+        audio_format = (payload.get("audio_format") or "mp3").lower().strip()
+        fmt_map = {
+            "mp3": AudioFormat.MP3_22050HZ_MONO_256KBPS,
+            "wav": AudioFormat.WAV_22050HZ_MONO_16BIT,
+            "pcm": AudioFormat.PCM_22050HZ_MONO_16BIT,
+        }
+        fmt = fmt_map.get(audio_format, AudioFormat.MP3_22050HZ_MONO_256KBPS)
+
+        dashscope.api_key = payload["api_key"]
+        model_id = payload["model_id"]
+        kwargs = {
+            "model": model_id,
+            "voice": payload["voice"],
+            "format": fmt,
+            "volume": max(0, min(100, int(payload.get("volume", 50) or 50))),
+            "speech_rate": max(0.5, min(2.0, float(payload.get("speech_rate", 1.0) or 1.0))),
+            "pitch_rate": max(0.5, min(2.0, float(payload.get("pitch_rate", 1.0) or 1.0))),
+        }
+        language_hints = payload.get("language_hints") or []
+        mid = (model_id or "").lower()
+        if language_hints and not (
+            mid.startswith("cosyvoice-v1") or mid in ("cosyvoice-v1",)
+        ):
+            kwargs["language_hints"] = list(language_hints)[:1]
+        instruction = (payload.get("instruction") or "").strip()
+        if instruction:
+            kwargs["instruction"] = instruction
+        if payload.get("enable_markdown_filter"):
+            kwargs["additional_params"] = {"enable_markdown_filter": True}
+
+        synthesizer = SpeechSynthesizer(
+            **kwargs,
+            workspace=payload.get("workspace_id") or None,
+            url=payload["ws_url"],
+        )
+        timeout_ms = max(1, int(payload.get("timeout_ms") or 1000))
+        try:
+            sig = _inspect.signature(synthesizer.call)
+            if "timeout_millis" in sig.parameters:
+                audio = synthesizer.call(payload["text"], timeout_millis=timeout_ms)
+            else:
+                audio = synthesizer.call(payload["text"])
+        except (TypeError, ValueError):
+            audio = synthesizer.call(payload["text"])
+
+        if audio is None:
+            result_queue.put(("err", "CosyVoice returned empty audio"))
+            return
+        if isinstance(audio, (bytes, bytearray)):
+            result_queue.put(("ok", bytes(audio)))
+            return
+        if hasattr(audio, "get_audio_data"):
+            data = audio.get_audio_data()
+            if data:
+                result_queue.put(("ok", bytes(data)))
+                return
+        result_queue.put(("err", f"Unexpected CosyVoice audio type: {type(audio)}"))
+    except Exception as e:
+        result_queue.put(("err", f"{type(e).__name__}: {e}"))
 
 # region -> OpenAI compatible base_url (default public endpoints)
 _REGION_COMPAT_URL = {
@@ -958,6 +1032,21 @@ class BailianImageClient(ImageModelClient):
         return BailianImageClient._is_edit_image_model(model_id)
 
     @staticmethod
+    def _max_ref_images(model_id: str) -> int:
+        """Official max input reference images for edit protocols."""
+        mid = (model_id or "").lower().replace("_", ".")
+        if BailianImageClient._supports_legacy_ref_img(model_id):
+            return 1
+        if mid.startswith("wan2.7"):
+            return 9
+        if mid.startswith("wan2.6") and "t2i" not in mid:
+            return 4
+        # Other modern edit-capable models: keep conservative 4
+        if BailianImageClient._supports_messages_img2img(model_id):
+            return 4
+        return 1
+
+    @staticmethod
     def _auto_route_enabled(mc: dict | None) -> bool:
         """Whether model auto-routing is enabled (default: False)."""
         if not mc:
@@ -1312,16 +1401,13 @@ class BailianImageClient(ImageModelClient):
         if not api_key:
             raise RuntimeError("Bailian Image: api_key is not configured")
 
-        # Collect up to 4 *valid* reference URIs (official edit limit).
-        # Validate first, then cap — so an invalid early image does not
-        # prevent a later valid one from being used.
+        # Collect *all* valid reference URIs first; model-specific cap is applied
+        # after target model resolution (wan2.7 up to 9, wan2.6 up to 4, legacy 1).
         ref_uris: list[str] = []
         for img in images:
             uri = await self._image_to_ref_uri(img)
             if uri:
                 ref_uris.append(uri)
-                if len(ref_uris) == 4:
-                    break
 
         configured_model = self.model.model_id
         if not ref_uris:
@@ -1349,6 +1435,14 @@ class BailianImageClient(ImageModelClient):
                 f"Use wan2.6-image / wan2.7-image, or enable model_config.auto_route "
                 f"(default is off)."
             )
+
+        max_refs = self._max_ref_images(model_id)
+        if len(ref_uris) > max_refs:
+            logger.info(
+                f"Bailian Image2Image: capping refs {len(ref_uris)} → {max_refs} "
+                f"(model={model_id})"
+            )
+            ref_uris = ref_uris[:max_refs]
 
         timeout = int(mc.get("timeout", 120) or 120)
         http_base = resolve_http_base_url(mp).rstrip("/")
@@ -1972,10 +2066,9 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         )
 
         try:
-            # Run blocking synthesis off the event loop. The sync path holds
-            # _DASHSCOPE_LOCK until the SDK call actually returns; timeout is
-            # enforced inside the SDK (timeout_millis), not by abandoning a
-            # future and unlocking early.
+            # Process-isolated synthesis: hard wall-clock timeout covers SDK
+            # connect/startup as well as the call itself. Parent never mutates
+            # dashscope.api_key, so a killed worker cannot race later TTS/STT.
             loop = asyncio.get_running_loop()
             audio_bytes = await loop.run_in_executor(
                 None,
@@ -2013,23 +2106,6 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str, mime=_resolve_mime(audio_format))
 
-    @staticmethod
-    def _call_speech_synthesizer(synthesizer, text: str, timeout_ms: int):
-        """Invoke CosyVoice synthesizer.call with SDK-native timeout when available.
-
-        Must be called while holding `_DASHSCOPE_LOCK`. The call is synchronous:
-        we never unlock while synthesis may still be in flight.
-        """
-        try:
-            sig = inspect.signature(synthesizer.call)
-            if "timeout_millis" in sig.parameters:
-                return synthesizer.call(text, timeout_millis=timeout_ms)
-        except (TypeError, ValueError) as e:
-            logger.debug(f"Bailian CosyVoice: timeout_millis unavailable ({e})")
-        # Older SDKs without timeout_millis: block until the SDK returns.
-        # Premature unlock would race on process-global dashscope.api_key.
-        return synthesizer.call(text)
-
     def _synth_sync(
         self,
         text: str,
@@ -2047,95 +2123,109 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         enable_markdown_filter: bool,
         timeout_sec: int = 60,
     ) -> bytes:
-        """Synchronous CosyVoice synthesis via DashScope SDK (run in thread).
+        """Synchronous CosyVoice synthesis with process isolation + hard deadline.
 
-        Mutates process-global dashscope.api_key under `_DASHSCOPE_LOCK`.
-        Uses ONE shared deadline for lock acquisition + synthesis. The lock is
-        held until the SDK call returns (success, error, or SDK-native timeout).
-        Never releases the lock based on a local future wait alone.
+        SpeechSynthesizer.call() performs fixed connect/start waits that are not
+        fully covered by timeout_millis. Running synthesis in a child process
+        allows terminating the whole operation when the overall deadline expires,
+        without holding parent-process dashscope global state past the timeout.
         """
-        from dashscope.audio.tts_v2 import SpeechSynthesizer
-
-        fmt = _resolve_audio_format(audio_format)
-
-        kwargs = {
-            "model": model_id,
-            "voice": voice,
-            "format": fmt,
-            "volume": max(0, min(100, volume)),
-            "speech_rate": max(0.5, min(2.0, speech_rate)),
-            "pitch_rate": max(0.5, min(2.0, pitch_rate)),
-        }
-
-        if language_hints and not _is_v1_model(model_id):
-            kwargs["language_hints"] = language_hints[:1]
-
-        if instruction:
-            kwargs["instruction"] = instruction
-
-        additional_params = {}
-        if enable_markdown_filter:
-            additional_params["enable_markdown_filter"] = True
-        if additional_params:
-            kwargs["additional_params"] = additional_params
-
-        # Single overall deadline: lock wait budget + remaining synthesis budget.
         call_timeout = max(1, int(timeout_sec or 60))
         deadline = time.monotonic() + call_timeout
-        synthesizer = None
-        audio = None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(
+                f"CosyVoice overall deadline exceeded before synthesis ({call_timeout}s)"
+            )
+        timeout_ms = max(1, int(remaining * 1000))
 
+        # Serialize CosyVoice workers so we do not spawn unbounded processes.
+        # Unlike the old lock-around-in-process-call path, parent api_key is not
+        # mutated; the lock only limits concurrent child processes.
         lock_budget = max(0.01, deadline - time.monotonic())
         acquired = _DASHSCOPE_LOCK.acquire(timeout=lock_budget)
         if not acquired:
             raise TimeoutError(
-                f"CosyVoice waiting for DashScope lock timed out after {call_timeout}s"
+                f"CosyVoice waiting for synthesis slot timed out after {call_timeout}s"
             )
+        proc = None
+        queue: multiprocessing.Queue | None = None
         try:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(
-                    f"CosyVoice overall deadline exceeded after waiting for lock "
-                    f"({call_timeout}s)"
-                )
-
-            import dashscope
-
-            dashscope.api_key = api_key
-            synthesizer = SpeechSynthesizer(
-                **kwargs,
-                workspace=workspace_id or None,
-                url=_resolve_ws_url(region, workspace_id),
-            )
-
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError(
-                    f"CosyVoice overall deadline exceeded before synthesis "
+                    f"CosyVoice overall deadline exceeded after waiting for slot "
                     f"({call_timeout}s)"
                 )
             timeout_ms = max(1, int(remaining * 1000))
 
-            # Blocking SDK call under the lock. Unlock only after this returns.
-            audio = self._call_speech_synthesizer(synthesizer, text, timeout_ms)
-        finally:
-            _DASHSCOPE_LOCK.release()
+            ctx = multiprocessing.get_context("spawn")
+            queue = ctx.Queue(maxsize=1)
+            payload = {
+                "text": text,
+                "api_key": api_key,
+                "model_id": model_id,
+                "voice": voice,
+                "workspace_id": workspace_id or "",
+                "ws_url": _resolve_ws_url(region, workspace_id),
+                "audio_format": audio_format,
+                "volume": volume,
+                "speech_rate": speech_rate,
+                "pitch_rate": pitch_rate,
+                "language_hints": list(language_hints or []),
+                "instruction": instruction or "",
+                "enable_markdown_filter": bool(enable_markdown_filter),
+                "timeout_ms": timeout_ms,
+            }
+            proc = ctx.Process(
+                target=_cosyvoice_synth_worker,
+                args=(payload, queue),
+                daemon=True,
+            )
+            proc.start()
 
-        if audio is None:
+            # Hard wall-clock wait covering connect + startup + synthesis.
+            join_timeout = max(0.01, deadline - time.monotonic())
+            proc.join(timeout=join_timeout)
+            if proc.is_alive():
+                proc.terminate()
+                proc.join(timeout=2.0)
+                if proc.is_alive():
+                    try:
+                        proc.kill()
+                    except Exception as e:
+                        logger.debug(f"Bailian CosyVoice: kill worker failed: {e}")
+                    proc.join(timeout=1.0)
+                raise TimeoutError(
+                    f"CosyVoice SpeechSynthesizer.call timed out after {call_timeout}s "
+                    f"(including connect/startup)"
+                )
+
             try:
-                if synthesizer is not None:
-                    resp = synthesizer.get_response()
-                    logger.error(f"Bailian CosyVoice empty audio, response={resp}")
+                status, data = queue.get_nowait()
             except Exception as e:
-                logger.debug(f"Bailian CosyVoice get_response after empty audio failed: {e}")
-            raise RuntimeError("CosyVoice returned empty audio")
+                raise RuntimeError(
+                    f"CosyVoice worker exited without result (code={proc.exitcode}): {e}"
+                ) from e
 
-        if isinstance(audio, (bytes, bytearray)):
-            return bytes(audio)
-
-        if hasattr(audio, "get_audio_data"):
-            data = audio.get_audio_data()
-            if data:
+            if status == "ok" and isinstance(data, (bytes, bytearray)):
                 return bytes(data)
-
-        raise RuntimeError(f"Unexpected CosyVoice audio type: {type(audio)}")
+            raise RuntimeError(str(data) if data else "CosyVoice returned empty audio")
+        finally:
+            try:
+                if queue is not None:
+                    try:
+                        queue.close()
+                    except Exception:
+                        pass
+                    try:
+                        queue.join_thread()
+                    except Exception:
+                        pass
+            finally:
+                if proc is not None and proc.is_alive():
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+                _DASHSCOPE_LOCK.release()
