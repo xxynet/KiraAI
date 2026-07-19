@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import time
 import json
@@ -59,6 +60,13 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/{plugin_id}/reload",
                 methods=["POST"],
                 endpoint=self.reload_plugin,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/{plugin_id}/readme",
+                methods=["GET"],
+                endpoint=self.get_plugin_readme,
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -226,6 +234,32 @@ class PluginsRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to update config for plugin {plugin_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to save plugin config")
+
+    async def get_plugin_readme(self, plugin_id: str):
+        """Return the optional README from an installed plugin directory."""
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+
+        plugin_manager = self.lifecycle.plugin_manager
+        if not plugin_manager.has_plugin(plugin_id):
+            raise HTTPException(status_code=404, detail="Plugin not found")
+
+        plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)
+        if not plugin_dir:
+            return {"readme": None}
+
+        def read_readme() -> Optional[str]:
+            for name in ("README.md", "README.MD", "README"):
+                readme_path = plugin_dir / name
+                if readme_path.is_file():
+                    return readme_path.read_text(encoding="utf-8", errors="replace")[:1_000_000]
+            return None
+
+        try:
+            return {"readme": await asyncio.to_thread(read_readme)}
+        except OSError as e:
+            logger.warning(f"Failed to read README for plugin {plugin_id}: {e}")
+            return {"readme": None}
 
     async def set_plugin_enabled(self, plugin_id: str, payload: Dict):
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):

@@ -15,6 +15,10 @@ export function getPluginConfig(pluginId: string) {
   return apiClient.get<{ config: Record<string, any>; schema: Record<string, any> }>(`/plugins/${encodeURIComponent(pluginId)}/config`)
 }
 
+export function getPluginReadme(pluginId: string) {
+  return apiClient.get<{ readme: string | null }>(`/plugins/${encodeURIComponent(pluginId)}/readme`)
+}
+
 export function updatePluginConfig(pluginId: string, data: PluginConfigUpdateRequest) {
   return apiClient.put(`/plugins/${encodeURIComponent(pluginId)}/config`, data)
 }

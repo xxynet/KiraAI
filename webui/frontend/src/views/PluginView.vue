@@ -129,6 +129,7 @@
           @uninstall="handleDeletePlugin(plugin.id)"
           @reload="handleReloadPlugin(plugin)"
           @update="handleUpdatePlugin(plugin)"
+          @details="openPluginDetails(plugin)"
         />
       </div>
     </div>
@@ -527,6 +528,7 @@
           :updating="updatingPlugins.has(item.id)"
           @install="handleStoreInstall(item)"
           @update="handleStoreUpdate(item)"
+          @details="openPluginDetails(item)"
         />
       </div>
 
@@ -743,6 +745,72 @@
     </Modal>
 
     <!-- Plugin Config Dialog -->
+    <Modal v-model="pluginDetailsVisible" content-class="max-w-4xl">
+      <div v-if="selectedPlugin" class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col overflow-hidden" style="max-height: 90vh;">
+        <div class="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div class="min-w-0 pr-4">
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('plugin.details_title') }}</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 break-words">
+              {{ localize(selectedPlugin, 'display_name', selectedPlugin.name || selectedPlugin.id) }}
+            </p>
+          </div>
+          <button type="button" class="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :aria-label="$t('plugin.close')" @click="pluginDetailsVisible = false">
+            <IconClose class="w-6 h-6" />
+          </button>
+        </div>
+        <div class="px-6 py-5 flex-1 min-h-0 overflow-y-auto space-y-5">
+          <p v-if="localize(selectedPlugin, 'description', selectedPlugin.description)" class="whitespace-pre-wrap text-sm leading-6 text-gray-600 dark:text-gray-300">
+            {{ localize(selectedPlugin, 'description', selectedPlugin.description) }}
+          </p>
+          <p v-else class="text-sm text-gray-400 dark:text-gray-500">{{ $t('plugin.no_description') }}</p>
+
+          <dl class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 text-sm">
+            <div>
+              <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.plugin_id') }}</dt>
+              <dd class="mt-1 font-mono break-all text-gray-900 dark:text-gray-100">{{ selectedPlugin.id }}</dd>
+            </div>
+            <div v-if="selectedPlugin.version">
+              <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.version') }}</dt>
+              <dd class="mt-1 text-gray-900 dark:text-gray-100">v{{ selectedPlugin.version }}</dd>
+            </div>
+            <div v-if="selectedPlugin.author">
+              <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.author') }}</dt>
+              <dd class="mt-1 text-gray-900 dark:text-gray-100">{{ selectedPlugin.author }}</dd>
+            </div>
+            <div v-if="pluginDetailsRepo">
+              <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.repo_url') }}</dt>
+              <dd class="mt-1 break-all">
+                <a :href="pluginDetailsRepo" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300">
+                  {{ pluginDetailsRepo }}
+                </a>
+              </dd>
+            </div>
+            <div v-if="'category' in selectedPlugin && selectedPlugin.category">
+              <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.category') }}</dt>
+              <dd class="mt-1 text-gray-900 dark:text-gray-100">{{ selectedPlugin.category }}</dd>
+            </div>
+            <div v-if="'core_version' in selectedPlugin && selectedPlugin.core_version">
+              <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.core_version') }}</dt>
+              <dd class="mt-1 text-gray-900 dark:text-gray-100">{{ selectedPlugin.core_version }}</dd>
+            </div>
+          </dl>
+
+          <div v-if="selectedPlugin.tags?.length">
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ $t('plugin.tags') }}</p>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <span v-for="tag in selectedPlugin.tags" :key="tag" class="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">{{ tag }}</span>
+            </div>
+          </div>
+
+          <section v-if="pluginReadmeLoading || pluginReadme" class="border-t border-gray-200 pt-5 dark:border-gray-700">
+            <h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ $t('plugin.readme_title') }}</h4>
+            <div v-if="pluginReadmeLoading" class="mt-3 text-sm text-gray-500 dark:text-gray-400">{{ $t('common.loading') }}</div>
+            <article v-else class="plugin-readme mt-3 text-sm leading-6 text-gray-700 dark:text-gray-300" v-html="renderMarkdown(pluginReadme!)" />
+          </section>
+        </div>
+      </div>
+    </Modal>
+
     <Modal v-model="pluginConfigVisible" content-class="max-w-md">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -863,6 +931,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
 import Modal from '@/components/common/Modal.vue'
@@ -871,7 +941,7 @@ import FileDropzone from '@/components/common/FileDropzone.vue'
 import AlertHint from '@/components/common/AlertHint.vue'
 
 import {
-  getPlugins, getPluginConfig, updatePluginConfig,
+  getPlugins, getPluginConfig, getPluginReadme, updatePluginConfig,
   togglePlugin as apiTogglePlugin, deletePlugin,
   installFromGithub, installFromUpload,
   reloadPlugin as apiReloadPlugin,
@@ -915,6 +985,21 @@ const checkingUpdates = ref(false)
 const updatingPlugins = ref(new Set<string>())
 const updateDialogVisible = ref(false)
 const updateTargetPlugin = ref<PluginItem | null>(null)
+const pluginDetailsVisible = ref(false)
+const selectedPlugin = ref<PluginItem | PluginStoreItem | null>(null)
+const pluginReadme = ref<string | null>(null)
+const pluginReadmeLoading = ref(false)
+let pluginReadmeRequest = 0
+const pluginDetailsRepo = computed(() => {
+  const repo = selectedPlugin.value?.repo
+  if (!repo) return null
+  try {
+    const url = new URL(repo)
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : null
+  } catch {
+    return null
+  }
+})
 
 // Proxy strategy
 const GH_PROXY_LIST = [
@@ -993,6 +1078,38 @@ function openConfirm(title: string, message: string, buttonText: string, action:
   confirmButtonText.value = buttonText
   pendingConfirmAction = action
   confirmModalRef.value?.open()
+}
+
+async function openPluginDetails(plugin: PluginItem | PluginStoreItem) {
+  const request = ++pluginReadmeRequest
+  selectedPlugin.value = plugin
+  pluginDetailsVisible.value = true
+  pluginReadme.value = null
+  const installedPlugin = plugins.value.find(item => item.id === plugin.id)
+  if (!installedPlugin) {
+    pluginReadmeLoading.value = false
+    return
+  }
+
+  pluginReadmeLoading.value = true
+  try {
+    const res = await getPluginReadme(installedPlugin.id)
+    if (request === pluginReadmeRequest) pluginReadme.value = res.data.readme
+  } catch {
+    // README is optional and must not prevent opening plugin details.
+  } finally {
+    if (request === pluginReadmeRequest) pluginReadmeLoading.value = false
+  }
+}
+
+function renderMarkdown(text: string): string {
+  const sanitized = DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
+  const parsedDocument = new DOMParser().parseFromString(sanitized, 'text/html')
+  parsedDocument.querySelectorAll('a').forEach(link => {
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+  })
+  return parsedDocument.body.innerHTML
 }
 
 function onConfirmAction() {
@@ -1721,3 +1838,47 @@ onMounted(async () => {
   handleCheckUpdates(true)
 })
 </script>
+
+<style>
+.plugin-readme h1,
+.plugin-readme h2,
+.plugin-readme h3 {
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+}
+
+.plugin-readme h1 { font-size: 1.25em; }
+.plugin-readme h2 { font-size: 1.125em; }
+.plugin-readme h3 { font-size: 1em; }
+
+.plugin-readme p,
+.plugin-readme ul,
+.plugin-readme ol,
+.plugin-readme pre {
+  margin: 0.75em 0;
+}
+
+.plugin-readme ul { list-style: disc; padding-left: 1.5em; }
+.plugin-readme ol { list-style: decimal; padding-left: 1.5em; }
+.plugin-readme pre { overflow-x: auto; padding: 0.75em; border-radius: 0.375rem; background: rgb(243 244 246); color: rgb(31 41 55); }
+.plugin-readme code { padding: 0.125em 0.25em; border-radius: 0.25rem; background: rgb(243 244 246); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.plugin-readme pre code { padding: 0; background: transparent; }
+.plugin-readme a { color: rgb(37 99 235); text-decoration: underline; }
+.plugin-readme blockquote { margin: 0.75em 0; border-left: 3px solid rgb(209 213 219); padding-left: 0.75em; color: rgb(75 85 99); }
+.plugin-readme hr { margin: 1.25em 0; border-color: rgb(229 231 235); }
+.plugin-readme table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.plugin-readme th,
+.plugin-readme td { border: 1px solid rgb(229 231 235); padding: 0.5em 0.75em; text-align: left; }
+.plugin-readme th { background: rgb(249 250 251); font-weight: 600; }
+.plugin-readme img { max-width: 100%; height: auto; }
+
+.dark .plugin-readme pre { background: rgb(31 41 55); color: rgb(229 231 235); }
+.dark .plugin-readme code { background: rgb(31 41 55); }
+.dark .plugin-readme pre code { background: transparent; }
+.dark .plugin-readme a { color: rgb(96 165 250); }
+.dark .plugin-readme blockquote { border-color: rgb(75 85 99); color: rgb(156 163 175); }
+.dark .plugin-readme hr { border-color: rgb(55 65 81); }
+.dark .plugin-readme th,
+.dark .plugin-readme td { border-color: rgb(55 65 81); }
+.dark .plugin-readme th { background: rgb(31 41 55); }
+</style>
