@@ -67,7 +67,9 @@
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ selectedConfigurationTitle }}</h2>
-          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :aria-label="t('onboarding.close_configuration')" @click="configurationModalVisible = false">×</button>
+          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :aria-label="t('onboarding.close_configuration')" @click="configurationModalVisible = false">
+            <IconClose class="w-6 h-6" />
+          </button>
         </div>
         <div class="flex-1 overflow-y-auto p-6"><component :is="selectedConfigurationComponent" v-if="selectedConfigurationComponent" /></div>
       </div>
@@ -85,7 +87,7 @@ import Modal from '@/components/common/Modal.vue'
 import ProviderView from '@/views/ProviderView.vue'
 import AdapterView from '@/views/AdapterView.vue'
 import PersonaView from '@/views/PersonaView.vue'
-import { IconInfo, IconLightning, IconMoon, IconSpinner, IconSun } from '@/components/icons'
+import { IconClose, IconInfo, IconLightning, IconMoon, IconSpinner, IconSun } from '@/components/icons'
 import { useAppStore } from '@/stores/app'
 
 const { t } = useI18n()
