@@ -81,6 +81,31 @@ class QQAdapter(IMAdapter):
         except Exception as e:
             return {}
 
+    @staticmethod
+    def _extract_poke_texts(msg: Dict) -> tuple[str, str]:
+        """兼容不同 OneBot 实现的戳一戳文案字段。
+
+        - NapCat 等实现：``msg['raw_info'][2]['txt']`` / ``msg['raw_info'][4]['txt']``
+        - SnowLuma 等实现：``msg['action']`` / ``msg['suffix']``，无 raw_info
+        """
+        # 优先保留原 NapCat raw_info 路径
+        raw_info = msg.get("raw_info")
+        if isinstance(raw_info, list) and len(raw_info) > 4:
+            try:
+                motion_text = raw_info[2].get("txt") if isinstance(raw_info[2], dict) else None
+                object_text = raw_info[4].get("txt") if isinstance(raw_info[4], dict) else None
+                if motion_text is not None and object_text is not None:
+                    return str(motion_text), str(object_text)
+            except Exception:
+                pass
+
+        # SnowLuma / 通用 OneBot 扩展字段兼容
+        # SnowLuma convertFriendPoke / convertGroupPoke:
+        #   action=action_str, suffix=suffix_str
+        motion_text = msg.get("action") or msg.get("action_str") or "戳了戳"
+        object_text = msg.get("suffix") or msg.get("suffix_str") or ""
+        return str(motion_text), str(object_text)
+
     async def start_blocking(self):
         @self.bot.group_event()
         async def on_group_message(msg: Dict):
@@ -585,10 +610,11 @@ class QQAdapter(IMAdapter):
                         and str(user_id) in self.user_list):
                     return
 
-            if self_id == target_id:
+            # 兼容不同 OneBot 实现对 self_id/target_id 的类型差异（int / str）
+            if str(self_id) == str(target_id):
                 is_mentioned = True
-                motion_text = msg['raw_info'][2]['txt']
-                object_text = msg['raw_info'][4]['txt']
+                # NapCat 等实现提供 raw_info；SnowLuma 等实现提供 action/suffix，无 raw_info
+                motion_text, object_text = self._extract_poke_texts(msg)
 
                 notice_str = f"[Poke 用户{user_id}({user_nickname}){motion_text}你{object_text}]"
                 message_chain.text(notice_str)
