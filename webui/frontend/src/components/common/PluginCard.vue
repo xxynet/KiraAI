@@ -1,7 +1,12 @@
 <template>
   <div
     class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col"
-    :class="error ? 'ring-1 ring-red-300 dark:ring-red-700' : ''"
+    :class="[error ? 'ring-1 ring-red-300 dark:ring-red-700' : '', 'cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500']"
+    role="button"
+    tabindex="0"
+    @click="onCardClick"
+    @keydown.enter.prevent="onCardKeydown"
+    @keydown.space.prevent="onCardKeydown"
   >
     <div class="flex items-start justify-between mb-3">
       <div>
@@ -216,6 +221,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
+  details: []
   toggle: []
   configure: []
   uninstall: []
@@ -223,6 +229,16 @@ const emit = defineEmits<{
   reload: []
   update: []
 }>()
+
+function onCardClick(event: MouseEvent) {
+  const target = event.target
+  if (target instanceof Element && target.closest('a, button, input, select, textarea')) return
+  emit('details')
+}
+
+function onCardKeydown(event: KeyboardEvent) {
+  if (event.target === event.currentTarget) emit('details')
+}
 
 const safeRepo = computed(() => {
   if (typeof props.repo !== 'string' || !props.repo) return null
