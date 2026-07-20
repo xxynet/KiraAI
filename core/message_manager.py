@@ -256,7 +256,12 @@ class MessageProcessor:
                             caps = self.kira_config.get_config("bot_config.capabilities.image_recognition", {})
                             if caps.get("enabled", True):
                                 img_prompt = caps.get("desc_prompt", "").strip() or None
-                                img_desc = await desc_img(client=vlm_model, image=ele, prompt=img_prompt)
+                                img_desc = await desc_img(
+                                    client=vlm_model,
+                                    image=ele,
+                                    prompt=img_prompt,
+                                    lang=self.kira_config.get_config("locale.lang") or "en",
+                                )
                             else:
                                 img_desc = ""
                         except Exception as e:
@@ -308,7 +313,12 @@ class MessageProcessor:
                             caps = self.kira_config.get_config("bot_config.capabilities.image_recognition", {})
                             if caps.get("enabled", True):
                                 sticker_prompt = caps.get("desc_prompt", "").strip() or None
-                                sticker_desc = await desc_img(client=vlm_model, image=ele, prompt=sticker_prompt)
+                                sticker_desc = await desc_img(
+                                    client=vlm_model,
+                                    image=ele,
+                                    prompt=sticker_prompt,
+                                    lang=self.kira_config.get_config("locale.lang") or "en",
+                                )
                             else:
                                 sticker_desc = ""
                         except Exception as e:

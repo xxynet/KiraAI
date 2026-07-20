@@ -14,6 +14,19 @@ if TYPE_CHECKING:
 logger = get_logger("llm", "purple")
 
 
+DEFAULT_VLM_PROMPTS = {
+    "zh": "描述这张图片的内容；如果图片中有文字，请一并输出。",
+    "en": "Describe the content of this image. If it contains text, include that text in the description.",
+}
+
+
+def get_default_vlm_prompt(lang: str | None) -> str:
+    """Return the localized fallback prompt used for VLM image descriptions."""
+    normalized_lang = str(lang or "en").lower().replace("_", "-")
+    language_code = normalized_lang.split("-", maxsplit=1)[0]
+    return DEFAULT_VLM_PROMPTS.get(language_code, DEFAULT_VLM_PROMPTS["en"])
+
+
 async def image_to_base64(image_path: str):
     """
     convert an image to base64
@@ -32,16 +45,22 @@ async def image_to_base64(image_path: str):
     return base64_data.decode('utf-8')
 
 
-async def desc_img(client: LLMModelClient, image: Union[Image, Sticker], prompt: str | None = None) -> str:
+async def desc_img(
+    client: LLMModelClient,
+    image: Union[Image, Sticker],
+    prompt: str | None = None,
+    lang: str | None = None,
+) -> str:
     """
     describe an image
     :param client: LLMModelClient
     :param image: url or base64
-    :param prompt: prompt of VLM, uses a default Chinese prompt if None
+    :param prompt: prompt of VLM, uses a localized default prompt if None
+    :param lang: configured language code used to select the default prompt
     :return: image description
     """
     if prompt is None:
-        prompt = "描述这张图片的内容，如果有文字请将其输出"
+        prompt = get_default_vlm_prompt(lang)
     from core.provider import LLMRequest
     try:
 
