@@ -46,6 +46,7 @@
           rel="noopener noreferrer"
           class="inline-flex items-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors mt-1"
           :title="$t('plugin.repo_link')"
+          @click.stop
         >
           <IconGithub class="w-4 h-4" />
         </a>
@@ -56,7 +57,7 @@
           class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
           :class="enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
           :aria-pressed="enabled ? 'true' : 'false'"
-          @click="emit('toggle')"
+          @click.stop="emit('toggle')"
         >
           <span
             class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
@@ -89,7 +90,7 @@
             ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
             : 'border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30'"
           :disabled="updating"
-          @click="!updating && emit('update')"
+          @click.stop="!updating && emit('update')"
         >
           <span v-if="updating" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />
@@ -101,7 +102,7 @@
           v-if="!error"
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
-          @click="emit('configure')"
+          @click.stop="emit('configure')"
         >
           {{ $t('plugin.configure') }}
         </button>
@@ -113,7 +114,7 @@
             ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
             : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'"
           :disabled="reloading"
-          @click="!reloading && emit('reload')"
+          @click.stop="!reloading && emit('reload')"
         >
           <span v-if="reloading" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />
@@ -128,7 +129,7 @@
             ? 'border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30'
             : 'border-gray-200 text-gray-300 cursor-not-allowed dark:border-gray-700 dark:text-gray-600'"
           :disabled="!uninstallable"
-          @click="uninstallable && emit('uninstall')"
+          @click.stop="uninstallable && emit('uninstall')"
         >
           {{ $t('plugin.uninstall') }}
         </button>
@@ -143,7 +144,7 @@
             ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
             : 'border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30'"
           :disabled="updating"
-          @click="!updating && emit('update')"
+          @click.stop="!updating && emit('update')"
         >
           <span v-if="updating" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />
@@ -159,7 +160,7 @@
             ? 'border-gray-200 text-gray-400 cursor-default dark:border-gray-700 dark:text-gray-500'
             : 'border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/30'"
           :disabled="installed || installing"
-          @click="!installed && !installing && emit('install')"
+          @click.stop="!installed && !installing && emit('install')"
         >
           <span v-if="installing" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />
