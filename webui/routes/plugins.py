@@ -554,6 +554,7 @@ class PluginsRoutes(Routes):
     async def fetch_plugin_store(self, payload: PluginStoreFetchRequest) -> List[PluginStoreItemResponse]:
         url: Optional[str] = payload.url
         source_id: Optional[str] = None
+        source: Optional[Dict[str, Any]] = None
 
         # If source_id is provided, look up URL from DB
         if payload.source_id and self.lifecycle and self.lifecycle.db_service:
@@ -567,19 +568,45 @@ class PluginsRoutes(Routes):
             raise HTTPException(status_code=400, detail="Either url or source_id is required")
 
         try:
-            raw_data = await PluginManager.fetch_plugin_store_data(url)
-            items = self._extract_plugins(raw_data)
+            raw_data = None
+            db_service = getattr(self.lifecycle, "db_service", None) if self.lifecycle else None
 
-            # Update cache on force refresh
-            if payload.force_refresh and source_id and self.lifecycle and self.lifecycle.db_service:
+            # Use the source cache for normal store browsing. A force refresh
+            # intentionally bypasses it so users can request the latest data.
+            if source_id and source and db_service and not payload.force_refresh:
                 now = int(time.time())
-                cache_file = await self._fetch_and_cache(
-                    source_id, url, existing_filename=source.get("cache_file") if source_id else None,
-                )
-                if cache_file:
-                    await self.lifecycle.db_service.update_plugin_store_source(
-                        source_id, cache_file=cache_file, updated_at=now,
+                cache_file = source.get("cache_file")
+                updated_at = source.get("updated_at", 0)
+                if cache_file and (now - updated_at) < 600:
+                    cache_path = get_data_path() / "plugin_src" / cache_file
+                    if cache_path.exists():
+                        try:
+                            raw_data = json.loads(cache_path.read_text(encoding="utf-8"))
+                        except (json.JSONDecodeError, OSError) as e:
+                            logger.warning(f"Failed to read plugin store cache {cache_path}: {e}")
+
+            if raw_data is None:
+                raw_data = await PluginManager.fetch_plugin_store_data(url)
+
+                # Persist a newly fetched response for source-backed requests.
+                # This includes force refreshes and cache misses/expirations.
+                if source_id and source and db_service:
+                    plugin_src_dir = get_data_path() / "plugin_src"
+                    plugin_src_dir.mkdir(parents=True, exist_ok=True)
+                    cache_file = source.get("cache_file")
+                    if cache_file and (plugin_src_dir / cache_file).exists():
+                        filename = cache_file
+                    else:
+                        filename = f"plugins_{uuid4().hex}.json"
+                    cache_path = plugin_src_dir / filename
+                    cache_path.write_text(
+                        json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8"
                     )
+                    await db_service.update_plugin_store_source(
+                        source_id, cache_file=filename, updated_at=int(time.time()),
+                    )
+
+            items = self._extract_plugins(raw_data)
             result: List[PluginStoreItemResponse] = []
             for item in items:
                 tags = item.get("tags") or []
