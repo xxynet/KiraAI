@@ -24,7 +24,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-anyio
+          pip install pytest pytest-anyio pytest-asyncio
 
       - name: Create data directories
         run: mkdir -p data/config

@@ -38,7 +38,7 @@ def make_config(lang):
     })
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(("lang", "expected"), [("en", "## Role"), ("zh", "## 角色设定")])
 async def test_agent_prompt_uses_configured_language(lang, expected):
     manager = PromptManager(make_config(lang), MockPersonaManager())
@@ -49,7 +49,7 @@ async def test_agent_prompt_uses_configured_language(lang, expected):
     assert "Test persona" in prompts[1].to_string()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("lang", [None, "de"])
 async def test_agent_prompt_defaults_to_english_for_empty_or_unknown_language(lang):
     manager = PromptManager(make_config(lang), MockPersonaManager())
