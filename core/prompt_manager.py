@@ -94,6 +94,9 @@ class PromptManager:
     async def get_agent_prompt(self, chat_env: Dict[str, Any]) -> list[Prompt]:
         """生成 Agent 提示词"""
         formatted_time = self.get_current_time_str()
+        templates = prompt_tmpl.get_agent_templates(
+            self.kira_config.get_config("locale.lang")
+        )
 
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
         max_tool_calls_per_turn = self.kira_config.get_config("bot_config.agent.max_tool_calls_per_turn")
@@ -101,16 +104,16 @@ class PromptManager:
         persona_prompt = persona.content
 
         agent_prompt: list[Prompt] = [
-            Prompt(prompt_tmpl.role_tmpl, name="role", source="system"),
-            Prompt(prompt_tmpl.persona_tmpl, name="persona", source="system", persona=persona_prompt),
-            Prompt(prompt_tmpl.attention_tmpl, name="attention", source="system"),
-            Prompt(prompt_tmpl.output_tmpl, name="output", source="system", max_tool_loop=max_tool_loop, max_tool_calls_per_turn=max_tool_calls_per_turn),
-            Prompt(prompt_tmpl.format_tmpl, name="format", source="system"),
-            Prompt(prompt_tmpl.accounts_tmpl, name="accounts", source="system", accounts=self.ada_config_prompt),
-            Prompt(prompt_tmpl.sessions_tmpl, name="sessions", source="system"),
-            Prompt(prompt_tmpl.chat_env_tmpl, name="chat_env", source="system", chat_env=chat_env),
-            Prompt(prompt_tmpl.memory_tmpl, name="memory", source="system"),
-            Prompt(prompt_tmpl.tools_tmpl, name="tools", source="system"),
-            Prompt(prompt_tmpl.time_tmpl, name="time", source="system", time_str=formatted_time)
+            Prompt(templates["role"], name="role", source="system"),
+            Prompt(templates["persona"], name="persona", source="system", persona=persona_prompt),
+            Prompt(templates["attention"], name="attention", source="system"),
+            Prompt(templates["output"], name="output", source="system", max_tool_loop=max_tool_loop, max_tool_calls_per_turn=max_tool_calls_per_turn),
+            Prompt(templates["format"], name="format", source="system"),
+            Prompt(templates["accounts"], name="accounts", source="system", accounts=self.ada_config_prompt),
+            Prompt(templates["sessions"], name="sessions", source="system"),
+            Prompt(templates["chat_env"], name="chat_env", source="system", chat_env=chat_env),
+            Prompt(templates["memory"], name="memory", source="system"),
+            Prompt(templates["tools"], name="tools", source="system"),
+            Prompt(templates["time"], name="time", source="system", time_str=formatted_time)
         ]
         return agent_prompt
