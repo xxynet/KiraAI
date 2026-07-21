@@ -295,5 +295,10 @@ agent_templates = {"zh": zh_templates, "en": en_templates}
 
 
 def get_agent_templates(lang: str | None) -> dict[str, str]:
-    """Return language-specific agent templates, defaulting to English."""
-    return agent_templates.get((lang or "en").lower(), en_templates)
+    """Return language-specific agent templates, defaulting to English.
+
+    Normalizes region-specific locale values (e.g. ``zh-CN``, ``zh_TW``)
+    by extracting the base language before lookup.
+    """
+    base_lang = (lang or "en").split("_")[0].split("-")[0].lower()
+    return agent_templates.get(base_lang, en_templates)
