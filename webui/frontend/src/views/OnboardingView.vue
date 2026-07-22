@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center relative">
+  <div class="min-h-screen flex items-center justify-center relative p-4">
     <div class="onboarding-light-spot onboarding-light-spot-1"></div>
     <div class="onboarding-light-spot onboarding-light-spot-2"></div>
     <div class="onboarding-light-spot onboarding-light-spot-3"></div>
@@ -9,8 +9,8 @@
       <IconMoon v-else class="w-6 h-6 text-gray-700" />
     </button>
 
-    <div class="relative z-10 w-full max-w-md px-6">
-      <div class="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 p-8 dark:bg-gray-800/70 dark:border-gray-700/30">
+    <div class="relative z-10 w-full max-w-md">
+      <div class="max-h-[calc(100vh-2rem)] flex flex-col bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 p-8 dark:bg-gray-800/70 dark:border-gray-700/30">
         <div class="text-center mb-8">
           <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4 shadow-lg">
             <IconLightning class="w-8 h-8 text-white" />
@@ -24,7 +24,7 @@
           <span class="w-8 h-1 rounded-full transition-colors" :class="step === 2 ? 'bg-blue-600' : 'bg-blue-200 dark:bg-blue-900'" />
         </div>
 
-        <form v-if="step === 1" class="space-y-6" @submit.prevent="goToConfigurationStep">
+        <form v-if="step === 1" class="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1" @submit.prevent="goToConfigurationStep">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300" for="backend-language">{{ t('onboarding.system_language') }}</label>
             <CustomSelect id="backend-language" v-model="language" :options="languageOptions" />
@@ -40,7 +40,7 @@
           </button>
         </form>
 
-        <div v-else class="space-y-4">
+        <div v-else class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
           <p class="text-sm text-gray-600 dark:text-gray-400">{{ t('onboarding.configuration_hint') }}</p>
           <button v-for="item in configurationItems" :key="item.key" type="button" class="w-full flex items-center gap-4 p-4 text-left rounded-xl border border-gray-200 bg-white/70 hover:border-blue-400 hover:bg-blue-50/70 transition-colors dark:border-gray-700 dark:bg-gray-800/70 dark:hover:border-blue-500 dark:hover:bg-gray-700" @click="openConfiguration(item.key)">
             <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">{{ item.order }}</span>
