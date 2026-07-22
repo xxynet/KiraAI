@@ -24,7 +24,7 @@
           <span class="w-8 h-1 rounded-full transition-colors" :class="step === 2 ? 'bg-blue-600' : 'bg-blue-200 dark:bg-blue-900'" />
         </div>
 
-        <form v-if="step === 1" class="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1" @submit.prevent="goToConfigurationStep">
+        <form v-if="step === 1" class="-mx-1 min-h-0 flex-1 space-y-6 overflow-y-auto px-1 py-1" @submit.prevent="goToConfigurationStep">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300" for="backend-language">{{ t('onboarding.system_language') }}</label>
             <CustomSelect id="backend-language" v-model="language" :options="languageOptions" />
@@ -35,12 +35,12 @@
             <input id="timezone" v-model="timezone" type="text" class="w-full h-10 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" :placeholder="t('onboarding.timezone_placeholder')">
             <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('onboarding.timezone_hint') }}</p>
           </div>
-          <button type="submit" class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563eb] transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-500">
+          <button type="submit" class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563eb] transition-all duration-200 active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-500">
             {{ t('onboarding.next') }}
           </button>
         </form>
 
-        <div v-else class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+        <div v-else class="-mx-1 min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-1">
           <p class="text-sm text-gray-600 dark:text-gray-400">{{ t('onboarding.configuration_hint') }}</p>
           <button v-for="item in configurationItems" :key="item.key" type="button" class="w-full flex items-center gap-4 p-4 text-left rounded-xl border border-gray-200 bg-white/70 hover:border-blue-400 hover:bg-blue-50/70 transition-colors dark:border-gray-700 dark:bg-gray-800/70 dark:hover:border-blue-500 dark:hover:bg-gray-700" @click="openConfiguration(item.key)">
             <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">{{ item.order }}</span>
