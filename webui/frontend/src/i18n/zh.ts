@@ -859,6 +859,8 @@ export default {
     finish: '完成',
     provider: '提供商',
     provider_hint: '先添加 AI 模型或服务提供商。',
+    default_models: '默认模型',
+    default_models_hint: '配置各项能力默认使用的提供商和模型。',
     adapter: '适配器',
     adapter_hint: '连接希望 KiraAI 进行互动的平台。',
     persona: '人设',

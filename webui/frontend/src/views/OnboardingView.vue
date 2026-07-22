@@ -71,7 +71,7 @@
             <IconClose class="w-6 h-6" />
           </button>
         </div>
-        <div class="flex-1 overflow-y-auto p-6"><component :is="selectedConfigurationComponent" v-if="selectedConfigurationComponent" /></div>
+        <div class="flex-1 overflow-y-auto p-6"><component :is="selectedConfigurationComponent" v-if="selectedConfigurationComponent" :initial-tab="selectedConfiguration === 'models' ? 'models' : undefined" /></div>
       </div>
     </Modal>
   </div>
@@ -88,6 +88,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import Modal from '@/components/common/Modal.vue'
 import ProviderView from '@/views/ProviderView.vue'
 import AdapterView from '@/views/AdapterView.vue'
+import ConfigView from '@/views/ConfigView.vue'
 import PersonaView from '@/views/PersonaView.vue'
 import { IconClose, IconInfo, IconLightning, IconMoon, IconSpinner, IconSun } from '@/components/icons'
 import { useAppStore } from '@/stores/app'
@@ -102,11 +103,12 @@ const loading = ref(false)
 const errorMessage = ref('')
 const step = ref<1 | 2>(1)
 const configurationModalVisible = ref(false)
-const selectedConfiguration = ref<'provider' | 'adapter' | 'persona' | null>(null)
+const selectedConfiguration = ref<'provider' | 'models' | 'adapter' | 'persona' | null>(null)
 const configurationItems = [
   { key: 'provider' as const, order: 1, titleKey: 'onboarding.provider', descriptionKey: 'onboarding.provider_hint' },
-  { key: 'adapter' as const, order: 2, titleKey: 'onboarding.adapter', descriptionKey: 'onboarding.adapter_hint' },
-  { key: 'persona' as const, order: 3, titleKey: 'onboarding.persona', descriptionKey: 'onboarding.persona_hint' },
+  { key: 'models' as const, order: 2, titleKey: 'onboarding.default_models', descriptionKey: 'onboarding.default_models_hint' },
+  { key: 'adapter' as const, order: 3, titleKey: 'onboarding.adapter', descriptionKey: 'onboarding.adapter_hint' },
+  { key: 'persona' as const, order: 4, titleKey: 'onboarding.persona', descriptionKey: 'onboarding.persona_hint' },
 ]
 const selectedConfigurationTitle = computed(() => {
   const item = configurationItems.find(({ key }) => key === selectedConfiguration.value)
@@ -114,6 +116,7 @@ const selectedConfigurationTitle = computed(() => {
 })
 const configurationComponents = {
   provider: ProviderView,
+  models: ConfigView,
   adapter: AdapterView,
   persona: PersonaView,
 }
@@ -122,7 +125,7 @@ const selectedConfigurationComponent = computed(() =>
 )
 
 function goToConfigurationStep() { step.value = 2 }
-function openConfiguration(key: 'provider' | 'adapter' | 'persona') { selectedConfiguration.value = key; configurationModalVisible.value = true }
+function openConfiguration(key: 'provider' | 'models' | 'adapter' | 'persona') { selectedConfiguration.value = key; configurationModalVisible.value = true }
 async function handleSubmit() {
   if (loading.value) return
   loading.value = true
