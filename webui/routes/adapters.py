@@ -76,12 +76,25 @@ class AdaptersRoutes(Routes):
             ),
         ]
 
-    async def get_adapter_platforms(self):
+    async def get_adapter_platforms(self, details: bool = False):
+        """Return stable platform IDs for backwards compatibility."""
         try:
             if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
                 logger.warning("Adapter manager not available for get_adapter_platforms")
                 return []
-            return self.lifecycle.adapter_manager.get_adapter_types()
+            adapter_manager = self.lifecycle.adapter_manager
+            if not details:
+                return adapter_manager.get_adapter_types()
+            return [
+                {
+                    "id": adapter_id,
+                    "display_name": manifest.get("display_name") or adapter_id,
+                    "description": manifest.get("description") or "",
+                    "locales": manifest.get("locales") or {},
+                }
+                for adapter_id in adapter_manager.get_adapter_types()
+                for manifest in [adapter_manager.get_manifest(adapter_id)]
+            ]
         except Exception as e:
             logger.error(f"Error getting adapter platforms: {e}")
             return []
@@ -104,6 +117,26 @@ class AdaptersRoutes(Routes):
             return manifest.get("locales") or {}
         return {}
 
+    def _get_adapter_platform_display(self, platform: str) -> tuple[str, Dict[str, Dict[str, str]]]:
+        if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
+            manifest = self.lifecycle.adapter_manager.get_manifest(platform)
+            return manifest.get("display_name") or platform, manifest.get("locales") or {}
+        return platform, {}
+
+    def _adapter_response(self, info, status_value: str) -> AdapterResponse:
+        platform_display_name, platform_locales = self._get_adapter_platform_display(info.platform)
+        return AdapterResponse(
+            id=info.adapter_id,
+            name=info.name,
+            platform=info.platform,
+            status=status_value,
+            description=info.description,
+            config=info.config,
+            locales=self._get_adapter_locales(info.platform),
+            platform_display_name=platform_display_name,
+            platform_locales=platform_locales,
+        )
+
     async def list_adapters(self):
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
             try:
@@ -115,18 +148,7 @@ class AdaptersRoutes(Routes):
                     adapter_status = (
                         "active" if info.enabled and info.name in running_adapters else "inactive"
                     )
-                    locales = self._get_adapter_locales(info.platform)
-                    adapters.append(
-                        AdapterResponse(
-                            id=info.adapter_id,
-                            name=info.name,
-                            platform=info.platform,
-                            status=adapter_status,
-                            description=info.description,
-                            config=info.config,
-                            locales=locales,
-                        )
-                    )
+                    adapters.append(self._adapter_response(info, adapter_status))
                 return adapters
             except Exception as e:
                 logger.error(f"Error listing adapters from lifecycle: {e}")
@@ -151,16 +173,7 @@ class AdaptersRoutes(Routes):
                     raise HTTPException(status_code=500, detail="Failed to create adapter")
                 running_adapters = set(adapter_mgr.get_adapters().keys())
                 status_value = "active" if info.enabled and info.name in running_adapters else "inactive"
-                locales = self._get_adapter_locales(info.platform)
-                return AdapterResponse(
-                    id=info.adapter_id,
-                    name=info.name,
-                    platform=info.platform,
-                    status=status_value,
-                    description=info.description,
-                    config=info.config,
-                    locales=locales,
-                )
+                return self._adapter_response(info, status_value)
             except HTTPException:
                 raise
             except Exception as e:
@@ -180,16 +193,7 @@ class AdaptersRoutes(Routes):
                     raise HTTPException(status_code=404, detail="Adapter not found")
                 running_adapters = set(adapter_mgr.get_adapters().keys())
                 adapter_status = "active" if info.enabled and info.name in running_adapters else "inactive"
-                locales = self._get_adapter_locales(info.platform)
-                return AdapterResponse(
-                    id=adapter_id,
-                    name=info.name,
-                    platform=info.platform,
-                    status=adapter_status,
-                    description=info.description,
-                    config=info.config,
-                    locales=locales,
-                )
+                return self._adapter_response(info, adapter_status)
             except HTTPException:
                 raise
             except Exception as e:
@@ -215,16 +219,7 @@ class AdaptersRoutes(Routes):
                     raise HTTPException(status_code=404, detail="Adapter not found")
                 running_adapters = set(adapter_mgr.get_adapters().keys())
                 status_value = "active" if info.enabled and info.name in running_adapters else "inactive"
-                locales = self._get_adapter_locales(info.platform)
-                return AdapterResponse(
-                    id=info.adapter_id,
-                    name=info.name,
-                    platform=info.platform,
-                    status=status_value,
-                    description=info.description,
-                    config=info.config,
-                    locales=locales,
-                )
+                return self._adapter_response(info, status_value)
             except HTTPException:
                 raise
             except Exception as e:

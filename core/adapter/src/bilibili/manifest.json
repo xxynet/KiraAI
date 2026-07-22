@@ -1,12 +1,13 @@
 {
     "name": "BiliBili",
+    "display_name": "BiliBili",
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "BiliBili Adapter",
     "repo": null,
     "locales": {
         "zh": {
-            "name": "BiliBili 适配器",
+            "display_name": "BiliBili",
             "description": "BiliBili 平台适配器"
         }
     }

@@ -1,8 +1,13 @@
 import apiClient from './client'
-import type { ProviderBase, ProviderResponse, ModelCreateRequest, ModelUpdateRequest } from '@/types'
+import type { ProviderBase, ProviderResponse, ProviderType, ModelCreateRequest, ModelUpdateRequest } from '@/types'
+import type { AxiosPromise } from 'axios'
 
-export function getProviderTypes() {
-  return apiClient.get<string[]>('/provider-types')
+export function getProviderTypes(details: true): AxiosPromise<ProviderType[]>
+export function getProviderTypes(details?: false): AxiosPromise<string[]>
+export function getProviderTypes(details = false) {
+  return apiClient.get<string[] | ProviderType[]>('/provider-types', {
+    params: details ? { details: true } : undefined,
+  })
 }
 
 export function getProviderSchema(providerType: string) {

@@ -30,7 +30,6 @@ class ProvidersRoutes(Routes):
                 path="/api/provider-types",
                 methods=["GET"],
                 endpoint=self.get_provider_types,
-                response_model=List[str],
                 tags=["providers"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -134,12 +133,26 @@ class ProvidersRoutes(Routes):
             ),
         ]
 
-    def _get_provider_locales(self, provider_type: str) -> Dict[str, Dict[str, str]]:
-        """Get locales dict from provider manifest for the given provider type."""
+    def _get_provider_type_display(self, provider_type: str) -> tuple[str, Dict[str, Dict[str, str]]]:
         if self.lifecycle and self.lifecycle.provider_manager:
             manifest = self.lifecycle.provider_manager.get_manifest(provider_type)
-            return manifest.get("locales") or {}
-        return {}
+            return manifest.get("display_name") or provider_type, manifest.get("locales") or {}
+        return provider_type, {}
+
+    def _provider_response(self, provider_info, status_value: str, model_config: dict) -> ProviderResponse:
+        type_display_name, type_locales = self._get_provider_type_display(provider_info.provider_type)
+        return ProviderResponse(
+            id=provider_info.provider_id,
+            name=provider_info.provider_name,
+            type=provider_info.provider_type,
+            status=status_value,
+            config=provider_info.provider_config,
+            model_config_data=model_config,
+            supported_model_types=self._get_supported_model_types(provider_info.provider_id),
+            locales=type_locales,
+            type_display_name=type_display_name,
+            type_locales=type_locales,
+        )
 
     def _get_supported_model_types(self, provider_id: str) -> List[str]:
         if not self.lifecycle or not self.lifecycle.provider_manager:
@@ -168,12 +181,24 @@ class ProvidersRoutes(Routes):
             logger.error(f"Failed to get supported model types for provider {provider_id}: {e}")
             return []
 
-    async def get_provider_types(self):
+    async def get_provider_types(self, details: bool = False):
         try:
             if not self.lifecycle or not self.lifecycle.provider_manager:
                 logger.warning("Provider manager not available for get_provider_types")
                 return []
-            return self.lifecycle.provider_manager.get_provider_types()
+            provider_manager = self.lifecycle.provider_manager
+            if not details:
+                return provider_manager.get_provider_types()
+            return [
+                {
+                    "id": provider_type,
+                    "display_name": manifest.get("display_name") or provider_type,
+                    "description": manifest.get("description") or "",
+                    "locales": manifest.get("locales") or {},
+                }
+                for provider_type in provider_manager.get_provider_types()
+                for manifest in [provider_manager.get_manifest(provider_type)]
+            ]
         except Exception as e:
             logger.error(f"Error getting provider types: {e}")
             return []
@@ -217,20 +242,11 @@ class ProvidersRoutes(Routes):
                 continue
             is_active = provider_id in active_providers
             config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
-            supported_model_types = self._get_supported_model_types(provider_id)
-            locales = self._get_provider_locales(provider_info.provider_type)
-            providers.append(
-                ProviderResponse(
-                    id=provider_info.provider_id,
-                    name=provider_info.provider_name,
-                    type=provider_info.provider_type,
-                    status="active" if is_active else "inactive",
-                    config=provider_info.provider_config,
-                    model_config_data=config.get("model_config", {}),
-                    supported_model_types=supported_model_types,
-                    locales=locales,
-                )
-            )
+            providers.append(self._provider_response(
+                provider_info,
+                "active" if is_active else "inactive",
+                config.get("model_config", {}),
+            ))
         return providers
 
     async def create_provider(self, payload: ProviderBase):
@@ -262,16 +278,11 @@ class ProvidersRoutes(Routes):
             self.lifecycle.kira_config.save_config()
             config_for_instantiation = generated_config.copy()
             self.lifecycle.provider_manager.set_provider(provider_id, config_for_instantiation)
-            locales = self._get_provider_locales(provider_type)
-            return ProviderResponse(
-                id=provider_id,
-                name=payload.name or provider_id,
-                type=provider_type,
-                status="active",
-                config=generated_config["provider_config"],
-                model_config_data=generated_config.get("model_config", {}),
-                supported_model_types=self._get_supported_model_types(provider_id),
-                locales=locales,
+            provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
+            if not provider_info:
+                raise HTTPException(status_code=500, detail="Failed to read created provider")
+            return self._provider_response(
+                provider_info, "active", generated_config.get("model_config", {})
             )
         except Exception as e:
             logger.error(f"Error creating provider: {e}")
@@ -284,16 +295,8 @@ class ProvidersRoutes(Routes):
             if not provider_info:
                 raise HTTPException(status_code=404, detail="Provider not found")
             config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
-            locales = self._get_provider_locales(provider_info.provider_type)
-            return ProviderResponse(
-                id=provider_info.provider_id,
-                name=provider_info.provider_name,
-                type=provider_info.provider_type,
-                status="active" if provider_inst else "inactive",
-                config=provider_info.provider_config,
-                model_config_data=config.get("model_config", {}),
-                supported_model_types=self._get_supported_model_types(provider_id),
-                locales=locales,
+            return self._provider_response(
+                provider_info, "active" if provider_inst else "inactive", config.get("model_config", {})
             )
         provider = self._providers.get(provider_id)
         if not provider:
@@ -313,16 +316,11 @@ class ProvidersRoutes(Routes):
             self.lifecycle.kira_config.save_config()
             config_for_instantiation = config.copy()
             self.lifecycle.provider_manager.set_provider(provider_id, config_for_instantiation)
-            locales = self._get_provider_locales(config.get("format", "unknown"))
-            return ProviderResponse(
-                id=provider_id,
-                name=config.get("name", provider_id),
-                type=config.get("format", "unknown"),
-                status="active",
-                config=config["provider_config"],
-                model_config_data=config.get("model_config", {}),
-                supported_model_types=self._get_supported_model_types(provider_id),
-                locales=locales,
+            provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
+            if not provider_info:
+                raise HTTPException(status_code=500, detail="Failed to read updated provider")
+            return self._provider_response(
+                provider_info, "active", config.get("model_config", {})
             )
         provider = self._providers.get(provider_id)
         if not provider:

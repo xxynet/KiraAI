@@ -42,7 +42,7 @@
                 {{ adapter.status }}
               </span>
             </div>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">{{ adapter.platform }}</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">{{ localizePlatform(adapter.platform_display_name, adapter.platform_locales, adapter.platform) }}</p>
           </div>
           <ToggleSwitch
             :model-value="adapter.status === 'active'"
@@ -172,7 +172,7 @@ import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import { IconPlus, IconTerminal, IconClose } from '@/components/icons'
-import type { AdapterResponse } from '@/types'
+import type { AdapterPlatform, AdapterResponse } from '@/types'
 
 const { t } = useI18n()
 const { localize } = useLocalized()
@@ -182,6 +182,7 @@ const confirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
 
 const adapters = ref<AdapterResponse[]>([])
 const platforms = ref<string[]>([])
+const platformDetails = ref<AdapterPlatform[]>([])
 const dialogVisible = ref(false)
 const editMode = ref(false)
 const editId = ref<string | null>(null)
@@ -196,7 +197,15 @@ const confirmMessage = ref('')
 let deleteTargetId: string | null = null
 
 const platformOptions = computed(() =>
-  platforms.value.map(p => ({ value: p, label: p }))
+  platforms.value.map(id => {
+    const platform = platformDetails.value.find(item => item.id === id)
+    return {
+      value: id,
+      label: platform
+        ? localize(platform, 'display_name', id)
+        : id,
+    }
+  })
 )
 
 const form = ref({
@@ -218,12 +227,24 @@ async function loadAdapters() {
 
 async function loadPlatforms() {
   try {
-    const res = await getAdapterPlatforms()
-    platforms.value = Array.isArray(res.data) ? res.data : []
+    const [idsRes, detailsRes] = await Promise.all([
+      getAdapterPlatforms(),
+      getAdapterPlatforms(true),
+    ])
+    platforms.value = Array.isArray(idsRes.data) ? idsRes.data : []
+    platformDetails.value = Array.isArray(detailsRes.data) ? detailsRes.data : []
   } catch (e) {
     notify(t('adapter.platform_load_failed'), 'error')
     console.error('Failed to load platforms:', e)
   }
+}
+
+function localizePlatform(
+  displayName: string,
+  locales: Record<string, Record<string, string>>,
+  fallback: string,
+) {
+  return localize({ display_name: displayName, locales }, 'display_name', fallback)
 }
 
 function openCreateDialog() {
