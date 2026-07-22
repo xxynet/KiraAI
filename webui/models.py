@@ -93,6 +93,8 @@ class ProviderResponse(ProviderBase):
     id: str
     model_config_data: Dict = Field(default_factory=dict, alias="model_config")
     supported_model_types: List[str] = Field(default_factory=list)
+    type_display_name: str = ""
+    type_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
 
 
 class ModelCreateRequest(BaseModel):
@@ -136,6 +138,8 @@ class AdapterBase(BaseModel):
 
 class AdapterResponse(AdapterBase):
     id: str
+    platform_display_name: str = ""
+    platform_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
 
 
 class PersonaBase(BaseModel):

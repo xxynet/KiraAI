@@ -93,12 +93,22 @@ export interface ProviderBase {
   type: string
   status: string
   config: Record<string, any>
+  locales?: Record<string, Record<string, string>>
+}
+
+export interface ProviderType {
+  id: string
+  display_name: string
+  description: string
+  locales: Record<string, Record<string, string>>
 }
 
 export interface ProviderResponse extends ProviderBase {
   id: string
   model_config: Record<string, any>
   supported_model_types: string[]
+  type_display_name: string
+  type_locales: Record<string, Record<string, string>>
 }
 
 export interface ModelCreateRequest {
@@ -119,8 +129,17 @@ export interface AdapterBase {
   config: Record<string, any>
 }
 
+export interface AdapterPlatform {
+  id: string
+  display_name: string
+  description: string
+  locales: Record<string, Record<string, string>>
+}
+
 export interface AdapterResponse extends AdapterBase {
   id: string
+  platform_display_name: string
+  platform_locales: Record<string, Record<string, string>>
 }
 
 export interface PersonaBase {

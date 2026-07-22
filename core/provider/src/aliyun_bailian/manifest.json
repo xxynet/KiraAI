@@ -1,16 +1,17 @@
 {
     "name": "AliyunBailian",
+    "display_name": "Aliyun Bailian",
     "version": "2.4.0",
     "author": "znq19",
     "description": "AliyunBailian (DashScope) full provider: LLM, CosyVoice TTS, STT, Image, Embedding, Rerank.",
     "repo": null,
     "locales": {
         "zh": {
-            "name": "阿里云百炼",
+            "display_name": "阿里云百炼",
             "description": "阿里云百炼完整提供商：大模型 / CosyVoice 语音合成 / 语音识别 / 文生图 / 向量 / 重排序"
         },
         "en": {
-            "name": "AliyunBailian",
+            "display_name": "Aliyun Bailian",
             "description": "AliyunBailian full provider: LLM, CosyVoice TTS, STT, Image, Embedding, Rerank"
         }
     }

@@ -1,9 +1,15 @@
 import apiClient from './client'
-import type { AdapterBase, AdapterResponse } from '@/types'
+import type { AdapterBase, AdapterPlatform, AdapterResponse } from '@/types'
+import type { AxiosPromise } from 'axios'
 
-export function getAdapterPlatforms() {
-  return apiClient.get<string[]>('/adapter-platforms')
+export function getAdapterPlatforms(details: true): AxiosPromise<AdapterPlatform[]>
+export function getAdapterPlatforms(details?: false): AxiosPromise<string[]>
+export function getAdapterPlatforms(details = false) {
+  return apiClient.get<string[] | AdapterPlatform[]>('/adapter-platforms', {
+    params: details ? { details: true } : undefined,
+  })
 }
+
 
 export function getAdapterSchema(platform: string) {
   return apiClient.get<any>(`/adapters/schema/${encodeURIComponent(platform)}`)

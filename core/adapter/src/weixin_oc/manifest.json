@@ -1,12 +1,17 @@
 {
     "name": "WeixinOC",
+    "display_name": "微信个人号",
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "个人微信适配器 (OpenClaw)",
     "repo": null,
     "locales": {
+        "zh": {
+            "display_name": "个人微信",
+            "description": "个人微信适配器 (OpenClaw)"
+        },
         "en": {
-            "name": "Weixin OC",
+            "display_name": "WeChat Personal",
             "description": "Personal WeChat Adapter (OpenClaw)"
         }
     }

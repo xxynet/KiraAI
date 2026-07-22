@@ -1,12 +1,13 @@
 {
     "name": "Volcengine",
+    "display_name": "Volcengine",
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "Volcengine Provider",
     "repo": null,
     "locales": {
         "zh": {
-            "name": "火山引擎",
+            "display_name": "火山引擎",
             "description": "火山引擎提供商"
         }
     }

@@ -1,12 +1,13 @@
 {
     "name": "ModelScope",
+    "display_name": "ModelScope",
     "version": "1.0.0",
     "author": "KiraAI",
     "description": "ModelScope Provider",
     "repo": null,
     "locales": {
         "zh": {
-            "name": "ModelScope 提供商",
+            "display_name": "ModelScope（魔搭）",
             "description": "ModelScope 提供商"
         }
     }

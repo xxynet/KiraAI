@@ -32,7 +32,7 @@
             </div>
             <div class="flex-1 min-w-0">
               <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ provider.name }}</div>
-              <div class="text-xs text-gray-500">{{ provider.type }}</div>
+              <div class="text-xs text-gray-500">{{ localizeProviderType(provider) }}</div>
             </div>
             <span class="px-2 py-1 text-xs rounded-full" :class="provider.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'">
               {{ provider.status }}
@@ -59,7 +59,7 @@
       <div v-else class="flex flex-col flex-1 overflow-y-auto pr-2">
         <div class="border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
           <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100 truncate">{{ selectedProvider?.name }}</h3>
-          <p class="text-sm text-gray-500 mt-1 truncate">{{ selectedProvider?.type }}</p>
+          <p class="text-sm text-gray-500 mt-1 truncate">{{ selectedProvider && localizeProviderType(selectedProvider) }}</p>
         </div>
 
         <!-- Provider Config Fields -->
@@ -176,7 +176,7 @@
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('provider.type') }}</label>
             <CustomSelect
               v-model="createForm.type"
-              :options="providerTypes.map(t => ({ value: t, label: t }))"
+              :options="providerTypes.map(type => ({ value: type.id, label: localize(type, 'display_name', type.id) }))"
               :placeholder="$t('provider.select_type') || 'Select provider type...'"
               @update:modelValue="onCreateTypeChange"
             />
@@ -354,7 +354,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import { IconClose, IconPlus, IconCpu, IconChevronDown, IconRefresh, IconSpinner, IconPulse, IconSliders, IconInfo } from '@/components/icons'
-import type { ProviderResponse } from '@/types'
+import type { ProviderResponse, ProviderType } from '@/types'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -391,7 +391,7 @@ function onConfirmAction() {
 
 const providers = ref<ProviderResponse[]>([])
 const selectedId = ref<string | null>(null)
-const providerTypes = ref<string[]>([])
+const providerTypes = ref<ProviderType[]>([])
 const providerSchema = ref<any>(null)
 const providerConfigValues = ref<Record<string, any>>({})
 const providerModels = ref<Record<string, any>>({})
@@ -454,6 +454,14 @@ function deepClone<T>(obj: T): T {
   } catch {
     return JSON.parse(JSON.stringify(obj))
   }
+}
+
+function localizeProviderType(provider: ProviderResponse) {
+  return localize(
+    { display_name: provider.type_display_name, locales: provider.type_locales },
+    'display_name',
+    provider.type,
+  )
 }
 
 function toggleModelGroup(modelType: string) {
@@ -540,7 +548,7 @@ function openCreateDialog() {
   createSchema.value = null
   createDialogVisible.value = true
   if (providerTypes.value.length === 0) {
-    getProviderTypes().then(res => { providerTypes.value = res.data }).catch(() => {
+    getProviderTypes(true).then(res => { providerTypes.value = res.data }).catch(() => {
       notify(t('provider.load_types_failed'), 'error')
     })
   }
