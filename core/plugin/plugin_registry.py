@@ -1466,9 +1466,9 @@ class PluginManager:
         for tag in comp.tags:
             tag_registry.unregister(tag.get("name"))
 
-        # clean up widget registration
-        comp.widgets.clear()
-        comp.widget_funcs.clear()
+        # Widget declarations are module-level metadata, just like API and page
+        # declarations.  Keep them across disable/enable so init_plugin() can
+        # make them available again without re-importing the plugin module.
 
         # clean up FastAPI routes (API routes, page routes, static mounts)
         self._remove_plugin_routes(plugin_id)
