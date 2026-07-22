@@ -858,6 +858,8 @@ export default {
     finish: 'Finish',
     provider: 'Provider',
     provider_hint: 'Add an AI model or service provider first.',
+    default_models: 'Default Models',
+    default_models_hint: 'Configure the default provider and model for each capability.',
     adapter: 'Adapter',
     adapter_hint: 'Connect the platforms where you want KiraAI to interact.',
     persona: 'Persona',

@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center relative">
+  <div class="min-h-screen flex items-center justify-center relative p-4">
     <div class="onboarding-light-spot onboarding-light-spot-1"></div>
     <div class="onboarding-light-spot onboarding-light-spot-2"></div>
     <div class="onboarding-light-spot onboarding-light-spot-3"></div>
@@ -9,8 +9,8 @@
       <IconMoon v-else class="w-6 h-6 text-gray-700" />
     </button>
 
-    <div class="relative z-10 w-full max-w-md px-6">
-      <div class="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 p-8 dark:bg-gray-800/70 dark:border-gray-700/30">
+    <div class="relative z-10 w-full max-w-md">
+      <div class="max-h-[calc(100vh-2rem)] flex flex-col bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 p-8 dark:bg-gray-800/70 dark:border-gray-700/30">
         <div class="text-center mb-8">
           <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4 shadow-lg">
             <IconLightning class="w-8 h-8 text-white" />
@@ -24,7 +24,7 @@
           <span class="w-8 h-1 rounded-full transition-colors" :class="step === 2 ? 'bg-blue-600' : 'bg-blue-200 dark:bg-blue-900'" />
         </div>
 
-        <form v-if="step === 1" class="space-y-6" @submit.prevent="goToConfigurationStep">
+        <form v-if="step === 1" class="-mx-1 min-h-0 flex-1 space-y-6 overflow-y-auto px-1 py-1" @submit.prevent="goToConfigurationStep">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300" for="backend-language">{{ t('onboarding.system_language') }}</label>
             <CustomSelect id="backend-language" v-model="language" :options="languageOptions" />
@@ -35,12 +35,12 @@
             <input id="timezone" v-model="timezone" type="text" class="w-full h-10 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" :placeholder="t('onboarding.timezone_placeholder')">
             <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('onboarding.timezone_hint') }}</p>
           </div>
-          <button type="submit" class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563eb] transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-500">
+          <button type="submit" class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563eb] transition-all duration-200 active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-500">
             {{ t('onboarding.next') }}
           </button>
         </form>
 
-        <div v-else class="space-y-4">
+        <div v-else class="-mx-1 min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-1">
           <p class="text-sm text-gray-600 dark:text-gray-400">{{ t('onboarding.configuration_hint') }}</p>
           <button v-for="item in configurationItems" :key="item.key" type="button" class="w-full flex items-center gap-4 p-4 text-left rounded-xl border border-gray-200 bg-white/70 hover:border-blue-400 hover:bg-blue-50/70 transition-colors dark:border-gray-700 dark:bg-gray-800/70 dark:hover:border-blue-500 dark:hover:bg-gray-700" @click="openConfiguration(item.key)">
             <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">{{ item.order }}</span>
@@ -71,7 +71,7 @@
             <IconClose class="w-6 h-6" />
           </button>
         </div>
-        <div class="flex-1 overflow-y-auto p-6"><component :is="selectedConfigurationComponent" v-if="selectedConfigurationComponent" /></div>
+        <div class="flex-1 overflow-y-auto p-6"><component :is="selectedConfigurationComponent" v-if="selectedConfigurationComponent" :initial-tab="selectedConfiguration === 'models' ? 'models' : undefined" /></div>
       </div>
     </Modal>
   </div>
@@ -88,6 +88,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import Modal from '@/components/common/Modal.vue'
 import ProviderView from '@/views/ProviderView.vue'
 import AdapterView from '@/views/AdapterView.vue'
+import ConfigView from '@/views/ConfigView.vue'
 import PersonaView from '@/views/PersonaView.vue'
 import { IconClose, IconInfo, IconLightning, IconMoon, IconSpinner, IconSun } from '@/components/icons'
 import { useAppStore } from '@/stores/app'
@@ -102,11 +103,12 @@ const loading = ref(false)
 const errorMessage = ref('')
 const step = ref<1 | 2>(1)
 const configurationModalVisible = ref(false)
-const selectedConfiguration = ref<'provider' | 'adapter' | 'persona' | null>(null)
+const selectedConfiguration = ref<'provider' | 'models' | 'adapter' | 'persona' | null>(null)
 const configurationItems = [
   { key: 'provider' as const, order: 1, titleKey: 'onboarding.provider', descriptionKey: 'onboarding.provider_hint' },
-  { key: 'adapter' as const, order: 2, titleKey: 'onboarding.adapter', descriptionKey: 'onboarding.adapter_hint' },
-  { key: 'persona' as const, order: 3, titleKey: 'onboarding.persona', descriptionKey: 'onboarding.persona_hint' },
+  { key: 'models' as const, order: 2, titleKey: 'onboarding.default_models', descriptionKey: 'onboarding.default_models_hint' },
+  { key: 'adapter' as const, order: 3, titleKey: 'onboarding.adapter', descriptionKey: 'onboarding.adapter_hint' },
+  { key: 'persona' as const, order: 4, titleKey: 'onboarding.persona', descriptionKey: 'onboarding.persona_hint' },
 ]
 const selectedConfigurationTitle = computed(() => {
   const item = configurationItems.find(({ key }) => key === selectedConfiguration.value)
@@ -114,6 +116,7 @@ const selectedConfigurationTitle = computed(() => {
 })
 const configurationComponents = {
   provider: ProviderView,
+  models: ConfigView,
   adapter: AdapterView,
   persona: PersonaView,
 }
@@ -122,7 +125,7 @@ const selectedConfigurationComponent = computed(() =>
 )
 
 function goToConfigurationStep() { step.value = 2 }
-function openConfiguration(key: 'provider' | 'adapter' | 'persona') { selectedConfiguration.value = key; configurationModalVisible.value = true }
+function openConfiguration(key: 'provider' | 'models' | 'adapter' | 'persona') { selectedConfiguration.value = key; configurationModalVisible.value = true }
 async function handleSubmit() {
   if (loading.value) return
   loading.value = true

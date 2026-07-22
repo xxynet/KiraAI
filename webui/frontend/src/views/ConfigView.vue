@@ -371,6 +371,7 @@ import {
 
 const { t, locale } = useI18n()
 const route = useRoute()
+const props = defineProps<{ initialTab?: string }>()
 
 const searchTerm = ref('')
 const saving = ref(false)
@@ -1005,9 +1006,9 @@ function handleKeydown(e: KeyboardEvent) {
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
   // Support ?tab= query parameter to switch to a specific category tab
-  const queryTab = route.query.tab as string | undefined
-  if (queryTab && categoryTabs.some(t => t.id === queryTab)) {
-    activeTab.value = queryTab
+  const initialTab = props.initialTab || (route.query.tab as string | undefined)
+  if (initialTab && categoryTabs.some(t => t.id === initialTab)) {
+    activeTab.value = initialTab
   }
   await loadConfig()
 })
