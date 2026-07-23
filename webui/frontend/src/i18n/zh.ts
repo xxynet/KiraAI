@@ -142,7 +142,7 @@ export default {
     model_group_llm: '大语言模型',
     model_group_tts: '语音合成',
     model_group_stt: '语音识别',
-    model_group_image: '图像',
+    model_group_image: '图像生成',
     model_group_video: '视频',
     model_group_embedding: '向量嵌入',
     model_group_rerank: '重排序',

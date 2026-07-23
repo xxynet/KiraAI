@@ -142,7 +142,7 @@ export default {
     model_group_llm: 'LLM',
     model_group_tts: 'TTS',
     model_group_stt: 'STT',
-    model_group_image: 'Image',
+    model_group_image: 'Image Generation',
     model_group_video: 'Video',
     model_group_embedding: 'Embedding',
     model_group_rerank: 'Rerank',
