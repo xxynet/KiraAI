@@ -73,9 +73,14 @@ class ProviderManager:
         manifest = cls._manifests.get(name, {})
         return copy.deepcopy(manifest) if manifest else {}
 
-    def get_model_client(self, provider_id: str, model_id: str) -> Optional[BaseModelClient]:
+    def get_model_client(
+        self,
+        provider_id: str,
+        model_id: str,
+        model_type: Optional[ModelType | str] = None,
+    ) -> Optional[BaseModelClient]:
         provider = self.get_provider(provider_id)
-        model_info = self.get_model_info(provider_id, model_id)
+        model_info = self.get_model_info(provider_id, model_id, model_type)
         if not model_info:
             return
         model_type_enum = model_info.model_type
@@ -89,7 +94,9 @@ class ProviderManager:
 
     def get_default_llm(self) -> LLMModelClient:
         model_info = self.get_default_model_info("default_llm")
-        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
         if not isinstance(model_client, LLMModelClient):
             raise TypeError(
                 f"Expected LLMModelClient, got {type(model_client).__name__}"
@@ -98,7 +105,9 @@ class ProviderManager:
 
     def get_default_fast_llm(self) -> LLMModelClient:
         model_info = self.get_default_model_info("default_fast_llm")
-        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
         if not isinstance(model_client, LLMModelClient):
             raise TypeError(
                 f"Expected LLMModelClient, got {type(model_client).__name__}"
@@ -107,7 +116,9 @@ class ProviderManager:
 
     def get_default_vlm(self) -> LLMModelClient:
         model_info = self.get_default_model_info("default_vlm")
-        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
         if not isinstance(model_client, LLMModelClient):
             raise TypeError(
                 f"Expected LLMModelClient, got {type(model_client).__name__}"
@@ -116,7 +127,9 @@ class ProviderManager:
 
     def get_default_tts(self) -> TTSModelClient:
         model_info = self.get_default_model_info("default_tts")
-        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
         if not isinstance(model_client, TTSModelClient):
             raise TypeError(
                 f"Expected TTSModelClient, got {type(model_client).__name__}"
@@ -129,7 +142,9 @@ class ProviderManager:
         except ValueError:
             logger.error("default_stt not configured, please configure it in Configuration")
             raise
-        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
         if not isinstance(model_client, STTModelClient):
             raise TypeError(
                 f"Expected STTModelClient, got {type(model_client).__name__}"
@@ -138,7 +153,9 @@ class ProviderManager:
 
     def get_default_image(self) -> ImageModelClient:
         model_info = self.get_default_model_info("default_image")
-        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
         if not isinstance(model_client, ImageModelClient):
             raise TypeError(
                 f"Expected ImageModelClient, got {type(model_client).__name__}"
@@ -147,7 +164,9 @@ class ProviderManager:
 
     def get_default_video(self) -> VideoModelClient:
         model_info = self.get_default_model_info("default_video")
-        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
         if not isinstance(model_client, VideoModelClient):
             raise TypeError(
                 f"Expected VideoModelClient, got {type(model_client).__name__}"
@@ -156,7 +175,9 @@ class ProviderManager:
 
     def get_default_embedding(self) -> EmbeddingModelClient:
         model_info = self.get_default_model_info("default_embedding")
-        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
         if not isinstance(model_client, EmbeddingModelClient):
             raise TypeError(
                 f"Expected EmbeddingModelClient, got {type(model_client).__name__}"
@@ -165,7 +186,9 @@ class ProviderManager:
 
     def get_default_rerank(self) -> RerankModelClient:
         model_info = self.get_default_model_info("default_rerank")
-        model_client = self.get_model_client(model_info.provider_id, model_info.model_id)
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
         if not isinstance(model_client, RerankModelClient):
             raise TypeError(
                 f"Expected RerankModelClient, got {type(model_client).__name__}"
@@ -298,14 +321,23 @@ class ProviderManager:
             type_dict[info.model_id] = info.model_config
         return models
 
-    def get_model_info(self, provider_id: str, model_id: str) -> Optional[ModelInfo]:
+    def get_model_info(
+        self,
+        provider_id: str,
+        model_id: str,
+        model_type: Optional[ModelType | str] = None,
+    ) -> Optional[ModelInfo]:
         providers_config = self.kira_config.get("providers", {})
         provider_config = providers_config.get(provider_id) or {}
         provider_instance_config = provider_config.get("provider_config", {}) or {}
         provider_name = provider_config.get("name", provider_id)
         model_config_root = provider_config.get("model_config") or {}
+        if isinstance(model_type, str):
+            model_type = ModelType(model_type)
         for model_type_key, type_models in model_config_root.items():
             if not isinstance(type_models, dict):
+                continue
+            if model_type is not None and model_type_key != model_type.value:
                 continue
             if model_id in type_models:
                 model_cfg = type_models[model_id]
@@ -477,7 +509,7 @@ class ProviderManager:
         :return: {"success": bool, "latency": int (ms), "error": str | None}
         """
         try:
-            model_client = self.get_model_client(provider_id, model_id)
+            model_client = self.get_model_client(provider_id, model_id, model_type)
         except Exception as e:
             return {"success": False, "latency": None, "error": str(e)}
         if not model_client:
