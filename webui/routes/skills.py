@@ -1,12 +1,14 @@
-import io
+import asyncio
 import json
 import os
 import shutil
+import tempfile
 import zipfile
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
 from core.logging_manager import get_logger
 from core.agent.skills_mgr import SkillsManager
@@ -78,6 +80,13 @@ class SkillsRoutes(Routes):
     def _folder_size(path) -> int:
         return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
 
+    @staticmethod
+    def _create_skill_archive(skill_path, archive_path) -> None:
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for file_path in skill_path.rglob("*"):
+                if file_path.is_file():
+                    zip_file.write(file_path, file_path.relative_to(skill_path.parent))
+
     async def list_skills(self):
         if not self.lifecycle or not hasattr(self.lifecycle, "skills_manager"):
             raise HTTPException(status_code=503, detail="Skills manager not available")
@@ -123,22 +132,42 @@ class SkillsRoutes(Routes):
             raise HTTPException(status_code=500, detail="Failed to update skill state")
 
     async def export_skill(self, skill_name: str):
+        archive_path = None
         try:
             skill = self._get_skill(skill_name)
-            archive = io.BytesIO()
-            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                for file_path in skill.path.rglob("*"):
-                    if file_path.is_file():
-                        zip_file.write(file_path, file_path.relative_to(skill.path.parent))
-            archive.seek(0)
+            archive_fd, archive_path = tempfile.mkstemp(prefix="kira-skill-", suffix=".zip")
+            os.close(archive_fd)
+            await asyncio.to_thread(self._create_skill_archive, skill.path, archive_path)
+
+            def cleanup_archive() -> None:
+                if archive_path:
+                    try:
+                        os.unlink(archive_path)
+                    except FileNotFoundError:
+                        pass
+
+            def iter_archive():
+                try:
+                    with open(archive_path, "rb") as archive_file:
+                        while chunk := archive_file.read(1024 * 1024):
+                            yield chunk
+                finally:
+                    cleanup_archive()
+
             return StreamingResponse(
-                archive,
+                iter_archive(),
                 media_type="application/zip",
                 headers={"Content-Disposition": f'attachment; filename="{skill.path.name}.zip"'},
+                background=BackgroundTask(cleanup_archive),
             )
         except HTTPException:
             raise
         except Exception as e:
+            if archive_path:
+                try:
+                    os.unlink(archive_path)
+                except FileNotFoundError:
+                    pass
             logger.error(f"Failed to export skill {skill_name}: {e}")
             raise HTTPException(status_code=500, detail="Failed to export skill")
 

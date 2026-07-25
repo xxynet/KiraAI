@@ -1574,6 +1574,7 @@ function handleDeleteSkill(skill: any) {
         await apiDeleteSkill(skill.id)
         notify(t('plugin.skills_delete_success'), 'success')
         await loadSkills()
+        await loadScope()
       } catch (e: any) {
         const detail = e?.response?.data?.detail
         notify(detail ? `${t('plugin.skills_delete_error')}: ${detail}` : t('plugin.skills_delete_error'), 'error')
