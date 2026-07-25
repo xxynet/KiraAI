@@ -334,6 +334,7 @@ class SkillItem(BaseModel):
     description: str = ""
     enabled: bool = True
     path: str = ""
+    size_bytes: int = 0
 
 
 class DirectoryEntry(BaseModel):
