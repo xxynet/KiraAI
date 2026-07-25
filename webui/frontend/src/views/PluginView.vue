@@ -278,7 +278,28 @@
             {{ skill.description }}
           </p>
           <div class="mt-auto">
-            <div class="text-xs font-mono text-gray-400 dark:text-gray-500 break-all">{{ skill.path }}</div>
+            <div class="text-xs font-mono text-gray-400 dark:text-gray-500 break-all mb-3">{{ skill.path }}</div>
+            <div class="flex items-center justify-between gap-3">
+              <div class="text-xs text-gray-400 dark:text-gray-500">{{ formatBytes(skill.size_bytes) }}</div>
+              <div class="flex items-center justify-end space-x-3">
+              <button
+                type="button"
+                class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
+                :title="$t('plugin.skills_export')"
+                @click="handleExportSkill(skill)"
+              >
+                <IconDownload class="w-3.5 h-3.5 inline-block mr-1" />{{ $t('plugin.skills_export') }}
+              </button>
+              <button
+                type="button"
+                class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+                :title="$t('plugin.skills_delete')"
+                @click="handleDeleteSkill(skill)"
+              >
+                <IconTrash class="w-3.5 h-3.5 inline-block mr-1" />{{ $t('plugin.skills_delete') }}
+              </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -953,6 +974,7 @@ import {
 } from '@/api/mcp'
 import {
   getSkills, toggleSkill as apiToggleSkill, refreshSkills as apiRefreshSkills, uploadSkill as apiUploadSkill,
+  exportSkill as apiExportSkill, deleteSkill as apiDeleteSkill,
 } from '@/api/skills'
 import { getScope, updateScope } from '@/api/scope'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
@@ -961,7 +983,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import PluginCard from '@/components/common/PluginCard.vue'
 import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
-  IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch,
+  IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch, IconDownload, IconTrash,
 } from '@/components/icons'
 import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
@@ -1518,6 +1540,46 @@ async function loadSkills() {
     skillsError.value = e?.message || t('plugin.skills_load_failed')
     notify(skillsError.value!, 'error')
   }
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 2)} ${units[index]}`
+}
+
+async function handleExportSkill(skill: any) {
+  try {
+    const response = await apiExportSkill(skill.id)
+    const blobUrl = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = `${skill.id}.zip`
+    link.click()
+    URL.revokeObjectURL(blobUrl)
+    notify(t('plugin.skills_export_success'), 'success')
+  } catch {
+    notify(t('plugin.skills_export_error'), 'error')
+  }
+}
+
+function handleDeleteSkill(skill: any) {
+  openConfirm(
+    t('plugin.skills_delete'),
+    t('plugin.skills_delete_confirm', { name: skill.name || skill.id }),
+    t('plugin.skills_delete'),
+    async () => {
+      try {
+        await apiDeleteSkill(skill.id)
+        notify(t('plugin.skills_delete_success'), 'success')
+        await loadSkills()
+      } catch (e: any) {
+        const detail = e?.response?.data?.detail
+        notify(detail ? `${t('plugin.skills_delete_error')}: ${detail}` : t('plugin.skills_delete_error'), 'error')
+      }
+    },
+  )
 }
 
 async function toggleSkillItem(skill: any) {

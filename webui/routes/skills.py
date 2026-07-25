@@ -1,9 +1,12 @@
+import io
 import json
 import os
 import shutil
+import zipfile
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from core.logging_manager import get_logger
 from core.agent.skills_mgr import SkillsManager
@@ -47,7 +50,33 @@ class SkillsRoutes(Routes):
                 tags=["skills"],
                 dependencies=[Depends(require_auth)],
             ),
+            RouteDefinition(
+                path="/api/skills/{skill_name}/export",
+                methods=["GET"],
+                endpoint=self.export_skill,
+                tags=["skills"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/skills/{skill_name}",
+                methods=["DELETE"],
+                endpoint=self.delete_skill,
+                tags=["skills"],
+                dependencies=[Depends(require_auth)],
+            ),
         ]
+
+    def _get_skill(self, skill_name: str):
+        if not self.lifecycle or not hasattr(self.lifecycle, "skills_manager"):
+            raise HTTPException(status_code=503, detail="Skills manager not available")
+        for skill in self.lifecycle.skills_manager.skills_info:
+            if skill.name == skill_name:
+                return skill
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
+
+    @staticmethod
+    def _folder_size(path) -> int:
+        return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
 
     async def list_skills(self):
         if not self.lifecycle or not hasattr(self.lifecycle, "skills_manager"):
@@ -66,6 +95,7 @@ class SkillsRoutes(Routes):
                         description=str(skill.description),
                         enabled=bool(skill.enabled),
                         path=str(skill.path),
+                        size_bytes=self._folder_size(skill.path),
                     )
                 )
             return items
@@ -91,6 +121,47 @@ class SkillsRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to set skill enabled state for {skill_name}: {e}")
             raise HTTPException(status_code=500, detail="Failed to update skill state")
+
+    async def export_skill(self, skill_name: str):
+        try:
+            skill = self._get_skill(skill_name)
+            archive = io.BytesIO()
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for file_path in skill.path.rglob("*"):
+                    if file_path.is_file():
+                        zip_file.write(file_path, file_path.relative_to(skill.path.parent))
+            archive.seek(0)
+            return StreamingResponse(
+                archive,
+                media_type="application/zip",
+                headers={"Content-Disposition": f'attachment; filename="{skill.path.name}.zip"'},
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to export skill {skill_name}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to export skill")
+
+    async def delete_skill(self, skill_name: str):
+        try:
+            skill = self._get_skill(skill_name)
+            skill_path = skill.path.resolve()
+            skills_dir = self.lifecycle.skills_manager.skills_dir.resolve()
+            if skill_path.parent != skills_dir or not skill_path.is_dir():
+                raise HTTPException(status_code=400, detail="Invalid skill path")
+            shutil.rmtree(skill_path)
+            manager = self.lifecycle.skills_manager
+            manager.skills_config_dict.pop(skill.name, None)
+            scope = manager._raw_config.get("_scope", {})
+            scope.pop(skill.name, None)
+            manager._save_config()
+            manager.skills_info = manager.scan_skill_dir()
+            return {"skill_name": skill_name, "deleted": True}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to delete skill {skill_name}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to delete skill")
 
     async def refresh_skills(self):
         if not self.lifecycle or not hasattr(self.lifecycle, "skills_manager"):

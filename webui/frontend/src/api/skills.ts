@@ -19,3 +19,11 @@ export function uploadSkill(file: File) {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
+
+export function exportSkill(skillName: string) {
+  return apiClient.get(`/skills/${encodeURIComponent(skillName)}/export`, { responseType: 'blob' })
+}
+
+export function deleteSkill(skillName: string) {
+  return apiClient.delete(`/skills/${encodeURIComponent(skillName)}`)
+}
