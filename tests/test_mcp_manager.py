@@ -7,13 +7,20 @@ from core.agent.mcp_mgr import MCPManager, MCPServer
 
 
 class FakeClient:
-    """Minimal stand-in for fastmcp.Client tracking connect/close calls."""
+    """Minimal stand-in for fastmcp.Client tracking connect/close calls.
+
+    Models the real fastmcp contract: `connected` mirrors is_connected(), which
+    only reports that a session object exists and stays True even after the
+    transport dies. `alive` is the real transport health, observable only via
+    ping() -- tests flip it to simulate a crashed server.
+    """
 
     instances = []
 
     def __init__(self, config):
         self.config = config
         self.connected = False
+        self.alive = False
         self.enter_count = 0
         self.close_count = 0
         self.calls = []
@@ -22,19 +29,29 @@ class FakeClient:
     def is_connected(self):
         return self.connected
 
+    async def ping(self):
+        if not self.alive:
+            raise ConnectionError("transport is dead")
+        return True
+
     async def __aenter__(self):
         self.connected = True
+        self.alive = True
         self.enter_count += 1
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self.connected = False
+        self.alive = False
 
     async def close(self):
         self.connected = False
+        self.alive = False
         self.close_count += 1
 
     async def call_tool(self, tool_name, kwargs, timeout=None):
+        if not self.alive:
+            raise ConnectionError("transport is dead")
         self.calls.append((tool_name, kwargs))
         return f"result:{tool_name}"
 
@@ -112,23 +129,72 @@ async def test_reconnects_after_connection_drop(manager):
 
 
 @pytest.mark.anyio
-async def test_retry_once_when_connection_drops_mid_call(manager):
+async def test_dead_transport_is_detected_despite_is_connected(manager):
+    """fastmcp's is_connected() stays True after the transport dies, so the
+    manager must fall back to a ping probe to notice."""
     server = _make_server(enabled=True)
     manager.add_server(server)
 
+    func = manager._make_mcp_func(server, "echo")
+    await func(x=0)
+
+    dead = FakeClient.instances[0]
+    dead.alive = False  # transport died; is_connected() still reports True
+    assert dead.is_connected() is True
+
+    with pytest.raises(ConnectionError):
+        await func(x=1)
+
+    # the poisoned client was dropped instead of being cached forever
+    assert server.id not in manager._clients
+    assert dead.close_count == 1
+
+
+@pytest.mark.anyio
+async def test_call_is_not_retried_when_connection_drops_mid_call(manager):
+    """A dropped connection must not re-issue the call: the request may already
+    have executed server-side, and a retry would duplicate side effects."""
+    server = _make_server(enabled=True)
+    manager.add_server(server)
+
+    executions = []
+
     async def failing_call_tool(tool_name, kwargs, timeout=None):
-        # connection drops while the call is in flight
-        client = FakeClient.instances[0]
-        client.connected = False
+        # the side effect lands, then the connection dies before responding
+        executions.append(kwargs)
+        FakeClient.instances[0].alive = False
         raise RuntimeError("connection lost")
 
     func = manager._make_mcp_func(server, "echo")
     await func(x=0)  # establish connection
     FakeClient.instances[0].call_tool = failing_call_tool
 
-    result = await func(x=1)
-    assert result == "result:echo"
+    with pytest.raises(RuntimeError):
+        await func(x=1)
+
+    # executed exactly once, no second dispatch
+    assert executions == [{"x": 1}]
+    assert len(FakeClient.instances) == 1
+
+
+@pytest.mark.anyio
+async def test_next_call_recovers_after_connection_death(manager):
+    """Dropping the dead client must let the following call reconnect, so one
+    crash does not permanently disable the server."""
+    server = _make_server(enabled=True)
+    manager.add_server(server)
+
+    func = manager._make_mcp_func(server, "echo")
+    await func(x=0)
+    FakeClient.instances[0].alive = False
+
+    with pytest.raises(ConnectionError):
+        await func(x=1)
+
+    # the next call builds a fresh connection and succeeds
+    assert await func(x=2) == "result:echo"
     assert len(FakeClient.instances) == 2
+    assert manager._clients[server.id] is FakeClient.instances[1]
 
 
 @pytest.mark.anyio
@@ -146,9 +212,10 @@ async def test_genuine_tool_error_is_not_retried(manager):
 
     with pytest.raises(ValueError):
         await func(x=1)
-    # connection stays up, no reconnect happened
+    # connection is alive, so it is kept and no reconnect happened
     assert len(FakeClient.instances) == 1
     assert FakeClient.instances[0].connected is True
+    assert manager._clients[server.id] is FakeClient.instances[0]
 
 
 @pytest.mark.anyio

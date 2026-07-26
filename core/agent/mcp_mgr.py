@@ -22,6 +22,8 @@ default_config = {
 # remote handshake can never block a server's connection lock forever
 MCP_CONNECT_TIMEOUT = 30.0
 MCP_CLOSE_TIMEOUT = 10.0
+# Liveness probe sent only after a tool call already failed
+MCP_PING_TIMEOUT = 5.0
 
 
 @dataclass
@@ -171,6 +173,22 @@ class MCPManager:
         if self._shutting_down:
             return False
         return any(s.id == server_id and s.enabled for s in self.servers)
+
+    @staticmethod
+    async def _is_client_alive(client: Client) -> bool:
+        """Probe whether the transport is actually usable.
+
+        fastmcp's Client.is_connected() only reports whether a session object
+        exists; it keeps returning True after the underlying stdio subprocess
+        dies or the socket drops. A ping is the only reliable liveness signal,
+        so it is sent only after a call already failed.
+        """
+        if not client.is_connected():
+            return False
+        try:
+            return bool(await asyncio.wait_for(client.ping(), timeout=MCP_PING_TIMEOUT))
+        except Exception:
+            return False
 
     async def _get_connected_client(self, server: MCPServer) -> Client:
         """Return the persistent client for a server, (re)connecting if needed.
@@ -567,19 +585,19 @@ class MCPManager:
             try:
                 result = await client.call_tool(tool_name, kwargs, timeout=server.timeout)
             except Exception:
-                if client.is_connected():
+                if await self._is_client_alive(client):
                     # connection is fine, this is a genuine tool error
                     raise
-                if not self._is_server_active(server.id):
-                    # the connection was closed deliberately
-                    # (disable/delete/shutdown): don't resurrect it
-                    raise
-                # connection dropped mid-call: reconnect once and retry.
-                # Accepted risk: if the request reached the server before the
-                # connection dropped, a non-idempotent tool may execute twice.
-                logger.warning(f"MCP connection to {server.name} lost, reconnecting...")
-                client = await self._get_connected_client(server)
-                result = await client.call_tool(tool_name, kwargs, timeout=server.timeout)
+                # The transport died. Drop the client so the next call builds a
+                # fresh connection, but deliberately do NOT re-issue this call:
+                # the request may already have executed server-side, and a blind
+                # retry would duplicate the side effects of non-idempotent tools.
+                logger.warning(
+                    f"MCP connection to {server.name} lost; dropping it so the "
+                    f"next call reconnects"
+                )
+                await self.close_connection(server.id)
+                raise
             return str(result)
 
         return _wrapped
