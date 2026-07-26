@@ -11,6 +11,8 @@ build/
 venv/
 .venv/
 .env
+# requirements.txt / pyproject.toml stay the source of truth; uv locks locally
+uv.lock
 
 # Frontend
 node_modules/

@@ -105,6 +105,10 @@ chmod +x scripts/run.sh
 scripts/run.sh
 ```
 
+Both scripts create `venv/` and install `requirements.txt` on first run. If
+[uv](https://docs.astral.sh/uv/) is on your `PATH` they use it instead of
+`venv` + `pip`, which is considerably faster.
+
 </details>
 
 ## ⚙️ Configuration

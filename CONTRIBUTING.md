@@ -83,6 +83,30 @@ If your idea hasn't been proposed yet, feel free to open an issue. When proposin
 
 ### Backend
 
+With [uv](https://docs.astral.sh/uv/) (recommended — it also installs Python if needed):
+
+```bash
+# One-time per shell: keep uv's project environment at venv/
+export UV_PROJECT_ENVIRONMENT=venv          # PowerShell: $env:UV_PROJECT_ENVIRONMENT = "venv"
+
+# Create the environment and install dependencies (including the dev group)
+uv sync
+
+# Run the app / tests without activating anything
+uv run python main.py
+uv run pytest tests/ -v
+```
+
+The environment directory is always `venv/` — that is what `scripts/run.*` create
+and what `UV_PROJECT_ENVIRONMENT` pins uv to; without it uv would default to
+`.venv/` and you would end up maintaining two environments.
+
+`.python-version` pins the interpreter to **3.11** (same as the Docker image), so
+`uv sync` / `uv venv` create a 3.11 environment and download it if it is missing.
+`requires-python` stays `>=3.10` because CI tests 3.10, 3.11 and 3.12.
+
+Or with the stdlib tooling:
+
 ```bash
 # Create and activate a virtual environment (recommended)
 python -m venv venv
@@ -94,6 +118,11 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 ```
+
+Runtime dependencies are declared in **both** `requirements.txt` (used by pip,
+`uv pip`, Docker and the plugin installer) and `pyproject.toml` (used by
+`uv sync`). Add new dependencies to both — `tests/test_pyproject_sync.py` fails
+if they drift apart.
 
 ### Frontend (WebUI)
 

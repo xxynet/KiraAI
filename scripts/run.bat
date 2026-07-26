@@ -10,9 +10,19 @@ if exist ".venv" if not exist "venv" (
     rename .venv venv
 )
 
+:: Use uv when available (much faster); fall back to venv + pip otherwise
+set "USE_UV=0"
+where uv >nul 2>nul
+if not errorlevel 1 (
+    set "USE_UV=1"
+    rem Keep uv's project environment at venv/ (uv would default to .venv/)
+    set "UV_PROJECT_ENVIRONMENT=venv"
+    echo Found uv, using it to manage the environment.
+)
+
 if not exist "venv" (
     echo [1/3] Creating virtual environment...
-    python -m venv venv
+    if "!USE_UV!"=="1" (uv venv venv) else (python -m venv venv)
     if errorlevel 1 (
         echo Failed to create virtual environment.
         pause
@@ -30,7 +40,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [3/3] Testing pip mirrors...
+echo [3/3] Testing PyPI mirrors...
 
 set "MIRROR="
 set "BEST_SPEED=0"
@@ -56,6 +66,8 @@ if defined MIRROR (
     set "MIRROR=-i https://pypi.org/simple/"
 )
 
+if "!USE_UV!"=="1" goto :uv_install
+
 python -m pip install --upgrade pip !MIRROR!
 if errorlevel 1 (
     echo Failed to upgrade pip.
@@ -63,6 +75,15 @@ if errorlevel 1 (
     exit /b 1
 )
 pip install -r requirements.txt !MIRROR!
+if errorlevel 1 (
+    echo Failed to install dependencies.
+    pause
+    exit /b 1
+)
+goto :install_done
+
+:uv_install
+uv pip install -r requirements.txt !MIRROR!
 if errorlevel 1 (
     echo Failed to install dependencies.
     pause
