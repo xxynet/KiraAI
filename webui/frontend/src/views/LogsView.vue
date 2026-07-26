@@ -225,6 +225,14 @@ const levelOptions = [
 const isHeld = computed(() => isPaused.value || !atBottom.value)
 const pendingCount = computed(() => pendingLogs.value.length)
 
+// The view can also stop being held without going through pause/jump-to-latest,
+// e.g. the user drags the scrollbar back to the bottom or a resize recomputes
+// `atBottom` as true. Flush on every release so buffered lines are never left
+// orphaned (lost from the view, and appended out of order on the next hold).
+watch(isHeld, (held) => {
+  if (!held) flushPending()
+})
+
 function matchesFilters(log: LogRow): boolean {
   const level = log.level?.toLowerCase()
   // CRITICAL is treated the same as ERROR
@@ -345,6 +353,8 @@ async function refreshLogs() {
   try {
     const res = await getLogHistory(100)
     allLogs.value = toRows(res.data.logs || [])
+    // History is fetched at a fixed 100 rows; cap it to the configured queue size.
+    trimVisible()
     scrollToBottom()
     notify(t('logs.refreshed'), 'success')
   } catch (e) {
@@ -490,6 +500,8 @@ onMounted(async () => {
   try {
     const res = await getLogHistory(100)
     allLogs.value = toRows(res.data.logs || [])
+    // History is fetched at a fixed 100 rows; cap it to the configured queue size.
+    trimVisible()
     scrollToBottom()
   } catch (e) {
     console.error('Failed to load log history:', e)
