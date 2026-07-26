@@ -609,6 +609,7 @@ export default {
       tts_enabled: '允许在回复中发送语音消息',
       image_generation_enabled: '允许通过文生图和图生图生成图片',
       video_generation_enabled: '允许通过文生视频生成视频',
+      forward_parsing_enabled: '解析转发消息的内容，关闭后仅保留占位符',
     },
     validation: {
       required: '此字段为必填项',
@@ -637,6 +638,7 @@ export default {
       tts_enabled: '语音合成',
       image_generation_enabled: '图片生成',
       video_generation_enabled: '视频生成',
+      forward_parsing_enabled: '解析转发消息',
       max_size_mb: '最大存储（MB）',
       max_files: '最大文件数',
       max_age_hours: '最大缓存时间（小时）',

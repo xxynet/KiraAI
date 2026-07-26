@@ -608,6 +608,7 @@ export default {
       tts_enabled: 'Allow sending voice messages in reply',
       image_generation_enabled: 'Allow generating images via text-to-image and image-to-image',
       video_generation_enabled: 'Allow generating videos via text-to-video',
+      forward_parsing_enabled: 'Parse the content of forwarded messages. When disabled, only a placeholder is kept',
     },
     validation: {
       required: 'This field is required',
@@ -636,6 +637,7 @@ export default {
       tts_enabled: 'Voice Synthesis',
       image_generation_enabled: 'Image Generation',
       video_generation_enabled: 'Video Generation',
+      forward_parsing_enabled: 'Forward Message Parsing',
       max_size_mb: 'Max Storage (MB)',
       max_files: 'Max Files',
       max_age_hours: 'Max Cache Age (hours)',

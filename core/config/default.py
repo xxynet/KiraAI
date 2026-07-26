@@ -38,6 +38,9 @@ DEFAULT_CONFIG = {
             },
             "video_generation": {
                 "enabled": False
+            },
+            "forward_parsing": {
+                "enabled": True
             }
         }
     },
