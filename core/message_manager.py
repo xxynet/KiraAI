@@ -350,7 +350,10 @@ class MessageProcessor:
                 else:
                     message_str += f"[Reply ID: {ele.message_id}]"
             elif isinstance(ele, Forward):
-                if ele.chains:
+                caps = self.kira_config.get_config("bot_config.capabilities.forward_parsing", {})
+                if not caps.get("enabled", True):
+                    message_str += "[Forward message]"
+                elif ele.chains:
                     forward_contents = ""
                     for i, chain in enumerate(ele.chains):
                         ele.chains[i].message_list = [x for x in chain if not isinstance(x, Forward)]

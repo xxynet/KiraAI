@@ -452,6 +452,7 @@ const allGroups: ConfigGroup[] = [
       { key: 'bot_config.capabilities.tts.enabled', labelKey: 'configuration.message.tts_enabled', labelFallback: 'Voice Synthesis', hintKey: 'configuration.hints.tts_enabled', hintFallback: 'Allow sending voice messages in reply', type: 'boolean', default: true },
       { key: 'bot_config.capabilities.image_generation.enabled', labelKey: 'configuration.message.image_generation_enabled', labelFallback: 'Image Generation', hintKey: 'configuration.hints.image_generation_enabled', hintFallback: 'Allow generating images via text-to-image and image-to-image', type: 'boolean', default: true },
       { key: 'bot_config.capabilities.video_generation.enabled', labelKey: 'configuration.message.video_generation_enabled', labelFallback: 'Video Generation', hintKey: 'configuration.hints.video_generation_enabled', hintFallback: 'Allow generating videos via text-to-video', type: 'boolean', default: false },
+      { key: 'bot_config.capabilities.forward_parsing.enabled', labelKey: 'configuration.message.forward_parsing_enabled', labelFallback: 'Forward Message Parsing', hintKey: 'configuration.hints.forward_parsing_enabled', hintFallback: 'Parse the content of forwarded messages. When disabled, only a placeholder is kept', type: 'boolean', default: true },
     ],
   },
   {
