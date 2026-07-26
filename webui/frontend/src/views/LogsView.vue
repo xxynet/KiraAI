@@ -9,6 +9,7 @@
           class="px-4 py-2 rounded-lg transition-colors flex items-center whitespace-nowrap text-white"
           :class="isPaused ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gray-600 hover:bg-gray-700'"
           :title="isPaused ? $t('logs.resume_hint') : $t('logs.pause_hint')"
+          :aria-pressed="isPaused"
           @click="togglePause"
         >
           <svg v-if="isPaused" class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
@@ -125,7 +126,7 @@
         style="height: calc(100vh - 18rem);"
         @scroll.passive="onScroll"
       >
-        <div v-if="visibleLogs.length === 0" class="flex justify-center items-center h-full">
+        <div v-if="visibleLogs.length === 0 && pendingCount === 0" class="flex justify-center items-center h-full">
           <p class="text-gray-500 dark:text-gray-400">{{ $t('logs.no_logs') }}</p>
         </div>
         <div
@@ -157,14 +158,6 @@
           <span v-else>{{ $t('logs.jump_to_latest') }}</span>
         </button>
       </transition>
-
-      <!-- Warn when the hold lasted long enough that buffered lines had to be dropped -->
-      <div
-        v-if="isHeld && droppedWhileHeld > 0"
-        class="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-amber-500/90 text-white text-xs font-medium shadow"
-      >
-        {{ $t('logs.buffer_overflow', { count: droppedWhileHeld }) }}
-      </div>
     </div>
   </div>
 </template>
@@ -244,7 +237,9 @@ const visibleLogs = computed(() => allLogs.value.filter(matchesFilters))
 
 function applyFilter() {
   localStorage.setItem('log_filter_levels', JSON.stringify(filterLevels.value))
-  scrollToBottom()
+  // Don't yank a held view (paused or scrolled up) to the bottom on a filter
+  // change — scrollToBottom sets atBottom=true, which would also flush the hold.
+  if (!isHeld.value) scrollToBottom()
 }
 
 function toggleAutoScroll() {
@@ -273,7 +268,12 @@ function flushPending() {
     pendingLogs.value = []
     trimVisible()
   }
-  droppedWhileHeld.value = 0
+  // Surface dropped lines as a one-shot notice; a banner gated on `isHeld` would
+  // vanish at the exact moment the user releases the hold, so they'd never see it.
+  if (droppedWhileHeld.value > 0) {
+    notify(t('logs.buffer_overflow', { count: droppedWhileHeld.value }), 'warning')
+    droppedWhileHeld.value = 0
+  }
   scrollToBottom()
 }
 
@@ -298,13 +298,11 @@ function ingest(rows: LogRow[]) {
 
   allLogs.value.push(...rows)
   trimVisible()
-  if (autoScroll.value) {
-    scrollToBottom()
-  } else {
-    // Appending content does not fire a scroll event, so the pinned state has
-    // to be recomputed by hand once the new rows are laid out.
-    nextTick(updateAtBottom)
-  }
+  // With auto-scroll off we deliberately leave `atBottom` untouched: a plain
+  // append must not unpin the view (that would make "auto-scroll off" silently
+  // degenerate into "paused" once a couple of rows pile up below the fold).
+  // Only a user-initiated scroll or resize recomputes it.
+  if (autoScroll.value) scrollToBottom()
 }
 
 function parseLogMessage(raw: unknown): LogRow {
@@ -341,6 +339,9 @@ function clearLogs() {
   pendingLogs.value = []
   droppedWhileHeld.value = 0
   clearSSE()
+  // The now-empty list is trivially "at the bottom"; recompute rather than
+  // relying on the incidental scroll event that emptying happens to fire.
+  nextTick(updateAtBottom)
   notify(t('logs.cleared'), 'success')
 }
 
@@ -351,9 +352,9 @@ async function refreshLogs() {
   droppedWhileHeld.value = 0
   isPaused.value = false
   try {
-    const res = await getLogHistory(100)
+    const res = await getLogHistory(maxQueueSize.value)
     allLogs.value = toRows(res.data.logs || [])
-    // History is fetched at a fixed 100 rows; cap it to the configured queue size.
+    // Defensive cap in case the backend returns more than requested.
     trimVisible()
     scrollToBottom()
     notify(t('logs.refreshed'), 'success')
@@ -380,14 +381,9 @@ function logLevelColor(level: string) {
   return 'text-gray-500 dark:text-gray-400'
 }
 
-function displayLevel(level: string): string {
-  return (level || 'INFO').toUpperCase()
-}
-
 function padLevel(level: string): string {
-  const l = displayLevel(level)
   // Pad to 7 characters for alignment (WARNING is 7 chars)
-  return l.padEnd(7, ' ')
+  return (level || 'INFO').toUpperCase().padEnd(7, ' ')
 }
 
 function updateAtBottom() {
@@ -498,9 +494,9 @@ onMounted(async () => {
 
   // Load history
   try {
-    const res = await getLogHistory(100)
+    const res = await getLogHistory(maxQueueSize.value)
     allLogs.value = toRows(res.data.logs || [])
-    // History is fetched at a fixed 100 rows; cap it to the configured queue size.
+    // Defensive cap in case the backend returns more than requested.
     trimVisible()
     scrollToBottom()
   } catch (e) {
