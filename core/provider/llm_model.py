@@ -7,6 +7,13 @@ from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage
 from core.prompt_manager import Prompt
 
+# Names of system prompt blocks whose content changes on nearly every request.
+# They sit in the middle of the system prompt, so any change to them invalidates
+# the cached token prefix of everything that follows, including the whole chat
+# history. They can optionally be relocated to the tail of the latest user
+# message, where nothing follows them and the prefix stays cacheable.
+DYNAMIC_PROMPT_NAMES = ("sessions", "chat_env", "time")
+
 
 @dataclass
 class LLMRequest:
@@ -47,12 +54,48 @@ class LLMRequest:
             else:
                 self.tool_choice = "none"
 
-    def assemble_prompt(self):
+    def assemble_prompt(self, dynamic_position: str = "latest_user"):
+        """Assemble system/user prompts into the message list.
+
+        ``dynamic_position`` controls where the blocks listed in
+        ``DYNAMIC_PROMPT_NAMES`` end up. ``"latest_user"`` (the default) moves
+        them to the front of the latest user message so the system prompt stays
+        a stable, cacheable prefix. ``"system"`` keeps them inline in the system
+        prompt, the behavior prior to this option. Any unknown value falls back
+        to ``"system"``.
+        """
+        static_prompt = self.system_prompt
+
+        if dynamic_position == "latest_user":
+            static_prompt = []
+            relocated: list[Prompt] = []
+            for p in self.system_prompt:
+                if isinstance(p, Prompt) and p.name in DYNAMIC_PROMPT_NAMES:
+                    # Relocated blocks are request-only and must never be
+                    # written back to the chat history.
+                    p.persist = False
+                    relocated.append(p)
+                else:
+                    static_prompt.append(p)
+            if relocated:
+                # Keep the environment context ahead of the actual user message,
+                # wrapped so the model can tell it apart from what the user said.
+                # The markers are separate Prompt objects rather than one merged
+                # block so each relocated block is still formatted exactly once.
+                self.user_prompt[:0] = [
+                    Prompt("<system_reminder>", name="dynamic_context_start",
+                           source="system", persist=False),
+                    *relocated,
+                    Prompt("</system_reminder>", name="dynamic_context_end",
+                           source="system", persist=False),
+                ]
+
         if self.system_prompt:
             if self.messages and self.messages[0].role == "system":
                 self.messages.pop(0)
-            system_prompt = "".join(p.to_string() for p in self.system_prompt if isinstance(p, Prompt))
-            self.messages.insert(0, OpenAIMessage(role="system", content=system_prompt))
+            if static_prompt:
+                system_prompt = "".join(p.to_string() for p in static_prompt if isinstance(p, Prompt))
+                self.messages.insert(0, OpenAIMessage(role="system", content=system_prompt))
 
         if self.user_prompt:
             user_prompt = "".join(p.to_string() for p in self.user_prompt if isinstance(p, Prompt))
