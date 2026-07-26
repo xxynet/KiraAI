@@ -137,7 +137,7 @@ class McpRoutes(Routes):
             if enabled:
                 await manager.enable_server(server_id)
             else:
-                manager.disable_server(server_id)
+                await manager.disable_server(server_id)
             return {"server_id": server_id, "enabled": enabled}
         except HTTPException:
             raise
@@ -190,7 +190,7 @@ class McpRoutes(Routes):
             if not isinstance(editor_config, dict):
                 raise HTTPException(status_code=400, detail="Invalid MCP config JSON")
             manager = self.lifecycle.mcp_manager
-            manager.update_server_from_editor(
+            await manager.update_server_from_editor(
                 server_id=server_id,
                 name=payload.name,
                 description=payload.description or "",
@@ -210,7 +210,7 @@ class McpRoutes(Routes):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
             raise HTTPException(status_code=503, detail="MCP manager not available")
         try:
-            self.lifecycle.mcp_manager.delete_server(server_id)
+            await self.lifecycle.mcp_manager.delete_server(server_id)
             return {"ok": True}
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))

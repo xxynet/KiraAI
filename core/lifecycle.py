@@ -267,6 +267,13 @@ class KiraLifecycle:
         if self.plugin_manager:
             await self.plugin_manager.terminate()
 
+        # close persistent MCP connections
+        if self.mcp_manager:
+            try:
+                await self.mcp_manager.shutdown()
+            except Exception as e:
+                logger.error(f"MCP manager shutdown error: {e}")
+
         # terminate all running adapters
         if self.adapter_manager:
             await self.adapter_manager.stop_adapters()
