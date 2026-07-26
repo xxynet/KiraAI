@@ -294,7 +294,7 @@
             <CustomSelect
               v-else-if="field.type === 'select'"
               :modelValue="getFieldValue(field.key) || ''"
-              :options="field.selectOptions || []"
+              :options="resolveSelectOptions(field)"
               :placeholder="$t(field.hintKey, field.hintFallback)"
               @update:modelValue="(v: string) => setFieldValue(field.key, v)"
             />
@@ -406,8 +406,17 @@ interface ConfigField {
   level?: string
   default?: any
   modelType?: string
-  selectOptions?: { value: string; label: string }[]
+  selectOptions?: { value: string; label: string; labelKey?: string }[]
   validation?: { min?: number; max?: number; required?: boolean; pattern?: RegExp; patternMessageKey?: string }
+}
+
+// Resolve select option labels, translating the ones that provide a labelKey
+// and falling back to the literal label.
+function resolveSelectOptions(field: ConfigField) {
+  return (field.selectOptions || []).map(o => ({
+    value: o.value,
+    label: o.labelKey ? t(o.labelKey, o.label) : o.label,
+  }))
 }
 
 interface ConfigGroup {
@@ -435,6 +444,10 @@ const allGroups: ConfigGroup[] = [
       { key: 'bot_config.bot.max_buffer_messages', labelKey: 'configuration.message.max_buffer_messages', labelFallback: 'Max Buffer Messages', hintKey: 'configuration.hints.max_buffer_messages', hintFallback: 'Maximum number of messages to buffer before processing', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
       { key: 'bot_config.bot.min_message_delay', labelKey: 'configuration.message.min_message_interval', labelFallback: 'Min Message Interval', hintKey: 'configuration.hints.min_message_interval', hintFallback: 'Minimum interval in seconds between messages', type: 'float', default: 1, validation: { min: 0, max: 60, required: true } },
       { key: 'bot_config.bot.max_message_delay', labelKey: 'configuration.message.max_message_interval', labelFallback: 'Max Message Interval', hintKey: 'configuration.hints.max_message_interval', hintFallback: 'Maximum interval in seconds between messages', type: 'float', default: 5, validation: { min: 0, max: 60, required: true } },
+      { key: 'bot_config.bot.dynamic_prompt_position', labelKey: 'configuration.message.dynamic_prompt_position', labelFallback: 'Dynamic Content Position', hintKey: 'configuration.hints.dynamic_prompt_position', hintFallback: 'Where session list, chat environment and time info are placed. Moving them to the latest user message keeps the system prompt stable and improves prompt cache hit rate', type: 'select', default: 'latest_user', selectOptions: [
+        { value: 'system', labelKey: 'configuration.message.dynamic_prompt_position_system', label: 'System Prompt' },
+        { value: 'latest_user', labelKey: 'configuration.message.dynamic_prompt_position_latest_user', label: 'Latest User Message' },
+      ]},
       { key: 'chat_info', labelKey: 'configuration.message.chat_info', labelFallback: 'More Chat Settings', hintKey: 'configuration.hints.chat_info', hintFallback: 'More chat settings are available in the active message plugin config under Add-ons → Plugins', type: 'info' },
     ],
   },
