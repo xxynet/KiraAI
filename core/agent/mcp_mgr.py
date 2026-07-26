@@ -18,6 +18,11 @@ default_config = {
   "mcpServers": {}
 }
 
+# Timeouts guarding connection management, so a hung stdio subprocess or
+# remote handshake can never block a server's connection lock forever
+MCP_CONNECT_TIMEOUT = 30.0
+MCP_CLOSE_TIMEOUT = 10.0
+
 
 @dataclass
 class MCPServer:
@@ -69,6 +74,7 @@ class MCPManager:
         # persistent fastmcp clients, one per server id
         self._clients: dict[str, Client] = {}
         self._client_locks: dict[str, asyncio.Lock] = {}
+        self._shutting_down = False
 
     @staticmethod
     def load_config():
@@ -156,6 +162,16 @@ class MCPManager:
             self._client_locks[server_id] = lock
         return lock
 
+    def _is_server_active(self, server_id: str) -> bool:
+        """True if the server still exists and is enabled.
+
+        Used by tool calls to avoid resurrecting a connection that was
+        deliberately closed by disable/delete/shutdown.
+        """
+        if self._shutting_down:
+            return False
+        return any(s.id == server_id and s.enabled for s in self.servers)
+
     async def _get_connected_client(self, server: MCPServer) -> Client:
         """Return the persistent client for a server, (re)connecting if needed.
 
@@ -171,11 +187,20 @@ class MCPManager:
                 # session died (server crash / network drop): fully reset
                 # the old client before building a fresh one
                 try:
-                    await client.close()
+                    await asyncio.wait_for(client.close(), timeout=MCP_CLOSE_TIMEOUT)
                 except Exception as e:
                     logger.debug(f"Error closing stale MCP client for {server.name}: {e}")
             client = Client(server.to_dict())
-            await client.__aenter__()
+            try:
+                await asyncio.wait_for(client.__aenter__(), timeout=MCP_CONNECT_TIMEOUT)
+            except BaseException:
+                # never leave a half-open client behind (e.g. a spawned
+                # subprocess whose handshake timed out or failed)
+                try:
+                    await asyncio.wait_for(client.close(), timeout=MCP_CLOSE_TIMEOUT)
+                except Exception as close_err:
+                    logger.debug(f"Error cleaning up failed MCP client for {server.name}: {close_err}")
+                raise
             self._clients[server.id] = client
             logger.debug(f"Opened persistent MCP connection to {server.name}")
             return client
@@ -187,12 +212,13 @@ class MCPManager:
             if client is None:
                 return
             try:
-                await client.close()
+                await asyncio.wait_for(client.close(), timeout=MCP_CLOSE_TIMEOUT)
             except Exception as e:
                 logger.warning(f"Error closing MCP client for server {server_id}: {e}")
 
     async def shutdown(self):
         """Close all persistent MCP connections (application shutdown)."""
+        self._shutting_down = True
         for server_id in list(self._clients.keys()):
             await self.close_connection(server_id)
 
@@ -371,6 +397,7 @@ class MCPManager:
                 self.llm_api.unregister_tool(tool.get("name"))
 
         await self.close_connection(server_id)
+        self._client_locks.pop(server_id, None)
 
         servers.pop(server_id)
         self.mcp_config["mcpServers"] = servers
@@ -451,7 +478,14 @@ class MCPManager:
         if target_server.enabled:
             return
 
-        await self.list_tools(target_server, keep_connection=True)
+        tools = await self.list_tools(target_server, keep_connection=True)
+        if not tools:
+            # unreachable server (or one exposing no tools): fail loudly
+            # instead of persisting "enabled" with zero tools registered
+            await self.close_connection(server_id)
+            raise ConnectionError(
+                f"Failed to fetch tools from MCP server {target_server.name}; server not enabled"
+            )
 
         tool_names = []
 
@@ -527,6 +561,8 @@ class MCPManager:
     def _make_mcp_func(self, server: MCPServer, tool_name: str):
         async def _wrapped(*_, **kwargs):
             # ignore positional args, e.g. MessageEvent
+            if not self._is_server_active(server.id):
+                raise RuntimeError(f"MCP server {server.name} is disabled or removed")
             client = await self._get_connected_client(server)
             try:
                 result = await client.call_tool(tool_name, kwargs, timeout=server.timeout)
@@ -534,7 +570,13 @@ class MCPManager:
                 if client.is_connected():
                     # connection is fine, this is a genuine tool error
                     raise
-                # connection dropped mid-call: reconnect once and retry
+                if not self._is_server_active(server.id):
+                    # the connection was closed deliberately
+                    # (disable/delete/shutdown): don't resurrect it
+                    raise
+                # connection dropped mid-call: reconnect once and retry.
+                # Accepted risk: if the request reached the server before the
+                # connection dropped, a non-idempotent tool may execute twice.
                 logger.warning(f"MCP connection to {server.name} lost, reconnecting...")
                 client = await self._get_connected_client(server)
                 result = await client.call_tool(tool_name, kwargs, timeout=server.timeout)
@@ -559,7 +601,7 @@ class MCPManager:
                 tools_response = await client.list_tools()
             except Exception as e:
                 logger.error(f"Failed to list MCP tools for {server.name}: {e}")
-                return
+                return []
             if isinstance(tools_response, dict):
                 tools = tools_response.get("tools", [])
             elif isinstance(tools_response, list):

@@ -77,7 +77,7 @@ def _make_server(server_id="srv1", enabled=False):
 
 @pytest.mark.anyio
 async def test_tool_calls_reuse_one_connection(manager):
-    server = _make_server()
+    server = _make_server(enabled=True)
     manager.add_server(server)
 
     func = manager._make_mcp_func(server, "echo")
@@ -95,7 +95,7 @@ async def test_tool_calls_reuse_one_connection(manager):
 
 @pytest.mark.anyio
 async def test_reconnects_after_connection_drop(manager):
-    server = _make_server()
+    server = _make_server(enabled=True)
     manager.add_server(server)
 
     func = manager._make_mcp_func(server, "echo")
@@ -113,7 +113,7 @@ async def test_reconnects_after_connection_drop(manager):
 
 @pytest.mark.anyio
 async def test_retry_once_when_connection_drops_mid_call(manager):
-    server = _make_server()
+    server = _make_server(enabled=True)
     manager.add_server(server)
 
     async def failing_call_tool(tool_name, kwargs, timeout=None):
@@ -133,7 +133,7 @@ async def test_retry_once_when_connection_drops_mid_call(manager):
 
 @pytest.mark.anyio
 async def test_genuine_tool_error_is_not_retried(manager):
-    server = _make_server()
+    server = _make_server(enabled=True)
     manager.add_server(server)
 
     func = manager._make_mcp_func(server, "echo")
@@ -166,6 +166,7 @@ async def test_disable_server_closes_connection(manager):
     await manager.disable_server(server.id)
     assert server.enabled is False
     assert server.id not in manager._clients
+    assert FakeClient.instances[0].close_count == 1
     assert "echo" not in manager.llm_api.registered
 
 
@@ -202,6 +203,7 @@ async def test_shutdown_closes_all_connections(manager):
     await manager.shutdown()
     assert manager._clients == {}
     assert all(c.connected is False for c in FakeClient.instances)
+    assert all(c.close_count == 1 for c in FakeClient.instances)
 
 
 @pytest.mark.anyio
@@ -215,4 +217,47 @@ async def test_delete_server_closes_connection(manager):
 
     await manager.delete_server(server.id)
     assert server.id not in manager._clients
+    assert FakeClient.instances[0].close_count == 1
     assert server.id not in manager.mcp_config.get("mcpServers", {})
+
+
+@pytest.mark.anyio
+async def test_no_reconnect_after_disable(manager):
+    """An in-flight/leftover tool func must not resurrect a deliberately
+    closed connection after the server is disabled."""
+    server = _make_server(enabled=False)
+    manager.add_server(server)
+    manager.mcp_config = {"mcpServers": {server.id: {"command": "echo"}}}
+
+    await manager.enable_server(server.id)
+    func = manager.llm_api.registered["echo"]
+    await func(x=1)
+
+    await manager.disable_server(server.id)
+
+    with pytest.raises(RuntimeError):
+        await func(x=2)
+    # no new client was built for the disabled server
+    assert len(FakeClient.instances) == 1
+    assert server.id not in manager._clients
+
+
+@pytest.mark.anyio
+async def test_enable_server_fails_when_unreachable(manager, monkeypatch):
+    server = _make_server(enabled=False)
+    manager.add_server(server)
+    manager.mcp_config = {"mcpServers": {server.id: {"command": "echo"}}}
+
+    async def failing_aenter(self):
+        raise RuntimeError("cannot connect")
+
+    monkeypatch.setattr(FakeClient, "__aenter__", failing_aenter)
+
+    with pytest.raises(ConnectionError):
+        await manager.enable_server(server.id)
+
+    # server must not be marked enabled, nothing registered, no client kept
+    assert server.enabled is False
+    assert manager.mcp_config["mcpServers"][server.id].get("enabled") is not True
+    assert manager.llm_api.registered == {}
+    assert server.id not in manager._clients
