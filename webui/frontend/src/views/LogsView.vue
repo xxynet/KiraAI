@@ -3,7 +3,38 @@
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
       <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('logs.title') }}</h3>
-      <div class="flex space-x-2">
+      <div class="flex flex-wrap gap-2 justify-end">
+        <!-- Freeze the stream so the list stops moving while reading -->
+        <button
+          class="px-4 py-2 rounded-lg transition-colors flex items-center whitespace-nowrap text-white"
+          :class="isPaused ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gray-600 hover:bg-gray-700'"
+          :title="isPaused ? $t('logs.resume_hint') : $t('logs.pause_hint')"
+          @click="togglePause"
+        >
+          <svg v-if="isPaused" class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M6.3 3.8a1 1 0 0 1 1.02.05l8 5a1 1 0 0 1 0 1.7l-8 5A1 1 0 0 1 5.8 14.7V5.3a1 1 0 0 1 .5-.87Z" />
+          </svg>
+          <svg v-else class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M6 4a1 1 0 0 1 1 1v10a1 1 0 1 1-2 0V5a1 1 0 0 1 1-1Zm8 0a1 1 0 0 1 1 1v10a1 1 0 1 1-2 0V5a1 1 0 0 1 1-1Z" />
+          </svg>
+          <span>{{ isPaused ? $t('logs.resume') : $t('logs.pause') }}</span>
+        </button>
+
+        <!-- Auto-scroll opt-out: keeps the viewport still even while pinned to the bottom -->
+        <button
+          class="px-4 py-2 rounded-lg border transition-colors flex items-center whitespace-nowrap"
+          :class="autoScroll
+            ? 'border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-500'
+            : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+          :aria-pressed="autoScroll"
+          @click="toggleAutoScroll"
+        >
+          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+          <span>{{ $t('logs.auto_scroll') }}</span>
+        </button>
+
         <button
           class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center"
           @click="clearLogs"
@@ -22,14 +53,21 @@
     </div>
 
     <!-- Filter row -->
-    <div class="mb-4 flex space-x-4 items-center">
-      <CustomMultiSelect
-        v-model="filterLevels"
-        :options="levelOptions"
-        :placeholder="$t('logs.filter_level')"
-        class="w-60"
-        @update:modelValue="applyFilter"
-      />
+    <div class="mb-4 flex flex-wrap gap-3 items-center">
+      <!-- Grow-to-fill wrapper: .custom-select is width:100%, which as a flex item
+           resolves to a full-width basis and forces the buttons to wrap. flex-1
+           (basis 0 + grow) instead lets it fill only the space left after the
+           buttons, so it spans the row without pushing them onto a new line;
+           min-w gives it a floor so it wraps gracefully on a narrow screen. -->
+      <div class="flex-1 min-w-[12rem]">
+        <CustomMultiSelect
+          v-model="filterLevels"
+          :options="levelOptions"
+          :placeholder="$t('logs.filter_level')"
+          @update:modelValue="applyFilter"
+        />
+      </div>
+
       <button
         class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center whitespace-nowrap"
         @click="downloadLogs"
@@ -79,22 +117,53 @@
     </Modal>
 
     <!-- Log container -->
-    <div
-      ref="logContainerRef"
-      id="log-container"
-      class="rounded-lg p-4 overflow-y-auto min-h-64"
-      style="height: calc(100vh - 18rem);"
-    >
-      <div v-if="filteredLogs.length === 0" class="flex justify-center items-center h-full">
-        <p class="text-gray-500 dark:text-gray-400">{{ $t('logs.no_logs') }}</p>
-      </div>
+    <div class="relative">
       <div
-        v-for="(log, idx) in filteredLogs"
-        :key="idx"
-        data-log-entry
-        class="font-mono text-base whitespace-normal break-words"
+        ref="logContainerRef"
+        id="log-container"
+        class="rounded-lg p-4 overflow-y-auto min-h-64"
+        style="height: calc(100vh - 18rem);"
+        @scroll.passive="onScroll"
       >
-        <span class="text-gray-500 dark:text-gray-400">[{{ log.timestamp }}]</span> <span :class="logLevelColor(log.level)" class="font-semibold whitespace-pre-wrap">{{ padLevel(log.level) }}</span> <span v-if="log.logger" :style="{ color: log.color || '#3b82f6' }" class="font-semibold">[{{ log.logger }}]</span> <span class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ log.message }}</span>
+        <div v-if="visibleLogs.length === 0" class="flex justify-center items-center h-full">
+          <p class="text-gray-500 dark:text-gray-400">{{ $t('logs.no_logs') }}</p>
+        </div>
+        <div
+          v-for="log in visibleLogs"
+          :key="log.id"
+          data-log-entry
+          class="font-mono text-base whitespace-normal break-words"
+        >
+          <span class="text-gray-500 dark:text-gray-400">[{{ log.timestamp }}]</span> <span :class="logLevelColor(log.level)" class="font-semibold whitespace-pre-wrap">{{ padLevel(log.level) }}</span> <span v-if="log.logger" :style="{ color: log.color || '#3b82f6' }" class="font-semibold">[{{ log.logger }}]</span> <span class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ log.message }}</span>
+        </div>
+      </div>
+
+      <!-- Held-stream pill: new lines are buffered, not injected, so the view never jumps -->
+      <transition
+        enter-active-class="transition duration-150 ease-out"
+        enter-from-class="opacity-0 translate-y-2"
+        leave-active-class="transition duration-100 ease-in"
+        leave-to-class="opacity-0 translate-y-2"
+      >
+        <button
+          v-if="isHeld"
+          class="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full shadow-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors flex items-center"
+          @click="jumpToLatest"
+        >
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+          <span v-if="pendingCount > 0">{{ $t('logs.new_logs', { count: pendingCount }) }}</span>
+          <span v-else>{{ $t('logs.jump_to_latest') }}</span>
+        </button>
+      </transition>
+
+      <!-- Warn when the hold lasted long enough that buffered lines had to be dropped -->
+      <div
+        v-if="isHeld && droppedWhileHeld > 0"
+        class="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-amber-500/90 text-white text-xs font-medium shadow"
+      >
+        {{ $t('logs.buffer_overflow', { count: droppedWhileHeld }) }}
       </div>
     </div>
   </div>
@@ -111,18 +180,38 @@ import { IconTrash, IconRefresh, IconDownload, IconPackage, IconSpinner, IconClo
 import Modal from '@/components/common/Modal.vue'
 import type { LogEntry } from '@/types'
 
+// A stable, monotonically increasing id per row. Using the array index as the
+// v-for key made Vue patch every existing row whenever the queue was trimmed
+// from the front, which caused visible flicker and lost text selection.
+type LogRow = LogEntry & { id: number }
+
+// How close to the bottom (in px) still counts as "following the stream".
+// A pixel threshold behaves consistently at any content height, unlike the
+// previous scrollHeight ratio which flipped behaviour as the buffer grew.
+const STICK_THRESHOLD_PX = 48
+
 const { t } = useI18n()
 const logContainerRef = ref<HTMLElement | null>(null)
 const filterLevels = ref<string[]>(['info', 'warning', 'error'])
-const allLogs = ref<LogEntry[]>([])
+const allLogs = ref<LogRow[]>([])
+// Lines that arrived while the view was held. They are kept out of `allLogs`
+// so the rendered list is completely static while the user is reading.
+const pendingLogs = ref<LogRow[]>([])
+const droppedWhileHeld = ref(0)
 const maxQueueSize = ref(100)
 
-const { messages, connected, connect, disconnect, clear: clearSSE } = useSSE()
-let lastProcessedIndex = 0
+const isPaused = ref(false)
+const autoScroll = ref(true)
+const atBottom = ref(true)
+
+const { messages, connect, disconnect, clear: clearSSE } = useSSE()
 
 const showInstallPanel = ref(false)
 const installPackagesInput = ref('')
 const isInstalling = ref(false)
+
+let rowId = 0
+let scrollRaf = 0
 
 const levelOptions = [
   { label: 'DEBUG', value: 'debug' },
@@ -131,35 +220,131 @@ const levelOptions = [
   { label: 'ERROR', value: 'error' },
 ]
 
-const filteredLogs = computed(() => {
-  return allLogs.value.filter(log => {
-    const level = log.level?.toLowerCase()
-    // CRITICAL is treated the same as ERROR
-    const normalized = level === 'critical' ? 'error' : level
-    return filterLevels.value.includes(normalized)
-  })
-})
+// The stream is "held" whenever appending would move content under the user's
+// eyes: either they explicitly paused, or they scrolled away from the bottom.
+const isHeld = computed(() => isPaused.value || !atBottom.value)
+const pendingCount = computed(() => pendingLogs.value.length)
+
+function matchesFilters(log: LogRow): boolean {
+  const level = log.level?.toLowerCase()
+  // CRITICAL is treated the same as ERROR
+  const normalized = level === 'critical' ? 'error' : level
+  return filterLevels.value.includes(normalized)
+}
+
+const visibleLogs = computed(() => allLogs.value.filter(matchesFilters))
 
 function applyFilter() {
   localStorage.setItem('log_filter_levels', JSON.stringify(filterLevels.value))
   scrollToBottom()
 }
 
+function toggleAutoScroll() {
+  autoScroll.value = !autoScroll.value
+  localStorage.setItem('log_auto_scroll', JSON.stringify(autoScroll.value))
+  if (autoScroll.value) jumpToLatest()
+}
+
+function togglePause() {
+  if (isPaused.value) {
+    isPaused.value = false
+    flushPending()
+  } else {
+    isPaused.value = true
+  }
+}
+
+function jumpToLatest() {
+  isPaused.value = false
+  flushPending()
+}
+
+function flushPending() {
+  if (pendingLogs.value.length > 0) {
+    allLogs.value.push(...pendingLogs.value)
+    pendingLogs.value = []
+    trimVisible()
+  }
+  droppedWhileHeld.value = 0
+  scrollToBottom()
+}
+
+function trimVisible() {
+  // Cap at maxQueueSize to prevent memory issues
+  const overflow = allLogs.value.length - maxQueueSize.value
+  if (overflow > 0) allLogs.value = allLogs.value.slice(overflow)
+}
+
+function ingest(rows: LogRow[]) {
+  if (rows.length === 0) return
+
+  if (isHeld.value) {
+    pendingLogs.value.push(...rows)
+    const overflow = pendingLogs.value.length - maxQueueSize.value
+    if (overflow > 0) {
+      pendingLogs.value = pendingLogs.value.slice(overflow)
+      droppedWhileHeld.value += overflow
+    }
+    return
+  }
+
+  allLogs.value.push(...rows)
+  trimVisible()
+  if (autoScroll.value) {
+    scrollToBottom()
+  } else {
+    // Appending content does not fire a scroll event, so the pinned state has
+    // to be recomputed by hand once the new rows are laid out.
+    nextTick(updateAtBottom)
+  }
+}
+
+function parseLogMessage(raw: unknown): LogRow {
+  try {
+    const logData = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return {
+      id: rowId++,
+      timestamp: logData.time || logData.timestamp || new Date().toLocaleString(),
+      level: logData.level || 'info',
+      message: logData.message || logData.msg || '',
+      logger: logData.logger || logData.name || '',
+      color: logData.color || '',
+    }
+  } catch {
+    // Preserve raw text messages when JSON parse fails
+    return {
+      id: rowId++,
+      timestamp: new Date().toLocaleString(),
+      level: 'info',
+      message: String(raw),
+      logger: '',
+      color: '',
+    }
+  }
+}
+
+function toRows(entries: LogEntry[]): LogRow[] {
+  return entries.map(entry => ({ ...entry, id: rowId++ }))
+}
+
 function clearLogs() {
   if (!confirm(t('logs.clear_confirm'))) return
   allLogs.value = []
+  pendingLogs.value = []
+  droppedWhileHeld.value = 0
   clearSSE()
-  lastProcessedIndex = 0
   notify(t('logs.cleared'), 'success')
 }
 
 async function refreshLogs() {
   disconnect()
   clearSSE()
-  lastProcessedIndex = 0
+  pendingLogs.value = []
+  droppedWhileHeld.value = 0
+  isPaused.value = false
   try {
     const res = await getLogHistory(100)
-    allLogs.value = res.data.logs || []
+    allLogs.value = toRows(res.data.logs || [])
     scrollToBottom()
     notify(t('logs.refreshed'), 'success')
   } catch (e) {
@@ -185,45 +370,58 @@ function logLevelColor(level: string) {
   return 'text-gray-500 dark:text-gray-400'
 }
 
+function displayLevel(level: string): string {
+  return (level || 'INFO').toUpperCase()
+}
+
 function padLevel(level: string): string {
-  const l = (level || 'INFO').toUpperCase()
+  const l = displayLevel(level)
   // Pad to 7 characters for alignment (WARNING is 7 chars)
   return l.padEnd(7, ' ')
 }
 
-function getScrollContainer(): HTMLElement | null {
-  return logContainerRef.value
+function updateAtBottom() {
+  const el = logContainerRef.value
+  if (!el) return
+  atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD_PX
+}
+
+function onScroll() {
+  // Coalesce the burst of scroll events a single gesture produces.
+  if (scrollRaf) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = 0
+    updateAtBottom()
+  })
 }
 
 function scrollToBottom() {
   nextTick(() => {
-    const el = getScrollContainer()
+    const el = logContainerRef.value
     if (!el) return
+    // Instant (not smooth) so the scroll handler sees a single settled
+    // position instead of intermediate ones that would unpin the view.
     el.scrollTop = el.scrollHeight
+    atBottom.value = true
   })
 }
 
-function smartScrollToBottom() {
-  nextTick(() => {
-    const el = getScrollContainer()
-    if (!el) return
-    const scrollRatio = (el.scrollTop + el.clientHeight) / el.scrollHeight
-    if (scrollRatio > 0.95) {
-      el.scrollTop = el.scrollHeight
-    }
-  })
+function formatLogLine(log: LogRow): string {
+  const logger = log.logger ? ` [${log.logger}]` : ''
+  return `[${log.timestamp}] ${padLevel(log.level)}${logger} ${log.message}`
 }
 
 function downloadLogs() {
-  const container = logContainerRef.value
-  if (!container) return
+  // Built from the data model rather than the DOM: the previous version
+  // exported only what happened to be rendered, and would now also miss
+  // anything buffered while the stream was held.
+  const rows = [...visibleLogs.value, ...pendingLogs.value.filter(matchesFilters)]
+  if (rows.length === 0) {
+    notify(t('logs.no_logs'), 'warning')
+    return
+  }
 
-  const lines = Array.from(container.children)
-    .filter(el => el.hasAttribute('data-log-entry'))
-    .map(el => el.textContent?.trim() || '')
-    .join('\n')
-
-  const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' })
+  const blob = new Blob([rows.map(formatLogLine).join('\n')], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -258,40 +456,12 @@ async function handleInstall() {
 
 // Watch for new SSE messages
 watch(messages, (msgs) => {
-  if (lastProcessedIndex > msgs.length) lastProcessedIndex = 0
-  if (msgs.length <= lastProcessedIndex) return
-  let added = false
-  for (let i = lastProcessedIndex; i < msgs.length; i++) {
-    try {
-      const logData = typeof msgs[i] === 'string' ? JSON.parse(msgs[i]) : msgs[i]
-      allLogs.value.push({
-        timestamp: logData.time || logData.timestamp || new Date().toLocaleString(),
-        level: logData.level || 'info',
-        message: logData.message || logData.msg || '',
-        logger: logData.logger || logData.name || '',
-        color: logData.color || '',
-      })
-      added = true
-    } catch {
-      // Preserve raw text messages when JSON parse fails
-      allLogs.value.push({
-        timestamp: new Date().toLocaleString(),
-        level: 'info',
-        message: String(msgs[i]),
-        logger: '',
-        color: '',
-      })
-      added = true
-    }
-  }
-  // Clear SSE buffer to prevent memory leak
+  if (msgs.length === 0) return
+  const rows = msgs.map(parseLogMessage)
+  // Clear SSE buffer to prevent memory leak. This re-triggers the watcher with
+  // an empty array, which the guard above short-circuits.
   clearSSE()
-  lastProcessedIndex = 0
-  // Cap at maxQueueSize to prevent memory issues
-  if (allLogs.value.length > maxQueueSize.value) {
-    allLogs.value = allLogs.value.slice(-maxQueueSize.value)
-  }
-  if (added) smartScrollToBottom()
+  ingest(rows)
 }, { deep: true })
 
 onMounted(async () => {
@@ -304,6 +474,12 @@ onMounted(async () => {
     }
   } catch { /* ignore */ }
 
+  // Load saved auto-scroll preference
+  try {
+    const raw = localStorage.getItem('log_auto_scroll')
+    if (raw !== null) autoScroll.value = JSON.parse(raw) !== false
+  } catch { /* ignore */ }
+
   // Fetch log config (maxQueueSize)
   try {
     const configRes = await getLogConfig()
@@ -313,17 +489,22 @@ onMounted(async () => {
   // Load history
   try {
     const res = await getLogHistory(100)
-    allLogs.value = res.data.logs || []
+    allLogs.value = toRows(res.data.logs || [])
     scrollToBottom()
   } catch (e) {
     console.error('Failed to load log history:', e)
   }
+
+  // Resizing changes clientHeight, which changes what counts as "at bottom"
+  window.addEventListener('resize', updateAtBottom)
 
   // Connect SSE
   loadLogs()
 })
 
 onUnmounted(() => {
+  window.removeEventListener('resize', updateAtBottom)
+  if (scrollRaf) cancelAnimationFrame(scrollRaf)
   disconnect()
 })
 </script>
