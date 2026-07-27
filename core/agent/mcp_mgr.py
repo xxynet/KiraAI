@@ -18,6 +18,13 @@ default_config = {
   "mcpServers": {}
 }
 
+# Timeouts guarding connection management, so a hung stdio subprocess or
+# remote handshake can never block a server's connection lock forever
+MCP_CONNECT_TIMEOUT = 30.0
+MCP_CLOSE_TIMEOUT = 10.0
+# Liveness probe sent only after a tool call already failed
+MCP_PING_TIMEOUT = 5.0
+
 
 @dataclass
 class MCPServer:
@@ -66,6 +73,10 @@ class MCPManager:
         self.llm_api = llm_api
         self.mcp_config: dict = self.load_config()
         self.servers: list[MCPServer] = []
+        # persistent fastmcp clients, one per server id
+        self._clients: dict[str, Client] = {}
+        self._client_locks: dict[str, asyncio.Lock] = {}
+        self._shutting_down = False
 
     @staticmethod
     def load_config():
@@ -143,6 +154,97 @@ class MCPManager:
 
     def add_server(self, server: MCPServer):
         self.servers.append(server)
+
+    # ====== Persistent connection management ======
+
+    def _get_client_lock(self, server_id: str) -> asyncio.Lock:
+        lock = self._client_locks.get(server_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._client_locks[server_id] = lock
+        return lock
+
+    def _is_server_active(self, server_id: str) -> bool:
+        """True if the server still exists and is enabled.
+
+        Used by tool calls to avoid resurrecting a connection that was
+        deliberately closed by disable/delete/shutdown.
+        """
+        if self._shutting_down:
+            return False
+        return any(s.id == server_id and s.enabled for s in self.servers)
+
+    @staticmethod
+    async def _is_client_alive(client: Client) -> bool:
+        """Probe whether the transport is actually usable.
+
+        fastmcp's Client.is_connected() only reports whether a session object
+        exists; it keeps returning True after the underlying stdio subprocess
+        dies or the socket drops. A ping is the only reliable liveness signal,
+        so it is sent only after a call already failed.
+        """
+        if not client.is_connected():
+            return False
+        try:
+            return bool(await asyncio.wait_for(client.ping(), timeout=MCP_PING_TIMEOUT))
+        except Exception:
+            return False
+
+    async def _get_connected_client(
+        self, server: MCPServer, require_active: bool = False
+    ) -> Client:
+        """Return the persistent client for a server, (re)connecting if needed.
+
+        The session is held open until close_connection() is called, so tool
+        calls reuse one connection instead of spawning a new subprocess /
+        HTTP session per call.
+        """
+        async with self._get_client_lock(server.id):
+            if require_active and not self._is_server_active(server.id):
+                raise RuntimeError(f"MCP server {server.name} is disabled or removed")
+            client = self._clients.get(server.id)
+            if client is not None and client.is_connected():
+                return client
+            if client is not None:
+                # session died (server crash / network drop): fully reset
+                # the old client before building a fresh one
+                try:
+                    await asyncio.wait_for(client.close(), timeout=MCP_CLOSE_TIMEOUT)
+                except Exception as e:
+                    logger.debug(f"Error closing stale MCP client for {server.name}: {e}")
+            client = Client(server.to_dict())
+            try:
+                await asyncio.wait_for(client.__aenter__(), timeout=MCP_CONNECT_TIMEOUT)
+            except BaseException:
+                # never leave a half-open client behind (e.g. a spawned
+                # subprocess whose handshake timed out or failed)
+                try:
+                    await asyncio.wait_for(client.close(), timeout=MCP_CLOSE_TIMEOUT)
+                except Exception as close_err:
+                    logger.debug(f"Error cleaning up failed MCP client for {server.name}: {close_err}")
+                raise
+            self._clients[server.id] = client
+            logger.debug(f"Opened persistent MCP connection to {server.name}")
+            return client
+
+    async def close_connection(self, server_id: str):
+        """Close and drop the persistent client for a server, if any."""
+        async with self._get_client_lock(server_id):
+            client = self._clients.pop(server_id, None)
+            if client is None:
+                return
+            try:
+                await asyncio.wait_for(client.close(), timeout=MCP_CLOSE_TIMEOUT)
+            except Exception as e:
+                logger.warning(f"Error closing MCP client for server {server_id}: {e}")
+
+    async def shutdown(self):
+        """Close all persistent MCP connections (application shutdown)."""
+        self._shutting_down = True
+        for server_id in list(self._clients.keys()):
+            await self.close_connection(server_id)
+
+    # ====== End persistent connection management ======
 
     def save_server_config(self):
         with open(MCP_CONFIG_PATH, 'w', encoding="utf-8") as f:
@@ -225,7 +327,7 @@ class MCPManager:
         }
         return editor_cfg
 
-    def update_server_from_editor(self, server_id: str, name: Optional[str], description: str, editor_config: dict) -> None:
+    async def update_server_from_editor(self, server_id: str, name: Optional[str], description: str, editor_config: dict) -> None:
         """
         Merge editor JSON back into the stored config for a single server.
         Meta fields are managed outside the editor:
@@ -297,7 +399,11 @@ class MCPManager:
                     server.headers = headers_val
             break
 
-    def delete_server(self, server_id: str) -> None:
+        # config changed: drop any live connection so the next call
+        # reconnects with the new config
+        await self.close_connection(server_id)
+
+    async def delete_server(self, server_id: str) -> None:
         """Remove a server from config and in-memory state. Raises ValueError if not found."""
         servers = self.mcp_config.get("mcpServers") or {}
         if not isinstance(servers, dict):
@@ -311,6 +417,9 @@ class MCPManager:
         if target_server and target_server.enabled:
             for tool in target_server.tools:
                 self.llm_api.unregister_tool(tool.get("name"))
+
+        await self.close_connection(server_id)
+        self._client_locks.pop(server_id, None)
 
         servers.pop(server_id)
         self.mcp_config["mcpServers"] = servers
@@ -391,7 +500,14 @@ class MCPManager:
         if target_server.enabled:
             return
 
-        await self.list_tools(target_server)
+        tools = await self.list_tools(target_server, keep_connection=True)
+        if not tools:
+            # unreachable server (or one exposing no tools): fail loudly
+            # instead of persisting "enabled" with zero tools registered
+            await self.close_connection(server_id)
+            raise ConnectionError(
+                f"Failed to fetch tools from MCP server {target_server.name}; server not enabled"
+            )
 
         tool_names = []
 
@@ -399,7 +515,7 @@ class MCPManager:
             tool_name = tool.get("name")
             tool_names.append(tool_name)
 
-            func = await self._make_mcp_func(target_server, tool_name)
+            func = self._make_mcp_func(target_server, tool_name)
 
             self.llm_api.register_tool(
                 name=tool_name,
@@ -414,7 +530,7 @@ class MCPManager:
             self.mcp_config["mcpServers"][server_id]["enabled"] = True
         self.save_server_config()
 
-    def disable_server(self, server_id: str):
+    async def disable_server(self, server_id: str):
         target_server = None
         for server in self.servers:
             if server.id == server_id:
@@ -430,6 +546,8 @@ class MCPManager:
             tool_name = tool.get("name")
             self.llm_api.unregister_tool(tool_name)
 
+        await self.close_connection(server_id)
+
         target_server.enabled = False
         if server_id in self.mcp_config["mcpServers"]:
             self.mcp_config["mcpServers"][server_id]["enabled"] = False
@@ -442,6 +560,7 @@ class MCPManager:
         self.load_servers()
 
         async def init_server(server):
+            # keeps the connection open for enabled servers, closes it otherwise
             await self.list_tools(server)
 
             if server.enabled:
@@ -449,7 +568,7 @@ class MCPManager:
                 for tool in server.tools:
                     tool_name = tool.get("name")
                     tool_names.append(tool_name)
-                    func = await self._make_mcp_func(server, tool_name)
+                    func = self._make_mcp_func(server, tool_name)
                     self.llm_api.register_tool(
                         name=tool_name,
                         description=tool.get("description"),
@@ -461,34 +580,56 @@ class MCPManager:
         for server in self.servers:
             asyncio.create_task(init_server(server))
 
-    @staticmethod
-    async def _make_mcp_func(server: MCPServer, tool_name: str):
+    def _make_mcp_func(self, server: MCPServer, tool_name: str):
         async def _wrapped(*_, **kwargs):
             # ignore positional args, e.g. MessageEvent
-            client_inner = Client(server.to_dict())
-            async with client_inner:
-                result = await client_inner.call_tool(tool_name, kwargs, timeout=server.timeout)
-                return str(result)
+            if not self._is_server_active(server.id):
+                raise RuntimeError(f"MCP server {server.name} is disabled or removed")
+            client = await self._get_connected_client(server, require_active=True)
+            try:
+                result = await client.call_tool(tool_name, kwargs, timeout=server.timeout)
+            except Exception:
+                if await self._is_client_alive(client):
+                    # connection is fine, this is a genuine tool error
+                    raise
+                # The transport died. Drop the client so the next call builds a
+                # fresh connection, but deliberately do NOT re-issue this call:
+                # the request may already have executed server-side, and a blind
+                # retry would duplicate the side effects of non-idempotent tools.
+                logger.warning(
+                    f"MCP connection to {server.name} lost; dropping it so the "
+                    f"next call reconnects"
+                )
+                await self.close_connection(server.id)
+                raise
+            return str(result)
 
         return _wrapped
 
-    @staticmethod
-    async def list_tools(server: MCPServer):
+    async def list_tools(self, server: MCPServer, keep_connection: Optional[bool] = None):
+        """Refresh server.tools.
+
+        keep_connection=None keeps the connection open only for enabled
+        servers; disabled ones are closed so keep-alive stdio subprocesses
+        don't linger.
+        """
+        if keep_connection is None:
+            keep_connection = server.enabled
+
         server.tools.clear()
-        client = Client(server.to_dict())
         try:
-            async with client:
-                try:
-                    tools_response = await client.list_tools()
-                except Exception as e:
-                    logger.error(f"Failed to list MCP tools for {server.name}: {e}")
-                    return
-                if isinstance(tools_response, dict):
-                    tools = tools_response.get("tools", [])
-                elif isinstance(tools_response, list):
-                    tools = tools_response
-                else:
-                    tools = []
+            client = await self._get_connected_client(server)
+            try:
+                tools_response = await client.list_tools()
+            except Exception as e:
+                logger.error(f"Failed to list MCP tools for {server.name}: {e}")
+                return []
+            if isinstance(tools_response, dict):
+                tools = tools_response.get("tools", [])
+            elif isinstance(tools_response, list):
+                tools = tools_response
+            else:
+                tools = []
 
             for tool in tools:
                 if hasattr(tool, "model_dump"):
@@ -511,5 +652,8 @@ class MCPManager:
 
             return server.tools
         except Exception as e:
-            logger.error(f"Failed to connect to MCP servers: {e}")
+            logger.error(f"Failed to connect to MCP server {server.name}: {e}")
             return []
+        finally:
+            if not keep_connection:
+                await self.close_connection(server.id)
