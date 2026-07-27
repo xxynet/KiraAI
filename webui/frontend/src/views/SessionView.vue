@@ -41,7 +41,18 @@
               </span>
             </td>
             <td class="px-6 py-4">
-              <div class="text-sm text-gray-500 dark:text-gray-400 font-mono break-all max-w-xs">{{ session.session_id || session.id }}</div>
+              <div class="flex items-center gap-2 max-w-xs">
+                <div class="text-sm text-gray-500 dark:text-gray-400 font-mono break-all">{{ session.session_id || session.id }}</div>
+                <button
+                  type="button"
+                  class="session-copy-button shrink-0 text-gray-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+                  :title="$t('sessions.copy_session_id')"
+                  :aria-label="$t('sessions.copy_session_id')"
+                  @click="copySessionId(session)"
+                >
+                  <IconCopy class="w-4 h-4" />
+                </button>
+              </div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
               <div class="text-sm text-gray-500 dark:text-gray-400">{{ session.message_count }}</div>
@@ -125,7 +136,7 @@ import { getSessions, getSession, updateSession, deleteSession } from '@/api/ses
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
-import { IconPlus, IconClose } from '@/components/icons'
+import { IconPlus, IconClose, IconCopy } from '@/components/icons'
 import type { SessionItem } from '@/types'
 
 const { t } = useI18n()
@@ -154,6 +165,25 @@ async function loadSessions() {
 
 function resolveSessionId(session: SessionItem): string {
   return session.id || session.session_id || ''
+}
+
+function getSessionIdentifier(session: SessionItem): string {
+  return session.id || [session.adapter_name, session.session_type, session.session_id].filter(Boolean).join(':')
+}
+
+async function copySessionId(session: SessionItem) {
+  const sessionIdentifier = getSessionIdentifier(session)
+  if (!sessionIdentifier) {
+    notify(t('sessions.copy_failed'), 'error')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(sessionIdentifier)
+    notify(t('sessions.copy_success'), 'success')
+  } catch {
+    notify(t('sessions.copy_failed'), 'error')
+  }
 }
 
 function getDisplayTitleSource(session: SessionItem): string {

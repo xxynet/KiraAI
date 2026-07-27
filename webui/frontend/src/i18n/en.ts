@@ -675,6 +675,9 @@ export default {
     },
   },
   sessions: {
+    copy_session_id: 'Copy session ID',
+    copy_success: 'Session ID copied',
+    copy_failed: 'Failed to copy session ID',
     title: 'Sessions',
     new: 'New Session',
     no_sessions: 'No active sessions',

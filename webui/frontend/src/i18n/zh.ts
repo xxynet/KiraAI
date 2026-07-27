@@ -676,6 +676,9 @@ export default {
     },
   },
   sessions: {
+    copy_session_id: '复制会话 ID',
+    copy_success: '会话 ID 已复制',
+    copy_failed: '复制会话 ID 失败',
     title: '会话管理',
     new: '新建会话',
     no_sessions: '无活跃会话',
