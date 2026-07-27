@@ -10,6 +10,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from mcp.shared.exceptions import McpError
 
 from core.agent.mcp_mgr import MCPManager, MCPServer
 
@@ -85,7 +86,7 @@ async def test_crashing_tool_executes_exactly_once(flaky_env):
     manager, server, ledger = flaky_env
     try:
         transfer = manager._make_mcp_func(server, "transfer")
-        with pytest.raises(Exception):
+        with pytest.raises(McpError):
             await transfer(amount=100)
 
         assert _ledger_entries(ledger) == ["transfer 100"]
@@ -103,7 +104,7 @@ async def test_server_recovers_after_crash(flaky_env):
 
         assert "pong" in await ping()
 
-        with pytest.raises(Exception):
+        with pytest.raises(McpError):
             await transfer(amount=1)
 
         # the dead client must have been dropped, not cached as "connected"

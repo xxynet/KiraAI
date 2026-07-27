@@ -190,7 +190,9 @@ class MCPManager:
         except Exception:
             return False
 
-    async def _get_connected_client(self, server: MCPServer) -> Client:
+    async def _get_connected_client(
+        self, server: MCPServer, require_active: bool = False
+    ) -> Client:
         """Return the persistent client for a server, (re)connecting if needed.
 
         The session is held open until close_connection() is called, so tool
@@ -198,6 +200,8 @@ class MCPManager:
         HTTP session per call.
         """
         async with self._get_client_lock(server.id):
+            if require_active and not self._is_server_active(server.id):
+                raise RuntimeError(f"MCP server {server.name} is disabled or removed")
             client = self._clients.get(server.id)
             if client is not None and client.is_connected():
                 return client
@@ -581,7 +585,7 @@ class MCPManager:
             # ignore positional args, e.g. MessageEvent
             if not self._is_server_active(server.id):
                 raise RuntimeError(f"MCP server {server.name} is disabled or removed")
-            client = await self._get_connected_client(server)
+            client = await self._get_connected_client(server, require_active=True)
             try:
                 result = await client.call_tool(tool_name, kwargs, timeout=server.timeout)
             except Exception:
