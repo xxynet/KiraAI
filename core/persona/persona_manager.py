@@ -53,8 +53,8 @@ class PersonaManager:
         return success
 
     async def init_persona(self):
-        persona_dict = await self.db.get_persona(persona_id="default")
-        if not persona_dict:
+        personas = await self.db.list_personas()
+        if not personas:
             import time
             await self.db.add_persona(
                 persona_id="default",

@@ -250,6 +250,18 @@ async def test_init_persona(persona_manager):
 
 
 @pytest.mark.anyio
+async def test_init_persona_does_not_seed_default_when_persona_exists(persona_manager):
+    """Test that initialization does not create a default alongside an existing persona."""
+    persona = PersonaInfo(id="custom", name="Custom", content="Custom content")
+    await persona_manager.create_persona(persona)
+
+    await persona_manager.init_persona()
+
+    personas = await persona_manager.list_personas()
+    assert [item.id for item in personas] == ["custom"]
+
+
+@pytest.mark.anyio
 async def test_get_persona_returns_none_when_no_active(persona_manager):
     """Test that get_persona returns None when no persona is active."""
     # Create default persona but do not activate it
