@@ -734,6 +734,9 @@ textarea:focus:hover,
 .dark .text-yellow-600 { color: #fbbf24 !important; }
 .dark .text-red-600 { color: #f87171 !important; }
 
+/* Keep session ID copy feedback visible despite the global dark-mode color overrides. */
+.dark .session-copy-button:hover { color: #93c5fd !important; }
+
 /* Borders / dividers — must hit 3:1 non-text contrast (WCAG 1.4.11) */
 .dark .border-gray-100,
 .dark .border-gray-200 { border-color: rgba(148, 163, 184, 0.24) !important; }

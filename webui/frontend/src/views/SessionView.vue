@@ -45,7 +45,7 @@
                 <div class="text-sm text-gray-500 dark:text-gray-400 font-mono break-all">{{ session.session_id || session.id }}</div>
                 <button
                   type="button"
-                  class="shrink-0 text-gray-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+                  class="session-copy-button shrink-0 text-gray-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
                   :title="$t('sessions.copy_session_id')"
                   :aria-label="$t('sessions.copy_session_id')"
                   @click="copySessionId(session)"
