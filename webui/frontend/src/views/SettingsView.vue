@@ -264,8 +264,8 @@
     <!-- About Tab -->
     <div v-show="activeTab === 'about'" class="space-y-6">
       <div class="flex flex-col items-center py-8">
-        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-4 shadow-lg">
-          <span class="text-3xl font-bold text-white">K</span>
+        <div class="w-20 h-20 rounded-2xl overflow-hidden mb-4 shadow-lg">
+          <img src="/icon.png" alt="KiraAI" class="w-full h-full object-cover" />
         </div>
         <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">KiraAI</h2>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ $t('settings.about_tagline') }}</p>
