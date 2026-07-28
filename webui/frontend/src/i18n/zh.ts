@@ -252,6 +252,7 @@ export default {
     modal_title: '添加人设',
     modal_name_label: '人设名称',
     modal_content_label: '人设内容',
+    char_count: '{count} 字符',
     modal_cancel: '取消',
     modal_save: '保存',
     format_json: 'JSON',

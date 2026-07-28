@@ -109,9 +109,14 @@
             />
           </div>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              {{ $t('persona.modal_content_label') }}
-            </label>
+            <div class="flex justify-between items-center mb-2">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ $t('persona.modal_content_label') }}
+              </label>
+              <span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+                {{ t('persona.char_count', { count: charCount }) }}
+              </span>
+            </div>
             <MonacoEditor
               v-model="form.content"
               :language="monacoLanguage"
@@ -210,6 +215,10 @@ const monacoLanguage = computed(() => {
   }
   return map[form.value.format] || 'plaintext'
 })
+
+// Count Unicode code points so that emoji and other non-BMP characters
+// count as one instead of two (UTF-16 surrogate pairs).
+const charCount = computed(() => (form.value.content ? [...form.value.content].length : 0))
 
 function formatLabel(fmt: string) {
   const map: Record<string, string> = {

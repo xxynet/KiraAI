@@ -252,6 +252,7 @@ export default {
     modal_title: 'Add Persona',
     modal_name_label: 'Persona Name',
     modal_content_label: 'Persona Content',
+    char_count: '{count} characters',
     modal_cancel: 'Cancel',
     modal_save: 'Save',
     format_json: 'JSON',
