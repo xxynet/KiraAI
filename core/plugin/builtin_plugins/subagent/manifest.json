@@ -1,0 +1,16 @@
+{
+    "display_name": "SubAgent",
+    "plugin_id": "subagent",
+    "uninstallable": true,
+    "version": "0.1.0",
+    "author": "KiraAI",
+    "description": "Enables the main agent to delegate tasks to specialized sub-agents with their own persona and tools.",
+    "repo": null,
+    "tags": ["agent", "tools"],
+    "locales": {
+        "zh": {
+            "display_name": "子代理",
+            "description": "让主代理能够将任务委派给拥有独立角色设定和工具集的子代理"
+        }
+    }
+}
