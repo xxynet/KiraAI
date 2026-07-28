@@ -13,11 +13,15 @@ const props = withDefaults(
     language?: string
     height?: number | string
     readOnly?: boolean
+    folding?: boolean
+    stickyScroll?: boolean
   }>(),
   {
     language: 'json',
     height: 500,
     readOnly: false,
+    folding: true,
+    stickyScroll: true,
   },
 )
 
@@ -43,6 +47,9 @@ onMounted(() => {
     theme: appStore.isDark ? 'vs-dark' : 'vs',
     automaticLayout: true,
     readOnly: props.readOnly,
+    folding: props.folding,
+    showFoldingControls: props.folding ? 'mouseover' : 'never',
+    stickyScroll: { enabled: props.stickyScroll },
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
     wordWrap: 'on',
