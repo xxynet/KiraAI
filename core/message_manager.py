@@ -188,6 +188,18 @@ class MessageProcessor:
 
         logger.info("MessageProcessor initialized")
 
+    async def handle_event(self, event):
+        """Handle events received from the event bus."""
+        if isinstance(event, KiraMessageBatchEvent):
+            await self.handle_im_batch_message(event)
+            return
+
+        async with self.message_processing_semaphore:
+            if isinstance(event, KiraMessageEvent):
+                await self.handle_im_message(event)
+            elif isinstance(event, KiraCommentEvent):
+                await self.handle_cmt_message(event)
+
     def get_session_lock(self, sid: str) -> Lock:
         """get session lock to avoid sending message simultaneously"""
         if sid not in self.session_locks:
