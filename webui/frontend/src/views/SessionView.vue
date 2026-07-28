@@ -98,6 +98,8 @@
             v-model="editorContent"
             language="json"
             :height="350"
+            :folding="false"
+            :sticky-scroll="false"
             class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden"
           />
         </div>
