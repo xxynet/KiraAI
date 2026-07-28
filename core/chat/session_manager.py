@@ -186,7 +186,24 @@ class SessionManager:
         logger.info(f"Memory updated for {session}")
 
     def delete_session(self, session: str):
+        deleted = False
         with self.memory_lock:
+            deleted = session in self.chat_memory
             self.chat_memory.pop(session, None)
             self._save_memory(self.chat_memory, self.chat_memory_path)
         logger.info(f"Memory deleted for {session}")
+
+        if deleted and getattr(self, "event_bus", None):
+            from core.event_bus import SystemEvent
+
+            event = SystemEvent(
+                event_type="session_deleted",
+                payload={"session": session},
+                source="session_manager",
+            )
+            publish_task = self.event_bus.publish(event)
+            try:
+                asyncio.create_task(publish_task, name="session_deleted_event")
+            except RuntimeError:
+                publish_task.close()
+                logger.warning("Unable to publish session deletion event outside a running event loop")

@@ -13,6 +13,7 @@ from .adapter import AdapterManager
 from .statistics import Statistics
 from .llm_client import LLMClient
 from .event_bus import EventBus
+from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent
 from .persona import PersonaManager
 from .provider import ProviderManager
 from .plugin import PluginContext, PluginManager
@@ -197,8 +198,12 @@ class KiraLifecycle:
             )
         )
 
-        self.event_bus = EventBus(self.stats, event_queue, self.message_processor, db=self.db_service)
+        self.event_bus = EventBus(self.stats, event_queue, db=self.db_service)
+        self.session_manager.event_bus = self.event_bus
         self.message_processor.event_bus = self.event_bus
+        self.event_bus.subscribe(KiraMessageEvent, self.message_processor.handle_event)
+        self.event_bus.subscribe(KiraMessageBatchEvent, self.message_processor.handle_event)
+        self.event_bus.subscribe(KiraCommentEvent, self.message_processor.handle_event)
 
         # ====== init plugin system ======
         self.plugin_context = PluginContext(

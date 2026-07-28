@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
-from enum import Enum, auto
+from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING, Type
 from dataclasses import dataclass, field
 from datetime import datetime
 import uuid
@@ -15,57 +14,42 @@ from core.chat import KiraMessageEvent, KiraCommentEvent
 from core.chat.message_utils import KiraMessageBatchEvent, KiraCustomEvent
 
 
-class EventType(Enum):
-    """事件类型枚举"""
-    KiraAILoaded = auto()
-
-    """When a message arrives, could be KiraMessageEvent, KiraCommentEvent, etc..."""
-    MsgRecv = auto()
-
-    """THe message has been processed and has a result"""
-    MsgResult = auto()
-
-    """The message has been sent to adapter"""
-    MsgSent = auto()
-
-
-# @dataclass
-# class Event:
-#     """统一事件对象"""
-#     event_type: EventType
-#     payload: Any
-#     source: str
-#     timestamp: datetime = field(default_factory=datetime.now)
-#     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-#     priority: int = 0  # 0 = normal, 1 = high, 2 = critical
-#     metadata: Dict[str, Any] = field(default_factory=dict)
+@dataclass
+class SystemEvent:
+    """统一事件对象"""
+    event_type: str
+    payload: Any
+    source: str
+    timestamp: datetime = field(default_factory=datetime.now)
+    event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    priority: int = 0  # 0 = normal, 1 = high, 2 = critical
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 if TYPE_CHECKING:
-    from core.message_manager import MessageProcessor
     from core.db.service import DatabaseService
 
 
 class EventBus:
     """事件总线"""
 
-    def __init__(self, stats: Statistics, event_queue: asyncio.Queue, message_processor: MessageProcessor,
+    def __init__(self, stats: Statistics, event_queue: asyncio.Queue,
                  db: DatabaseService = None):
         self.stats = stats
         self.db = db
 
         self.event_queue: asyncio.Queue = event_queue
 
-        self.message_processor = message_processor
-
-        # TODO make max concurrent messages as a config
-        self.message_processing_semaphore = asyncio.Semaphore(3)
-
         # subscribers dict：{event_type: [handlers]}
-        self.subscribers: Dict[EventType, List[Callable]] = {}
+        self.subscribers: Dict[Union[str, Type], List[Callable]] = {}
 
-        # event handlers
-        self.event_handlers: Dict[Union[KiraMessageEvent, KiraCommentEvent], Callable]
+        # Built-in events have one fixed owner. Later registrations cannot
+        # replace it, while application-specific events remain multicast.
+        self._single_handler_event_types = {
+            KiraMessageEvent,
+            KiraMessageBatchEvent,
+            KiraCustomEvent,
+        }
 
         # middleware list
         self.middlewares: List[Callable] = []
@@ -88,30 +72,35 @@ class EventBus:
         self._running_event = asyncio.Event()
         self.logger = get_logger("event_bus", "blue")
 
-    async def _dispatch_event(self, event):
-        if isinstance(event, KiraMessageBatchEvent):
-            await self.message_processor.handle_im_batch_message(event)
-            return
-        if isinstance(event, KiraCustomEvent):
-            from core.plugin.plugin_handlers import event_handler_reg, EventType as PluginEventType
-            for handler in event_handler_reg.get_handlers(PluginEventType.ON_CUSTOM_EVENT):
-                filter_name = getattr(handler.handler, '_custom_event_name', None)
-                if filter_name is None or filter_name == event.event_name:
-                    await handler.exec_handler(event)
-            return
-        async with self.message_processing_semaphore:
-            if isinstance(event, KiraMessageEvent):
-                await self.message_processor.handle_im_message(event)
-            elif isinstance(event, KiraCommentEvent):
-                await self.message_processor.handle_cmt_message(event)
+        self.subscribe(KiraCustomEvent, self._dispatch_custom_event)
 
-    def subscribe(self, event_type: EventType, handler: Callable):
+    async def _dispatch_event(self, event):
+        await self._process_event(event)
+
+    async def _dispatch_custom_event(self, event: KiraCustomEvent):
+        from core.plugin.plugin_handlers import event_handler_reg, EventType as PluginEventType
+
+        for handler in event_handler_reg.get_handlers(PluginEventType.ON_CUSTOM_EVENT):
+            filter_name = getattr(handler.handler, '_custom_event_name', None)
+            if filter_name is None or filter_name == event.event_name:
+                await handler.exec_handler(event)
+
+    def subscribe(self, event_type: Union[str, Type], handler: Callable):
         """subscribe event"""
+        if event_type in self._single_handler_event_types:
+            if event_type in self.subscribers:
+                self.logger.warning(
+                    "Handler for built-in event %s is already registered; ignoring replacement",
+                    event_type.__name__,
+                )
+                return
+            self.subscribers[event_type] = [handler]
+            return
         if event_type not in self.subscribers:
             self.subscribers[event_type] = []
         self.subscribers[event_type].append(handler)
 
-    def unsubscribe(self, event_type: EventType, handler: Callable):
+    def unsubscribe(self, event_type: Union[str, Type], handler: Callable):
         """unsubscribe event"""
         if event_type in self.subscribers:
             self.subscribers[event_type].remove(handler)
@@ -162,11 +151,14 @@ class EventBus:
 
     async def _process_event(self, event):
         """处理单个事件"""
-        event_type = event.event_type
+        if isinstance(event, (KiraMessageEvent, KiraMessageBatchEvent, KiraCustomEvent, KiraCommentEvent)):
+            event_type = type(event)
+        else:
+            event_type = getattr(event, "event_type", None)
 
         # 处理所有订阅者
         if event_type in self.subscribers:
-            for handler in self.subscribers[event_type]:
+            for handler in tuple(self.subscribers[event_type]):
                 try:
                     await handler(event)
                 except Exception as e:
