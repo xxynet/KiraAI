@@ -49,6 +49,7 @@ class EventBus:
             KiraMessageEvent,
             KiraMessageBatchEvent,
             KiraCustomEvent,
+            KiraCommentEvent,
         }
 
         # middleware list
@@ -104,6 +105,8 @@ class EventBus:
         """unsubscribe event"""
         if event_type in self.subscribers:
             self.subscribers[event_type].remove(handler)
+            if not self.subscribers[event_type]:
+                del self.subscribers[event_type]
 
     def add_middleware(self, middleware: Callable):
         """add a middleware"""

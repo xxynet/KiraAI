@@ -28,6 +28,7 @@ class SessionManager:
         self.chat_memory_path = CHAT_MEMORY_PATH
 
         self.memory_lock = Lock()
+        self._background_tasks: set[asyncio.Task] = set()
 
         # === Session history ===
         self.chat_memory = self._load_memory(self.chat_memory_path)
@@ -203,7 +204,9 @@ class SessionManager:
             )
             publish_task = self.event_bus.publish(event)
             try:
-                asyncio.create_task(publish_task, name="session_deleted_event")
+                task = asyncio.create_task(publish_task, name="session_deleted_event")
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
             except RuntimeError:
                 publish_task.close()
                 logger.warning("Unable to publish session deletion event outside a running event loop")
