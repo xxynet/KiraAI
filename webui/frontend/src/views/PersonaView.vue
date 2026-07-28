@@ -216,7 +216,9 @@ const monacoLanguage = computed(() => {
   return map[form.value.format] || 'plaintext'
 })
 
-const charCount = computed(() => form.value.content?.length ?? 0)
+// Count Unicode code points so that emoji and other non-BMP characters
+// count as one instead of two (UTF-16 surrogate pairs).
+const charCount = computed(() => (form.value.content ? [...form.value.content].length : 0))
 
 function formatLabel(fmt: string) {
   const map: Record<string, string> = {
