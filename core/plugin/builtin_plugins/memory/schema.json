@@ -1,21 +1,42 @@
 {
-  "max_memory_num": {
-    "name": "Max memory num",
-    "type": "integer",
-    "default": 100,
-    "hint": "Maximum number of memories, triggers memory compression while hit this number",
+  "enable_recall": {
+    "type": "switch",
+    "name": "Enable memory recall",
+    "default": true,
+    "hint": "Inject relevant long-term memories into the memory prompt section.",
     "locales": {
-      "zh": { "name": "最大记忆数量", "hint": "记忆条数达到此数量时触发记忆压缩" }
+      "zh": { "name": "启用记忆召回", "hint": "将相关长期记忆注入 memory 提示词段" }
     }
   },
-  "compression_model": {
-    "name": "Compression Model",
-    "type": "model_select",
-    "model_type": "llm",
-    "default": null,
-    "hint": "Model ID used to compress memories, use default fast LLM by default",
+  "recall_top_k": {
+    "type": "integer",
+    "name": "Recall top-K",
+    "default": 8,
+    "minimum": 1,
+    "maximum": 20,
+    "hint": "Maximum number of memories recalled for one request.",
     "locales": {
-      "zh": { "name": "压缩模型", "hint": "用于压缩记忆的模型 ID，默认使用快速 LLM" }
+      "zh": { "name": "召回数量", "hint": "单次请求最多召回的记忆条数" }
+    }
+  },
+  "max_recall_chars": {
+    "type": "integer",
+    "name": "Maximum recall characters",
+    "default": 3000,
+    "minimum": 200,
+    "hint": "Maximum characters injected into the prompt.",
+    "locales": {
+      "zh": { "name": "召回最大字符数", "hint": "注入提示词的记忆最大字符数" }
+    }
+  },
+  "max_memories": {
+    "type": "integer",
+    "name": "Maximum memories",
+    "default": 200,
+    "minimum": 1,
+    "hint": "Old low-importance memories are removed after this limit is exceeded.",
+    "locales": {
+      "zh": { "name": "最大记忆数量", "hint": "超过上限后优先删除低重要性且较久未访问的记忆" }
     }
   }
 }
