@@ -173,6 +173,31 @@ function getSessionIdentifier(session: SessionItem): string {
   return session.id || [session.adapter_name, session.session_type, session.session_id].filter(Boolean).join(':')
 }
 
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall back for browsers or embedded contexts that deny Clipboard API access.
+    }
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+
+  try {
+    return document.execCommand('copy')
+  } finally {
+    textarea.remove()
+  }
+}
+
 async function copySessionId(session: SessionItem) {
   const sessionIdentifier = getSessionIdentifier(session)
   if (!sessionIdentifier) {
@@ -180,10 +205,9 @@ async function copySessionId(session: SessionItem) {
     return
   }
 
-  try {
-    await navigator.clipboard.writeText(sessionIdentifier)
+  if (await copyTextToClipboard(sessionIdentifier)) {
     notify(t('sessions.copy_success'), 'success')
-  } catch {
+  } else {
     notify(t('sessions.copy_failed'), 'error')
   }
 }
