@@ -178,8 +178,6 @@ class AuthRoutes(Routes):
                     return response
                 if request.method != "GET":
                     return response
-                if "text/html" not in request.headers.get("accept", ""):
-                    return response
                 full_path = request.url.path.lstrip("/")
                 if full_path.startswith(("api/", "assets/", "monacoeditorwork/", "page/")):
                     return response
@@ -200,6 +198,12 @@ class AuthRoutes(Routes):
                             return FileResponse(resolved)
                     except (OSError, ValueError):
                         pass
+                # Only browser navigations should fall back to the SPA shell.
+                # Root-level files must be served regardless of the request's
+                # Accept header, since image and other asset requests do not
+                # include text/html.
+                if "text/html" not in request.headers.get("accept", ""):
+                    return response
                 no_cache_headers = {
                     "Cache-Control": "no-cache, no-store, must-revalidate",
                     "Pragma": "no-cache",
