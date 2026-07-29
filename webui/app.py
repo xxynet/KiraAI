@@ -140,14 +140,6 @@ class KiraWebUI:
 
         self.app.add_middleware(PluginBridgeInjectionMiddleware)
 
-        # Serve the plugin bridge SDK directly so it works before frontend is built
-        bridge_js_path = self.webui_dir / 'frontend' / 'public' / 'plugin-bridge.js'
-        if bridge_js_path.exists():
-            from fastapi.responses import FileResponse as _FileResponse
-            @self.app.get('/plugin-bridge.js', include_in_schema=False)
-            async def serve_bridge_js():
-                return _FileResponse(bridge_js_path, media_type='application/javascript')
-
         # Mount user sticker library
         if self.sticker_dir.exists():
             self.app.mount(
