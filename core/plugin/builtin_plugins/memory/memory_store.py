@@ -17,7 +17,7 @@ import uuid
 from pathlib import Path
 from typing import Iterable, Optional
 
-from sqlalchemy import ForeignKey, Integer, String, Text, Float, delete, func, or_, select
+from sqlalchemy import ForeignKey, Integer, String, Text, Float, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -36,6 +36,7 @@ class MemoryRecord(MemoryBase):
     normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
     scope: Mapped[str] = mapped_column(String(32), nullable=False, default="global")
     owner_id: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    memory_type: Mapped[str] = mapped_column(String(32), nullable=False, default="fact")
     importance: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     created_at: Mapped[float] = mapped_column(Float, nullable=False)
     updated_at: Mapped[float] = mapped_column(Float, nullable=False)
@@ -109,6 +110,18 @@ class MemoryStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         await self.db.init()
         await self.db.create_all(MemoryBase.metadata)
+        await self._ensure_schema()
+
+    async def _ensure_schema(self) -> None:
+        """Add columns introduced after the initial memory database schema."""
+        async with self.db.engine.begin() as connection:
+            result = await connection.execute(text("PRAGMA table_info(memory_records)"))
+            columns = {row[1] for row in result.fetchall()}
+            if "memory_type" not in columns:
+                await connection.execute(text(
+                    "ALTER TABLE memory_records "
+                    "ADD COLUMN memory_type VARCHAR(32) NOT NULL DEFAULT 'fact'"
+                ))
 
     async def close(self) -> None:
         await self.db.dispose()
@@ -120,6 +133,7 @@ class MemoryStore:
             "text": item.text,
             "scope": item.scope,
             "owner_id": item.owner_id,
+            "memory_type": item.memory_type,
             "importance": item.importance,
             "created_at": item.created_at,
             "updated_at": item.updated_at,
@@ -132,13 +146,15 @@ class MemoryStore:
         return result
 
     async def _insert(self, session: AsyncSession, text: str, scope: str,
-                      owner_id: str, importance: float, source: str) -> dict:
+                      owner_id: str, importance: float, source: str,
+                      memory_type: str = "fact") -> dict:
         normalized = normalize_text(text)
         now = time.time()
         existing = await session.scalar(select(MemoryRecord).where(
             MemoryRecord.normalized_text == normalized,
             MemoryRecord.scope == scope,
             MemoryRecord.owner_id == owner_id,
+            MemoryRecord.memory_type == memory_type,
             MemoryRecord.status == "active",
         ))
         if existing is not None:
@@ -149,6 +165,7 @@ class MemoryStore:
         item = MemoryRecord(
             id=f"mem_{uuid.uuid4().hex}", text=text.strip(),
             normalized_text=normalized, scope=scope, owner_id=owner_id,
+            memory_type=memory_type,
             importance=max(0.0, min(1.0, float(importance))),
             created_at=now, updated_at=now, last_accessed_at=now,
             source=source, status="active",
@@ -162,12 +179,15 @@ class MemoryStore:
         return self._as_dict(item)
 
     async def add(self, text: str, scope: str = "global", owner_id: str = "",
-                  importance: float = 0.5, source: str = "manual") -> dict:
+                  importance: float = 0.5, source: str = "manual",
+                  memory_type: str = "fact") -> dict:
         if not normalize_text(text):
             raise ValueError("Memory text must not be empty")
         async with self.lock:
             async with self.db.transaction() as session:
-                result = await self._insert(session, text, scope, owner_id, importance, source)
+                result = await self._insert(
+                    session, text, scope, owner_id, importance, source, memory_type
+                )
                 await self._prune(session, scope, owner_id)
                 return result
 
@@ -234,7 +254,8 @@ class MemoryStore:
             )).all()
             return [self._as_dict(item) for item in items]
 
-    async def search(self, query: str, scopes: list[tuple[str, str]], limit: int = 8) -> list[dict]:
+    async def search(self, query: str, scopes: list[tuple[str, str]], limit: int = 8,
+                    memory_type: Optional[str] = None) -> list[dict]:
         query_terms = tokenize(query)
         if not query_terms or not scopes:
             return []
@@ -249,6 +270,8 @@ class MemoryStore:
                         MemoryTerm.term.in_(list(query_terms)),
                     )
                 )
+                if memory_type:
+                    stmt = stmt.where(MemoryRecord.memory_type == memory_type)
                 rows = (await session.execute(stmt)).all()
                 if not rows:
                     return []
@@ -319,7 +342,8 @@ class MemoryStore:
                     if not line:
                         continue
                     await self._insert(
-                        session, line, "global", "", 0.5, "simple_memory_core_txt"
+                        session, line, "global", "", 0.5,
+                        "simple_memory_core_txt", "fact"
                     )
                     count += 1
                 session.add(MemoryMigration(

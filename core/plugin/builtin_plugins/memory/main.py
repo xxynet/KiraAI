@@ -27,10 +27,14 @@ MEM_TOOL_FEW_SHOT = """
 - 普通闲聊、一次性状态和未经确认的推测不要保存。
 - 私聊未指定范围时保存到 user；群聊未指定范围时保存到当前 session。
 - 私聊不要使用 session 范围；群聊专属内容才使用 session 范围。
+- 可用记忆类型包括 fact、preference、event、goal、relationship、instruction、profile。
 - 系统会自动按当前消息检索相关记忆，不要主动请求全部记忆。
 """
 
 VALID_SCOPES = {"global", "user", "session"}
+MEMORY_TYPES = {
+    "fact", "preference", "event", "goal", "relationship", "instruction", "profile"
+}
 
 
 class MemoryPlugin(BasePlugin):
@@ -134,14 +138,23 @@ class MemoryPlugin(BasePlugin):
                 "text": {"type": "string", "minLength": 1, "description": "记忆文本"},
                 "scope": {"type": "string", "enum": ["global", "user", "session"]},
                 "importance": {"type": "number", "minimum": 0, "maximum": 1},
+                "memory_type": {
+                    "type": "string", "enum": sorted(MEMORY_TYPES),
+                    "description": "可选的记忆类型",
+                },
             },
             "required": ["text"],
         },
     )
     async def memory_add(self, event, text: str, scope: str = "",
-                         importance: float = 0.5) -> str:
+                         importance: float = 0.5, memory_type: str = "fact") -> str:
+        memory_type = (memory_type or "fact").strip().lower()
+        if memory_type not in MEMORY_TYPES:
+            raise ValueError(f"Unsupported memory type: {memory_type}")
         scope, owner_id = self._scope_owner(event, scope)
-        item = await self.store.add(text, scope, owner_id, importance)
+        item = await self.store.add(
+            text, scope, owner_id, importance, memory_type=memory_type
+        )
         return f"Memory saved: {item['id']}"
 
     @register.tool(
@@ -152,12 +165,23 @@ class MemoryPlugin(BasePlugin):
             "properties": {
                 "query": {"type": "string", "minLength": 1, "description": "检索内容"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                "memory_type": {
+                    "type": "string", "enum": sorted(MEMORY_TYPES),
+                    "description": "可选的记忆类型过滤",
+                },
             },
             "required": ["query"],
         },
     )
-    async def memory_search(self, event, query: str, limit: int = 8) -> str:
-        items = await self.store.search(query, self._scopes(event), min(max(int(limit), 1), 20))
+    async def memory_search(self, event, query: str, limit: int = 8,
+                            memory_type: Optional[str] = None) -> str:
+        if memory_type is not None:
+            memory_type = memory_type.strip().lower()
+            if memory_type not in MEMORY_TYPES:
+                raise ValueError(f"Unsupported memory type: {memory_type}")
+        items = await self.store.search(
+            query, self._scopes(event), min(max(int(limit), 1), 20), memory_type
+        )
         if not items:
             return "No relevant memories"
         return "\n".join(f"[{item['id']}] {item['text']}" for item in items)

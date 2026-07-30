@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -50,6 +51,73 @@ def test_legacy_core_txt_migration_is_idempotent(tmp_path: Path):
             assert await store.migrate_legacy(legacy) == 0
             memories = await store.list([("global", "")])
             assert {item["text"] for item in memories} == {"喜欢咖啡", "喜欢旅行"}
+        finally:
+            await store.close()
+
+    run(scenario())
+
+
+def test_memory_search_can_filter_by_type(tmp_path: Path):
+    async def scenario():
+        store = MemoryStore(tmp_path / "memory.db")
+        await store.initialize()
+        try:
+            await store.add("用户喜欢咖啡", "user", "qq:1", memory_type="preference")
+            await store.add("用户在上海工作", "user", "qq:1", memory_type="fact")
+
+            preferences = await store.search(
+                "用户", [("user", "qq:1")], memory_type="preference"
+            )
+            facts = await store.search("用户", [("user", "qq:1")], memory_type="fact")
+            assert [item["memory_type"] for item in preferences] == ["preference"]
+            assert [item["memory_type"] for item in facts] == ["fact"]
+        finally:
+            await store.close()
+
+    run(scenario())
+
+
+def test_existing_database_gets_default_memory_type_column(tmp_path: Path):
+    db_path = tmp_path / "memory.db"
+    connection = sqlite3.connect(db_path)
+    connection.executescript(
+        """
+        CREATE TABLE memory_records (
+            id VARCHAR(64) PRIMARY KEY,
+            text TEXT NOT NULL,
+            normalized_text TEXT NOT NULL,
+            scope VARCHAR(32) NOT NULL,
+            owner_id VARCHAR(255) NOT NULL,
+            importance FLOAT NOT NULL,
+            created_at FLOAT NOT NULL,
+            updated_at FLOAT NOT NULL,
+            last_accessed_at FLOAT NOT NULL,
+            access_count INTEGER NOT NULL,
+            source VARCHAR(64) NOT NULL,
+            status VARCHAR(16) NOT NULL
+        );
+        CREATE TABLE memory_terms (
+            memory_id VARCHAR(64) NOT NULL,
+            term VARCHAR(128) NOT NULL,
+            weight FLOAT NOT NULL,
+            PRIMARY KEY (memory_id, term)
+        );
+        CREATE TABLE memory_migrations (
+            name VARCHAR(64) PRIMARY KEY,
+            migrated_at FLOAT NOT NULL,
+            imported_count INTEGER NOT NULL
+        );
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    async def scenario():
+        store = MemoryStore(db_path)
+        await store.initialize()
+        try:
+            item = await store.add("旧数据库兼容", "global", "")
+            assert item["memory_type"] == "fact"
         finally:
             await store.close()
 
