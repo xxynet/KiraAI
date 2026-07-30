@@ -56,6 +56,25 @@ def test_legacy_core_txt_migration_is_idempotent(tmp_path: Path):
     run(scenario())
 
 
+def test_memory_limit_is_enforced_per_scope(tmp_path: Path):
+    async def scenario():
+        store = MemoryStore(tmp_path / "memory.db", max_memories=1)
+        await store.initialize()
+        try:
+            global_item = await store.add("global fact", "global", "", importance=0.1)
+            user_item = await store.add("important user fact", "user", "qq:1", importance=0.9)
+            await store.add("temporary user fact", "user", "qq:1", importance=0.1)
+
+            global_items = await store.list([("global", "")])
+            user_items = await store.list([("user", "qq:1")])
+            assert [item["id"] for item in global_items] == [global_item["id"]]
+            assert [item["id"] for item in user_items] == [user_item["id"]]
+        finally:
+            await store.close()
+
+    run(scenario())
+
+
 def test_private_and_group_scope_semantics():
     plugin = MemoryPlugin(None, {})
     private_event = SimpleNamespace(

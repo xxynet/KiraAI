@@ -168,19 +168,24 @@ class MemoryStore:
         async with self.lock:
             async with self.db.transaction() as session:
                 result = await self._insert(session, text, scope, owner_id, importance, source)
-                await self._prune(session)
+                await self._prune(session, scope, owner_id)
                 return result
 
-    async def _prune(self, session: AsyncSession) -> None:
+    async def _prune(self, session: AsyncSession, scope: str, owner_id: str) -> None:
+        target = (
+            MemoryRecord.scope == scope,
+            MemoryRecord.owner_id == owner_id,
+            MemoryRecord.status == "active",
+        )
         count = await session.scalar(select(func.count()).select_from(MemoryRecord).where(
-            MemoryRecord.status == "active"
+            *target
         ))
         overflow = max(0, int(count or 0) - self.max_memories)
         if not overflow:
             return
         victims = (await session.scalars(
             select(MemoryRecord)
-            .where(MemoryRecord.status == "active")
+            .where(*target)
             .order_by(MemoryRecord.importance.asc(), MemoryRecord.last_accessed_at.asc())
             .limit(overflow)
         )).all()
