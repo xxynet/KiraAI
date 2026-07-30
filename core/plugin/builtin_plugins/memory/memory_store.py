@@ -283,7 +283,17 @@ class MemoryStore:
                     scored.append((score, item))
 
                 scored.sort(key=lambda value: value[0], reverse=True)
-                return [self._as_dict(item, score) for score, item in scored[:max(1, limit)]]
+                results = []
+                seen_texts = set()
+                for score, item in scored:
+                    normalized = normalize_text(item.text)
+                    if normalized in seen_texts:
+                        continue
+                    seen_texts.add(normalized)
+                    results.append(self._as_dict(item, score))
+                    if len(results) >= max(1, limit):
+                        break
+                return results
 
     async def migrate_legacy(self, legacy_path: Path) -> int:
         """Import non-empty lines from the old core.txt exactly once."""

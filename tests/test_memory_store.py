@@ -1,7 +1,9 @@
 import asyncio
+from types import SimpleNamespace
 from pathlib import Path
 
 from core.plugin.builtin_plugins.memory.memory_store import MemoryStore, tokenize
+from core.plugin.builtin_plugins.memory.main import MemoryPlugin
 
 
 def run(coro):
@@ -52,3 +54,30 @@ def test_legacy_core_txt_migration_is_idempotent(tmp_path: Path):
             await store.close()
 
     run(scenario())
+
+
+def test_private_and_group_scope_semantics():
+    plugin = MemoryPlugin(None, {})
+    private_event = SimpleNamespace(
+        session=SimpleNamespace(sid="qq:dm:100"),
+        adapter=SimpleNamespace(name="qq"),
+        messages=[SimpleNamespace(
+            sender=SimpleNamespace(user_id="100"),
+            group=None,
+        )],
+    )
+    group_event = SimpleNamespace(
+        session=SimpleNamespace(sid="qq:gm:200"),
+        adapter=SimpleNamespace(name="qq"),
+        messages=[SimpleNamespace(
+            sender=SimpleNamespace(user_id="100"),
+            group=SimpleNamespace(group_id="200"),
+        )],
+    )
+
+    assert plugin._scope_owner(private_event, "") == ("user", "qq:100")
+    assert plugin._scopes(private_event) == [("global", ""), ("user", "qq:100")]
+    assert plugin._scope_owner(group_event, "") == ("session", "qq:gm:200")
+    assert plugin._scopes(group_event) == [
+        ("global", ""), ("session", "qq:gm:200"), ("user", "qq:100")
+    ]

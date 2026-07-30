@@ -25,7 +25,8 @@ MEM_TOOL_FEW_SHOT = """
 - 重要且稳定的信息可以使用 `memory_add` 保存。
 - 添加前先判断是否已有相同事实；事实变化时优先更新旧记忆。
 - 普通闲聊、一次性状态和未经确认的推测不要保存。
-- 记忆支持 global、user、session 三种范围；未指定时保存为 global。
+- 私聊未指定范围时保存到 user；群聊未指定范围时保存到当前 session。
+- 私聊不要使用 session 范围；群聊专属内容才使用 session 范围。
 - 系统会自动按当前消息检索相关记忆，不要主动请求全部记忆。
 """
 
@@ -79,11 +80,23 @@ class MemoryPlugin(BasePlugin):
         adapter_name = getattr(adapter, "name", "") if adapter else ""
         return f"{adapter_name}:{user_id}" if user_id else ""
 
+    @classmethod
+    def _is_group(cls, event) -> bool:
+        messages = getattr(event, "messages", None) or []
+        message = messages[-1] if messages else getattr(event, "message", None)
+        if message is not None:
+            return getattr(message, "group", None) is not None
+        return ":gm:" in cls._sid(event)
+
     def _scope_owner(self, event, scope: str, owner_id: str = "") -> tuple[str, str]:
-        scope = (scope or "global").strip().lower()
+        scope = (scope or "").strip().lower()
+        if not scope:
+            scope = "session" if self._is_group(event) else "user"
         if scope not in VALID_SCOPES:
             raise ValueError(f"Unsupported memory scope: {scope}")
         if scope == "session":
+            if not self._is_group(event):
+                raise ValueError("Session memories are only available in group chats")
             owner_id = owner_id or self._sid(event)
         elif scope == "user":
             owner_id = owner_id or self._owner_id(event)
@@ -106,7 +119,7 @@ class MemoryPlugin(BasePlugin):
         scopes = [("global", "")]
         sid = self._sid(event)
         owner = self._owner_id(event)
-        if sid:
+        if self._is_group(event) and sid:
             scopes.append(("session", sid))
         if owner:
             scopes.append(("user", owner))
@@ -114,7 +127,7 @@ class MemoryPlugin(BasePlugin):
 
     @register.tool(
         name="memory_add",
-        description="保存一条结构化长期记忆。scope 可为 global、user 或 session。",
+        description="保存一条结构化长期记忆。私聊默认 user，群聊默认 session，也可显式指定 scope。",
         params={
             "type": "object",
             "properties": {
@@ -125,7 +138,7 @@ class MemoryPlugin(BasePlugin):
             "required": ["text"],
         },
     )
-    async def memory_add(self, event, text: str, scope: str = "global",
+    async def memory_add(self, event, text: str, scope: str = "",
                          importance: float = 0.5) -> str:
         scope, owner_id = self._scope_owner(event, scope)
         item = await self.store.add(text, scope, owner_id, importance)
