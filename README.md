@@ -130,6 +130,9 @@ Run the project & enter webui to configure:
 - Persona
 ...
 
+> [!NOTE]
+> **Telemetry**: KiraAI collects anonymous usage statistics (version, platform, message/LLM usage counts — **no chat content**) and reports them to `https://telemetry.kira-ai.top`. It is **enabled by default**. To disable it, set the environment variable `KIRA_TELEMETRY_ENABLED=0` or set `"telemetry": { "enabled": false }` in `data/config/system_config.json`.
+
 ## 🗂️ Project Structure
 
 <details>

@@ -129,6 +129,9 @@ scripts/run.sh
 - 人设
 ...
 
+> [!NOTE]
+> **遥测（Telemetry）**：KiraAI 会收集匿名使用统计（版本、平台、消息/LLM 用量计数——**不含聊天内容**）并上报至 `https://telemetry.kira-ai.top`，**默认开启**。如需关闭，可设置环境变量 `KIRA_TELEMETRY_ENABLED=0`，或将 `data/config/system_config.json` 中的 `"telemetry": { "enabled": false }` 改为 `false`。
+
 ## 🗂️ 项目结构
 
 <details>
