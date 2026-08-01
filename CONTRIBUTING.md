@@ -114,7 +114,7 @@ The Vite dev server starts on `:3000` and proxies API requests to the Python bac
 ### Docker (optional)
 
 ```bash
-docker compose up --build
+docker compose up -d
 ```
 
 ---

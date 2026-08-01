@@ -19,7 +19,7 @@ KiraAI, a modular, multi-platform AI digital life that connects various AI model
 - Easy-to-use WebUI
 - Customizable LLM providers and models
 - Flexible message sending mechanism, various message elements
-- Add-ons, expand the boundarieds of AI digital life
+- Plugins, expand the boundaries of AI digital life
 
 ## 📷 ScreenShots
 
@@ -58,6 +58,22 @@ Go to [Releases](https://github.com/xxynet/KiraAI/releases) and download `Source
 (zip)` from the release tagged latest
 
 Extract zip and run `scripts/run.bat` on Windows or run `scripts/run.sh` on Linux or Mac
+
+### 🐳 Docker (alternative)
+
+Prefer containers? Make sure [Docker](https://docs.docker.com/get-docker/) is installed, then run:
+
+```bash
+docker compose up -d
+```
+
+KiraAI will be served at `http://localhost:5267`. Runtime state (config, memory, plugins, DB) is persisted under `./data`.
+
+```bash
+docker compose logs -f    # follow logs
+docker compose down       # stop the container
+docker compose pull       # update to the latest image
+```
 
 ## 🧪 Development Guide
 
@@ -122,6 +138,12 @@ Run the project & enter webui to configure:
 ```
 KiraAI/
   core/               # Core modules
+    event_bus.py        # EventBus: async pub/sub bus for internal & platform events
+    launcher.py         # KiraLauncher: boots the WebUI & manages the lifecycle
+    lifecycle.py        # KiraLifecycle: central manager of modules & background tasks
+    llm_client.py       # LLMClient: unified LLM client with tool-calling support
+    logging_manager.py  # Colored console logging + rotating file handler
+    temp_monitor.py     # AsyncTempMonitor: async cleanup of temp/cache folders
     adapter/           # Chat platform adapters
     agent/             # Agent executor, MCP & skill management
     chat/              # Session management & message handling
