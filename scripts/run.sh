@@ -12,6 +12,15 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   PYTHON_BIN="python"
 fi
 
+# Use uv when available (much faster); fall back to venv + pip otherwise
+USE_UV=0
+if command -v uv >/dev/null 2>&1; then
+  USE_UV=1
+  # Keep uv's project environment at venv/ (uv would default to .venv/)
+  export UV_PROJECT_ENVIRONMENT=venv
+  echo "Found uv, using it to manage the environment."
+fi
+
 # Step 1: Migrate .venv -> venv (backward compatibility)
 if [ -d .venv ] && [ ! -d venv ]; then
   echo "[compat] Renaming .venv to venv..."
@@ -21,7 +30,11 @@ fi
 # Step 1: Create venv if missing
 if [ ! -d venv ]; then
   echo "[1/3] Creating virtual environment..."
-  "$PYTHON_BIN" -m venv venv
+  if [ "$USE_UV" -eq 1 ]; then
+    uv venv venv
+  else
+    "$PYTHON_BIN" -m venv venv
+  fi
 else
   echo "Virtual environment already exists."
 fi
@@ -32,7 +45,7 @@ echo "[2/3] Activating virtual environment..."
 source venv/bin/activate
 
 # Step 3: Test pip mirrors and select fastest
-echo "[3/3] Testing pip mirrors..."
+echo "[3/3] Testing PyPI mirrors..."
 
 MIRROR=""
 BEST_SPEED=0
@@ -80,9 +93,15 @@ else
   MIRROR="-i https://pypi.org/simple/"
 fi
 
-python -m pip install --upgrade pip $MIRROR
+if [ "$USE_UV" -eq 0 ]; then
+  python -m pip install --upgrade pip $MIRROR
+fi
 if [ -f requirements.txt ]; then
-  pip install -r requirements.txt $MIRROR
+  if [ "$USE_UV" -eq 1 ]; then
+    uv pip install -r requirements.txt $MIRROR
+  else
+    pip install -r requirements.txt $MIRROR
+  fi
 else
   echo "requirements.txt not found, skipping dependency installation."
 fi

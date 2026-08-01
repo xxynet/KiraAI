@@ -9,7 +9,7 @@ KiraAI is a modular, multi-platform AI "digital life" system that connects vario
 - **GitHub**: https://github.com/xxynet/KiraAI
 - **Docs**: https://docs.kira-ai.top
 
-Version is defined in `core/config/default.py`.
+Version is defined in `core/config/default.py` and mirrored in `pyproject.toml`.
 
 ## Development Commands
 
@@ -21,6 +21,19 @@ python main.py --env dev          # Dev mode (enables API docs + access logs)
 python -m pytest tests/ -v        # Run all tests
 python -m pytest tests/test_config_loader.py -v  # Run a single test file
 ```
+
+Either pip or [uv](https://docs.astral.sh/uv/) can manage the environment:
+
+```bash
+pip install -r requirements.txt        # pip
+export UV_PROJECT_ENVIRONMENT=venv     # uv: keep the environment at venv/, not .venv/
+uv sync                                # uv: create venv/ and install (dev group included)
+uv run python main.py                  # Run without activating the environment
+```
+
+The environment directory is always `venv/`. `.python-version` pins the
+interpreter to 3.11 (same as the Docker image); `requires-python` stays `>=3.10`
+because CI tests 3.10–3.12.
 
 ### Frontend (Node.js 18+, Vue 3 + Vite)
 
@@ -43,6 +56,8 @@ docker-compose up
 - PR body **must** strictly follow `.github/PULL_REQUEST_TEMPLATE.md` — read it before every `gh pr create`, fill every required section, and never freestyle the body.
 - Always check `core/utils/` for existing reusable interfaces before writing new ones.
 - All new code comments must be written in English.
+- New runtime dependencies must be added to **both** `requirements.txt` and `pyproject.toml`; `tests/test_pyproject_sync.py` fails if they drift.
+- Never shell out to `sys.executable -m pip` — environments created by `uv venv` have no pip. Use `core/utils/pkg_installer.py` instead.
 
 ## Architecture
 

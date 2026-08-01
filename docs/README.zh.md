@@ -104,6 +104,9 @@ chmod +x scripts/run.sh
 scripts/run.sh
 ```
 
+两个脚本首次运行时会创建 `venv/` 并安装 `requirements.txt`。若 `PATH` 中存在
+[uv](https://docs.astral.sh/uv/)，脚本会用 uv 代替 `venv` + `pip`，速度快很多。
+
 </details>
 
 ## ⚙️ 配置项

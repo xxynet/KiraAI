@@ -16,7 +16,6 @@ After installation call PluginManager.load_plugin_from_dir() to activate the plu
 import asyncio
 import json
 import shutil
-import sys
 import uuid
 import zipfile
 from pathlib import Path
@@ -26,6 +25,7 @@ from core.logging_manager import get_logger
 from core.utils.github_api import parse_github_url, pick_fastest_source
 from core.utils.network import download_file
 from core.utils.path_utils import get_data_path, is_within_directory
+from core.utils.pkg_installer import build_install_command
 
 logger = get_logger("plugin_installer", "cyan")
 
@@ -109,7 +109,8 @@ async def install_from_zip(
 
 async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = None) -> List[str]:
     """
-    Install dependencies listed in the plugin's requirements.txt using pip.
+    Install dependencies listed in the plugin's requirements.txt using pip or uv,
+    whichever is available in the current environment.
 
     Returns a list of warning strings (empty if everything succeeded).
     Does NOT raise; failures are returned as warnings so the caller can
@@ -120,26 +121,26 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
         return []
 
     logger.info(f"Installing requirements for plugin at {plugin_dir}")
-    pip_cmd = [sys.executable, "-m", "pip", "install", "-r", str(req_file)]
-    if pypi_mirror:
-        if pypi_mirror.startswith(("http://", "https://")):
-            pip_cmd.extend(["-i", pypi_mirror])
-        else:
-            logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {pypi_mirror}")
+    try:
+        install_cmd = build_install_command(["-r", str(req_file)], pypi_mirror)
+    except RuntimeError as e:
+        logger.warning(f"Cannot install requirements for {plugin_dir.name}: {e}")
+        return [str(e)]
+
     try:
         proc = await asyncio.create_subprocess_exec(
-            *pip_cmd,
+            *install_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
     except Exception as e:
-        return [f"Failed to run pip: {e}"]
+        return [f"Failed to run {install_cmd[0]}: {e}"]
 
     if proc.returncode != 0:
         msg = stderr.decode(errors="replace").strip()
-        logger.warning(f"pip install failed for {plugin_dir.name}: {msg}")
-        return [f"pip install failed (exit {proc.returncode}): {msg}"]
+        logger.warning(f"Dependency install failed for {plugin_dir.name}: {msg}")
+        return [f"Dependency install failed (exit {proc.returncode}): {msg}"]
 
     logger.info(f"Requirements installed for plugin '{plugin_dir.name}'")
     return []

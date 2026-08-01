@@ -12,6 +12,7 @@ from core.chat import KiraMessageBatchEvent
 from core.provider import LLMRequest
 
 from core.utils.path_utils import get_data_path
+from core.utils.pkg_installer import build_pip_shell_prefix
 
 restricted_paths = ['~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/', '.pem',
                     '.p12', 'key', 'secret', 'password', 'token', 'credential']
@@ -705,13 +706,19 @@ class FilePlugin(BasePlugin):
                 import sys
                 shell_command = f'"{sys.executable}" ' + shell_command[len(py_prefix):]
 
-        # Resolve pip path if it's a pip command
+        # Resolve pip path if it's a pip command (falls back to uv when pip is absent)
+        pip_env: dict = {}
         for pip_prefix in ("pip ", "pip3 "):
             if shell_command.startswith(pip_prefix):
-                import sys
-                shell_command = f'"{sys.executable}" -m pip ' + shell_command[len(pip_prefix):]
+                try:
+                    prefix, pip_env = build_pip_shell_prefix()
+                except RuntimeError as e:
+                    logger.warning(f'Cannot run pip command: {e}')
+                    return f'Cannot run pip command: {e}'
+                shell_command = f'{prefix} ' + shell_command[len(pip_prefix):]
 
         env = os.environ.copy()
+        env.update(pip_env)
         env['PYTHONIOENCODING'] = 'utf-8'
         if os.name == 'nt':
             shell_command = f'chcp 65001 >nul && {shell_command}'

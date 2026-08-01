@@ -1,12 +1,12 @@
 import asyncio
 import json
-import sys
 
 from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from core.logging_manager import get_logger, log_cache_manager
+from core.utils.pkg_installer import build_install_command, describe_backend
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 
@@ -113,17 +113,17 @@ class LogsRoutes(Routes):
             return {"maxQueueSize": 100}
 
     async def install_packages(self, body: InstallPackagesRequest):
-        """POST endpoint that kicks off pip install in background."""
+        """POST endpoint that kicks off a package install in background."""
         packages = body.packages.strip()
         if not packages:
             raise HTTPException(status_code=400, detail="No packages specified")
         if self._install_task and not self._install_task.done():
             raise HTTPException(status_code=409, detail="Another installation is already in progress")
-        self._install_task = asyncio.create_task(self._run_pip_install(packages, body.pypi_mirror))
+        self._install_task = asyncio.create_task(self._run_package_install(packages, body.pypi_mirror))
         return {"status": "started"}
 
-    async def _run_pip_install(self, packages: str, pypi_mirror: str | None = None):
-        """Background task: run pip install and stream output to the logger."""
+    async def _run_package_install(self, packages: str, pypi_mirror: str | None = None):
+        """Background task: run the package install and stream output to the logger."""
         # Fall back to global pypi_mirror config if user didn't provide one
         if not pypi_mirror:
             config = getattr(self.lifecycle, "kira_config", None)
@@ -131,12 +131,12 @@ class LogsRoutes(Routes):
                 pypi_mirror = (config.get("network") or {}).get("pypi_mirror") or None
 
         logger.info(f"Starting package installation: {packages}")
-        cmd = [sys.executable, "-u", "-m", "pip", "install", *packages.split()]
-        if pypi_mirror:
-            if pypi_mirror.startswith(("http://", "https://")):
-                cmd.extend(["-i", pypi_mirror])
-            else:
-                logger.warning(f"Ignoring invalid pypi_mirror: {pypi_mirror}")
+        try:
+            cmd = build_install_command(packages.split(), pypi_mirror, unbuffered=True)
+        except RuntimeError as e:
+            logger.error(f"Package installation error: {e}")
+            return
+        logger.info(f"Using installer backend: {describe_backend()}")
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,

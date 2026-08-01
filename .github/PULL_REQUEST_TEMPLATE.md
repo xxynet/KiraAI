@@ -30,6 +30,6 @@
 
 - [ ] I have tested these changes locally
 - [ ] I have updated documentation if needed
-- [ ] New dependencies have been added to `requirements.txt` (if applicable)
+- [ ] New dependencies have been added to both `requirements.txt` and `pyproject.toml` (if applicable)
 - [ ] If this PR introduces new features, they have been discussed with the owner or maintainer
 - [ ] This PR does not introduce breaking changes
