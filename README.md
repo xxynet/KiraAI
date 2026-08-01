@@ -19,7 +19,7 @@ KiraAI, a modular, multi-platform AI digital life that connects various AI model
 - Easy-to-use WebUI
 - Customizable LLM providers and models
 - Flexible message sending mechanism, various message elements
-- Add-ons, expand the boundarieds of AI digital life
+- Plugins, expand the boundaries of AI digital life
 
 ## 📷 ScreenShots
 
@@ -122,6 +122,12 @@ Run the project & enter webui to configure:
 ```
 KiraAI/
   core/               # Core modules
+    event_bus.py        # EventBus: async pub/sub bus for internal & platform events
+    launcher.py         # KiraLauncher: boots the WebUI & lifecycle
+    lifecycle.py        # KiraLifecycle: central manager of all modules & background tasks
+    llm_client.py       # LLMClient: unified LLM client with tool-calling support
+    logging_manager.py  # Colored console logging + rotating file handler
+    temp_monitor.py     # AsyncTempMonitor: async cleanup of temp/cache folders
     adapter/           # Chat platform adapters
     agent/             # Agent executor, MCP & skill management
     chat/              # Session management & message handling

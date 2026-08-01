@@ -114,8 +114,11 @@ The Vite dev server starts on `:3000` and proxies API requests to the Python bac
 ### Docker (optional)
 
 ```bash
-docker compose up --build
+# Pull the prebuilt image (xxynet/kira-ai:latest) and start in the background
+docker compose up -d
 ```
+
+> `docker-compose.yml` references the prebuilt image and has no `build` section, so `--build` is not needed. Stop the container with `docker compose down`.
 
 ---
 

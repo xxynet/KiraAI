@@ -19,7 +19,7 @@ KiraAI，一个模块化、跨平台的 AI 数字生命项目，以数字生命�
 - 易于使用的 WebUI
 - 可自定义的 LLM 提供商与模型
 - 灵活的消息发送机制，丰富的消息元素支持
-- 附加功能，可自行拓展数字生命能力边界
+- 插件（Plugin），可自行拓展数字生命能力边界
 
 ## 📷 截图
 
@@ -121,6 +121,12 @@ scripts/run.sh
 ```
 KiraAI/
   core/               # 核心模块
+    event_bus.py        # 事件总线：内部与平台事件的异步发布/订阅
+    launcher.py         # KiraLauncher：启动 WebUI 与生命周期
+    lifecycle.py        # KiraLifecycle：所有模块与后台任务的核心管理器
+    llm_client.py       # LLMClient：统一 LLM 客户端（含工具调用）
+    logging_manager.py  # 彩色控制台日志 + 滚动文件日志
+    temp_monitor.py     # AsyncTempMonitor：异步清理临时/缓存目录
     adapter/           # 适配器（聊天平台接入）
     agent/             # 代理执行器、MCP 管理、技能管理
     chat/              # 会话管理与消息处理
