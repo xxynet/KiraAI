@@ -44,7 +44,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 
 ### Reporting Bugs
 
-Before opening a new issue, please **[search existing issues](https://github.com/xxynet/KiraAI/issues)** to check if the same bug has already been reported. If you find an existing issue that matches yours, add your information as a comment instead of creating a duplicate.
+Before opening a new issue, please **[search existing issues](https://github.com/xxynet/KiraAI/issues)** to check if the same bug has already been reported. If you find an existing issue that matches yours, add your comment instead of creating a duplicate.
 
 If no existing issue covers your bug, [open a new issue](https://github.com/xxynet/KiraAI/issues/new) with:
 
@@ -114,8 +114,11 @@ The Vite dev server starts on `:3000` and proxies API requests to the Python bac
 ### Docker (optional)
 
 ```bash
-docker compose up --build
+# Pull the prebuilt image (xxynet/kira-ai:latest) and start in the background
+docker compose up -d
 ```
+
+> `docker-compose.yml` references the prebuilt image and has no `build` section, so `--build` is not needed. Stop the container with `docker compose down`.
 
 ---
 

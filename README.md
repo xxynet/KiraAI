@@ -19,7 +19,7 @@ KiraAI, a modular, multi-platform AI digital life that connects various AI model
 - Easy-to-use WebUI
 - Customizable LLM providers and models
 - Flexible message sending mechanism, various message elements
-- Add-ons, expand the boundarieds of AI digital life
+- Plugins, expand the boundaries of AI digital life
 
 ## 📷 ScreenShots
 
@@ -58,6 +58,24 @@ Go to [Releases](https://github.com/xxynet/KiraAI/releases) and download `Source
 (zip)` from the release tagged latest
 
 Extract zip and run `scripts/run.bat` on Windows or run `scripts/run.sh` on Linux or Mac
+
+### 🐳 Docker (alternative)
+
+Prefer containers? Make sure [Docker](https://docs.docker.com/get-docker/) is installed, then:
+
+```bash
+# Pull the prebuilt image and start in the background
+docker compose up -d
+```
+
+KiraAI will be served at `http://localhost:5267`. Runtime data is persisted under `./data` (mounted to `/app/data` inside the container).
+
+```bash
+docker compose logs -f    # follow logs
+docker compose down       # stop the container
+```
+
+> `docker-compose.yml` pulls `xxynet/kira-ai:latest` from Docker Hub by default and contains no `build` section.
 
 ## 🧪 Development Guide
 
@@ -114,6 +132,61 @@ Run the project & enter webui to configure:
 - Persona
 ...
 
+## 🛠️ CLI Parameters
+
+KiraAI can be launched from the command line. All parameters are optional; sensible defaults are used when omitted.
+
+| Parameter | Description | Default | Example |
+| --- | --- | --- | --- |
+| `--data-dir <path>` | Directory where KiraAI stores runtime data (databases, logs, cache, session files). | `./data` | `kiraai --data-dir /var/lib/kiraai` |
+| `--env <dev\|prod>` | Runtime environment. `dev` enables debug logging, hot reload, and verbose errors; `prod` enables optimized behavior and production-grade logging. Can also be set via the `KIRA_ENV` environment variable. | `prod` | `kiraai --env dev` |
+| `--disable-webui-auth` | Disables authentication for the WebUI. Only recommended on trusted local networks. | Off (auth enabled) | `kiraai --disable-webui-auth` |
+| `--telemetry-server <url>` | Overrides the endpoint that telemetry data is reported to. Can also be set via the `KIRA_TELEMETRY_SERVER` environment variable. | Default KiraAI telemetry endpoint | `kiraai --telemetry-server https://telemetry.example.com` |
+| `--webui-dir <path>` | Path to a custom WebUI static directory (frontend build) to serve instead of the bundled one. | Bundled WebUI | `kiraai --webui-dir ./webui/dist` |
+| `--ignore-webui-version-check` | Skips the WebUI ↔ backend version compatibility check. Useful when running a custom-built or mismatched WebUI version. | Off (version check enabled) | `kiraai --ignore-webui-version-check` |
+
+### Environment variables
+
+| Variable | Description |
+| --- | --- |
+| `KIRA_ENV` | Equivalent to `--env`. Accepted values: `dev`, `prod`. |
+| `KIRA_TELEMETRY_SERVER` | Equivalent to `--telemetry-server`. |
+
+## 📡 Telemetry
+
+KiraAI collects anonymous telemetry data to understand how the project is used, prioritize development efforts, and improve stability. Telemetry is **enabled by default**.
+
+### What is collected
+
+- **Anonymous usage data** — aggregate statistics: message counts per platform, LLM call counts and token usage, average response time.
+- **Runtime environment** — KiraAI version, Python version, OS platform.
+- **Client identifier** — a randomly generated, anonymous installation ID.
+- **Country code** — resolved once at startup via a third-party service (`ip-api.com`, plain HTTP) based on your public IP address.
+
+No chat content, message history, personal information, or file/configuration contents are collected or transmitted.
+
+### Disabling telemetry
+
+Telemetry is on by default. Disable it in either of the following ways:
+
+**Via environment variable** (recommended):
+
+```bash
+KIRA_TELEMETRY_ENABLED=0 python main.py
+```
+
+**Via `system_config.json`** — set `telemetry.enabled` to `false` and restart KiraAI:
+
+```json
+{
+  "telemetry": {
+    "enabled": false
+  }
+}
+```
+
+> Note: there is currently no WebUI switch for telemetry.
+
 ## 🗂️ Project Structure
 
 <details>
@@ -122,6 +195,12 @@ Run the project & enter webui to configure:
 ```
 KiraAI/
   core/               # Core modules
+    event_bus.py        # EventBus: async pub/sub bus for internal & platform events
+    launcher.py         # KiraLauncher: boots the WebUI & lifecycle
+    lifecycle.py        # KiraLifecycle: central manager of all modules & background tasks
+    llm_client.py       # LLMClient: unified LLM client with tool-calling support
+    logging_manager.py  # Colored console logging + rotating file handler
+    temp_monitor.py     # AsyncTempMonitor: async cleanup of temp/cache folders
     adapter/           # Chat platform adapters
     agent/             # Agent executor, MCP & skill management
     chat/              # Session management & message handling

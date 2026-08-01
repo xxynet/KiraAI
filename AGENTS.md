@@ -34,7 +34,7 @@ npm run build    # Type-check (vue-tsc) + build → webui/static/dist/
 ### Docker
 
 ```bash
-docker-compose up
+docker compose up -d
 ```
 
 ## Rules
