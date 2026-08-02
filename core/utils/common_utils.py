@@ -76,7 +76,7 @@ async def _download_image_bytes(image_url: str) -> bytes:
             pass  # 直连也不通，继续走代理尝试，由下方流程抛出最终的异常
     try:
         return await _fetch_image_bytes(image_url, timeout, trust_env=True)
-    except (httpx.ConnectTimeout, httpx.ConnectError):
+    except (httpx.ConnectTimeout, httpx.ConnectError, httpx.ProxyError):
         # 系统代理不可达，记录失败时间并回退直连
         _proxy_failed_at = time.monotonic()
         return await _fetch_image_bytes(image_url, timeout, trust_env=False)
