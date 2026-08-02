@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import base64
 import httpx
-import os
-import ssl
-import time
-import urllib.request
 
 from typing import Union, TYPE_CHECKING
 
@@ -38,84 +34,15 @@ async def image_to_base64(image_path: str):
     :return: Base64编码的字符串
     """
     if image_path.startswith(("http://", "https://")):
-        image_data = await _download_image_bytes(image_path)
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(image_path)
+            resp.raise_for_status()
+            image_data = resp.content
         base64_data = base64.b64encode(image_data)
         return base64_data.decode('utf-8')
     with open(image_path, 'rb') as image_file:
         base64_data = base64.b64encode(image_file.read())
     return base64_data.decode('utf-8')
-
-
-# 代理连接失败后的直连偏好：避免死代理环境下每次下载都白等一个连接超时，
-# 超过重试间隔后会重新尝试代理，代理恢复即可自动切回
-_proxy_failed_at: float | None = None
-_PROXY_RETRY_INTERVAL = 600.0
-
-
-def _make_direct_transport() -> httpx.AsyncHTTPTransport:
-    """
-    构建完全不经过代理的 transport。仅在配置了 SSL_CERT_FILE / SSL_CERT_DIR
-    环境变量时手动构建 TLS context 保留自定义 CA 证书；否则使用 httpx 默认的
-    CA 选择（certifi），与常规请求路径保持一致。
-    """
-    cafile = os.environ.get("SSL_CERT_FILE")
-    capath = os.environ.get("SSL_CERT_DIR")
-    if cafile or capath:
-        ssl_context = ssl.create_default_context(cafile=cafile, capath=capath)
-        return httpx.AsyncHTTPTransport(verify=ssl_context)
-    return httpx.AsyncHTTPTransport()
-
-
-def _would_use_proxy(image_url: str) -> bool:
-    """判断该 URL 按当前环境变量配置是否会走系统代理（考虑 NO_PROXY 绕过名单）"""
-    if not urllib.request.getproxies():
-        return False
-    host = httpx.URL(image_url).host or ""
-    return not urllib.request.proxy_bypass(host)
-
-
-async def _fetch_image_bytes(image_url: str, timeout: httpx.Timeout, trust_env: bool) -> bytes:
-    """按指定的代理策略下载图片，trust_env=False 表示绕过系统代理（仍保留自定义 CA 证书配置）"""
-    if trust_env:
-        client = httpx.AsyncClient(trust_env=True, timeout=timeout)
-    else:
-        # 显式传入 transport 后 httpx 不会再读取代理环境变量，等效于绕过代理直连
-        client = httpx.AsyncClient(transport=_make_direct_transport(), timeout=timeout)
-    async with client:
-        resp = await client.get(image_url)
-        resp.raise_for_status()
-        return resp.content
-
-
-async def _download_image_bytes(image_url: str) -> bytes:
-    """
-    下载图片字节内容。默认走系统代理（与之前行为一致，不影响依赖代理访问外网图片的用户），
-    代理连接失败时回退直连并记住该状态：之后一段时间内优先直连，避免每次都白等代理超时；
-    超过 _PROXY_RETRY_INTERVAL 后重新尝试代理，代理恢复则自动切回。
-    :param image_url: 图片网络URL
-    :return: 图片字节内容
-    """
-    global _proxy_failed_at
-    # connect 只约束建连（TCP+TLS）：正常路径几百毫秒内完成，3s 已是数倍余量；
-    # 过长的 connect 超时只会让黑洞型代理的探测白等。下载阶段的 20s 保持不变。
-    timeout = httpx.Timeout(20.0, connect=3.0)
-    if _proxy_failed_at is not None and time.monotonic() - _proxy_failed_at < _PROXY_RETRY_INTERVAL:
-        try:
-            return await _fetch_image_bytes(image_url, timeout, trust_env=False)
-        except (httpx.ConnectTimeout, httpx.ConnectError):
-            pass  # 直连也不通，继续走代理尝试，由下方流程抛出最终的异常
-    try:
-        return await _fetch_image_bytes(image_url, timeout, trust_env=True)
-    except httpx.ProxyError:
-        # 明确是代理故障，记录失败时间并回退直连
-        _proxy_failed_at = time.monotonic()
-        return await _fetch_image_bytes(image_url, timeout, trust_env=False)
-    except (httpx.ConnectTimeout, httpx.ConnectError):
-        # 可能是代理黑洞，也可能是 NO_PROXY 命中的直连失败——
-        # 只有确认该 URL 确实会走代理时才把失败记到代理头上
-        if _would_use_proxy(image_url):
-            _proxy_failed_at = time.monotonic()
-        return await _fetch_image_bytes(image_url, timeout, trust_env=False)
 
 
 async def desc_img(
