@@ -40,12 +40,15 @@ export async function setCurrentSource(sourceId: string): Promise<void> {
 export interface PluginStoreFetchResult {
   items: PluginStoreItem[]
   usedCacheFallback: boolean
+  cacheFallbackStatus: number | null
 }
 
 export async function fetchPluginsFromSource(sourceId: string, forceRefresh: boolean = false): Promise<PluginStoreFetchResult> {
   const res = await apiClient.post('/plugin-store/fetch', { source_id: sourceId, force_refresh: forceRefresh })
+  const fallbackStatus = Number.parseInt(res.headers['x-plugin-store-cache-fallback-status'] || '', 10)
   return {
     items: res.data,
     usedCacheFallback: res.headers['x-plugin-store-cache-fallback'] === 'true',
+    cacheFallbackStatus: Number.isInteger(fallbackStatus) ? fallbackStatus : null,
   }
 }

@@ -583,6 +583,7 @@ class PluginsRoutes(Routes):
                     raw_data = self._read_plugin_store_cache(cache_file)
 
             used_cache_fallback = False
+            cache_fallback_status: Optional[int] = None
             if raw_data is None:
                 try:
                     raw_data = await PluginManager.fetch_plugin_store_data(url)
@@ -594,6 +595,7 @@ class PluginsRoutes(Routes):
                     if raw_data is None:
                         raise fetch_error
                     used_cache_fallback = True
+                    cache_fallback_status = self._plugin_store_error_status(fetch_error)
                     logger.warning(
                         "Failed to refresh plugin store %s; using local cache: %s",
                         url,
@@ -620,6 +622,9 @@ class PluginsRoutes(Routes):
 
             if used_cache_fallback:
                 response.headers["X-Plugin-Store-Cache-Fallback"] = "true"
+                response.headers["X-Plugin-Store-Cache-Fallback-Status"] = str(
+                    cache_fallback_status
+                )
 
             items = self._extract_plugins(raw_data)
             result: List[PluginStoreItemResponse] = []
@@ -655,6 +660,20 @@ class PluginsRoutes(Routes):
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"Failed to read plugin store cache {cache_path}: {e}")
             return None
+
+    @staticmethod
+    def _plugin_store_error_status(error: Exception) -> int:
+        """Return an HTTP status from a store error, or the API's validation status."""
+        status_code = getattr(error, "status_code", None)
+        if isinstance(status_code, int):
+            return status_code
+
+        error_response = getattr(error, "response", None)
+        status_code = getattr(error_response, "status_code", None)
+        if isinstance(status_code, int):
+            return status_code
+
+        return 422
 
     @staticmethod
     def _extract_plugins(raw_data: Any) -> List[Dict[str, Any]]:

@@ -46,3 +46,11 @@ async def test_fetch_plugin_store_uses_cache_when_refresh_fails(tmp_path, monkey
 
     assert [item.id for item in result] == ["cached-plugin"]
     assert response.headers["X-Plugin-Store-Cache-Fallback"] == "true"
+    assert response.headers["X-Plugin-Store-Cache-Fallback-Status"] == "422"
+
+
+def test_plugin_store_error_status_uses_remote_response_status():
+    error = RuntimeError("store returned an error")
+    error.response = SimpleNamespace(status_code=500)
+
+    assert PluginsRoutes._plugin_store_error_status(error) == 500

@@ -1853,7 +1853,7 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
   storeLoading.value = true
   storeError.value = null
   try {
-    const { items, usedCacheFallback } = await fetchPluginsFromSource(currentStoreSource.value.id, forceRefresh)
+    const { items, usedCacheFallback, cacheFallbackStatus } = await fetchPluginsFromSource(currentStoreSource.value.id, forceRefresh)
     // Mark already-installed plugins
     const installedIds = new Set(plugins.value.map(p => p.id))
     storePlugins.value = items.map(item => ({
@@ -1861,7 +1861,10 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
       installed: installedIds.has(item.id),
     }))
     if (usedCacheFallback) {
-      notify(t('pluginStore.cache_fallback_warning'), 'error')
+      const errorMessage = cacheFallbackStatus === null
+        ? ''
+        : t('pluginStore.request_failed_status', { status: cacheFallbackStatus })
+      notify(`${t('pluginStore.cache_fallback_warning')}${errorMessage ? ` ${errorMessage}` : ''}`, 'error')
     } else if (forceRefresh) {
       notify(t('pluginStore.refresh_success'), 'success')
     }
