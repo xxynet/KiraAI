@@ -681,7 +681,7 @@ class QQAdapter(IMAdapter):
         message_chain = await self.process_incoming_message(msg)
 
         group_info = await self.bot.get_group_info(msg.get("group_id"))
-        group_name = group_info.get("data").get("group_name")
+        group_name = (group_info.get("data") or {}).get("group_name") or str(group_id)
 
         message_obj = KiraMessageEvent(
             adapter=self.info,
