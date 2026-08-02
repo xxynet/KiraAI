@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import httpx
+import os
+import ssl
 import time
 
 from typing import Union, TYPE_CHECKING
@@ -49,9 +51,27 @@ _proxy_failed_at: float | None = None
 _PROXY_RETRY_INTERVAL = 600.0
 
 
+def _make_direct_transport() -> httpx.AsyncHTTPTransport:
+    """
+    构建完全不经过代理的 transport，同时手动保留 SSL_CERT_FILE / SSL_CERT_DIR
+    环境变量指向的自定义 CA 证书（trust_env=False 会把证书配置一并丢弃，
+    企业内网“代理 + 自签 CA”场景在直连回退时仍然需要）。
+    """
+    ssl_context = ssl.create_default_context(
+        cafile=os.environ.get("SSL_CERT_FILE"),
+        capath=os.environ.get("SSL_CERT_DIR"),
+    )
+    return httpx.AsyncHTTPTransport(verify=ssl_context)
+
+
 async def _fetch_image_bytes(image_url: str, timeout: httpx.Timeout, trust_env: bool) -> bytes:
-    """按指定的代理策略下载图片，trust_env=False 表示忽略系统代理环境变量"""
-    async with httpx.AsyncClient(trust_env=trust_env, timeout=timeout) as client:
+    """按指定的代理策略下载图片，trust_env=False 表示绕过系统代理（仍保留自定义 CA 证书配置）"""
+    if trust_env:
+        client = httpx.AsyncClient(trust_env=True, timeout=timeout)
+    else:
+        # 显式传入 transport 后 httpx 不会再读取代理环境变量，等效于绕过代理直连
+        client = httpx.AsyncClient(transport=_make_direct_transport(), timeout=timeout)
+    async with client:
         resp = await client.get(image_url)
         resp.raise_for_status()
         return resp.content
