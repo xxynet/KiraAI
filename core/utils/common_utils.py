@@ -5,6 +5,7 @@ import httpx
 import os
 import ssl
 import time
+import urllib.request
 
 from typing import Union, TYPE_CHECKING
 
@@ -53,15 +54,24 @@ _PROXY_RETRY_INTERVAL = 600.0
 
 def _make_direct_transport() -> httpx.AsyncHTTPTransport:
     """
-    构建完全不经过代理的 transport，同时手动保留 SSL_CERT_FILE / SSL_CERT_DIR
-    环境变量指向的自定义 CA 证书（trust_env=False 会把证书配置一并丢弃，
-    企业内网“代理 + 自签 CA”场景在直连回退时仍然需要）。
+    构建完全不经过代理的 transport。仅在配置了 SSL_CERT_FILE / SSL_CERT_DIR
+    环境变量时手动构建 TLS context 保留自定义 CA 证书；否则使用 httpx 默认的
+    CA 选择（certifi），与常规请求路径保持一致。
     """
-    ssl_context = ssl.create_default_context(
-        cafile=os.environ.get("SSL_CERT_FILE"),
-        capath=os.environ.get("SSL_CERT_DIR"),
-    )
-    return httpx.AsyncHTTPTransport(verify=ssl_context)
+    cafile = os.environ.get("SSL_CERT_FILE")
+    capath = os.environ.get("SSL_CERT_DIR")
+    if cafile or capath:
+        ssl_context = ssl.create_default_context(cafile=cafile, capath=capath)
+        return httpx.AsyncHTTPTransport(verify=ssl_context)
+    return httpx.AsyncHTTPTransport()
+
+
+def _would_use_proxy(image_url: str) -> bool:
+    """判断该 URL 按当前环境变量配置是否会走系统代理（考虑 NO_PROXY 绕过名单）"""
+    if not urllib.request.getproxies():
+        return False
+    host = httpx.URL(image_url).host or ""
+    return not urllib.request.proxy_bypass(host)
 
 
 async def _fetch_image_bytes(image_url: str, timeout: httpx.Timeout, trust_env: bool) -> bytes:
@@ -96,9 +106,15 @@ async def _download_image_bytes(image_url: str) -> bytes:
             pass  # 直连也不通，继续走代理尝试，由下方流程抛出最终的异常
     try:
         return await _fetch_image_bytes(image_url, timeout, trust_env=True)
-    except (httpx.ConnectTimeout, httpx.ConnectError, httpx.ProxyError):
-        # 系统代理不可达，记录失败时间并回退直连
+    except httpx.ProxyError:
+        # 明确是代理故障，记录失败时间并回退直连
         _proxy_failed_at = time.monotonic()
+        return await _fetch_image_bytes(image_url, timeout, trust_env=False)
+    except (httpx.ConnectTimeout, httpx.ConnectError):
+        # 可能是代理黑洞，也可能是 NO_PROXY 命中的直连失败——
+        # 只有确认该 URL 确实会走代理时才把失败记到代理头上
+        if _would_use_proxy(image_url):
+            _proxy_failed_at = time.monotonic()
         return await _fetch_image_bytes(image_url, timeout, trust_env=False)
 
 
