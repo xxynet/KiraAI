@@ -5,7 +5,7 @@ import json
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import Depends, File, HTTPException, Query, UploadFile
+from fastapi import Depends, File, HTTPException, Query, Response, UploadFile
 
 from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
@@ -551,7 +551,9 @@ class PluginsRoutes(Routes):
 
         return self._build_install_result(plugin_manager, new_plugin_id, warnings)
 
-    async def fetch_plugin_store(self, payload: PluginStoreFetchRequest) -> List[PluginStoreItemResponse]:
+    async def fetch_plugin_store(
+        self, payload: PluginStoreFetchRequest, response: Response,
+    ) -> List[PluginStoreItemResponse]:
         url: Optional[str] = payload.url
         source_id: Optional[str] = None
         source: Optional[Dict[str, Any]] = None
@@ -578,19 +580,29 @@ class PluginsRoutes(Routes):
                 cache_file = source.get("cache_file")
                 updated_at = source.get("updated_at", 0)
                 if cache_file and (now - updated_at) < 600:
-                    cache_path = get_data_path() / "plugin_src" / cache_file
-                    if cache_path.exists():
-                        try:
-                            raw_data = json.loads(cache_path.read_text(encoding="utf-8"))
-                        except (json.JSONDecodeError, OSError) as e:
-                            logger.warning(f"Failed to read plugin store cache {cache_path}: {e}")
+                    raw_data = self._read_plugin_store_cache(cache_file)
 
+            used_cache_fallback = False
             if raw_data is None:
-                raw_data = await PluginManager.fetch_plugin_store_data(url)
+                try:
+                    raw_data = await PluginManager.fetch_plugin_store_data(url)
+                except Exception as fetch_error:
+                    # An expired cache remains useful when the store is temporarily
+                    # unavailable. Let the client know so it can warn the user.
+                    cache_file = source.get("cache_file") if source else None
+                    raw_data = self._read_plugin_store_cache(cache_file)
+                    if raw_data is None:
+                        raise fetch_error
+                    used_cache_fallback = True
+                    logger.warning(
+                        "Failed to refresh plugin store %s; using local cache: %s",
+                        url,
+                        fetch_error,
+                    )
 
                 # Persist a newly fetched response for source-backed requests.
                 # This includes force refreshes and cache misses/expirations.
-                if source_id and source and db_service:
+                if source_id and source and db_service and not used_cache_fallback:
                     plugin_src_dir = get_data_path() / "plugin_src"
                     plugin_src_dir.mkdir(parents=True, exist_ok=True)
                     cache_file = source.get("cache_file")
@@ -605,6 +617,9 @@ class PluginsRoutes(Routes):
                     await db_service.update_plugin_store_source(
                         source_id, cache_file=filename, updated_at=int(time.time()),
                     )
+
+            if used_cache_fallback:
+                response.headers["X-Plugin-Store-Cache-Fallback"] = "true"
 
             items = self._extract_plugins(raw_data)
             result: List[PluginStoreItemResponse] = []
@@ -624,6 +639,22 @@ class PluginsRoutes(Routes):
             return result
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"Failed to fetch plugin store data: {e}")
+
+    @staticmethod
+    def _read_plugin_store_cache(cache_file: Optional[str]) -> Optional[Any]:
+        """Load a plugin store cache file, returning None when it is unavailable."""
+        if not cache_file:
+            return None
+
+        cache_path = get_data_path() / "plugin_src" / cache_file
+        if not cache_path.exists():
+            return None
+
+        try:
+            return json.loads(cache_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to read plugin store cache {cache_path}: {e}")
+            return None
 
     @staticmethod
     def _extract_plugins(raw_data: Any) -> List[Dict[str, Any]]:
