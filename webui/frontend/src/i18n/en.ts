@@ -475,6 +475,8 @@ export default {
     no_plugins: 'No plugins available in this source',
     load_failed: 'Failed to load plugin store',
     fetch_failed: 'Failed to fetch plugins from source',
+    cache_fallback_warning: 'Plugin store refresh failed. Using locally cached data.',
+    request_failed_status: 'Request failed with status code {status}.',
     install: 'Install',
     installed: 'Installed',
     installing: 'Installing...',

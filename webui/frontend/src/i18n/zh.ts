@@ -475,6 +475,8 @@ export default {
     no_plugins: '该插件源暂无可用插件',
     load_failed: '加载插件商店失败',
     fetch_failed: '从插件源获取插件失败',
+    cache_fallback_warning: '插件商店刷新失败，正在使用本地缓存数据。',
+    request_failed_status: '请求失败，状态码 {status}',
     install: '安装',
     installed: '已安装',
     installing: '安装中...',

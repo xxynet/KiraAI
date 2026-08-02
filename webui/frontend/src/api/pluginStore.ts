@@ -37,7 +37,18 @@ export async function setCurrentSource(sourceId: string): Promise<void> {
  * @param sourceId  The DB source id — required for force_refresh to update the cache file.
  * @param forceRefresh If true, bypass cache and re-fetch from remote URL.
  */
-export async function fetchPluginsFromSource(sourceId: string, forceRefresh: boolean = false): Promise<PluginStoreItem[]> {
+export interface PluginStoreFetchResult {
+  items: PluginStoreItem[]
+  usedCacheFallback: boolean
+  cacheFallbackStatus: number | null
+}
+
+export async function fetchPluginsFromSource(sourceId: string, forceRefresh: boolean = false): Promise<PluginStoreFetchResult> {
   const res = await apiClient.post('/plugin-store/fetch', { source_id: sourceId, force_refresh: forceRefresh })
-  return res.data
+  const fallbackStatus = Number.parseInt(res.headers['x-plugin-store-cache-fallback-status'] || '', 10)
+  return {
+    items: res.data,
+    usedCacheFallback: res.headers['x-plugin-store-cache-fallback'] === 'true',
+    cacheFallbackStatus: Number.isInteger(fallbackStatus) ? fallbackStatus : null,
+  }
 }
