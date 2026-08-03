@@ -1859,8 +1859,11 @@ function storePluginName(item: PluginStoreItem): string {
 
 function storePluginUpdatedAt(item: PluginStoreItem): number {
   const value = item.updated_at
-  if (typeof value === 'number') return value < 100_000_000_000 ? value * 1000 : value
+  const normalizeTimestamp = (timestamp: number) => timestamp < 100_000_000_000 ? timestamp * 1000 : timestamp
+  if (typeof value === 'number') return Number.isFinite(value) ? normalizeTimestamp(value) : 0
   if (!value) return 0
+  const numericValue = Number(value)
+  if (Number.isFinite(numericValue)) return normalizeTimestamp(numericValue)
   const timestamp = Date.parse(value)
   return Number.isNaN(timestamp) ? 0 : timestamp
 }
