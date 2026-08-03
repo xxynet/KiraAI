@@ -257,6 +257,8 @@ export interface PluginStoreItem {
   downloads?: number
   tags?: string[]
   installed?: boolean
+  stars?: number
+  updated_at?: string | number | null
 }
 
 export interface PluginUpdateCheckItem {

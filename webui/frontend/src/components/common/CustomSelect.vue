@@ -44,7 +44,8 @@
           role="option"
           :aria-selected="modelValue === option.value"
         >
-          {{ option.label }}
+          <span class="custom-select-option-label">{{ option.label }}</span>
+          <IconCheck v-if="modelValue === option.value" class="select-check" width="16" height="16" />
         </div>
       </div>
     </Teleport>
@@ -53,7 +54,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
-import { IconChevronDown } from '@/components/icons'
+import { IconCheck, IconChevronDown } from '@/components/icons'
 
 interface Option {
   value: string
@@ -129,7 +130,9 @@ function adjustPosition() {
     position: 'fixed',
     left: triggerRect.left + 'px',
     top: top + 'px',
-    width: triggerRect.width + 'px',
+    minWidth: triggerRect.width + 'px',
+    width: 'max-content',
+    maxWidth: `calc(100vw - ${triggerRect.left + 8}px)`,
   }
 }
 
@@ -304,6 +307,19 @@ onUnmounted(() => {
 
 .custom-select-option.highlighted {
   background-color: rgba(59, 130, 246, 0.1);
+}
+
+.custom-select-option-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-check {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 </style>
 

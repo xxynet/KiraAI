@@ -495,10 +495,11 @@ textarea:focus:hover,
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 12px;
+  border-radius: 13px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   max-height: 300px;
   overflow-y: auto;
+  padding: 6px;
   z-index: 9999;
   opacity: 0;
   visibility: hidden;
@@ -513,13 +514,16 @@ textarea:focus:hover,
 }
 
 .custom-select-option {
-  padding: 10px 12px;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
   cursor: pointer;
   transition: all 0.15s ease-in-out;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.2;
   color: #374151;
-  border-radius: 12px;
-  margin: 6px 8px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
 }
@@ -527,13 +531,19 @@ textarea:focus:hover,
 .custom-select-option:hover,
 .custom-select-option.active {
   background-color: rgba(59, 130, 246, 0.1);
-  color: #1d4ed8;
+  color: #374151;
 }
 
 .custom-select-option.selected {
-  background-color: rgba(59, 130, 246, 0.15);
+  background-color: transparent;
   color: #1d4ed8;
-  font-weight: 500;
+  font-weight: 550;
+}
+
+.custom-select-option.selected:hover,
+.custom-select-option.selected.active {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
 }
 
 .custom-select-options::-webkit-scrollbar {
@@ -617,11 +627,17 @@ textarea:focus:hover,
 .dark .custom-select-option:hover,
 .dark .custom-select-option.active {
   background-color: rgba(59, 130, 246, 0.2);
-  color: #93c5fd;
+  color: #e5e7eb;
 }
 
 .dark .custom-select-option.selected {
-  background-color: rgba(59, 130, 246, 0.25);
+  background-color: transparent;
+  color: #93c5fd;
+}
+
+.dark .custom-select-option.selected:hover,
+.dark .custom-select-option.selected.active {
+  background-color: rgba(59, 130, 246, 0.2);
   color: #93c5fd;
 }
 

@@ -467,15 +467,29 @@
         <span v-if="currentStoreSource" class="ml-3 text-sm text-gray-500 dark:text-gray-400">
           {{ $t('pluginStore.current_source') }}: <span class="font-medium text-gray-700 dark:text-gray-300">{{ currentStoreSource.name }}</span>
         </span>
-        <div v-if="currentStoreSource && !storeLoading && storePlugins.length > 0" class="relative ml-auto">
-          <input
-            v-model="storeSearchTerm"
-            type="text"
-            :placeholder="$t('plugin.search_placeholder')"
-            :aria-label="$t('plugin.search_placeholder')"
-            class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-          />
-          <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <div v-if="currentStoreSource && !storeLoading && storePlugins.length > 0" class="ml-auto flex flex-wrap items-center justify-end gap-3">
+          <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+            <span>{{ $t('pluginStore.category') }}</span>
+            <div class="w-32 plugin-store-select">
+              <CustomSelect v-model="storeCategory" :options="storeCategoryOptions" />
+            </div>
+          </label>
+          <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+            <span>{{ $t('pluginStore.sort') }}</span>
+            <div class="w-32 plugin-store-select">
+              <CustomSelect v-model="storeSort" :options="storeSortOptions" />
+            </div>
+          </label>
+          <div class="relative">
+            <input
+              v-model="storeSearchTerm"
+              type="text"
+              :placeholder="$t('plugin.search_placeholder')"
+              :aria-label="$t('plugin.search_placeholder')"
+              class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            />
+            <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          </div>
         </div>
       </div>
 
@@ -533,7 +547,7 @@
       <!-- Plugin Cards Grid -->
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <PluginCard
-          v-for="item in filteredStorePlugins"
+          v-for="item in paginatedStorePlugins"
           :key="item.id"
           mode="store"
           :id="item.id"
@@ -551,6 +565,28 @@
           @update="handleStoreUpdate(item)"
           @details="openPluginDetails(item)"
         />
+      </div>
+
+      <div v-if="filteredStorePlugins.length > STORE_PAGE_SIZE" class="mt-6 flex items-center justify-center gap-3">
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+          :disabled="storePage === 1"
+          @click="storePage--"
+        >
+          {{ $t('pluginStore.pagination_previous') }}
+        </button>
+        <span class="text-sm text-gray-500 dark:text-gray-400">
+          {{ $t('pluginStore.pagination_page', { page: storePage, total: storeTotalPages }) }}
+        </span>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+          :disabled="storePage === storeTotalPages"
+          @click="storePage++"
+        >
+          {{ $t('pluginStore.pagination_next') }}
+        </button>
       </div>
 
       <!-- Plugin Sources Management Modal -->
@@ -1740,6 +1776,30 @@ const sourceManageVisible = ref(false)
 const newSourceName = ref('')
 const newSourceUrl = ref('')
 const storeSearchTerm = ref('')
+const storeCategory = ref('all')
+const storeSort = ref('stars')
+const STORE_PAGE_SIZE = 12
+const storePage = ref(1)
+
+const storeCategoryOptions = computed(() => {
+  const categories = new Set(
+    storePlugins.value
+      .map(item => item.category?.trim())
+      .filter((category): category is string => Boolean(category)),
+  )
+  return [
+    { value: 'all', label: t('pluginStore.all_categories') },
+    ...Array.from(categories)
+      .sort((a, b) => a.localeCompare(b))
+      .map(category => ({ value: category, label: category })),
+  ]
+})
+
+const storeSortOptions = computed(() => [
+  { value: 'stars', label: t('pluginStore.sort_most_starred') },
+  { value: 'updated', label: t('pluginStore.sort_recently_updated') },
+  { value: 'name', label: t('pluginStore.sort_name') },
+])
 
 const filteredPlugins = computed(() => {
   const q = pluginsSearchTerm.value.trim().toLowerCase()
@@ -1756,8 +1816,9 @@ const filteredPlugins = computed(() => {
 
 const filteredStorePlugins = computed(() => {
   const q = storeSearchTerm.value.trim().toLowerCase()
-  if (!q) return storePlugins.value
-  return storePlugins.value.filter(item => {
+  const filtered = storePlugins.value.filter(item => {
+    if (storeCategory.value !== 'all' && item.category?.trim() !== storeCategory.value) return false
+    if (!q) return true
     const name = (localize(item, 'display_name', item.name) || '').toLowerCase()
     const desc = (localize(item, 'description', item.description) || '').toLowerCase()
     const author = (item.author || '').toLowerCase()
@@ -1765,7 +1826,47 @@ const filteredStorePlugins = computed(() => {
     const tags = (item.tags || []).join(' ').toLowerCase()
     return name.includes(q) || desc.includes(q) || author.includes(q) || id.includes(q) || tags.includes(q)
   })
+
+  return [...filtered].sort((a, b) => {
+    if (storeSort.value === 'name') {
+      return storePluginName(a).localeCompare(storePluginName(b)) || a.id.localeCompare(b.id)
+    }
+
+    const valueA = storeSort.value === 'stars' ? Number(a.stars || 0) : storePluginUpdatedAt(a)
+    const valueB = storeSort.value === 'stars' ? Number(b.stars || 0) : storePluginUpdatedAt(b)
+    return valueB - valueA || storePluginName(a).localeCompare(storePluginName(b)) || a.id.localeCompare(b.id)
+  })
 })
+
+const storeTotalPages = computed(() => Math.max(1, Math.ceil(filteredStorePlugins.value.length / STORE_PAGE_SIZE)))
+
+const paginatedStorePlugins = computed(() => {
+  const start = (storePage.value - 1) * STORE_PAGE_SIZE
+  return filteredStorePlugins.value.slice(start, start + STORE_PAGE_SIZE)
+})
+
+watch([storeSearchTerm, storeCategory, storeSort], () => {
+  storePage.value = 1
+})
+
+watch(storeTotalPages, totalPages => {
+  if (storePage.value > totalPages) storePage.value = totalPages
+})
+
+function storePluginName(item: PluginStoreItem): string {
+  return localize(item, 'display_name', item.name || item.id)
+}
+
+function storePluginUpdatedAt(item: PluginStoreItem): number {
+  const value = item.updated_at
+  const normalizeTimestamp = (timestamp: number) => timestamp < 100_000_000_000 ? timestamp * 1000 : timestamp
+  if (typeof value === 'number') return Number.isFinite(value) ? normalizeTimestamp(value) : 0
+  if (!value) return 0
+  const numericValue = Number(value)
+  if (Number.isFinite(numericValue)) return normalizeTimestamp(numericValue)
+  const timestamp = Date.parse(value)
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
 
 function isCurrentSource(src: PluginStoreSource): boolean {
   return currentStoreSource.value?.id === src.id
@@ -1860,6 +1961,10 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
       ...item,
       installed: installedIds.has(item.id),
     }))
+    storePage.value = 1
+    if (storeCategory.value !== 'all' && !storePlugins.value.some(item => item.category?.trim() === storeCategory.value)) {
+      storeCategory.value = 'all'
+    }
     if (usedCacheFallback) {
       const errorMessage = cacheFallbackStatus === null
         ? ''
@@ -1949,4 +2054,9 @@ onMounted(async () => {
 .dark .plugin-readme th,
 .dark .plugin-readme td { border-color: rgb(55 65 81); }
 .dark .plugin-readme th { background: rgb(31 41 55); }
+
+.plugin-store-select .custom-select-trigger {
+  min-height: 34px;
+  padding: 6px 12px;
+}
 </style>
