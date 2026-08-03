@@ -547,7 +547,7 @@
       <!-- Plugin Cards Grid -->
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <PluginCard
-          v-for="item in filteredStorePlugins"
+          v-for="item in paginatedStorePlugins"
           :key="item.id"
           mode="store"
           :id="item.id"
@@ -565,6 +565,28 @@
           @update="handleStoreUpdate(item)"
           @details="openPluginDetails(item)"
         />
+      </div>
+
+      <div v-if="filteredStorePlugins.length > STORE_PAGE_SIZE" class="mt-6 flex items-center justify-center gap-3">
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+          :disabled="storePage === 1"
+          @click="storePage--"
+        >
+          {{ $t('pluginStore.pagination_previous') }}
+        </button>
+        <span class="text-sm text-gray-500 dark:text-gray-400">
+          {{ $t('pluginStore.pagination_page', { page: storePage, total: storeTotalPages }) }}
+        </span>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+          :disabled="storePage === storeTotalPages"
+          @click="storePage++"
+        >
+          {{ $t('pluginStore.pagination_next') }}
+        </button>
       </div>
 
       <!-- Plugin Sources Management Modal -->
@@ -1756,6 +1778,8 @@ const newSourceUrl = ref('')
 const storeSearchTerm = ref('')
 const storeCategory = ref('all')
 const storeSort = ref('stars')
+const STORE_PAGE_SIZE = 12
+const storePage = ref(1)
 
 const storeCategoryOptions = computed(() => {
   const categories = new Set(
@@ -1812,6 +1836,21 @@ const filteredStorePlugins = computed(() => {
     const valueB = storeSort.value === 'stars' ? Number(b.stars || 0) : storePluginUpdatedAt(b)
     return valueB - valueA || storePluginName(a).localeCompare(storePluginName(b)) || a.id.localeCompare(b.id)
   })
+})
+
+const storeTotalPages = computed(() => Math.max(1, Math.ceil(filteredStorePlugins.value.length / STORE_PAGE_SIZE)))
+
+const paginatedStorePlugins = computed(() => {
+  const start = (storePage.value - 1) * STORE_PAGE_SIZE
+  return filteredStorePlugins.value.slice(start, start + STORE_PAGE_SIZE)
+})
+
+watch([storeSearchTerm, storeCategory, storeSort], () => {
+  storePage.value = 1
+})
+
+watch(storeTotalPages, totalPages => {
+  if (storePage.value > totalPages) storePage.value = totalPages
 })
 
 function storePluginName(item: PluginStoreItem): string {
@@ -1919,6 +1958,7 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
       ...item,
       installed: installedIds.has(item.id),
     }))
+    storePage.value = 1
     if (storeCategory.value !== 'all' && !storePlugins.value.some(item => item.category?.trim() === storeCategory.value)) {
       storeCategory.value = 'all'
     }
