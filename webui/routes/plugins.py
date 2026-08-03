@@ -689,7 +689,7 @@ class PluginsRoutes(Routes):
 
         Extra useful fields (if present): category, repo, stars, updated_at, name, id
 
-        NOTE: github_data is intentionally NOT parsed.
+        GitHub metadata is limited to the public star count used for sorting.
         """
         raw_plugins: Any = None
         if isinstance(raw_data, dict):
@@ -717,9 +717,9 @@ class PluginsRoutes(Routes):
             description = raw.get("description", "")
             category = raw.get("category")
             repo = raw.get("repo") or raw.get("repo_url")
-            stars = raw.get(
-                "stars", raw.get("star_count", raw.get("stargazers_count", 0))
-            )
+            github_data = raw.get("github_data")
+            github_stars = github_data.get("stars", 0) if isinstance(github_data, dict) else 0
+            stars = raw.get("stars", raw.get("star_count", github_stars))
             updated_at = raw.get("updated_at", raw.get("updatedAt"))
 
             locales = raw.get("locales")

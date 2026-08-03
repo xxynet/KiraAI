@@ -54,3 +54,17 @@ def test_plugin_store_error_status_uses_remote_response_status():
     error.response = SimpleNamespace(status_code=500)
 
     assert PluginsRoutes._plugin_store_error_status(error) == 500
+
+
+def test_extract_plugins_reads_nested_github_stars():
+    plugins = PluginsRoutes._extract_plugins({
+        "plugins": {
+            "example": {
+                "plugin_id": "example",
+                "display_name": "Example",
+                "github_data": {"stars": 12},
+            },
+        },
+    })
+
+    assert plugins[0]["stars"] == 12
