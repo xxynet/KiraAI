@@ -264,6 +264,8 @@ class PluginStoreItemResponse(BaseModel):
     repo: Optional[str] = None
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
+    stars: int = 0
+    updated_at: Optional[Union[int, str]] = None
 
 
 class PluginUpdateCheckItem(BaseModel):

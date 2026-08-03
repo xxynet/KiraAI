@@ -640,6 +640,8 @@ class PluginsRoutes(Routes):
                     repo=item.get("repo"),
                     locales=item.get("locales") or {},
                     tags=[str(t) for t in tags if t],
+                    stars=item.get("stars", 0),
+                    updated_at=item.get("updated_at"),
                 ))
             return result
         except Exception as e:
@@ -685,7 +687,7 @@ class PluginsRoutes(Routes):
         Standard schema fields prioritized:
           plugin_id, display_name, version, author, description
 
-        Extra useful fields (if present): category, repo, name, id
+        Extra useful fields (if present): category, repo, stars, updated_at, name, id
 
         NOTE: github_data is intentionally NOT parsed.
         """
@@ -715,6 +717,10 @@ class PluginsRoutes(Routes):
             description = raw.get("description", "")
             category = raw.get("category")
             repo = raw.get("repo") or raw.get("repo_url")
+            stars = raw.get(
+                "stars", raw.get("star_count", raw.get("stargazers_count", 0))
+            )
+            updated_at = raw.get("updated_at", raw.get("updatedAt"))
 
             locales = raw.get("locales")
 
@@ -727,6 +733,8 @@ class PluginsRoutes(Routes):
                 "category": str(category) if category else None,
                 "repo": str(repo) if repo else None,
                 "locales": locales if isinstance(locales, dict) else {},
+                "stars": int(stars) if isinstance(stars, (int, float, str)) and str(stars).isdigit() else 0,
+                "updated_at": updated_at if isinstance(updated_at, (int, str)) else None,
             }
 
             if "id" in raw and raw["id"] is not None:

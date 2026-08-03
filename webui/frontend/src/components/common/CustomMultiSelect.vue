@@ -64,7 +64,8 @@
           :aria-selected="isSelected(option.value)"
         >
           <span class="select-check mr-2">{{ isSelected(option.value) ? '✓' : '' }}</span>
-          {{ option.label }}
+          <span class="custom-select-option-label">{{ option.label }}</span>
+          <IconCheck v-if="isSelected(option.value)" class="select-check" width="16" height="16" />
         </div>
       </div>
     </Teleport>
@@ -73,7 +74,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
-import { IconX, IconChevronDown } from '@/components/icons'
+import { IconCheck, IconX, IconChevronDown } from '@/components/icons'
 
 interface Option {
   value: string
@@ -152,7 +153,9 @@ function adjustPosition() {
     position: 'fixed',
     left: triggerRect.left + 'px',
     top: top + 'px',
-    width: triggerRect.width + 'px',
+    minWidth: triggerRect.width + 'px',
+    width: 'max-content',
+    maxWidth: `calc(100vw - ${triggerRect.left + 8}px)`,
   }
 }
 
@@ -343,9 +346,16 @@ onUnmounted(() => {
 }
 
 .select-check {
-  display: inline-block;
-  width: 16px;
-  text-align: center;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.select-check.mr-2 {
+  display: none;
+}
+
+.custom-select-option-label {
+  white-space: nowrap;
 }
 
 .custom-select-option.highlighted {
