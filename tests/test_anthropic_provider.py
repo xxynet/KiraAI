@@ -12,11 +12,7 @@ from core.provider.src.anthropic.model_clients import (
     build_anthropic_headers,
     normalize_anthropic_base_url,
 )
-from core.provider.src.anthropic.provider import (
-    AnthropicProvider,
-    MAX_MODEL_PAGES,
-    MODEL_PAGE_SIZE,
-)
+from core.provider.src.anthropic.provider import AnthropicProvider
 
 
 def build_client(
@@ -424,7 +420,7 @@ async def test_lists_all_remote_model_pages(monkeypatch):
         {"id": "claude-new", "name": "Claude New", "description": ""},
         {"id": "claude-old", "name": "Claude Old", "description": ""},
     ]
-    assert requested_limits == [MODEL_PAGE_SIZE]
+    assert requested_limits == [100]
 
 
 @pytest.mark.anyio
@@ -464,13 +460,15 @@ async def test_model_pagination_is_bounded(monkeypatch):
 
     models = await provider.get_llm_list()
 
-    assert len(models) == MAX_MODEL_PAGES
-    assert next_page_calls == MAX_MODEL_PAGES - 1
+    assert len(models) == 20
+    assert next_page_calls == 19
 
 
 @pytest.mark.anyio
-async def test_model_pagination_handles_missing_next_page(monkeypatch):
-    class MissingNextPage:
+async def test_model_pagination_handles_nonstandard_missing_next_page(monkeypatch):
+    """Protect compatible paginator implementations outside the SDK contract."""
+
+    class NonstandardMissingNextPage:
         data = [SimpleNamespace(id="first", display_name="First")]
 
         @staticmethod
@@ -483,7 +481,7 @@ async def test_model_pagination_handles_missing_next_page(monkeypatch):
 
     class FakeModels:
         async def list(self, limit):
-            return MissingNextPage()
+            return NonstandardMissingNextPage()
 
     class FakeClient:
         models = FakeModels()
