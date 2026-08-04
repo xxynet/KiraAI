@@ -7,6 +7,9 @@ from .model_clients import (
     build_anthropic_client,
 )
 
+MODEL_PAGE_SIZE = 100
+MAX_MODEL_PAGES = 20
+
 
 class AnthropicProvider(BaseProvider):
     models = {ModelType.LLM: AnthropicCompatibleLLMClient}
@@ -22,8 +25,10 @@ class AnthropicProvider(BaseProvider):
                 self.provider_config,
                 timeout=10,
             ) as client:
-                page = await client.models.list(limit=1000)
-                while True:
+                page = await client.models.list(limit=MODEL_PAGE_SIZE)
+                for page_number in range(1, MAX_MODEL_PAGES + 1):
+                    if page is None:
+                        break
                     for item in page.data:
                         model_id = getattr(item, "id", "")
                         if not model_id:
@@ -38,7 +43,7 @@ class AnthropicProvider(BaseProvider):
                             }
                         )
 
-                    if not page.has_next_page():
+                    if page_number == MAX_MODEL_PAGES or not page.has_next_page():
                         break
                     page = await page.get_next_page()
         except AnthropicError as e:

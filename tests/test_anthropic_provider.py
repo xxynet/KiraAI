@@ -12,7 +12,11 @@ from core.provider.src.anthropic.model_clients import (
     build_anthropic_headers,
     normalize_anthropic_base_url,
 )
-from core.provider.src.anthropic.provider import AnthropicProvider
+from core.provider.src.anthropic.provider import (
+    AnthropicProvider,
+    MAX_MODEL_PAGES,
+    MODEL_PAGE_SIZE,
+)
 
 
 def build_client(
@@ -420,7 +424,85 @@ async def test_lists_all_remote_model_pages(monkeypatch):
         {"id": "claude-new", "name": "Claude New", "description": ""},
         {"id": "claude-old", "name": "Claude Old", "description": ""},
     ]
-    assert requested_limits == [1000]
+    assert requested_limits == [MODEL_PAGE_SIZE]
+
+
+@pytest.mark.anyio
+async def test_model_pagination_is_bounded(monkeypatch):
+    next_page_calls = 0
+
+    class RepeatingPage:
+        data = [SimpleNamespace(id="repeated", display_name="Repeated")]
+
+        @staticmethod
+        def has_next_page():
+            return True
+
+        async def get_next_page(self):
+            nonlocal next_page_calls
+            next_page_calls += 1
+            return self
+
+    class FakeModels:
+        async def list(self, limit):
+            return RepeatingPage()
+
+    class FakeClient:
+        models = FakeModels()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+    monkeypatch.setattr(
+        "core.provider.src.anthropic.provider.build_anthropic_client",
+        lambda *args, **kwargs: FakeClient(),
+    )
+    provider = AnthropicProvider("test", "Test", {})
+
+    models = await provider.get_llm_list()
+
+    assert len(models) == MAX_MODEL_PAGES
+    assert next_page_calls == MAX_MODEL_PAGES - 1
+
+
+@pytest.mark.anyio
+async def test_model_pagination_handles_missing_next_page(monkeypatch):
+    class MissingNextPage:
+        data = [SimpleNamespace(id="first", display_name="First")]
+
+        @staticmethod
+        def has_next_page():
+            return True
+
+        @staticmethod
+        async def get_next_page():
+            return None
+
+    class FakeModels:
+        async def list(self, limit):
+            return MissingNextPage()
+
+    class FakeClient:
+        models = FakeModels()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+    monkeypatch.setattr(
+        "core.provider.src.anthropic.provider.build_anthropic_client",
+        lambda *args, **kwargs: FakeClient(),
+    )
+    provider = AnthropicProvider("test", "Test", {})
+
+    models = await provider.get_llm_list()
+
+    assert models == [{"id": "first", "name": "First", "description": ""}]
 
 
 @pytest.mark.anyio
