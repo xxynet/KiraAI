@@ -8,7 +8,7 @@ from openai import APIStatusError, APITimeoutError, APIConnectionError
 
 from core.logging_manager import get_logger
 from core.llm_client import LLMClient
-from core.provider import LLMRequest, LLMResponse, LLMModelClient
+from core.provider import LLMRequest, LLMResponse, LLMModelClient, ProviderAPIError
 from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage
 from core.chat.message_utils import KiraExceptionEvent
@@ -96,7 +96,7 @@ class AgentExecutor:
                         model_id = model.model.model_id
                         llm_logger.info(f"[{sid}] Successfully switched to model: {model_id} ({provider_name})")
                     break
-                except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                except (APIStatusError, APITimeoutError, APIConnectionError, ProviderAPIError) as e:
                     last_exc = e
                     logger.error(f"[{sid}] Model {model.model.model_id} failed: {type(e).__name__}: {e}")
                     if model_idx < len(model_group) - 1:

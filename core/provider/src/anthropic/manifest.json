@@ -1,0 +1,14 @@
+{
+  "name": "Anthropic",
+  "display_name": "Anthropic",
+  "version": "1.0.0",
+  "author": "KiraAI",
+  "description": "Anthropic-compatible Messages API provider",
+  "repo": null,
+  "locales": {
+    "zh": {
+      "display_name": "Anthropic",
+      "description": "兼容 Anthropic Messages API 格式的提供商"
+    }
+  }
+}
