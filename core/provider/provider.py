@@ -9,6 +9,10 @@ from .llm_model import LLMRequest, LLMResponse, LLMStreamChunk, RerankResult
 from core.chat.message_elements import Record, Image, Video
 
 
+class ProviderAPIError(Exception):
+    """Provider-level API error eligible for model failover."""
+
+
 class ModelType(Enum):
     LLM = "llm"
     TTS = "tts"
