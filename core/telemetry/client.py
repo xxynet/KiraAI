@@ -13,6 +13,7 @@ import httpx
 from core.config import KiraConfig, VERSION
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
+from core.utils.system_info import collect_system_profile
 from core.statistics import Statistics
 from core.db.service import DatabaseService
 
@@ -412,6 +413,7 @@ class TelemetryClient:
             "python_version": python_version or sys_platform.python_version(),
             "platform": sys_platform.platform(),
         }
+        data.update(collect_system_profile())
         if self.country_code:
             data["country_code"] = self.country_code
         self.send_event(TelemetryEventType.SYSTEM_STARTUP, data)
