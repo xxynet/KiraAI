@@ -1,4 +1,8 @@
+import hashlib
 import platform
+import subprocess
+from pathlib import Path
+from typing import Optional
 
 import psutil
 
@@ -52,3 +56,67 @@ def collect_system_profile() -> dict[str, int | str]:
         logger.debug("Failed to probe CPU architecture", exc_info=True)
 
     return profile
+
+
+def get_anonymous_machine_id() -> Optional[str]:
+    """Return a stable, one-way identifier for the current operating system.
+
+    The OS identifier is never persisted or sent over the network.  Hashing it
+    makes the value useful only for correlating KiraAI installations running on
+    the same machine.
+    """
+    try:
+        system = platform.system()
+        if system == "Windows":
+            source_id = _get_windows_machine_id()
+        elif system == "Linux":
+            source_id = _get_linux_machine_id()
+        elif system == "Darwin":
+            source_id = _get_macos_machine_id()
+        else:
+            return None
+    except Exception:
+        logger.debug("Failed to obtain an operating-system machine identifier", exc_info=True)
+        return None
+
+    if not source_id:
+        return None
+
+    return hashlib.sha256(f"KiraAI machine ID v1\\0{source_id}".encode("utf-8")).hexdigest()
+
+
+def _get_windows_machine_id() -> Optional[str]:
+    import winreg
+
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as key:
+        value, _ = winreg.QueryValueEx(key, "MachineGuid")
+    return str(value).strip() or None
+
+
+def _get_linux_machine_id() -> Optional[str]:
+    for path in (Path("/etc/machine-id"), Path("/var/lib/dbus/machine-id")):
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if value:
+            return value
+    return None
+
+
+def _get_macos_machine_id() -> Optional[str]:
+    result = subprocess.run(
+        ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=2,
+    )
+    for line in result.stdout.splitlines():
+        if "IOPlatformUUID" not in line:
+            continue
+        _, _, value = line.partition("=")
+        value = value.strip().strip('"')
+        if value:
+            return value
+    return None

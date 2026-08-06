@@ -90,7 +90,7 @@ The Developer reserves the right to demand that you immediately cease such activ
 
 6.3 **Plugin Data:** Installed third-party plugins may collect or transmit additional data. You should review their privacy policies and source code before installing plugins.
 
-6.4 **Telemetry Data:** The Software may contain optional statistics and telemetry modules. When enabled, telemetry may include software and Python versions, operating-system platform, coarse country or region, total system memory, physical and logical CPU core counts, and CPU architecture, together with aggregated usage and reliability metrics. It does not include message content, host names, hardware serial numbers, or network-interface identifiers. You can disable this data collection in the configuration. Please refer to the relevant configuration documentation for details.
+6.4 **Telemetry Data:** The Software may contain optional statistics and telemetry modules. When enabled, telemetry may include software and Python versions, operating-system platform, coarse country or region, total system memory, physical and logical CPU core counts, CPU architecture, and an anonymous one-way identifier derived from the operating system's machine identifier, together with aggregated usage and reliability metrics. The raw operating-system identifier is not transmitted or stored by the Software. Telemetry does not include message content, host names, hardware serial numbers, or network-interface identifiers. You can disable telemetry by setting the `KIRA_TELEMETRY_ENABLED` environment variable to `false` before starting the Software.
 
 ---
 
