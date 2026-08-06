@@ -13,7 +13,7 @@ import httpx
 from core.config import KiraConfig, VERSION
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
-from core.utils.system_info import collect_system_profile
+from core.utils.system_info import collect_system_profile, get_anonymous_machine_id
 from core.statistics import Statistics
 from core.db.service import DatabaseService
 
@@ -46,6 +46,7 @@ class TelemetryClient:
             self._enabled_from_env = False
         self.client_uuid: Optional[str] = self.telemetry_config.get("client_uuid")
         self.secret_key: Optional[str] = self.telemetry_config.get("secret_key")
+        self.machine_id: Optional[str] = None
 
         self.server_url: str = os.environ.get("KIRA_TELEMETRY_SERVER", "https://telemetry.kira-ai.top/api/v1")
         self.heartbeat_interval: int = 300  # 5 minutes
@@ -87,6 +88,9 @@ class TelemetryClient:
     async def _initialize_background(self, post_event: Optional[str] = None) -> None:
         """Background task: request UUID, fetch country code, then emit startup (and optional) events."""
         try:
+            # This can require a small OS-level file or registry read, so do it
+            # outside the event loop. The raw OS identifier never leaves this helper.
+            self.machine_id = await asyncio.to_thread(get_anonymous_machine_id)
             if not self.client_uuid or not self.secret_key:
                 await self._request_uuid()
 
@@ -414,6 +418,8 @@ class TelemetryClient:
             "platform": sys_platform.platform(),
         }
         data.update(collect_system_profile())
+        if self.machine_id:
+            data["machine_id"] = self.machine_id
         if self.country_code:
             data["country_code"] = self.country_code
         self.send_event(TelemetryEventType.SYSTEM_STARTUP, data)
