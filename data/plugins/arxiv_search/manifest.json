@@ -1,0 +1,23 @@
+{
+    "display_name": "arXiv Search",
+    "plugin_id": "arxiv_search",
+    "version": "1.2.1",
+    "author": "陈舒昕 & Orion",
+    "description": "arXiv 论文查询、翻译与下载：/arxiv search <关键词> [-t] 搜索论文、/arxiv get <ID> [-t] 获取详情、/arxiv tr <ID> 标题摘要翻译成中文、/arxiv dl <ID> 下载 PDF、/arxiv src <ID> 下载 LaTeX 源码。基于 arXiv 官方 API。",
+    "tags": [
+        "arxiv",
+        "paper",
+        "search",
+        "download",
+        "translate",
+        "research",
+        "academic",
+        "slash-command"
+    ],
+    "locales": {
+        "zh": {
+            "display_name": "arXiv 论文助手",
+            "description": "arXiv 论文查询、翻译与下载：/arxiv search <关键词> [-t] 搜索论文、/arxiv get <ID> [-t] 获取详情、/arxiv tr <ID> 将标题与摘要翻译成中文、/arxiv dl <ID> 下载 PDF 到 data/files/arxiv_pdf/、/arxiv src <ID> 下载 LaTeX 源码到 data/files/arxiv_src/。基于 arXiv 官方 API。"
+        }
+    }
+}

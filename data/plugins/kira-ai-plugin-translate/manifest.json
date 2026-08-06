@@ -1,0 +1,25 @@
+{
+  "display_name": "翻译插件",
+  "plugin_id": "kira-ai-plugin-translate",
+  "version": "1.0.0",
+  "core_version": ">=2.24.2",
+  "author": "KiraAI Community",
+  "description": "多后端文本翻译（百度/DeepL/Google/阿里/本地模型），自动语言检测与后端自动回退",
+  "repo": "https://github.com/NymphSX/kira-ai-plugin-translate",
+  "tags": [
+    "translate",
+    "translation",
+    "i18n",
+    "多语言"
+  ],
+  "locales": {
+    "zh": {
+      "display_name": "翻译插件",
+      "description": "多后端文本翻译，自动语言检测与后端自动回退"
+    },
+    "en": {
+      "display_name": "Translation Plugin",
+      "description": "Multi-backend text translation with auto language detection and failover"
+    }
+  }
+}

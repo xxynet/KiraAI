@@ -1,0 +1,66 @@
+{
+  "backend": {
+    "type": "section", "name": "翻译后端", "collapsed": false,
+    "fields": {
+      "enable_tool": {
+        "type": "switch", "default": true, "name": "启用 translate 工具",
+        "hint": "开启后 LLM 可通过 translate 工具翻译文本",
+        "locales": { "zh": { "name": "启用 translate 工具" } }
+      },
+      "default_backend": {
+        "type": "enum", "options": ["auto", "baidu", "deepl", "google", "aliyun", "local"],
+        "default": "auto", "name": "默认后端",
+        "hint": "auto=按顺序自动回退：百度→阿里云→DeepL→本地模型",
+        "locales": { "zh": { "name": "默认后端", "hint": "auto=按顺序自动回退：百度→阿里云→DeepL→本地模型" } }
+      }
+    }
+  },
+  "baidu": {
+    "type": "section", "name": "百度翻译", "collapsed": true,
+    "fields": {
+      "baidu_appid": { "type": "string", "default": "", "name": "APP ID" },
+      "baidu_secret_key": { "type": "sensitive", "default": "", "name": "密钥" }
+    }
+  },
+  "deepl": {
+    "type": "section", "name": "DeepL", "collapsed": true,
+    "fields": {
+      "deepl_api_key": { "type": "sensitive", "default": "", "name": "API Key" },
+      "deepl_pro": {
+        "type": "switch", "default": false, "name": "Pro 版",
+        "hint": "开启使用 api.deepl.com，否则 api-free.deepl.com"
+      }
+    }
+  },
+  "google": {
+    "type": "section", "name": "Google 翻译", "collapsed": true,
+    "fields": {
+      "google_api_key": { "type": "sensitive", "default": "", "name": "Cloud API Key", "hint": "留空则该后端不可用（国内网络不通，建议仅海外部署时配置）" }
+    }
+  },
+  "aliyun": {
+    "type": "section", "name": "阿里云机器翻译", "collapsed": true,
+    "fields": {
+      "aliyun_access_key_id": { "type": "sensitive", "default": "", "name": "AccessKey ID" },
+      "aliyun_access_key_secret": { "type": "sensitive", "default": "", "name": "AccessKey Secret" },
+      "aliyun_region": { "type": "string", "default": "cn-hangzhou", "name": "Region" }
+    }
+  },
+  "local": {
+    "type": "section", "name": "本地模型", "collapsed": true,
+    "fields": {
+      "local_backend_url": { "type": "string", "default": "http://127.0.0.1:11434", "name": "服务地址", "hint": "Ollama 或 OpenAI 兼容服务地址" },
+      "local_model": { "type": "string", "default": "qwen2.5:7b", "name": "模型名" },
+      "local_timeout": { "type": "integer", "default": 120, "name": "超时秒数" }
+    }
+  },
+  "quota": {
+    "type": "section", "name": "额度与限流", "collapsed": true,
+    "fields": {
+      "max_chars_per_call": { "type": "integer", "default": 5000, "name": "单次最大字符数" },
+      "max_chars_per_day": { "type": "integer", "default": 10000, "name": "全局每日最大字符数", "hint": "建议按所选后端免费额度下调，防止一夜烧穿月度免费量" },
+      "max_queries_per_min": { "type": "integer", "default": 30, "name": "每分钟最大请求数" },
+      "enable_cache": { "type": "switch", "default": true, "name": "启用翻译缓存", "hint": "相同文本+语对命中缓存，不消耗额度" }
+    }
+  }
+}

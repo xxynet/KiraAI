@@ -1,0 +1,111 @@
+{
+    "max_results": {
+        "type": "integer",
+        "name": "默认搜索条数",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 20,
+        "hint": "/arxiv search 默认返回的论文条数"
+    },
+    "request_timeout": {
+        "type": "integer",
+        "name": "请求超时（秒）",
+        "default": 15,
+        "hint": "arXiv API 请求超时秒数；PDF 下载使用该值的 2 倍"
+    },
+    "sort_by": {
+        "type": "enum",
+        "name": "默认排序",
+        "options": [
+            "relevance",
+            "submittedDate",
+            "lastUpdatedDate"
+        ],
+        "default": "relevance",
+        "hint": "搜索结果排序：相关度 / 提交日期 / 最近更新"
+    },
+    "download_dir": {
+        "type": "string",
+        "name": "PDF 下载目录",
+        "default": "data/files/arxiv_pdf",
+        "hint": "PDF 保存目录（相对项目根目录，或绝对路径）"
+    },
+    "source_dir": {
+        "type": "string",
+        "name": "源码下载目录",
+        "default": "data/files/arxiv_src",
+        "hint": "LaTeX 源码包保存目录（相对项目根目录，或绝对路径）"
+    },
+    "command": {
+        "type": "section",
+        "name": "命令设置",
+        "hint": "斜杠命令前缀、开关与白名单",
+        "collapsed": true,
+        "fields": {
+            "command_prefix": {
+                "type": "string",
+                "name": "命令前缀",
+                "default": "/arxiv",
+                "hint": "斜杠命令前缀，必须以 / 开头，如 /arxiv"
+            },
+            "enable_commands": {
+                "type": "switch",
+                "name": "启用斜杠命令",
+                "default": true,
+                "hint": "关闭后 /arxiv 命令不生效（LLM 工具仍可用）"
+            },
+            "slash_whitelist": {
+                "type": "list",
+                "name": "斜杠命令白名单",
+                "default": [],
+                "hint": "允许使用斜杠命令的 QQ 号（每行一个）；留空=不限制所有用户可用；使用斜杠命令需先 @机器人（私聊无需）"
+            }
+        }
+    },
+    "translate": {
+        "type": "section",
+        "name": "翻译设置",
+        "hint": "标题/摘要翻译（LLM）与 LaTeX 正文翻译（翻译插件后端/模型）配置",
+        "collapsed": true,
+        "fields": {
+            "translate_enabled": {
+                "type": "switch",
+                "name": "启用翻译",
+                "default": true,
+                "hint": "关闭后 -t/--translate 参数与工具的 translate 参数不生效"
+            },
+            "translate_lang": {
+                "type": "enum",
+                "name": "目标语言",
+                "options": [
+                    "zh",
+                    "en",
+                    "ja",
+                    "ko"
+                ],
+                "default": "zh",
+                "hint": "翻译目标语言"
+            },
+            "translate_backend": {
+                "type": "enum",
+                "name": "翻译后端",
+                "options": [
+                    "auto",
+                    "baidu",
+                    "deepl",
+                    "google",
+                    "aliyun",
+                    "local"
+                ],
+                "default": "auto",
+                "hint": "LaTeX 正文翻译（/arxiv translate-latex）使用的后端：auto=按翻译插件配置自动回退；baidu/deepl/google/aliyun/local 为直接指定后端（local=本地模型，见 translate_local_model 说明）"
+            },
+            "translate_local_model": {
+                "type": "string",
+                "name": "本地翻译模型",
+                "default": "",
+                "hint": "仅当 translate_backend=local 时生效，如 qwen2.5:7b；留空则用翻译插件自身 local_model。当前翻译插件接口暂不支持按调用覆盖模型，local 模型需在翻译插件（kira-ai-plugin-translate）侧设置；若翻译插件后续支持 model 参数，本配置将自动透传覆盖"
+            }
+        }
+    }
+}
