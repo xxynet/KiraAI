@@ -25,3 +25,4 @@ py-cord>=2.7.2
 deprecated>=1.2.13
 aiohttp>=3.14.1
 dashscope>=1.26.3
+tzdata>=2025.2
