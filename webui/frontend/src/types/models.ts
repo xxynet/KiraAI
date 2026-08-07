@@ -252,6 +252,8 @@ export interface PluginStoreItem {
   author: string
   description: string
   category?: string
+  category_name?: string | null
+  category_locales?: Record<string, Record<string, string>>
   repo?: string | null
   icon?: string | null
   downloads?: number

@@ -261,6 +261,8 @@ class PluginStoreItemResponse(BaseModel):
     author: str = ""
     description: str = ""
     category: Optional[str] = None
+    category_name: Optional[str] = None
+    category_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     repo: Optional[str] = None
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
