@@ -844,7 +844,7 @@
             </div>
             <div v-if="'category' in selectedPlugin && selectedPlugin.category">
               <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.category') }}</dt>
-              <dd class="mt-1 text-gray-900 dark:text-gray-100">{{ selectedPlugin.category }}</dd>
+              <dd class="mt-1 text-gray-900 dark:text-gray-100">{{ storeCategoryName(selectedPlugin) }}</dd>
             </div>
             <div v-if="'core_version' in selectedPlugin && selectedPlugin.core_version">
               <dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.core_version') }}</dt>
@@ -1782,16 +1782,16 @@ const STORE_PAGE_SIZE = 12
 const storePage = ref(1)
 
 const storeCategoryOptions = computed(() => {
-  const categories = new Set(
-    storePlugins.value
-      .map(item => item.category?.trim())
-      .filter((category): category is string => Boolean(category)),
-  )
+  const categories = new Map<string, PluginStoreItem>()
+  for (const item of storePlugins.value) {
+    const category = item.category?.trim()
+    if (category && !categories.has(category)) categories.set(category, item)
+  }
   return [
     { value: 'all', label: t('pluginStore.all_categories') },
-    ...Array.from(categories)
-      .sort((a, b) => a.localeCompare(b))
-      .map(category => ({ value: category, label: category })),
+    ...Array.from(categories.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([category, item]) => ({ value: category, label: storeCategoryName(item) })),
   ]
 })
 
@@ -1855,6 +1855,19 @@ watch(storeTotalPages, totalPages => {
 
 function storePluginName(item: PluginStoreItem): string {
   return localize(item, 'display_name', item.name || item.id)
+}
+
+function storeCategoryName(item: {
+  category?: string | null
+  category_name?: string | null
+  category_locales?: Record<string, Record<string, string>>
+}): string {
+  const category = item.category?.trim() || ''
+  return localize(
+    { name: item.category_name || category, locales: item.category_locales },
+    'name',
+    category,
+  )
 }
 
 function storePluginUpdatedAt(item: PluginStoreItem): number {

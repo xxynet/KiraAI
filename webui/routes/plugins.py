@@ -637,6 +637,8 @@ class PluginsRoutes(Routes):
                     author=str(item.get("author", "")),
                     description=str(item.get("description", "")),
                     category=item.get("category"),
+                    category_name=item.get("category_name"),
+                    category_locales=item.get("category_locales") or {},
                     repo=item.get("repo"),
                     locales=item.get("locales") or {},
                     tags=[str(t) for t in tags if t],
@@ -692,8 +694,12 @@ class PluginsRoutes(Routes):
         GitHub metadata is limited to the public star count used for sorting.
         """
         raw_plugins: Any = None
+        category_catalog: Dict[str, Any] = {}
         if isinstance(raw_data, dict):
             raw_plugins = raw_data.get("plugins", [])
+            raw_categories = raw_data.get("categories")
+            if isinstance(raw_categories, dict):
+                category_catalog = raw_categories
         elif isinstance(raw_data, list):
             raw_plugins = raw_data
 
@@ -716,6 +722,9 @@ class PluginsRoutes(Routes):
             author = raw.get("author", "")
             description = raw.get("description", "")
             category = raw.get("category")
+            category_info = category_catalog.get(category) if isinstance(category, str) else None
+            category_name = category_info.get("name") if isinstance(category_info, dict) else None
+            category_locales = category_info.get("locales") if isinstance(category_info, dict) else None
             repo = raw.get("repo") or raw.get("repo_url")
             github_data = raw.get("github_data")
             github_stars = github_data.get("stars", 0) if isinstance(github_data, dict) else 0
@@ -731,6 +740,8 @@ class PluginsRoutes(Routes):
                 "author": str(author),
                 "description": str(description),
                 "category": str(category) if category else None,
+                "category_name": str(category_name) if category_name else None,
+                "category_locales": category_locales if isinstance(category_locales, dict) else {},
                 "repo": str(repo) if repo else None,
                 "locales": locales if isinstance(locales, dict) else {},
                 "stars": int(stars) if isinstance(stars, (int, float, str)) and str(stars).isdigit() else 0,
