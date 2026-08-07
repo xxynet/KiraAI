@@ -675,7 +675,7 @@ export default {
       default_tts_desc: 'Text to speech.',
       default_stt: 'Default STT',
       default_stt_desc: 'Speech to text.',
-      default_image: 'Default Image',
+      default_image: 'Default Image Generation',
       default_image_desc: 'Image generation.',
       default_embedding: 'Default Embedding',
       default_embedding_desc: 'Embedding model.',

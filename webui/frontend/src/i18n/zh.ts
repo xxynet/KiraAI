@@ -676,7 +676,7 @@ export default {
       default_tts_desc: '文本转语音模型。',
       default_stt: '默认语音识别',
       default_stt_desc: '语音转文本模型。',
-      default_image: '默认图片模型',
+      default_image: '默认图片生成模型',
       default_image_desc: '图片生成模型。',
       default_embedding: '默认向量嵌入',
       default_embedding_desc: '向量嵌入模型。',
