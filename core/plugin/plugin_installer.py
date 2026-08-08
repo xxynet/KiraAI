@@ -51,6 +51,7 @@ async def install_from_github(
     gh_proxy: Optional[str] = None,
     is_plugin_installed: Optional[Callable[[str], bool]] = None,
     target_dir: Optional[Path] = None,
+    expected_plugin_id: Optional[str] = None,
 ) -> Path:
     """
     Download a plugin from GitHub, extract it, and move it into plugins_dir.
@@ -62,6 +63,8 @@ async def install_from_github(
                           declares an already registered plugin ID.
     target_dir — existing plugin directory to replace. Used by updates when
                  its folder name differs from the plugin ID.
+    expected_plugin_id — plugin ID expected by an update request. The archive
+                         is rejected before replacing target_dir if it differs.
 
     Returns the installed plugin directory.
     Raises ValueError for bad URL / missing manifest.
@@ -96,6 +99,7 @@ async def install_from_github(
         preferred_name=repo,
         is_plugin_installed=is_plugin_installed,
         target_dir=target_dir,
+        expected_plugin_id=expected_plugin_id,
     )
 
 
@@ -105,6 +109,7 @@ async def install_from_zip(
     preferred_name: str = "",
     is_plugin_installed: Optional[Callable[[str], bool]] = None,
     target_dir: Optional[Path] = None,
+    expected_plugin_id: Optional[str] = None,
 ) -> Path:
     """
     Install a plugin from an uploaded zip archive.
@@ -115,6 +120,7 @@ async def install_from_zip(
     is_plugin_installed — callback used to reject an archive whose manifest
                           declares an already registered plugin ID.
     target_dir — existing plugin directory to replace.
+    expected_plugin_id — plugin ID expected by an update request.
 
     Returns the installed plugin directory.
     Raises ValueError if the archive is invalid or manifest.json is missing.
@@ -132,6 +138,7 @@ async def install_from_zip(
         preferred_name=preferred_name,
         is_plugin_installed=is_plugin_installed,
         target_dir=target_dir,
+        expected_plugin_id=expected_plugin_id,
     )
 
 
@@ -183,6 +190,7 @@ async def _extract_and_install(
     preferred_name: str = "",
     is_plugin_installed: Optional[Callable[[str], bool]] = None,
     target_dir: Optional[Path] = None,
+    expected_plugin_id: Optional[str] = None,
 ) -> Path:
     """
     Extract temp_zip into a staging directory under data/temp/, move the result
@@ -218,6 +226,10 @@ async def _extract_and_install(
             if not plugin_id:
                 raise ValueError(
                     "manifest.json does not contain 'plugin_id' and no name could be inferred"
+                )
+            if expected_plugin_id and plugin_id != expected_plugin_id:
+                raise ValueError(
+                    f"Plugin identity changed: expected '{expected_plugin_id}', got '{plugin_id}'"
                 )
             if is_plugin_installed and is_plugin_installed(plugin_id):
                 raise PluginAlreadyInstalledError(

@@ -379,7 +379,7 @@ class PluginsRoutes(Routes):
                 is_plugin_installed=plugin_manager.has_plugin,
             )
         except PluginAlreadyInstalledError as e:
-            raise HTTPException(status_code=409, detail=str(e))
+            raise HTTPException(status_code=409, detail=str(e)) from e
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
         except ConnectionError as e:
@@ -410,7 +410,7 @@ class PluginsRoutes(Routes):
                 is_plugin_installed=plugin_manager.has_plugin,
             )
         except PluginAlreadyInstalledError as e:
-            raise HTTPException(status_code=409, detail=str(e))
+            raise HTTPException(status_code=409, detail=str(e)) from e
         except (ValueError, IOError) as e:
             raise HTTPException(status_code=422, detail=str(e))
 
@@ -551,6 +551,7 @@ class PluginsRoutes(Routes):
                 plugin_manager.plugin_dir,
                 gh_proxy=payload.gh_proxy,
                 target_dir=plugin_dir,
+                expected_plugin_id=plugin_id,
             )
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))

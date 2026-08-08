@@ -50,3 +50,25 @@ def test_update_replaces_legacy_plugin_directory(tmp_path, monkeypatch):
     assert installed_dir == legacy_dir
     assert not (legacy_dir / "stale.txt").exists()
     assert not (plugins_dir / "plugin-id").exists()
+
+
+def test_update_rejects_a_changed_plugin_id_before_replacing_files(tmp_path, monkeypatch):
+    plugins_dir = tmp_path / "plugins"
+    legacy_dir = plugins_dir / "repository-folder"
+    legacy_dir.mkdir(parents=True)
+    stale_file = legacy_dir / "stale.txt"
+    stale_file.write_text("old plugin", encoding="utf-8")
+    monkeypatch.setattr(plugin_installer, "get_data_path", lambda: tmp_path)
+
+    with pytest.raises(ValueError, match="Plugin identity changed"):
+        asyncio.run(
+            plugin_installer.install_from_zip(
+                _plugin_archive("different-plugin-id"),
+                plugins_dir,
+                target_dir=legacy_dir,
+                expected_plugin_id="plugin-id",
+            )
+        )
+
+    assert stale_file.read_text(encoding="utf-8") == "old plugin"
+    assert not (legacy_dir / "main.py").exists()
