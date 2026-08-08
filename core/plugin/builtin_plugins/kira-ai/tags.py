@@ -86,7 +86,11 @@ class ImgTag(BaseTag):
                 img_extension = ref_file.suffix.lstrip(".")
                 bs64 = await image_to_base64(str(ref_file))
                 ref_images.append(Image(image=bs64, name=p, mime=f"image/{img_extension}"))
-            image_client = self.ctx.provider_mgr.get_default_image()
+            try:
+                image_client = self.ctx.provider_mgr.get_default_image()
+            except ValueError as exc:
+                message_logger.error(f"Failed to get image client: {exc}")
+                return []
             if not image_client:
                 message_logger.error("Failed to get image client, please set default image model in Configuration")
                 return []
@@ -98,7 +102,11 @@ class ImgTag(BaseTag):
             return [img_res] if img_res else []
         else:
             # text-to-image mode (original behavior)
-            image_client = self.ctx.provider_mgr.get_default_image()
+            try:
+                image_client = self.ctx.provider_mgr.get_default_image()
+            except ValueError as exc:
+                message_logger.error(f"Failed to get image client: {exc}")
+                return []
             if not image_client:
                 message_logger.error("Failed to get image client, please set default image model in Configuration")
                 return []
