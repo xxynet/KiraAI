@@ -27,8 +27,8 @@
       />
     </div>
     <div
-      class="collapsible-section-body border border-t-0 border-gray-200 dark:border-gray-700 rounded-b-lg bg-white dark:bg-gray-900 overflow-hidden transition-all duration-200"
-      :class="{ 'max-h-0 opacity-0 py-0 border-0': isCollapsed, 'max-h-[2000px] opacity-100': !isCollapsed }"
+      class="collapsible-section-body border border-t-0 border-gray-200 dark:border-gray-700 rounded-b-lg bg-white dark:bg-gray-900 overflow-x-hidden transition-all duration-200"
+      :class="{ 'max-h-0 opacity-0 py-0 border-0 overflow-hidden': isCollapsed, 'max-h-[2000px] opacity-100 overflow-y-auto': !isCollapsed }"
     >
       <div class="p-4">
         <slot />
