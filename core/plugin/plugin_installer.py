@@ -20,7 +20,7 @@ import sys
 import uuid
 import zipfile
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from core.logging_manager import get_logger
 from core.utils.github_api import parse_github_url, pick_fastest_source
@@ -28,6 +28,10 @@ from core.utils.network import download_file
 from core.utils.path_utils import get_data_path, is_within_directory
 
 logger = get_logger("plugin_installer", "cyan")
+
+
+class PluginAlreadyInstalledError(ValueError):
+    """Raised when an archive declares a plugin already registered at runtime."""
 
 
 def _temp_dir() -> Path:
@@ -45,6 +49,8 @@ async def install_from_github(
     plugins_dir: Path,
     proxy: Optional[str] = None,
     gh_proxy: Optional[str] = None,
+    is_plugin_installed: Optional[Callable[[str], bool]] = None,
+    target_dir: Optional[Path] = None,
 ) -> Path:
     """
     Download a plugin from GitHub, extract it, and move it into plugins_dir.
@@ -52,6 +58,10 @@ async def install_from_github(
     proxy    — HTTP/SOCKS proxy forwarded to download_file
     gh_proxy — GitHub reverse-proxy URL prefix (e.g. "https://ghproxy.com/")
                The direct archive link is appended to this prefix.
+    is_plugin_installed — callback used to reject an archive whose manifest
+                          declares an already registered plugin ID.
+    target_dir — existing plugin directory to replace. Used by updates when
+                 its folder name differs from the plugin ID.
 
     Returns the installed plugin directory.
     Raises ValueError for bad URL / missing manifest.
@@ -80,19 +90,31 @@ async def install_from_github(
         temp_zip.unlink(missing_ok=True)
         raise ConnectionError(f"Failed to download from GitHub: {e}") from e
 
-    return await _extract_and_install(temp_zip, plugins_dir, preferred_name=repo)
+    return await _extract_and_install(
+        temp_zip,
+        plugins_dir,
+        preferred_name=repo,
+        is_plugin_installed=is_plugin_installed,
+        target_dir=target_dir,
+    )
 
 
 async def install_from_zip(
     zip_bytes: bytes,
     plugins_dir: Path,
     preferred_name: str = "",
+    is_plugin_installed: Optional[Callable[[str], bool]] = None,
+    target_dir: Optional[Path] = None,
 ) -> Path:
     """
     Install a plugin from an uploaded zip archive.
 
     Writes the bytes to data/temp/ first so large uploads are not kept in
     memory during extraction, then extracts and moves to plugins_dir.
+
+    is_plugin_installed — callback used to reject an archive whose manifest
+                          declares an already registered plugin ID.
+    target_dir — existing plugin directory to replace.
 
     Returns the installed plugin directory.
     Raises ValueError if the archive is invalid or manifest.json is missing.
@@ -104,7 +126,13 @@ async def install_from_zip(
         temp_zip.unlink(missing_ok=True)
         raise IOError(f"Failed to write uploaded zip to temp: {e}") from e
 
-    return await _extract_and_install(temp_zip, plugins_dir, preferred_name=preferred_name)
+    return await _extract_and_install(
+        temp_zip,
+        plugins_dir,
+        preferred_name=preferred_name,
+        is_plugin_installed=is_plugin_installed,
+        target_dir=target_dir,
+    )
 
 
 async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = None) -> List[str]:
@@ -153,6 +181,8 @@ async def _extract_and_install(
     temp_zip: Path,
     plugins_dir: Path,
     preferred_name: str = "",
+    is_plugin_installed: Optional[Callable[[str], bool]] = None,
+    target_dir: Optional[Path] = None,
 ) -> Path:
     """
     Extract temp_zip into a staging directory under data/temp/, move the result
@@ -189,6 +219,10 @@ async def _extract_and_install(
                 raise ValueError(
                     "manifest.json does not contain 'plugin_id' and no name could be inferred"
                 )
+            if is_plugin_installed and is_plugin_installed(plugin_id):
+                raise PluginAlreadyInstalledError(
+                    f"Plugin '{plugin_id}' is already installed. Use the update action instead."
+                )
 
             staging = _temp_dir() / f"extract_{uuid.uuid4().hex[:8]}_{plugin_id}"
             staging.mkdir(parents=True, exist_ok=True)
@@ -206,9 +240,15 @@ async def _extract_and_install(
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(zf.read(item.filename))
 
-        # Move staging → plugins_dir/<plugin_id>/  (replace if already exists)
+        # Updates may preserve a legacy directory name. New installs always
+        # use plugins_dir/<plugin_id>/.
         plugins_dir.mkdir(parents=True, exist_ok=True)
-        dest = plugins_dir / plugin_id
+        if target_dir is None:
+            dest = plugins_dir / plugin_id
+        else:
+            dest = target_dir
+            if dest.resolve().parent != plugins_dir.resolve():
+                raise ValueError("Plugin update target must be a direct child of the plugins directory")
         if dest.exists():
             shutil.rmtree(dest)
         shutil.move(str(staging), str(dest))

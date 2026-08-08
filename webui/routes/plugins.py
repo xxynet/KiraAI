@@ -9,7 +9,12 @@ from fastapi import Depends, File, HTTPException, Query, Response, UploadFile
 
 from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
-from core.plugin.plugin_installer import install_from_github, install_from_zip, install_requirements
+from core.plugin.plugin_installer import (
+    PluginAlreadyInstalledError,
+    install_from_github,
+    install_from_zip,
+    install_requirements,
+)
 from core.utils.path_utils import get_data_path
 from webui.models import (
     PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem,
@@ -371,7 +376,10 @@ class PluginsRoutes(Routes):
                 plugin_manager.plugin_dir,
                 proxy=payload.proxy,
                 gh_proxy=payload.gh_proxy,
+                is_plugin_installed=plugin_manager.has_plugin,
             )
+        except PluginAlreadyInstalledError as e:
+            raise HTTPException(status_code=409, detail=str(e))
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
         except ConnectionError as e:
@@ -396,7 +404,13 @@ class PluginsRoutes(Routes):
 
         zip_bytes = await file.read()
         try:
-            plugin_dir = await install_from_zip(zip_bytes, plugin_manager.plugin_dir)
+            plugin_dir = await install_from_zip(
+                zip_bytes,
+                plugin_manager.plugin_dir,
+                is_plugin_installed=plugin_manager.has_plugin,
+            )
+        except PluginAlreadyInstalledError as e:
+            raise HTTPException(status_code=409, detail=str(e))
         except (ValueError, IOError) as e:
             raise HTTPException(status_code=422, detail=str(e))
 
@@ -527,11 +541,16 @@ class PluginsRoutes(Routes):
         if not info.repo:
             raise HTTPException(status_code=400, detail="Plugin has no repo URL configured")
 
+        plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)
+        if not plugin_dir:
+            raise HTTPException(status_code=500, detail="Could not resolve installed plugin directory")
+
         try:
             plugin_dir = await install_from_github(
                 info.repo,
                 plugin_manager.plugin_dir,
                 gh_proxy=payload.gh_proxy,
+                target_dir=plugin_dir,
             )
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
