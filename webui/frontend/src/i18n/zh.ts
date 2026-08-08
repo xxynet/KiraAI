@@ -345,6 +345,7 @@ export default {
     install_installing: '安装中...',
     install_success: '插件安装成功',
     install_failed: '安装失败',
+    install_already_installed: '该插件已安装，请使用更新功能。',
     install_warning: '安装完成（有警告）',
     install_url_required: '请输入仓库链接',
     install_no_file: '请选择 .zip 文件',

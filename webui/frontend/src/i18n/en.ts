@@ -345,6 +345,7 @@ export default {
     install_installing: 'Installing...',
     install_success: 'Plugin installed successfully',
     install_failed: 'Installation failed',
+    install_already_installed: 'This plugin is already installed. Please use the update action instead.',
     install_warning: 'Installed with warnings',
     install_url_required: 'Repository URL is required',
     install_no_file: 'Please select a .zip file',

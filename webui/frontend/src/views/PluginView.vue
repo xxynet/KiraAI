@@ -1457,8 +1457,12 @@ async function handleInstall() {
     installDialogVisible.value = false
     notify(t('plugin.install_success'), 'success')
     await loadPlugins()
-  } catch {
-    notify(t('plugin.install_failed'), 'error')
+  } catch (e: any) {
+    if (e?.response?.status === 409) {
+      notify(t('plugin.install_already_installed'), 'error')
+    } else {
+      notify(t('plugin.install_failed'), 'error')
+    }
   } finally {
     installing.value = false
   }
