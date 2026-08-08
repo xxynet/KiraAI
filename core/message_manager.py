@@ -13,7 +13,7 @@ import random
 import os
 
 from core.logging_manager import get_logger
-from core.utils.common_utils import desc_img
+from core.utils.common_utils import desc_img, speech_to_text
 from core.utils.path_utils import get_data_path
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent, MessageChain
 from core.chat.message_utils import KiraIMSentResult, KiraStepResult
@@ -376,7 +376,12 @@ class MessageProcessor:
                 try:
                     caps = self.kira_config.get_config("bot_config.capabilities.stt", {})
                     if caps.get("enabled", True):
-                        record_text = await self.llm_api.speech_to_text(record=ele)
+                        stt_client = self.provider_mgr.get_default_stt()
+                        if not stt_client:
+                            logger.error("Failed to get STT client, please set default STT model in Configuration")
+                            record_text = "[Speech recognition unavailable]"
+                        else:
+                            record_text = await speech_to_text(client=stt_client, record=ele)
                     else:
                         record_text = "[Speech recognition disabled]"
                 except Exception as e:

@@ -8,8 +8,8 @@ from typing import Union, TYPE_CHECKING
 from core.logging_manager import get_logger
 
 if TYPE_CHECKING:
-    from core.chat.message_elements import Image, Sticker
-    from core.provider import LLMModelClient
+    from core.chat.message_elements import Image, Sticker, Record
+    from core.provider import LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient
 
 logger = get_logger("llm", "purple")
 
@@ -93,3 +93,58 @@ async def desc_img(
     except Exception as e:
         logger.error(f"error occurred when describing image: {str(e)}")
         return ""
+
+
+async def text_to_speech(client: TTSModelClient, text: str) -> Record:
+        tts_client = client
+        provider_name = tts_client.model.provider_name
+        model_id = tts_client.model.model_id
+        logger.info(f"Generating speech using {model_id} ({provider_name})")
+        record = await tts_client.text_to_speech(text)
+        if record:
+            logger.info(f"Generated speech from text {text}")
+        return record
+
+
+async def speech_to_text(client: STTModelClient, record: Record):
+    stt_client = client
+    provider_name = stt_client.model.provider_name
+    model_id = stt_client.model.model_id
+    logger.info(f"Recognizing text using {model_id} ({provider_name})")
+    text = await stt_client.speech_to_text(record)
+    logger.info(f"Recognized text: {text}")
+    return text
+
+
+async def generate_image(client: ImageModelClient, prompt: str) -> Image:
+    image_client = client
+    provider_name = image_client.model.provider_name
+    model_id = image_client.model.model_id
+    logger.info(f"Generating image using {model_id} ({provider_name})")
+    try:
+        img_res = await image_client.text_to_image(prompt)
+        if img_res:
+            logger.info(f"Image generated with prompt: {prompt}")
+            logger.debug(f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}")
+        else:
+            logger.error("Failed to generate image with text: result is None")
+        return img_res
+    except Exception as e:
+        logger.error(f"Failed to generate image with text: {e}")
+
+
+async def image_to_image(client: ImageModelClient, prompt: str, image: Union[Image, list[Image]]) -> Image:
+    image_client = client
+    provider_name = image_client.model.provider_name
+    model_id = image_client.model.model_id
+    logger.info(f"Generating image using {model_id} ({provider_name}) with a reference image")
+    try:
+        img_res = await image_client.image_to_image(prompt=prompt, image=image)
+        if img_res:
+            logger.info(f"Image generated (img2img): prompt: {prompt}")
+            logger.debug(f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}")
+        else:
+            logger.error("Failed to generate image with a reference image: result is None")
+        return img_res
+    except Exception as e:
+        logger.error(f"Failed to generate image with a reference image: {e}")

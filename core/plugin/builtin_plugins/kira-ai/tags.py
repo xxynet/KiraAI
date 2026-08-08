@@ -18,7 +18,7 @@ from core.chat.message_elements import (
 )
 
 from core.utils.path_utils import get_data_path
-from core.utils.common_utils import image_to_base64
+from core.utils.common_utils import image_to_base64, text_to_speech, generate_image, image_to_image
 from core.logging_manager import get_logger
 
 message_logger = get_logger("message", "cyan")
@@ -86,15 +86,23 @@ class ImgTag(BaseTag):
                 img_extension = ref_file.suffix.lstrip(".")
                 bs64 = await image_to_base64(str(ref_file))
                 ref_images.append(Image(image=bs64, name=p, mime=f"image/{img_extension}"))
+            image_client = self.ctx.provider_mgr.get_default_image()
+            if not image_client:
+                message_logger.error("Failed to get image client, please set default image model in Configuration")
+                return []
             if not ref_images:
                 message_logger.warning("No valid reference images found, falling back to text-to-image")
-                img_res = await self.ctx.llm_api.generate_img(value)
+                img_res = await generate_image(image_client, value)
                 return [img_res] if img_res else []
-            img_res = await self.ctx.llm_api.image_to_image(value, image=ref_images)
+            img_res = await image_to_image(image_client, value, image=ref_images)
             return [img_res] if img_res else []
         else:
             # text-to-image mode (original behavior)
-            img_res = await self.ctx.llm_api.generate_img(value)
+            image_client = self.ctx.provider_mgr.get_default_image()
+            if not image_client:
+                message_logger.error("Failed to get image client, please set default image model in Configuration")
+                return []
+            img_res = await generate_image(image_client, value)
             return [img_res] if img_res else []
 
 
@@ -153,7 +161,11 @@ class RecordTag(BaseTag):
             if not caps.get("enabled", True):
                 message_logger.warning("TTS is disabled in capabilities settings")
                 return []
-            record_obj = await self.ctx.llm_api.text_to_speech(value)
+            tts_client = self.ctx.provider_mgr.get_default_tts()
+            if not tts_client:
+                message_logger.error("Failed to get TTS client, please set default TTS model in Configuration")
+                return []
+            record_obj = await text_to_speech(tts_client, value)
             return [record_obj]
         except Exception as e:
             message_logger.error(f"an error occurred while generating voice message: {e}")
@@ -191,7 +203,11 @@ class SelfieTag(BaseTag):
             if ref_file.is_file():
                 img_extension = ref_file.suffix.lstrip(".")
                 bs64 = await image_to_base64(str(ref_file))
-                img_res = await self.ctx.llm_api.image_to_image(value, image=Image(image=bs64, name=ref_img_path, mime=f"image/{img_extension}"))
+                image_client = self.ctx.provider_mgr.get_default_image()
+                if not image_client:
+                    message_logger.error("Failed to get image client, please set default image model in Configuration")
+                    return []
+                img_res = await image_to_image(image_client, value, image=Image(image=bs64, name=ref_img_path, mime=f"image/{img_extension}"))
                 if img_res:
                     return [img_res]
                 message_logger.warning("Invalid selfie image result")
