@@ -124,7 +124,11 @@ class VideoTag(BaseTag):
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         duration = kwargs.get("duration", "5")
 
-        video_client = self.ctx.provider_mgr.get_default_video()
+        try:
+            video_client = self.ctx.provider_mgr.get_default_video()
+        except ValueError as exc:
+            provider_logger.error(f"Failed to get video client: {exc}")
+            return []
         if not video_client:
             provider_logger.error(f"Failed to get video client, please set default video model in Configuration")
             return []

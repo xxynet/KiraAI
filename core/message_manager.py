@@ -726,7 +726,11 @@ class MessageProcessor:
 
         cmt_prompt = await self.prompt_manager.get_comment_prompt(cmt_content)
 
-        client = self.provider_mgr.get_default_llm()
+        try:
+            client = self.provider_mgr.get_default_llm()
+        except ValueError as exc:
+            llm_logger.error(f"Failed to get default LLM client: {exc}")
+            return
         if not client:
             llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
             return
