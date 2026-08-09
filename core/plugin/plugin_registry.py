@@ -784,7 +784,7 @@ class PluginManager:
             bound_func = func
             if plugin_instance is not None and hasattr(plugin_instance, func.__name__):
                 bound_func = getattr(plugin_instance, func.__name__)
-            self.ctx.llm_api.register_tool(
+            self.ctx.tool_mgr.register_tool(
                 name=tool_name,
                 description=meta.get("description", ""),
                 parameters=meta.get("parameters") or {},
@@ -1451,10 +1451,10 @@ class PluginManager:
             return
 
         # clean up tool registration
-        if self.ctx and getattr(self.ctx, "llm_api", None):
+        if self.ctx and getattr(self.ctx, "tool_mgr", None):
             for tool_name in list(comp.tools.keys()):
                 try:
-                    self.ctx.llm_api.unregister_tool(tool_name)
+                    self.ctx.tool_mgr.unregister_tool(tool_name)
                 except Exception as e:
                     logger.error(f"Failed to unregister tool {tool_name} for plugin {plugin_id}: {e}")
 

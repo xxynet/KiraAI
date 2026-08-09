@@ -7,7 +7,7 @@ from typing import AsyncIterator, Optional, TYPE_CHECKING, Literal
 from openai import APIStatusError, APITimeoutError, APIConnectionError
 
 from core.logging_manager import get_logger
-from core.llm_client import LLMClient
+from .func_tool_manager import FuncToolManager
 from core.provider import LLMRequest, LLMResponse, LLMModelClient, ProviderAPIError
 from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage
@@ -43,8 +43,8 @@ class AgentStepResult:
 
 
 class AgentExecutor:
-    def __init__(self, llm_api: LLMClient, tool_set: Optional[ToolSet] = None):
-        self.llm_api = llm_api
+    def __init__(self, tool_manager: FuncToolManager, tool_set: Optional[ToolSet] = None):
+        self.tool_manager = tool_manager
         self.tool_set = tool_set
 
     async def run(
@@ -178,7 +178,7 @@ class AgentExecutor:
             reasoning = llm_resp.reasoning_content or ""
 
             try:
-                await self.llm_api.execute_tool(event, llm_resp, tool_set=self.tool_set)
+                await self.tool_manager.execute_tool(event, llm_resp, tool_set=self.tool_set)
             except Exception as e:
                 logger.error(f"[{sid}] Tool execution failed: {e}")
                 exc_event = KiraExceptionEvent(

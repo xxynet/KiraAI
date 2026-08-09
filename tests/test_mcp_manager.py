@@ -61,7 +61,7 @@ class FakeClient:
         ]
 
 
-class FakeLLMClient:
+class FakeFuncToolManager:
     def __init__(self):
         self.registered = {}
 
@@ -77,7 +77,7 @@ def manager(monkeypatch, tmp_path):
     monkeypatch.setattr(mcp_mgr, "MCP_CONFIG_PATH", tmp_path / "mcp.json")
     monkeypatch.setattr(mcp_mgr, "Client", FakeClient)
     FakeClient.instances = []
-    mgr = MCPManager(FakeLLMClient())
+    mgr = MCPManager(FakeFuncToolManager())
     return mgr
 
 
@@ -228,13 +228,13 @@ async def test_disable_server_closes_connection(manager):
     assert server.enabled is True
     assert server.id in manager._clients
     assert manager._clients[server.id].connected is True
-    assert "echo" in manager.llm_api.registered
+    assert "echo" in manager.tool_manager.registered
 
     await manager.disable_server(server.id)
     assert server.enabled is False
     assert server.id not in manager._clients
     assert FakeClient.instances[0].close_count == 1
-    assert "echo" not in manager.llm_api.registered
+    assert "echo" not in manager.tool_manager.registered
 
 
 @pytest.mark.anyio
@@ -297,7 +297,7 @@ async def test_no_reconnect_after_disable(manager):
     manager.mcp_config = {"mcpServers": {server.id: {"command": "echo"}}}
 
     await manager.enable_server(server.id)
-    func = manager.llm_api.registered["echo"]
+    func = manager.tool_manager.registered["echo"]
     await func(x=1)
 
     await manager.disable_server(server.id)
@@ -326,5 +326,5 @@ async def test_enable_server_fails_when_unreachable(manager, monkeypatch):
     # server must not be marked enabled, nothing registered, no client kept
     assert server.enabled is False
     assert manager.mcp_config["mcpServers"][server.id].get("enabled") is not True
-    assert manager.llm_api.registered == {}
+    assert manager.tool_manager.registered == {}
     assert server.id not in manager._clients

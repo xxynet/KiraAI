@@ -11,7 +11,7 @@ from .prompt_manager import PromptManager
 from core.chat.session_manager import SessionManager
 from .adapter import AdapterManager
 from .statistics import Statistics
-from .llm_client import LLMClient
+from .agent.func_tool_manager import FuncToolManager
 from .event_bus import EventBus
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent
 from .persona import PersonaManager
@@ -46,7 +46,7 @@ class KiraLifecycle:
 
         self.provider_manager: Optional[ProviderManager] = None
 
-        self.llm_api: Optional[LLMClient] = None
+        self.tool_manager: Optional[FuncToolManager] = None
 
         self.adapter_manager: Optional[AdapterManager] = None
 
@@ -147,8 +147,8 @@ class KiraLifecycle:
         # ====== init ProviderManager config ======
         self.provider_manager = ProviderManager(self.db_service, self.kira_config)
 
-        # ====== init LLMClient ======
-        self.llm_api = LLMClient(self.kira_config, self.provider_manager)
+        # ====== init function tool manager ======
+        self.tool_manager = FuncToolManager(self.kira_config)
         # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(self.kira_config, event_queue)
         await self.adapter_manager.initialize()
@@ -170,7 +170,7 @@ class KiraLifecycle:
 
         # ====== init MCP manager ======
         try:
-            self.mcp_manager = MCPManager(self.llm_api)
+            self.mcp_manager = MCPManager(self.tool_manager)
             await self.mcp_manager.init_mcp()
         except Exception as e:
             logger.error(f"Failed to initialize MCPManager: {e}")
@@ -183,7 +183,7 @@ class KiraLifecycle:
         self.message_processor = MessageProcessor(
             db=self.db_service,
             kira_config=self.kira_config,
-            llm_api=self.llm_api,
+            tool_manager=self.tool_manager,
             provider_manager=self.provider_manager,
             skills_manager=self.skills_manager,
             adapter_manager=self.adapter_manager,
@@ -211,7 +211,7 @@ class KiraLifecycle:
             config=self.kira_config,
             event_bus=self.event_bus,
             provider_mgr=self.provider_manager,
-            llm_api=self.llm_api,
+            tool_mgr=self.tool_manager,
             adapter_mgr=self.adapter_manager,
             persona_mgr=self.persona_manager,
             sticker_manager=self.sticker_manager,

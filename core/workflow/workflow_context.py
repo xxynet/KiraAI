@@ -8,7 +8,7 @@ from ..adapter import AdapterManager
 from core.chat.session_manager import SessionManager
 from core.config import KiraConfig
 from core.event_bus import EventBus
-from core.llm_client import LLMClient
+from core.agent.func_tool_manager import FuncToolManager
 from core.persona import PersonaManager
 from core.utils.path_utils import get_data_path
 
@@ -24,7 +24,7 @@ class WorkflowContext:
 
     provider_mgr: ProviderManager
 
-    llm_api: LLMClient
+    tool_mgr: FuncToolManager
 
     adapter_mgr: AdapterManager
 
