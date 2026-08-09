@@ -773,8 +773,8 @@ class MessageProcessor:
         :param tag_set: TagSet object
         :return: list[KiraIMSentResult]
         """
-        parts = event.sid.split(":")
-        if len(parts) != 3:
+        parts = event.sid.split(":", maxsplit=2)
+        if len(parts) != 3 or any(not part for part in parts):
             raise ValueError("invalid target, must follow the form of <adapter>:<dm|gm>:<id>")
 
         message_results = []
@@ -825,8 +825,8 @@ class MessageProcessor:
         :param chain: MessageChain instance
         :return: KiraIMSentResult instance
         """
-        parts = session.split(":")
-        if len(parts) != 3:
+        parts = session.split(":", maxsplit=2)
+        if len(parts) != 3 or any(not part for part in parts):
             raise ValueError("invalid target, must follow <adapter>:<dm|gm>:<id>")
 
         adapter_name, chat_type, pid = parts

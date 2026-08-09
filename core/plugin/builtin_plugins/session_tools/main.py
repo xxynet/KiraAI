@@ -81,8 +81,8 @@ class SessionPlugin(BasePlugin):
         }
     )
     async def session_send(self, event: KiraMessageBatchEvent, target: str, description: str):
-        parts = target.split(":")
-        if not len(parts) == 3:
+        parts = target.split(":", maxsplit=2)
+        if len(parts) != 3 or any(not part for part in parts):
             raise ValueError(f"Failed to parse sid")
         if event.sid == target:
             return "Do not send messages to current session using this tool, output directly to send messages"
