@@ -27,6 +27,7 @@ from core.provider.llm_model import RerankResult
 from core.chat.message_elements import Record, Image
 from core.logging_manager import get_logger
 from core.utils.model_clients import OpenAICompatibleLLMClient
+from core.utils.model_clients import build_llm_default_headers
 
 logger = get_logger("provider", "purple")
 
@@ -205,14 +206,10 @@ class BailianLLMClient(OpenAICompatibleLLMClient):
     """LLM via DashScope OpenAI-compatible chat completions."""
 
     def _build_client(self) -> AsyncOpenAI:
-        section_advanced = self.model.provider_config.get("section_advanced")
-        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
-        if not isinstance(default_headers, dict) or not default_headers:
-            default_headers = None
         return AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=resolve_compatible_base_url(self.model.provider_config),
-            default_headers=default_headers,
+            default_headers=build_llm_default_headers(self.model.provider_config),
         )
 
 

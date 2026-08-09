@@ -8,6 +8,7 @@ from anthropic import AnthropicError, AsyncAnthropic
 
 from core.provider import LLMModelClient, ModelInfo, ProviderAPIError
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
+from core.utils.model_clients import build_llm_default_headers
 
 DEFAULT_BASE_URL = "https://api.anthropic.com"
 DEFAULT_API_VERSION = "2023-06-01"
@@ -28,16 +29,7 @@ def build_anthropic_headers(provider_config: dict) -> dict[str, str]:
         "anthropic-version": provider_config.get("anthropic_version")
         or DEFAULT_API_VERSION,
     }
-    advanced = provider_config.get("section_advanced") or {}
-    custom_headers = advanced.get("headers") if isinstance(advanced, dict) else None
-    if isinstance(custom_headers, dict):
-        headers.update(
-            {
-                str(key): str(value)
-                for key, value in custom_headers.items()
-                if value is not None
-            }
-        )
+    headers.update(build_llm_default_headers(provider_config))
     return headers
 
 

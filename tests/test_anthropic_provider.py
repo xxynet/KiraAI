@@ -13,6 +13,7 @@ from core.provider.src.anthropic.model_clients import (
     normalize_anthropic_base_url,
 )
 from core.provider.src.anthropic.provider import AnthropicProvider
+from core.utils.model_clients import DEFAULT_USER_AGENT
 
 
 def build_client(
@@ -58,6 +59,7 @@ def test_normalizes_compatible_base_urls_and_builds_headers():
     assert headers["anthropic-version"] == "custom-version"
     assert headers["x-api-key"] == "override"
     assert headers["x-tenant"] == "42"
+    assert headers["User-Agent"] == DEFAULT_USER_AGENT
 
 
 def test_converts_openai_messages_images_and_tool_round_trip():

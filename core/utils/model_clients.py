@@ -7,6 +7,33 @@ from core.provider import ModelInfo
 from core.provider import LLMModelClient, TTSModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.chat.message_elements import Record
+from core.config.default import VERSION
+
+
+DEFAULT_USER_AGENT = f"kira-ai/{VERSION.removeprefix('v')}"
+
+
+def build_llm_default_headers(provider_config: dict | None) -> dict[str, str]:
+    """Return configured LLM headers with KiraAI's default user agent."""
+    config = provider_config or {}
+    advanced = config.get("section_advanced") or {}
+    configured_headers = advanced.get("headers") if isinstance(advanced, dict) else None
+    headers = (
+        {
+            str(key): str(value)
+            for key, value in configured_headers.items()
+            if value is not None
+        }
+        if isinstance(configured_headers, dict)
+        else {}
+    )
+    has_user_agent = any(
+        key.lower() == "user-agent" and value.strip()
+        for key, value in headers.items()
+    )
+    if not has_user_agent:
+        headers["User-Agent"] = DEFAULT_USER_AGENT
+    return headers
 
 class OpenAICompatibleLLMClient(LLMModelClient):
     def __init__(self, model: ModelInfo):
@@ -14,14 +41,10 @@ class OpenAICompatibleLLMClient(LLMModelClient):
 
     def _build_client(self) -> AsyncOpenAI:
         """Create an AsyncOpenAI client from provider config."""
-        section_advanced = self.model.provider_config.get("section_advanced")
-        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
-        if not isinstance(default_headers, dict) or not default_headers:
-            default_headers = None
         return AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
-            default_headers=default_headers,
+            default_headers=build_llm_default_headers(self.model.provider_config),
         )
 
     def _build_request_kwargs(self, request: LLMRequest, **overrides) -> dict:
@@ -39,8 +62,8 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         kwargs = dict(
             model=self.model.model_id,
             messages=[m if isinstance(m, dict) else m.to_dict() for m in request.messages],
-            tools=request.tools if request.tools else None,
-            tool_choice=request.tool_choice if request.tool_choice != "none" else None,
+            tools=request.tools if request.tools else NOT_GIVEN,
+            tool_choice=request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
             temperature=temperature if temperature is not None else NOT_GIVEN,
             timeout=timeout if timeout is not None else NOT_GIVEN,
         )
@@ -181,7 +204,7 @@ class OpenAICompatibleTTSClient(TTSModelClient):
         client = AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
-            default_headers=default_headers
+            default_headers=default_headers,
         )
 
         async with client.audio.speech.with_streaming_response.create(
