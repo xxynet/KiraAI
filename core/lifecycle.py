@@ -11,7 +11,7 @@ from .prompt_manager import PromptManager
 from core.chat.session_manager import SessionManager
 from .adapter import AdapterManager
 from .statistics import Statistics
-from .llm_client import FuncToolManager
+from .agent.func_tool_manager import FuncToolManager
 from .event_bus import EventBus
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent
 from .persona import PersonaManager

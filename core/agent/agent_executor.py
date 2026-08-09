@@ -7,7 +7,7 @@ from typing import AsyncIterator, Optional, TYPE_CHECKING, Literal
 from openai import APIStatusError, APITimeoutError, APIConnectionError
 
 from core.logging_manager import get_logger
-from core.llm_client import FuncToolManager
+from .func_tool_manager import FuncToolManager
 from core.provider import LLMRequest, LLMResponse, LLMModelClient, ProviderAPIError
 from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage

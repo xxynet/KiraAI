@@ -7,9 +7,9 @@ import json
 import time
 
 from core.logging_manager import get_logger
-from .config import KiraConfig
-from .provider import LLMRequest, LLMResponse
-from .agent.tool import ToolResult, ToolSet
+from core.config import KiraConfig
+from core.provider import LLMRequest, LLMResponse
+from .tool import ToolResult, ToolSet
 from core.utils.tool_utils import BaseTool
 
 logger = get_logger("llm", "purple")

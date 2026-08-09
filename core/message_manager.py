@@ -36,7 +36,7 @@ from core.chat.message_elements import (
     Video
 )
 
-from core.llm_client import FuncToolManager
+from core.agent.func_tool_manager import FuncToolManager
 from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager

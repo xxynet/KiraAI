@@ -10,7 +10,7 @@ from ..provider import ProviderManager, LLMModelClient, EmbeddingModelClient
 from core.chat.session_manager import SessionManager
 from ..adapter import AdapterManager
 from core.event_bus import EventBus
-from core.llm_client import FuncToolManager
+from core.agent.func_tool_manager import FuncToolManager
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group, KiraIMSentResult
 from core.config import KiraConfig
 from core.persona import PersonaManager

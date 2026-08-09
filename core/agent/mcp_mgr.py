@@ -5,7 +5,7 @@ from typing import Optional, Literal
 from dataclasses import dataclass, field
 from fastmcp import Client
 
-from core.llm_client import FuncToolManager
+from .func_tool_manager import FuncToolManager
 from core.utils.path_utils import get_config_path
 
 from core.logging_manager import get_logger
