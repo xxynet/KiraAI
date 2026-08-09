@@ -221,6 +221,12 @@ class AdapterManager:
                 return False
         return True
 
+    @staticmethod
+    def _validate_adapter_name(name: str):
+        """Reject adapter names that cannot be represented in session IDs."""
+        if ":" in name:
+            raise ValueError("Adapter name must not contain ':'")
+
     def generate_adapter_config(self, platform: str, name: str) -> Optional[str]:
         schema_fields = self.get_schema(platform)
         if not schema_fields:
@@ -263,6 +269,8 @@ class AdapterManager:
         if not name or not platform:
             logger.error("Adapter name and platform are required for creation")
             return None
+
+        self._validate_adapter_name(name)
 
         if not self._check_name_unique(name):
             raise ValueError(f"Adapter name '{name}' is already in use")
@@ -333,6 +341,8 @@ class AdapterManager:
         old_desc = config_entry.get("desc") or ""
 
         new_name_for_check = name or old_name
+        if name:
+            self._validate_adapter_name(name)
         if name and old_name != new_name_for_check and not self._check_name_unique(new_name_for_check, exclude_id=adapter_id):
             raise ValueError(f"Adapter name '{new_name_for_check}' is already in use")
 

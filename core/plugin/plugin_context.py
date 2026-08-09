@@ -162,8 +162,8 @@ class PluginContext:
         """
         import time
         cur_time = int(time.time())
-        parts = session.split(":")
-        if not len(parts) == 3:
+        parts = session.split(":", maxsplit=2)
+        if len(parts) != 3 or any(not part for part in parts):
             raise ValueError("Failed to parse session string")
         ada_name, st, sid = parts
         ada = self.adapter_mgr.get_adapter(ada_name)
