@@ -36,7 +36,7 @@ from core.chat.message_elements import (
     Video
 )
 
-from core.llm_client import LLMClient
+from core.llm_client import FuncToolManager
 from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager
@@ -149,7 +149,7 @@ class MessageProcessor:
     def __init__(self,
                  db: DatabaseService,
                  kira_config,
-                 llm_api: LLMClient,
+                 tool_manager: FuncToolManager,
                  provider_manager: ProviderManager,
                  skills_manager: SkillsManager,
                  adapter_manager: AdapterManager,
@@ -165,7 +165,7 @@ class MessageProcessor:
         self.min_message_delay = float(self.bot_config.get("min_message_delay", "0.8"))
         self.max_message_delay = float(self.bot_config.get("max_message_delay", "1.5"))
 
-        self.llm_api = llm_api
+        self.tool_manager = tool_manager
         self.event_bus: Optional[EventBus] = None
 
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
@@ -574,7 +574,7 @@ class MessageProcessor:
         # Filter tools by scope
         tool_server_map = self.mcp_manager.get_tool_server_map()
 
-        tool_set = self.llm_api.build_tool_set()
+        tool_set = self.tool_manager.build_tool_set()
         # Remove tools blocked by MCP server scope
         tool_set.tools = [
             t for t in tool_set.tools
@@ -642,7 +642,7 @@ class MessageProcessor:
 
         max_agent_steps = max_tool_loop
 
-        agent_executor = AgentExecutor(self.llm_api, request.tool_set)
+        agent_executor = AgentExecutor(self.tool_manager, request.tool_set)
         agent_ctx = AgentExecutionContext(
             event=event,
             request=request,

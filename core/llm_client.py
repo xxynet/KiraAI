@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-from asyncio import Semaphore, wait_for, TimeoutError as AsyncTimeoutError
+from asyncio import wait_for, TimeoutError as AsyncTimeoutError
 from typing import Optional, Union, TYPE_CHECKING
 import copy
 import json
 import time
 
 from core.logging_manager import get_logger
-from core.chat.message_elements import Record, Image, Sticker
 from .config import KiraConfig
 from .provider import LLMRequest, LLMResponse
 from .agent.tool import ToolResult, ToolSet
 from core.utils.tool_utils import BaseTool
-from .provider import ProviderManager
 
 logger = get_logger("llm", "purple")
 tool_logger = get_logger("tool_use", "orange")
@@ -41,55 +39,27 @@ class _LegacyFuncTool(BaseTool):
         }
 
 
-class LLMClient:
-    def __init__(self, kira_config: KiraConfig, provider_mgr: ProviderManager):
+class FuncToolManager:
+    def __init__(self, kira_config: KiraConfig):
         self.kira_config = kira_config
 
-        self.provider_mgr = provider_mgr
-
-        self.tools_definitions: list[dict] = []
-        self.tools_functions = {}
-
-        self.llm_semaphore = Semaphore(2)
+        self.tool_set = ToolSet()
 
     def register_tool(self, name, description, parameters, func):
         """Register a tool"""
-        self.tools_definitions.append({
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": description,
-                "parameters": parameters
-            }
-        })
-        self.tools_functions[name] = func
+        self.tool_set.add(_LegacyFuncTool(
+            name=name,
+            description=description,
+            parameters=parameters,
+            func=func,
+        ))
 
     def unregister_tool(self, name: str):
-        if name in self.tools_functions:
-            del self.tools_functions[name]
-
-        for i, tool_def in enumerate(self.tools_definitions):
-            if tool_def.get("function", {}).get("name") == name:
-                del self.tools_definitions[i]
+        self.tool_set.remove(name)
 
     def build_tool_set(self) -> ToolSet:
-        """Wrap all registered legacy tools into a unified ToolSet."""
-        tool_set = ToolSet()
-        for td in self.tools_definitions:
-            func_def = td.get("function", {})
-            name = func_def.get("name")
-            if not name:
-                continue
-            func = self.tools_functions.get(name)
-            if not func:
-                continue
-            tool_set.add(_LegacyFuncTool(
-                name=name,
-                description=func_def.get("description", ""),
-                parameters=func_def.get("parameters", {}),
-                func=func,
-            ))
-        return tool_set
+        """Return a request-local copy of the registered tools."""
+        return ToolSet(tools=self.tool_set.tools.copy())
 
     async def execute_tool(self, event: KiraMessageBatchEvent, resp: LLMResponse, tool_set: Optional[ToolSet] = None):
         max_tool_calls_per_turn = self.kira_config.get_config("bot_config.agent.max_tool_calls_per_turn")

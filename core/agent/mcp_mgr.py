@@ -5,7 +5,7 @@ from typing import Optional, Literal
 from dataclasses import dataclass, field
 from fastmcp import Client
 
-from core.llm_client import LLMClient
+from core.llm_client import FuncToolManager
 from core.utils.path_utils import get_config_path
 
 from core.logging_manager import get_logger
@@ -69,8 +69,8 @@ class MCPServer:
 
 
 class MCPManager:
-    def __init__(self, llm_api: LLMClient):
-        self.llm_api = llm_api
+    def __init__(self, tool_manager: FuncToolManager):
+        self.tool_manager = tool_manager
         self.mcp_config: dict = self.load_config()
         self.servers: list[MCPServer] = []
         # persistent fastmcp clients, one per server id
@@ -416,7 +416,7 @@ class MCPManager:
         target_server = next((s for s in self.servers if s.id == server_id), None)
         if target_server and target_server.enabled:
             for tool in target_server.tools:
-                self.llm_api.unregister_tool(tool.get("name"))
+                self.tool_manager.unregister_tool(tool.get("name"))
 
         await self.close_connection(server_id)
         self._client_locks.pop(server_id, None)
@@ -517,7 +517,7 @@ class MCPManager:
 
             func = self._make_mcp_func(target_server, tool_name)
 
-            self.llm_api.register_tool(
+            self.tool_manager.register_tool(
                 name=tool_name,
                 description=tool.get("description"),
                 parameters=tool.get("parameters"),
@@ -544,7 +544,7 @@ class MCPManager:
 
         for tool in target_server.tools:
             tool_name = tool.get("name")
-            self.llm_api.unregister_tool(tool_name)
+            self.tool_manager.unregister_tool(tool_name)
 
         await self.close_connection(server_id)
 
@@ -569,7 +569,7 @@ class MCPManager:
                     tool_name = tool.get("name")
                     tool_names.append(tool_name)
                     func = self._make_mcp_func(server, tool_name)
-                    self.llm_api.register_tool(
+                    self.tool_manager.register_tool(
                         name=tool_name,
                         description=tool.get("description"),
                         parameters=tool.get("parameters"),
