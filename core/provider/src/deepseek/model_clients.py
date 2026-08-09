@@ -1,10 +1,17 @@
-from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
+from openai import (
+    AsyncOpenAI,
+    APIStatusError,
+    APITimeoutError,
+    APIConnectionError,
+    NOT_GIVEN,
+)
 import time
 from typing import AsyncGenerator
 
 from core.provider import ModelInfo, LLMModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.logging_manager import get_logger
+from core.utils.model_clients import build_llm_default_headers
 
 logger = get_logger("provider", "purple")
 
@@ -25,14 +32,10 @@ class DeepSeekLLMClient(LLMModelClient):
 
     def _build_client(self) -> AsyncOpenAI:
         """Create an AsyncOpenAI client from provider config."""
-        section_advanced = self.model.provider_config.get("section_advanced")
-        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
-        if not isinstance(default_headers, dict) or not default_headers:
-            default_headers = None
         return AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
-            default_headers=default_headers,
+            default_headers=build_llm_default_headers(self.model.provider_config),
         )
 
     def _build_request_kwargs(self, request: LLMRequest, **overrides) -> dict:
@@ -59,8 +62,8 @@ class DeepSeekLLMClient(LLMModelClient):
         kwargs = dict(
             model=self.model.model_id,
             messages=[m if isinstance(m, dict) else m.to_dict() for m in request.messages],
-            tools=request.tools if request.tools else None,
-            tool_choice=request.tool_choice if request.tool_choice != "none" else None,
+            tools=request.tools if request.tools else NOT_GIVEN,
+            tool_choice=request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
         )
 
         if thinking_enabled:
