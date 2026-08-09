@@ -18,6 +18,9 @@ def test_llm_headers_default_and_preserve_custom_user_agent():
     assert build_llm_default_headers(
         {"section_advanced": {"headers": {"user-agent": "custom-agent/1.0"}}}
     ) == {"user-agent": "custom-agent/1.0"}
+    assert build_llm_default_headers(
+        {"section_advanced": {"headers": {"user-agent": ""}}}
+    ) == {"User-Agent": DEFAULT_USER_AGENT}
 
 
 @pytest.mark.parametrize(

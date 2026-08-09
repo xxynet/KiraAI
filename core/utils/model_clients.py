@@ -27,10 +27,10 @@ def build_llm_default_headers(provider_config: dict | None) -> dict[str, str]:
         if isinstance(configured_headers, dict)
         else {}
     )
-    has_user_agent = any(
-        key.lower() == "user-agent" and value.strip()
-        for key, value in headers.items()
-    )
+    for key in list(headers):
+        if key.lower() == "user-agent" and not headers[key].strip():
+            del headers[key]
+    has_user_agent = any(key.lower() == "user-agent" for key in headers)
     if not has_user_agent:
         headers["User-Agent"] = DEFAULT_USER_AGENT
     return headers
