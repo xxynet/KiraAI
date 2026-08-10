@@ -613,7 +613,12 @@ class MessageProcessor:
                     f"此外，你可以在<msg>标签外使用以下控制标签（与<msg>同级）：\n{root_prompt}" if root_prompt else "")
                 break
         request.assemble_prompt(
-            self.kira_config.get_config("bot_config.bot.dynamic_prompt_position", "latest_user")
+            dynamic_position=self.kira_config.get_config(
+                "bot_config.bot.dynamic_prompt_position", "latest_user"
+            ),
+            memory_position=self.kira_config.get_config(
+                "bot_config.bot.memory_prompt_position", "latest_user"
+            ),
         )
 
         # Re-derive tools list after plugins may have added to tool_set

@@ -13,6 +13,7 @@ from core.prompt_manager import Prompt
 # history. They can optionally be relocated to the tail of the latest user
 # message, where nothing follows them and the prefix stays cacheable.
 DYNAMIC_PROMPT_NAMES = ("sessions", "chat_env", "time")
+MEMORY_PROMPT_NAME = "memory"
 
 
 @dataclass
@@ -54,7 +55,11 @@ class LLMRequest:
             else:
                 self.tool_choice = "none"
 
-    def assemble_prompt(self, dynamic_position: str = "latest_user"):
+    def assemble_prompt(
+        self,
+        dynamic_position: str = "latest_user",
+        memory_position: str = "system",
+    ):
         """Assemble system/user prompts into the message list.
 
         ``dynamic_position`` controls where the blocks listed in
@@ -63,14 +68,23 @@ class LLMRequest:
         a stable, cacheable prefix. ``"system"`` keeps them inline in the system
         prompt, the behavior prior to this option. Any unknown value falls back
         to ``"system"``.
+
+        ``memory_position`` independently controls whether the core-memory
+        block remains in the system prompt or is moved to the latest user
+        message. It defaults to ``"system"`` to preserve the behavior of
+        callers that do not provide the new setting.
         """
         static_prompt = self.system_prompt
 
-        if dynamic_position == "latest_user":
+        if dynamic_position == "latest_user" or memory_position == "latest_user":
             static_prompt = []
             relocated: list[Prompt] = []
             for p in self.system_prompt:
-                if isinstance(p, Prompt) and p.name in DYNAMIC_PROMPT_NAMES:
+                should_relocate = isinstance(p, Prompt) and (
+                    (p.name in DYNAMIC_PROMPT_NAMES and dynamic_position == "latest_user")
+                    or (p.name == MEMORY_PROMPT_NAME and memory_position == "latest_user")
+                )
+                if should_relocate:
                     # Relocated blocks are request-only and must never be
                     # written back to the chat history.
                     p.persist = False

@@ -8,7 +8,8 @@ DEFAULT_CONFIG = {
             "max_buffer_messages": 5,
             "min_message_delay": 2,
             "max_message_delay": 5,
-            "dynamic_prompt_position": "latest_user"
+            "dynamic_prompt_position": "latest_user",
+            "memory_prompt_position": "latest_user"
         },
         "agent": {
             "max_tool_loop": 5,
