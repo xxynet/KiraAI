@@ -448,6 +448,10 @@ const allGroups: ConfigGroup[] = [
         { value: 'system', labelKey: 'configuration.message.dynamic_prompt_position_system', label: 'System Prompt' },
         { value: 'latest_user', labelKey: 'configuration.message.dynamic_prompt_position_latest_user', label: 'Latest User Message' },
       ]},
+      { key: 'bot_config.bot.memory_prompt_position', labelKey: 'configuration.message.memory_prompt_position', labelFallback: 'Memory Injection Position', hintKey: 'configuration.hints.memory_prompt_position', hintFallback: 'Where core memory is placed. Moving it to the latest user message keeps the system prompt stable and improves prompt cache hit rate when memory changes', type: 'select', default: 'latest_user', selectOptions: [
+        { value: 'system', labelKey: 'configuration.message.dynamic_prompt_position_system', label: 'System Prompt' },
+        { value: 'latest_user', labelKey: 'configuration.message.dynamic_prompt_position_latest_user', label: 'Latest User Message' },
+      ]},
       { key: 'chat_info', labelKey: 'configuration.message.chat_info', labelFallback: 'More Chat Settings', hintKey: 'configuration.hints.chat_info', hintFallback: 'More chat settings are available in the active message plugin config under Add-ons → Plugins', type: 'info' },
     ],
   },

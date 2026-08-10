@@ -2,9 +2,8 @@ from core.prompt_manager import Prompt
 from core.provider.llm_model import LLMRequest
 
 DYNAMIC_BLOCKS = ("SESSIONS", "CHATENV", "TIME")
-# 'memory' holds core memory content and 'tools' holds the tool few-shots that
-# plugins append. Both are deliberately kept in the system prompt.
-STATIC_BLOCKS = ("ROLE", "MEMORY", "TOOLS")
+MEMORY_BLOCK = "MEMORY"
+STATIC_BLOCKS = ("ROLE", "TOOLS")
 
 
 def make_request():
@@ -36,7 +35,7 @@ def test_system_position_keeps_dynamic_blocks_inline():
     req.assemble_prompt("system")
 
     system_content = req.messages[0].content
-    for block in (*STATIC_BLOCKS, *DYNAMIC_BLOCKS):
+    for block in (*STATIC_BLOCKS, MEMORY_BLOCK, *DYNAMIC_BLOCKS):
         assert block in system_content
     assert req.messages[-1].content.strip() == "hello"
 
@@ -54,7 +53,7 @@ def test_latest_user_moves_dynamic_blocks_out_of_system_prompt():
     req.assemble_prompt("latest_user")
 
     system_content = req.messages[0].content
-    for block in STATIC_BLOCKS:
+    for block in (*STATIC_BLOCKS, MEMORY_BLOCK):
         assert block in system_content
     for block in DYNAMIC_BLOCKS:
         assert block not in system_content
@@ -63,7 +62,7 @@ def test_latest_user_moves_dynamic_blocks_out_of_system_prompt():
     assert req.messages[-1].role == "user"
     for block in DYNAMIC_BLOCKS:
         assert block in user_content
-    for block in STATIC_BLOCKS:
+    for block in (*STATIC_BLOCKS, MEMORY_BLOCK):
         assert block not in user_content
     # Environment context precedes the actual user message.
     assert user_content.index("SESSIONS") < user_content.index("hello")
@@ -80,6 +79,23 @@ def test_relocated_blocks_are_wrapped_in_system_reminder():
         assert start < user_content.index(block) < end
     # The user's own message stays outside the wrapper.
     assert end < user_content.index("hello")
+
+
+def test_latest_user_moves_memory_when_configured():
+    req = make_request()
+    req.assemble_prompt("system", "latest_user")
+
+    assert MEMORY_BLOCK not in req.messages[0].content
+    assert MEMORY_BLOCK in req.messages[-1].content
+    assert req.messages[-1].content.index(MEMORY_BLOCK) < req.messages[-1].content.index("hello")
+
+
+def test_memory_position_is_independent_from_dynamic_position():
+    req = make_request()
+    req.assemble_prompt("latest_user", "system")
+
+    assert MEMORY_BLOCK in req.messages[0].content
+    assert MEMORY_BLOCK not in req.messages[-1].content
 
 
 def test_relocated_blocks_are_not_persisted():
