@@ -43,6 +43,7 @@ docker-compose up
 - PR body **must** strictly follow `.github/PULL_REQUEST_TEMPLATE.md` — read it before every `gh pr create`, fill every required section, and never freestyle the body.
 - Always check `core/utils/` for existing reusable interfaces before writing new ones.
 - All new code comments must be written in English.
+- When developing plugins, expose user-invoked capabilities through LLM-native extension points, such as `@register.tool` and `@register.tag` (XML tags), instead of command syntax for better digital life experience. 
 
 ## Architecture
 
