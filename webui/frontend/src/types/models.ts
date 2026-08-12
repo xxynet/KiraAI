@@ -101,6 +101,7 @@ export interface ProviderType {
   display_name: string
   description: string
   locales: Record<string, Record<string, string>>
+  icon?: string | null
 }
 
 export interface ProviderResponse extends ProviderBase {
@@ -109,6 +110,7 @@ export interface ProviderResponse extends ProviderBase {
   supported_model_types: string[]
   type_display_name: string
   type_locales: Record<string, Record<string, string>>
+  type_icon?: string | null
 }
 
 export interface ModelCreateRequest {
@@ -134,12 +136,14 @@ export interface AdapterPlatform {
   display_name: string
   description: string
   locales: Record<string, Record<string, string>>
+  icon?: string | null
 }
 
 export interface AdapterResponse extends AdapterBase {
   id: string
   platform_display_name: string
   platform_locales: Record<string, Record<string, string>>
+  platform_icon?: string | null
 }
 
 export interface PersonaBase {
@@ -196,6 +200,7 @@ export interface PluginItem {
   error?: string | null
   status?: string
   menus?: PageMenu[]
+  icon?: string | null
 }
 
 export interface PluginConfigUpdateRequest {

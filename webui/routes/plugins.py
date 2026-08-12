@@ -3,9 +3,11 @@ import shutil
 import time
 import json
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi.responses import FileResponse
 
 from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
@@ -37,6 +39,13 @@ class PluginsRoutes(Routes):
                 methods=["GET"],
                 endpoint=self.list_plugins,
                 response_model=List[PluginItem],
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/{plugin_id}/icon",
+                methods=["GET"],
+                endpoint=self.get_plugin_icon,
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -197,12 +206,24 @@ class PluginsRoutes(Routes):
                         error=info.error,
                         status=info.status,
                         menus=menus,
+                        icon=(
+                            f"/api/plugins/{quote(pid, safe='')}/icon"
+                            if info.icon else None
+                        ),
                     )
                 )
             return items
         except Exception as e:
             logger.error(f"Failed to list plugins: {e}")
             raise HTTPException(status_code=500, detail="Failed to list plugins")
+
+    async def get_plugin_icon(self, plugin_id: str):
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=404, detail="Plugin manager not available")
+        plugin_info = self.lifecycle.plugin_manager.get_plugin_info(plugin_id)
+        if not plugin_info or not plugin_info.icon:
+            raise HTTPException(status_code=404, detail="Plugin icon not found")
+        return FileResponse(plugin_info.icon, headers={"Cache-Control": "no-cache"})
 
     async def get_plugin_config(self, plugin_id: str):
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):

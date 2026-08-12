@@ -1,6 +1,8 @@
 from typing import Dict, List
+from urllib.parse import quote
 
 from fastapi import Depends, HTTPException, status
+from fastapi.responses import FileResponse
 
 from core.logging_manager import get_logger
 from webui.models import (
@@ -30,6 +32,13 @@ class ProvidersRoutes(Routes):
                 path="/api/provider-types",
                 methods=["GET"],
                 endpoint=self.get_provider_types,
+                tags=["providers"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/provider-types/{provider_type}/icon",
+                methods=["GET"],
+                endpoint=self.get_provider_type_icon,
                 tags=["providers"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -139,6 +148,13 @@ class ProvidersRoutes(Routes):
             return manifest.get("display_name") or provider_type, manifest.get("locales") or {}
         return provider_type, {}
 
+    def _get_provider_type_icon(self, provider_type: str) -> str | None:
+        if not self.lifecycle or not self.lifecycle.provider_manager:
+            return None
+        if not self.lifecycle.provider_manager.get_icon_path(provider_type):
+            return None
+        return f"/api/provider-types/{quote(provider_type, safe='')}/icon"
+
     def _provider_response(self, provider_info, status_value: str, model_config: dict) -> ProviderResponse:
         type_display_name, type_locales = self._get_provider_type_display(provider_info.provider_type)
         return ProviderResponse(
@@ -152,6 +168,7 @@ class ProvidersRoutes(Routes):
             locales=type_locales,
             type_display_name=type_display_name,
             type_locales=type_locales,
+            type_icon=self._get_provider_type_icon(provider_info.provider_type),
         )
 
     def _get_supported_model_types(self, provider_id: str) -> List[str]:
@@ -195,6 +212,7 @@ class ProvidersRoutes(Routes):
                     "display_name": manifest.get("display_name") or provider_type,
                     "description": manifest.get("description") or "",
                     "locales": manifest.get("locales") or {},
+                    "icon": self._get_provider_type_icon(provider_type),
                 }
                 for provider_type in provider_manager.get_provider_types()
                 for manifest in [provider_manager.get_manifest(provider_type)]
@@ -202,6 +220,14 @@ class ProvidersRoutes(Routes):
         except Exception as e:
             logger.error(f"Error getting provider types: {e}")
             return []
+
+    async def get_provider_type_icon(self, provider_type: str):
+        if not self.lifecycle or not self.lifecycle.provider_manager:
+            raise HTTPException(status_code=404, detail="Provider manager not available")
+        icon_path = self.lifecycle.provider_manager.get_icon_path(provider_type)
+        if not icon_path:
+            raise HTTPException(status_code=404, detail="Provider icon not found")
+        return FileResponse(icon_path, headers={"Cache-Control": "no-cache"})
 
     async def get_provider_schema(self, provider_type: str):
         if not self.lifecycle or not self.lifecycle.provider_manager:

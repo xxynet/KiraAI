@@ -1,5 +1,5 @@
 import zipfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Optional
 
 # ─── Path overrides (set once via init_paths at startup) ─────────────────────
@@ -57,6 +57,34 @@ def is_within_directory(directory: Path, target: Path) -> bool:
     directory = Path(directory).resolve()
     target = Path(target).resolve()
     return target == directory or directory in target.parents
+
+
+_ICON_EXTENSIONS = frozenset({
+    ".avif", ".gif", ".ico", ".jpeg", ".jpg", ".png", ".svg", ".webp",
+})
+
+
+def resolve_manifest_icon_path(manifest_dir: Path, icon: object) -> Optional[Path]:
+    """Return a safe local icon file referenced by a manifest.
+
+    Manifest icons are intentionally relative to the directory containing the
+    manifest.  This prevents a provider, adapter, or plugin manifest from
+    exposing files outside of its own package through the WebUI.
+    """
+    if not isinstance(icon, str) or not icon.strip() or "\x00" in icon:
+        return None
+
+    configured_path = Path(icon)
+    if configured_path.is_absolute() or PureWindowsPath(icon).is_absolute():
+        return None
+
+    root = manifest_dir.resolve()
+    target = (root / configured_path).resolve()
+    if not is_within_directory(root, target):
+        return None
+    if not target.is_file() or target.suffix.lower() not in _ICON_EXTENSIONS:
+        return None
+    return target
 
 
 def safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: Path) -> None:

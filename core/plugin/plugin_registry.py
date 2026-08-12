@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable, Literal, Union
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from packaging.version import Version, InvalidVersion
-from core.utils.path_utils import get_data_path, get_config_path
+from core.utils.path_utils import get_data_path, get_config_path, resolve_manifest_icon_path
 from core.logging_manager import get_logger
 from core.config.config_field import BaseConfigField, SectionField, build_fields
 from core.config import VERSION
@@ -35,6 +35,7 @@ class PluginInfo:
     locales: Dict[str, Dict[str, str]] = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
     core_version: Optional[str] = None
+    icon: Optional[Path] = None
     builtin: bool = False
     uninstallable: bool = False
     hidden: bool = False
@@ -1805,6 +1806,7 @@ class PluginManager:
             uninstallable = bool(manifest.get("uninstallable", False))
         else:
             uninstallable = True
+        icon = resolve_manifest_icon_path(path, manifest.get("icon")) if path else None
 
         return PluginInfo(
             plugin_id=plugin_id,
@@ -1816,6 +1818,7 @@ class PluginManager:
             locales=manifest.get("locales") or {},
             tags=[str(t) for t in (manifest.get("tags") or []) if t],
             core_version=str(manifest["core_version"]) if manifest.get("core_version") else None,
+            icon=icon,
             builtin=is_builtin,
             uninstallable=uninstallable,
             hidden=hidden,

@@ -9,8 +9,11 @@
     @keydown.space="onCardKeydown"
   >
     <div class="flex items-start justify-between mb-3">
-      <div>
-        <div class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ name || id }}</div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <img v-if="icon" :src="icon" :alt="''" class="w-6 h-6 flex-shrink-0 object-contain" />
+          <div class="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">{{ name || id }}</div>
+        </div>
         <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {{ version ? `v${version}` : '' }}{{ version && author ? ' · ' : '' }}{{ author || '' }}
           <span v-if="hasUpdate" class="ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400">
@@ -193,6 +196,7 @@ const props = withDefaults(defineProps<{
   coreVersion?: string | null
   error?: string | null
   status?: string
+  icon?: string | null
   reloading?: boolean
   // update
   hasUpdate?: boolean
@@ -213,6 +217,7 @@ const props = withDefaults(defineProps<{
   coreVersion: null,
   error: null,
   status: 'ready',
+  icon: null,
   reloading: false,
   hasUpdate: false,
   latestVersion: null,

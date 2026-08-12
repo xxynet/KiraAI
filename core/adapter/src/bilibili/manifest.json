@@ -5,6 +5,7 @@
     "author": "KiraAI",
     "description": "BiliBili Adapter",
     "repo": null,
+    "icon": "icon.svg",
     "locales": {
         "zh": {
             "display_name": "BiliBili",

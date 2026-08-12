@@ -28,7 +28,13 @@
             @click="selectProvider(provider.id)"
           >
             <div class="mr-3">
-              <IconCpu class="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <img
+                v-if="provider.type_icon"
+                :src="provider.type_icon"
+                :alt="''"
+                class="w-5 h-5 object-contain"
+              />
+              <IconCpu v-else class="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </div>
             <div class="flex-1 min-w-0">
               <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ provider.name }}</div>

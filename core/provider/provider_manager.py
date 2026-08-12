@@ -5,6 +5,7 @@ import uuid
 import importlib.util
 import inspect
 import copy
+from pathlib import Path
 from typing import Dict, Optional, Type
 
 from .provider import (
@@ -15,7 +16,7 @@ from .provider import (
 from .llm_model import LLMRequest
 from core.agent.message import OpenAIMessage
 
-from core.utils.path_utils import get_config_path
+from core.utils.path_utils import get_config_path, resolve_manifest_icon_path
 from core.logging_manager import get_logger
 from core.config import KiraConfig
 from core.config.config_field import BaseConfigField, build_fields
@@ -34,6 +35,7 @@ class ProviderManager:
     # Registry data
     _registry: Dict[str, Type[BaseProvider]] = {}  # Provider classes
     _manifests: Dict[str, dict] = {}
+    _manifest_dirs: Dict[str, Path] = {}
     _schemas: Dict[str, dict] = {}
     
     def __new__(cls, db: DatabaseService, kira_config: KiraConfig):
@@ -72,6 +74,14 @@ class ProviderManager:
     def get_manifest(cls, name: str) -> dict:
         manifest = cls._manifests.get(name, {})
         return copy.deepcopy(manifest) if manifest else {}
+
+    @classmethod
+    def get_icon_path(cls, name: str) -> Optional[Path]:
+        manifest_dir = cls._manifest_dirs.get(name)
+        manifest = cls._manifests.get(name, {})
+        if not manifest_dir:
+            return None
+        return resolve_manifest_icon_path(manifest_dir, manifest.get("icon"))
 
     def get_model_client(
         self,
@@ -625,6 +635,7 @@ class ProviderManager:
                             key = provider_name
                             cls._registry[key] = attr_value
                             cls._manifests[key] = manifest
+                            cls._manifest_dirs[key] = Path(provider_dir)
                             cls._schemas[key] = schema
                             logger.info(f"Registered provider: {provider_name}")
                             found = True

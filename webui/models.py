@@ -95,6 +95,7 @@ class ProviderResponse(ProviderBase):
     supported_model_types: List[str] = Field(default_factory=list)
     type_display_name: str = ""
     type_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    type_icon: Optional[str] = None
 
 
 class ModelCreateRequest(BaseModel):
@@ -140,6 +141,7 @@ class AdapterResponse(AdapterBase):
     id: str
     platform_display_name: str = ""
     platform_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    platform_icon: Optional[str] = None
 
 
 class PersonaBase(BaseModel):
@@ -238,6 +240,7 @@ class PluginItem(BaseModel):
     error: Optional[str] = None
     status: str = "pending"
     menus: List[PageMenu] = Field(default_factory=list)
+    icon: Optional[str] = None
 
 
 class PluginConfigUpdateRequest(BaseModel):

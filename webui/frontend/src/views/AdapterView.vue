@@ -42,7 +42,15 @@
                 {{ adapter.status }}
               </span>
             </div>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">{{ localizePlatform(adapter.platform_display_name, adapter.platform_locales, adapter.platform) }}</p>
+            <div class="mt-1 flex items-center gap-2 min-w-0 text-sm text-gray-500 dark:text-gray-400">
+              <img
+                v-if="adapter.platform_icon"
+                :src="adapter.platform_icon"
+                :alt="''"
+                class="w-4 h-4 flex-shrink-0 object-contain"
+              />
+              <span class="truncate">{{ localizePlatform(adapter.platform_display_name, adapter.platform_locales, adapter.platform) }}</span>
+            </div>
           </div>
           <ToggleSwitch
             :model-value="adapter.status === 'active'"
@@ -204,6 +212,7 @@ const platformOptions = computed(() =>
       label: platform
         ? localize(platform, 'display_name', id)
         : id,
+      icon: platform?.icon || null,
     }
   })
 )

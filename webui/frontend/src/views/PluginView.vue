@@ -120,6 +120,7 @@
           :core-version="plugin.core_version"
           :error="plugin.error"
           :status="plugin.status"
+          :icon="plugin.icon"
           :reloading="reloadingPlugins.has(plugin.id)"
           :has-update="pluginUpdates.has(plugin.id)"
           :latest-version="pluginUpdates.get(plugin.id)?.latest_version ?? null"
