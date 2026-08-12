@@ -5,6 +5,8 @@
   "author": "KiraAI",
   "description": "Anthropic-compatible Messages API provider",
   "repo": null,
+  "icon": "icon.svg",
+  "icon-dark": "icon-dark.svg",
   "locales": {
     "zh": {
       "display_name": "Anthropic",

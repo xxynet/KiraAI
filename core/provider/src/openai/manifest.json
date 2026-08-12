@@ -5,6 +5,8 @@
     "author": "KiraAI",
     "description": "OpenAI Provider",
     "repo": null,
+    "icon": "icon.svg",
+    "icon-dark": "icon-dark.svg",
     "locales": {
         "zh": {
             "display_name": "OpenAI",

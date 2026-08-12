@@ -210,6 +210,10 @@ class PluginsRoutes(Routes):
                             f"/api/plugins/{quote(pid, safe='')}/icon"
                             if info.icon else None
                         ),
+                        icon_dark=(
+                            f"/api/plugins/{quote(pid, safe='')}/icon?dark=true"
+                            if info.icon_dark else None
+                        ),
                     )
                 )
             return items
@@ -217,13 +221,16 @@ class PluginsRoutes(Routes):
             logger.error(f"Failed to list plugins: {e}")
             raise HTTPException(status_code=500, detail="Failed to list plugins")
 
-    async def get_plugin_icon(self, plugin_id: str):
+    async def get_plugin_icon(self, plugin_id: str, dark: bool = False):
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
             raise HTTPException(status_code=404, detail="Plugin manager not available")
         plugin_info = self.lifecycle.plugin_manager.get_plugin_info(plugin_id)
-        if not plugin_info or not plugin_info.icon:
+        icon_path = None
+        if plugin_info:
+            icon_path = plugin_info.icon_dark if dark else plugin_info.icon
+        if not icon_path:
             raise HTTPException(status_code=404, detail="Plugin icon not found")
-        return FileResponse(plugin_info.icon, headers={"Cache-Control": "no-cache"})
+        return FileResponse(icon_path, headers={"Cache-Control": "no-cache"})
 
     async def get_plugin_config(self, plugin_id: str):
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
@@ -464,6 +471,11 @@ class PluginsRoutes(Routes):
             core_version=info.core_version if info else None,
             error=info.error if info else None,
             status=info.status if info else "pending",
+            icon=(f"/api/plugins/{quote(plugin_id, safe='')}/icon" if info and info.icon else None),
+            icon_dark=(
+                f"/api/plugins/{quote(plugin_id, safe='')}/icon?dark=true"
+                if info and info.icon_dark else None
+            ),
             warnings=warnings,
         )
 

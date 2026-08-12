@@ -29,8 +29,8 @@
           >
             <div class="mr-3">
               <img
-                v-if="provider.type_icon"
-                :src="provider.type_icon"
+                v-if="providerIcon(provider)"
+                :src="providerIcon(provider)"
                 :alt="''"
                 class="w-5 h-5 object-contain"
               />
@@ -182,7 +182,12 @@
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('provider.type') }}</label>
             <CustomSelect
               v-model="createForm.type"
-              :options="providerTypes.map(type => ({ value: type.id, label: localize(type, 'display_name', type.id) }))"
+              :options="providerTypes.map(type => ({
+                value: type.id,
+                label: localize(type, 'display_name', type.id),
+                icon: type.icon || null,
+                iconDark: type.icon_dark || null,
+              }))"
               :placeholder="$t('provider.select_type') || 'Select provider type...'"
               @update:modelValue="onCreateTypeChange"
             />
@@ -348,6 +353,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
+import { useTheme } from '@/composables/useTheme'
 import { notify } from '@/composables/useNotification'
 import {
   getProviders, getProviderTypes, getProviderSchema,
@@ -365,6 +371,7 @@ import type { ProviderResponse, ProviderType } from '@/types'
 const router = useRouter()
 const { t } = useI18n()
 const { localize } = useLocalized()
+const { isDark } = useTheme()
 
 function goToModelConfig() {
   router.push('/configuration?tab=models')
@@ -468,6 +475,12 @@ function localizeProviderType(provider: ProviderResponse) {
     'display_name',
     provider.type,
   )
+}
+
+function providerIcon(provider: ProviderResponse): string | undefined {
+  return isDark.value
+    ? provider.type_icon_dark || provider.type_icon || undefined
+    : provider.type_icon || undefined
 }
 
 function toggleModelGroup(modelType: string) {

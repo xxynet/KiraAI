@@ -28,19 +28,30 @@ def test_resolve_manifest_icon_path_rejects_non_image_files(tmp_path):
     assert resolve_manifest_icon_path(tmp_path, "main.py") is None
 
 
-def test_builtin_adapter_manifest_icons_resolve_within_their_directories():
-    adapter_root = Path(__file__).parents[1] / "core" / "adapter" / "src"
+def test_builtin_manifest_icons_resolve_within_their_directories():
+    project_root = Path(__file__).parents[1]
 
-    for manifest_path in adapter_root.glob("*/manifest.json"):
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert resolve_manifest_icon_path(manifest_path.parent, manifest.get("icon")), manifest_path
+    for component_root in (
+        project_root / "core" / "adapter" / "src",
+        project_root / "core" / "provider" / "src",
+    ):
+        for manifest_path in component_root.glob("*/manifest.json"):
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            assert resolve_manifest_icon_path(manifest_path.parent, manifest.get("icon")), manifest_path
+            if "icon-dark" in manifest:
+                assert resolve_manifest_icon_path(manifest_path.parent, manifest["icon-dark"]), manifest_path
 
 
-def test_plugin_info_includes_resolved_manifest_icon(monkeypatch, tmp_path):
+def test_plugin_info_includes_resolved_manifest_icons(monkeypatch, tmp_path):
     icon = tmp_path / "icon.svg"
+    dark_icon = tmp_path / "icon-dark.svg"
     icon.write_text("<svg></svg>", encoding="utf-8")
+    dark_icon.write_text("<svg></svg>", encoding="utf-8")
     monkeypatch.setitem(plugin_registry._plugin_module_paths, "test-plugin", tmp_path)
 
-    info = plugin_registry.PluginManager._build_plugin_info("test-plugin", {"icon": "icon.svg"})
+    info = plugin_registry.PluginManager._build_plugin_info(
+        "test-plugin", {"icon": "icon.svg", "icon-dark": "icon-dark.svg"},
+    )
 
     assert info.icon == icon.resolve()
+    assert info.icon_dark == dark_icon.resolve()

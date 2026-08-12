@@ -76,12 +76,14 @@ class ProviderManager:
         return copy.deepcopy(manifest) if manifest else {}
 
     @classmethod
-    def get_icon_path(cls, name: str) -> Optional[Path]:
+    def get_icon_path(cls, name: str, dark: bool = False) -> Optional[Path]:
         manifest_dir = cls._manifest_dirs.get(name)
         manifest = cls._manifests.get(name, {})
         if not manifest_dir:
             return None
-        return resolve_manifest_icon_path(manifest_dir, manifest.get("icon"))
+        return resolve_manifest_icon_path(
+            manifest_dir, manifest.get("icon-dark" if dark else "icon"),
+        )
 
     def get_model_client(
         self,

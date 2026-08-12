@@ -55,12 +55,14 @@ class AdapterManager:
         return cls._manifests.get(platform, {}).copy()
 
     @classmethod
-    def get_icon_path(cls, platform: str) -> Optional[Path]:
+    def get_icon_path(cls, platform: str, dark: bool = False) -> Optional[Path]:
         manifest_dir = cls._manifest_dirs.get(platform)
         manifest = cls._manifests.get(platform, {})
         if not manifest_dir:
             return None
-        return resolve_manifest_icon_path(manifest_dir, manifest.get("icon"))
+        return resolve_manifest_icon_path(
+            manifest_dir, manifest.get("icon-dark" if dark else "icon"),
+        )
 
     def get_adapter_info(self, adapter_id: str) -> Optional[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {})

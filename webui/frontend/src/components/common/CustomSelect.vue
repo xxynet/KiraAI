@@ -18,8 +18,8 @@
     >
       <div class="custom-select-content">
         <img
-          v-if="selectedOption?.icon"
-          :src="selectedOption.icon"
+          v-if="selectedIcon"
+          :src="selectedIcon"
           :alt="''"
           class="custom-select-icon"
         />
@@ -51,8 +51,8 @@
           :aria-selected="modelValue === option.value"
         >
           <img
-            v-if="option.icon"
-            :src="option.icon"
+            v-if="optionIcon(option)"
+            :src="optionIcon(option)"
             :alt="''"
             class="custom-select-icon"
           />
@@ -67,11 +67,13 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { IconCheck, IconChevronDown } from '@/components/icons'
+import { useTheme } from '@/composables/useTheme'
 
 interface Option {
   value: string
   label: string
   icon?: string | null
+  iconDark?: string | null
 }
 
 const props = defineProps<{
@@ -84,6 +86,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
+
+const { isDark } = useTheme()
 
 const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()
@@ -111,6 +115,11 @@ const selectedOption = computed(() =>
 )
 
 const selectedLabel = computed(() => selectedOption.value?.label || '')
+const selectedIcon = computed(() => selectedOption.value ? optionIcon(selectedOption.value) : null)
+
+function optionIcon(option: Option): string | undefined {
+  return isDark.value ? option.iconDark || option.icon || undefined : option.icon || undefined
+}
 
 function toggleDropdown() {
   if (props.disabled) return

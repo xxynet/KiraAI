@@ -101,6 +101,7 @@ class AdaptersRoutes(Routes):
                     "description": manifest.get("description") or "",
                     "locales": manifest.get("locales") or {},
                     "icon": self._get_adapter_platform_icon(adapter_id),
+                    "icon_dark": self._get_adapter_platform_icon(adapter_id, dark=True),
                 }
                 for adapter_id in adapter_manager.get_adapter_types()
                 for manifest in [adapter_manager.get_manifest(adapter_id)]
@@ -133,12 +134,13 @@ class AdaptersRoutes(Routes):
             return manifest.get("display_name") or platform, manifest.get("locales") or {}
         return platform, {}
 
-    def _get_adapter_platform_icon(self, platform: str) -> str | None:
+    def _get_adapter_platform_icon(self, platform: str, dark: bool = False) -> str | None:
         if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
             return None
-        if not self.lifecycle.adapter_manager.get_icon_path(platform):
+        if not self.lifecycle.adapter_manager.get_icon_path(platform, dark=dark):
             return None
-        return f"/api/adapter-platforms/{quote(platform, safe='')}/icon"
+        suffix = "?dark=true" if dark else ""
+        return f"/api/adapter-platforms/{quote(platform, safe='')}/icon{suffix}"
 
     def _adapter_response(self, info, status_value: str) -> AdapterResponse:
         platform_display_name, platform_locales = self._get_adapter_platform_display(info.platform)
@@ -153,12 +155,13 @@ class AdaptersRoutes(Routes):
             platform_display_name=platform_display_name,
             platform_locales=platform_locales,
             platform_icon=self._get_adapter_platform_icon(info.platform),
+            platform_icon_dark=self._get_adapter_platform_icon(info.platform, dark=True),
         )
 
-    async def get_adapter_platform_icon(self, platform: str):
+    async def get_adapter_platform_icon(self, platform: str, dark: bool = False):
         if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
             raise HTTPException(status_code=404, detail="Adapter manager not available")
-        icon_path = self.lifecycle.adapter_manager.get_icon_path(platform)
+        icon_path = self.lifecycle.adapter_manager.get_icon_path(platform, dark=dark)
         if not icon_path:
             raise HTTPException(status_code=404, detail="Adapter icon not found")
         return FileResponse(icon_path, headers={"Cache-Control": "no-cache"})

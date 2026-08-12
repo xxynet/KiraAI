@@ -11,7 +11,7 @@
     <div class="flex items-start justify-between mb-3">
       <div class="min-w-0">
         <div class="flex items-center gap-2">
-          <img v-if="icon" :src="icon" :alt="''" class="w-6 h-6 flex-shrink-0 object-contain" />
+          <img v-if="displayIcon" :src="displayIcon" :alt="''" class="w-6 h-6 flex-shrink-0 object-contain" />
           <div class="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">{{ name || id }}</div>
         </div>
         <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -179,6 +179,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { IconInfo, IconGithub, IconSpinner } from '@/components/icons'
+import { useTheme } from '@/composables/useTheme'
 
 const props = withDefaults(defineProps<{
   id: string
@@ -197,6 +198,7 @@ const props = withDefaults(defineProps<{
   error?: string | null
   status?: string
   icon?: string | null
+  iconDark?: string | null
   reloading?: boolean
   // update
   hasUpdate?: boolean
@@ -218,6 +220,7 @@ const props = withDefaults(defineProps<{
   error: null,
   status: 'ready',
   icon: null,
+  iconDark: null,
   reloading: false,
   hasUpdate: false,
   latestVersion: null,
@@ -235,6 +238,9 @@ const emit = defineEmits<{
   reload: []
   update: []
 }>()
+
+const { isDark } = useTheme()
+const displayIcon = computed(() => isDark.value ? props.iconDark || props.icon : props.icon)
 
 function onCardClick(event: MouseEvent) {
   const target = event.target

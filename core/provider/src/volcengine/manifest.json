@@ -5,6 +5,7 @@
     "author": "KiraAI",
     "description": "Volcengine Provider",
     "repo": null,
+    "icon": "icon.svg",
     "locales": {
         "zh": {
             "display_name": "火山引擎",

@@ -148,12 +148,13 @@ class ProvidersRoutes(Routes):
             return manifest.get("display_name") or provider_type, manifest.get("locales") or {}
         return provider_type, {}
 
-    def _get_provider_type_icon(self, provider_type: str) -> str | None:
+    def _get_provider_type_icon(self, provider_type: str, dark: bool = False) -> str | None:
         if not self.lifecycle or not self.lifecycle.provider_manager:
             return None
-        if not self.lifecycle.provider_manager.get_icon_path(provider_type):
+        if not self.lifecycle.provider_manager.get_icon_path(provider_type, dark=dark):
             return None
-        return f"/api/provider-types/{quote(provider_type, safe='')}/icon"
+        suffix = "?dark=true" if dark else ""
+        return f"/api/provider-types/{quote(provider_type, safe='')}/icon{suffix}"
 
     def _provider_response(self, provider_info, status_value: str, model_config: dict) -> ProviderResponse:
         type_display_name, type_locales = self._get_provider_type_display(provider_info.provider_type)
@@ -169,6 +170,7 @@ class ProvidersRoutes(Routes):
             type_display_name=type_display_name,
             type_locales=type_locales,
             type_icon=self._get_provider_type_icon(provider_info.provider_type),
+            type_icon_dark=self._get_provider_type_icon(provider_info.provider_type, dark=True),
         )
 
     def _get_supported_model_types(self, provider_id: str) -> List[str]:
@@ -213,6 +215,7 @@ class ProvidersRoutes(Routes):
                     "description": manifest.get("description") or "",
                     "locales": manifest.get("locales") or {},
                     "icon": self._get_provider_type_icon(provider_type),
+                    "icon_dark": self._get_provider_type_icon(provider_type, dark=True),
                 }
                 for provider_type in provider_manager.get_provider_types()
                 for manifest in [provider_manager.get_manifest(provider_type)]
@@ -221,10 +224,10 @@ class ProvidersRoutes(Routes):
             logger.error(f"Error getting provider types: {e}")
             return []
 
-    async def get_provider_type_icon(self, provider_type: str):
+    async def get_provider_type_icon(self, provider_type: str, dark: bool = False):
         if not self.lifecycle or not self.lifecycle.provider_manager:
             raise HTTPException(status_code=404, detail="Provider manager not available")
-        icon_path = self.lifecycle.provider_manager.get_icon_path(provider_type)
+        icon_path = self.lifecycle.provider_manager.get_icon_path(provider_type, dark=dark)
         if not icon_path:
             raise HTTPException(status_code=404, detail="Provider icon not found")
         return FileResponse(icon_path, headers={"Cache-Control": "no-cache"})

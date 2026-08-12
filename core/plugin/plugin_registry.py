@@ -36,6 +36,7 @@ class PluginInfo:
     tags: List[str] = field(default_factory=list)
     core_version: Optional[str] = None
     icon: Optional[Path] = None
+    icon_dark: Optional[Path] = None
     builtin: bool = False
     uninstallable: bool = False
     hidden: bool = False
@@ -1807,6 +1808,7 @@ class PluginManager:
         else:
             uninstallable = True
         icon = resolve_manifest_icon_path(path, manifest.get("icon")) if path else None
+        icon_dark = resolve_manifest_icon_path(path, manifest.get("icon-dark")) if path else None
 
         return PluginInfo(
             plugin_id=plugin_id,
@@ -1819,6 +1821,7 @@ class PluginManager:
             tags=[str(t) for t in (manifest.get("tags") or []) if t],
             core_version=str(manifest["core_version"]) if manifest.get("core_version") else None,
             icon=icon,
+            icon_dark=icon_dark,
             builtin=is_builtin,
             uninstallable=uninstallable,
             hidden=hidden,
