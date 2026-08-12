@@ -5,6 +5,7 @@
     "author": "znq19",
     "description": "AliyunBailian (DashScope) full provider: LLM, CosyVoice TTS, STT, Image, Embedding, Rerank.",
     "repo": null,
+    "icon": "icon.svg",
     "locales": {
         "zh": {
             "display_name": "阿里云百炼",

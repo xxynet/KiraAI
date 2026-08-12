@@ -5,6 +5,7 @@
     "author": "KiraAI",
     "description": "DeepSeek Provider with thinking mode support",
     "repo": null,
+    "icon": "icon.svg",
     "locales": {
         "zh": {
             "display_name": "DeepSeek",

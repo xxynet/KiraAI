@@ -1,6 +1,8 @@
 from typing import Dict, List
+from urllib.parse import quote
 
 from fastapi import Depends, HTTPException, status
+from fastapi.responses import FileResponse
 
 from core.logging_manager import get_logger
 from webui.models import AdapterBase, AdapterResponse
@@ -23,6 +25,13 @@ class AdaptersRoutes(Routes):
                 path="/api/adapter-platforms",
                 methods=["GET"],
                 endpoint=self.get_adapter_platforms,
+                tags=["adapters"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/adapter-platforms/{platform}/icon",
+                methods=["GET"],
+                endpoint=self.get_adapter_platform_icon,
                 tags=["adapters"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -91,6 +100,8 @@ class AdaptersRoutes(Routes):
                     "display_name": manifest.get("display_name") or adapter_id,
                     "description": manifest.get("description") or "",
                     "locales": manifest.get("locales") or {},
+                    "icon": self._get_adapter_platform_icon(adapter_id),
+                    "icon_dark": self._get_adapter_platform_icon(adapter_id, dark=True),
                 }
                 for adapter_id in adapter_manager.get_adapter_types()
                 for manifest in [adapter_manager.get_manifest(adapter_id)]
@@ -123,6 +134,14 @@ class AdaptersRoutes(Routes):
             return manifest.get("display_name") or platform, manifest.get("locales") or {}
         return platform, {}
 
+    def _get_adapter_platform_icon(self, platform: str, dark: bool = False) -> str | None:
+        if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
+            return None
+        if not self.lifecycle.adapter_manager.get_icon_path(platform, dark=dark):
+            return None
+        suffix = "?dark=true" if dark else ""
+        return f"/api/adapter-platforms/{quote(platform, safe='')}/icon{suffix}"
+
     def _adapter_response(self, info, status_value: str) -> AdapterResponse:
         platform_display_name, platform_locales = self._get_adapter_platform_display(info.platform)
         return AdapterResponse(
@@ -135,7 +154,17 @@ class AdaptersRoutes(Routes):
             locales=self._get_adapter_locales(info.platform),
             platform_display_name=platform_display_name,
             platform_locales=platform_locales,
+            platform_icon=self._get_adapter_platform_icon(info.platform),
+            platform_icon_dark=self._get_adapter_platform_icon(info.platform, dark=True),
         )
+
+    async def get_adapter_platform_icon(self, platform: str, dark: bool = False):
+        if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
+            raise HTTPException(status_code=404, detail="Adapter manager not available")
+        icon_path = self.lifecycle.adapter_manager.get_icon_path(platform, dark=dark)
+        if not icon_path:
+            raise HTTPException(status_code=404, detail="Adapter icon not found")
+        return FileResponse(icon_path, headers={"Cache-Control": "no-cache"})
 
     async def list_adapters(self):
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):

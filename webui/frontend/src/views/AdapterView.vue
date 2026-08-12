@@ -42,7 +42,15 @@
                 {{ adapter.status }}
               </span>
             </div>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">{{ localizePlatform(adapter.platform_display_name, adapter.platform_locales, adapter.platform) }}</p>
+            <div class="mt-1 flex items-center gap-2 min-w-0 text-sm text-gray-500 dark:text-gray-400">
+              <img
+                v-if="adapterIcon(adapter)"
+                :src="adapterIcon(adapter)"
+                :alt="''"
+                class="w-4 h-4 flex-shrink-0 object-contain"
+              />
+              <span class="truncate">{{ localizePlatform(adapter.platform_display_name, adapter.platform_locales, adapter.platform) }}</span>
+            </div>
           </div>
           <ToggleSwitch
             :model-value="adapter.status === 'active'"
@@ -161,6 +169,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
+import { useTheme } from '@/composables/useTheme'
 import { notify } from '@/composables/useNotification'
 import {
   getAdapters, getAdapterPlatforms, getAdapterSchema,
@@ -176,6 +185,7 @@ import type { AdapterPlatform, AdapterResponse } from '@/types'
 
 const { t } = useI18n()
 const { localize } = useLocalized()
+const { isDark } = useTheme()
 
 const configFormRef = ref<InstanceType<typeof ConfigForm>>()
 const confirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
@@ -204,9 +214,17 @@ const platformOptions = computed(() =>
       label: platform
         ? localize(platform, 'display_name', id)
         : id,
+      icon: platform?.icon || null,
+      iconDark: platform?.icon_dark || null,
     }
   })
 )
+
+function adapterIcon(adapter: AdapterResponse): string | undefined {
+  return isDark.value
+    ? adapter.platform_icon_dark || adapter.platform_icon || undefined
+    : adapter.platform_icon || undefined
+}
 
 const form = ref({
   name: '',

@@ -17,7 +17,13 @@
       :aria-activedescendant="isOpen && activeIndex >= 0 ? `${selectId}-opt-${activeIndex}` : undefined"
     >
       <div class="custom-select-content">
-        {{ selectedLabel || placeholder }}
+        <img
+          v-if="selectedIcon"
+          :src="selectedIcon"
+          :alt="''"
+          class="custom-select-icon"
+        />
+        <span class="custom-select-label">{{ selectedLabel || placeholder }}</span>
       </div>
       <div class="custom-select-arrow" :class="{ active: isOpen }">
         <IconChevronDown width="20" height="20" />
@@ -44,6 +50,12 @@
           role="option"
           :aria-selected="modelValue === option.value"
         >
+          <img
+            v-if="optionIcon(option)"
+            :src="optionIcon(option)"
+            :alt="''"
+            class="custom-select-icon"
+          />
           <span class="custom-select-option-label">{{ option.label }}</span>
           <IconCheck v-if="modelValue === option.value" class="select-check" width="16" height="16" />
         </div>
@@ -55,10 +67,13 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { IconCheck, IconChevronDown } from '@/components/icons'
+import { useTheme } from '@/composables/useTheme'
 
 interface Option {
   value: string
   label: string
+  icon?: string | null
+  iconDark?: string | null
 }
 
 const props = defineProps<{
@@ -71,6 +86,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
+
+const { isDark } = useTheme()
 
 const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()
@@ -93,10 +110,16 @@ function findScrollAncestor(el: HTMLElement | null): HTMLElement | null {
   return null
 }
 
-const selectedLabel = computed(() => {
-  const option = props.options.find(opt => opt.value === props.modelValue)
-  return option?.label || ''
-})
+const selectedOption = computed(() =>
+  props.options.find(option => option.value === props.modelValue),
+)
+
+const selectedLabel = computed(() => selectedOption.value?.label || '')
+const selectedIcon = computed(() => selectedOption.value ? optionIcon(selectedOption.value) : null)
+
+function optionIcon(option: Option): string | undefined {
+  return isDark.value ? option.iconDark || option.icon || undefined : option.icon || undefined
+}
 
 function toggleDropdown() {
   if (props.disabled) return
@@ -299,10 +322,25 @@ onUnmounted(() => {
 <style scoped>
 /* CustomSelect-specific overrides only; shared styles are in main.css */
 .custom-select-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.custom-select-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.custom-select-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
 .custom-select-option.highlighted {

@@ -7,6 +7,7 @@ import inspect
 import uuid
 import sys
 import types
+from pathlib import Path
 from typing import Union, Optional, Dict, Type
 
 from deprecated import deprecated
@@ -14,6 +15,7 @@ from deprecated import deprecated
 from core.logging_manager import get_logger
 from core.config import KiraConfig
 from core.config.config_field import BaseConfigField, build_fields
+from core.utils.path_utils import resolve_manifest_icon_path
 from .adapter_info import AdapterInfo
 from .adapter_utils import IMAdapter, SocialMediaAdapter
 
@@ -24,6 +26,7 @@ logger = get_logger("adapter", "blue")
 class AdapterManager:
     _registry: Dict[str, Type[Union[IMAdapter, SocialMediaAdapter]]] = {}
     _manifests: Dict[str, dict] = {}
+    _manifest_dirs: Dict[str, Path] = {}
     _schemas: Dict[str, list[BaseConfigField]] = {}
 
     def __init__(self, kira_config: KiraConfig, event_queue: asyncio.Queue):
@@ -50,6 +53,16 @@ class AdapterManager:
     @classmethod
     def get_manifest(cls, platform: str) -> dict:
         return cls._manifests.get(platform, {}).copy()
+
+    @classmethod
+    def get_icon_path(cls, platform: str, dark: bool = False) -> Optional[Path]:
+        manifest_dir = cls._manifest_dirs.get(platform)
+        manifest = cls._manifests.get(platform, {})
+        if not manifest_dir:
+            return None
+        return resolve_manifest_icon_path(
+            manifest_dir, manifest.get("icon-dark" if dark else "icon"),
+        )
 
     def get_adapter_info(self, adapter_id: str) -> Optional[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {})
@@ -189,6 +202,7 @@ class AdapterManager:
                 if inspect.isclass(attr_value) and issubclass(attr_value, (IMAdapter, SocialMediaAdapter)) and attr_value not in (IMAdapter, SocialMediaAdapter):
                     cls._registry[platform_name] = attr_value
                     cls._manifests[platform_name] = manifest
+                    cls._manifest_dirs[platform_name] = Path(adapter_dir)
                     cls._schemas[platform_name] = schema_fields
                     logger.info(f"Registered adapter: {platform_name}")
                     found = True
