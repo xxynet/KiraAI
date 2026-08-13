@@ -266,6 +266,7 @@ export interface PluginStoreItem {
   category_locales?: Record<string, Record<string, string>>
   repo?: string | null
   icon?: string | null
+  icon_dark?: string | null
   downloads?: number
   tags?: string[]
   installed?: boolean

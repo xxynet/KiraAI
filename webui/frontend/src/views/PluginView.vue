@@ -558,6 +558,8 @@
           :author="item.author"
           :description="localize(item, 'description', item.description)"
           :repo="item.repo"
+          :icon="item.icon"
+          :icon-dark="item.icon_dark"
           :tags="item.tags"
           :installed="item.installed"
           :has-update="item.installed && pluginUpdates.has(item.id)"

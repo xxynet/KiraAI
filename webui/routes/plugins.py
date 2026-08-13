@@ -693,6 +693,8 @@ class PluginsRoutes(Routes):
                     category_name=item.get("category_name"),
                     category_locales=item.get("category_locales") or {},
                     repo=item.get("repo"),
+                    icon=item.get("icon"),
+                    icon_dark=item.get("icon_dark"),
                     locales=item.get("locales") or {},
                     tags=[str(t) for t in tags if t],
                     stars=item.get("stars", 0),
@@ -779,6 +781,8 @@ class PluginsRoutes(Routes):
             category_name = category_info.get("name") if isinstance(category_info, dict) else None
             category_locales = category_info.get("locales") if isinstance(category_info, dict) else None
             repo = raw.get("repo") or raw.get("repo_url")
+            icon = raw.get("icon")
+            icon_dark = raw.get("icon_dark") or raw.get("icon-dark")
             github_data = raw.get("github_data")
             github_stars = github_data.get("stars", 0) if isinstance(github_data, dict) else 0
             stars = raw.get("stars", raw.get("star_count", github_stars))
@@ -796,6 +800,8 @@ class PluginsRoutes(Routes):
                 "category_name": str(category_name) if category_name else None,
                 "category_locales": category_locales if isinstance(category_locales, dict) else {},
                 "repo": str(repo) if repo else None,
+                "icon": str(icon) if isinstance(icon, str) else None,
+                "icon_dark": str(icon_dark) if isinstance(icon_dark, str) else None,
                 "locales": locales if isinstance(locales, dict) else {},
                 "stars": int(stars) if isinstance(stars, (int, float, str)) and str(stars).isdigit() else 0,
                 "updated_at": updated_at if isinstance(updated_at, (int, str)) else None,

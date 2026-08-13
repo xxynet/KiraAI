@@ -68,3 +68,19 @@ def test_extract_plugins_reads_nested_github_stars():
     })
 
     assert plugins[0]["stars"] == 12
+
+
+def test_extract_plugins_preserves_store_icon_urls():
+    plugins = PluginsRoutes._extract_plugins({
+        "plugins": {
+            "example": {
+                "plugin_id": "example",
+                "display_name": "Example",
+                "icon": "https://store.example/icons/example.svg",
+                "icon_dark": "https://store.example/icons/example-dark.svg",
+            },
+        },
+    })
+
+    assert plugins[0]["icon"] == "https://store.example/icons/example.svg"
+    assert plugins[0]["icon_dark"] == "https://store.example/icons/example-dark.svg"
