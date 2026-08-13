@@ -9,35 +9,35 @@
     @keydown.space="onCardKeydown"
   >
     <div class="flex items-start justify-between mb-3">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <img v-if="displayIcon" :src="displayIcon" :alt="''" class="w-6 h-6 flex-shrink-0 object-contain" />
+      <div class="flex min-w-0 items-start gap-3">
+        <img v-if="displayIcon" :src="displayIcon" :alt="''" class="w-10 h-10 flex-shrink-0 object-contain" />
+        <div class="min-w-0">
           <div class="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">{{ name || id }}</div>
-        </div>
-        <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          {{ version ? `v${version}` : '' }}{{ version && author ? ' · ' : '' }}{{ author || '' }}
-          <span v-if="hasUpdate" class="ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400">
-            {{ $t('plugin.update_available') }}
-          </span>
-        </div>
-        <div v-if="coreVersion" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-          {{ $t('plugin.core_version') }}: {{ coreVersion }}
-        </div>
-        <div v-if="status === 'installing'" class="mt-2 flex items-center gap-1.5 text-xs">
-          <IconSpinner class="animate-spin h-3.5 w-3.5 text-yellow-500" />
-          <span class="text-yellow-600 dark:text-yellow-400">{{ $t('plugin.status_installing') }}</span>
-        </div>
-        <div v-else-if="status === 'loading'" class="mt-2 flex items-center gap-1.5 text-xs">
-          <IconSpinner class="animate-spin h-3.5 w-3.5 text-blue-500" />
-          <span class="text-blue-600 dark:text-blue-400">{{ $t('plugin.status_loading') }}</span>
-        </div>
-        <div v-else-if="status === 'pending'" class="mt-2 flex items-center gap-1.5 text-xs">
-          <span class="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
-          <span class="text-gray-500 dark:text-gray-400">{{ $t('plugin.status_pending') }}</span>
-        </div>
-        <div v-if="error" class="mt-2 min-w-0 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400 overflow-hidden">
-          <IconInfo class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-          <span class="min-w-0 break-all line-clamp-6">{{ error }}</span>
+          <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ version ? `v${version}` : '' }}{{ version && author ? ' · ' : '' }}{{ author || '' }}
+            <span v-if="hasUpdate" class="ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+              {{ $t('plugin.update_available') }}
+            </span>
+          </div>
+          <div v-if="coreVersion" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            {{ $t('plugin.core_version') }}: {{ coreVersion }}
+          </div>
+          <div v-if="status === 'installing'" class="mt-2 flex items-center gap-1.5 text-xs">
+            <IconSpinner class="animate-spin h-3.5 w-3.5 text-yellow-500" />
+            <span class="text-yellow-600 dark:text-yellow-400">{{ $t('plugin.status_installing') }}</span>
+          </div>
+          <div v-else-if="status === 'loading'" class="mt-2 flex items-center gap-1.5 text-xs">
+            <IconSpinner class="animate-spin h-3.5 w-3.5 text-blue-500" />
+            <span class="text-blue-600 dark:text-blue-400">{{ $t('plugin.status_loading') }}</span>
+          </div>
+          <div v-else-if="status === 'pending'" class="mt-2 flex items-center gap-1.5 text-xs">
+            <span class="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
+            <span class="text-gray-500 dark:text-gray-400">{{ $t('plugin.status_pending') }}</span>
+          </div>
+          <div v-if="error" class="mt-2 min-w-0 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400 overflow-hidden">
+            <IconInfo class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <span class="min-w-0 break-all line-clamp-6">{{ error }}</span>
+          </div>
         </div>
       </div>
       <div class="flex items-start space-x-2">
