@@ -6,7 +6,7 @@
     </div>
 
     <!-- Custom Tabs -->
-    <div class="flex space-x-4 mb-4 border-b border-gray-200 dark:border-gray-700">
+    <div class="flex flex-wrap gap-x-4 mb-4 border-b border-gray-200 dark:border-gray-700">
       <button
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
@@ -51,7 +51,7 @@
 
     <!-- Plugins Tab Content -->
     <div v-show="activeTab === 'plugins'">
-      <div class="flex items-center justify-start mb-4">
+      <div class="flex flex-wrap items-center gap-2 mb-4">
         <button
           type="button"
           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -62,20 +62,20 @@
         </button>
         <button
           type="button"
-          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ml-2"
+          class="inline-flex shrink-0 items-center whitespace-nowrap px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           :disabled="refreshingPlugins"
           @click="refreshPlugins"
         >
           <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': refreshingPlugins }" />
           <span>{{ $t('common.refresh') }}</span>
         </button>
-        <div class="relative ml-auto">
+        <div class="relative w-full sm:ml-auto sm:w-56">
           <input
             v-model="pluginsSearchTerm"
             type="text"
             :placeholder="$t('plugin.search_placeholder')"
             :aria-label="$t('plugin.search_placeholder')"
-            class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            class="w-full border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
           />
           <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         </div>
@@ -138,7 +138,7 @@
 
     <!-- MCP Tab Content -->
     <div v-show="activeTab === 'mcp'">
-      <div class="flex items-center justify-start mb-4">
+      <div class="flex flex-wrap items-center gap-2 mb-4">
         <button
           type="button"
           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -220,7 +220,7 @@
 
     <!-- Skills Tab Content -->
     <div v-show="activeTab === 'skills'">
-      <div class="flex items-center justify-start mb-4">
+      <div class="flex flex-wrap items-center gap-2 mb-4">
         <button
           type="button"
           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors mr-2"
@@ -231,7 +231,7 @@
         </button>
         <button
           type="button"
-          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          class="inline-flex shrink-0 items-center whitespace-nowrap px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           @click="refreshSkillList"
         >
           <IconRefresh class="w-4 h-4 mr-1" />
@@ -447,10 +447,10 @@
     <!-- Plugin Store Tab Content -->
     <div v-show="activeTab === 'pluginStore'">
       <!-- Plugin Sources Button -->
-      <div class="flex items-center justify-start mb-4">
+      <div class="flex flex-wrap items-center gap-2 mb-4">
         <button
           type="button"
-          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          class="inline-flex shrink-0 items-center whitespace-nowrap px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           @click="openSourceManage"
         >
           <IconCog class="w-4 h-4 mr-1" />
@@ -459,36 +459,36 @@
         <button
           v-if="currentStoreSource"
           type="button"
-          class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ml-2"
+          class="inline-flex shrink-0 items-center whitespace-nowrap px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           :disabled="storeLoading"
           @click="() => fetchStorePlugins(true)"
         >
           <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': storeLoading }" />
           <span>{{ $t('common.refresh') }}</span>
         </button>
-        <span v-if="currentStoreSource" class="ml-3 text-sm text-gray-500 dark:text-gray-400">
+        <span v-if="currentStoreSource" class="w-full text-sm text-gray-500 dark:text-gray-400 sm:w-auto sm:ml-1">
           {{ $t('pluginStore.current_source') }}: <span class="font-medium text-gray-700 dark:text-gray-300">{{ currentStoreSource.name }}</span>
         </span>
-        <div v-if="currentStoreSource && !storeLoading && storePlugins.length > 0" class="ml-auto flex flex-wrap items-center justify-end gap-3">
-          <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+        <div v-if="currentStoreSource && !storeLoading && storePlugins.length > 0" class="flex w-full flex-col gap-3 sm:ml-auto sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          <label class="flex w-full items-center justify-between gap-2 text-sm text-gray-600 dark:text-gray-300 sm:w-auto sm:justify-start">
             <span>{{ $t('pluginStore.category') }}</span>
-            <div class="w-32 plugin-store-select">
+            <div class="w-32 shrink-0 plugin-store-select">
               <CustomSelect v-model="storeCategory" :options="storeCategoryOptions" />
             </div>
           </label>
-          <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+          <label class="flex w-full items-center justify-between gap-2 text-sm text-gray-600 dark:text-gray-300 sm:w-auto sm:justify-start">
             <span>{{ $t('pluginStore.sort') }}</span>
-            <div class="w-32 plugin-store-select">
+            <div class="w-32 shrink-0 plugin-store-select">
               <CustomSelect v-model="storeSort" :options="storeSortOptions" />
             </div>
           </label>
-          <div class="relative">
+          <div class="relative w-full sm:w-56">
             <input
               v-model="storeSearchTerm"
               type="text"
               :placeholder="$t('plugin.search_placeholder')"
               :aria-label="$t('plugin.search_placeholder')"
-              class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             />
             <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           </div>

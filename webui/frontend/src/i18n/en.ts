@@ -12,6 +12,7 @@ export default {
   },
   header: {
     logout: 'Logout',
+    more_actions: 'More actions',
     theme_toggle: 'Toggle theme',
     switch_to_light: 'Switch to light theme',
     switch_to_dark: 'Switch to dark theme',

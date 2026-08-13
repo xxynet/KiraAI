@@ -12,6 +12,7 @@ export default {
   },
   header: {
     logout: '退出登录',
+    more_actions: '更多操作',
     theme_toggle: '切换主题',
     switch_to_light: '切换到浅色主题',
     switch_to_dark: '切换到深色主题',
