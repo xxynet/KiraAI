@@ -12,9 +12,10 @@
         {{ title }}
       </h2>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="header-actions flex items-center gap-2">
       <!-- Update -->
       <button
+        type="button"
         class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] transition-colors"
         :class="hasNewVersion ? 'text-blue-500 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'"
         :aria-label="t('header.releases')"
@@ -46,10 +47,11 @@
       </a>
       <!-- Theme Toggle -->
       <button
+        type="button"
         class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
         :aria-label="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')"
         :title="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')"
-        @click="toggleTheme"
+        @click="handleThemeToggle"
       >
         <IconMoon v-if="!appStore.isDark" class="w-6 h-6" />
         <IconSun v-else class="w-6 h-6" />
@@ -65,6 +67,63 @@
       </button>
     </div>
 
+    <div ref="mobileMenu" class="mobile-header-menu relative">
+      <button
+        type="button"
+        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        :aria-label="t('header.more_actions')"
+        :title="t('header.more_actions')"
+        :aria-expanded="mobileMenuOpen"
+        aria-haspopup="menu"
+        @click="mobileMenuOpen = !mobileMenuOpen"
+      >
+        <IconMoreVertical class="w-6 h-6" />
+      </button>
+      <Transition name="mobile-header-menu">
+        <div
+          v-if="mobileMenuOpen"
+          class="mobile-header-menu-panel absolute right-0 top-full mt-2 min-w-48 rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-600 shadow-lg dark:border-gray-700 dark:bg-[#1b1b1f]/95 dark:text-gray-300"
+          role="menu"
+        >
+          <button type="button" class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" role="menuitem" @click="openReleases">
+            <IconDownload class="w-5 h-5" :class="hasNewVersion ? 'text-blue-500 dark:text-blue-400' : ''" />
+            <span>{{ t('header.releases') }}</span>
+          </button>
+          <a
+            :href="t('header.docs_url')"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]"
+            role="menuitem"
+            @click="mobileMenuOpen = false"
+          >
+            <IconBook class="w-5 h-5" />
+            <span>{{ t('header.docs') }}</span>
+          </a>
+          <a
+            href="https://github.com/xxynet/KiraAI"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]"
+            role="menuitem"
+            @click="mobileMenuOpen = false"
+          >
+            <IconGithub class="w-5 h-5" />
+            <span>GitHub</span>
+          </a>
+          <button type="button" class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" role="menuitem" @click="handleThemeToggle">
+            <IconMoon v-if="!appStore.isDark" class="w-5 h-5" />
+            <IconSun v-else class="w-5 h-5" />
+            <span>{{ appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark') }}</span>
+          </button>
+          <button type="button" class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" role="menuitem" @click="handleLogout">
+            <IconLogout class="w-5 h-5" />
+            <span>{{ t('header.logout') }}</span>
+          </button>
+        </div>
+      </Transition>
+    </div>
+
     <!-- Releases Modal -->
     <ReleasesModal
       v-model="showReleases"
@@ -78,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
@@ -88,7 +147,7 @@ import { getReleases } from '@/api/auth'
 import ReleasesModal from './ReleasesModal.vue'
 import type { ReleaseItem } from '@/types'
 import {
-  IconHamburger, IconDownload, IconBook, IconGithub, IconMoon, IconSun, IconLogout,
+  IconHamburger, IconMoreVertical, IconDownload, IconBook, IconGithub, IconMoon, IconSun, IconLogout,
 } from '@/components/icons'
 
 defineProps<{ title: string }>()
@@ -100,6 +159,8 @@ const authStore = useAuthStore()
 const router = useRouter()
 const { toggleTheme } = useTheme()
 
+const mobileMenu = ref<HTMLElement | null>(null)
+const mobileMenuOpen = ref(false)
 const showReleases = ref(false)
 const releases = ref<ReleaseItem[]>([])
 const currentVersion = ref('')
@@ -115,6 +176,7 @@ const hasNewVersion = computed(() => {
 })
 
 onMounted(async () => {
+  document.addEventListener('pointerdown', closeMobileMenuOnOutsideClick)
   try {
     const { data } = await getReleases()
     currentVersion.value = data.current_version
@@ -124,7 +186,18 @@ onMounted(async () => {
   }
 })
 
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeMobileMenuOnOutsideClick)
+})
+
+function closeMobileMenuOnOutsideClick(event: PointerEvent) {
+  if (!mobileMenu.value?.contains(event.target as Node)) {
+    mobileMenuOpen.value = false
+  }
+}
+
 async function openReleases() {
+  mobileMenuOpen.value = false
   showReleases.value = true
   releasesLoading.value = true
   releasesError.value = false
@@ -139,7 +212,13 @@ async function openReleases() {
   }
 }
 
+function handleThemeToggle() {
+  toggleTheme()
+  mobileMenuOpen.value = false
+}
+
 async function handleLogout() {
+  mobileMenuOpen.value = false
   try {
     await authStore.logout()
   } finally {
@@ -147,3 +226,48 @@ async function handleLogout() {
   }
 }
 </script>
+
+<style scoped>
+.mobile-header-menu {
+  display: none;
+}
+
+.mobile-header-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.625rem;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.mobile-header-menu-item:active {
+  transform: scale(0.98);
+}
+
+.mobile-header-menu-enter-active,
+.mobile-header-menu-leave-active {
+  transform-origin: top right;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.mobile-header-menu-enter-from,
+.mobile-header-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-0.5rem) scale(0.96);
+}
+
+@media (max-width: 768px) {
+  .header-actions {
+    display: none;
+  }
+
+  .mobile-header-menu {
+    display: block;
+  }
+}
+</style>

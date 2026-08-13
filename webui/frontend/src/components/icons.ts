@@ -28,6 +28,10 @@ export const IconHamburger = svgIcon(
   '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />',
 )
 
+export const IconMoreVertical = svgIcon(
+  '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 5.25a.75.75 0 110-1.5.75.75 0 010 1.5zm0 7.5a.75.75 0 110-1.5.75.75 0 010 1.5zm0 7.5a.75.75 0 110-1.5.75.75 0 010 1.5z" />',
+)
+
 export const IconChevronDown = svgIcon(
   '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />',
 )
