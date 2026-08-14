@@ -13,6 +13,7 @@ from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage
 from core.chat.message_utils import KiraExceptionEvent
 from core.plugin.plugin_handlers import event_handler_reg, EventType
+from core.prompt_manager import Prompt
 
 if TYPE_CHECKING:
     from core.chat.message_utils import KiraMessageBatchEvent
@@ -77,9 +78,15 @@ class AgentExecutor:
 
             # Inject last-step hint so the LLM knows to wrap up
             if is_final:
+                final_step_prompt = Prompt(
+                    name="final_step_hint",
+                    source="system",
+                    persist=False,
+                    content="<system_reminder>This is the final model call for this turn. Conclude this turn now; do not start further work that depends on tool results. Any tool result will not invoke you again this turn and will only be available the next time you are invoked. If you need to communicate anything to the user, provide it in this response, using the information already available. If a user-facing answer is needed but information is insufficient, clearly state what is missing and give the user a concise next step. You may end silently with <msg/> when no user-facing response is needed.</system_reminder>",
+                )
                 request.messages.append(OpenAIMessage(
-                    role="system",
-                    content="⚠️ This is your last response opportunity in this turn. There will be no more conversation turns after this. If you need to communicate anything to the user, output it directly in this response. If you choose to end silently (<msg/>), no output is needed."
+                    role="user",
+                    content=final_step_prompt.to_string(),
                 ))
 
             # Try models in order, failover to next on provider/API errors.
