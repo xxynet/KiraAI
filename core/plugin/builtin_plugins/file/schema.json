@@ -36,6 +36,33 @@
       "zh": { "name": "命令黑名单", "hint": "禁止执行的命令列表" }
     }
   },
+  "exec_timeout": {
+    "name": "Exec Timeout",
+    "type": "integer",
+    "default": 30,
+    "hint": "Maximum runtime in seconds for commands without background mode.",
+    "locales": {
+      "zh": { "name": "前台命令超时", "hint": "未启用后台模式的命令最大运行时间，单位为秒。" }
+    }
+  },
+  "background_exec_timeout": {
+    "name": "Background Exec Timeout",
+    "type": "integer",
+    "default": 300,
+    "hint": "Maximum total runtime in seconds for commands in background mode.",
+    "locales": {
+      "zh": { "name": "后台命令超时", "hint": "启用后台模式的命令最大总运行时间，单位为秒。" }
+    }
+  },
+  "background_exec_wait_seconds": {
+    "name": "Background Exec Wait Time",
+    "type": "integer",
+    "default": 2,
+    "hint": "How long to wait in seconds for a background command to finish before returning a task ID.",
+    "locales": {
+      "zh": { "name": "后台命令等待时长", "hint": "后台命令开始后等待结果的时长；超过该时长将返回任务 ID，单位为秒。" }
+    }
+  },
   "extra_paths": {
     "type": "section",
     "name": "Extra Allowed Paths",
