@@ -4,14 +4,19 @@ import shutil
 import asyncio
 import posixpath
 import subprocess
+import signal
+from dataclasses import dataclass, field
+from time import monotonic
+from uuid import uuid4
 
 from pathlib import Path
 
 from core.plugin import BasePlugin, logger, on, Priority, register
-from core.chat import KiraMessageBatchEvent
+from core.chat import KiraMessageBatchEvent, MessageChain
+from core.chat.message_elements import Text
 from core.provider import LLMRequest
 
-from core.utils.path_utils import get_data_path
+from core.utils.path_utils import get_data_path, get_root_path
 
 restricted_paths = ['~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/', '.pem',
                     '.p12', 'key', 'secret', 'password', 'token', 'credential']
@@ -23,7 +28,26 @@ blocked_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg',
                       '.dll', '.so', '.dylib', '.pdf', '.doc', '.docx', '.xls', '.xlsx',
                       '.ppt', '.pptx', '.iso', '.img', '.dmg'}
 
-ALL_TOOL_NAMES = ["read_file", "write_file", "edit_file", "list_files", "grep", "search_files", "exec"]
+ALL_TOOL_NAMES = [
+    "read_file", "write_file", "edit_file", "list_files", "grep", "search_files",
+    "exec", "manage_background_exec",
+]
+PROCESS_TERMINATION_GRACE_SECONDS = 5
+
+
+@dataclass
+class BackgroundExecTask:
+    task_id: str
+    session: str
+    work_dir: Path
+    timeout: int
+    started_at: float = field(default_factory=monotonic)
+    output_chunks: list[str] = field(default_factory=list)
+    process: asyncio.subprocess.Process | None = None
+    execution_task: asyncio.Task[str] | None = None
+    status: str = "starting"
+    stop_requested: bool = False
+    notify_on_completion: bool = False
 
 
 class FilePlugin(BasePlugin):
@@ -39,10 +63,23 @@ class FilePlugin(BasePlugin):
         self.allowed_read_paths = tuple()
         self.allowed_write_paths = tuple()
 
+        self._exec_timeout = 30
+        self._background_exec_timeout = 300
+        self._background_exec_wait_seconds = 2
+        self._background_exec_tasks: dict[str, BackgroundExecTask] = {}
+        self._background_notice_tasks: set[asyncio.Task] = set()
+
     async def initialize(self):
         self.allowed_sessions = self.plugin_cfg.get("allowed_sessions", [])
         self.allowed_exec_sessions = self.plugin_cfg.get("allowed_exec_sessions", [])
         self.exec_deny_list = self.plugin_cfg.get("exec_deny_list", [])
+        self._exec_timeout = self._get_positive_int_config("exec_timeout", 30)
+        self._background_exec_timeout = self._get_positive_int_config(
+            "background_exec_timeout", 300
+        )
+        self._background_exec_wait_seconds = self._get_positive_int_config(
+            "background_exec_wait_seconds", 2
+        )
         base_read = ["data/files", "data/temp", "data/skills"]
         base_write = ["data/files", "data/temp"]
         extra_paths_cfg = self.plugin_cfg.get("extra_paths", {})
@@ -51,17 +88,243 @@ class FilePlugin(BasePlugin):
         self.allowed_read_paths = tuple(base_read + extra_read)
         self.allowed_write_paths = tuple(base_write + extra_write)
 
+    def _get_positive_int_config(self, key: str, default: int) -> int:
+        value = self.plugin_cfg.get(key, default)
+        if isinstance(value, bool):
+            value = None
+        else:
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                value = None
+
+        if value is not None and value > 0:
+            return value
+
+        logger.warning(f"Invalid {key} value; using default of {default} seconds")
+        return default
+
     @on.llm_request(priority=Priority.LOW)
     async def filter_tools(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
         enabled = self.plugin_cfg.get("enabled_tools")
         if enabled is None:
             enabled = ALL_TOOL_NAMES
-        disabled = set(ALL_TOOL_NAMES) - set(enabled)
+        enabled = set(enabled)
+        if "exec" in enabled:
+            enabled.add("manage_background_exec")
+        else:
+            enabled.discard("manage_background_exec")
+        disabled = set(ALL_TOOL_NAMES) - enabled
         if disabled:
             req.tool_set.remove(*disabled)
 
     async def terminate(self):
-        pass
+        background_tasks = list(self._background_exec_tasks.values())
+        self._background_exec_tasks.clear()
+        for background_task in background_tasks:
+            background_task.stop_requested = True
+            background_task.notify_on_completion = False
+            await self._terminate_background_process(background_task.process)
+            if background_task.execution_task is not None:
+                background_task.execution_task.cancel()
+
+        notice_tasks = list(self._background_notice_tasks)
+        for notice_task in notice_tasks:
+            notice_task.cancel()
+
+        await asyncio.gather(
+            *(task.execution_task for task in background_tasks if task.execution_task is not None),
+            *notice_tasks,
+            return_exceptions=True,
+        )
+        self._background_notice_tasks.clear()
+
+    @staticmethod
+    def _run_shell_command(
+        shell_command: str,
+        exec_timeout: int,
+        env: dict[str, str],
+        exec_work_dir: Path,
+    ) -> str:
+        try:
+            result = subprocess.run(
+                shell_command, shell=True, capture_output=True,
+                stdin=subprocess.DEVNULL,
+                timeout=exec_timeout, env=env, cwd=exec_work_dir,
+                encoding='utf-8', errors='replace'
+            )
+            output = (result.stdout or '') + (result.stderr or '')
+            if result.returncode == 0:
+                return f'Shell command output:\n{output}'
+            return f'Shell command failed (exit {result.returncode}):\n{output}'
+        except subprocess.TimeoutExpired:
+            return f'Shell command timed out after {exec_timeout} seconds: {shell_command}'
+        except Exception as e:
+            return f'Unexpected error while executing shell command: {e}'
+
+    @staticmethod
+    async def _read_background_output(
+        stream: asyncio.StreamReader | None,
+        background_task: BackgroundExecTask,
+    ):
+        if stream is None:
+            return
+        while chunk := await stream.read(4096):
+            background_task.output_chunks.append(chunk.decode("utf-8", errors="replace"))
+
+    @staticmethod
+    async def _terminate_background_process(process: asyncio.subprocess.Process | None):
+        if process is None or process.returncode is not None:
+            return
+
+        try:
+            if os.name == "nt":
+                killer = await asyncio.create_subprocess_exec(
+                    "taskkill", "/PID", str(process.pid), "/T", "/F",
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(killer.wait(), timeout=PROCESS_TERMINATION_GRACE_SECONDS)
+                if killer.returncode != 0 and process.returncode is None:
+                    logger.warning(
+                        f"taskkill failed for background process {process.pid} "
+                        f"with exit code {killer.returncode}; killing the shell process"
+                    )
+                    process.kill()
+            else:
+                os.killpg(process.pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError, asyncio.TimeoutError):
+            if process.returncode is None:
+                process.kill()
+
+        try:
+            await asyncio.wait_for(process.wait(), timeout=PROCESS_TERMINATION_GRACE_SECONDS)
+        except asyncio.TimeoutError:
+            if os.name == "nt":
+                logger.warning(
+                    f"Background process {process.pid} did not exit after taskkill; killing the shell process"
+                )
+                if process.returncode is None:
+                    process.kill()
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (OSError, ProcessLookupError):
+                    pass
+            await process.wait()
+
+    async def _run_background_shell_command(
+        self,
+        shell_command: str,
+        background_task: BackgroundExecTask,
+        env: dict[str, str],
+    ) -> str:
+        process_kwargs = {}
+        if os.name == "nt":
+            process_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            process_kwargs["start_new_session"] = True
+
+        try:
+            process = await asyncio.create_subprocess_shell(
+                shell_command,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=background_task.work_dir,
+                env=env,
+                **process_kwargs,
+            )
+            background_task.process = process
+            background_task.status = "running"
+            readers = [
+                asyncio.create_task(self._read_background_output(process.stdout, background_task)),
+                asyncio.create_task(self._read_background_output(process.stderr, background_task)),
+            ]
+
+            timed_out = False
+            try:
+                if background_task.stop_requested:
+                    await self._terminate_background_process(process)
+                else:
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=background_task.timeout)
+                    except asyncio.TimeoutError:
+                        timed_out = True
+                        background_task.status = "timed_out"
+                        await self._terminate_background_process(process)
+            finally:
+                await asyncio.gather(*readers, return_exceptions=True)
+
+            output = "".join(background_task.output_chunks)
+            if background_task.stop_requested:
+                background_task.status = "stopped"
+                return f"Shell command stopped by request:\n{output}"
+            if timed_out:
+                return (
+                    f"Shell command timed out after {background_task.timeout} seconds: "
+                    f"{shell_command}"
+                )
+            if process.returncode == 0:
+                background_task.status = "completed"
+                return f"Shell command output:\n{output}"
+            background_task.status = "failed"
+            return f"Shell command failed (exit {process.returncode}):\n{output}"
+        except Exception as e:
+            background_task.status = "failed"
+            return f"Unexpected error while executing shell command: {e}"
+
+    async def _stop_background_task(self, background_task: BackgroundExecTask):
+        background_task.stop_requested = True
+        background_task.notify_on_completion = False
+        if background_task.process is not None:
+            await self._terminate_background_process(background_task.process)
+
+    async def _publish_background_exec_result(
+        self,
+        task_id: str,
+        session: str,
+        status: str,
+        task: asyncio.Task[str],
+    ):
+        try:
+            result = task.result()
+        except asyncio.CancelledError:
+            result = "Shell command was cancelled"
+        except Exception as e:
+            result = f"Unexpected error while executing shell command: {e}"
+
+        try:
+            status_text = {
+                "completed": "completed",
+                "timed_out": "timed out",
+                "failed": "failed",
+            }.get(status, "finished")
+            message = f"Background shell command {status_text} (task_id: {task_id}):\n{result}"
+            await self.ctx.publish_notice(
+                session,
+                MessageChain([Text(message)]),
+                is_mentioned=True,
+            )
+        except Exception as e:
+            logger.error(f"Failed to publish background shell command result for task {task_id}: {e}")
+
+    def _on_background_exec_done(self, task_id: str, session: str, task: asyncio.Task[str]):
+        background_task = self._background_exec_tasks.pop(task_id, None)
+        if background_task is None or not background_task.notify_on_completion:
+            return
+        notice_task = asyncio.create_task(
+            self._publish_background_exec_result(
+                task_id,
+                session,
+                background_task.status,
+                task,
+            ),
+            name=f"file_exec_notice_{task_id}",
+        )
+        self._background_notice_tasks.add(notice_task)
+        notice_task.add_done_callback(self._background_notice_tasks.discard)
 
     def _is_path_allowed(self, path: str, allowed_prefixes: tuple) -> bool:
         """Check if path starts with an allowed prefix directory."""
@@ -678,17 +941,38 @@ class FilePlugin(BasePlugin):
             "type": "object",
             "properties": {
                 "cmd": {"type": "string", "description": "Command to execute"},
+                "work_dir": {
+                    "type": "string",
+                    "description": "Optional existing working directory. Relative paths are resolved from the application root."
+                },
+                "background": {
+                    "type": "boolean",
+                    "description": "Whether to run the command in the background. Waits for the configured background wait time before returning a task ID, then sends the completed result to this session. Defaults to false."
+                }
             },
             "required": ["cmd"]
         }
     )
-    async def exec(self, event: KiraMessageBatchEvent, cmd: str) -> str:
+    async def exec(self, event: KiraMessageBatchEvent, cmd: str, work_dir: str | None = None, background: bool = False) -> str:
         if event.sid not in self.allowed_exec_sessions:
             return "Permission denied: current session not allowed to execute shell commands"
 
-        import subprocess
-
         shell_command = cmd.strip()
+
+        exec_work_dir = get_root_path()
+        if work_dir is not None:
+            if not isinstance(work_dir, str) or not work_dir.strip():
+                return "Working directory must be a non-empty string"
+            try:
+                exec_work_dir = Path(work_dir).expanduser()
+                if not exec_work_dir.is_absolute():
+                    exec_work_dir = get_root_path() / exec_work_dir
+                exec_work_dir = exec_work_dir.resolve(strict=True)
+            except (OSError, RuntimeError, ValueError):
+                return f"Working directory not found: {work_dir}"
+
+            if not exec_work_dir.is_dir():
+                return f"Working directory is not a directory: {work_dir}"
 
         # Check deny list
         if self.exec_deny_list:
@@ -716,21 +1000,113 @@ class FilePlugin(BasePlugin):
         if os.name == 'nt':
             shell_command = f'chcp 65001 >nul && {shell_command}'
 
-        exec_timeout = 30  # seconds
-
-        logger.info(f'Executing shell command: {shell_command} (cwd: {os.getcwd()})')
-        try:
-            result = subprocess.run(
-                shell_command, shell=True, capture_output=True,
-                stdin=subprocess.DEVNULL,
-                timeout=exec_timeout, env=env, encoding='utf-8', errors='replace'
+        logger.info(f'Executing shell command: {shell_command} (cwd: {exec_work_dir})')
+        if not background:
+            return await asyncio.to_thread(
+                self._run_shell_command,
+                shell_command,
+                self._exec_timeout,
+                env,
+                exec_work_dir,
             )
-            output = (result.stdout or '') + (result.stderr or '')
-            if result.returncode == 0:
-                return f'Shell command output:\n{output}'
-            else:
-                return f'Shell command failed (exit {result.returncode}):\n{output}'
-        except subprocess.TimeoutExpired:
-            return f'Shell command timed out after {exec_timeout} seconds: {shell_command}'
-        except Exception as e:
-            return f'Unexpected error while executing shell command: {e}'
+
+        task_id = f"exec-{uuid4().hex}"
+        background_task = BackgroundExecTask(
+            task_id=task_id,
+            session=event.sid,
+            work_dir=exec_work_dir,
+            timeout=self._background_exec_timeout,
+        )
+        command_task = asyncio.create_task(
+            self._run_background_shell_command(shell_command, background_task, env),
+            name=f"exec_task_{task_id}",
+        )
+        background_task.execution_task = command_task
+        self._background_exec_tasks[task_id] = background_task
+        command_task.add_done_callback(
+            lambda task: self._on_background_exec_done(task_id, event.sid, task)
+        )
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(command_task),
+                timeout=self._background_exec_wait_seconds,
+            )
+        except asyncio.TimeoutError:
+            background_task.notify_on_completion = True
+            return (
+                f"Shell command is running in the background (task_id: {task_id}). "
+                "The result will be sent to this session when it completes."
+            )
+        except asyncio.CancelledError:
+            background_task.notify_on_completion = False
+            await self._stop_background_task(background_task)
+            try:
+                await asyncio.shield(command_task)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._background_exec_tasks.pop(task_id, None)
+            raise
+
+    @register.tool(
+        "manage_background_exec",
+        "List, inspect output from, or stop background shell commands started in the current session.",
+        {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "output", "stop"],
+                    "description": "Use 'list' to view running tasks, 'output' to view a task's current output, or 'stop' to stop a task.",
+                },
+                "task_id": {
+                    "type": "string",
+                    "description": "Required for the 'output' and 'stop' actions."
+                },
+            },
+            "required": ["action"],
+        },
+    )
+    async def manage_background_exec(
+        self,
+        event: KiraMessageBatchEvent,
+        action: str,
+        task_id: str | None = None,
+    ) -> str:
+        if event.sid not in self.allowed_exec_sessions:
+            return "Permission denied: current session not allowed to manage shell commands"
+
+        if action == "list":
+            session_tasks = [
+                task for task in self._background_exec_tasks.values()
+                if task.session == event.sid
+            ]
+            if not session_tasks:
+                return "No background tasks are currently running."
+
+            return "Running background tasks:\n" + "\n".join(
+                (
+                    f"- {task.task_id} | status: {task.status} | "
+                    f"elapsed: {int(monotonic() - task.started_at)}s | "
+                    f"output: {sum(len(chunk) for chunk in task.output_chunks)} chars"
+                )
+                for task in session_tasks
+            )
+
+        if action not in {"output", "stop"}:
+            return "Invalid action. Use one of: list, output, stop."
+        if not task_id:
+            return f"task_id is required for the '{action}' action"
+
+        background_task = self._background_exec_tasks.get(task_id)
+        if background_task is None or background_task.session != event.sid:
+            return f"Background task not found: {task_id}"
+
+        if action == "output":
+            output = "".join(background_task.output_chunks)
+            if not output:
+                return f"No output has been produced yet for task {task_id}."
+            return f"Current output for task {task_id}:\n{output}"
+
+        await self._stop_background_task(background_task)
+        return f"Stop requested for background task {task_id}."
