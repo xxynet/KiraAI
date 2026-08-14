@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from core.plugin.builtin_plugins.file import main as file_main
 from core.plugin.builtin_plugins.file.main import BackgroundExecTask, FilePlugin
 
 
@@ -36,6 +37,25 @@ class FakeBackgroundProcess:
 
     def kill(self):
         self.terminate()
+
+
+class ResistantProcess:
+    def __init__(self):
+        self.pid = 12345
+        self.returncode = None
+        self._finished = asyncio.Event()
+
+    async def wait(self):
+        await self._finished.wait()
+        return self.returncode
+
+
+class FakeKillerProcess:
+    def __init__(self, returncode: int):
+        self.returncode = returncode
+
+    async def wait(self):
+        return self.returncode
 
 
 @pytest.fixture
@@ -239,11 +259,19 @@ async def test_cancelled_background_exec_cleans_up_task(file_plugin):
     event = SimpleNamespace(sid="test:dm:1")
     file_plugin.ctx = SimpleNamespace(publish_notice=AsyncMock())
     file_plugin._background_exec_wait_seconds = 1
-    process = FakeBackgroundProcess(delay=0.05)
+    process = FakeBackgroundProcess(delay=1)
+
+    async def terminate_process(fake_process):
+        fake_process.terminate()
+        await fake_process.wait()
 
     with patch(
         "core.plugin.builtin_plugins.file.main.asyncio.create_subprocess_shell",
         new=AsyncMock(return_value=process),
+    ), patch.object(
+        file_plugin,
+        "_terminate_background_process",
+        new=AsyncMock(side_effect=terminate_process),
     ):
         exec_call = asyncio.create_task(file_plugin.exec(event, "echo test", background=True))
         for _ in range(10):
@@ -253,8 +281,8 @@ async def test_cancelled_background_exec_cleans_up_task(file_plugin):
         exec_call.cancel()
         with pytest.raises(asyncio.CancelledError):
             await exec_call
-        await asyncio.sleep(0.1)
 
+    assert process.returncode == -15
     assert file_plugin._background_exec_tasks == {}
     file_plugin.ctx.publish_notice.assert_not_awaited()
 
@@ -286,3 +314,44 @@ async def test_terminate_stops_and_clears_background_tasks(file_plugin):
     assert file_plugin._background_exec_tasks == {}
     assert file_plugin._background_notice_tasks == set()
     file_plugin.ctx.publish_notice.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_terminate_background_process_force_kills_posix_process_group(monkeypatch):
+    process = ResistantProcess()
+    signals = []
+    sigkill = getattr(file_main.signal, "SIGKILL", 9)
+
+    def killpg(pid, signal_value):
+        signals.append((pid, signal_value))
+        if signal_value == sigkill:
+            process.returncode = -9
+            process._finished.set()
+
+    monkeypatch.setattr(file_main, "PROCESS_TERMINATION_GRACE_SECONDS", 0.01)
+    monkeypatch.setattr(file_main.signal, "SIGKILL", sigkill, raising=False)
+    with patch("core.plugin.builtin_plugins.file.main.os.name", "posix"), patch(
+        "core.plugin.builtin_plugins.file.main.os.killpg",
+        side_effect=killpg,
+        create=True,
+    ):
+        await FilePlugin._terminate_background_process(process)
+
+    assert signals == [
+        (process.pid, file_main.signal.SIGTERM),
+        (process.pid, sigkill),
+    ]
+
+
+@pytest.mark.anyio
+async def test_terminate_background_process_checks_taskkill_failure():
+    process = FakeBackgroundProcess(delay=1)
+    killer = FakeKillerProcess(returncode=1)
+
+    with patch("core.plugin.builtin_plugins.file.main.os.name", "nt"), patch(
+        "core.plugin.builtin_plugins.file.main.asyncio.create_subprocess_exec",
+        new=AsyncMock(return_value=killer),
+    ):
+        await FilePlugin._terminate_background_process(process)
+
+    assert process.returncode == -15

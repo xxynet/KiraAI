@@ -32,6 +32,7 @@ ALL_TOOL_NAMES = [
     "read_file", "write_file", "edit_file", "list_files", "grep", "search_files",
     "exec", "manage_background_exec",
 ]
+PROCESS_TERMINATION_GRACE_SECONDS = 5
 
 
 @dataclass
@@ -184,16 +185,33 @@ class FilePlugin(BasePlugin):
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
-                await asyncio.wait_for(killer.wait(), timeout=5)
+                await asyncio.wait_for(killer.wait(), timeout=PROCESS_TERMINATION_GRACE_SECONDS)
+                if killer.returncode != 0 and process.returncode is None:
+                    logger.warning(
+                        f"taskkill failed for background process {process.pid} "
+                        f"with exit code {killer.returncode}; killing the shell process"
+                    )
+                    process.kill()
             else:
                 os.killpg(process.pid, signal.SIGTERM)
         except (OSError, ProcessLookupError, asyncio.TimeoutError):
-            process.kill()
+            if process.returncode is None:
+                process.kill()
 
         try:
-            await asyncio.wait_for(process.wait(), timeout=5)
+            await asyncio.wait_for(process.wait(), timeout=PROCESS_TERMINATION_GRACE_SECONDS)
         except asyncio.TimeoutError:
-            process.kill()
+            if os.name == "nt":
+                logger.warning(
+                    f"Background process {process.pid} did not exit after taskkill; killing the shell process"
+                )
+                if process.returncode is None:
+                    process.kill()
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (OSError, ProcessLookupError):
+                    pass
             await process.wait()
 
     async def _run_background_shell_command(
@@ -1019,6 +1037,16 @@ class FilePlugin(BasePlugin):
                 f"Shell command is running in the background (task_id: {task_id}). "
                 "The result will be sent to this session when it completes."
             )
+        except asyncio.CancelledError:
+            background_task.notify_on_completion = False
+            await self._stop_background_task(background_task)
+            try:
+                await asyncio.shield(command_task)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._background_exec_tasks.pop(task_id, None)
+            raise
 
     @register.tool(
         "manage_background_exec",
