@@ -82,7 +82,7 @@ class AgentExecutor:
                     name="final_step_hint",
                     source="system",
                     persist=False,
-                    content="<system_reminder>⚠️ This is your last response opportunity in this turn. There will be no more conversation turns after this. If you need to communicate anything to the user, output it directly in this response. If you choose to end silently (<msg/>), no output is needed.</system_reminder>",
+                    content="<system_reminder>This is the final model call for this turn. Conclude this turn now; do not start further work that depends on tool results. Any tool result will not invoke you again this turn and will only be available the next time you are invoked. If you need to communicate anything to the user, provide it in this response, using the information already available. If a user-facing answer is needed but information is insufficient, clearly state what is missing and give the user a concise next step. You may end silently with <msg/> when no user-facing response is needed.</system_reminder>",
                 )
                 request.messages.append(OpenAIMessage(
                     role="user",
