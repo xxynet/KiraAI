@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from core.plugin.builtin_plugins.file.main import FilePlugin
+from core.plugin.builtin_plugins.file.main import BackgroundExecTask, FilePlugin
 
 
 class FakeBackgroundProcess:
@@ -201,4 +201,88 @@ async def test_manage_background_exec_lists_output_and_stops_own_task(file_plugi
         await asyncio.sleep(0.01)
 
     assert task_id not in file_plugin._background_exec_tasks
+    file_plugin.ctx.publish_notice.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_background_exec_stop_before_wait_returns_captured_output(file_plugin, tmp_path):
+    background_task = BackgroundExecTask(
+        task_id="exec-test",
+        session="test:dm:1",
+        work_dir=tmp_path,
+        timeout=30,
+        stop_requested=True,
+    )
+    process = FakeBackgroundProcess(stdout="started\n", delay=1)
+
+    async def terminate_process(fake_process):
+        fake_process.terminate()
+        await fake_process.wait()
+
+    with patch(
+        "core.plugin.builtin_plugins.file.main.asyncio.create_subprocess_shell",
+        new=AsyncMock(return_value=process),
+    ), patch.object(
+        file_plugin,
+        "_terminate_background_process",
+        new=AsyncMock(side_effect=terminate_process),
+    ):
+        result = await file_plugin._run_background_shell_command(
+            "echo test", background_task, {}
+        )
+
+    assert result == "Shell command stopped by request:\nstarted\n"
+
+
+@pytest.mark.anyio
+async def test_cancelled_background_exec_cleans_up_task(file_plugin):
+    event = SimpleNamespace(sid="test:dm:1")
+    file_plugin.ctx = SimpleNamespace(publish_notice=AsyncMock())
+    file_plugin._background_exec_wait_seconds = 1
+    process = FakeBackgroundProcess(delay=0.05)
+
+    with patch(
+        "core.plugin.builtin_plugins.file.main.asyncio.create_subprocess_shell",
+        new=AsyncMock(return_value=process),
+    ):
+        exec_call = asyncio.create_task(file_plugin.exec(event, "echo test", background=True))
+        for _ in range(10):
+            if file_plugin._background_exec_tasks:
+                break
+            await asyncio.sleep(0)
+        exec_call.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await exec_call
+        await asyncio.sleep(0.1)
+
+    assert file_plugin._background_exec_tasks == {}
+    file_plugin.ctx.publish_notice.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_terminate_stops_and_clears_background_tasks(file_plugin):
+    event = SimpleNamespace(sid="test:dm:1")
+    file_plugin.ctx = SimpleNamespace(publish_notice=AsyncMock())
+    file_plugin._background_exec_wait_seconds = 0.01
+    process = FakeBackgroundProcess(delay=1)
+
+    async def terminate_process(fake_process):
+        fake_process.terminate()
+        await fake_process.wait()
+
+    with patch(
+        "core.plugin.builtin_plugins.file.main.asyncio.create_subprocess_shell",
+        new=AsyncMock(return_value=process),
+    ), patch.object(
+        file_plugin,
+        "_terminate_background_process",
+        new=AsyncMock(side_effect=terminate_process),
+    ):
+        result = await file_plugin.exec(event, "echo test", background=True)
+        assert "task_id: exec-" in result
+        await file_plugin.terminate()
+
+    assert process.returncode == -15
+    assert file_plugin._background_exec_tasks == {}
+    assert file_plugin._background_notice_tasks == set()
     file_plugin.ctx.publish_notice.assert_not_awaited()

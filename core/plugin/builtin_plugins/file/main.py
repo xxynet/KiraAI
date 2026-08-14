@@ -46,7 +46,7 @@ class BackgroundExecTask:
     execution_task: asyncio.Task[str] | None = None
     status: str = "starting"
     stop_requested: bool = False
-    notify_on_completion: bool = True
+    notify_on_completion: bool = False
 
 
 class FilePlugin(BasePlugin):
@@ -118,7 +118,25 @@ class FilePlugin(BasePlugin):
             req.tool_set.remove(*disabled)
 
     async def terminate(self):
-        pass
+        background_tasks = list(self._background_exec_tasks.values())
+        self._background_exec_tasks.clear()
+        for background_task in background_tasks:
+            background_task.stop_requested = True
+            background_task.notify_on_completion = False
+            await self._terminate_background_process(background_task.process)
+            if background_task.execution_task is not None:
+                background_task.execution_task.cancel()
+
+        notice_tasks = list(self._background_notice_tasks)
+        for notice_task in notice_tasks:
+            notice_task.cancel()
+
+        await asyncio.gather(
+            *(task.execution_task for task in background_tasks if task.execution_task is not None),
+            *notice_tasks,
+            return_exceptions=True,
+        )
+        self._background_notice_tasks.clear()
 
     @staticmethod
     def _run_shell_command(
@@ -207,20 +225,17 @@ class FilePlugin(BasePlugin):
                 asyncio.create_task(self._read_background_output(process.stderr, background_task)),
             ]
 
-            if background_task.stop_requested:
-                await self._terminate_background_process(process)
-                background_task.status = "stopped"
-                return "Shell command stopped by request"
-
+            timed_out = False
             try:
-                await asyncio.wait_for(process.wait(), timeout=background_task.timeout)
-            except asyncio.TimeoutError:
-                background_task.status = "timed_out"
-                await self._terminate_background_process(process)
-                return (
-                    f"Shell command timed out after {background_task.timeout} seconds: "
-                    f"{shell_command}"
-                )
+                if background_task.stop_requested:
+                    await self._terminate_background_process(process)
+                else:
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=background_task.timeout)
+                    except asyncio.TimeoutError:
+                        timed_out = True
+                        background_task.status = "timed_out"
+                        await self._terminate_background_process(process)
             finally:
                 await asyncio.gather(*readers, return_exceptions=True)
 
@@ -228,6 +243,11 @@ class FilePlugin(BasePlugin):
             if background_task.stop_requested:
                 background_task.status = "stopped"
                 return f"Shell command stopped by request:\n{output}"
+            if timed_out:
+                return (
+                    f"Shell command timed out after {background_task.timeout} seconds: "
+                    f"{shell_command}"
+                )
             if process.returncode == 0:
                 background_task.status = "completed"
                 return f"Shell command output:\n{output}"
@@ -985,17 +1005,16 @@ class FilePlugin(BasePlugin):
         )
         background_task.execution_task = command_task
         self._background_exec_tasks[task_id] = background_task
+        command_task.add_done_callback(
+            lambda task: self._on_background_exec_done(task_id, event.sid, task)
+        )
         try:
-            result = await asyncio.wait_for(
+            return await asyncio.wait_for(
                 asyncio.shield(command_task),
                 timeout=self._background_exec_wait_seconds,
             )
-            self._background_exec_tasks.pop(task_id, None)
-            return result
         except asyncio.TimeoutError:
-            command_task.add_done_callback(
-                lambda task: self._on_background_exec_done(task_id, event.sid, task)
-            )
+            background_task.notify_on_completion = True
             return (
                 f"Shell command is running in the background (task_id: {task_id}). "
                 "The result will be sent to this session when it completes."
