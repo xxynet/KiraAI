@@ -11,7 +11,7 @@ from core.plugin import BasePlugin, logger, on, Priority, register
 from core.chat import KiraMessageBatchEvent
 from core.provider import LLMRequest
 
-from core.utils.path_utils import get_data_path
+from core.utils.path_utils import get_data_path, get_root_path
 
 restricted_paths = ['~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/', '.pem',
                     '.p12', 'key', 'secret', 'password', 'token', 'credential']
@@ -678,17 +678,40 @@ class FilePlugin(BasePlugin):
             "type": "object",
             "properties": {
                 "cmd": {"type": "string", "description": "Command to execute"},
+                "work_dir": {
+                    "type": "string",
+                    "description": "Optional existing working directory. Relative paths are resolved from the application root."
+                },
+                "background": {
+                    "type": "boolean",
+                    "description": "Whether to run the command in the background, without waiting for output. Defaults to false."
+                }
             },
             "required": ["cmd"]
         }
     )
-    async def exec(self, event: KiraMessageBatchEvent, cmd: str) -> str:
+    async def exec(self, event: KiraMessageBatchEvent, cmd: str, work_dir: str | None = None, background: bool = False) -> str:
         if event.sid not in self.allowed_exec_sessions:
             return "Permission denied: current session not allowed to execute shell commands"
 
         import subprocess
 
         shell_command = cmd.strip()
+
+        exec_work_dir = get_root_path()
+        if work_dir is not None:
+            if not isinstance(work_dir, str) or not work_dir.strip():
+                return "Working directory must be a non-empty string"
+            try:
+                exec_work_dir = Path(work_dir).expanduser()
+                if not exec_work_dir.is_absolute():
+                    exec_work_dir = get_root_path() / exec_work_dir
+                exec_work_dir = exec_work_dir.resolve(strict=True)
+            except (OSError, RuntimeError, ValueError):
+                return f"Working directory not found: {work_dir}"
+
+            if not exec_work_dir.is_dir():
+                return f"Working directory is not a directory: {work_dir}"
 
         # Check deny list
         if self.exec_deny_list:
@@ -718,12 +741,13 @@ class FilePlugin(BasePlugin):
 
         exec_timeout = 30  # seconds
 
-        logger.info(f'Executing shell command: {shell_command} (cwd: {os.getcwd()})')
+        logger.info(f'Executing shell command: {shell_command} (cwd: {exec_work_dir})')
         try:
             result = subprocess.run(
                 shell_command, shell=True, capture_output=True,
                 stdin=subprocess.DEVNULL,
-                timeout=exec_timeout, env=env, encoding='utf-8', errors='replace'
+                timeout=exec_timeout, env=env, cwd=exec_work_dir,
+                encoding='utf-8', errors='replace'
             )
             output = (result.stdout or '') + (result.stderr or '')
             if result.returncode == 0:
