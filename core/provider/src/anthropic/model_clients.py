@@ -9,6 +9,7 @@ from anthropic import AnthropicError, AsyncAnthropic
 from core.provider import LLMModelClient, ModelInfo, ProviderAPIError
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.utils.model_clients import build_llm_default_headers
+from core.utils.media_refs import resolve_media_references
 
 DEFAULT_BASE_URL = "https://api.anthropic.com"
 DEFAULT_API_VERSION = "2023-06-01"
@@ -132,7 +133,11 @@ class AnthropicCompatibleLLMClient(LLMModelClient):
         return value if isinstance(value, dict) else {}
 
     @classmethod
-    def _convert_messages(cls, request: LLMRequest) -> tuple[str, list[dict]]:
+    def _convert_messages(
+        cls,
+        request: LLMRequest,
+        raw_messages: list[dict] | None = None,
+    ) -> tuple[str, list[dict]]:
         system_parts: list[str] = []
         messages: list[dict] = []
 
@@ -144,7 +149,7 @@ class AnthropicCompatibleLLMClient(LLMModelClient):
             else:
                 messages.append({"role": role, "content": blocks})
 
-        for raw_message in request.messages:
+        for raw_message in (raw_messages if raw_messages is not None else request.messages):
             message = (
                 raw_message if isinstance(raw_message, dict) else raw_message.to_dict()
             )
@@ -206,10 +211,16 @@ class AnthropicCompatibleLLMClient(LLMModelClient):
             converted.append(anthropic_tool)
         return converted
 
-    def _build_request_body(self, request: LLMRequest, **overrides) -> dict:
+    def _build_request_body(
+        self,
+        request: LLMRequest,
+        *,
+        resolved_messages: list[dict] | None = None,
+        **overrides,
+    ) -> dict:
         model_config = self.model.model_config or {}
         advanced = model_config.get("section_advanced") or {}
-        system, messages = self._convert_messages(request)
+        system, messages = self._convert_messages(request, resolved_messages)
 
         body = {
             "model": self.model.model_id,
@@ -288,7 +299,10 @@ class AnthropicCompatibleLLMClient(LLMModelClient):
         return response
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
-        body = self._build_request_body(request, **kwargs)
+        messages = await resolve_media_references(request.messages)
+        body = self._build_request_body(
+            request, resolved_messages=messages, **kwargs
+        )
         start_time = time.perf_counter()
         try:
             async with self._build_client() as client:
@@ -309,7 +323,10 @@ class AnthropicCompatibleLLMClient(LLMModelClient):
     async def chat_stream(
         self, request: LLMRequest, **kwargs
     ) -> AsyncGenerator[LLMStreamChunk, None]:
-        body = self._build_request_body(request, stream=True, **kwargs)
+        messages = await resolve_media_references(request.messages)
+        body = self._build_request_body(
+            request, resolved_messages=messages, stream=True, **kwargs
+        )
         input_tokens = None
         output_tokens = None
         cached_tokens = None

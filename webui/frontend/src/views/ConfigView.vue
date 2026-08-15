@@ -464,6 +464,10 @@ const allGroups: ConfigGroup[] = [
     icon: IconFlask,
     fields: [
       { key: 'bot_config.capabilities.image_recognition.enabled', labelKey: 'configuration.message.image_recognition_enabled', labelFallback: 'Image Recognition', hintKey: 'configuration.hints.image_recognition_enabled', hintFallback: 'Automatically describe images and stickers in messages using VLM', type: 'boolean', default: true },
+      { key: 'bot_config.capabilities.image_recognition.mode', labelKey: 'configuration.message.image_recognition_mode', labelFallback: 'Image Processing Mode', hintKey: 'configuration.hints.image_recognition_mode', hintFallback: 'Native sends images directly to the main LLM. VLM description converts them to text first.', type: 'select', default: 'vlm_description', selectOptions: [
+        { value: 'vlm_description', labelKey: 'configuration.message.image_recognition_mode_vlm', label: 'VLM Description' },
+        { value: 'native', labelKey: 'configuration.message.image_recognition_mode_native', label: 'Native Multimodal' },
+      ]},
       { key: 'bot_config.capabilities.image_recognition.desc_prompt', labelKey: 'configuration.message.desc_prompt', labelFallback: 'Custom Description Prompt', hintKey: 'configuration.hints.desc_prompt', hintFallback: 'Custom prompt for image description. Leave empty to use the default prompt. Setting this will override the default', type: 'string', default: '' },
       { key: 'bot_config.capabilities.stt.enabled', labelKey: 'configuration.message.stt_enabled', labelFallback: 'Speech Recognition', hintKey: 'configuration.hints.stt_enabled', hintFallback: 'Transcribe incoming voice messages to text', type: 'boolean', default: true },
       { key: 'bot_config.capabilities.tts.enabled', labelKey: 'configuration.message.tts_enabled', labelFallback: 'Voice Synthesis', hintKey: 'configuration.hints.tts_enabled', hintFallback: 'Allow sending voice messages in reply', type: 'boolean', default: true },

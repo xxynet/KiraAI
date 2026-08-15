@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import asyncio
+import copy
 import json
 import os
 import time
 import uuid
-from typing import Dict, List, Optional, overload
+from typing import Dict, List, Optional, TYPE_CHECKING, overload
 from threading import Lock
 
 from core.logging_manager import get_logger
@@ -13,6 +16,9 @@ from core.db.service import DatabaseService
 
 from .session import Session
 
+if TYPE_CHECKING:
+    from core.event_bus import EventBus
+
 logger = get_logger("session", "green")
 
 CHAT_MEMORY_PATH: str = f"{get_data_path()}/memory/chat_memory.json"
@@ -21,9 +27,15 @@ CORE_MEMORY_PATH: str = f"{get_data_path()}/memory/core.txt"
 
 class SessionManager:
 
-    def __init__(self, db: DatabaseService, kira_config: KiraConfig):
+    def __init__(
+        self,
+        db: DatabaseService,
+        kira_config: KiraConfig,
+        event_bus: Optional[EventBus] = None,
+    ):
         self.db = db
         self.kira_config = kira_config
+        self.event_bus = event_bus
         self.max_memory_length = int(kira_config["bot_config"].get("bot").get("max_memory_length"))
         self.chat_memory_path = CHAT_MEMORY_PATH
 
@@ -89,7 +101,7 @@ class SessionManager:
                     session_data["timestamp"] = None
             self._save_memory()
 
-    def _save_memory(self, memory: Dict[str, dict] = None, path: str = None):
+    def _save_memory(self, memory: Dict[str, dict] = None, path: str = None) -> bool:
         """保存记忆到文件"""
         if not memory:
             memory = self.chat_memory
@@ -98,8 +110,10 @@ class SessionManager:
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(json.dumps(memory, indent=4, ensure_ascii=False))
+            return True
         except Exception as e:
             logger.error(f"Error saving memory to {path}: {e}")
+            return False
 
     @overload
     def get_session_info(self, session: None = None) -> List[Session]:
@@ -166,10 +180,29 @@ class SessionManager:
         self._ensure_session_data(session)
         return self.chat_memory[session].get("memory", [])
 
+    def get_existing_memory_snapshot(self, session: str) -> Optional[list[list[dict]]]:
+        """Return a copy of existing memory without creating a missing session."""
+        with self.memory_lock:
+            session_data = self.chat_memory.get(session)
+            if session_data is None:
+                return None
+            return copy.deepcopy(session_data.get("memory", []))
+
     def write_memory(self, session: str, memory: list[list[dict]]):
         with self.memory_lock:
+            old_memory = copy.deepcopy(self.chat_memory[session].get("memory", []))
             self.chat_memory[session]["memory"] = memory
-            self._save_memory(self.chat_memory, self.chat_memory_path)
+            saved = self._save_memory(self.chat_memory, self.chat_memory_path)
+            new_memory = copy.deepcopy(memory)
+        if saved:
+            self._publish_session_event(
+                "session_memory_written",
+                {
+                    "session": session,
+                    "old_memory": old_memory,
+                    "new_memory": new_memory,
+                },
+            )
         logger.info(f"Memory written for {session}")
 
     def update_memory(self, session: str, new_chunk):
@@ -183,30 +216,47 @@ class SessionManager:
             session_data["memory"].append(new_chunk)
             if len(session_data["memory"]) > self.max_memory_length:
                 session_data["memory"] = session_data["memory"][-self.max_memory_length:]
-            self._save_memory(self.chat_memory, self.chat_memory_path)
+            saved = self._save_memory(self.chat_memory, self.chat_memory_path)
+            published_chunk = copy.deepcopy(new_chunk)
+        if saved:
+            self._publish_session_event(
+                "session_memory_updated",
+                {"session": session, "new_chunk": published_chunk},
+            )
         logger.info(f"Memory updated for {session}")
+
+    def _publish_session_event(self, event_type: str, payload: dict) -> None:
+        """Queue a session lifecycle event after its state has been persisted."""
+        if not getattr(self, "event_bus", None):
+            return
+        from core.event_bus import SystemEvent
+
+        publish_coro = self.event_bus.publish(
+            SystemEvent(event_type=event_type, payload=payload, source="session_manager")
+        )
+        try:
+            task = asyncio.create_task(
+                publish_coro,
+                name=f"{event_type}_event",
+            )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        except RuntimeError:
+            publish_coro.close()
+            logger.warning("Unable to publish session lifecycle event outside a running event loop")
 
     def delete_session(self, session: str):
         deleted = False
         with self.memory_lock:
             deleted = session in self.chat_memory
-            self.chat_memory.pop(session, None)
-            self._save_memory(self.chat_memory, self.chat_memory_path)
-        logger.info(f"Memory deleted for {session}")
-
-        if deleted and getattr(self, "event_bus", None):
-            from core.event_bus import SystemEvent
-
-            event = SystemEvent(
-                event_type="session_deleted",
-                payload={"session": session},
-                source="session_manager",
+            old_memory = copy.deepcopy(
+                self.chat_memory.get(session, {}).get("memory", [])
             )
-            publish_task = self.event_bus.publish(event)
-            try:
-                task = asyncio.create_task(publish_task, name="session_deleted_event")
-                self._background_tasks.add(task)
-                task.add_done_callback(self._background_tasks.discard)
-            except RuntimeError:
-                publish_task.close()
-                logger.warning("Unable to publish session deletion event outside a running event loop")
+            self.chat_memory.pop(session, None)
+            saved = self._save_memory(self.chat_memory, self.chat_memory_path)
+        if deleted and saved:
+            self._publish_session_event(
+                "session_deleted",
+                {"session": session, "old_memory": old_memory},
+            )
+        logger.info(f"Memory deleted for {session}")

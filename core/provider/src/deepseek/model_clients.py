@@ -12,6 +12,7 @@ from core.provider import ModelInfo, LLMModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.logging_manager import get_logger
 from core.utils.model_clients import build_llm_default_headers
+from core.utils.media_refs import resolve_media_references
 
 logger = get_logger("provider", "purple")
 
@@ -80,7 +81,8 @@ class DeepSeekLLMClient(LLMModelClient):
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
         client = self._build_client()
-        request_kwargs = self._build_request_kwargs(request, **kwargs)
+        messages = await resolve_media_references(request.messages)
+        request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
 
         try:
             start_time = time.perf_counter()
@@ -131,7 +133,10 @@ class DeepSeekLLMClient(LLMModelClient):
 
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
         client = self._build_client()
-        request_kwargs = self._build_request_kwargs(request, stream=True, **kwargs)
+        messages = await resolve_media_references(request.messages)
+        request_kwargs = self._build_request_kwargs(
+            request, messages=messages, stream=True, **kwargs
+        )
         request_kwargs["stream_options"] = {"include_usage": True}
 
         try:

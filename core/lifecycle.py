@@ -9,6 +9,7 @@ from .sticker_manager import StickerManager
 from .message_manager import MessageProcessor
 from .prompt_manager import PromptManager
 from core.chat.session_manager import SessionManager
+from core.chat.session_media_manager import SessionMediaManager
 from .adapter import AdapterManager
 from .statistics import Statistics
 from .agent.func_tool_manager import FuncToolManager
@@ -153,8 +154,18 @@ class KiraLifecycle:
         self.adapter_manager = AdapterManager(self.kira_config, event_queue)
         await self.adapter_manager.initialize()
 
+        # ====== init event bus ======
+        self.event_bus = EventBus(self.stats, event_queue, db=self.db_service)
+
         # ====== init session manager ======
-        self.session_manager = SessionManager(self.db_service, self.kira_config)
+        self.session_manager = SessionManager(
+            self.db_service,
+            self.kira_config,
+            event_bus=self.event_bus,
+        )
+        self.session_media_manager = SessionMediaManager(
+            self.event_bus, self.session_manager
+        )
 
         # ====== init persona manager ======
         self.persona_manager = PersonaManager(db=self.db_service)
@@ -198,8 +209,6 @@ class KiraLifecycle:
             )
         )
 
-        self.event_bus = EventBus(self.stats, event_queue, db=self.db_service)
-        self.session_manager.event_bus = self.event_bus
         self.message_processor.event_bus = self.event_bus
         self.event_bus.subscribe(KiraMessageEvent, self.message_processor.handle_event)
         self.event_bus.subscribe(KiraMessageBatchEvent, self.message_processor.handle_event)

@@ -8,6 +8,7 @@ from core.provider import LLMModelClient, TTSModelClient, ImageModelClient, Embe
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.chat.message_elements import Record
 from core.config.default import VERSION
+from core.utils.media_refs import resolve_media_references
 
 
 DEFAULT_USER_AGENT = f"kira-ai/{VERSION.removeprefix('v')}"
@@ -74,7 +75,8 @@ class OpenAICompatibleLLMClient(LLMModelClient):
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
         client = self._build_client()
-        request_kwargs = self._build_request_kwargs(request, **kwargs)
+        messages = await resolve_media_references(request.messages)
+        request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
         try:
             start_time = time.perf_counter()
             response = await client.chat.completions.create(**request_kwargs)
@@ -125,7 +127,10 @@ class OpenAICompatibleLLMClient(LLMModelClient):
 
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
         client = self._build_client()
-        request_kwargs = self._build_request_kwargs(request, stream=True, **kwargs)
+        messages = await resolve_media_references(request.messages)
+        request_kwargs = self._build_request_kwargs(
+            request, messages=messages, stream=True, **kwargs
+        )
         request_kwargs["stream_options"] = {"include_usage": True}
 
         try:

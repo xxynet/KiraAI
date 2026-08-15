@@ -15,7 +15,7 @@ import os
 from core.logging_manager import get_logger
 from core.utils.common_utils import desc_img, speech_to_text
 from core.utils.path_utils import get_data_path
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent, MessageChain
+from core.chat.message_utils import KiraIMMessage, KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent, MessageChain
 from core.chat.message_utils import KiraIMSentResult, KiraStepResult
 from core.prompt_manager import Prompt
 
@@ -50,6 +50,7 @@ from core.tag import tag_registry, TagSet, BaseTag, RootTagAction
 from core.db.service import DatabaseService
 
 from core.provider import LLMModelClient
+from core.utils.media_refs import store_session_media
 
 
 logger = get_logger("message", "cyan")
@@ -250,6 +251,14 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, Image):
+                image_mode = self.kira_config.get_config(
+                    "bot_config.capabilities.image_recognition.mode",
+                    "vlm_description",
+                )
+                if image_mode == "native":
+                    ele.caption = "attached image"
+                    message_str += "[Image attached]"
+                    continue
                 if ele.caption is None:
                     try:
                         md5 = await ele.hash_image()
@@ -307,6 +316,14 @@ class MessageProcessor:
                     logger.warning(f"Failed to save image: {e}")
                     message_str += f"[Image {str(ele.caption)}]"
             elif isinstance(ele, Sticker):
+                image_mode = self.kira_config.get_config(
+                    "bot_config.capabilities.image_recognition.mode",
+                    "vlm_description",
+                )
+                if image_mode == "native":
+                    ele.caption = "attached sticker"
+                    message_str += "[Sticker attached]"
+                    continue
                 if ele.caption is None:
                     try:
                         md5 = await ele.hash_image()
@@ -449,6 +466,28 @@ class MessageProcessor:
                 pass
         return message_str
 
+    @staticmethod
+    def _iter_message_images(message_chain: MessageChain):
+        """Yield every image-like element contained in a message chain."""
+        for element in message_chain:
+            if isinstance(element, (Image, Sticker)):
+                yield element
+            elif isinstance(element, Reply) and element.chain:
+                yield from MessageProcessor._iter_message_images(element.chain)
+            elif isinstance(element, Forward):
+                for chain in element.chains:
+                    yield from MessageProcessor._iter_message_images(chain)
+
+    async def _build_native_content(self, message: KiraIMMessage, session_id: str) -> list[dict]:
+        """Persist incoming images and create the provider-independent content parts."""
+        content: list[dict] = [{"type": "text", "text": message.message_str or ""}]
+        for image in self._iter_message_images(message.chain):
+            try:
+                content.append(await store_session_media(image, session_id, message.message_id))
+            except Exception as exc:
+                logger.warning(f"Failed to persist image for native multimodal input: {exc}")
+        return content
+
     async def handle_im_message(self, event: KiraMessageEvent):
         """process im message"""
 
@@ -510,9 +549,14 @@ class MessageProcessor:
         sid = event.session.sid
 
         for i, message in enumerate(event.messages):
-            # TODO Add support for multimodal image/document comprehension
             message_str = await self.message_format_to_text(message.chain)
             message.message_str = message_str
+            image_mode = self.kira_config.get_config(
+                "bot_config.capabilities.image_recognition.mode",
+                "vlm_description",
+            )
+            if image_mode == "native":
+                message.native_content = await self._build_native_content(message, sid)
 
         # EventType.ON_IM_BATCH_MESSAGE
         im_batch_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_BATCH_MESSAGE)
@@ -628,6 +672,17 @@ class MessageProcessor:
             ),
         )
 
+        native_parts = [
+            part
+            for message in event.messages
+            for part in (message.native_content or [])[1:]
+        ]
+        if native_parts and request.messages and request.messages[-1].role == "user":
+            request.messages[-1].content = [
+                {"type": "text", "text": request.messages[-1].content or ""},
+                *native_parts,
+            ]
+
         # Re-derive tools list after plugins may have added to tool_set
         request.tools = request.tool_set.to_list()
         # Recompute tool_choice if it was auto-derived (not explicitly set by a plugin)
@@ -640,8 +695,19 @@ class MessageProcessor:
 
         # 把收到的消息放到新收到的消息内容中（仅持久化 persist=True 的 Prompt）
         persist_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
+        persisted_native_parts = [
+            part
+            for message in event.messages
+            for part in (message.native_content or [])[1:]
+        ]
+        persisted_content: str | list[dict] = persist_message
+        if persisted_native_parts:
+            persisted_content = [
+                {"type": "text", "text": persist_message},
+                *persisted_native_parts,
+            ]
         new_messages: list[OpenAIMessage] = []
-        new_messages.append(OpenAIMessage(role="user", content=persist_message))
+        new_messages.append(OpenAIMessage(role="user", content=persisted_content))
 
         # Get max tool loop config, defaults to 2 if not a valid integer
         # Note: This variable represents the total agent loop iterations (not just tool calls),

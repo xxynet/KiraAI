@@ -27,6 +27,7 @@ DEFAULT_CONFIG = {
         "capabilities": {
             "image_recognition": {
                 "enabled": True,
+                "mode": "vlm_description",
                 "desc_prompt": ""
             },
             "tts": {
