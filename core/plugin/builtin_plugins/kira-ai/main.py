@@ -103,6 +103,7 @@ class DefaultPlugin(BasePlugin):
                     break
                 formatted_message = self._format_user_message(event.messages[message_index])
                 p.content = formatted_message
+                p.render_template = False
                 message_index += 1
 
     @on.llm_response()

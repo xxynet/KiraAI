@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Dict, Any, Optional
 
+from jinja2 import Environment, StrictUndefined
+
 from core.logging_manager import get_logger
 from core.persona import PersonaManager
 from core.config import KiraConfig
@@ -8,15 +10,19 @@ import core.prompts.agent_tmpl as prompt_tmpl
 
 logger = get_logger("prompt_manager", "yellow")
 
+_PROMPT_TEMPLATE_ENV = Environment(autoescape=False, undefined=StrictUndefined)
+
 
 class Prompt:
     def __init__(self, content: str, name: Optional[str] = None, source: Optional[str] = None,
-                 end: Optional[str] = "\n", persist: bool = True, **kwargs):
+                 end: Optional[str] = "\n", persist: bool = True,
+                 render_template: bool = False, **kwargs):
         self.name = name
         self.source = source
         self.content = content
         self.end = end
         self.persist = persist
+        self.render_template = render_template
         self.kwargs = kwargs
 
     def __str__(self):
@@ -26,18 +32,13 @@ class Prompt:
         return self.__str__()
 
     def to_string(self):
-        p = self._format_prompt() or self.content
+        p = self._format_prompt() if self.render_template else self.content
         if self.end:
             p += self.end
         return p
 
     def _format_prompt(self):
-        try:
-            return self.content.format(**self.kwargs)
-        except KeyError:
-            pass
-        except Exception as e:
-            logger.warning(f"Prompt format failed: {e}")
+        return _PROMPT_TEMPLATE_ENV.from_string(self.content).render(**self.kwargs)
 
 
 class PromptManager:
@@ -105,15 +106,15 @@ class PromptManager:
 
         agent_prompt: list[Prompt] = [
             Prompt(templates["role"], name="role", source="system"),
-            Prompt(templates["persona"], name="persona", source="system", persona=persona_prompt),
+            Prompt(templates["persona"], name="persona", source="system", render_template=True, persona=persona_prompt),
             Prompt(templates["attention"], name="attention", source="system"),
-            Prompt(templates["output"], name="output", source="system", max_tool_loop=max_tool_loop, max_tool_calls_per_turn=max_tool_calls_per_turn),
-            Prompt(templates["format"], name="format", source="system"),
-            Prompt(templates["accounts"], name="accounts", source="system", accounts=self.ada_config_prompt),
+            Prompt(templates["output"], name="output", source="system", render_template=True, max_tool_loop=max_tool_loop, max_tool_calls_per_turn=max_tool_calls_per_turn),
+            Prompt(templates["format"], name="format", source="system", render_template=True),
+            Prompt(templates["accounts"], name="accounts", source="system", render_template=True, accounts=self.ada_config_prompt),
             Prompt(templates["sessions"], name="sessions", source="system"),
-            Prompt(templates["chat_env"], name="chat_env", source="system", chat_env=chat_env),
+            Prompt(templates["chat_env"], name="chat_env", source="system", render_template=True, chat_env=chat_env),
             Prompt(templates["memory"], name="memory", source="system"),
             Prompt(templates["tools"], name="tools", source="system"),
-            Prompt(templates["time"], name="time", source="system", time_str=formatted_time)
+            Prompt(templates["time"], name="time", source="system", render_template=True, time_str=formatted_time)
         ]
         return agent_prompt
