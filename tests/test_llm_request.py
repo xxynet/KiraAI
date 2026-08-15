@@ -1,9 +1,49 @@
 from core.prompt_manager import Prompt
+from core.prompts.agent_tmpl import get_agent_templates
 from core.provider.llm_model import LLMRequest
+from jinja2 import UndefinedError
 
 DYNAMIC_BLOCKS = ("SESSIONS", "CHATENV", "TIME")
 MEMORY_BLOCK = "MEMORY"
 STATIC_BLOCKS = ("ROLE", "TOOLS")
+
+
+def test_prompt_renders_jinja2_placeholders():
+    prompt = Prompt("Hello {{ message }}", message="Kira")
+
+    assert prompt.to_string() == "Hello Kira\n"
+
+
+def test_prompt_preserves_literal_braces():
+    prompt = Prompt('{"message": "example"}')
+
+    assert prompt.to_string() == '{"message": "example"}\n'
+
+
+def test_prompt_rejects_undefined_jinja2_variables():
+    prompt = Prompt("Hello {{ message }}")
+
+    try:
+        prompt.to_string()
+    except UndefinedError:
+        pass
+    else:
+        raise AssertionError("Undefined Jinja2 variables must fail rendering")
+
+
+def test_format_templates_render_dynamic_tag_placeholders():
+    for lang in ("zh", "en"):
+        prompt = Prompt(
+            get_agent_templates(lang)["format"],
+            message_types="<text>TEXT</text>",
+            root_tags="<control>CONTROL</control>",
+        )
+
+        rendered = prompt.to_string()
+        assert "<text>TEXT</text>" in rendered
+        assert "<control>CONTROL</control>" in rendered
+        assert "{{ message_types }}" not in rendered
+        assert "{{ root_tags }}" not in rendered
 
 
 def make_request():

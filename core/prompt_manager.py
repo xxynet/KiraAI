@@ -1,12 +1,16 @@
 from datetime import datetime
 from typing import Dict, Any, Optional
 
+from jinja2 import Environment, StrictUndefined
+
 from core.logging_manager import get_logger
 from core.persona import PersonaManager
 from core.config import KiraConfig
 import core.prompts.agent_tmpl as prompt_tmpl
 
 logger = get_logger("prompt_manager", "yellow")
+
+_PROMPT_TEMPLATE_ENV = Environment(autoescape=False, undefined=StrictUndefined)
 
 
 class Prompt:
@@ -32,12 +36,7 @@ class Prompt:
         return p
 
     def _format_prompt(self):
-        try:
-            return self.content.format(**self.kwargs)
-        except KeyError:
-            pass
-        except Exception as e:
-            logger.warning(f"Prompt format failed: {e}")
+        return _PROMPT_TEMPLATE_ENV.from_string(self.content).render(**self.kwargs)
 
 
 class PromptManager:

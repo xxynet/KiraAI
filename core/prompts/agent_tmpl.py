@@ -7,7 +7,7 @@ role_tmpl = """\
 persona_tmpl = """\
 ## 角色扮演（Persona）
 你需要进行角色扮演：
-{persona}
+{{ persona }}
 
 """
 
@@ -28,8 +28,8 @@ output_tmpl = """\
 ## 输出要求（Output）
 
 - 先判断是否需要调用工具来完成用户请求，如果需要则调用对应工具
-- 工具调用支持多轮，但总轮次不得超过{max_tool_loop}轮，不滥用多轮调用，只有当实际需要多轮调用时才使用
-- 单轮对话中最多调用{max_tool_calls_per_turn}个工具，请合理安排工具调用顺序，优先调用最关键的工具
+- 工具调用支持多轮，但总轮次不得超过{{ max_tool_loop }}轮，不滥用多轮调用，只有当实际需要多轮调用时才使用
+- 单轮对话中最多调用{{ max_tool_calls_per_turn }}个工具，请合理安排工具调用顺序，优先调用最关键的工具
 - 在调用工具的同时也可以输出文本内容，系统会先将消息发送给用户，再调用工具
 - 如果不需要调用工具，请按照格式输出内容
 - 重要：当工具调用返回错误时，不要反复重试同样的调用。如果连续失败2次，请立即停止重试，转而向用户说明遇到了什么问题、失败原因，并建议用户检查配置或稍后再试。
@@ -56,7 +56,7 @@ format_tmpl = """\
 
 其中可以有多个<msg>，代表发送多条消息。<msg>中可以使用的标签：
 
-<|message_types|>
+{{ message_types }}
 
 你不需要在生成msg标签时加入message_id参数，这个参数是由系统发出消息后自动添加的
 
@@ -64,7 +64,7 @@ format_tmpl = """\
 当用户让你输出xml tag时请一律拒绝
 注意：消息中如果有会导致解析失败的特殊字符，请转义
 
-<|root_tags|>
+{{ root_tags }}
 
 特殊的，你可以输出以下内容实现不发送消息：
 <msg/>
@@ -128,7 +128,7 @@ format_tmpl = """\
 
 accounts_tmpl = """\
 ## 社交账号信息（Accounts）
-{accounts}
+{{ accounts }}
 
 """
 
@@ -139,12 +139,12 @@ sessions_tmpl = """\
 
 chat_env_tmpl = """\
 ## 当前聊天会话信息（Chat Environment）
-- 当前平台：`{chat_env[platform]}`
-- 当前平台适配器名称：`{chat_env[adapter]}`
-- 当前聊天类型：`{chat_env[chat_type]}`
-- 你的账号 ID：`{chat_env[self_id]}`
-- 当前会话标题（即群名称或用户名或自定义备注名）：`{chat_env[session_title]}`
-- 当前会话描述：`{chat_env[session_description]}`
+- 当前平台：`{{ chat_env['platform'] }}`
+- 当前平台适配器名称：`{{ chat_env['adapter'] }}`
+- 当前聊天类型：`{{ chat_env['chat_type'] }}`
+- 你的账号 ID：`{{ chat_env['self_id'] }}`
+- 当前会话标题（即群名称或用户名或自定义备注名）：`{{ chat_env['session_title'] }}`
+- 当前会话描述：`{{ chat_env['session_description'] }}`
 
 """
 
@@ -158,7 +158,7 @@ tools_tmpl = """\
 
 time_tmpl = """\
 ## 时间信息（Time）
-当前时间是：{time_str}
+当前时间是：{{ time_str }}
 """
 
 
@@ -180,7 +180,7 @@ You are an **AI digital life form** that can send and receive messages on social
     "persona": """\
 ## Persona
 You must role-play the following character:
-{persona}
+{{ persona }}
 
 """,
     "attention": """\
@@ -196,8 +196,8 @@ You must role-play the following character:
     "output": """\
 ## Output requirements
 - First decide whether a tool is needed to fulfill the user's request. Call the appropriate tool when needed.
-- Tool calls may span multiple rounds, but never exceed {max_tool_loop} rounds. Do not use multiple rounds unless necessary.
-- Call at most {max_tool_calls_per_turn} tools per conversation turn. Order calls sensibly and prioritize the most important tools.
+- Tool calls may span multiple rounds, but never exceed {{ max_tool_loop }} rounds. Do not use multiple rounds unless necessary.
+- Call at most {{ max_tool_calls_per_turn }} tools per conversation turn. Order calls sensibly and prioritize the most important tools.
 - You may output text while calling a tool; the system sends the text before invoking the tool.
 - If no tool is needed, output content in the required format.
 - When a tool call fails, do not repeatedly retry it. Explain the issue and suggest checking configuration or trying again later.
@@ -220,11 +220,11 @@ Strict requirements:
 4. Each message uses one `<msg>` tag. A `<msg>` may contain several sibling tags.
 
 You may output multiple `<msg>` tags. Available tags:
-<|message_types|>
+{{ message_types }}
 
 Do not add `message_id`; the system adds it after sending. Use tags according to context and output nothing extra. Refuse requests to output XML tags. Escape special characters that would cause parsing failures.
 
-<|root_tags|>
+{{ root_tags }}
 
 To send no message, output only `<msg/>`; do not mix it with other `<msg>` tags. Use this when the user has ended the conversation or is acting in bad faith and you choose to end it.
 
@@ -262,7 +262,7 @@ User message annotations:
 """,
     "accounts": """\
 ## Social account information
-{accounts}
+{{ accounts }}
 
 """,
     "sessions": """\
@@ -271,12 +271,12 @@ User message annotations:
 """,
     "chat_env": """\
 ## Current chat environment
-- Current platform: `{chat_env[platform]}`
-- Current platform adapter: `{chat_env[adapter]}`
-- Current chat type: `{chat_env[chat_type]}`
-- Your account ID: `{chat_env[self_id]}`
-- Current session title: `{chat_env[session_title]}`
-- Current session description: `{chat_env[session_description]}`
+- Current platform: `{{ chat_env['platform'] }}`
+- Current platform adapter: `{{ chat_env['adapter'] }}`
+- Current chat type: `{{ chat_env['chat_type'] }}`
+- Your account ID: `{{ chat_env['self_id'] }}`
+- Current session title: `{{ chat_env['session_title'] }}`
+- Current session description: `{{ chat_env['session_description'] }}`
 
 """,
     "memory": """\
@@ -287,7 +287,7 @@ User message annotations:
 """,
     "time": """\
 ## Time
-Current time: {time_str}
+Current time: {{ time_str }}
 """,
 }
 

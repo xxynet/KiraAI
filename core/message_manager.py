@@ -608,9 +608,11 @@ class MessageProcessor:
         root_prompt = tag_set.to_root_prompt()
         for sp in request.system_prompt:
             if sp.name == "format":
-                sp.content = sp.content.replace("<|message_types|>", tag_set.to_prompt())
-                sp.content = sp.content.replace("<|root_tags|>",
-                    f"此外，你可以在<msg>标签外使用以下控制标签（与<msg>同级）：\n{root_prompt}" if root_prompt else "")
+                sp.kwargs["message_types"] = tag_set.to_prompt()
+                sp.kwargs["root_tags"] = (
+                    f"此外，你可以在<msg>标签外使用以下控制标签（与<msg>同级）：\n{root_prompt}"
+                    if root_prompt else ""
+                )
                 break
         request.assemble_prompt(
             dynamic_position=self.kira_config.get_config(
