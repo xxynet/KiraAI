@@ -9,7 +9,11 @@ STATIC_BLOCKS = ("ROLE", "TOOLS")
 
 
 def test_prompt_renders_jinja2_placeholders():
-    prompt = Prompt("Hello {{ message }}", message="Kira")
+    prompt = Prompt(
+        "Hello {{ message }}",
+        render_template=True,
+        message="Kira",
+    )
 
     assert prompt.to_string() == "Hello Kira\n"
 
@@ -21,7 +25,7 @@ def test_prompt_preserves_literal_braces():
 
 
 def test_prompt_rejects_undefined_jinja2_variables():
-    prompt = Prompt("Hello {{ message }}")
+    prompt = Prompt("Hello {{ message }}", render_template=True)
 
     try:
         prompt.to_string()
@@ -35,6 +39,7 @@ def test_format_templates_render_dynamic_tag_placeholders():
     for lang in ("zh", "en"):
         prompt = Prompt(
             get_agent_templates(lang)["format"],
+            render_template=True,
             message_types="<text>TEXT</text>",
             root_tags="<control>CONTROL</control>",
         )
@@ -44,6 +49,23 @@ def test_format_templates_render_dynamic_tag_placeholders():
         assert "<control>CONTROL</control>" in rendered
         assert "{{ message_types }}" not in rendered
         assert "{{ root_tags }}" not in rendered
+
+
+def test_non_template_prompt_never_renders_user_content():
+    prompt = Prompt("User text: {{ 7 * 7 }}")
+
+    assert prompt.to_string() == "User text: {{ 7 * 7 }}\n"
+
+
+def test_external_plugin_can_opt_in_to_template_rendering():
+    prompt = Prompt(
+        "{{ time }} | {{ message }}",
+        render_template=True,
+        time="12:00",
+        message="Hello",
+    )
+
+    assert prompt.to_string() == "12:00 | Hello\n"
 
 
 def make_request():

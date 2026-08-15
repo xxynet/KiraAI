@@ -587,7 +587,12 @@ class MessageProcessor:
 
         # Add received im messages
         for i, message in enumerate(event.messages):
-            request.user_prompt.append(Prompt(message.message_str, name="message", source="system"))
+            request.user_prompt.append(Prompt(
+                message.message_str,
+                name="message",
+                source="system",
+                render_template=False,
+            ))
 
         # Build tag set
         tag_set = TagSet()
