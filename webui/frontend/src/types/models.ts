@@ -352,6 +352,21 @@ export interface ReleasesResponse {
   releases: ReleaseItem[]
 }
 
+export interface UpdateStageProgress {
+  status: string
+  percent: number
+}
+
+export interface ReleaseUpdateProgress {
+  id: string
+  target_version: string
+  status: 'running' | 'restarting' | 'failed'
+  stage: string
+  message: string
+  overall_percent: number
+  stages: Record<string, UpdateStageProgress>
+}
+
 // Scope types — mirrors webui/routes/scope.py
 export type ScopeEntry = { allow: string[] } | { deny: string[] }
 

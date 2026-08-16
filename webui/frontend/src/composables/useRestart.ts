@@ -5,6 +5,7 @@ export interface RestartOptions {
   maxRetries?: number
   intervalMs?: number
   probeEndpoint?: string
+  requireRestart?: boolean
 }
 
 function resolveOptions(options: RestartOptions): Required<RestartOptions> {
@@ -12,17 +13,21 @@ function resolveOptions(options: RestartOptions): Required<RestartOptions> {
     maxRetries: options.maxRetries ?? 60,
     intervalMs: options.intervalMs ?? 1000,
     probeEndpoint: options.probeEndpoint ?? '/overview',
+    requireRestart: options.requireRestart ?? false,
   }
 }
 
 async function pollUntilReady(opts: Required<RestartOptions>): Promise<void> {
+  let observedUnavailable = !opts.requireRestart
   for (let i = 0; i < opts.maxRetries; i++) {
     try {
       await apiClient.get(opts.probeEndpoint)
-      window.location.reload()
-      return
+      if (observedUnavailable) {
+        window.location.reload()
+        return
+      }
     } catch {
-      // server not ready yet
+      observedUnavailable = true
     }
     await new Promise(r => setTimeout(r, opts.intervalMs))
   }

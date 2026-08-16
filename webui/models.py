@@ -393,3 +393,18 @@ class RestoreResponse(BaseModel):
 
 class DownloadReleaseRequest(BaseModel):
     tag_name: str
+
+
+class UpdateStageProgress(BaseModel):
+    status: str = "pending"
+    percent: int = 0
+
+
+class ReleaseUpdateProgress(BaseModel):
+    id: str
+    target_version: str
+    status: str
+    stage: str
+    message: str
+    overall_percent: int = 0
+    stages: Dict[str, UpdateStageProgress] = Field(default_factory=dict)

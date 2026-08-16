@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { TokenLoginRequest, LoginResponse, AuthConfigResponse, ReleasesResponse } from '@/types'
+import type { TokenLoginRequest, LoginResponse, AuthConfigResponse, ReleasesResponse, ReleaseUpdateProgress } from '@/types'
 
 export function getAuthConfig() {
   return apiClient.get<AuthConfigResponse>('/auth/config')
@@ -22,5 +22,9 @@ export function getReleases() {
 }
 
 export function downloadRelease(tagName: string) {
-  return apiClient.post('/releases/download', { tag_name: tagName })
+  return apiClient.post<ReleaseUpdateProgress>('/releases/download', { tag_name: tagName })
+}
+
+export function getReleaseUpdateProgress(taskId: string) {
+  return apiClient.get<ReleaseUpdateProgress>(`/releases/progress/${encodeURIComponent(taskId)}`)
 }
