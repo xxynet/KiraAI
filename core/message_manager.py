@@ -50,6 +50,7 @@ from core.tag import tag_registry, TagSet, BaseTag, RootTagAction
 from core.db.service import DatabaseService
 
 from core.provider import LLMModelClient
+from core.utils.image_compression import compress_image_element
 from core.utils.media_refs import store_session_media
 
 
@@ -547,8 +548,13 @@ class MessageProcessor:
     async def handle_im_batch_message(self, event: KiraMessageBatchEvent):
         # Start processing
         sid = event.session.sid
+        compression_config = self.kira_config.get_config(
+            "bot_config.image_compression", {}
+        )
 
         for i, message in enumerate(event.messages):
+            for image in self._iter_message_images(message.chain):
+                await compress_image_element(image, compression_config)
             message_str = await self.message_format_to_text(message.chain)
             message.message_str = message_str
             image_mode = self.kira_config.get_config(

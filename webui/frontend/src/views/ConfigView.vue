@@ -490,6 +490,20 @@ const allGroups: ConfigGroup[] = [
     ],
   },
   {
+    id: 'image-compression',
+    labelKey: 'configuration.groups.image_compression',
+    labelFallback: 'Image Compression',
+    descKey: 'configuration.groups.image_compression_desc',
+    descFallback: 'Control image compression before VLM and native multimodal requests',
+    icon: IconImage,
+    fields: [
+      { key: 'bot_config.image_compression.enabled', labelKey: 'configuration.message.image_compression_enabled', labelFallback: 'Image Compression', hintKey: 'configuration.hints.image_compression_enabled', hintFallback: 'Compress large or high-resolution incoming images before VLM and native multimodal requests.', type: 'boolean', default: false },
+      { key: 'bot_config.image_compression.max_size', labelKey: 'configuration.message.image_compression_max_size', labelFallback: 'Max Image Edge', hintKey: 'configuration.hints.image_compression_max_size', hintFallback: 'Longest edge after compression, in pixels.', type: 'integer', default: 1280, validation: { min: 1, max: 8192 } },
+      { key: 'bot_config.image_compression.quality', labelKey: 'configuration.message.image_compression_quality', labelFallback: 'JPEG Quality', hintKey: 'configuration.hints.image_compression_quality', hintFallback: 'JPEG output quality from 1 to 100.', type: 'integer', default: 95, validation: { min: 1, max: 100 } },
+      { key: 'bot_config.image_compression.min_file_size_mb', labelKey: 'configuration.message.image_compression_min_size', labelFallback: 'Compression Threshold', hintKey: 'configuration.hints.image_compression_min_size', hintFallback: 'Compress only when this size in MB is exceeded or the image edge is too large.', type: 'integer', default: 1, validation: { min: 0, max: 100 } },
+    ],
+  },
+  {
     id: 'selfie',
     labelKey: 'configuration.groups.selfie',
     labelFallback: 'Digital Life Appearance',
@@ -590,7 +604,7 @@ interface CategoryTab {
 }
 
 const categoryTabs: CategoryTab[] = [
-  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'selfie'] },
+  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'image-compression', 'selfie'] },
   { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['locale', 'network', 'cache', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]

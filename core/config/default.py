@@ -24,6 +24,12 @@ DEFAULT_CONFIG = {
             "max_files": 50,
             "max_age_hours": 24
         },
+        "image_compression": {
+            "enabled": False,
+            "max_size": 1280,
+            "quality": 95,
+            "min_file_size_mb": 1
+        },
         "capabilities": {
             "image_recognition": {
                 "enabled": True,
