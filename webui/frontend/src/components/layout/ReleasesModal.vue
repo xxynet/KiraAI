@@ -1,5 +1,5 @@
 <template>
-  <Modal v-model="show" content-class="max-w-2xl">
+  <Modal v-model="show" content-class="max-w-2xl" :persistent="isUpdating">
     <div class="bg-white dark:bg-[#1a1a1e] rounded-xl shadow-xl overflow-hidden">
       <!-- Header -->
       <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
@@ -20,7 +20,30 @@
       </div>
 
       <!-- Content -->
-      <div class="max-h-[70vh] overflow-y-auto">
+      <div ref="contentRef" class="max-h-[70vh] overflow-y-auto">
+        <!-- In-place update progress -->
+        <div v-if="updateProgress" class="mx-6 mt-5 rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="font-medium text-gray-800 dark:text-gray-100">{{ t('header.update_progress_title') }}</p>
+              <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ updateProgress.message }}</p>
+            </div>
+            <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-300">{{ updateProgress.overall_percent }}%</span>
+          </div>
+          <div class="mt-3 h-2 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-950">
+            <div class="h-full rounded-full bg-blue-500 transition-all duration-300" :style="{ width: `${updateProgress.overall_percent}%` }" />
+          </div>
+          <div class="mt-4 space-y-2">
+            <div v-for="stage in updateStages" :key="stage.name" class="flex items-center justify-between text-sm">
+              <span :class="stageClass(stage.status)">{{ stageLabel(stage.name) }}</span>
+              <span :class="stageClass(stage.status)">{{ stageText(stage.status) }}</span>
+            </div>
+          </div>
+          <p v-if="updateProgress.status === 'failed'" class="mt-4 text-sm text-red-600 dark:text-red-400">
+            {{ t('header.update_rollback_notice') }}
+          </p>
+        </div>
+
         <!-- Loading -->
         <div v-if="loading" class="p-6 space-y-4">
           <div v-for="i in 3" :key="i" class="animate-pulse">
@@ -86,7 +109,7 @@
               <button
                 v-if="release.tag_name !== currentVersion"
                 :class="actionButtonClass(release)"
-                :disabled="downloadingTag !== null"
+                :disabled="isUpdating"
                 class="shrink-0 ml-3 px-3 py-1 text-xs font-medium rounded-lg transition-colors"
                 @click="onActionClick(release)"
               >
@@ -131,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -139,9 +162,9 @@ import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import { notify } from '@/composables/useNotification'
 import { IconClose, IconExternalLink } from '@/components/icons'
-import { downloadRelease } from '@/api/auth'
+import { downloadRelease, getReleaseUpdateProgress } from '@/api/auth'
 import { waitUntilReady } from '@/composables/useRestart'
-import type { ReleaseItem } from '@/types'
+import type { ReleaseItem, ReleaseUpdateProgress } from '@/types'
 
 const props = defineProps<{
   modelValue: boolean
@@ -164,12 +187,22 @@ const show = computed({
 })
 
 const downloadingTag = ref<string | null>(null)
+const updateProgress = ref<ReleaseUpdateProgress | null>(null)
+const contentRef = ref<HTMLElement | null>(null)
 const confirmRef = ref<InstanceType<typeof ConfirmModal>>()
 const pendingRelease = ref<ReleaseItem | null>(null)
 
 const confirmTitle = ref('')
 const confirmMessage = ref('')
 const confirmButton = ref('')
+let progressTimer: ReturnType<typeof setTimeout> | null = null
+
+const isUpdating = computed(() => updateProgress.value?.status === 'running' || updateProgress.value?.status === 'restarting')
+const updateStages = computed(() => {
+  const stages = updateProgress.value?.stages || {}
+  return ['webui', 'download', 'verify', 'apply', 'dependencies', 'restart']
+    .map(name => ({ name, status: stages[name]?.status ?? 'pending', percent: stages[name]?.percent ?? 0 }))
+})
 
 function isNewer(tag: string): boolean {
   const currentRelease = props.releases.find(r => r.tag_name === props.currentVersion)
@@ -228,16 +261,18 @@ async function handleConfirm() {
   const release = pendingRelease.value
   if (!release) return
   downloadingTag.value = release.tag_name
+  updateProgress.value = null
   const isNew = isNewer(release.tag_name)
   try {
-    await downloadRelease(release.tag_name)
-    notify(isNew ? t('header.update_success') : t('header.switch_success'), 'success')
-    // Backend restarts automatically after update — just wait for it to come back
-    try {
-      await waitUntilReady()
-    } catch {
-      notify(t('header.restart_timeout'), 'warning', 600000)
+    const { data } = await downloadRelease(release.tag_name)
+    if (!isValidProgress(data)) {
+      notify(t('header.update_backend_outdated'), 'error', 10000)
+      return
     }
+    updateProgress.value = data
+    await nextTick()
+    contentRef.value?.scrollTo({ top: 0 })
+    await pollUpdateProgress(data.id, isNew)
   } catch {
     notify(t('header.download_failed'), 'error')
   } finally {
@@ -245,6 +280,85 @@ async function handleConfirm() {
     pendingRelease.value = null
   }
 }
+
+async function pollUpdateProgress(taskId: string, isNew: boolean) {
+  let requestFailures = 0
+  while (true) {
+    let data: ReleaseUpdateProgress
+    try {
+      ({ data } = await getReleaseUpdateProgress(taskId))
+      requestFailures = 0
+    } catch {
+      requestFailures += 1
+      if (requestFailures >= 3) {
+        if (updateProgress.value) {
+          updateProgress.value = {
+            ...updateProgress.value,
+            status: 'failed',
+            stage: 'failed',
+            message: t('header.update_progress_unavailable'),
+          }
+        }
+        notify(t('header.update_failed'), 'error', 10000)
+        return
+      }
+      await waitForNextProgressPoll()
+      continue
+    }
+    updateProgress.value = data
+    if (data.status === 'failed') {
+      notify(t('header.update_failed'), 'error', 10000)
+      return
+    }
+    if (data.status === 'restarting') {
+      notify(isNew ? t('header.update_success') : t('header.switch_success'), 'success')
+      try {
+        await waitUntilReady({ requireRestart: true })
+      } catch {
+        notify(t('header.restart_timeout'), 'warning', 600000)
+      }
+      return
+    }
+    await waitForNextProgressPoll()
+  }
+}
+
+function isValidProgress(value: unknown): value is ReleaseUpdateProgress {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    typeof (value as ReleaseUpdateProgress).id === 'string' &&
+    typeof (value as ReleaseUpdateProgress).overall_percent === 'number' &&
+    (value as ReleaseUpdateProgress).stages,
+  )
+}
+
+function waitForNextProgressPoll(): Promise<void> {
+  return new Promise(resolve => {
+    progressTimer = setTimeout(() => {
+      progressTimer = null
+      resolve()
+    }, 500)
+  })
+}
+
+function stageLabel(stage: string): string {
+  return t(`header.update_stage_${stage}`)
+}
+
+function stageText(status: string): string {
+  return status === 'done' ? t('header.update_stage_done') : status === 'running' ? t('header.update_stage_running') : t('header.update_stage_pending')
+}
+
+function stageClass(status: string): string {
+  if (status === 'done') return 'text-green-600 dark:text-green-400'
+  if (status === 'running') return 'text-blue-600 dark:text-blue-300'
+  return 'text-gray-500 dark:text-gray-400'
+}
+
+onBeforeUnmount(() => {
+  if (progressTimer) clearTimeout(progressTimer)
+})
 
 function renderMarkdown(text: string): string {
   return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)

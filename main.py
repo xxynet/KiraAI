@@ -77,14 +77,18 @@ def _parse_args() -> argparse.Namespace:
 
 def _recover_bak_files(root_path: Path):
     """Recover from any incomplete update left by a previous crash."""
-    import shutil
+    from core.utils.update_transaction import recover_interrupted_update
+
+    for message in recover_interrupted_update(root_path):
+        print(f"[supervisor] {message}")
+
+    # Backups from releases before transaction journaling are ambiguous when the
+    # destination still exists. Keep those files rather than risking a restore
+    # over a newer file. New updates use a dedicated transaction backup folder.
     for bak in root_path.glob("*.bak"):
         original = bak.with_suffix("")
         if original.exists():
-            if bak.is_dir():
-                shutil.rmtree(bak)
-            else:
-                bak.unlink()
+            print(f"[supervisor] Leaving ambiguous legacy backup: {bak.name}")
         else:
             bak.rename(original)
 
