@@ -50,6 +50,7 @@ class KiraIMMessage:
     raw_message: Optional[dict] = None
     extra: Optional[dict] = None
     message_str: Optional[str] = field(default=None, init=False)
+    native_content: Optional[list[dict]] = field(default=None, init=False)
     message_repr: Optional[str] = field(default=None, init=False)
 
     def is_group_message(self):

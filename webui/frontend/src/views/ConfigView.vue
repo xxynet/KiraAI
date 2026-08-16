@@ -464,6 +464,10 @@ const allGroups: ConfigGroup[] = [
     icon: IconFlask,
     fields: [
       { key: 'bot_config.capabilities.image_recognition.enabled', labelKey: 'configuration.message.image_recognition_enabled', labelFallback: 'Image Recognition', hintKey: 'configuration.hints.image_recognition_enabled', hintFallback: 'Automatically describe images and stickers in messages using VLM', type: 'boolean', default: true },
+      { key: 'bot_config.capabilities.image_recognition.mode', labelKey: 'configuration.message.image_recognition_mode', labelFallback: 'Image Processing Mode', hintKey: 'configuration.hints.image_recognition_mode', hintFallback: 'Native sends images directly to the main LLM. VLM description converts them to text first.', type: 'select', default: 'vlm_description', selectOptions: [
+        { value: 'vlm_description', labelKey: 'configuration.message.image_recognition_mode_vlm', label: 'VLM Description' },
+        { value: 'native', labelKey: 'configuration.message.image_recognition_mode_native', label: 'Native Multimodal' },
+      ]},
       { key: 'bot_config.capabilities.image_recognition.desc_prompt', labelKey: 'configuration.message.desc_prompt', labelFallback: 'Custom Description Prompt', hintKey: 'configuration.hints.desc_prompt', hintFallback: 'Custom prompt for image description. Leave empty to use the default prompt. Setting this will override the default', type: 'string', default: '' },
       { key: 'bot_config.capabilities.stt.enabled', labelKey: 'configuration.message.stt_enabled', labelFallback: 'Speech Recognition', hintKey: 'configuration.hints.stt_enabled', hintFallback: 'Transcribe incoming voice messages to text', type: 'boolean', default: true },
       { key: 'bot_config.capabilities.tts.enabled', labelKey: 'configuration.message.tts_enabled', labelFallback: 'Voice Synthesis', hintKey: 'configuration.hints.tts_enabled', hintFallback: 'Allow sending voice messages in reply', type: 'boolean', default: true },
@@ -483,6 +487,20 @@ const allGroups: ConfigGroup[] = [
       { key: 'bot_config.agent.max_tool_loop', labelKey: 'configuration.message.max_tool_loop', labelFallback: 'Max Agent Loop', hintKey: 'configuration.hints.max_tool_loop', hintFallback: 'Maximum number of agent loop iterations per response', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
       { key: 'bot_config.agent.max_tool_calls_per_turn', labelKey: 'configuration.message.max_tool_calls_per_turn', labelFallback: 'Max Tool Calls Per Turn', hintKey: 'configuration.hints.max_tool_calls_per_turn', hintFallback: 'Maximum number of tool calls allowed in a single turn', type: 'integer', default: 5, validation: { min: 1, max: 100, required: true } },
       { key: 'bot_config.agent.tool_call_timeout', labelKey: 'configuration.message.tool_call_timeout', labelFallback: 'Tool Call Timeout (s)', hintKey: 'configuration.hints.tool_call_timeout', hintFallback: 'Maximum seconds to wait for a single tool call to complete, 0 means no timeout', type: 'float', default: 60, validation: { min: 0, max: 600, required: true } },
+    ],
+  },
+  {
+    id: 'image-compression',
+    labelKey: 'configuration.groups.image_compression',
+    labelFallback: 'Image Compression',
+    descKey: 'configuration.groups.image_compression_desc',
+    descFallback: 'Control image compression before VLM and native multimodal requests',
+    icon: IconImage,
+    fields: [
+      { key: 'bot_config.image_compression.enabled', labelKey: 'configuration.message.image_compression_enabled', labelFallback: 'Image Compression', hintKey: 'configuration.hints.image_compression_enabled', hintFallback: 'Compress large or high-resolution incoming images before VLM and native multimodal requests.', type: 'boolean', default: false },
+      { key: 'bot_config.image_compression.max_size', labelKey: 'configuration.message.image_compression_max_size', labelFallback: 'Max Image Edge', hintKey: 'configuration.hints.image_compression_max_size', hintFallback: 'Longest edge after compression, in pixels.', type: 'integer', default: 1280, validation: { min: 1, max: 8192 } },
+      { key: 'bot_config.image_compression.quality', labelKey: 'configuration.message.image_compression_quality', labelFallback: 'JPEG Quality', hintKey: 'configuration.hints.image_compression_quality', hintFallback: 'JPEG output quality from 1 to 100.', type: 'integer', default: 95, validation: { min: 1, max: 100 } },
+      { key: 'bot_config.image_compression.min_file_size_mb', labelKey: 'configuration.message.image_compression_min_size', labelFallback: 'Compression Threshold', hintKey: 'configuration.hints.image_compression_min_size', hintFallback: 'Compress only when this size in MB is exceeded or the image edge is too large.', type: 'integer', default: 1, validation: { min: 0, max: 100 } },
     ],
   },
   {
@@ -586,7 +604,7 @@ interface CategoryTab {
 }
 
 const categoryTabs: CategoryTab[] = [
-  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'selfie'] },
+  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'image-compression', 'selfie'] },
   { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['locale', 'network', 'cache', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
