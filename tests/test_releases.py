@@ -1,4 +1,5 @@
 import io
+import asyncio
 import tempfile
 import zipfile
 from pathlib import Path
@@ -120,3 +121,31 @@ def test_prepared_webui_archive_can_be_rolled_back(tmp_path: Path, monkeypatch) 
     assert transaction.rollback() == []
     assert (dist_dir / "index.html").read_text(encoding="utf-8") == "before"
     assert (dist_dir / ".version").read_text(encoding="utf-8") == "v1.0.0"
+
+
+def test_update_marks_task_failed_when_rollback_raises(tmp_path: Path, monkeypatch) -> None:
+    class BrokenTransaction:
+        def rollback(self) -> list[str]:
+            raise RuntimeError("rollback failed")
+
+    async def download_webui(_tag: str) -> bytes:
+        return b"webui archive"
+
+    routes = releases.ReleasesRoutes(None, None)
+    task_id = "task"
+    routes._progress[task_id] = routes._new_progress(task_id, "v2.0.0")
+    updates_dir = tmp_path / "updates"
+    updates_dir.mkdir()
+    (updates_dir / "v2.0.0.zip").write_bytes(b"placeholder")
+
+    monkeypatch.setattr(releases, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(releases, "download_dist_archive", download_webui)
+    monkeypatch.setattr(releases.ReleasesRoutes, "_apply_update", staticmethod(lambda *_args: BrokenTransaction()))
+    monkeypatch.setattr(releases, "apply_dist_archive", lambda *_args: (_ for _ in ()).throw(RuntimeError("apply failed")))
+
+    asyncio.run(routes._run_update(task_id, "v2.0.0"))
+
+    progress = routes._progress[task_id]
+    assert progress["status"] == "failed"
+    assert progress["stage"] == "failed"
+    assert "rollback encountered errors" in progress["message"]

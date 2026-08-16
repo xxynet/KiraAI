@@ -202,17 +202,26 @@ class ReleasesRoutes(Routes):
                 self.lifecycle.uvicorn_server.should_exit = True
             asyncio.get_running_loop().call_later(RESTART_DELAY_SECONDS, os._exit, RESTART_EXIT_CODE)
         except Exception as exc:
+            rollback_failed = False
             for transaction in (dist_transaction, source_transaction):
                 if transaction is None:
                     continue
-                rollback_errors = await asyncio.to_thread(transaction.rollback)
+                try:
+                    rollback_errors = await asyncio.to_thread(transaction.rollback)
+                except Exception:
+                    rollback_failed = True
+                    logger.exception("Failed to roll back update transaction")
+                    continue
                 for message in rollback_errors:
                     logger.error(message)
             logger.exception(f"Update {tag} failed")
+            message = "Update failed. Existing files were restored when possible; check the server log for details."
+            if rollback_failed:
+                message = "Update failed and automatic rollback encountered errors; check the server log before retrying."
             self._progress[task_id].update({
                 "status": "failed",
                 "stage": "failed",
-                "message": "Update failed. Existing files were restored when possible; check the server log for details.",
+                "message": message,
             })
 
     @staticmethod
