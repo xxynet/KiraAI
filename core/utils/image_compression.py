@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from pathlib import Path
 
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageOps
 
 from core.chat.message_elements import Image, Sticker
 from core.logging_manager import get_logger
@@ -50,6 +50,16 @@ def _compress_image_sync(
     try:
         source_size = source_path.stat().st_size
         with PILImage.open(source_path) as opened_image:
+            max_pixels = PILImage.MAX_IMAGE_PIXELS
+            if (
+                max_pixels is not None
+                and opened_image.width * opened_image.height > max_pixels
+            ):
+                logger.warning(
+                    "Skipping image compression because %s exceeds the pixel limit",
+                    source_path.name,
+                )
+                return None
             if (
                 getattr(opened_image, "is_animated", False)
                 or getattr(opened_image, "n_frames", 1) > 1
@@ -58,25 +68,30 @@ def _compress_image_sync(
             if source_size < min_file_size_bytes and max(opened_image.size) <= max_size:
                 return None
 
-            has_alpha = opened_image.mode in {"RGBA", "LA"} or (
-                opened_image.mode == "P" and "transparency" in opened_image.info
-            )
-            output_format = "PNG" if has_alpha else "JPEG"
-            output_suffix = ".png" if has_alpha else ".jpg"
-            output_mime = "image/png" if has_alpha else "image/jpeg"
-            image = opened_image.convert("RGBA" if has_alpha else "RGB")
+            transposed_image = ImageOps.exif_transpose(opened_image)
             try:
-                image.thumbnail((max_size, max_size), PILImage.Resampling.LANCZOS)
-                output_dir = get_data_path() / "temp"
-                output_dir.mkdir(parents=True, exist_ok=True)
-                output_path = output_dir / f"compressed_{uuid.uuid4().hex}{output_suffix}"
-                save_kwargs: dict[str, int | bool] = {"optimize": True}
-                if output_format == "JPEG":
-                    save_kwargs["quality"] = quality
-                image.save(output_path, output_format, **save_kwargs)
-                return output_path, output_mime
+                has_alpha = transposed_image.mode in {"RGBA", "LA"} or (
+                    transposed_image.mode == "P"
+                    and "transparency" in transposed_image.info
+                )
+                output_format = "PNG" if has_alpha else "JPEG"
+                output_suffix = ".png" if has_alpha else ".jpg"
+                output_mime = "image/png" if has_alpha else "image/jpeg"
+                image = transposed_image.convert("RGBA" if has_alpha else "RGB")
+                try:
+                    image.thumbnail((max_size, max_size), PILImage.Resampling.LANCZOS)
+                    output_dir = get_data_path() / "temp"
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    output_path = output_dir / f"compressed_{uuid.uuid4().hex}{output_suffix}"
+                    save_kwargs: dict[str, int | bool] = {"optimize": True}
+                    if output_format == "JPEG":
+                        save_kwargs["quality"] = quality
+                    image.save(output_path, output_format, **save_kwargs)
+                    return output_path, output_mime
+                finally:
+                    image.close()
             finally:
-                image.close()
+                transposed_image.close()
     except Exception as exc:
         logger.warning(f"Failed to compress image {source_path.name}: {exc}")
         return None

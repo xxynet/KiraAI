@@ -8,6 +8,7 @@ import binascii
 import hashlib
 import mimetypes
 import os
+import tempfile
 from pathlib import Path
 from typing import Iterable
 
@@ -66,8 +67,25 @@ async def store_session_media(
 
     def write_media() -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.exists():
-            target.write_bytes(raw_data)
+        if target.exists():
+            return
+
+        descriptor, temporary_path = tempfile.mkstemp(
+            prefix=f".{content_hash}.",
+            suffix=".tmp",
+            dir=target.parent,
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as temporary_file:
+                temporary_file.write(raw_data)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+            try:
+                os.link(temporary_path, target)
+            except FileExistsError:
+                pass
+        finally:
+            Path(temporary_path).unlink(missing_ok=True)
 
     await asyncio.to_thread(write_media)
     return {

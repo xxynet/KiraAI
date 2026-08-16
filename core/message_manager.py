@@ -551,18 +551,16 @@ class MessageProcessor:
         compression_config = self.kira_config.get_config(
             "bot_config.image_compression", {}
         )
+        image_mode = self.kira_config.get_config(
+            "bot_config.capabilities.image_recognition.mode",
+            "vlm_description",
+        )
 
-        for i, message in enumerate(event.messages):
+        for message in event.messages:
             for image in self._iter_message_images(message.chain):
                 await compress_image_element(image, compression_config)
             message_str = await self.message_format_to_text(message.chain)
             message.message_str = message_str
-            image_mode = self.kira_config.get_config(
-                "bot_config.capabilities.image_recognition.mode",
-                "vlm_description",
-            )
-            if image_mode == "native":
-                message.native_content = await self._build_native_content(message, sid)
 
         # EventType.ON_IM_BATCH_MESSAGE
         im_batch_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_BATCH_MESSAGE)
@@ -636,7 +634,7 @@ class MessageProcessor:
         request.system_prompt.extend(agent_prompt_list)
 
         # Add received im messages
-        for i, message in enumerate(event.messages):
+        for message in event.messages:
             request.user_prompt.append(Prompt(
                 message.message_str,
                 name="message",
@@ -677,6 +675,10 @@ class MessageProcessor:
                 "bot_config.bot.memory_prompt_position", "latest_user"
             ),
         )
+
+        if image_mode == "native":
+            for message in event.messages:
+                message.native_content = await self._build_native_content(message, sid)
 
         native_parts = [
             part
