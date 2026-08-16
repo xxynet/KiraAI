@@ -13,6 +13,7 @@ from fastapi import Depends, HTTPException, status
 from core.config.default import VERSION
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_requirements
+from core.utils.dist_checker import apply_dist_archive, download_dist_archive
 from core.utils.github_api import download_asset, get_all_releases, pick_fastest_source
 from core.utils.path_utils import get_data_path, get_root_path
 from core.utils.update_transaction import STAGE_PREFIX, UpdateTransaction
@@ -24,6 +25,7 @@ logger = get_logger("releases", "green")
 
 RESTART_EXIT_CODE = 42
 RESTART_DELAY_SECONDS = 0.5  # Allow HTTP response to flush before hard exit
+RESTART_PROGRESS_GRACE_SECONDS = 2.0  # Let the browser observe the restarting state first
 _install_lock = asyncio.Lock()
 
 _RELEASES_CACHE_TTL = 300  # 5 minutes
@@ -124,7 +126,7 @@ class ReleasesRoutes(Routes):
             "overall_percent": 0,
             "stages": {
                 name: {"status": "pending", "percent": 0}
-                for name in ("download", "verify", "apply", "dependencies", "restart")
+                for name in ("webui", "download", "verify", "apply", "dependencies", "restart")
             },
         }
 
@@ -134,7 +136,8 @@ class ReleasesRoutes(Routes):
         progress["stages"][stage].update({"status": status, "percent": percent})
 
     async def _run_update(self, task_id: str, tag: str) -> None:
-        transaction: UpdateTransaction | None = None
+        source_transaction: UpdateTransaction | None = None
+        dist_transaction: UpdateTransaction | None = None
         try:
             async with _install_lock:
                 safe_tag = re.sub(r"[^A-Za-z0-9._-]", "-", tag)
@@ -144,7 +147,11 @@ class ReleasesRoutes(Routes):
                 zip_path = updates_dir / f"{safe_tag}.zip"
                 loop = asyncio.get_running_loop()
 
-                self._set_progress(task_id, "download", "Downloading release source...", 5)
+                self._set_progress(task_id, "webui", "Downloading WebUI assets...", 5)
+                dist_archive = await download_dist_archive(tag)
+                self._set_progress(task_id, "webui", "WebUI assets downloaded and verified.", 30, "done")
+
+                self._set_progress(task_id, "download", "Downloading release source...", 35)
                 if not zip_path.exists():
                     direct_url = f"https://github.com/xxynet/KiraAI/archive/refs/tags/{tag}.zip"
                     ranked_urls = await pick_fastest_source(direct_url)
@@ -162,32 +169,42 @@ class ReleasesRoutes(Routes):
                     if data is None:
                         raise RuntimeError("Failed to download release source")
                     await loop.run_in_executor(None, zip_path.write_bytes, data)
-                self._set_progress(task_id, "download", "Release source downloaded.", 35, "done")
+                self._set_progress(task_id, "download", "Release source downloaded.", 55, "done")
 
-                self._set_progress(task_id, "verify", "Verifying update package...", 40)
-                transaction = await asyncio.to_thread(self._apply_update, zip_path, True)
-                self._set_progress(task_id, "verify", "Update package verified.", 50, "done")
-                self._set_progress(task_id, "apply", "Update files applied; keeping rollback backup...", 70, "done")
+                self._set_progress(task_id, "verify", "Verifying update package...", 60)
+                source_transaction = await asyncio.to_thread(self._apply_update, zip_path, True)
+                self._set_progress(task_id, "verify", "Update package verified.", 65, "done")
+                self._set_progress(task_id, "apply", "Applying core and WebUI files...", 70)
+                dist_transaction = await asyncio.to_thread(apply_dist_archive, dist_archive, tag, True)
+                self._set_progress(task_id, "apply", "Core and WebUI files applied; keeping rollback backups...", 80, "done")
 
-                self._set_progress(task_id, "dependencies", "Installing dependencies...", 75)
+                self._set_progress(task_id, "dependencies", "Installing dependencies...", 85)
                 config = getattr(self.lifecycle, "kira_config", None)
                 pypi_mirror = ((config.get("network") or {}).get("pypi_mirror") if config else None)
                 warnings = await install_requirements(get_root_path(), pypi_mirror=pypi_mirror)
                 if warnings:
                     raise RuntimeError("Dependency installation failed: " + "; ".join(warnings))
-                await asyncio.to_thread(transaction.commit)
-                transaction = None
-                self._set_progress(task_id, "dependencies", "Dependencies installed.", 90, "done")
+                await asyncio.to_thread(source_transaction.commit)
+                source_transaction = None
+                await asyncio.to_thread(dist_transaction.commit)
+                dist_transaction = None
+                self._set_progress(task_id, "dependencies", "Dependencies installed.", 92, "done")
 
             self._set_progress(task_id, "restart", "Update complete. Restarting KiraAI...", 98)
             self._progress[task_id]["status"] = "restarting"
             logger.info("Scheduling restart after update...")
+            # The progress endpoint is in this process. Keep it alive briefly
+            # so polling clients can switch from progress polling to restart
+            # detection instead of treating the expected disconnect as failure.
+            await asyncio.sleep(RESTART_PROGRESS_GRACE_SECONDS)
             await self.lifecycle.stop()
             if self.lifecycle.uvicorn_server:
                 self.lifecycle.uvicorn_server.should_exit = True
             asyncio.get_running_loop().call_later(RESTART_DELAY_SECONDS, os._exit, RESTART_EXIT_CODE)
         except Exception as exc:
-            if transaction is not None:
+            for transaction in (dist_transaction, source_transaction):
+                if transaction is None:
+                    continue
                 rollback_errors = await asyncio.to_thread(transaction.rollback)
                 for message in rollback_errors:
                     logger.error(message)

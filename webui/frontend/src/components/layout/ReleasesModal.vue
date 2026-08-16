@@ -20,7 +20,7 @@
       </div>
 
       <!-- Content -->
-      <div class="max-h-[70vh] overflow-y-auto">
+      <div ref="contentRef" class="max-h-[70vh] overflow-y-auto">
         <!-- In-place update progress -->
         <div v-if="updateProgress" class="mx-6 mt-5 rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
           <div class="flex items-start justify-between gap-4">
@@ -154,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -188,6 +188,7 @@ const show = computed({
 
 const downloadingTag = ref<string | null>(null)
 const updateProgress = ref<ReleaseUpdateProgress | null>(null)
+const contentRef = ref<HTMLElement | null>(null)
 const confirmRef = ref<InstanceType<typeof ConfirmModal>>()
 const pendingRelease = ref<ReleaseItem | null>(null)
 
@@ -199,7 +200,7 @@ let progressTimer: ReturnType<typeof setTimeout> | null = null
 const isUpdating = computed(() => updateProgress.value?.status === 'running' || updateProgress.value?.status === 'restarting')
 const updateStages = computed(() => {
   const stages = updateProgress.value?.stages || {}
-  return ['download', 'verify', 'apply', 'dependencies', 'restart']
+  return ['webui', 'download', 'verify', 'apply', 'dependencies', 'restart']
     .map(name => ({ name, status: stages[name]?.status ?? 'pending', percent: stages[name]?.percent ?? 0 }))
 })
 
@@ -260,10 +261,17 @@ async function handleConfirm() {
   const release = pendingRelease.value
   if (!release) return
   downloadingTag.value = release.tag_name
+  updateProgress.value = null
   const isNew = isNewer(release.tag_name)
   try {
     const { data } = await downloadRelease(release.tag_name)
+    if (!isValidProgress(data)) {
+      notify(t('header.update_backend_outdated'), 'error', 10000)
+      return
+    }
     updateProgress.value = data
+    await nextTick()
+    contentRef.value?.scrollTo({ top: 0 })
     await pollUpdateProgress(data.id, isNew)
   } catch {
     notify(t('header.download_failed'), 'error')
@@ -274,8 +282,29 @@ async function handleConfirm() {
 }
 
 async function pollUpdateProgress(taskId: string, isNew: boolean) {
+  let requestFailures = 0
   while (true) {
-    const { data } = await getReleaseUpdateProgress(taskId)
+    let data: ReleaseUpdateProgress
+    try {
+      ({ data } = await getReleaseUpdateProgress(taskId))
+      requestFailures = 0
+    } catch {
+      requestFailures += 1
+      if (requestFailures >= 3) {
+        if (updateProgress.value) {
+          updateProgress.value = {
+            ...updateProgress.value,
+            status: 'failed',
+            stage: 'failed',
+            message: t('header.update_progress_unavailable'),
+          }
+        }
+        notify(t('header.update_failed'), 'error', 10000)
+        return
+      }
+      await waitForNextProgressPoll()
+      continue
+    }
     updateProgress.value = data
     if (data.status === 'failed') {
       notify(t('header.update_failed'), 'error', 10000)
@@ -290,11 +319,27 @@ async function pollUpdateProgress(taskId: string, isNew: boolean) {
       }
       return
     }
-    await new Promise<void>(resolve => {
-      progressTimer = setTimeout(resolve, 500)
-    })
-    progressTimer = null
+    await waitForNextProgressPoll()
   }
+}
+
+function isValidProgress(value: unknown): value is ReleaseUpdateProgress {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    typeof (value as ReleaseUpdateProgress).id === 'string' &&
+    typeof (value as ReleaseUpdateProgress).overall_percent === 'number' &&
+    (value as ReleaseUpdateProgress).stages,
+  )
+}
+
+function waitForNextProgressPoll(): Promise<void> {
+  return new Promise(resolve => {
+    progressTimer = setTimeout(() => {
+      progressTimer = null
+      resolve()
+    }, 500)
+  })
 }
 
 function stageLabel(stage: string): string {

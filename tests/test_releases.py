@@ -1,7 +1,9 @@
+import io
 import tempfile
 import zipfile
 from pathlib import Path
 
+from core.utils import dist_checker
 from core.utils.update_transaction import JOURNAL_NAME, STAGE_PREFIX, UpdateTransaction, recover_interrupted_update
 from webui.routes import releases
 
@@ -96,3 +98,25 @@ def test_committed_transaction_keeps_new_file_and_removes_backup(tmp_path: Path)
     assert recover_interrupted_update(root) == []
     assert target.read_text(encoding="utf-8") == "after"
     assert not (root / JOURNAL_NAME).exists()
+
+
+def test_prepared_webui_archive_can_be_rolled_back(tmp_path: Path, monkeypatch) -> None:
+    dist_dir = tmp_path / "data" / "dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("before", encoding="utf-8")
+    (dist_dir / ".version").write_text("v1.0.0", encoding="utf-8")
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("dist/index.html", "after")
+        zf.writestr("dist/assets/app.js", "console.log('updated')")
+
+    monkeypatch.setattr(dist_checker, "get_dist_dir", lambda: dist_dir)
+    transaction = dist_checker.apply_dist_archive(archive.getvalue(), "v2.0.0", keep_backup=True)
+
+    assert transaction is not None
+    assert (dist_dir / "index.html").read_text(encoding="utf-8") == "after"
+    assert (dist_dir / ".version").read_text(encoding="utf-8") == "v2.0.0"
+    assert transaction.rollback() == []
+    assert (dist_dir / "index.html").read_text(encoding="utf-8") == "before"
+    assert (dist_dir / ".version").read_text(encoding="utf-8") == "v1.0.0"

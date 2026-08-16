@@ -30,9 +30,9 @@ def _remove_path(path: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def _write_journal(root: Path, data: dict[str, Any]) -> None:
-    journal = root / JOURNAL_NAME
-    fd, tmp_name = tempfile.mkstemp(prefix=f"{JOURNAL_NAME}.", suffix=".tmp", dir=root)
+def _write_journal(root: Path, journal_name: str, data: dict[str, Any]) -> None:
+    journal = root / journal_name
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{journal_name}.", suffix=".tmp", dir=root)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
@@ -46,13 +46,22 @@ def _write_journal(root: Path, data: dict[str, Any]) -> None:
 class UpdateTransaction:
     """Replace direct children of an application root with crash recovery."""
 
-    def __init__(self, root: Path, stage_dir: Path, names: list[str]) -> None:
+    def __init__(
+        self,
+        root: Path,
+        stage_dir: Path,
+        names: list[str],
+        journal_name: str = JOURNAL_NAME,
+    ) -> None:
         self.root = root.resolve()
         self.stage_dir = stage_dir.resolve()
         if not _is_direct_child(self.root, self.stage_dir, STAGE_PREFIX):
             raise ValueError("Update staging directory must be a direct child of the application root")
         if any(not name or Path(name).name != name for name in names):
             raise ValueError("Update items must be direct children of the application root")
+        if not journal_name or Path(journal_name).name != journal_name:
+            raise ValueError("Update journal name must be a direct child filename")
+        self.journal_name = journal_name
 
         self.backup_dir = Path(tempfile.mkdtemp(prefix=BACKUP_PREFIX, dir=self.root)).resolve()
         self.data: dict[str, Any] = {
@@ -63,10 +72,10 @@ class UpdateTransaction:
                 for name in names
             ],
         }
-        _write_journal(self.root, self.data)
+        _write_journal(self.root, self.journal_name, self.data)
 
     def _save(self) -> None:
-        _write_journal(self.root, self.data)
+        _write_journal(self.root, self.journal_name, self.data)
 
     def apply(self) -> None:
         """Move staged files into place while retaining rollback backups."""
@@ -101,14 +110,14 @@ class UpdateTransaction:
         self.data["phase"] = "committed"
         self._save()
         _remove_path(self.backup_dir)
-        (self.root / JOURNAL_NAME).unlink(missing_ok=True)
+        (self.root / self.journal_name).unlink(missing_ok=True)
 
-    def rollback(self) -> None:
+    def rollback(self) -> list[str]:
         """Restore the pre-update tree without overwriting unknown user files."""
-        _rollback_from_data(self.root, self.data)
+        return _rollback_from_data(self.root, self.data, self.journal_name)
 
 
-def _rollback_from_data(root: Path, data: dict[str, Any]) -> list[str]:
+def _rollback_from_data(root: Path, data: dict[str, Any], journal_name: str) -> list[str]:
     backup_dir = root / str(data.get("backup_dir") or "")
     if not _is_direct_child(root, backup_dir, BACKUP_PREFIX):
         return ["Update recovery skipped because its backup path is unsafe."]
@@ -138,14 +147,16 @@ def _rollback_from_data(root: Path, data: dict[str, Any]) -> list[str]:
     if errors:
         return errors
     _remove_path(backup_dir)
-    (root / JOURNAL_NAME).unlink(missing_ok=True)
+    (root / journal_name).unlink(missing_ok=True)
     return []
 
 
-def recover_interrupted_update(root: Path) -> list[str]:
+def recover_interrupted_update(root: Path, journal_name: str = JOURNAL_NAME) -> list[str]:
     """Recover or finalize the one update transaction recorded under ``root``."""
     root = root.resolve()
-    journal = root / JOURNAL_NAME
+    if not journal_name or Path(journal_name).name != journal_name:
+        return ["Update recovery skipped an unsafe journal filename."]
+    journal = root / journal_name
     if not journal.exists():
         return []
     try:
@@ -165,4 +176,4 @@ def recover_interrupted_update(root: Path) -> list[str]:
             return []
         except OSError as exc:
             return [f"Update cleanup failed: {exc}"]
-    return _rollback_from_data(root, data)
+    return _rollback_from_data(root, data, journal_name)
