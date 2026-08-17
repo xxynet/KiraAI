@@ -18,8 +18,42 @@ from core.provider import LLMRequest
 
 from core.utils.path_utils import get_data_path, get_root_path
 
-restricted_paths = ['~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/', '.pem',
-                    '.p12', 'key', 'secret', 'password', 'token', 'credential']
+restricted_dir_segments = (('.ssh',), ('.gnupg',), ('.aws',), ('.config', 'gh'))
+
+restricted_extensions = frozenset({'.pem', '.p12'})
+
+restricted_name_words = frozenset({
+    'key', 'keys', 'secret', 'secrets', 'password', 'passwords',
+    'token', 'tokens', 'credential', 'credentials',
+})
+
+_NAME_WORD_SPLIT = re.compile(r'[^a-z0-9]+')
+
+
+def is_restricted_path(path: str) -> bool:
+    """Check whether a normalized path points at credential-like material.
+
+    Matching is done on whole path segments and on the words inside a segment, so a
+    file such as ``data/files/monkey.txt`` is not rejected for containing "key".
+    """
+    segments = [s for s in path.replace('\\', '/').lower().split('/') if s not in ('', '.')]
+    if not segments:
+        return False
+
+    for pattern in restricted_dir_segments:
+        span = len(pattern)
+        if any(tuple(segments[i:i + span]) == pattern for i in range(len(segments) - span + 1)):
+            return True
+
+    for segment in segments:
+        if Path(segment).suffix in restricted_extensions:
+            return True
+        words = {w for w in _NAME_WORD_SPLIT.split(segment) if w}
+        if words & restricted_name_words:
+            return True
+
+    return False
+
 
 blocked_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg',
                       '.mp3', '.mp4', '.wav', '.ogg', '.flac', '.aac', '.silk', '.slk',
@@ -140,25 +174,72 @@ class FilePlugin(BasePlugin):
         self._background_notice_tasks.clear()
 
     @staticmethod
+    def _kill_process_group(process: subprocess.Popen) -> None:
+        """Kill the shell and everything it spawned, mirroring the background path."""
+        if process.returncode is not None:
+            return
+
+        try:
+            if os.name == "nt":
+                killer = subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=PROCESS_TERMINATION_GRACE_SECONDS,
+                )
+                if killer.returncode != 0 and process.returncode is None:
+                    logger.warning(
+                        f"taskkill failed for shell process {process.pid} with exit code "
+                        f"{killer.returncode}; killing the shell process"
+                    )
+                    process.kill()
+            else:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=PROCESS_TERMINATION_GRACE_SECONDS)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError, subprocess.SubprocessError):
+            if process.returncode is None:
+                process.kill()
+
+    @staticmethod
     def _run_shell_command(
         shell_command: str,
         exec_timeout: int,
         env: dict[str, str],
         exec_work_dir: Path,
     ) -> str:
+        process_kwargs: dict = {}
+        if os.name == "nt":
+            process_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            process_kwargs["start_new_session"] = True
+
         try:
-            result = subprocess.run(
-                shell_command, shell=True, capture_output=True,
+            with subprocess.Popen(
+                shell_command, shell=True,
                 stdin=subprocess.DEVNULL,
-                timeout=exec_timeout, env=env, cwd=exec_work_dir,
-                encoding='utf-8', errors='replace'
-            )
-            output = (result.stdout or '') + (result.stderr or '')
-            if result.returncode == 0:
-                return f'Shell command output:\n{output}'
-            return f'Shell command failed (exit {result.returncode}):\n{output}'
-        except subprocess.TimeoutExpired:
-            return f'Shell command timed out after {exec_timeout} seconds: {shell_command}'
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=env, cwd=exec_work_dir,
+                encoding='utf-8', errors='replace',
+                **process_kwargs,
+            ) as process:
+                try:
+                    stdout, stderr = process.communicate(timeout=exec_timeout)
+                except subprocess.TimeoutExpired:
+                    FilePlugin._kill_process_group(process)
+                    try:
+                        process.communicate(timeout=PROCESS_TERMINATION_GRACE_SECONDS)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    return f'Shell command timed out after {exec_timeout} seconds: {shell_command}'
+
+                output = (stdout or '') + (stderr or '')
+                if process.returncode == 0:
+                    return f'Shell command output:\n{output}'
+                return f'Shell command failed (exit {process.returncode}):\n{output}'
         except Exception as e:
             return f'Unexpected error while executing shell command: {e}'
 
@@ -372,9 +453,8 @@ class FilePlugin(BasePlugin):
         if path is None:
             return "Permission denied: Path traversal detected"
 
-        for rp in restricted_paths:
-            if rp in path:
-                return "Permission denied: Path contains restricted keywords"
+        if is_restricted_path(path):
+            return "Permission denied: Path contains restricted keywords"
 
         if not self._is_path_allowed(path, self.allowed_read_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
@@ -424,9 +504,8 @@ class FilePlugin(BasePlugin):
         if path is None:
             return "Permission denied: Path traversal detected"
 
-        for rp in restricted_paths:
-            if rp in path:
-                return "Permission denied: Path contains restricted keywords"
+        if is_restricted_path(path):
+            return "Permission denied: Path contains restricted keywords"
 
         if not self._is_path_allowed(path, self.allowed_write_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
@@ -465,9 +544,8 @@ class FilePlugin(BasePlugin):
         if path is None:
             return "Permission denied: Path traversal detected"
 
-        for rp in restricted_paths:
-            if rp in path:
-                return "Permission denied: Path contains restricted keywords"
+        if is_restricted_path(path):
+            return "Permission denied: Path contains restricted keywords"
 
         if not self._is_path_allowed(path, self.allowed_write_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_write_paths)}"
@@ -521,9 +599,8 @@ class FilePlugin(BasePlugin):
         if path is None:
             return "Permission denied: Path traversal detected"
 
-        for rp in restricted_paths:
-            if rp in path:
-                return "Permission denied: Path contains restricted keywords"
+        if is_restricted_path(path):
+            return "Permission denied: Path contains restricted keywords"
 
         if not self._is_path_allowed(path, self.allowed_read_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
@@ -570,9 +647,8 @@ class FilePlugin(BasePlugin):
         if normalized is None:
             return None, "Permission denied: Path traversal detected"
 
-        for rp in restricted_paths:
-            if rp in normalized:
-                return None, "Permission denied: Path contains restricted keywords"
+        if is_restricted_path(normalized):
+            return None, "Permission denied: Path contains restricted keywords"
 
         if not self._is_path_allowed(normalized, self.allowed_read_paths):
             return None, f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
@@ -890,9 +966,8 @@ class FilePlugin(BasePlugin):
         if path is None:
             return "Permission denied: Path traversal detected"
 
-        for rp in restricted_paths:
-            if rp in path:
-                return "Permission denied: Path contains restricted keywords"
+        if is_restricted_path(path):
+            return "Permission denied: Path contains restricted keywords"
 
         if not self._is_path_allowed(path, self.allowed_read_paths):
             return f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"

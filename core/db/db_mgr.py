@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.engine import Result
 
 Base = declarative_base()
 
@@ -85,16 +84,6 @@ class DatabaseManager:
         async with self.get_session() as session:
             async with session.begin():
                 yield session
-
-    async def execute(
-        self,
-        statement,
-        params: Optional[dict[str, Any]] = None,
-    ) -> Result[Any]:
-        """Execute a statement and return the result object."""
-        async with self.get_session() as session:
-            result = await session.execute(statement, params or {})
-            return result
 
     async def fetch_one(
         self,

@@ -59,6 +59,11 @@ class TelemetryClient:
         self._shutdown_event = asyncio.Event()
         self._report_lock = asyncio.Lock()
         self._init_task: Optional[asyncio.Task] = None
+        # Row ids already queued for sending. They stay unreported in the DB until the
+        # server accepts the event, so they must be skipped by later aggregation runs to
+        # avoid queueing the same counts twice.
+        self._inflight_message_ids: set[str] = set()
+        self._inflight_llm_ids: set[str] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -122,8 +127,8 @@ class TelemetryClient:
                 except (asyncio.CancelledError, Exception):
                     pass
 
-            # Cancel stats/heartbeat first — stats_loop finally block
-            # guarantees _report_lock is released on cancellation.
+            # Cancel stats/heartbeat first so the final _report_stats below is not
+            # racing a scheduled run for the same rows.
             for task in (self._heartbeat_task, self._stats_task):
                 if task and not task.done():
                     task.cancel()
@@ -134,7 +139,6 @@ class TelemetryClient:
                     except Exception as e:
                         logger.debug(f"Telemetry task {task.get_name()} raised on shutdown: {e}")
 
-            # Now safe — lock is guaranteed free
             await self._report_stats()
 
             started_ts = self.stats.get_stats("started_ts") if self.stats else None
@@ -176,16 +180,20 @@ class TelemetryClient:
     def send_event(
         self, event_type: str, data: dict[str, Any],
         force: bool = False, on_success: Optional[Any] = None,
-    ) -> None:
+        on_failure: Optional[Any] = None,
+    ) -> bool:
         """
         Fire-and-forget event submission.
         If the worker is not running, the event is silently dropped.
         Use ``force=True`` to bypass the local enabled check (used for
         telemetry state-change events themselves).
         ``on_success`` is an async callback invoked after the server accepts the event.
+        ``on_failure`` is an async callback invoked when the event could not be delivered.
+
+        Returns True when the event was queued.
         """
         if not force and not self.is_enabled():
-            return
+            return False
 
         event = TelemetryEvent(
             event_type=event_type,
@@ -193,11 +201,14 @@ class TelemetryClient:
             client_uuid=self.client_uuid,
             timestamp=datetime.now(timezone.utc).isoformat(),
             _on_success=on_success,
+            _on_failure=on_failure,
         )
         try:
             self._send_queue.put_nowait(event)
         except asyncio.QueueFull:
             logger.warning("Telemetry send queue is full; dropping event.")
+            return False
+        return True
 
     async def toggle_telemetry(self, enabled: bool) -> bool:
         """
@@ -362,6 +373,7 @@ class TelemetryClient:
                 payload["signature"] = self._sign_payload(payload)
             except Exception as e:
                 logger.error(f"Failed to sign telemetry event: {e}")
+                await self._run_failure_callback(event)
                 continue
 
             try:
@@ -384,23 +396,37 @@ class TelemetryClient:
                     logger.warning("Telemetry rejected by server (disabled or bad signature).")
                 else:
                     logger.warning(f"Telemetry server returned {e.response.status_code}: {e}")
+                await self._run_failure_callback(event)
             except Exception as e:
                 logger.warning(f"Failed to send telemetry event: {type(e).__name__}: {e}")
+                await self._run_failure_callback(event)
+
+    @staticmethod
+    async def _run_failure_callback(event: TelemetryEvent) -> None:
+        if not event._on_failure:
+            return
+        try:
+            await event._on_failure()
+        except Exception as e:
+            logger.warning(f"Telemetry on_failure callback failed: {e}")
 
     # ------------------------------------------------------------------
     # Geo lookup
     # ------------------------------------------------------------------
     async def _fetch_country_code(self) -> Optional[str]:
         """
-        Fetch country code from public IP via ip-api.com.
+        Fetch country code from public IP over HTTPS.
         Uses a dedicated client with proxy explicitly disabled.
+
+        api.country.is is used because ip-api.com only serves plaintext HTTP on its free
+        tier, which would expose the client's public IP to on-path observers.
         """
         transport = httpx.AsyncHTTPTransport(proxy=None)
         try:
             async with httpx.AsyncClient(timeout=5.0, transport=transport) as client:
-                resp = await client.get("http://ip-api.com/json/?fields=countryCode")
+                resp = await client.get("https://api.country.is/")
                 resp.raise_for_status()
-                code = resp.json().get("countryCode")
+                code = resp.json().get("country")
                 if code:
                     logger.debug(f"Country code detected: {code}")
                     return code
@@ -440,24 +466,40 @@ class TelemetryClient:
     # ------------------------------------------------------------------
     async def _stats_loop(self) -> None:
         """Background loop that aggregates and reports telemetry data every 30 minutes."""
-        try:
-            while not self._shutdown_event.is_set():
-                try:
-                    await asyncio.wait_for(self._shutdown_event.wait(), timeout=1800.0)
-                except asyncio.TimeoutError:
-                    pass
-                else:
-                    break
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=1800.0)
+            except asyncio.TimeoutError:
+                pass
+            else:
+                break
 
-                await self._report_stats()
-        finally:
-            # Guarantee the lock is released if this task is cancelled while inside _report_stats
-            if self._report_lock.locked():
-                self._report_lock.release()
+            await self._report_stats()
+
+    @staticmethod
+    def _inflight_callbacks(tracker: set[str], mark: Any, ids: list[str]) -> tuple[Any, Any]:
+        """Build the (on_success, on_failure) pair for one batch of reserved row ids.
+
+        Success marks the rows reported and releases them; failure only releases them, so
+        the rows are picked up again by a later aggregation run instead of being lost.
+        """
+        async def on_success() -> None:
+            try:
+                await mark(ids)
+            finally:
+                tracker.difference_update(ids)
+
+        async def on_failure() -> None:
+            tracker.difference_update(ids)
+
+        return on_success, on_failure
 
     async def _report_stats(self) -> None:
         """Aggregate unreported records and queue for sending. Marking is done by the worker on success."""
-        await self._report_lock.acquire()
+        async with self._report_lock:
+            await self._aggregate_and_queue_stats()
+
+    async def _aggregate_and_queue_stats(self) -> None:
         try:
             since_ts = int(time.time()) - 12 * 3600
             event_count = 0
@@ -466,7 +508,10 @@ class TelemetryClient:
             # Counts and the id set to mark are derived from a SINGLE per-row
             # snapshot, so they cannot diverge (a row counted but never marked, or
             # marked but never counted, as the prior two-query read allowed).
-            msg_rows = await self.db.get_unreported_telemetry_message_rows(since_ts)
+            msg_rows = [
+                row for row in await self.db.get_unreported_telemetry_message_rows(since_ts)
+                if row["id"] not in self._inflight_message_ids
+            ]
             if msg_rows:
                 by_hour: dict[int, dict[str, int]] = {}
                 msg_ids_by_hour: dict[int, list[str]] = {}
@@ -478,17 +523,27 @@ class TelemetryClient:
                     ids = msg_ids_by_hour.get(hour_ts, [])
                     if not ids:
                         continue
-                    self.send_event(TelemetryEventType.MESSAGE_STATS, {
+                    on_success, on_failure = self._inflight_callbacks(
+                        self._inflight_message_ids, self.db.mark_telemetry_messages_by_ids, ids,
+                    )
+                    self._inflight_message_ids.update(ids)
+                    queued = self.send_event(TelemetryEventType.MESSAGE_STATS, {
                         "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
                         "total_messages": sum(platforms.values()),
                         "messages_by_platform": platforms,
                         "time_window_minutes": 60,
-                    }, on_success=lambda ids=ids: self.db.mark_telemetry_messages_by_ids(ids))
+                    }, on_success=on_success, on_failure=on_failure)
+                    if not queued:
+                        self._inflight_message_ids.difference_update(ids)
+                        continue
                     event_count += 1
 
             # LLM usage stats — one event per hour, models nested. Same single-snapshot
             # approach: aggregate measures and collect ids from the same rows.
-            llm_rows = await self.db.get_unreported_telemetry_llm_usage_rows(since_ts)
+            llm_rows = [
+                row for row in await self.db.get_unreported_telemetry_llm_usage_rows(since_ts)
+                if row["id"] not in self._inflight_llm_ids
+            ]
             if llm_rows:
                 llm_by_hour: dict[int, list[dict]] = {}
                 llm_ids_by_hour: dict[int, list[str]] = {}
@@ -529,7 +584,11 @@ class TelemetryClient:
                         }
                         for model, m in per_model.items()
                     }
-                    self.send_event(TelemetryEventType.LLM_USAGE, {
+                    on_success, on_failure = self._inflight_callbacks(
+                        self._inflight_llm_ids, self.db.mark_telemetry_llm_by_ids, ids,
+                    )
+                    self._inflight_llm_ids.update(ids)
+                    queued = self.send_event(TelemetryEventType.LLM_USAGE, {
                         "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
                         "total_calls": total_calls,
                         "success_calls": total_success,
@@ -539,7 +598,10 @@ class TelemetryClient:
                         "total_cached_tokens": total_cached,
                         "avg_response_time_ms": int(total_resp_ms / total_calls) if total_calls else 0,
                         "models": models,
-                    }, on_success=lambda ids=ids: self.db.mark_telemetry_llm_by_ids(ids))
+                    }, on_success=on_success, on_failure=on_failure)
+                    if not queued:
+                        self._inflight_llm_ids.difference_update(ids)
+                        continue
                     event_count += 1
 
             if event_count:
@@ -551,6 +613,3 @@ class TelemetryClient:
 
         except Exception as e:
             logger.warning(f"Failed to report hourly stats: {e}")
-        finally:
-            if self._report_lock.locked():
-                self._report_lock.release()

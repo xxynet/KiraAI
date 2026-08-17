@@ -22,6 +22,8 @@ class StickerManager:
         self._sticker_paths: list = []
         self._sticker_index: int = 0
         self._on_registered_callbacks: list[Callable] = []
+        self._index_lock = asyncio.Lock()
+        self._callback_tasks: set[asyncio.Task] = set()
 
     async def init(self):
         """Load stickers from database into memory cache."""
@@ -90,15 +92,19 @@ class StickerManager:
         if sticker_id:
             sid = str(sticker_id)
         else:
-            self._sticker_index += 1
-            sid = str(self._sticker_index)
+            async with self._index_lock:
+                self._sticker_index += 1
+                sid = str(self._sticker_index)
 
         await self.db.add_sticker(sid, desc, filename, extra={})
 
         self._sticker_cache[sid] = {"desc": desc, "path": filename, "extra": {}}
         self._sticker_paths.append(filename)
 
-        asyncio.create_task(self._fire_registered(sid, {"desc": desc, "path": filename}))
+        # Keep a reference so the callback task is not garbage collected mid-flight.
+        task = asyncio.create_task(self._fire_registered(sid, {"desc": desc, "path": filename}))
+        self._callback_tasks.add(task)
+        task.add_done_callback(self._callback_tasks.discard)
 
     async def update_sticker_desc(self, sticker_id: str, desc: str):
         sid = str(sticker_id)
@@ -159,20 +165,21 @@ class StickerManager:
         final_desc = desc or ""
         # Resolve the sticker id before building the stored filename so the id
         # can be used to keep filenames unique.
-        if sticker_id and str(sticker_id).strip():
-            sid = str(sticker_id).strip()
-            if sid in self._sticker_cache:
-                raise ValueError(f"Sticker id {sid} already exists")
-            if sid.isdigit():
-                try:
-                    numeric_id = int(sid)
-                    if numeric_id > self._sticker_index:
-                        self._sticker_index = numeric_id
-                except Exception:
-                    pass
-        else:
-            self._sticker_index += 1
-            sid = str(self._sticker_index)
+        async with self._index_lock:
+            if sticker_id and str(sticker_id).strip():
+                sid = str(sticker_id).strip()
+                if sid in self._sticker_cache:
+                    raise ValueError(f"Sticker id {sid} already exists")
+                if sid.isdigit():
+                    try:
+                        numeric_id = int(sid)
+                        if numeric_id > self._sticker_index:
+                            self._sticker_index = numeric_id
+                    except Exception:
+                        pass
+            else:
+                self._sticker_index += 1
+                sid = str(self._sticker_index)
         # Sanitize the name to prevent path traversal (e.g. "../secret")
         safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", name_only)
         if not safe_name or safe_name in (".", ".."):

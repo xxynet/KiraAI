@@ -24,6 +24,7 @@ class TelemetryEvent:
     client_uuid: Optional[str] = None
     signature: Optional[str] = None
     _on_success: Optional[Callable[[], Any]] = field(default=None, repr=False)
+    _on_failure: Optional[Callable[[], Any]] = field(default=None, repr=False)
 
     def to_payload(self) -> dict[str, Any]:
         payload = {
