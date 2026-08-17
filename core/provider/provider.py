@@ -200,7 +200,7 @@ class BaseProvider(ABC):
         self.provider_name: str = provider_name
         self.provider_config: dict = provider_config
 
-    def get_model_client(self, model_type: ModelType) -> BaseModelClient:
+    def get_model_client(self, model_type: ModelType) -> type[BaseModelClient]:
         if model_type not in self.models:
             raise ValueError(f"Model type {model_type.value} not implemented")
         return self.models[model_type]

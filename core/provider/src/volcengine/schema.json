@@ -74,7 +74,27 @@
         }
       }
     },
-    "video": {},
+    "video": {
+      "timeout": {
+        "name": "超时",
+        "type": "integer",
+        "default": 300,
+        "min": 1,
+        "hint": "视频生成任务的总等待时间（秒），火山方舟视频生成通常需要 1-5 分钟",
+        "locales": {
+          "en": { "name": "Timeout", "hint": "Total wait time for a video generation task in seconds; Volcengine video generation usually takes 1-5 minutes" }
+        }
+      },
+      "ratio": {
+        "name": "画面比例",
+        "type": "string",
+        "default": "16:9",
+        "hint": "视频画面比例，如 16:9、9:16、1:1、adaptive（使用参考图比例）",
+        "locales": {
+          "en": { "name": "Aspect Ratio", "hint": "Video aspect ratio, e.g. 16:9, 9:16, 1:1, adaptive (follow the reference image)" }
+        }
+      }
+    },
     "embedding": {
       "timeout": {
         "name": "超时",

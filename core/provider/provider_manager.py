@@ -91,10 +91,15 @@ class ProviderManager:
         model_id: str,
         model_type: Optional[ModelType | str] = None,
     ) -> Optional[BaseModelClient]:
-        provider = self.get_provider(provider_id)
         model_info = self.get_model_info(provider_id, model_id, model_type)
         if not model_info:
             return
+        provider = self.get_provider(provider_id)
+        if provider is None:
+            raise ValueError(
+                f"Provider {provider_id} is configured but not loaded, "
+                f"check the startup logs for its instantiation error"
+            )
         model_type_enum = model_info.model_type
 
         if model_type_enum not in provider.models:
@@ -211,35 +216,39 @@ class ProviderManager:
         default_model = self.kira_config.get_config(f"models.{model_key}")
         if not default_model:
             raise ValueError(f"{model_key} not set")
-        if default_model and ":" in default_model:
-            model_provider = default_model.split(":")[0]
-            model_id = ":".join(default_model.split(":")[1:])
-
-            model_type_mapping = {
-                "default_llm": "llm",
-                "default_fast_llm": "llm",
-                "default_vlm": "llm",
-                "default_tts": "tts",
-                "default_stt": "stt",
-                "default_image": "image",
-                "default_embedding": "embedding",
-                "default_rerank": "rerank",
-                "default_video": "video"
-            }
-            model_type = model_type_mapping[model_key]
-            model_type_enum = ModelType(model_type)
-
-            model_info = ModelInfo(
-                model_type_enum,
-                model_id,
-                model_provider,
-                self.kira_config.get_config(f"providers.{model_provider}.name"),
-                self.kira_config.get_config(f"providers.{model_provider}.provider_config"),
-                # When the model ID has a dot, kira_config.get_config would return unexpected value.
-                # Guard against a missing model_config section (get_config returns None).
-                (self.kira_config.get_config(f"providers.{model_provider}.model_config.{model_type}") or {}).get(model_id)
+        if ":" not in default_model:
+            raise ValueError(
+                f"{model_key} is malformed: expected 'provider_id:model_id', "
+                f"got {default_model!r}"
             )
-            return model_info
+        model_provider = default_model.split(":")[0]
+        model_id = ":".join(default_model.split(":")[1:])
+
+        model_type_mapping = {
+            "default_llm": "llm",
+            "default_fast_llm": "llm",
+            "default_vlm": "llm",
+            "default_tts": "tts",
+            "default_stt": "stt",
+            "default_image": "image",
+            "default_embedding": "embedding",
+            "default_rerank": "rerank",
+            "default_video": "video"
+        }
+        model_type = model_type_mapping[model_key]
+        model_type_enum = ModelType(model_type)
+
+        model_info = ModelInfo(
+            model_type_enum,
+            model_id,
+            model_provider,
+            self.kira_config.get_config(f"providers.{model_provider}.name"),
+            self.kira_config.get_config(f"providers.{model_provider}.provider_config"),
+            # When the model ID has a dot, kira_config.get_config would return unexpected value.
+            # Guard against a missing model_config section (get_config returns None).
+            (self.kira_config.get_config(f"providers.{model_provider}.model_config.{model_type}") or {}).get(model_id)
+        )
+        return model_info
 
     def get_provider_info(self, provider_id: str) -> Optional[ProviderInfo]:
         providers_config = self.kira_config.get("providers", {})
@@ -806,15 +815,24 @@ class ProviderManager:
 
     async def fetch_remote_models(self, provider_id: str, model_type: str = "llm") -> list[dict]:
         """
-        Fetch available models from a provider's remote API.
+        Fetch available models of the given type from a provider's remote API.
         Returns a list of model info dicts.
         """
         provider = self.get_provider(provider_id)
         if not provider:
             raise ValueError(f"Provider {provider_id} not found")
         try:
-            models = await provider.get_llm_list()
+            model_type = ModelType(model_type).value
+        except ValueError as e:
+            raise ValueError(f"Unknown model type {model_type!r}") from e
+        list_method = getattr(provider, f"get_{model_type}_list", None)
+        if not callable(list_method):
+            raise ValueError(
+                f"Provider {provider_id} does not support listing remote {model_type} models"
+            )
+        try:
+            models = await list_method()
             return models
         except Exception as e:
-            logger.error(f"Failed to fetch remote models for provider {provider_id}: {e}")
+            logger.error(f"Failed to fetch remote {model_type} models for provider {provider_id}: {e}")
             raise

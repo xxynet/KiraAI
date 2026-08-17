@@ -4,7 +4,7 @@ import aiohttp
 
 from typing import Optional
 
-from core.provider import ModelInfo, TTSModelClient
+from core.provider import ModelInfo, TTSModelClient, ProviderAPIError
 from core.chat.message_elements import Record
 from core.logging_manager import get_logger
 
@@ -86,18 +86,25 @@ class GptSovitsTTSClient(TTSModelClient):
                             audio_bytes += chunk
                     else:
                         logger.error(f"GPT-Sovits TTS Request failed: {response.status}")
+                        error_detail = ""
                         try:
                             error_info = await response.json()
                             logger.error(f"GPT-Sovits Error: {error_info}")
+                            error_detail = f": {error_info}"
                         except (aiohttp.ContentTypeError, ValueError):
                             logger.error("GPT-Sovits error response was not valid JSON")
-                        return None
-            except asyncio.TimeoutError:
+                        raise ProviderAPIError(
+                            f"GPT-SoVITS TTS request failed with status {response.status}{error_detail}"
+                        )
+            except asyncio.TimeoutError as e:
                 logger.error(f"GPT-Sovits TTS request timed out after {timeout}s")
-                return None
+                raise ProviderAPIError(f"GPT-SoVITS TTS request timed out after {timeout}s") from e
             except aiohttp.ClientError as e:
                 logger.error(f"GPT-Sovits TTS network error: {e}")
-                return None
+                raise ProviderAPIError(f"GPT-SoVITS TTS network error: {e}") from e
+
+        if not audio_bytes:
+            raise ProviderAPIError("GPT-SoVITS TTS returned empty audio")
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str)
