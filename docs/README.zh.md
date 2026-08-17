@@ -145,6 +145,11 @@ KiraAI/
 
 </details>
 
+## 💖 Contributors
+
+<a href="https://github.com/xxynet/KiraAI/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=xxynet/KiraAI" />
+</a>
+
 ## ✨ Star History
 [![Star History Chart](https://api.star-history.com/svg?repos=xxynet/KiraAI&type=date&legend=top-left)](https://www.star-history.com/#xxynet/KiraAI&type=date&legend=top-left)
-
