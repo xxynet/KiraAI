@@ -106,6 +106,8 @@ class WeixinOCAdapter(IMAdapter):
         self._context_tokens: dict[str, str] = {}
         self._typing_states: dict[str, TypingSessionState] = {}
         self._last_inbound_error = ""
+        self._inbound_error_backoff_s = 0.0
+        self._run_task: asyncio.Task | None = None
         self._typing_keepalive_interval_s = max(
             1, int(self.config.get("weixin_oc_typing_keepalive_interval", 5))
         )
@@ -450,7 +452,13 @@ class WeixinOCAdapter(IMAdapter):
         )
         self.publish(message_obj)
 
-    async def _poll_inbound_updates(self) -> None:
+    def _next_inbound_backoff(self) -> float:
+        """Grow the inbound retry delay, capped, so repeated failures cannot spin"""
+        self._inbound_error_backoff_s = min(max(self._inbound_error_backoff_s * 2, 5.0), 60.0)
+        return self._inbound_error_backoff_s
+
+    async def _poll_inbound_updates(self) -> bool:
+        """Fetch pending updates, returning False when the server reported an error"""
         data = await self.client.request_json(
             "POST",
             "ilink/bot/getupdates",
@@ -465,7 +473,7 @@ class WeixinOCAdapter(IMAdapter):
         )
         ret = int(data.get("ret") or 0)
         errcode = data.get("errcode", 0)
-        if ret != 0 and ret is not None:
+        if ret != 0:
             errmsg = str(data.get("errmsg", ""))
             self._last_inbound_error = f"ret={ret}, errcode={errcode}, errmsg={errmsg}"
             self.logger.warning(
@@ -473,7 +481,7 @@ class WeixinOCAdapter(IMAdapter):
                 self.info.name,
                 self._last_inbound_error,
             )
-            return
+            return False
         if errcode and int(errcode) != 0:
             errmsg = str(data.get("errmsg", ""))
             self._last_inbound_error = f"ret={ret}, errcode={errcode}, errmsg={errmsg}"
@@ -488,13 +496,13 @@ class WeixinOCAdapter(IMAdapter):
                 self._context_tokens.clear()
                 self._login_session = None
                 await self._save_account_state()
-                return
+                return True
             self.logger.warning(
                 "weixin_oc(%s): getupdates error: %s",
                 self.info.name,
                 self._last_inbound_error,
             )
-            return
+            return False
 
         if data.get("get_updates_buf"):
             self._sync_buf = str(data.get("get_updates_buf"))
@@ -502,10 +510,12 @@ class WeixinOCAdapter(IMAdapter):
 
         for msg in data.get("msgs", []) if isinstance(data.get("msgs"), list) else []:
             if self._shutdown_event.is_set():
-                return
+                return True
             if not isinstance(msg, dict):
                 continue
             await self._handle_inbound_message(msg)
+
+        return True
 
     async def _send_items_to_session(
         self,
@@ -773,7 +783,15 @@ class WeixinOCAdapter(IMAdapter):
         self._sync_client_state()
 
     async def start(self):
-        asyncio.create_task(self._run_loop())
+        self._run_task = asyncio.create_task(self._run_loop())
+        self._run_task.add_done_callback(self._on_run_task_done)
+
+    def _on_run_task_done(self, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            self.logger.error("weixin_oc(%s): run loop task failed: %s", self.info.name, exc)
 
     async def _run_loop(self) -> None:
         try:
@@ -822,19 +840,33 @@ class WeixinOCAdapter(IMAdapter):
                     continue
 
                 try:
-                    await self._poll_inbound_updates()
+                    polled = await self._poll_inbound_updates()
                 except asyncio.TimeoutError:
+                    self._inbound_error_backoff_s = 0.0
                     self.logger.debug(
                         "weixin_oc(%s): inbound long-poll timeout",
                         self.info.name,
                     )
                 except Exception as e:
+                    delay = self._next_inbound_backoff()
                     self.logger.error(
-                        "weixin_oc(%s): poll inbound failed, retry in 5s: %s",
+                        "weixin_oc(%s): poll inbound failed, retry in %.0fs: %s",
                         self.info.name,
+                        delay,
                         e,
                     )
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(delay)
+                else:
+                    if polled:
+                        self._inbound_error_backoff_s = 0.0
+                    else:
+                        delay = self._next_inbound_backoff()
+                        self.logger.warning(
+                            "weixin_oc(%s): inbound poll failed, retry in %.0fs",
+                            self.info.name,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
         except asyncio.CancelledError:
             raise
         except Exception as e:

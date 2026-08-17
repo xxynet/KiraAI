@@ -25,10 +25,24 @@ class IMAdapter(ABC):
 
         self.permission_mode = None
 
-        self.group_list: List[Union[int, str]] = []
-        self.user_list: List[Union[int, str]] = []
+        self.group_list: List[str] = []
+        self.user_list: List[str] = []
 
         self._init_permission_lists()
+
+    @staticmethod
+    def _normalize_id_list(raw) -> List[str]:
+        """Normalize configured ids to strings, matching the `str(chat.id)` lookups"""
+        if not isinstance(raw, list):
+            return []
+        normalized = []
+        for item in raw:
+            if item is None:
+                continue
+            value = str(item).strip()
+            if value:
+                normalized.append(value)
+        return normalized
 
     def _init_permission_lists(self):
         """init permission lists"""
@@ -38,21 +52,11 @@ class IMAdapter(ABC):
         self.permission_mode = _permission_mode
 
         if _permission_mode == "allow_list":
-            group_allow_list = self.config.get("group_allow_list", "")
-            user_allow_list = self.config.get("user_allow_list", "")
-
-            if group_allow_list and isinstance(group_allow_list, list):
-                self.group_list = group_allow_list
-            if user_allow_list and isinstance(user_allow_list, list):
-                self.user_list = user_allow_list
+            self.group_list = self._normalize_id_list(self.config.get("group_allow_list", ""))
+            self.user_list = self._normalize_id_list(self.config.get("user_allow_list", ""))
         elif _permission_mode == "deny_list":
-            group_deny_list = self.config.get("group_deny_list", "")
-            user_deny_list = self.config.get("user_deny_list", "")
-
-            if group_deny_list and isinstance(group_deny_list, list):
-                self.group_list = group_deny_list
-            if user_deny_list and isinstance(user_deny_list, list):
-                self.user_list = user_deny_list
+            self.group_list = self._normalize_id_list(self.config.get("group_deny_list", ""))
+            self.user_list = self._normalize_id_list(self.config.get("user_deny_list", ""))
         else:
             self.permission_mode = "allow_list"
 
