@@ -152,4 +152,4 @@ KiraAI/
 </a>
 
 ## ✨ Star History
-[![Star History Chart](https://api.star-history.com/svg?repos=xxynet/KiraAI&type=date&legend=top-left)](https://www.star-history.com/#xxynet/KiraAI&type=date&legend=top-left)
+[![RepoStars](https://repostars.dev/api/embed?repo=xxynet%2FKiraAI&theme=dark)](https://repostars.dev/?repos=xxynet%2FKiraAI&theme=dark)
