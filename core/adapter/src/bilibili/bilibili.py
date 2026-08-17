@@ -5,11 +5,13 @@ import re
 import time
 from typing import Union, Optional, Dict, Any
 
-from bilibili_api import comment, Credential, homepage, search
+from bilibili_api import comment, Credential, homepage, search, user
 from bilibili_api.utils.aid_bvid_transformer import bvid2aid
+from bilibili_api.utils import network
 
 from core.adapter.adapter_utils import SocialMediaAdapter
 from core.chat import KiraCommentEvent
+from core.logging_manager import get_logger
 
 from core.chat.message_elements import (
     Text,
@@ -31,6 +33,7 @@ class BiliBiliAdapter(SocialMediaAdapter):
         self.last_process_ts: int = int(time.time())
         self.listening_task = None
         self.bot_uid = self.config.get("bot_uid")
+        self.logger = get_logger(info.name, "blue")
         self._credential = Credential(
             sessdata=self.config.get("sessdata", ""),
             bili_jct=self.config.get("bili_jct", ""),
@@ -40,11 +43,33 @@ class BiliBiliAdapter(SocialMediaAdapter):
         )
 
     async def start(self):
+        network.select_client("aiohttp")
+        session = network.get_session()
+        session.headers["Accept-Encoding"] = "gzip, deflate"
+        await self._log_login_status()
         if self.config.get("listening_bvid"):
             self.listening_task = asyncio.create_task(self._start_listening(self.config.get("listening_interval")))
             await self.listening_task
         else:
             return
+
+    async def _log_login_status(self):
+        if not self.config.get("sessdata"):
+            self.logger.info("Bilibili login status: not logged in")
+            return
+
+        try:
+            account = await user.get_self_info(self._credential)
+        except Exception as exc:
+            self.logger.warning(
+                f"Bilibili login status verification failed: {type(exc).__name__}: {str(exc)[:100]}"
+            )
+            return
+
+        self.logger.info(
+            f"Bilibili login status: logged in, nickname={account.get('name', 'unknown')}, "
+            f"uid={account.get('mid', 'unknown')}"
+        )
 
     async def stop(self):
         """Stop the comment-listening task if it is running."""
@@ -132,9 +157,9 @@ class BiliBiliAdapter(SocialMediaAdapter):
                 parent=sub,
                 credential=self._credential
             )
-            print(f"回复成功: {result}")
+            self.logger.debug(f"回复成功: {result}")
         except Exception as e:
-            print(f"回复失败: {e}")
+            self.logger.debug(f"回复失败: {e}")
 
     async def _start_listening(self, interval: float = 20.0):
         """开始监听，默认20秒检查一次"""
@@ -144,7 +169,7 @@ class BiliBiliAdapter(SocialMediaAdapter):
                 await self._check_new_comments()
                 await asyncio.sleep(interval)
             except Exception as e:
-                print(f"监听出错: {e}")
+                self.logger.error(f"Bilibili 监听出错: {e}")
                 await asyncio.sleep(interval)
 
     async def _check_new_comments(self):
