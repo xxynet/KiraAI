@@ -53,6 +53,8 @@ class KiraLauncher:
 
         loop.set_exception_handler(_suppress_proactor_reset)
 
+        running_tasks: list[asyncio.Task] = []
+
         self.stats = Statistics()
 
         self.lifecycle = KiraLifecycle(stats=self.stats)
@@ -87,14 +89,26 @@ class KiraLauncher:
                 except Exception as e:
                     self.logger.warning(f"Failed to get ip addresses: {e}")
 
-            tasks = asyncio.gather(
-                self.lifecycle.init_and_run_system(),
-                self.webui.run(host, port)
-            )
-            await tasks
+            running_tasks = [
+                asyncio.create_task(self.lifecycle.init_and_run_system(), name="kira_system"),
+                asyncio.create_task(self.webui.run(host, port), name="kira_webui"),
+            ]
+            await asyncio.gather(*running_tasks)
         except (asyncio.CancelledError, KeyboardInterrupt):
             self.logger.info("✨ Exiting KiraAI...")
-            await self.lifecycle.stop()
+        except Exception as e:
+            self.logger.error(f"KiraAI stopped due to an unexpected error: {e}", exc_info=True)
+        finally:
+            if self.lifecycle is not None:
+                try:
+                    await self.lifecycle.stop()
+                except Exception as e:
+                    self.logger.error(f"Error during shutdown: {e}", exc_info=True)
+            # asyncio.gather() leaves siblings running when one of them fails
+            for task in running_tasks:
+                task.cancel()
+            if running_tasks:
+                await asyncio.gather(*running_tasks, return_exceptions=True)
             self.logger.info("✔ Exited KiraAI")
 
     @staticmethod
@@ -110,17 +124,27 @@ class KiraLauncher:
                 ip_addresses.append((interface, address.address))
         return ip_addresses
 
-    @staticmethod
-    def _load_webui_config() -> dict:
+    def _load_webui_config(self) -> dict:
         """Load WebUI configuration from data/webui.json"""
+        default_config = {"host": "0.0.0.0", "port": 5267}
         config_path = get_data_path() / "webui.json"
         if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                self.logger.warning(
+                    f"Failed to read {config_path}, falling back to defaults "
+                    f"(host={default_config['host']}, port={default_config['port']}): {e}"
+                )
+                return dict(default_config)
+            if not isinstance(config, dict):
+                self.logger.warning(
+                    f"{config_path} must contain a JSON object, falling back to defaults"
+                )
+                return dict(default_config)
+            return config
         else:
             with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(json.dumps({
-                    "host": "0.0.0.0",
-                    "port": 5267
-                }))
-            return {"host": "0.0.0.0", "port": 5267}
+                f.write(json.dumps(default_config))
+            return dict(default_config)

@@ -139,11 +139,18 @@ class MCPManager:
                 description=description
             )
 
+            timeout = server_config.get("timeout")
+            if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
+                server.timeout = float(timeout)
+
             if server_type == "stdio":
                 command = server_config.get("command")
                 args = server_config.get("args", [])
+                env = server_config.get("env", {})
                 server.command = command
                 server.args = args
+                if isinstance(env, dict):
+                    server.env = env
             elif server_type in ("sse", "streamable_http"):
                 url = server_config.get("url", "")
                 headers = server_config.get("headers", {})
@@ -577,8 +584,14 @@ class MCPManager:
                     )
                 logger.info(f"Registered {len(tool_names)} MCP tools from {server.name}: {tool_names}")
 
-        for server in self.servers:
-            asyncio.create_task(init_server(server))
+        servers = list(self.servers)
+        results = await asyncio.gather(
+            *(init_server(server) for server in servers),
+            return_exceptions=True,
+        )
+        for server, result in zip(servers, results):
+            if isinstance(result, Exception):
+                logger.error(f"Failed to initialize MCP server {server.name}: {result}")
 
     def _make_mcp_func(self, server: MCPServer, tool_name: str):
         async def _wrapped(*_, **kwargs):

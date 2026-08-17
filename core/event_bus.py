@@ -30,6 +30,14 @@ if TYPE_CHECKING:
     from core.db.service import DatabaseService
 
 
+# Sentinel pushed by stop() to unblock the dispatch() queue wait
+_STOP_SENTINEL = object()
+
+
+def _describe(obj) -> str:
+    return getattr(obj, "__qualname__", None) or getattr(obj, "__name__", None) or repr(obj)
+
+
 class EventBus:
     """事件总线"""
 
@@ -148,9 +156,10 @@ class EventBus:
                     self.event_bus_stats["processed"] += 1
                     self.stats.set_stats("event_bus", self.event_bus_stats)
 
-            except Exception as e:
+            except Exception:
                 self.event_bus_stats["errors"] += 1
                 self.stats.set_stats("event_bus", self.event_bus_stats)
+                self.logger.exception("Unhandled exception in event bus consumer loop")
 
     async def _process_event(self, event):
         """处理单个事件"""
@@ -164,9 +173,13 @@ class EventBus:
             for handler in tuple(self.subscribers[event_type]):
                 try:
                     await handler(event)
-                except Exception as e:
+                except Exception:
                     self.event_bus_stats["errors"] += 1
                     self.stats.set_stats("event_bus", self.event_bus_stats)
+                    self.logger.exception(
+                        f"Unhandled exception in handler {_describe(handler)} "
+                        f"for event {_describe(event_type)}"
+                    )
 
     async def dispatch(self):
         """start event bus"""
@@ -174,6 +187,8 @@ class EventBus:
 
         while self._running_event.is_set():
             event: Union[KiraMessageEvent, KiraCommentEvent] = await self.event_queue.get()
+            if event is _STOP_SENTINEL:
+                break
             if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
                 self.total_messages_stats["total_messages"] += 1
                 self.stats.set_stats("messages", self.total_messages_stats)
@@ -200,6 +215,9 @@ class EventBus:
     async def stop(self):
         """stop event bus"""
         self._running_event.clear()
+        # dispatch() blocks on queue.get(), so clearing the flag alone would not
+        # be noticed until the next event arrives
+        await self.event_queue.put(_STOP_SENTINEL)
         # for task in self._running_tasks:
         #     task.cancel()
         # await asyncio.gather(*self._running_tasks, return_exceptions=True)

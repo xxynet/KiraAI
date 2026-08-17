@@ -58,6 +58,22 @@ logger = get_logger("message", "cyan")
 llm_logger = get_logger("llm", "purple")
 
 
+def _config_float(value: Any, default: float) -> float:
+    """Coerce a config value to float, falling back to default on null/garbage."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _config_int(value: Any, default: int) -> int:
+    """Coerce a config value to int, falling back to default on null/garbage."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class SessionBuffer:
     def __init__(self, max_count: int = None):
         self.buffer: list = []
@@ -66,6 +82,15 @@ class SessionBuffer:
 
     def add(self, message: KiraMessageEvent):
         self.buffer.append(message)
+        # Safety net: the buffer is normally drained by a message plugin flush,
+        # but a disabled or failing plugin must not let it grow without bound
+        if self.max_count and len(self.buffer) > self.max_count:
+            overflow = len(self.buffer) - self.max_count
+            del self.buffer[:overflow]
+            logger.warning(
+                f"Session buffer exceeded max_count={self.max_count}, "
+                f"dropped {overflow} oldest buffered message(s)"
+            )
 
     def pop(self, count: int = 1):
         if self.get_length() < count:
@@ -162,10 +187,10 @@ class MessageProcessor:
         self.db = db
         self.kira_config = kira_config
         self.bot_config = kira_config["bot_config"].get("bot")
-        self.max_message_interval = float(self.bot_config.get("max_message_interval"))
-        self.max_buffer_messages = int(self.bot_config.get("max_buffer_messages"))
-        self.min_message_delay = float(self.bot_config.get("min_message_delay", "0.8"))
-        self.max_message_delay = float(self.bot_config.get("max_message_delay", "1.5"))
+        self.max_message_interval = _config_float(self.bot_config.get("max_message_interval"), 2.0)
+        self.max_buffer_messages = _config_int(self.bot_config.get("max_buffer_messages"), 5)
+        self.min_message_delay = _config_float(self.bot_config.get("min_message_delay"), 0.8)
+        self.max_message_delay = _config_float(self.bot_config.get("max_message_delay"), 1.5)
 
         self.tool_manager = tool_manager
         self.event_bus: Optional[EventBus] = None
@@ -720,11 +745,7 @@ class MessageProcessor:
         # Get max tool loop config, defaults to 2 if not a valid integer
         # Note: This variable represents the total agent loop iterations (not just tool calls),
         # but the name is kept as-is for backward compatibility with existing config files.
-        max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
-        try:
-            max_tool_loop = int(max_tool_loop)
-        except ValueError:
-            max_tool_loop = 2
+        max_tool_loop = _config_int(self.kira_config.get_config("bot_config.agent.max_tool_loop"), 2)
 
         max_agent_steps = max_tool_loop
 
@@ -759,10 +780,11 @@ class MessageProcessor:
                     return False
             if raw_output:
                 llm_resp.text_response = step_result.raw_output
-                for idx in range(-1, -len(new_messages), -1):
-                    if new_messages[idx].role == "assistant":
-                        new_messages[idx].content = step_result.raw_output
-                        request.messages[idx].content = step_result.raw_output
+                # new_messages and request.messages hold the same OpenAIMessage
+                # objects, so updating the message in place covers both lists
+                for message in reversed(new_messages):
+                    if message.role == "assistant":
+                        message.content = step_result.raw_output
                         break
             return True
 
@@ -786,6 +808,12 @@ class MessageProcessor:
                 )
             except Exception as e:
                 logger.debug(f"Failed to record telemetry LLM usage: {e}")
+
+            # A stopped step's assistant message is deliberately kept out of
+            # new_messages, so its response must not be sent either
+            if step.state == "stopped":
+                logger.info(f"Event {event.event_id} stopped, response not sent")
+                break
 
             if not await send_llm_text(llm_resp):
                 break
@@ -838,7 +866,7 @@ class MessageProcessor:
         except Exception as e:
             logger.debug(f"Failed to record telemetry LLM usage: {e}")
 
-        response = llm_resp.text_response.strip()
+        response = (llm_resp.text_response or "").strip()
 
         logger.info(f"LLM: {response}")
 

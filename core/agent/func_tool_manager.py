@@ -92,13 +92,16 @@ class FuncToolManager:
                 })
                 continue
 
+            # Some providers omit "arguments" entirely for no-arg tool calls
             raw_args = tool_call.get("function", {}).get("arguments")
+            if isinstance(raw_args, str):
+                raw_args = raw_args.strip()
             try:
-                if not raw_args.strip():
+                if not raw_args:
                     args = {}
                 else:
                     args = json.loads(raw_args)
-            except json.JSONDecodeError as e:
+            except (TypeError, ValueError) as e:
                 logger.error(f"Failed to parse function calling arguments: {e}")
                 logger.error(f"Raw args: {raw_args}")
                 args = {}

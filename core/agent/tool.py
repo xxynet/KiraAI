@@ -28,9 +28,8 @@ class ToolSet:
                 tool_inst = tool
             else:
                 continue
-            for i, t in enumerate(self.tools):
-                if t.name == tool.name:
-                    self.tools.pop(i)
+            # Read the name off the instance: a subclass may only set it in __init__
+            self.tools = [t for t in self.tools if t.name != tool_inst.name]
             self.tools.append(tool_inst)
 
     def remove(self, *tool_names: str):
