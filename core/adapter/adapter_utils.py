@@ -110,6 +110,11 @@ class SocialMediaAdapter(ABC):
     async def start(self):
         pass
 
+    @abstractmethod
+    async def stop(self):
+        """Stop the adapter and release its running resources."""
+        pass
+
     async def get_feed(self, count: int):
         pass
 

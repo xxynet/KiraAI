@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from datetime import datetime
 import re
 import time
@@ -44,6 +45,14 @@ class BiliBiliAdapter(SocialMediaAdapter):
             await self.listening_task
         else:
             return
+
+    async def stop(self):
+        """Stop the comment-listening task if it is running."""
+        if self.listening_task and not self.listening_task.done():
+            self.listening_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.listening_task
+        self.listening_task = None
 
     @staticmethod
     def _format_time(ts):

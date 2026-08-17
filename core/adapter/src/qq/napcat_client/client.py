@@ -75,7 +75,7 @@ class NapCatWebSocketClient:
         async def on_napcat_message(msg: dict):
             if msg.get("status", "") == "failed":
                 if msg.get("retcode") == 1403:
-                    logger.error("invalid token")
+                    logger.error("WebSocket 服务器 Token 无效")
                     await self.close()
 
         con_resp = await self.connect()
