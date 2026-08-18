@@ -129,7 +129,7 @@
         <h3 class="text-lg font-semibold text-gray-800 mb-4">
           {{ resolveWidgetLabel(w.label) }}
         </h3>
-        <div class="widget-html-content" v-html="w.content"></div>
+        <div class="widget-html-content" v-html="DOMPurify.sanitize(w.content)"></div>
       </div>
     </template>
 
@@ -139,6 +139,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import DOMPurify from 'dompurify'
 import * as echarts from 'echarts'
 import { IconClock, IconChat, IconTerminal, IconCpu } from '@/components/icons'
 import { getOverview } from '@/api/overview'
