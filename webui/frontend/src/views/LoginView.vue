@@ -8,9 +8,8 @@
     <!-- Theme Toggle Button -->
     <button
       type="button"
-      class="fixed top-4 right-4 z-50 p-2 rounded-lg bg-white/70 backdrop-blur-md border border-white/30 shadow-lg hover:bg-white/90 disabled:cursor-wait disabled:opacity-60 transition-all duration-200 dark:bg-gray-800/70 dark:border-gray-700/30 dark:hover:bg-gray-800/90"
+      class="fixed top-4 right-4 z-50 p-2 rounded-lg bg-white/70 backdrop-blur-md border border-white/30 shadow-lg hover:bg-white/90 transition-all duration-200 dark:bg-gray-800/70 dark:border-gray-700/30 dark:hover:bg-gray-800/90"
       :aria-label="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')"
-      :disabled="appStore.isThemeTransitioning"
       @click="toggleTheme"
     >
       <IconSun v-if="appStore.isDark" class="w-6 h-6 text-yellow-500" />

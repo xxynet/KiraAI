@@ -102,7 +102,6 @@ export const useAppStore = defineStore('app', () => {
     theme,
     language,
     isDark,
-    isThemeTransitioning,
     setTheme,
     toggleTheme,
     setLanguage,
