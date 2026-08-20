@@ -34,16 +34,35 @@ export const useAppStore = defineStore('app', () => {
   const language = ref<Language>(sanitizeLanguage(localStorage.getItem('language')))
 
   const isDark = ref(theme.value === 'dark')
+  const isThemeTransitioning = ref(false)
+
+  function clearThemeTransition(root: HTMLElement) {
+    if (themeTransitionTimer !== undefined) {
+      window.clearTimeout(themeTransitionTimer)
+      themeTransitionTimer = undefined
+    }
+    root.classList.remove('theme-transition')
+    isThemeTransitioning.value = false
+  }
 
   function setTheme(newTheme: string, animate = false) {
+    const root = document.documentElement
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? true
+    const shouldAnimate = animate && !prefersReducedMotion
+    if (shouldAnimate && isThemeTransitioning.value) {
+      return false
+    }
+    if (!shouldAnimate) {
+      clearThemeTransition(root)
+    }
+
     const validated = sanitizeTheme(newTheme)
     theme.value = validated
     isDark.value = validated === 'dark'
     localStorage.setItem('theme', validated)
 
-    const root = document.documentElement
-    const shouldAnimate = animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (shouldAnimate) {
+      isThemeTransitioning.value = true
       root.classList.add('theme-transition')
       // Ensure the browser applies the transition before changing theme colors.
       void root.offsetWidth
@@ -56,18 +75,16 @@ export const useAppStore = defineStore('app', () => {
     }
 
     if (shouldAnimate) {
-      if (themeTransitionTimer !== undefined) {
-        window.clearTimeout(themeTransitionTimer)
-      }
       themeTransitionTimer = window.setTimeout(() => {
-        root.classList.remove('theme-transition')
-        themeTransitionTimer = undefined
+        clearThemeTransition(root)
       }, THEME_TRANSITION_DURATION)
     }
+
+    return true
   }
 
   function toggleTheme() {
-    setTheme(isDark.value ? 'light' : 'dark', true)
+    return setTheme(isDark.value ? 'light' : 'dark', true)
   }
 
   function setLanguage(lang: string) {
@@ -85,6 +102,7 @@ export const useAppStore = defineStore('app', () => {
     theme,
     language,
     isDark,
+    isThemeTransitioning,
     setTheme,
     toggleTheme,
     setLanguage,

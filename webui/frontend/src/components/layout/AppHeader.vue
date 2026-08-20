@@ -48,9 +48,10 @@
       <!-- Theme Toggle -->
       <button
         type="button"
-        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] disabled:cursor-wait disabled:opacity-60 dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
         :aria-label="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')"
         :title="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')"
+        :disabled="appStore.isThemeTransitioning"
         @click="handleThemeToggle"
       >
         <IconMoon v-if="!appStore.isDark" class="w-6 h-6" />
@@ -110,7 +111,7 @@
             <IconGithub class="w-5 h-5" />
             <span>GitHub</span>
           </a>
-          <button type="button" class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" @click="handleThemeToggle">
+          <button type="button" class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 disabled:cursor-wait disabled:opacity-60 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" :disabled="appStore.isThemeTransitioning" @click="handleThemeToggle">
             <IconMoon v-if="!appStore.isDark" class="w-5 h-5" />
             <IconSun v-else class="w-5 h-5" />
             <span>{{ appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark') }}</span>
