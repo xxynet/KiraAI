@@ -12,8 +12,9 @@ export function useTheme() {
   }
 
   async function toggleTheme() {
-    appStore.toggleTheme()
-    await syncMonacoTheme()
+    if (appStore.toggleTheme()) {
+      await syncMonacoTheme()
+    }
   }
 
   return {

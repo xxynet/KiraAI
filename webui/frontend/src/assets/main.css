@@ -3,6 +3,17 @@
 @tailwind utilities;
 
 /* ==================== Global Transitions ==================== */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow;
+    transition-duration: 250ms;
+    transition-timing-function: ease-in-out;
+  }
+}
+
 .provider-item,
 .custom-select-trigger {
   transition-property: border-color;

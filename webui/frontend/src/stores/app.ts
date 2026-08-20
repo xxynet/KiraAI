@@ -7,6 +7,9 @@ const ALLOWED_LANGUAGES = ['en', 'zh'] as const
 type Theme = (typeof ALLOWED_THEMES)[number]
 type Language = (typeof ALLOWED_LANGUAGES)[number]
 
+const THEME_TRANSITION_DURATION = 250
+let themeTransitionTimer: number | undefined
+
 function sanitizeTheme(value: string | null): Theme {
   return (ALLOWED_THEMES as readonly string[]).includes(value ?? '') ? (value as Theme) : 'light'
 }
@@ -31,21 +34,57 @@ export const useAppStore = defineStore('app', () => {
   const language = ref<Language>(sanitizeLanguage(localStorage.getItem('language')))
 
   const isDark = ref(theme.value === 'dark')
+  const isThemeTransitioning = ref(false)
 
-  function setTheme(newTheme: string) {
+  function clearThemeTransition(root: HTMLElement) {
+    if (themeTransitionTimer !== undefined) {
+      window.clearTimeout(themeTransitionTimer)
+      themeTransitionTimer = undefined
+    }
+    root.classList.remove('theme-transition')
+    isThemeTransitioning.value = false
+  }
+
+  function setTheme(newTheme: string, animate = false) {
+    const root = document.documentElement
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? true
+    const shouldAnimate = animate && !prefersReducedMotion
+    if (shouldAnimate && isThemeTransitioning.value) {
+      return false
+    }
+    if (!shouldAnimate) {
+      clearThemeTransition(root)
+    }
+
     const validated = sanitizeTheme(newTheme)
     theme.value = validated
     isDark.value = validated === 'dark'
     localStorage.setItem('theme', validated)
-    if (validated === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
+
+    if (shouldAnimate) {
+      isThemeTransitioning.value = true
+      root.classList.add('theme-transition')
+      // Ensure the browser applies the transition before changing theme colors.
+      void root.offsetWidth
     }
+
+    if (validated === 'dark') {
+      root.classList.add('dark')
+    } else {
+      root.classList.remove('dark')
+    }
+
+    if (shouldAnimate) {
+      themeTransitionTimer = window.setTimeout(() => {
+        clearThemeTransition(root)
+      }, THEME_TRANSITION_DURATION)
+    }
+
+    return true
   }
 
   function toggleTheme() {
-    setTheme(isDark.value ? 'light' : 'dark')
+    return setTheme(isDark.value ? 'light' : 'dark', true)
   }
 
   function setLanguage(lang: string) {
