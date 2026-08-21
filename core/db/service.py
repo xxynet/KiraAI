@@ -1,5 +1,6 @@
 import time
 import uuid
+import warnings
 from typing import Optional
 from sqlalchemy import select, delete, or_, and_, func, cast, Integer
 
@@ -503,6 +504,18 @@ class DatabaseService:
         ]
 
     async def mark_telemetry_reported(self) -> None:
+        """Mark every unreported telemetry row as reported.
+
+        Deprecated: marking by window instead of by primary key marks rows that were
+        inserted after aggregation and therefore never sent. Use
+        :meth:`mark_telemetry_messages_by_ids` / :meth:`mark_telemetry_llm_by_ids`.
+        """
+        warnings.warn(
+            "mark_telemetry_reported is deprecated; use mark_telemetry_messages_by_ids / "
+            "mark_telemetry_llm_by_ids instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         async with self.db.transaction() as session:
             await session.execute(
                 TelemetryMessage.__table__.update()

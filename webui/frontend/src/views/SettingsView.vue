@@ -526,7 +526,7 @@ async function handleRestart() {
 async function fetchBackupList() {
   try {
     const { data } = await listBackups()
-    backupList.value = data as unknown as BackupItem[]
+    backupList.value = data
   } catch {
     // silent
   }
@@ -568,8 +568,7 @@ async function handleDeleteBackup(filename: string) {
 async function handleRestoreFromBackup(filename: string) {
   restoreLoading.value = true
   try {
-    const { data } = await restoreFromBackup(filename)
-    const result = data as unknown as { success: boolean; message: string }
+    const { data: result } = await restoreFromBackup(filename)
     if (result.success) {
       notify(t('settings.restore_success'), 'success')
       await triggerRestart()
@@ -602,8 +601,7 @@ async function handleRestore() {
 
   restoreLoading.value = true
   try {
-    const { data } = await restoreBackup(file)
-    const result = data as unknown as { success: boolean; message: string }
+    const { data: result } = await restoreBackup(file)
     if (result.success) {
       notify(t('settings.restore_success'), 'success')
       restoreModalVisible.value = false

@@ -46,7 +46,7 @@ class SearchPlugin(BasePlugin):
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "The search query to execute with Tavily."},
-                "topic": {"type": "string", "enum": ["general", "news"], "description": "Optional. The category of the search.news is useful for retrieving real-time updates, general is for broader, more general-purpose searches that may include a wide range of sources. Defaults to general"},
+                "topic": {"type": "string", "enum": ["general", "news", "finance"], "description": "Optional. The category of the search.news is useful for retrieving real-time updates, finance is for financial and market information, general is for broader, more general-purpose searches that may include a wide range of sources. Defaults to general"},
                 "search_depth": {"type": "string", "enum": ["basic", "advanced"], "description": "Optional. Controls the latency vs relevance tradeoff.\n\nadvanced: Highest relevance, higher latency.\nbasic: Balanced relevance and latency. Defaults to basic"}
             },
             "required": ["query"]
@@ -83,8 +83,8 @@ class SearchPlugin(BasePlugin):
             return "Tavily API key not found. Please configure it in plugin config"
         client = TavilyClient(self._key)
 
-        max_results = int(str(self.plugin_cfg.get("max_results", 5)))
-
-        res = client.extract(urls=url, query=query, max_results=max_results, extract_depth=extract_depth)
+        # Tavily Extract has no max_results parameter; passing it through would end up
+        # as an unknown field in the request body.
+        res = client.extract(urls=url, query=query, extract_depth=extract_depth)
         results = res.get("results") or []
         return "".join(json.dumps(ele, ensure_ascii=False) for ele in results)

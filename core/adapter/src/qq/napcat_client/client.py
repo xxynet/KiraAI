@@ -53,6 +53,7 @@ class NapCatWebSocketClient:
         self.last_heartbeat: Optional[int] = None
         self.login_success_event: asyncio.Event = asyncio.Event()
         self._listening_task: Optional[asyncio.Task] = None
+        self._verify_task: Optional[asyncio.Task] = None
         self.event_callbacks: dict[str, list[Callable]] = {
             "group": [],
             "private": [],
@@ -124,18 +125,34 @@ class NapCatWebSocketClient:
 
     async def _reconnect(self):
         attempt = 0
-        while not self.shutdown_event.is_set() and attempt < 20:
+        while not self.shutdown_event.is_set():
             attempt += 1
             logger.warning(f"🔄 WebSocket 连接断开，正在尝试第 {attempt} 次重连")
             resp = await self.connect()
             if resp.get("status") == "ok":
                 logger.info("✅ WebSocket 重连成功")
                 self.login_success_event.set()
+                self._verify_task = asyncio.create_task(self._verify_login_account())
                 return True
             elif resp.get("status") == "failed":
                 logger.warning(f"WebSocket 重连失败: {resp.get('message')}")
-            await asyncio.sleep(min(2 ** attempt, 60))
+            await asyncio.sleep(min(2 ** min(attempt, 6), 60))
         return False
+
+    async def _verify_login_account(self):
+        """Check that the reconnected NapCat session still serves the configured account.
+
+        Runs outside the receive loop so ``get_login_info`` can be resolved by it.
+        """
+        try:
+            login_info = await self.get_login_info()
+        except Exception as e:
+            logger.warning(f"重连后获取登录信息失败: {e}")
+            return
+        login_id = (login_info.get("data") or {}).get("user_id")
+        if str(login_id) != str(self.self_id):
+            logger.error("配置的账号与 NapCat 登录账号不一致")
+            await self.close()
 
     def group_event(self):
         def wrapper(func):
@@ -178,16 +195,21 @@ class NapCatWebSocketClient:
                         await self.handle_message(data)
                     except json.JSONDecodeError:
                         logger.error(f"❌ 无法解析消息: {message}")
+                    except Exception as e:
+                        logger.error(f"❌ 处理消息失败: {e}\n{traceback.format_exc()}")
             except websockets.exceptions.ConnectionClosed:
                 logger.warning("🔌 WebSocket 连接已关闭")
-                success = await self._reconnect()
-                if not success:
-                    logger.error("❌ 重连次数达到上限，WebSocket 重连失败！")
-                    await self.close()
-                    break
-                continue
             except Exception as e:
-                logger.error(f"❌ 监听错误: {e}")
+                logger.error(f"❌ 监听错误: {e}\n{traceback.format_exc()}")
+                # Avoid spinning when the receive stream fails immediately
+                await asyncio.sleep(1)
+
+            if self.shutdown_event.is_set():
+                break
+
+            if not await self._reconnect():
+                logger.error("❌ WebSocket 重连失败！")
+                await self.close()
                 break
 
     async def handle_message(self, data: dict):
@@ -380,6 +402,8 @@ class NapCatWebSocketClient:
     async def close(self):
         self.shutdown_event.set()
         self.login_success_event.clear()
+        if self._verify_task and not self._verify_task.done() and self._verify_task is not asyncio.current_task():
+            self._verify_task.cancel()
         if self.websocket:
             await self.websocket.close()
         if self._listening_task and not self._listening_task.done():

@@ -3,7 +3,7 @@ import re
 import time
 from typing import Optional, Union
 
-from core.provider import ModelInfo
+from core.provider import ModelInfo, ProviderAPIError
 from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.logging_manager import get_logger
@@ -67,16 +67,16 @@ class OpenAIImageClient(ImageModelClient):
     # ──────── Mode A: /v1/images/generations ────────
 
     async def _text_to_image_via_generations(self, prompt: str) -> Image:
-        client = self._build_client()
         image_size = self.model.model_config.get("size", None)
         try:
-            images_response = await client.images.generate(
-                model=self.model.model_id,
-                prompt=prompt,
-                size=image_size if image_size else None,
-                response_format="url",
-                extra_body={"watermark": False},
-            )
+            async with self._build_client() as client:
+                images_response = await client.images.generate(
+                    model=self.model.model_id,
+                    prompt=prompt,
+                    size=image_size if image_size else None,
+                    response_format="url",
+                    extra_body={"watermark": False},
+                )
             if not images_response.data:
                 raise ValueError("Image generation API returned empty data")
             return Image(image=images_response.data[0].url)
@@ -90,14 +90,14 @@ class OpenAIImageClient(ImageModelClient):
     # ──────── Mode B: /v1/chat/completions (non-stream) ────────
 
     async def _text_to_image_via_chat(self, prompt: str) -> Image:
-        client = self._build_client()
         messages = [{"role": "user", "content": prompt}]
 
         try:
-            response = await client.chat.completions.create(
-                model=self.model.model_id,
-                messages=messages,
-            )
+            async with self._build_client() as client:
+                response = await client.chat.completions.create(
+                    model=self.model.model_id,
+                    messages=messages,
+                )
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Image generation (chat) API error: {e}")
             raise
@@ -247,17 +247,17 @@ class OpenAIImageClient(ImageModelClient):
     # ──────── image-to-image Mode A: /v1/images/generations ────────
 
     async def _image_to_image_via_generations(self, prompt: str, images: list[Image]) -> Image:
-        client = self._build_client()
         image_size = self.model.model_config.get("size", None)
         image_data_urls = [await img.to_data_url() for img in images]
         try:
-            images_response = await client.images.generate(
-                model=self.model.model_id,
-                prompt=prompt,
-                size=image_size if image_size else None,
-                response_format="url",
-                extra_body={"watermark": False, "image": image_data_urls},
-            )
+            async with self._build_client() as client:
+                images_response = await client.images.generate(
+                    model=self.model.model_id,
+                    prompt=prompt,
+                    size=image_size if image_size else None,
+                    response_format="url",
+                    extra_body={"watermark": False, "image": image_data_urls},
+                )
             if not images_response.data:
                 raise ValueError("Image-to-image generation API returned empty data")
             return Image(image=images_response.data[0].url)
@@ -271,17 +271,17 @@ class OpenAIImageClient(ImageModelClient):
     # ──────── image-to-image Mode B: /v1/chat/completions ────────
 
     async def _image_to_image_via_chat(self, prompt: str, images: list[Image]) -> Image:
-        client = self._build_client()
         content = [{"type": "text", "text": prompt}]
         for img in images:
             image_data_url = await img.to_data_url()
             content.append({"type": "image_url", "image_url": {"url": image_data_url}})
         messages = [{"role": "user", "content": content}]
         try:
-            response = await client.chat.completions.create(
-                model=self.model.model_id,
-                messages=messages,
-            )
+            async with self._build_client() as client:
+                response = await client.chat.completions.create(
+                    model=self.model.model_id,
+                    messages=messages,
+                )
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Image-to-image (chat) API error: {e}")
             raise
@@ -316,26 +316,26 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
 
-        client = AsyncOpenAI(
-            api_key=self.model.provider_config.get("api_key", ""),
-            base_url=self.model.provider_config.get("base_url", ""),
-            timeout=timeout_sec,
-            default_headers=default_headers
-        )
         try:
             start_time = time.perf_counter()
-            response = await client.embeddings.create(
-                model=self.model.model_id,
-                input=texts
-            )
+            async with AsyncOpenAI(
+                api_key=self.model.provider_config.get("api_key", ""),
+                base_url=self.model.provider_config.get("base_url", ""),
+                timeout=timeout_sec,
+                default_headers=default_headers
+            ) as client:
+                response = await client.embeddings.create(
+                    model=self.model.model_id,
+                    input=texts
+                )
             elapsed = round(time.perf_counter() - start_time, 2)
             if elapsed > slow_threshold:
                 logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Embedding API error: {e}")
-            return []
+            raise ProviderAPIError(f"Embedding request failed: {e}") from e
         except Exception as e:
             logger.error(f"Embedding error: {e}")
-            return []
+            raise ProviderAPIError(f"Embedding request failed: {e}") from e
 

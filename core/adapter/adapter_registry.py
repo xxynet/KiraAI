@@ -32,6 +32,7 @@ class AdapterManager:
     def __init__(self, kira_config: KiraConfig, event_queue: asyncio.Queue):
         self.kira_config = kira_config
         self._adapters: dict[str, Union[IMAdapter, SocialMediaAdapter]] = {}
+        self._adapter_tasks: dict[str, asyncio.Task] = {}
         self.adas_config: dict = kira_config.get("adapters", {}) or {}
         self.event_queue = event_queue
 
@@ -151,6 +152,9 @@ class AdapterManager:
                     logger.warning(f"Failed to load manifest from {manifest_path}: {e}")
 
             platform_name = manifest.get("name") if isinstance(manifest, dict) else None
+            if not platform_name:
+                logger.warning(f"Manifest without a valid 'name' in {adapter_dir}, skipping")
+                continue
 
             schema_fields: list[BaseConfigField] = []
             schema_path = os.path.join(adapter_dir, "schema.json")
@@ -200,6 +204,11 @@ class AdapterManager:
             found = False
             for attr_name, attr_value in inspect.getmembers(module):
                 if inspect.isclass(attr_value) and issubclass(attr_value, (IMAdapter, SocialMediaAdapter)) and attr_value not in (IMAdapter, SocialMediaAdapter):
+                    registered_dir = cls._manifest_dirs.get(platform_name)
+                    if registered_dir and registered_dir != Path(adapter_dir):
+                        logger.warning(
+                            f"Adapter name '{platform_name}' from {adapter_dir} overrides the one registered from {registered_dir}"
+                        )
                     cls._registry[platform_name] = attr_value
                     cls._manifests[platform_name] = manifest
                     cls._manifest_dirs[platform_name] = Path(adapter_dir)
@@ -454,13 +463,27 @@ class AdapterManager:
         self._adapters[name] = instance
         await self.start_adapter(name)
 
+    def _on_adapter_task_done(self, name: str, task: asyncio.Task):
+        self._adapter_tasks.pop(name, None)
+        if task.cancelled():
+            logger.info(f"Adapter {name} task cancelled")
+            return
+        exc = task.exception()
+        if exc:
+            logger.error(f"Adapter {name} task failed: {exc}", exc_info=exc)
+        else:
+            logger.info(f"Adapter {name} task finished")
+
     async def start_adapter(self, name):
         """start an adapter by specified adapter name"""
         try:
             task = asyncio.create_task(self._adapters[name].start())
-            task.add_done_callback(lambda t: logger.info(f"Started adapter {name}"))
         except Exception as e:
             logger.error(f"Failed to start adapter {name}: {e}")
+            return
+        self._adapter_tasks[name] = task
+        task.add_done_callback(lambda t: self._on_adapter_task_done(name, t))
+        logger.info(f"Started adapter {name}")
 
     async def stop_adapter(self, name: str):
         """stop an adapter by specified adapter name"""
@@ -500,8 +523,11 @@ class AdapterManager:
 
     async def stop_adapters(self):
         """stop all running adapters"""
-        for ada in self._adapters:
-            await self._adapters[ada].stop()
+        for name, adapter in list(self._adapters.items()):
+            try:
+                await adapter.stop()
+            except Exception as e:
+                logger.error(f"Failed to stop adapter {name}: {e}")
 
     def get_adapters(self) -> dict[str, Union[IMAdapter, SocialMediaAdapter]]:
         """return the entire dict where adapters are registered"""

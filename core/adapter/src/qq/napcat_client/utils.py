@@ -1,6 +1,11 @@
 from typing import Union, Optional, Type
 import re
 
+from core.logging_manager import get_logger
+
+
+logger = get_logger("napcat", "blue")
+
 
 class QQMessageType:
     class Text:
@@ -85,8 +90,22 @@ class QQMessageType:
 
 
 class QQMessageChain:
+    SUPPORTED_TYPES = (
+        QQMessageType.Text,
+        QQMessageType.Image,
+        QQMessageType.At,
+        QQMessageType.Reply,
+        QQMessageType.Emoji,
+        QQMessageType.Sticker,
+        QQMessageType.Record,
+    )
+
     def __init__(self, msg_list: Optional[list] = None):
         self.msg_seg_list = msg_list if msg_list else []
+
+    def unsupported_elements(self) -> list:
+        """Return the elements that ``to_list`` is unable to serialise"""
+        return [ele for ele in self.msg_seg_list if not isinstance(ele, self.SUPPORTED_TYPES)]
 
     def to_list(self):
         msg_list = []
@@ -175,4 +194,6 @@ class QQMessageChain:
                         "file": file_param
                     }
                 })
+            else:
+                logger.warning(f"无法序列化的消息段，已跳过：{type(ele).__name__}")
         return msg_list

@@ -77,14 +77,18 @@ class KiraLifecycle:
 
         self.tasks: list[asyncio.Task] = []
 
+        self._stopped = False
+
     async def schedule_tasks(self):
-        self.tasks = [
+        scheduled_tasks: list[asyncio.Task] = [
             # asyncio.create_task(self.sticker_manager.scan_and_register_sticker(), name="sticker_scan")
         ]
-        results = await asyncio.gather(*self.tasks, return_exceptions=True)
+        # Keep the references in self.tasks so stop() can cancel them
+        self.tasks.extend(scheduled_tasks)
+        results = await asyncio.gather(*scheduled_tasks, return_exceptions=True)
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                task = self.tasks[i]
+                task = scheduled_tasks[i]
                 logger.error(f"Scheduled task '{task.get_name()}' failed: {result}")
 
     def _apply_network_env(self):
@@ -258,13 +262,21 @@ class KiraLifecycle:
         )
 
         # ====== schedule tasks ======
-        asyncio.create_task(self.schedule_tasks())
+        self.tasks.append(
+            asyncio.create_task(self.schedule_tasks(), name="schedule_tasks")
+        )
 
         logger.info("All modules initialized, starting message processing loop...")
 
         await self.event_bus.dispatch()
 
     async def stop(self):
+        # stop() is reachable from the launcher teardown and from the WebUI
+        # restart/update routes, so it must never tear down twice
+        if self._stopped:
+            return
+        self._stopped = True
+
         # Fire ON_SHUTDOWN lifecycle event (before any teardown)
         shutdown_handlers = event_handler_reg.get_handlers(EventType.ON_SHUTDOWN)
         for handler in shutdown_handlers:
@@ -294,10 +306,20 @@ class KiraLifecycle:
         if self.event_bus:
             await self.event_bus.stop()
 
+        # stop temp folder monitor
+        if self.temp_monitor:
+            try:
+                await self.temp_monitor.stop_monitoring()
+            except Exception as e:
+                logger.error(f"Temp monitor shutdown error: {e}")
+
+        # cancel all tasks
+        tasks, self.tasks = self.tasks, []
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
         # dispose database manager
         if self.db_manager:
             await self.db_manager.dispose()
-
-        # cancel all tasks
-        for task in self.tasks:
-            task.cancel()

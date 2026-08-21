@@ -1,4 +1,7 @@
+import asyncio
+import json
 import os
+import secrets
 import shutil
 import tempfile
 import zipfile
@@ -7,6 +10,7 @@ from pathlib import Path
 
 from fastapi import Depends, File, HTTPException, Request, UploadFile
 
+from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
 from webui.models import (
     BackupCreateResponse,
@@ -17,10 +21,17 @@ from webui.models import (
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
-from webui.utils import _update_access_token
+from webui.utils import _load_webui_config, _update_access_token
+
+logger = get_logger("webui", "blue")
 
 # Backup directory lives inside the data directory
 BACKUP_DIR_NAME = "backups"
+
+# Credentials that must survive a restore: an archived copy would silently
+# rotate the admin's access token and invalidate every issued session.
+WEBUI_CONFIG_FILE_NAME = "webui.json"
+JWT_SECRET_FILE_NAME = ".jwt_secret"
 
 
 def _get_backup_dir() -> Path:
@@ -41,6 +52,48 @@ def _calc_dir_size(path: Path) -> tuple[int, int]:
                 except OSError:
                     pass
     return total, count
+
+
+def _collect_storage_entries(data_path: Path) -> tuple[list[DirectoryEntry], int]:
+    """Return one entry per top-level subdirectory plus the total data size."""
+    directories: list[DirectoryEntry] = []
+    if data_path.exists():
+        for entry in sorted(data_path.iterdir()):
+            if not entry.is_dir():
+                continue
+            size, count = _calc_dir_size(entry)
+            directories.append(
+                DirectoryEntry(
+                    name=entry.name,
+                    path=str(entry),
+                    size_bytes=size,
+                    file_count=count,
+                )
+            )
+
+    total_size, _ = _calc_dir_size(data_path)
+    return directories, total_size
+
+
+def _write_backup_archive(data_path: Path, zip_path: Path) -> int:
+    """Pack the data directory into *zip_path* and return the archive size."""
+    # Directories to exclude from backup (backups themselves, dist builds, transient data)
+    exclude_dirs = {BACKUP_DIR_NAME, "dist", "__pycache__", "updates", "temp"}
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(data_path):
+            # Prune excluded directories
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+            rel_root = Path(root).relative_to(data_path)
+            for f in files:
+                full_path = Path(root) / f
+                arcname = rel_root / f
+                try:
+                    zf.write(full_path, arcname)
+                except OSError:
+                    pass
+
+    return zip_path.stat().st_size
 
 
 class SettingsRoutes(Routes):
@@ -114,22 +167,7 @@ class SettingsRoutes(Routes):
         data_path = get_data_path()
         disk = shutil.disk_usage(data_path)
 
-        directories = []
-        if data_path.exists():
-            for entry in sorted(data_path.iterdir()):
-                if not entry.is_dir():
-                    continue
-                size, count = _calc_dir_size(entry)
-                directories.append(
-                    DirectoryEntry(
-                        name=entry.name,
-                        path=str(entry),
-                        size_bytes=size,
-                        file_count=count,
-                    )
-                )
-
-        total_size, _ = _calc_dir_size(data_path)
+        directories, total_size = await asyncio.to_thread(_collect_storage_entries, data_path)
 
         return StorageInfoResponse(
             data_path=str(data_path),
@@ -151,23 +189,7 @@ class SettingsRoutes(Routes):
         filename = f"backup_{timestamp}.zip"
         zip_path = backup_dir / filename
 
-        # Directories to exclude from backup (backups themselves, dist builds, transient data)
-        exclude_dirs = {BACKUP_DIR_NAME, "dist", "__pycache__", "updates", "temp"}
-
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for root, dirs, files in os.walk(data_path):
-                # Prune excluded directories
-                dirs[:] = [d for d in dirs if d not in exclude_dirs]
-                rel_root = Path(root).relative_to(data_path)
-                for f in files:
-                    full_path = Path(root) / f
-                    arcname = rel_root / f
-                    try:
-                        zf.write(full_path, arcname)
-                    except OSError:
-                        pass
-
-        size = zip_path.stat().st_size
+        size = await asyncio.to_thread(_write_backup_archive, data_path, zip_path)
         return BackupCreateResponse(
             filename=filename,
             size_bytes=size,
@@ -220,9 +242,41 @@ class SettingsRoutes(Routes):
         if backup_path.resolve().parent != _get_backup_dir().resolve():
             raise HTTPException(status_code=400, detail="Invalid filename")
 
-        return self._do_restore(backup_path)
+        return await asyncio.to_thread(self._do_restore, backup_path)
 
     # ── Restore ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _keep_current_credentials(staging_path: Path) -> None:
+        """Drop the archived JWT secret and re-point the archived access token
+        at the one currently in use, so a restore cannot lock the admin out."""
+        staged_secret = staging_path / JWT_SECRET_FILE_NAME
+        if staged_secret.is_file():
+            staged_secret.unlink()
+
+        staged_config = staging_path / WEBUI_CONFIG_FILE_NAME
+        if not staged_config.is_file():
+            return
+
+        try:
+            restored_config = json.loads(staged_config.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Could not read {WEBUI_CONFIG_FILE_NAME} from the archive: {e}")
+            staged_config.unlink()
+            return
+
+        if not isinstance(restored_config, dict):
+            staged_config.unlink()
+            return
+
+        current_token = _load_webui_config().get("access_token")
+        if current_token:
+            restored_config["access_token"] = current_token
+        else:
+            restored_config.pop("access_token", None)
+        staged_config.write_text(
+            json.dumps(restored_config, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
     def _do_restore(self, zip_source) -> RestoreResponse:
         """Extract a zip into a staging dir, validate, then copy to data directory."""
@@ -251,7 +305,10 @@ class SettingsRoutes(Routes):
                             with zf.open(member) as src, open(target, "wb") as dst:
                                 shutil.copyfileobj(src, dst)
 
-                # Step 2: Copy validated files to data_path
+                # Step 2: Keep the live credentials instead of the archived ones
+                self._keep_current_credentials(staging_path)
+
+                # Step 3: Copy validated files to data_path
                 for src_file in staging_path.rglob("*"):
                     rel = src_file.relative_to(staging_path)
                     dst_file = data_path / rel
@@ -274,7 +331,7 @@ class SettingsRoutes(Routes):
             raise HTTPException(status_code=400, detail="Only .zip files are accepted")
 
         file.file.seek(0)
-        return self._do_restore(file.file)
+        return await asyncio.to_thread(self._do_restore, file.file)
 
     # ── Access Token ────────────────────────────────────────────────────────
 
@@ -282,7 +339,10 @@ class SettingsRoutes(Routes):
         if request.app.state.disable_auth:
             raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
         current_token = request.app.state.access_token
-        if body.old_token != current_token:
+        if not secrets.compare_digest(
+            (body.old_token or "").encode("utf-8"),
+            (current_token or "").encode("utf-8"),
+        ):
             raise HTTPException(status_code=400, detail="Old token is incorrect")
         if not body.new_token or len(body.new_token) < 6:
             raise HTTPException(status_code=400, detail="New token must be at least 6 characters")

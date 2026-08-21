@@ -6,12 +6,16 @@ from openai import (
     NOT_GIVEN,
 )
 import time
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from core.provider import ModelInfo, LLMModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.logging_manager import get_logger
-from core.utils.model_clients import build_llm_default_headers
+from core.utils.model_clients import (
+    apply_stream_options,
+    build_llm_default_headers,
+    create_chat_stream,
+)
 from core.utils.media_refs import resolve_media_references
 
 logger = get_logger("provider", "purple")
@@ -47,6 +51,7 @@ class DeepSeekLLMClient(LLMModelClient):
         model_config = self.model.model_config or {}
         thinking_enabled = model_config.get("thinking_enabled", True)
         reasoning_effort = model_config.get("reasoning_effort", "high")
+        timeout = model_config.get("timeout")
         section_advanced = model_config.get("section_advanced") or {}
         user_extra_body = section_advanced.get("extra_body")
 
@@ -65,6 +70,7 @@ class DeepSeekLLMClient(LLMModelClient):
             messages=[m if isinstance(m, dict) else m.to_dict() for m in request.messages],
             tools=request.tools if request.tools else NOT_GIVEN,
             tool_choice=request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
+            timeout=timeout if timeout is not None else NOT_GIVEN,
         )
 
         if thinking_enabled:
@@ -80,13 +86,13 @@ class DeepSeekLLMClient(LLMModelClient):
         return kwargs
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
-        client = self._build_client()
         messages = await resolve_media_references(request.messages)
         request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
 
         try:
             start_time = time.perf_counter()
-            response = await client.chat.completions.create(**request_kwargs)
+            async with self._build_client() as client:
+                response = await client.chat.completions.create(**request_kwargs)
             end_time = time.perf_counter()
 
             llm_resp = LLMResponse("")
@@ -132,64 +138,74 @@ class DeepSeekLLMClient(LLMModelClient):
             raise
 
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
-        client = self._build_client()
         messages = await resolve_media_references(request.messages)
         request_kwargs = self._build_request_kwargs(
             request, messages=messages, stream=True, **kwargs
         )
-        request_kwargs["stream_options"] = {"include_usage": True}
+        apply_stream_options(request_kwargs)
+
+        # The final chunk is held back until the stream ends so that
+        # finish_reason and token usage are reported together, exactly once.
+        pending_final: Optional[LLMStreamChunk] = None
+        usage: Optional[dict] = None
 
         try:
-            stream = await client.chat.completions.create(**request_kwargs)
-            async for event in stream:
-                # Usage-only event (sent by OpenAI API after the final choice chunk)
-                if not event.choices:
-                    if event.usage:
-                        yield LLMStreamChunk(
-                            is_final=True,
-                            usage={
+            async with self._build_client() as client:
+                stream = await create_chat_stream(client, request_kwargs)
+                async for event in stream:
+                    # Usage-only event (sent by OpenAI API after the final choice chunk)
+                    if not event.choices:
+                        if event.usage:
+                            usage = {
                                 "input_tokens": event.usage.prompt_tokens,
                                 "output_tokens": event.usage.completion_tokens,
                                 "cached_tokens": getattr(event.usage, "prompt_cache_hit_tokens", None),
-                            },
-                        )
-                    continue
+                            }
+                        continue
 
-                choice = event.choices[0]
-                delta = choice.delta
+                    choice = event.choices[0]
+                    delta = choice.delta
 
-                chunk = LLMStreamChunk()
+                    chunk = LLMStreamChunk()
 
-                # Text content
-                if delta.content:
-                    chunk.delta_text = delta.content
+                    # Text content
+                    if delta.content:
+                        chunk.delta_text = delta.content
 
-                # DeepSeek reasoning_content
-                reasoning = getattr(delta, "reasoning_content", "") or ""
-                if reasoning:
-                    chunk.delta_reasoning = reasoning
+                    # DeepSeek reasoning_content
+                    reasoning = getattr(delta, "reasoning_content", "") or ""
+                    if reasoning:
+                        chunk.delta_reasoning = reasoning
 
-                # Tool calls — pass through raw incremental deltas from SDK
-                if delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        fragment = {
-                            "index": tc.index,
-                            "id": tc.id or "",
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name if tc.function and tc.function.name else "",
-                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
-                            },
-                        }
-                        chunk.tool_calls_delta.append(fragment)
+                    # Tool calls — pass through raw incremental deltas from SDK
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            fragment = {
+                                "index": tc.index,
+                                "id": tc.id or "",
+                                "type": "function",
+                                "function": {
+                                    "name": tc.function.name if tc.function and tc.function.name else "",
+                                    "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
+                                },
+                            }
+                            chunk.tool_calls_delta.append(fragment)
 
-                # Finish reason
-                finish_reason = choice.finish_reason
-                if finish_reason:
-                    chunk.is_final = True
-                    chunk.finish_reason = finish_reason
+                    # Finish reason
+                    finish_reason = choice.finish_reason
+                    if finish_reason:
+                        chunk.is_final = True
+                        chunk.finish_reason = finish_reason
+                        pending_final = chunk
+                        continue
 
-                yield chunk
+                    yield chunk
+
+                if pending_final is not None:
+                    pending_final.usage = usage
+                    yield pending_final
+                elif usage is not None:
+                    yield LLMStreamChunk(is_final=True, usage=usage)
 
         except APIStatusError:
             raise

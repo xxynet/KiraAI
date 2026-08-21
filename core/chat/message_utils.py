@@ -183,7 +183,8 @@ class KiraMessageBatchEvent:
     _is_stopped: bool = False
 
     def __post_init__(self):
-        self.event_id = uuid.uuid4().hex
+        if not self.event_id:
+            self.event_id = uuid.uuid4().hex
 
     def is_group_message(self):
         return self.messages[-1].group is not None

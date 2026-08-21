@@ -3,7 +3,7 @@ import json
 import time
 from datetime import datetime
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from core.adapter.adapter_utils import IMAdapter
 from core.logging_manager import get_logger
@@ -27,6 +27,10 @@ from core.chat.message_elements import (
 from core.chat import Session, Group, User
 
 from .napcat_client import NapCatWebSocketClient, QQMessageChain, QQMessageType
+
+
+# Elements that need a dedicated API call instead of a plain message chain
+SPECIAL_ELEMENT_TYPES = (Poke, File, Video, Forward)
 
 
 def extract_card_info(card_json: str) -> dict:
@@ -67,6 +71,7 @@ class QQAdapter(IMAdapter):
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
         self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "selfie", "file", "video", "forward"]
         self.bot: NapCatWebSocketClient = NapCatWebSocketClient()
+        self._start_task: Optional[asyncio.Task] = None
         self.logger = get_logger(info.name, "blue")
         self.debug_mode = self.config.get("debug_mode", False)
         self.debug_mode_list = self.config.get("debug_mode_list", [])
@@ -132,7 +137,15 @@ class QQAdapter(IMAdapter):
         await self.bot.run(bt_uin=self.config["bot_pid"], ws_uri=self.config["ws_uri"], ws_token=self.config["ws_token"])
 
     async def start(self):
-        task = asyncio.create_task(self.start_blocking())
+        self._start_task = asyncio.create_task(self.start_blocking())
+        self._start_task.add_done_callback(self._on_start_task_done)
+
+    def _on_start_task_done(self, task: asyncio.Task):
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            self.logger.error(f"QQ 适配器运行任务异常退出: {exc}", exc_info=exc)
 
     async def stop(self):
         await self.bot.close()
@@ -140,13 +153,68 @@ class QQAdapter(IMAdapter):
     def get_client(self) -> NapCatWebSocketClient:
         return self.bot
 
+    @staticmethod
+    def _merge_sent_results(results: list) -> KiraIMSentResult:
+        """Fold the per-element results of one message chain into a single result"""
+        merged = KiraIMSentResult(None)
+        errors = []
+        for res in results:
+            if res.message_id:
+                merged.message_id = res.message_id
+            if not res.ok:
+                merged.ok = False
+                if res.err:
+                    errors.append(res.err)
+        merged.is_notice = bool(results) and all(res.is_notice for res in results)
+        merged.err = "; ".join(errors)
+        return merged
+
     async def send_group_message(self, group_id, send_message_obj):
         try:
             message_chain = await self._process_outgoing_message(send_message_obj)
             if not message_chain:
                 self.logger.warning("处理后的消息链为空，跳过群消息发送")
                 return KiraIMSentResult(None, ok=False, err="Empty message chain after processing")
-            ele = message_chain[0]
+
+            plain_elements = [ele for ele in message_chain if not isinstance(ele, SPECIAL_ELEMENT_TYPES)]
+
+            results = []
+            if plain_elements and not all(isinstance(ele, QQMessageType.Reply) for ele in plain_elements):
+                results.append(await self._send_plain_group_message(group_id, plain_elements))
+            for ele in message_chain:
+                if isinstance(ele, SPECIAL_ELEMENT_TYPES):
+                    results.append(await self._send_group_element(group_id, ele))
+
+            if not results:
+                self.logger.warning("消息链中没有可发送的内容，跳过群消息发送")
+                return KiraIMSentResult(None, ok=False, err="Nothing to send in message chain")
+            return self._merge_sent_results(results)
+        except Exception as e:
+            return KiraIMSentResult(None, ok=False, err=str(e))
+
+    async def _send_plain_group_message(self, group_id, elements: list) -> KiraIMSentResult:
+        qq_message_chain = QQMessageChain(elements)
+        unsupported = qq_message_chain.unsupported_elements()
+        result = await self.bot.send_group_message(group_id=group_id, msg=qq_message_chain)
+        status = result.get("status")
+        retcode = result.get("retcode")
+        msg_res = KiraIMSentResult(None)
+        if status == "failed":
+            msg_res.ok = False
+            if retcode == 1200:
+                msg_res.err = "禁言中或达到发言频率限制，消息发送失败"
+            else:
+                msg_res.err = f"未知错误，消息发送失败，错误码：{retcode}"
+            return msg_res
+        msg_res.message_id = str((result.get("data", {}) or {}).get("message_id"))
+        if unsupported:
+            msg_res.ok = False
+            msg_res.err = f"消息段无法发送：{[type(ele).__name__ for ele in unsupported]}"
+            self.logger.warning(msg_res.err)
+        return msg_res
+
+    async def _send_group_element(self, group_id, ele) -> KiraIMSentResult:
+        try:
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid, group_id=group_id)
                 return KiraIMSentResult(message_id=None, is_notice=True)
@@ -274,34 +342,54 @@ class QQAdapter(IMAdapter):
                     msg_res.err = f"Error occurred while forwarding message: {e}"
                 return msg_res
 
-            message_chain = QQMessageChain(message_chain)
-            result = await self.bot.send_group_message(group_id=group_id, msg=message_chain)
-            status = result.get("status")
-            retcode = result.get("retcode")
-            msg_res = KiraIMSentResult(None)
-            if status == "failed":
-                msg_res.ok = False
-                if retcode == 1200:
-                    msg_res.err = "禁言中或达到发言频率限制，消息发送失败"
-                else:
-                    msg_res.err = f"未知错误，消息发送失败，错误码：{retcode}"
-                return msg_res
-            message_id = str((result.get("data", {}) or {}).get("message_id"))
-            msg_res.message_id = message_id
-            return msg_res
+            return KiraIMSentResult(None, ok=False, err=f"Unsupported message element: {type(ele).__name__}")
         except Exception as e:
             return KiraIMSentResult(None, ok=False, err=str(e))
 
     async def send_direct_message(self, user_id, send_message_obj):
-        msg_res = KiraIMSentResult(None)
         try:
             message_chain = await self._process_outgoing_message(send_message_obj)
             if not message_chain:
                 self.logger.warning("处理后的消息链为空，跳过私聊消息发送")
-                msg_res.ok = False
-                msg_res.err = "Empty message chain after processing"
-                return msg_res
-            ele = message_chain[0]
+                return KiraIMSentResult(None, ok=False, err="Empty message chain after processing")
+
+            plain_elements = [ele for ele in message_chain if not isinstance(ele, SPECIAL_ELEMENT_TYPES)]
+
+            results = []
+            if plain_elements and not all(isinstance(ele, QQMessageType.Reply) for ele in plain_elements):
+                results.append(await self._send_plain_direct_message(user_id, plain_elements))
+            for ele in message_chain:
+                if isinstance(ele, SPECIAL_ELEMENT_TYPES):
+                    results.append(await self._send_direct_element(user_id, ele))
+
+            if not results:
+                self.logger.warning("消息链中没有可发送的内容，跳过私聊消息发送")
+                return KiraIMSentResult(None, ok=False, err="Nothing to send in message chain")
+            return self._merge_sent_results(results)
+        except Exception as e:
+            return KiraIMSentResult(None, ok=False, err=str(e))
+
+    async def _send_plain_direct_message(self, user_id, elements: list) -> KiraIMSentResult:
+        qq_message_chain = QQMessageChain(elements)
+        unsupported = qq_message_chain.unsupported_elements()
+        result = await self.bot.send_direct_message(user_id=user_id, msg=qq_message_chain)
+        status = result.get("status")
+        retcode = result.get("retcode")
+        msg_res = KiraIMSentResult(None)
+        if status == "failed":
+            msg_res.ok = False
+            msg_res.err = f"未知错误，消息发送失败，错误码：{retcode}"
+            return msg_res
+        msg_res.message_id = str((result.get("data", {}) or {}).get("message_id"))
+        if unsupported:
+            msg_res.ok = False
+            msg_res.err = f"消息段无法发送：{[type(ele).__name__ for ele in unsupported]}"
+            self.logger.warning(msg_res.err)
+        return msg_res
+
+    async def _send_direct_element(self, user_id, ele) -> KiraIMSentResult:
+        msg_res = KiraIMSentResult(None)
+        try:
             if isinstance(ele, Poke):
                 await self.bot.send_poke(user_id=ele.pid)
                 msg_res.is_notice = True
@@ -428,16 +516,8 @@ class QQAdapter(IMAdapter):
                     msg_res.err = f"Error occurred while forwarding message: {e}"
                 return msg_res
 
-            message_chain = QQMessageChain(message_chain)
-            result = await self.bot.send_direct_message(user_id=user_id, msg=message_chain)
-            status = result.get("status")
-            retcode = result.get("retcode")
-            if status == "failed":
-                msg_res.ok = False
-                msg_res.err = f"未知错误，消息发送失败，错误码：{retcode}"
-                return msg_res
-            message_id = str((result.get("data", {}) or {}).get("message_id"))
-            msg_res.message_id = message_id
+            msg_res.ok = False
+            msg_res.err = f"Unsupported message element: {type(ele).__name__}"
         except Exception as e:
             msg_res.ok = False
             msg_res.err = str(e)

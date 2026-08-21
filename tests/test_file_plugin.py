@@ -1,4 +1,6 @@
 import asyncio
+import os
+import subprocess
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -117,17 +119,50 @@ async def test_filter_tools_disables_background_manager_without_exec(file_plugin
 @pytest.mark.anyio
 async def test_exec_uses_resolved_work_dir(file_plugin, tmp_path):
     event = SimpleNamespace(sid="test:dm:1")
-    completed = SimpleNamespace(stdout="ok", stderr="", returncode=0)
 
-    with patch(
-        "core.plugin.builtin_plugins.file.main.subprocess.run",
-        return_value=completed,
-    ) as run:
+    with patch("core.plugin.builtin_plugins.file.main.subprocess.Popen") as popen:
+        process = popen.return_value.__enter__.return_value
+        process.communicate.return_value = ("ok", "")
+        process.returncode = 0
         result = await file_plugin.exec(event, "echo test", str(tmp_path))
 
     assert result == "Shell command output:\nok"
-    assert run.call_args.kwargs["cwd"] == tmp_path.resolve()
-    assert run.call_args.kwargs["timeout"] == 30
+    assert popen.call_args.kwargs["cwd"] == tmp_path.resolve()
+    assert process.communicate.call_args.kwargs["timeout"] == 30
+
+
+@pytest.mark.anyio
+async def test_exec_runs_shell_in_its_own_process_group(file_plugin, tmp_path):
+    event = SimpleNamespace(sid="test:dm:1")
+
+    with patch("core.plugin.builtin_plugins.file.main.subprocess.Popen") as popen:
+        process = popen.return_value.__enter__.return_value
+        process.communicate.return_value = ("ok", "")
+        process.returncode = 0
+        await file_plugin.exec(event, "echo test", str(tmp_path))
+
+    kwargs = popen.call_args.kwargs
+    if os.name == "nt":
+        assert kwargs["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        assert kwargs["start_new_session"] is True
+
+
+@pytest.mark.anyio
+async def test_exec_timeout_kills_the_whole_process_group(file_plugin, tmp_path):
+    event = SimpleNamespace(sid="test:dm:1")
+
+    with patch("core.plugin.builtin_plugins.file.main.subprocess.Popen") as popen:
+        process = popen.return_value.__enter__.return_value
+        process.pid = 4242
+        process.returncode = None
+        process.communicate.side_effect = subprocess.TimeoutExpired("echo test", 30)
+
+        with patch("core.plugin.builtin_plugins.file.main.FilePlugin._kill_process_group") as kill:
+            result = await file_plugin.exec(event, "echo test", str(tmp_path))
+
+    kill.assert_called_once_with(process)
+    assert "timed out after 30 seconds" in result
 
 
 @pytest.mark.anyio
@@ -135,11 +170,11 @@ async def test_exec_rejects_missing_work_dir(file_plugin, tmp_path):
     event = SimpleNamespace(sid="test:dm:1")
     missing_dir = tmp_path / "missing"
 
-    with patch("core.plugin.builtin_plugins.file.main.subprocess.run") as run:
+    with patch("core.plugin.builtin_plugins.file.main.subprocess.Popen") as popen:
         result = await file_plugin.exec(event, "echo test", str(missing_dir))
 
     assert result == f"Working directory not found: {missing_dir}"
-    run.assert_not_called()
+    popen.assert_not_called()
 
 
 @pytest.mark.anyio

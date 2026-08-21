@@ -96,8 +96,10 @@ class TelegramAdapter(IMAdapter):
         # Register command handlers
         self.app.add_handler(CommandHandler("start", self._cmd_start))
         self.app.add_handler(CommandHandler("help", self._cmd_help))
-        # Register message handler for text, images, voice, etc. (excluding edited messages)
-        self.app.add_handler(MessageHandler(filters.ALL, self._on_message))
+        # Register message handler for text, images, voice, etc.
+        # UpdateType.MESSAGE only matches update.message, so edited messages and
+        # (edited) channel posts are excluded
+        self.app.add_handler(MessageHandler(filters.UpdateType.MESSAGE, self._on_message))
 
         # Initialize and start the application asynchronously
         try:
@@ -139,6 +141,10 @@ class TelegramAdapter(IMAdapter):
         msg = update.effective_message
         chat = msg.chat
         user = msg.from_user
+
+        if user is None:
+            logger.debug(f"[{self.info.name}] Ignored message without sender in chat {chat.id}")
+            return
 
         if chat.type in ("group", "supergroup"):
 
@@ -212,7 +218,7 @@ class TelegramAdapter(IMAdapter):
                     ),
                     is_mentioned=is_mentioned,
                     message_id=str(msg.id),
-                    self_id=self.config["bot_pid"],
+                    self_id=self.config.get("bot_pid", ""),
                     chain=message_chain,
                 ),
                 timestamp=int(msg.date.timestamp() or time.time())
@@ -243,7 +249,7 @@ class TelegramAdapter(IMAdapter):
                     ),
                     is_mentioned=True,
                     message_id=str(msg.id),
-                    self_id=self.config["bot_pid"],
+                    self_id=self.config.get("bot_pid", ""),
                     chain=message_chain,
                 ),
                 timestamp=int(msg.date.timestamp() or time.time())
@@ -329,22 +335,28 @@ class TelegramAdapter(IMAdapter):
 
         # Voice/Audio
         if tg_message.voice:
-            voice_id = tg_message.voice.file_id
-            voice_file = await self.app.bot.get_file(voice_id)
-            voice_url = voice_file.file_path
+            try:
+                voice_id = tg_message.voice.file_id
+                voice_file = await self.app.bot.get_file(voice_id)
+                voice_url = voice_file.file_path
 
-            voice_content = await get_file_content(voice_url)
-            base64_data = base64.b64encode(voice_content)
-            elements.append(Record(record=base64_data.decode('utf-8')))
+                voice_content = await get_file_content(voice_url)
+                base64_data = base64.b64encode(voice_content)
+                elements.append(Record(record=base64_data.decode('utf-8')))
+            except Exception:
+                elements.append(Text("[Voice]"))
 
         elif tg_message.audio:
-            audio_id = tg_message.audio.file_id
-            audio_file = await self.app.bot.get_file(audio_id)
-            audio_url = audio_file.file_path
+            try:
+                audio_id = tg_message.audio.file_id
+                audio_file = await self.app.bot.get_file(audio_id)
+                audio_url = audio_file.file_path
 
-            audio_content = await get_file_content(audio_url)
-            base64_data = base64.b64encode(audio_content)
-            elements.append(Record(record=base64_data.decode('utf-8')))
+                audio_content = await get_file_content(audio_url)
+                base64_data = base64.b64encode(audio_content)
+                elements.append(Record(record=base64_data.decode('utf-8')))
+            except Exception:
+                elements.append(Text("[Audio]"))
 
         # Document (File)
         if tg_message.document:
@@ -421,7 +433,11 @@ class TelegramAdapter(IMAdapter):
 
             # Reply element: capture target message id and advance
             if isinstance(ele, Reply):
-                reply_to_id = int(ele.message_id)
+                try:
+                    reply_to_id = int(ele.message_id)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid reply target message id: {ele.message_id!r}")
+                    reply_to_id = None
                 idx += 1
                 continue
 

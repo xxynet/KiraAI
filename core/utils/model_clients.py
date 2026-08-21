@@ -8,8 +8,11 @@ from core.provider import LLMModelClient, TTSModelClient, ImageModelClient, Embe
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.chat.message_elements import Record
 from core.config.default import VERSION
+from core.logging_manager import get_logger
 from core.utils.media_refs import resolve_media_references
 
+
+logger = get_logger("provider", "purple")
 
 DEFAULT_USER_AGENT = f"kira-ai/{VERSION.removeprefix('v')}"
 
@@ -35,6 +38,34 @@ def build_llm_default_headers(provider_config: dict | None) -> dict[str, str]:
     if not has_user_agent:
         headers["User-Agent"] = DEFAULT_USER_AGENT
     return headers
+
+
+def apply_stream_options(request_kwargs: dict) -> None:
+    """Ask for token usage by default; a falsy override opts out entirely."""
+    request_kwargs.setdefault("stream_options", {"include_usage": True})
+    if not request_kwargs["stream_options"]:
+        request_kwargs.pop("stream_options")
+
+
+async def create_chat_stream(client: AsyncOpenAI, request_kwargs: dict):
+    """Open a streaming chat completion tolerating gateways without stream_options.
+
+    Some self-described OpenAI-compatible endpoints reject ``stream_options``
+    with a 4xx while accepting the rest of the request. Retry once without it
+    so streaming degrades to "no usage reporting" instead of failing.
+    """
+    try:
+        return await client.chat.completions.create(**request_kwargs)
+    except APIStatusError as e:
+        if not request_kwargs.get("stream_options"):
+            raise
+        logger.warning(
+            f"Stream request rejected with stream_options ({e}); "
+            f"retrying without token usage reporting"
+        )
+        request_kwargs.pop("stream_options", None)
+        return await client.chat.completions.create(**request_kwargs)
+
 
 class OpenAICompatibleLLMClient(LLMModelClient):
     def __init__(self, model: ModelInfo):
@@ -74,12 +105,12 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         return kwargs
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
-        client = self._build_client()
         messages = await resolve_media_references(request.messages)
         request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
         try:
             start_time = time.perf_counter()
-            response = await client.chat.completions.create(**request_kwargs)
+            async with self._build_client() as client:
+                response = await client.chat.completions.create(**request_kwargs)
             end_time = time.perf_counter()
             llm_resp = LLMResponse("")
             llm_resp.time_consumed = round(end_time - start_time, 2)
@@ -126,66 +157,76 @@ class OpenAICompatibleLLMClient(LLMModelClient):
             raise
 
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
-        client = self._build_client()
         messages = await resolve_media_references(request.messages)
         request_kwargs = self._build_request_kwargs(
             request, messages=messages, stream=True, **kwargs
         )
-        request_kwargs["stream_options"] = {"include_usage": True}
+        apply_stream_options(request_kwargs)
+
+        # The final chunk is held back until the stream ends so that
+        # finish_reason and token usage are reported together, exactly once.
+        pending_final: Optional[LLMStreamChunk] = None
+        usage: Optional[dict] = None
 
         try:
-            stream = await client.chat.completions.create(**request_kwargs)
-            async for event in stream:
-                # Usage-only event (sent by OpenAI API after the final choice chunk)
-                if not event.choices:
-                    if event.usage:
-                        prompt_details = getattr(event.usage, "prompt_tokens_details", None)
-                        cached = getattr(prompt_details, "cached_tokens", None) if prompt_details else None
-                        yield LLMStreamChunk(
-                            is_final=True,
-                            usage={
+            async with self._build_client() as client:
+                stream = await create_chat_stream(client, request_kwargs)
+                async for event in stream:
+                    # Usage-only event (sent by OpenAI API after the final choice chunk)
+                    if not event.choices:
+                        if event.usage:
+                            prompt_details = getattr(event.usage, "prompt_tokens_details", None)
+                            cached = getattr(prompt_details, "cached_tokens", None) if prompt_details else None
+                            usage = {
                                 "input_tokens": event.usage.prompt_tokens,
                                 "output_tokens": event.usage.completion_tokens,
                                 "cached_tokens": cached,
-                            },
-                        )
-                    continue
+                            }
+                        continue
 
-                choice = event.choices[0]
-                delta = choice.delta
+                    choice = event.choices[0]
+                    delta = choice.delta
 
-                chunk = LLMStreamChunk()
+                    chunk = LLMStreamChunk()
 
-                # Text content
-                if delta.content:
-                    chunk.delta_text = delta.content
+                    # Text content
+                    if delta.content:
+                        chunk.delta_text = delta.content
 
-                # Reasoning content (DeepSeek / extended models)
-                reasoning = getattr(delta, "reasoning_content", "") or ""
-                if reasoning:
-                    chunk.delta_reasoning = reasoning
+                    # Reasoning content (DeepSeek / extended models)
+                    reasoning = getattr(delta, "reasoning_content", "") or ""
+                    if reasoning:
+                        chunk.delta_reasoning = reasoning
 
-                # Tool calls — pass through raw incremental deltas from SDK
-                if delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        fragment = {
-                            "index": tc.index,
-                            "id": tc.id or "",
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name if tc.function and tc.function.name else "",
-                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
-                            },
-                        }
-                        chunk.tool_calls_delta.append(fragment)
+                    # Tool calls — pass through raw incremental deltas from SDK
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            fragment = {
+                                "index": tc.index,
+                                "id": tc.id or "",
+                                "type": "function",
+                                "function": {
+                                    "name": tc.function.name if tc.function and tc.function.name else "",
+                                    "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
+                                },
+                            }
+                            chunk.tool_calls_delta.append(fragment)
 
-                # Finish reason
-                finish_reason = choice.finish_reason
-                if finish_reason:
-                    chunk.is_final = True
-                    chunk.finish_reason = finish_reason
+                    # Finish reason
+                    finish_reason = choice.finish_reason
+                    if finish_reason:
+                        chunk.is_final = True
+                        chunk.finish_reason = finish_reason
+                        pending_final = chunk
+                        continue
 
-                yield chunk
+                    yield chunk
+
+                if pending_final is not None:
+                    pending_final.usage = usage
+                    yield pending_final
+                elif usage is not None:
+                    yield LLMStreamChunk(is_final=True, usage=usage)
 
         except APIStatusError:
             raise
@@ -206,21 +247,20 @@ class OpenAICompatibleTTSClient(TTSModelClient):
         default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
-        client = AsyncOpenAI(
+        async with AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
             default_headers=default_headers,
-        )
-
-        async with client.audio.speech.with_streaming_response.create(
-                model=self.model.model_id,
-                voice=self.model.model_config.get("voice_name", ""),
-                input=text,
-                response_format="mp3"
-        ) as response:
-            audio_bytes = b""
-            async for chunk in response.iter_bytes():
-                audio_bytes += chunk
+        ) as client:
+            async with client.audio.speech.with_streaming_response.create(
+                    model=self.model.model_id,
+                    voice=self.model.model_config.get("voice_name", ""),
+                    input=text,
+                    response_format="mp3"
+            ) as response:
+                audio_bytes = b""
+                async for chunk in response.iter_bytes():
+                    audio_bytes += chunk
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str)

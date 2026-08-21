@@ -150,7 +150,7 @@ class SkillsManager:
             if not s.enabled:
                 continue
 
-            p.content += f"- **{s.name}**: {s.description}\n  Path: {str(s.path)}"
+            p.content += f"- **{s.name}**: {s.description}\n  Path: {str(s.path)}\n"
 
         return p
 

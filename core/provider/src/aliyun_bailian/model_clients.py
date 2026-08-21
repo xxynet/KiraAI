@@ -17,6 +17,7 @@ from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionEr
 
 from core.provider import (
     ModelInfo,
+    ProviderAPIError,
     TTSModelClient,
     STTModelClient,
     ImageModelClient,
@@ -34,8 +35,9 @@ logger = get_logger("provider", "purple")
 # CosyVoice non-streaming call limit (characters)
 _MAX_TEXT_CHARS = 20000
 
-# Protect dashscope global api_key / websocket url mutation across concurrent calls
-_DASHSCOPE_LOCK = threading.Lock()
+# Cap concurrent CosyVoice child processes without serialising synthesis
+_COSYVOICE_MAX_CONCURRENCY = 3
+_COSYVOICE_SLOTS = threading.BoundedSemaphore(_COSYVOICE_MAX_CONCURRENCY)
 
 
 def _cosyvoice_synth_worker(payload: dict, result_queue: multiprocessing.Queue) -> None:
@@ -257,10 +259,10 @@ class BailianEmbeddingClient(EmbeddingModelClient):
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Bailian Embedding API error: {e}")
-            return []
+            raise ProviderAPIError(f"Bailian embedding request failed: {e}") from e
         except Exception as e:
             logger.error(f"Bailian Embedding error: {e}")
-            return []
+            raise ProviderAPIError(f"Bailian embedding request failed: {e}") from e
 
 
 # ───────────────────────────── Rerank ─────────────────────────────
@@ -285,7 +287,7 @@ class BailianRerankClient(RerankModelClient):
         api_key = (mp.get("api_key") or "").strip()
         if not api_key:
             logger.error("Bailian Rerank: api_key is not configured")
-            return []
+            raise ProviderAPIError("Bailian rerank: api_key is not configured")
 
         model_id = self.model.model_id
         timeout = int(mc.get("timeout", 30) or 30)
@@ -347,7 +349,7 @@ class BailianRerankClient(RerankModelClient):
                 data = resp.json()
         except Exception as e:
             logger.error(f"Bailian Rerank failed: {e}")
-            return []
+            raise ProviderAPIError(f"Bailian rerank request failed: {e}") from e
 
         # Normalize results from different response shapes
         raw_results = []
@@ -1614,7 +1616,7 @@ class BailianSTTClient(STTModelClient):
         api_key = (mp.get("api_key") or "").strip()
         if not api_key:
             logger.error("Bailian STT: api_key is not configured")
-            return ""
+            raise ProviderAPIError("Bailian STT: api_key is not configured")
 
         model_id = self.model.model_id or "paraformer-realtime-v2"
         sample_rate = int(mc.get("sample_rate", 16000) or 16000)
@@ -1670,12 +1672,14 @@ class BailianSTTClient(STTModelClient):
                 timeout=timeout,
             )
             return text or ""
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as e:
             logger.error(f"Bailian STT timed out after {timeout}s (model={model_id})")
-            return ""
+            raise ProviderAPIError(
+                f"Bailian STT timed out after {timeout}s (model={model_id})"
+            ) from e
         except Exception as e:
             logger.error(f"Bailian STT failed: {e}")
-            return ""
+            raise ProviderAPIError(f"Bailian STT failed: {e}") from e
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 try:
@@ -2043,12 +2047,12 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         api_key = (mp.get("api_key") or "").strip()
         if not api_key:
             logger.error("Bailian CosyVoice TTS: api_key is not configured")
-            return None
+            raise ProviderAPIError("Bailian CosyVoice TTS: api_key is not configured")
 
         voice = (mc.get("voice") or "").strip()
         if not voice:
             logger.error("Bailian CosyVoice TTS: voice is not configured")
-            return None
+            raise ProviderAPIError("Bailian CosyVoice TTS: voice is not configured")
 
         model_id = self.model.model_id
         region = _region(mp)
@@ -2104,13 +2108,15 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
                 logger.error(
                     f"Bailian CosyVoice TTS timed out after {timeout}s (model={model_id})"
                 )
-            else:
-                logger.error(f"Bailian CosyVoice TTS failed: {e}")
-            return None
+                raise ProviderAPIError(
+                    f"Bailian CosyVoice TTS timed out after {timeout}s (model={model_id})"
+                ) from e
+            logger.error(f"Bailian CosyVoice TTS failed: {e}")
+            raise ProviderAPIError(f"Bailian CosyVoice TTS failed: {e}") from e
 
         if not audio_bytes:
             logger.error("Bailian CosyVoice TTS returned empty audio")
-            return None
+            raise ProviderAPIError("Bailian CosyVoice TTS returned empty audio")
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str, mime=_resolve_mime(audio_format))
@@ -2148,11 +2154,11 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
             )
         timeout_ms = max(1, int(remaining * 1000))
 
-        # Serialize CosyVoice workers so we do not spawn unbounded processes.
-        # Unlike the old lock-around-in-process-call path, parent api_key is not
-        # mutated; the lock only limits concurrent child processes.
-        lock_budget = max(0.01, deadline - time.monotonic())
-        acquired = _DASHSCOPE_LOCK.acquire(timeout=lock_budget)
+        # Bound the number of concurrent CosyVoice workers so we do not spawn
+        # unbounded processes. Parent api_key is never mutated, so slots only
+        # limit concurrency and do not need to serialise synthesis.
+        slot_budget = max(0.01, deadline - time.monotonic())
+        acquired = _COSYVOICE_SLOTS.acquire(timeout=slot_budget)
         if not acquired:
             raise TimeoutError(
                 f"CosyVoice waiting for synthesis slot timed out after {call_timeout}s"
@@ -2237,7 +2243,7 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
             finally:
                 if proc is not None and proc.is_alive():
                     self._terminate_cosyvoice_worker(proc)
-                _DASHSCOPE_LOCK.release()
+                _COSYVOICE_SLOTS.release()
 
     @staticmethod
     def _terminate_cosyvoice_worker(proc: multiprocessing.Process | None) -> None:

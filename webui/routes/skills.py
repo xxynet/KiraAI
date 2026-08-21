@@ -80,6 +80,10 @@ class SkillsRoutes(Routes):
     def _folder_size(path) -> int:
         return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
 
+    @classmethod
+    def _folder_sizes(cls, paths: List[Any]) -> List[int]:
+        return [cls._folder_size(path) for path in paths]
+
     @staticmethod
     def _create_skill_archive(skill_path, archive_path) -> None:
         with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -94,9 +98,12 @@ class SkillsRoutes(Routes):
             skills_manager = self.lifecycle.skills_manager
 
         try:
-            skills_info = skills_manager.skills_info
+            skills_info = list(skills_manager.skills_info)
+            sizes = await asyncio.to_thread(
+                self._folder_sizes, [skill.path for skill in skills_info]
+            )
             items: List[SkillItem] = []
-            for skill in skills_info:
+            for skill, size_bytes in zip(skills_info, sizes):
                 items.append(
                     SkillItem(
                         id=str(skill.name),
@@ -104,7 +111,7 @@ class SkillsRoutes(Routes):
                         description=str(skill.description),
                         enabled=bool(skill.enabled),
                         path=str(skill.path),
-                        size_bytes=self._folder_size(skill.path),
+                        size_bytes=size_bytes,
                     )
                 )
             return items

@@ -608,6 +608,7 @@ export default {
       logging_desc: 'Terminal and file logging configuration',
       locale: 'Locale Settings',
       locale_desc: 'Language and timezone configuration',
+      network: 'Network Settings',
       network_desc: 'Network and package source configuration',
     },
     hints: {

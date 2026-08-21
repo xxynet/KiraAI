@@ -74,6 +74,11 @@ class SessionsRoutes(Routes):
         if len(parts) < 3:
             raise HTTPException(status_code=400, detail="Invalid session id format")
 
+        # read_memory creates the session when it is missing, so an unknown id
+        # has to be rejected before it can be persisted by a plain GET.
+        if session_id not in self.lifecycle.session_manager.chat_memory:
+            raise HTTPException(status_code=404, detail="Session not found")
+
         memory = self.lifecycle.session_manager.read_memory(session_id)
 
         adapter_name, session_type, session_key = parts[0], parts[1], ":".join(parts[2:])

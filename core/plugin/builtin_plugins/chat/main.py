@@ -29,8 +29,17 @@ class DefaultChatPlugin(BasePlugin):
     async def terminate(self):
         """
         Cleanup when plugin is terminated
+
+        Debounce loops run forever and hold on to self.ctx, so they must not
+        outlive the plugin instance.
         """
-        pass
+        tasks = list(self.session_tasks.values())
+        for task in tasks:
+            task.cancel()
+        self.session_tasks.clear()
+        self.session_events.clear()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     @on.im_message(priority=Priority.HIGH)
     async def handle_msg(self, event: KiraMessageEvent):

@@ -263,6 +263,29 @@ _plugin_components: Dict[str, PluginComponents] = {}
 def _ensure_components(plugin_id: str) -> PluginComponents:
     return _plugin_components.setdefault(plugin_id, PluginComponents())
 
+
+def _resolve_plugin_id(obj: Any, kind: str) -> Optional[str]:
+    """Resolve the plugin owning *obj*, or None when ownership cannot be determined.
+
+    An unresolved owner has no usable identity: it would collect components from
+    unrelated sources into a single empty-id bucket that ``is_plugin_enabled`` always
+    reports as disabled, so callers drop the registration instead.
+    """
+    plugin_id = get_obj_plugin_id(obj)
+    if not plugin_id:
+        logger.warning(
+            f"Skipping {kind} registration for "
+            f"'{getattr(obj, '__qualname__', obj)}': owning plugin could not be resolved"
+        )
+        return None
+    return plugin_id
+
+
+def _components_for(obj: Any, kind: str) -> Optional[PluginComponents]:
+    plugin_id = _resolve_plugin_id(obj, kind)
+    return _ensure_components(plugin_id) if plugin_id else None
+
+
 """Plugins that failed to load: {plugin_id: {"manifest": {...}, "error": "..."}}"""
 _plugin_load_errors: Dict[str, Dict[str, Any]] = {}
 
@@ -343,16 +366,18 @@ class RegisterDeco:
     @staticmethod
     def tool(name: str, description: str, params: dict):
         def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_tool(name, description, params, func)
+            comp = _components_for(func, "tool")
+            if comp is not None:
+                comp.register_tool(name, description, params, func)
             return func
         return decorator
 
     @staticmethod
     def tag(name: str, description: str, parent: Optional[str] = "msg"):
         def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_tag(name, description, func, parent)
+            comp = _components_for(func, "tag")
+            if comp is not None:
+                comp.register_tag(name, description, func, parent)
             return func
         return decorator
 
@@ -374,8 +399,9 @@ class RegisterDeco:
                    with keys ``label`` (str or locale dict), ``icon``, ``order``.
         """
         def decorator(obj):
-            plugin_id = get_obj_plugin_id(obj)
-            comp = _ensure_components(plugin_id)
+            comp = _components_for(obj, "page")
+            if comp is None:
+                return obj
 
             if isinstance(obj, PluginPage):
                 comp.register_page(route, None, auth, menu, page_obj=obj)
@@ -398,8 +424,9 @@ class RegisterDeco:
         html:      Try to serve index.html for directory requests
         """
         def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_static(path, directory, html)
+            comp = _components_for(func, "static")
+            if comp is not None:
+                comp.register_static(path, directory, html)
             return func
         return decorator
 
@@ -414,8 +441,9 @@ class RegisterDeco:
         kwargs: Forwarded to FastAPI add_api_route (response_model, summary, …)
         """
         def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_api(method, path, func, auth, **kwargs)
+            comp = _components_for(func, "api")
+            if comp is not None:
+                comp.register_api(method, path, func, auth, **kwargs)
             return func
         return decorator
 
@@ -429,8 +457,9 @@ class RegisterDeco:
               When enabled, ``ws.state.user`` is set before the endpoint runs.
         """
         def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_ws(path, func, auth)
+            comp = _components_for(func, "ws")
+            if comp is not None:
+                comp.register_ws(path, func, auth)
             return func
         return decorator
 
@@ -456,10 +485,10 @@ class RegisterDeco:
             size:  ``"small"`` (default, stat card) or ``"wide"`` (full-width).
         """
         def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            widget_id = f"{plugin_id}:{func.__name__}"
-            _ensure_components(plugin_id).register_widget(
-                widget_id, label, icon, color, order, size, func)
+            plugin_id = _resolve_plugin_id(func, "widget")
+            if plugin_id:
+                _ensure_components(plugin_id).register_widget(
+                    f"{plugin_id}:{func.__name__}", label, icon, color, order, size, func)
             return func
         return decorator
 
@@ -468,8 +497,9 @@ class OnEventDeco:
 
     @staticmethod
     def _register_hook(func: Callable, priority: Union[Priority, int], event_type: EventType):
-        plugin_id = get_obj_plugin_id(func)
-        _ensure_components(plugin_id).register_hook(func, priority, event_type)
+        comp = _components_for(func, "hook")
+        if comp is not None:
+            comp.register_hook(func, priority, event_type)
 
     def im_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
@@ -2086,6 +2116,11 @@ class PluginManager:
         registered = self._register_plugin_class(plugin_id, module, plugin_root)
         if not registered:
             logger.warning(f"No BasePlugin subclass found in {plugin_root}")
+            # The module already executed, so drop it together with whatever its
+            # decorators registered.
+            sys.modules.pop(module_name, None)
+            _module_to_plugin.pop(module_name, None)
+            _plugin_components.pop(plugin_id, None)
             _plugin_load_errors[plugin_id] = {
                 "manifest": _plugin_manifests.get(plugin_id, {}),
                 "error": "No BasePlugin subclass found",

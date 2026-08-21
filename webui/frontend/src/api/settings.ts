@@ -24,6 +24,11 @@ export interface BackupItem {
   created_at: string
 }
 
+export interface RestoreResponse {
+  success: boolean
+  message: string
+}
+
 export function getStorageInfo() {
   return apiClient.get<StorageInfoResponse>('/settings/storage')
 }
@@ -41,13 +46,13 @@ export function deleteBackup(filename: string) {
 }
 
 export function restoreFromBackup(filename: string) {
-  return apiClient.post(`/settings/backup/${filename}/restore`)
+  return apiClient.post<RestoreResponse>(`/settings/backup/${filename}/restore`)
 }
 
 export function restoreBackup(file: File) {
   const formData = new FormData()
   formData.append('file', file)
-  return apiClient.post('/settings/restore', formData)
+  return apiClient.post<RestoreResponse>('/settings/restore', formData)
 }
 
 export function changeAccessToken(oldToken: string, newToken: string) {

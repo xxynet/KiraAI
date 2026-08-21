@@ -189,6 +189,7 @@ class SessionManager:
             return copy.deepcopy(session_data.get("memory", []))
 
     def write_memory(self, session: str, memory: list[list[dict]]):
+        self._ensure_session_data(session)
         with self.memory_lock:
             old_memory = copy.deepcopy(self.chat_memory[session].get("memory", []))
             self.chat_memory[session]["memory"] = memory
