@@ -10,7 +10,9 @@
   >
     <div class="flex items-start justify-between mb-3">
       <div class="flex min-w-0 items-start gap-3">
-        <img v-if="displayIcon" :src="displayIcon" :alt="''" class="w-10 h-10 flex-shrink-0 object-contain" />
+        <div v-if="displayIcon" class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px]">
+          <img :src="displayIcon" :alt="''" class="h-full w-full object-contain" />
+        </div>
         <div class="min-w-0">
           <div class="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">{{ name || id }}</div>
           <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">

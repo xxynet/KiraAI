@@ -707,7 +707,9 @@
         </div>
         <div class="px-6 py-5 space-y-4 overflow-y-auto">
           <div class="flex min-w-0 items-start gap-3">
-            <img v-if="storeInstallIcon" :src="storeInstallIcon" :alt="''" class="h-12 w-12 shrink-0 object-contain" />
+            <div v-if="storeInstallIcon" class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[10px]">
+              <img :src="storeInstallIcon" :alt="''" class="h-full w-full object-contain" />
+            </div>
             <div class="min-w-0">
               <p class="truncate text-base font-semibold text-gray-900 dark:text-gray-100">{{ storePluginName(storeInstallTarget) }}</p>
               <p v-if="storeInstallTarget.version || storeInstallTarget.author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">v{{ storeInstallTarget.version }}<span v-if="storeInstallTarget.version && storeInstallTarget.author"> · </span>{{ storeInstallTarget.author }}</p>
