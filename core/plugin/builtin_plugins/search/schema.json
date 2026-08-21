@@ -1,20 +1,87 @@
 {
-  "tavily_key": {
-    "name": "Tavily Key",
-    "type": "string",
-    "default": null,
-    "hint": "Your Tavily key, create one in https://app.tavily.com/home ",
-    "locales": {
-      "zh": { "name": "Tavily 密钥", "hint": "你的 Tavily 密钥，在 https://app.tavily.com/home 创建" }
+  "info_intro": {
+    "type": "info",
+    "name": "说明",
+    "hint": "联网搜索插件：Tavily / AnySearch 双引擎。hybrid 混合模式会并发调用两个源并按相关性融合排序去重（RRF + 归一化 score 加权）。AnySearch Key 可在 https://anysearch.com/console/api-keys 免费创建，留空则匿名访问（每日 1000 次免费额度）。",
+    "level": "info"
+  },
+  "section_source": {
+    "type": "section",
+    "name": "搜索源",
+    "collapsed": false,
+    "fields": {
+      "search_provider": {
+        "type": "enum",
+        "name": "搜索模式",
+        "default": "hybrid",
+        "options": ["hybrid", "auto", "tavily", "anysearch"],
+        "hint": "hybrid=双源并发混合返回（推荐）；auto=Tavily 优先，无 Key 回退 AnySearch；tavily/anysearch=强制单源"
+      },
+      "tavily_key": {
+        "type": "sensitive",
+        "name": "Tavily Key",
+        "default": null,
+        "hint": "Your Tavily key, create one in https://app.tavily.com/home",
+        "locales": {
+          "zh": { "name": "Tavily 密钥", "hint": "你的 Tavily 密钥，在 https://app.tavily.com/home 创建" }
+        }
+      },
+      "anysearch_key": {
+        "type": "sensitive",
+        "name": "AnySearch Key",
+        "default": "",
+        "hint": "AnySearch API Key（as_sk_ 开头）。留空则使用匿名访问（每日 1000 次，限流较低）",
+        "locales": {
+          "zh": { "name": "AnySearch 密钥", "hint": "AnySearch API Key（as_sk_ 开头）。留空则匿名访问" }
+        }
+      },
+      "anysearch_base_url": {
+        "type": "string",
+        "name": "AnySearch API 地址",
+        "default": "https://api.anysearch.com",
+        "hint": "默认官方地址，一般无需修改",
+        "locales": {
+          "zh": { "name": "AnySearch API 地址", "hint": "默认官方地址，一般无需修改" }
+        }
+      }
     }
   },
-  "max_results": {
-    "name": "Max Results",
-    "type": "integer",
-    "default": 5,
-    "hint": "The maximum number of search results to return.",
-    "locales": {
-      "zh": { "name": "最大结果数", "hint": "返回的最大搜索结果数" }
+  "section_common": {
+    "type": "section",
+    "name": "通用设置",
+    "collapsed": false,
+    "fields": {
+      "max_results": {
+        "type": "integer",
+        "name": "最大结果数",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 10,
+        "hint": "单次搜索最终返回的结果条数（1-10），hybrid 模式下为融合去重后的条数",
+        "locales": {
+          "zh": { "name": "最大结果数", "hint": "单次搜索最终返回的结果条数（1-10）" }
+        }
+      },
+      "hybrid_score_weight": {
+        "type": "float",
+        "name": "混合打分权重",
+        "default": 0.4,
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "hint": "hybrid 模式融合时 score 归一化得分的权重，其余权重归 RRF 排名分。0=纯 RRF，1=纯 score",
+        "locales": {
+          "zh": { "name": "混合打分权重", "hint": "hybrid 融合时 score 归一化权重，其余归 RRF 排名分。0=纯 RRF，1=纯 score" }
+        }
+      },
+      "anysearch_timeout": {
+        "type": "float",
+        "name": "AnySearch 超时（秒）",
+        "default": 30.0,
+        "hint": "AnySearch API 请求超时时间",
+        "locales": {
+          "zh": { "name": "AnySearch 超时（秒）", "hint": "AnySearch API 请求超时时间" }
+        }
+      }
     }
   }
 }
