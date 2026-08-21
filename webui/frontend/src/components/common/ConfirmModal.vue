@@ -5,8 +5,8 @@
     @close="onCancel"
   >
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl">
-      <div class="px-6 py-4">
-        <div class="flex items-center mb-4">
+      <div class="px-6 pt-6 pb-4">
+        <div class="flex items-center mb-2">
           <div :class="variant === 'info' ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-red-100 dark:bg-red-900/30'" class="rounded-full p-3 mr-4">
             <IconInfo v-if="variant === 'info'" class="w-6 h-6 text-blue-600 dark:text-blue-400" />
             <IconWarning v-else class="w-6 h-6 text-red-600 dark:text-red-400" />
@@ -22,7 +22,7 @@
         </div>
         <slot></slot>
       </div>
-      <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+      <div class="px-6 pb-6 flex justify-end space-x-3">
         <button
           class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           @click="onCancel"

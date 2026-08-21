@@ -77,7 +77,7 @@
 
     <!-- Create/Edit Modal -->
     <Modal v-model="dialogVisible" content-class="max-w-4xl" content-style="width: 90%;">
-      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full mx-4 flex flex-col modal-card" style="max-height: 90vh;">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col modal-card" style="max-height: 90vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
             {{ editMode ? $t('persona.edit_title') : $t('persona.modal_title') }}
