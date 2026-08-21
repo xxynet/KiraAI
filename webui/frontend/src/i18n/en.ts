@@ -499,7 +499,7 @@ export default {
     install_success: 'Plugin installed successfully',
     install_failed: 'Failed to install plugin',
     install_details_title: 'Install Plugin',
-    install_silent: 'Install silently (continue in the background after closing this window)',
+    install_silent: 'Continue silently',
     install_background: 'Installing in background',
     install_view_progress: 'View progress',
     install_cancel: 'Cancel installation',

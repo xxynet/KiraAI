@@ -728,16 +728,17 @@
             <div class="flex items-center gap-2 text-gray-700 dark:text-gray-200"><IconSpinner v-if="storeInstallTask.status === 'installing'" class="h-4 w-4 animate-spin text-blue-600" /><span>{{ storeInstallStageLabel }}</span></div>
             <p v-if="storeInstallTask.error" class="mt-2 break-words text-red-600 dark:text-red-400">{{ storeInstallTask.error }}</p>
           </div>
-          <label v-else class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer"><input v-model="storeInstallSilent" type="checkbox" class="mt-0.5 rounded border-gray-300 dark:border-gray-600" /><span>{{ $t('pluginStore.install_silent') }}</span></label>
         </div>
         <div class="flex justify-end gap-3 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
-          <button v-if="storeInstallTask?.status === 'installing'" type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="storeInstallVisible = false">{{ $t('plugin.close') }}</button>
+          <template v-if="storeInstallTask?.status === 'installing'">
+            <button type="button" class="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50" :disabled="storeInstallTask.stage === 'loading'" @click="cancelStoreInstall">{{ $t('pluginStore.install_cancel') }}</button>
+            <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="continueStoreInstallSilently">{{ $t('pluginStore.install_silent') }}</button>
+          </template>
           <button v-else-if="storeInstallTask" type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="storeInstallVisible = false">{{ $t('plugin.close') }}</button>
           <template v-else>
             <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="storeInstallVisible = false">{{ $t('plugin.cancel') }}</button>
             <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="startStoreInstall">{{ $t('pluginStore.install') }}</button>
           </template>
-          <button v-if="storeInstallTask?.status === 'installing'" type="button" class="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50" :disabled="storeInstallTask.stage === 'loading'" @click="cancelStoreInstall">{{ $t('pluginStore.install_cancel') }}</button>
         </div>
       </div>
     </Modal>
@@ -2116,7 +2117,6 @@ async function startStoreInstall() {
     const response = await startGithubInstallTask({ repo_url: item.repo, gh_proxy: resolveStoreInstallProxy() })
     storeInstallTask.value = response.data
     startStoreInstallPolling()
-    if (storeInstallSilent.value) storeInstallVisible.value = false
   } catch (e: any) {
     const detail = e?.response?.data?.detail
     notify(detail ? `${t('pluginStore.install_failed')}: ${detail}` : t('pluginStore.install_failed'), 'error')
@@ -2128,6 +2128,11 @@ function stopStoreInstallPolling() {
     clearInterval(storeInstallPollTimer)
     storeInstallPollTimer = null
   }
+}
+
+function continueStoreInstallSilently() {
+  storeInstallSilent.value = true
+  storeInstallVisible.value = false
 }
 
 function startStoreInstallPolling() {
@@ -2147,7 +2152,8 @@ async function refreshStoreInstallTask() {
     if (response.data.status === 'completed') {
       await loadPlugins()
       await fetchStorePlugins()
-      if (!storeInstallSilent.value) notify(t('pluginStore.install_success'), 'success')
+      storeInstallVisible.value = false
+      notify(t('pluginStore.install_success'), 'success')
     } else if (response.data.status === 'cancelled') {
       if (!storeInstallSilent.value) notify(t('pluginStore.install_cancelled'), 'success')
     } else if (!storeInstallSilent.value) {

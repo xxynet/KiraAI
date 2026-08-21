@@ -499,7 +499,7 @@ export default {
     install_success: '插件安装成功',
     install_failed: '插件安装失败',
     install_details_title: '安装插件',
-    install_silent: '静默安装（关闭此窗口后继续在后台安装）',
+    install_silent: '静默安装',
     install_background: '后台安装中',
     install_view_progress: '查看进度',
     install_cancel: '取消安装',
