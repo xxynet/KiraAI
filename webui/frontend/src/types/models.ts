@@ -222,6 +222,16 @@ export interface PluginInstallResult extends PluginItem {
   warnings: string[]
 }
 
+export interface PluginInstallTask {
+  task_id: string
+  repo_url: string
+  status: 'installing' | 'completed' | 'failed' | 'cancelled'
+  stage: 'downloading' | 'installing_dependencies' | 'loading' | 'completed' | 'failed' | 'cancelled'
+  plugin_id?: string | null
+  error?: string | null
+  warnings: string[]
+}
+
 export interface McpServerItem {
   id: string
   type: string

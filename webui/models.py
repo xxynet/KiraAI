@@ -260,6 +260,18 @@ class PluginInstallResult(PluginItem):
     warnings: List[str] = Field(default_factory=list)
 
 
+class PluginInstallTask(BaseModel):
+    """A background GitHub plugin installation task."""
+
+    task_id: str
+    repo_url: str
+    status: Literal["installing", "completed", "failed", "cancelled"]
+    stage: Literal["downloading", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
+    plugin_id: Optional[str] = None
+    error: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+
+
 class PluginStoreItemResponse(BaseModel):
     id: str
     name: str

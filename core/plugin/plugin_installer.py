@@ -89,6 +89,9 @@ async def install_from_github(
 
     try:
         await download_file(url, str(temp_zip), proxy=proxy)
+    except asyncio.CancelledError:
+        temp_zip.unlink(missing_ok=True)
+        raise
     except Exception as e:
         temp_zip.unlink(missing_ok=True)
         raise ConnectionError(f"Failed to download from GitHub: {e}") from e
@@ -161,6 +164,7 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
             pip_cmd.extend(["-i", pypi_mirror])
         else:
             logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {pypi_mirror}")
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *pip_cmd,
@@ -168,6 +172,14 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
+    except asyncio.CancelledError:
+        if proc and proc.returncode is None:
+            proc.terminate()
+            try:
+                await proc.wait()
+            except ProcessLookupError:
+                pass
+        raise
     except Exception as e:
         return [f"Failed to run pip: {e}"]
 
