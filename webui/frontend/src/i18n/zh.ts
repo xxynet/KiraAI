@@ -498,6 +498,7 @@ export default {
     installing: '安装中...',
     install_success: '插件安装成功',
     install_failed: '插件安装失败',
+    install_status_failed: '无法获取安装状态，请稍后刷新插件商店。',
     install_details_title: '安装插件',
     install_silent: '静默安装',
     install_background: '后台安装中',

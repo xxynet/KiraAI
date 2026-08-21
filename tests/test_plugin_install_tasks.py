@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 import webui.routes.plugins as plugin_routes
 from webui.models import PluginInstallGithubRequest
@@ -33,3 +33,30 @@ async def test_background_plugin_install_task_can_be_cancelled(tmp_path, monkeyp
     result = await routes.get_install_task(created.task_id)
     assert result.status == "cancelled"
     assert result.stage == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_plugin_install_guard_rejects_concurrent_operations():
+    routes = PluginsRoutes(FastAPI(), SimpleNamespace())
+
+    async with routes._plugin_install_lock:
+        with pytest.raises(HTTPException, match="already in progress"):
+            routes._ensure_plugin_install_available()
+
+
+def test_plugin_install_task_history_is_bounded():
+    routes = PluginsRoutes(FastAPI(), SimpleNamespace())
+    for index in range(20):
+        routes._install_tasks[str(index)] = {
+            "task_id": str(index),
+            "status": "completed",
+            "completed_at": index,
+        }
+
+    newest_task = {"task_id": "newest", "status": "installing"}
+    routes._install_tasks["newest"] = newest_task
+    routes._finish_install_task(newest_task, status="completed", stage="completed")
+
+    assert len(routes._install_tasks) == 20
+    assert "0" not in routes._install_tasks
+    assert "newest" in routes._install_tasks

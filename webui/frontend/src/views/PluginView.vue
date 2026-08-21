@@ -1840,7 +1840,10 @@ const storeInstallVisible = ref(false)
 const storeInstallTarget = ref<PluginStoreItem | null>(null)
 const storeInstallTask = ref<PluginInstallTask | null>(null)
 const storeInstallSilent = ref(false)
-let storeInstallPollTimer: ReturnType<typeof setInterval> | null = null
+const STORE_INSTALL_POLL_INTERVAL_MS = 1000
+const STORE_INSTALL_MAX_POLL_FAILURES = 3
+let storeInstallPollTimer: ReturnType<typeof setTimeout> | null = null
+let storeInstallPollFailures = 0
 const storeInstallIcon = computed(() => {
   const item = storeInstallTarget.value
   return isDark.value ? item?.icon_dark || item?.icon : item?.icon || null
@@ -2085,6 +2088,7 @@ function handleStoreInstall(item: PluginStoreItem) {
   storeInstallTarget.value = item
   storeInstallTask.value = null
   storeInstallSilent.value = false
+  storeInstallPollFailures = 0
   storeInstallVisible.value = true
 }
 
@@ -2125,7 +2129,7 @@ async function startStoreInstall() {
 
 function stopStoreInstallPolling() {
   if (storeInstallPollTimer) {
-    clearInterval(storeInstallPollTimer)
+    clearTimeout(storeInstallPollTimer)
     storeInstallPollTimer = null
   }
 }
@@ -2137,8 +2141,15 @@ function continueStoreInstallSilently() {
 
 function startStoreInstallPolling() {
   if (!storeInstallTask.value || storeInstallPollTimer) return
-  storeInstallPollTimer = setInterval(() => { void refreshStoreInstallTask() }, 1000)
-  void refreshStoreInstallTask()
+  scheduleStoreInstallPoll(0)
+}
+
+function scheduleStoreInstallPoll(delay: number) {
+  if (storeInstallPollTimer) return
+  storeInstallPollTimer = setTimeout(() => {
+    storeInstallPollTimer = null
+    void refreshStoreInstallTask()
+  }, delay)
 }
 
 async function refreshStoreInstallTask() {
@@ -2147,7 +2158,11 @@ async function refreshStoreInstallTask() {
   try {
     const response = await getPluginInstallTask(task.task_id)
     storeInstallTask.value = response.data
-    if (response.data.status === 'installing') return
+    if (response.data.status === 'installing') {
+      storeInstallPollFailures = 0
+      scheduleStoreInstallPoll(STORE_INSTALL_POLL_INTERVAL_MS)
+      return
+    }
     stopStoreInstallPolling()
     if (response.data.status === 'completed') {
       await loadPlugins()
@@ -2160,7 +2175,13 @@ async function refreshStoreInstallTask() {
       notify(t('pluginStore.install_failed'), 'error')
     }
   } catch {
-    stopStoreInstallPolling()
+    storeInstallPollFailures += 1
+    if (storeInstallPollFailures >= STORE_INSTALL_MAX_POLL_FAILURES) {
+      stopStoreInstallPolling()
+      if (!storeInstallSilent.value) notify(t('pluginStore.install_status_failed'), 'error')
+      return
+    }
+    scheduleStoreInstallPoll(STORE_INSTALL_POLL_INTERVAL_MS * 2 ** (storeInstallPollFailures - 1))
   }
 }
 
