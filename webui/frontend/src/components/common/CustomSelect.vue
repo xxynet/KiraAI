@@ -4,6 +4,7 @@
     <div
       class="custom-select-trigger"
       :class="{ active: isOpen, 'has-value': !!modelValue, placeholder: !modelValue, disabled: props.disabled }"
+      :style="props.height ? { height: props.height, minHeight: props.height } : undefined"
       @click.stop="toggleDropdown"
       @keydown.enter.prevent="onEnter"
       @keydown.space.prevent="onEnter"
@@ -81,6 +82,7 @@ const props = defineProps<{
   options: Option[]
   placeholder?: string
   disabled?: boolean
+  height?: string
 }>()
 
 const emit = defineEmits<{

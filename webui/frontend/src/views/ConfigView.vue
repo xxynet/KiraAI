@@ -180,34 +180,24 @@
               <div class="text-xs text-gray-500 dark:text-gray-400" v-html="highlightSearch($t(field.hintKey, field.hintFallback))" />
             </div>
             <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
-              <select
-                :value="getModelProvider(field.key)"
-                class="w-full sm:w-40 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                @change="(e) => setModelProvider(field.key, (e.target as HTMLSelectElement).value, field.modelType)"
-              >
-                <option value="">{{ $t('configuration.none') }}</option>
-                <option
-                  v-for="p in providers"
-                  :key="p.id"
-                  :value="p.id"
-                >
-                  {{ p.name || p.id }}
-                </option>
-              </select>
-              <select
-                :value="getModelId(field.key)"
-                class="w-full sm:w-48 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                @change="(e) => setModelId(field.key, (e.target as HTMLSelectElement).value)"
-              >
-                <option value="">{{ $t('configuration.none') }}</option>
-                <option
-                  v-for="modelId in getAvailableModels(field.key, field.modelType)"
-                  :key="modelId"
-                  :value="modelId"
-                >
-                  {{ modelId }}
-                </option>
-              </select>
+              <div class="w-full sm:w-40">
+                <CustomSelect
+                  :modelValue="getModelProvider(field.key)"
+                  :options="modelProviderOptions"
+                  :placeholder="$t('configuration.none')"
+                  height="38px"
+                  @update:modelValue="(value: string) => setModelProvider(field.key, value, field.modelType)"
+                />
+              </div>
+              <div class="w-full sm:w-48">
+                <CustomSelect
+                  :modelValue="getModelId(field.key)"
+                  :options="getModelOptions(field.key, field.modelType)"
+                  :placeholder="$t('configuration.none')"
+                  height="38px"
+                  @update:modelValue="(value: string) => setModelId(field.key, value)"
+                />
+              </div>
             </div>
             <p
               v-if="validationErrors[field.key]"
@@ -708,6 +698,24 @@ function getModelId(key: string): string {
   return parseModelReference(getFieldValue(key) || '').modelId
 }
 
+const modelProviderOptions = computed(() => [
+  { value: '', label: t('configuration.none') },
+  ...providers.value.map(provider => ({
+    value: provider.id,
+    label: provider.name || provider.id,
+  })),
+])
+
+function getModelOptions(key: string, modelType?: string) {
+  return [
+    { value: '', label: t('configuration.none') },
+    ...getAvailableModels(key, modelType).map(modelId => ({
+      value: modelId,
+      label: modelId,
+    })),
+  ]
+}
+
 function setModelProvider(key: string, providerId: string, _modelType?: string) {
   if (!providerId) {
     delete pendingProviders.value[key]
@@ -1077,6 +1085,7 @@ onUnmounted(() => {
   background: rgba(148, 163, 184, 0.15);
   border-color: rgba(148, 163, 184, 0.25);
 }
+
 .modified-badge-enter-active,
 .modified-badge-leave-active {
   transition: opacity 0.2s ease, transform 0.2s ease;
