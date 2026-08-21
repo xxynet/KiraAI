@@ -135,7 +135,12 @@ class AgentExecutor:
             llm_resp.agent_step_index = step_index
             llm_logger.debug(llm_resp)
 
-            cached_tokens_info = f", Cached tokens: {llm_resp.cached_tokens}" if llm_resp.cached_tokens is not None else ""
+            cached_tokens_info = ""
+            if llm_resp.cached_tokens is not None:
+                cached_tokens_info = f", Cached tokens: {llm_resp.cached_tokens}"
+                if llm_resp.input_tokens:
+                    cache_hit_rate = llm_resp.cached_tokens / llm_resp.input_tokens * 100
+                    cached_tokens_info += f" (Cache hit rate: {cache_hit_rate:.1f}%)"
 
             llm_logger.info(
                 f"[{sid}] Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}{cached_tokens_info}, step: {step_index}/{max_steps}"
