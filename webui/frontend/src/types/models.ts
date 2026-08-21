@@ -279,6 +279,7 @@ export interface PluginStoreItem {
   icon_dark?: string | null
   downloads?: number
   tags?: string[]
+  core_version?: string | null
   installed?: boolean
   stars?: number
   updated_at?: string | number | null

@@ -286,6 +286,7 @@ class PluginStoreItemResponse(BaseModel):
     icon_dark: Optional[str] = None
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
+    core_version: Optional[str] = None
     stars: int = 0
     updated_at: Optional[Union[int, str]] = None
 

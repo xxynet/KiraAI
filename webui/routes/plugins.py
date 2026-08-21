@@ -827,6 +827,7 @@ class PluginsRoutes(Routes):
                     icon_dark=item.get("icon_dark"),
                     locales=item.get("locales") or {},
                     tags=[str(t) for t in tags if t],
+                    core_version=item.get("core_version"),
                     stars=item.get("stars", 0),
                     updated_at=item.get("updated_at"),
                 ))
@@ -919,6 +920,8 @@ class PluginsRoutes(Routes):
             updated_at = raw.get("updated_at", raw.get("updatedAt"))
 
             locales = raw.get("locales")
+            tags = raw.get("tags")
+            core_version = raw.get("core_version")
 
             item: Dict[str, Any] = {
                 "plugin_id": str(plugin_id),
@@ -933,6 +936,8 @@ class PluginsRoutes(Routes):
                 "icon": str(icon) if isinstance(icon, str) else None,
                 "icon_dark": str(icon_dark) if isinstance(icon_dark, str) else None,
                 "locales": locales if isinstance(locales, dict) else {},
+                "tags": [str(tag) for tag in tags if tag] if isinstance(tags, list) else [],
+                "core_version": str(core_version) if core_version else None,
                 "stars": int(stars) if isinstance(stars, (int, float, str)) and str(stars).isdigit() else 0,
                 "updated_at": updated_at if isinstance(updated_at, (int, str)) else None,
             }

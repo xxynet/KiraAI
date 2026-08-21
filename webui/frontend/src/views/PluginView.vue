@@ -568,6 +568,7 @@
           :icon="item.icon"
           :icon-dark="item.icon_dark"
           :tags="item.tags"
+          :core-version="item.core_version"
           :installed="item.installed"
           :installing="storeInstallTarget?.id === item.id && storeInstallTask?.status === 'installing'"
           :has-update="item.installed && pluginUpdates.has(item.id)"
