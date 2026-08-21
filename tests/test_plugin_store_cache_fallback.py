@@ -84,3 +84,18 @@ def test_extract_plugins_preserves_store_icon_urls():
 
     assert plugins[0]["icon"] == "https://store.example/icons/example.svg"
     assert plugins[0]["icon_dark"] == "https://store.example/icons/example-dark.svg"
+
+
+def test_extract_plugins_preserves_tags_and_core_version():
+    plugins = PluginsRoutes._extract_plugins({
+        "plugins": {
+            "example": {
+                "plugin_id": "example",
+                "tags": ["utility", "network"],
+                "core_version": ">=2.29.0",
+            },
+        },
+    })
+
+    assert plugins[0]["tags"] == ["utility", "network"]
+    assert plugins[0]["core_version"] == ">=2.29.0"

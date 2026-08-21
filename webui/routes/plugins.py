@@ -2,6 +2,7 @@ import asyncio
 import shutil
 import time
 import json
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 from uuid import uuid4
@@ -19,7 +20,7 @@ from core.plugin.plugin_installer import (
 )
 from core.utils.path_utils import get_data_path
 from webui.models import (
-    PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginItem,
+    PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginInstallTask, PluginItem,
     PluginStoreItemResponse, PluginStoreFetchRequest,
     PluginStoreSourceItem, PluginStoreSourceCreateRequest, PluginStoreSourceUpdateRequest,
     PluginUpdateCheckItem, PluginUpdateRequest,
@@ -29,9 +30,15 @@ from webui.routes.base import RouteDefinition, Routes
 from webui.utils import schema_to_dict
 
 logger = get_logger("webui", "blue")
+MAX_RETAINED_INSTALL_TASKS = 20
 
 
 class PluginsRoutes(Routes):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._install_tasks: Dict[str, Dict[str, Any]] = {}
+        self._plugin_install_lock = asyncio.Lock()
+
     def get_routes(self):
         return [
             RouteDefinition(
@@ -104,6 +111,38 @@ class PluginsRoutes(Routes):
                 methods=["POST"],
                 endpoint=self.install_from_upload,
                 response_model=PluginInstallResult,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/install/github/tasks",
+                methods=["POST"],
+                endpoint=self.start_github_install_task,
+                response_model=PluginInstallTask,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/install/tasks/active",
+                methods=["GET"],
+                endpoint=self.get_active_install_task,
+                response_model=Optional[PluginInstallTask],
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/install/tasks/{task_id}",
+                methods=["GET"],
+                endpoint=self.get_install_task,
+                response_model=PluginInstallTask,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/install/tasks/{task_id}/cancel",
+                methods=["POST"],
+                endpoint=self.cancel_install_task,
+                response_model=PluginInstallTask,
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -397,7 +436,12 @@ class PluginsRoutes(Routes):
             raise HTTPException(status_code=503, detail="Plugin manager not available")
 
         plugin_manager = self.lifecycle.plugin_manager
+        async with self._plugin_install_guard():
+            return await self._install_from_github_locked(payload, plugin_manager)
 
+    async def _install_from_github_locked(
+        self, payload: PluginInstallGithubRequest, plugin_manager
+    ) -> PluginInstallResult:
         try:
             plugin_dir = await install_from_github(
                 payload.repo_url,
@@ -421,6 +465,123 @@ class PluginsRoutes(Routes):
 
         return self._build_install_result(plugin_manager, plugin_id, warnings)
 
+    async def start_github_install_task(self, payload: PluginInstallGithubRequest) -> PluginInstallTask:
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+        self._ensure_plugin_install_available()
+
+        task_id = uuid4().hex
+        task_data: Dict[str, Any] = {
+            "task_id": task_id,
+            "repo_url": payload.repo_url,
+            "status": "installing",
+            "stage": "downloading",
+            "plugin_id": None,
+            "error": None,
+            "warnings": [],
+            "task": None,
+        }
+        self._install_tasks[task_id] = task_data
+        task_data["task"] = asyncio.create_task(self._run_github_install_task(task_data, payload))
+        return self._serialize_install_task(task_data)
+
+    async def get_active_install_task(self) -> Optional[PluginInstallTask]:
+        active = self._active_install_task()
+        return self._serialize_install_task(active) if active else None
+
+    async def get_install_task(self, task_id: str) -> PluginInstallTask:
+        task_data = self._install_tasks.get(task_id)
+        if not task_data:
+            raise HTTPException(status_code=404, detail="Plugin installation task not found")
+        return self._serialize_install_task(task_data)
+
+    async def cancel_install_task(self, task_id: str) -> PluginInstallTask:
+        task_data = self._install_tasks.get(task_id)
+        if not task_data:
+            raise HTTPException(status_code=404, detail="Plugin installation task not found")
+        task = task_data.get("task")
+        if task_data["status"] != "installing" or not task or task.done():
+            return self._serialize_install_task(task_data)
+        if task_data["stage"] == "loading":
+            raise HTTPException(status_code=409, detail="Plugin installation can no longer be cancelled")
+        task.cancel()
+        return self._serialize_install_task(task_data)
+
+    def _active_install_task(self) -> Optional[Dict[str, Any]]:
+        return next(
+            (task for task in self._install_tasks.values() if task["status"] == "installing"),
+            None,
+        )
+
+    def _ensure_plugin_install_available(self) -> None:
+        if self._plugin_install_lock.locked() or self._active_install_task():
+            raise HTTPException(status_code=409, detail="Another plugin installation is already in progress")
+
+    @asynccontextmanager
+    async def _plugin_install_guard(self):
+        self._ensure_plugin_install_available()
+        async with self._plugin_install_lock:
+            yield
+
+    def _finish_install_task(self, task_data: Dict[str, Any], **values: Any) -> None:
+        task_data.update(values)
+        task_data["completed_at"] = time.monotonic()
+        terminal_tasks = sorted(
+            (task for task in self._install_tasks.values() if task["status"] != "installing"),
+            key=lambda task: task.get("completed_at", 0),
+        )
+        for task in terminal_tasks[:-MAX_RETAINED_INSTALL_TASKS]:
+            self._install_tasks.pop(task["task_id"], None)
+
+    @staticmethod
+    def _serialize_install_task(task_data: Dict[str, Any]) -> PluginInstallTask:
+        return PluginInstallTask(**{
+            key: value for key, value in task_data.items() if key not in {"task", "completed_at"}
+        })
+
+    async def _run_github_install_task(
+        self, task_data: Dict[str, Any], payload: PluginInstallGithubRequest
+    ) -> None:
+        plugin_manager = self.lifecycle.plugin_manager
+        async with self._plugin_install_lock:
+            plugin_dir = None
+            plugin_id = None
+            try:
+                plugin_dir = await install_from_github(
+                    payload.repo_url,
+                    plugin_manager.plugin_dir,
+                    proxy=payload.proxy,
+                    gh_proxy=payload.gh_proxy,
+                    is_plugin_installed=plugin_manager.has_plugin,
+                )
+                task_data["stage"] = "installing_dependencies"
+                warnings = await install_requirements(plugin_dir, pypi_mirror=self._get_pypi_mirror())
+                task_data["stage"] = "loading"
+                plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
+                if not plugin_id:
+                    raise RuntimeError("Plugin files were installed but failed to load")
+                self._finish_install_task(
+                    task_data,
+                    status="completed",
+                    stage="completed",
+                    plugin_id=plugin_id,
+                    warnings=warnings,
+                )
+            except asyncio.CancelledError:
+                if plugin_dir and plugin_dir.exists():
+                    if plugin_id:
+                        await plugin_manager.uninstall_plugin(plugin_id)
+                    await asyncio.to_thread(shutil.rmtree, plugin_dir, ignore_errors=True)
+                self._finish_install_task(task_data, status="cancelled", stage="cancelled")
+                raise
+            except PluginAlreadyInstalledError as e:
+                self._finish_install_task(task_data, status="failed", stage="failed", error=str(e))
+            except (ValueError, ConnectionError, IOError) as e:
+                self._finish_install_task(task_data, status="failed", stage="failed", error=str(e))
+            except Exception as e:
+                logger.exception("Background plugin installation failed")
+                self._finish_install_task(task_data, status="failed", stage="failed", error=str(e))
+
     async def install_from_upload(self, file: UploadFile = File(...)) -> PluginInstallResult:
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
             raise HTTPException(status_code=503, detail="Plugin manager not available")
@@ -431,6 +592,10 @@ class PluginsRoutes(Routes):
         plugin_manager = self.lifecycle.plugin_manager
 
         zip_bytes = await file.read()
+        async with self._plugin_install_guard():
+            return await self._install_from_upload_locked(zip_bytes, plugin_manager)
+
+    async def _install_from_upload_locked(self, zip_bytes: bytes, plugin_manager) -> PluginInstallResult:
         try:
             plugin_dir = await install_from_zip(
                 zip_bytes,
@@ -565,7 +730,12 @@ class PluginsRoutes(Routes):
             raise HTTPException(status_code=503, detail="Plugin manager not available")
 
         plugin_manager = self.lifecycle.plugin_manager
+        async with self._plugin_install_guard():
+            return await self._update_plugin_locked(plugin_id, payload, plugin_manager)
 
+    async def _update_plugin_locked(
+        self, plugin_id: str, payload: PluginUpdateRequest, plugin_manager
+    ) -> PluginInstallResult:
         info = plugin_manager.get_plugin_info(plugin_id)
         if not info:
             raise HTTPException(status_code=404, detail="Plugin not found")
@@ -697,6 +867,7 @@ class PluginsRoutes(Routes):
                     icon_dark=item.get("icon_dark"),
                     locales=item.get("locales") or {},
                     tags=[str(t) for t in tags if t],
+                    core_version=item.get("core_version"),
                     stars=item.get("stars", 0),
                     updated_at=item.get("updated_at"),
                 ))
@@ -789,6 +960,8 @@ class PluginsRoutes(Routes):
             updated_at = raw.get("updated_at", raw.get("updatedAt"))
 
             locales = raw.get("locales")
+            tags = raw.get("tags")
+            core_version = raw.get("core_version")
 
             item: Dict[str, Any] = {
                 "plugin_id": str(plugin_id),
@@ -803,6 +976,8 @@ class PluginsRoutes(Routes):
                 "icon": str(icon) if isinstance(icon, str) else None,
                 "icon_dark": str(icon_dark) if isinstance(icon_dark, str) else None,
                 "locales": locales if isinstance(locales, dict) else {},
+                "tags": [str(tag) for tag in tags if tag] if isinstance(tags, list) else [],
+                "core_version": str(core_version) if core_version else None,
                 "stars": int(stars) if isinstance(stars, (int, float, str)) and str(stars).isdigit() else 0,
                 "updated_at": updated_at if isinstance(updated_at, (int, str)) else None,
             }

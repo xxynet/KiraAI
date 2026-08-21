@@ -4,6 +4,7 @@ import type {
   PluginConfigUpdateRequest,
   PluginInstallGithubRequest,
   PluginInstallResult,
+  PluginInstallTask,
   PluginUpdateCheckItem,
 } from '@/types'
 
@@ -47,6 +48,22 @@ export function installFromUpload(file: File) {
   const formData = new FormData()
   formData.append('file', file)
   return apiClient.post<PluginInstallResult>('/plugins/install/upload', formData)
+}
+
+export function startGithubInstallTask(data: PluginInstallGithubRequest) {
+  return apiClient.post<PluginInstallTask>('/plugins/install/github/tasks', data)
+}
+
+export function getActivePluginInstallTask() {
+  return apiClient.get<PluginInstallTask | null>('/plugins/install/tasks/active')
+}
+
+export function getPluginInstallTask(taskId: string) {
+  return apiClient.get<PluginInstallTask>(`/plugins/install/tasks/${encodeURIComponent(taskId)}`)
+}
+
+export function cancelPluginInstallTask(taskId: string) {
+  return apiClient.post<PluginInstallTask>(`/plugins/install/tasks/${encodeURIComponent(taskId)}/cancel`)
 }
 
 export function checkPluginUpdates() {

@@ -495,6 +495,13 @@
         </div>
       </div>
 
+      <div v-if="storeInstallTask?.status === 'installing'" class="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+        <IconSpinner class="h-4 w-4 animate-spin shrink-0" />
+        <span class="min-w-0 flex-1 truncate">{{ storeInstallTarget?.name || storeInstallTask.repo_url }} · {{ storeInstallStageLabel }}</span>
+        <button type="button" class="font-medium hover:underline" @click="storeInstallVisible = true">{{ $t('pluginStore.install_view_progress') }}</button>
+        <button type="button" class="font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400" :disabled="storeInstallTask.stage === 'loading'" @click="cancelStoreInstall">{{ $t('pluginStore.install_cancel') }}</button>
+      </div>
+
       <!-- Plugin Store Error -->
       <div v-if="storeError" class="flex justify-center items-center py-12">
         <div class="text-center">
@@ -561,7 +568,9 @@
           :icon="item.icon"
           :icon-dark="item.icon_dark"
           :tags="item.tags"
+          :core-version="item.core_version"
           :installed="item.installed"
+          :installing="storeInstallTarget?.id === item.id && storeInstallTask?.status === 'installing'"
           :has-update="item.installed && pluginUpdates.has(item.id)"
           :latest-version="pluginUpdates.get(item.id)?.latest_version ?? null"
           :updating="updatingPlugins.has(item.id)"
@@ -690,6 +699,49 @@
         </div>
       </Modal>
     </div>
+
+    <Modal v-model="storeInstallVisible" content-class="max-w-lg">
+      <div v-if="storeInstallTarget" class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
+        <div class="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('pluginStore.install_details_title') }}</h3>
+          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="storeInstallVisible = false"><IconClose class="w-6 h-6" /></button>
+        </div>
+        <div class="px-6 py-5 space-y-4 overflow-y-auto">
+          <div class="flex min-w-0 items-start gap-3">
+            <div v-if="storeInstallIcon" class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[10px]">
+              <img :src="storeInstallIcon" :alt="''" class="h-full w-full object-contain" />
+            </div>
+            <div class="min-w-0">
+              <p class="truncate text-base font-semibold text-gray-900 dark:text-gray-100">{{ storePluginName(storeInstallTarget) }}</p>
+              <p v-if="storeInstallTarget.version || storeInstallTarget.author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">v{{ storeInstallTarget.version }}<span v-if="storeInstallTarget.version && storeInstallTarget.author"> · </span>{{ storeInstallTarget.author }}</p>
+            </div>
+          </div>
+          <p v-if="storeInstallTarget.description" class="whitespace-pre-wrap text-sm leading-6 text-gray-600 dark:text-gray-300">{{ localize(storeInstallTarget, 'description', storeInstallTarget.description) }}</p>
+          <div v-if="storeInstallTarget.tags?.length" class="flex flex-wrap gap-1.5">
+            <span v-for="tag in storeInstallTarget.tags" :key="tag" class="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">{{ tag }}</span>
+          </div>
+          <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            <div><dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.plugin_id') }}</dt><dd class="mt-1 font-mono break-all text-gray-900 dark:text-gray-100">{{ storeInstallTarget.id }}</dd></div>
+            <div v-if="storeInstallRepo" class="sm:col-span-2"><dt class="text-gray-500 dark:text-gray-400">{{ $t('plugin.repo_url') }}</dt><dd class="mt-1 break-all"><a :href="storeInstallRepo" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300">{{ storeInstallRepo }}</a></dd></div>
+          </dl>
+          <div v-if="storeInstallTask" class="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-700">
+            <div class="flex items-center gap-2 text-gray-700 dark:text-gray-200"><IconSpinner v-if="storeInstallTask.status === 'installing'" class="h-4 w-4 animate-spin text-blue-600" /><span>{{ storeInstallStageLabel }}</span></div>
+            <p v-if="storeInstallTask.error" class="mt-2 break-words text-red-600 dark:text-red-400">{{ storeInstallTask.error }}</p>
+          </div>
+        </div>
+        <div class="flex justify-end gap-3 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+          <template v-if="storeInstallTask?.status === 'installing'">
+            <button type="button" class="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50" :disabled="storeInstallTask.stage === 'loading'" @click="cancelStoreInstall">{{ $t('pluginStore.install_cancel') }}</button>
+            <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="continueStoreInstallSilently">{{ $t('pluginStore.install_silent') }}</button>
+          </template>
+          <button v-else-if="storeInstallTask" type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="storeInstallVisible = false">{{ $t('plugin.close') }}</button>
+          <template v-else>
+            <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="storeInstallVisible = false">{{ $t('plugin.cancel') }}</button>
+            <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="startStoreInstall">{{ $t('pluginStore.install') }}</button>
+          </template>
+        </div>
+      </div>
+    </Modal>
 
     <!-- Install Plugin Dialog -->
     <Modal v-model="installDialogVisible" content-class="max-w-md">
@@ -996,6 +1048,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
+import { useTheme } from '@/composables/useTheme'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
@@ -1004,7 +1057,8 @@ import AlertHint from '@/components/common/AlertHint.vue'
 import {
   getPlugins, getPluginConfig, getPluginReadme, updatePluginConfig,
   togglePlugin as apiTogglePlugin, deletePlugin,
-  installFromGithub, installFromUpload,
+  installFromGithub, installFromUpload, startGithubInstallTask, getActivePluginInstallTask,
+  getPluginInstallTask, cancelPluginInstallTask,
   reloadPlugin as apiReloadPlugin,
   checkPluginUpdates, updatePlugin as apiUpdatePlugin,
 } from '@/api/plugin'
@@ -1025,11 +1079,12 @@ import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
   IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch, IconDownload, IconTrash,
 } from '@/components/icons'
-import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem } from '@/types'
+import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem, PluginInstallTask } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
 const { localize } = useLocalized()
+const { isDark } = useTheme()
 const activeTab = ref('plugins')
 
 // Plugins
@@ -1298,6 +1353,7 @@ onUnmounted(() => {
     clearInterval(pluginPollTimer)
     pluginPollTimer = null
   }
+  stopStoreInstallPolling()
 })
 
 async function loadMcpServers() {
@@ -1780,6 +1836,28 @@ const currentStoreSource = ref<PluginStoreSource | null>(null)
 const storePlugins = ref<PluginStoreItem[]>([])
 const storeLoading = ref(false)
 const storeError = ref<string | null>(null)
+const storeInstallVisible = ref(false)
+const storeInstallTarget = ref<PluginStoreItem | null>(null)
+const storeInstallTask = ref<PluginInstallTask | null>(null)
+const storeInstallSilent = ref(false)
+const STORE_INSTALL_POLL_INTERVAL_MS = 1000
+const STORE_INSTALL_MAX_POLL_FAILURES = 3
+let storeInstallPollTimer: ReturnType<typeof setTimeout> | null = null
+let storeInstallPollFailures = 0
+const storeInstallIcon = computed(() => {
+  const item = storeInstallTarget.value
+  return isDark.value ? item?.icon_dark || item?.icon : item?.icon || null
+})
+const storeInstallRepo = computed(() => {
+  const repo = storeInstallTarget.value?.repo
+  if (!repo) return null
+  try {
+    const url = new URL(repo)
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : null
+  } catch {
+    return null
+  }
+})
 const sourceManageVisible = ref(false)
 const newSourceName = ref('')
 const newSourceUrl = ref('')
@@ -1982,6 +2060,9 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
       ...item,
       installed: installedIds.has(item.id),
     }))
+    if (storeInstallTask.value && !storeInstallTarget.value) {
+      storeInstallTarget.value = storePlugins.value.find(item => item.repo === storeInstallTask.value?.repo_url) || null
+    }
     storePage.value = 1
     if (storeCategory.value !== 'all' && !storePlugins.value.some(item => item.category?.trim() === storeCategory.value)) {
       storeCategory.value = 'all'
@@ -2004,11 +2085,117 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
 
 function handleStoreInstall(item: PluginStoreItem) {
   if (item.installed) return
-  // Open the install modal with the plugin's repo URL pre-filled
-  resetInstallForm()
-  installTab.value = 'github'
-  installForm.value.repo_url = item.repo || ''
-  installDialogVisible.value = true
+  storeInstallTarget.value = item
+  storeInstallTask.value = null
+  storeInstallSilent.value = false
+  storeInstallPollFailures = 0
+  storeInstallVisible.value = true
+}
+
+const storeInstallStageLabel = computed(() => {
+  const stage = storeInstallTask.value?.stage
+  if (!stage) return ''
+  const labels: Record<PluginInstallTask['stage'], string> = {
+    downloading: t('pluginStore.install_stage_downloading'),
+    installing_dependencies: t('pluginStore.install_stage_dependencies'),
+    loading: t('pluginStore.install_stage_loading'),
+    completed: t('pluginStore.install_stage_completed'),
+    failed: t('pluginStore.install_stage_failed'),
+    cancelled: t('pluginStore.install_stage_cancelled'),
+  }
+  return labels[stage]
+})
+
+function resolveStoreInstallProxy(): string | null {
+  if (proxyStrategy.value === 'specific') return selectedProxyUrl.value
+  return proxyStrategy.value === 'auto' ? 'auto' : null
+}
+
+async function startStoreInstall() {
+  const item = storeInstallTarget.value
+  if (!item?.repo) {
+    notify(t('plugin.install_failed'), 'error')
+    return
+  }
+  try {
+    const response = await startGithubInstallTask({ repo_url: item.repo, gh_proxy: resolveStoreInstallProxy() })
+    storeInstallTask.value = response.data
+    startStoreInstallPolling()
+  } catch (e: any) {
+    const detail = e?.response?.data?.detail
+    notify(detail ? `${t('pluginStore.install_failed')}: ${detail}` : t('pluginStore.install_failed'), 'error')
+  }
+}
+
+function stopStoreInstallPolling() {
+  if (storeInstallPollTimer) {
+    clearTimeout(storeInstallPollTimer)
+    storeInstallPollTimer = null
+  }
+}
+
+function continueStoreInstallSilently() {
+  storeInstallSilent.value = true
+  storeInstallVisible.value = false
+}
+
+function startStoreInstallPolling() {
+  if (!storeInstallTask.value || storeInstallPollTimer) return
+  scheduleStoreInstallPoll(0)
+}
+
+function scheduleStoreInstallPoll(delay: number) {
+  if (storeInstallPollTimer) return
+  storeInstallPollTimer = setTimeout(() => {
+    storeInstallPollTimer = null
+    void refreshStoreInstallTask()
+  }, delay)
+}
+
+async function refreshStoreInstallTask() {
+  const task = storeInstallTask.value
+  if (!task) return
+  try {
+    const response = await getPluginInstallTask(task.task_id)
+    storeInstallTask.value = response.data
+    if (response.data.status === 'installing') {
+      storeInstallPollFailures = 0
+      scheduleStoreInstallPoll(STORE_INSTALL_POLL_INTERVAL_MS)
+      return
+    }
+    stopStoreInstallPolling()
+    if (response.data.status === 'completed') {
+      await loadPlugins()
+      await fetchStorePlugins()
+      storeInstallVisible.value = false
+      notify(t('pluginStore.install_success'), 'success')
+    } else if (response.data.status === 'cancelled') {
+      if (!storeInstallSilent.value) notify(t('pluginStore.install_cancelled'), 'success')
+    } else if (!storeInstallSilent.value) {
+      notify(t('pluginStore.install_failed'), 'error')
+    }
+  } catch {
+    storeInstallPollFailures += 1
+    if (storeInstallPollFailures >= STORE_INSTALL_MAX_POLL_FAILURES) {
+      stopStoreInstallPolling()
+      if (!storeInstallSilent.value) notify(t('pluginStore.install_status_failed'), 'error')
+      return
+    }
+    scheduleStoreInstallPoll(STORE_INSTALL_POLL_INTERVAL_MS * 2 ** (storeInstallPollFailures - 1))
+  }
+}
+
+async function cancelStoreInstall() {
+  const task = storeInstallTask.value
+  if (!task || task.status !== 'installing') return
+  try {
+    const response = await cancelPluginInstallTask(task.task_id)
+    storeInstallTask.value = response.data
+    await refreshStoreInstallTask()
+  } catch (e: any) {
+    const detail = e?.response?.data?.detail
+    notify(detail ? `${t('pluginStore.install_failed')}: ${detail}` : t('pluginStore.install_failed'), 'error')
+  }
 }
 
 async function handleStoreUpdate(item: PluginStoreItem) {
@@ -2028,6 +2215,14 @@ onMounted(async () => {
       fetchStorePlugins()
     }
   })
+  getActivePluginInstallTask().then(response => {
+    const task = response.data
+    if (!task) return
+    storeInstallTask.value = task
+    const matchingItem = storePlugins.value.find(item => item.repo === task.repo_url)
+    if (matchingItem) storeInstallTarget.value = matchingItem
+    startStoreInstallPolling()
+  }).catch(() => {})
   // Auto-check for plugin updates on page load (silent: no notification if none)
   handleCheckUpdates(true)
 })
