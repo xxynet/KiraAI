@@ -725,6 +725,7 @@ function setModelProvider(key: string, providerId: string, _modelType?: string) 
     validateField(key)
     return
   }
+  if (providerId === getModelProvider(key)) return
   // Switching provider invalidates any previously chosen model, so we clear
   // the persisted value and park the provider in pending state until the user
   // picks a model. `validateField` will flag this as required-but-missing.
