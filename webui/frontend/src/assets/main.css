@@ -305,6 +305,23 @@ textarea.transition-colors {
   background: #9ca3af;
 }
 
+/* ==================== Text Selection ==================== */
+::selection {
+  background-color: rgba(59, 130, 246, 0.25);
+}
+
+::-moz-selection {
+  background-color: rgba(59, 130, 246, 0.25);
+}
+
+.dark ::selection {
+  background-color: rgba(59, 130, 246, 0.45);
+}
+
+.dark ::-moz-selection {
+  background-color: rgba(59, 130, 246, 0.45);
+}
+
 /* ==================== Form Inputs ==================== */
 input:not([type="checkbox"], [type="radio"]),
 select,
