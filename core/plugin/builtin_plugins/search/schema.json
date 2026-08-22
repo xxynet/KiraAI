@@ -13,23 +13,23 @@
   },
   "section_source": {
     "type": "section",
-    "name": "搜索源",
+    "name": "Search Sources",
     "collapsed": false,
     "fields": {
       "search_provider": {
         "type": "enum",
-        "name": "搜索模式",
+        "name": "Search Mode",
         "default": "hybrid",
         "options": [
           "hybrid",
           "tavily",
           "anysearch"
         ],
-        "hint": "hybrid=双源并发混合返回（推荐，任一源不可用自动降级单源，等效旧 auto）；tavily/anysearch=强制单源",
+        "hint": "hybrid = query both sources concurrently and merge (recommended, auto-falls back to single source if one is unavailable, equivalent to legacy auto); tavily/anysearch = force single source",
         "locales": {
           "zh": {
             "name": "搜索模式",
-            "hint": "hybrid=双源并发混合（推荐，任一源不可用自动降级单源）；tavily/anysearch=强制单源"
+            "hint": "hybrid=双源并发混合返回（推荐，任一源不可用自动降级单源，等效旧 auto）；tavily/anysearch=强制单源"
           }
         }
       },
@@ -49,19 +49,19 @@
         "type": "sensitive",
         "name": "AnySearch Key",
         "default": "",
-        "hint": "AnySearch API Key（as_sk_ 开头）。留空则使用匿名访问（每日 1000 次，限流较低）",
+        "hint": "AnySearch API Key (starts with as_sk_). Leave blank to use anonymous access (1,000 free requests per day, lower rate limit)",
         "locales": {
           "zh": {
             "name": "AnySearch 密钥",
-            "hint": "AnySearch API Key（as_sk_ 开头）。留空则匿名访问"
+            "hint": "AnySearch API Key（as_sk_ 开头）。留空则匿名访问（每日 1000 次，限流较低）"
           }
         }
       },
       "anysearch_base_url": {
         "type": "string",
-        "name": "AnySearch API 地址",
+        "name": "AnySearch API Base URL",
         "default": "https://api.anysearch.com",
-        "hint": "默认官方地址，一般无需修改",
+        "hint": "Default official endpoint, usually no need to change",
         "locales": {
           "zh": {
             "name": "AnySearch API 地址",
@@ -73,30 +73,30 @@
   },
   "section_common": {
     "type": "section",
-    "name": "通用设置",
+    "name": "Common Settings",
     "collapsed": false,
     "fields": {
       "max_results": {
         "type": "integer",
-        "name": "最大结果数",
+        "name": "Max Results",
         "default": 5,
         "minimum": 1,
         "maximum": 10,
-        "hint": "单次搜索最终返回的结果条数（1-10），hybrid 模式下为融合去重后的条数",
+        "hint": "Number of results returned for a single search (1-10); in hybrid mode this is the count after fusion and deduplication",
         "locales": {
           "zh": {
             "name": "最大结果数",
-            "hint": "单次搜索最终返回的结果条数（1-10）"
+            "hint": "单次搜索最终返回的结果条数（1-10），hybrid 模式下为融合去重后的条数"
           }
         }
       },
       "hybrid_score_weight": {
         "type": "float",
-        "name": "混合打分权重",
+        "name": "Hybrid Score Weight",
         "default": 0.4,
         "minimum": 0.0,
         "maximum": 1.0,
-        "hint": "hybrid 模式融合时 score 归一化得分的权重，其余权重归 RRF 排名分。0=纯 RRF，1=纯 score",
+        "hint": "Weight of the normalized score when fusing in hybrid mode; the rest goes to the RRF rank score. 0 = pure RRF, 1 = pure score",
         "locales": {
           "zh": {
             "name": "混合打分权重",
