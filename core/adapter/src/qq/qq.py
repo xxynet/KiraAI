@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import uuid
 from datetime import datetime
 import asyncio
 from typing import Any, Dict
@@ -140,6 +141,110 @@ class QQAdapter(IMAdapter):
     def get_client(self) -> NapCatWebSocketClient:
         return self.bot
 
+    @staticmethod
+    def _sent_result_from_response(response: object, operation: str) -> KiraIMSentResult:
+        if not isinstance(response, dict):
+            return KiraIMSentResult(None, ok=False, err=f"Failed to {operation}: invalid response {response!r}")
+        if response.get("status") != "ok":
+            return KiraIMSentResult(None, ok=False, err=f"Failed to {operation}: {response}")
+
+        message_id = (response.get("data") or {}).get("message_id")
+        return KiraIMSentResult(str(message_id) if message_id is not None else None)
+
+    @staticmethod
+    async def _prepare_media_file(media: File | Video) -> tuple[str, str]:
+        if media.file_type == "url":
+            file_value = media.file
+        else:
+            file_value = f"base64://{await media.to_base64()}"
+        return file_value, media.name or uuid.uuid4().hex
+
+    async def _send_file(self, target_id, file: File, is_group: bool) -> KiraIMSentResult:
+        try:
+            file_value, file_name = await self._prepare_media_file(file)
+            if is_group:
+                response = await self.bot.upload_group_file(
+                    group_id=str(target_id),
+                    file=file_value,
+                    name=file_name,
+                )
+            else:
+                response = await self.bot.upload_private_file(
+                    user_id=str(target_id),
+                    file=file_value,
+                    name=file_name,
+                )
+            return self._sent_result_from_response(response, "upload file")
+        except Exception as e:
+            return KiraIMSentResult(message_id=None, ok=False, err=f"Error occurred while uploading file: {e}")
+
+    async def _send_video(self, target_id, video: Video, is_group: bool) -> KiraIMSentResult:
+        try:
+            file_value, file_name = await self._prepare_media_file(video)
+            message = [{
+                "type": "video",
+                "data": {
+                    "name": file_name,
+                    "file": file_value,
+                },
+            }]
+            if is_group:
+                response = await self.bot.send_group_segments(
+                    group_id=target_id,
+                    message=message,
+                )
+            else:
+                response = await self.bot.send_direct_segments(
+                    user_id=target_id,
+                    message=message,
+                )
+            return self._sent_result_from_response(response, "send video")
+        except Exception as e:
+            return KiraIMSentResult(message_id=None, ok=False, err=f"Error occurred while uploading video: {e}")
+
+    async def _send_forward(self, target_id, forward: Forward, is_group: bool) -> KiraIMSentResult:
+        try:
+            raw_message_ids = forward.message_id
+            if raw_message_ids is None:
+                return KiraIMSentResult(message_id=None, ok=False, err="Forward message has no message ID")
+            message_ids = [raw_message_ids] if isinstance(raw_message_ids, (str, int)) else list(raw_message_ids)
+            if not message_ids:
+                return KiraIMSentResult(message_id=None, ok=False, err="Forward message has no message ID")
+
+            if forward.merge:
+                message = [
+                    {"type": "node", "data": {"id": message_id}}
+                    for message_id in message_ids
+                ]
+                if is_group:
+                    response = await self.bot.send_group_segments(
+                        group_id=target_id,
+                        message=message,
+                    )
+                else:
+                    response = await self.bot.send_direct_segments(
+                        user_id=target_id,
+                        message=message,
+                    )
+            elif len(message_ids) == 1:
+                if is_group:
+                    response = await self.bot.forward_group_single_message(
+                        group_id=target_id,
+                        message_id=message_ids[0],
+                    )
+                else:
+                    response = await self.bot.forward_direct_single_message(
+                        user_id=target_id,
+                        message_id=message_ids[0],
+                    )
+            else:
+                self.logger.warning("Multiple non-merged forwards are not supported")
+                return KiraIMSentResult(message_id=None, ok=False, err="Multiple non-merged forwards are not supported")
+
+            return self._sent_result_from_response(response, "forward message")
+        except Exception as e:
+            return KiraIMSentResult(message_id=None, ok=False, err=f"Error occurred while forwarding message: {e}")
+
     async def send_group_message(self, group_id, send_message_obj):
         try:
             message_chain = await self._process_outgoing_message(send_message_obj)
@@ -151,128 +256,11 @@ class QQAdapter(IMAdapter):
                 await self.bot.send_poke(user_id=ele.pid, group_id=group_id)
                 return KiraIMSentResult(message_id=None, is_notice=True)
             elif isinstance(ele, File):
-                msg_res = KiraIMSentResult(None)
-                try:
-                    if ele.file_type == "url":
-                        file_string = ele.file
-                    else:
-                        file_b64 = await ele.to_base64()
-                        file_string = f"base64://{file_b64}"
-                    file_name = ele.name
-                    if not file_name:
-                        import uuid
-                        file_name = uuid.uuid4().hex
-                    resp = await self.bot.upload_group_file(str(group_id), file_string, file_name)
-                    if not isinstance(resp, dict):
-                        msg_res.ok = False
-                        msg_res.err = f"Failed to send file: invalid response {resp!r}"
-                        return msg_res
-                    message_id = str((resp.get("data") or {}).get("message_id"))
-                    if resp.get("status") != "ok":
-                        msg_res.ok = False
-                        msg_res.err = f"Failed to send file: {resp}"
-                        return msg_res
-                    msg_res.message_id = message_id
-                except Exception as e:
-                    msg_res.ok = False
-                    msg_res.err = f"Error occurred while uploading file: {e}"
-                return msg_res
+                return await self._send_file(target_id=group_id, file=ele, is_group=True)
             elif isinstance(ele, Video):
-                msg_res = KiraIMSentResult(None)
-                try:
-                    if ele.file_type == "url":
-                        video_file = ele.file
-                    else:
-                        video_file_b64 = await ele.to_base64()
-                        video_file = f"base64://{video_file_b64}"
-                    video_file_name = ele.name
-                    if not video_file_name:
-                        import uuid
-                        video_file_name = uuid.uuid4().hex
-                    resp = await self.bot.send_action("send_group_msg", {
-                        "group_id": group_id,
-                        "message": [
-                            {
-                                "type": "video",
-                                "data": {
-                                    "name": video_file_name,
-                                    "file": video_file,
-                                }
-                            }
-                        ]
-                    })
-                    if not isinstance(resp, dict):
-                        msg_res.ok = False
-                        msg_res.err = f"Failed to send video: invalid response {resp!r}"
-                        return msg_res
-                    message_id = str((resp.get("data") or {}).get("message_id"))
-                    if resp.get("status") != "ok":
-                        msg_res.ok = False
-                        msg_res.err = f"Failed to send video: {resp}"
-                        return msg_res
-                    msg_res.message_id = message_id
-                except Exception as e:
-                    msg_res.ok = False
-                    msg_res.err = f"Error occurred while uploading video: {e}"
-                return msg_res
+                return await self._send_video(target_id=group_id, video=ele, is_group=True)
             elif isinstance(ele, Forward):
-                msg_res = KiraIMSentResult(None)
-                try:
-                    forward_message_id = ele.message_id
-                    merge = ele.merge
-
-                    if merge:
-                        resp = await self.bot.send_action(
-                            action="send_group_msg",
-                            params={
-                                "group_id": group_id,
-                                "message": [
-                                    {
-                                        "type": "node",
-                                        "data": {
-                                            "id": x
-                                        }
-                                    } for x in forward_message_id
-                                ],
-
-                            }
-                        )
-                        if not isinstance(resp, dict):
-                            msg_res.ok = False
-                            msg_res.err = f"Failed to forward message: invalid response {resp!r}"
-                            return msg_res
-                        message_id = str((resp.get("data") or {}).get("message_id"))
-                        if resp.get("status") != "ok":
-                            msg_res.ok = False
-                            msg_res.err = f"Failed to forward message: {resp}"
-                            return msg_res
-                        msg_res.message_id = message_id
-
-                    elif len(forward_message_id) == 1:
-                        resp = await self.bot.send_action(
-                            action="forward_group_single_msg",
-                            params={
-                                "message_id": forward_message_id[0],
-                                "group_id": group_id
-                            }
-                        )
-                        if not isinstance(resp, dict):
-                            msg_res.ok = False
-                            msg_res.err = f"Failed to forward message: invalid response {resp!r}"
-                            return msg_res
-                        message_id = str((resp.get("data") or {}).get("message_id"))
-                        if resp.get("status") != "ok":
-                            msg_res.ok = False
-                            msg_res.err = f"Failed to forward message: {resp}"
-                            return msg_res
-                        msg_res.message_id = message_id
-                    else:
-                        self.logger.warning("尝试发送多条逐条转发消息")
-                        ...
-                except Exception as e:
-                    msg_res.ok = False
-                    msg_res.err = f"Error occurred while forwarding message: {e}"
-                return msg_res
+                return await self._send_forward(target_id=group_id, forward=ele, is_group=True)
 
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_group_message(group_id=group_id, msg=message_chain)
@@ -307,126 +295,11 @@ class QQAdapter(IMAdapter):
                 msg_res.is_notice = True
                 return msg_res
             elif isinstance(ele, File):
-                try:
-                    if ele.file_type == "url":
-                        file_string = ele.file
-                    else:
-                        file_b64 = await ele.to_base64()
-                        file_string = f"base64://{file_b64}"
-                    file_name = ele.name
-                    if not file_name:
-                        import uuid
-                        file_name = uuid.uuid4().hex
-                    resp = await self.bot.upload_private_file(str(user_id), file_string, file_name)
-                    if not isinstance(resp, dict):
-                        msg_res.ok = False
-                        msg_res.err = f"Failed to send file: invalid response {resp!r}"
-                        return msg_res
-                    message_id = str((resp.get("data") or {}).get("message_id"))
-                    if resp.get("status") != "ok":
-                        msg_res.ok = False
-                        msg_res.err = f"Failed to send file: {resp}"
-                        return msg_res
-                    msg_res.message_id = message_id
-                except Exception as e:
-                    msg_res.ok = False
-                    msg_res.err = f"Error occurred while uploading file: {e}"
-                return msg_res
+                return await self._send_file(target_id=user_id, file=ele, is_group=False)
             elif isinstance(ele, Video):
-                try:
-                    if ele.file_type == "url":
-                        video_file = ele.file
-                    else:
-                        video_file_b64 = await ele.to_base64()
-                        video_file = f"base64://{video_file_b64}"
-                    video_file_name = ele.name
-                    if not video_file_name:
-                        import uuid
-                        video_file_name = uuid.uuid4().hex
-                    resp = await self.bot.send_action("send_private_msg", {
-                        "user_id": user_id,
-                        "message": [
-                            {
-                                "type": "video",
-                                "data": {
-                                    "name": video_file_name,
-                                    "file": video_file,
-                                }
-                            }
-                        ]
-                    })
-                    if not isinstance(resp, dict):
-                        msg_res.ok = False
-                        msg_res.err = f"Failed to send video: invalid response {resp!r}"
-                        return msg_res
-                    message_id = str((resp.get("data") or {}).get("message_id"))
-                    if resp.get("status") != "ok":
-                        msg_res.ok = False
-                        msg_res.err = f"Failed to send video: {resp}"
-                        return msg_res
-                    msg_res.message_id = message_id
-                except Exception as e:
-                    msg_res.ok = False
-                    msg_res.err = f"Error occurred while uploading video: {e}"
-                return msg_res
+                return await self._send_video(target_id=user_id, video=ele, is_group=False)
             elif isinstance(ele, Forward):
-                msg_res = KiraIMSentResult(None)
-                try:
-                    forward_message_id = ele.message_id
-                    merge = ele.merge
-
-                    if merge:
-                        resp = await self.bot.send_action(
-                            action="send_private_msg",
-                            params={
-                                "user_id": user_id,
-                                "message": [
-                                    {
-                                        "type": "node",
-                                        "data": {
-                                            "id": x
-                                        }
-                                    } for x in forward_message_id
-                                ],
-
-                            }
-                        )
-                        if not isinstance(resp, dict):
-                            msg_res.ok = False
-                            msg_res.err = f"Failed to forward message: invalid response {resp!r}"
-                            return msg_res
-                        message_id = str((resp.get("data") or {}).get("message_id"))
-                        if resp.get("status") != "ok":
-                            msg_res.ok = False
-                            msg_res.err = f"Failed to forward message: {resp}"
-                            return msg_res
-                        msg_res.message_id = message_id
-                    elif len(forward_message_id) == 1:
-
-                        resp = await self.bot.send_action(
-                            action="forward_friend_single_msg",
-                            params={
-                                "message_id": forward_message_id[0],
-                                "user_id": user_id
-                            }
-                        )
-                        if not isinstance(resp, dict):
-                            msg_res.ok = False
-                            msg_res.err = f"Failed to forward message: invalid response {resp!r}"
-                            return msg_res
-                        message_id = str((resp.get("data") or {}).get("message_id"))
-                        if resp.get("status") != "ok":
-                            msg_res.ok = False
-                            msg_res.err = f"Failed to forward message: {resp}"
-                            return msg_res
-                        msg_res.message_id = message_id
-                    else:
-                        self.logger.warning("尝试发送多条逐条转发消息")
-                        ...
-                except Exception as e:
-                    msg_res.ok = False
-                    msg_res.err = f"Error occurred while forwarding message: {e}"
-                return msg_res
+                return await self._send_forward(target_id=user_id, forward=ele, is_group=False)
 
             message_chain = QQMessageChain(message_chain)
             result = await self.bot.send_direct_message(user_id=user_id, msg=message_chain)
@@ -507,12 +380,12 @@ class QQAdapter(IMAdapter):
                     file_size = ele.get("data").get("file_size")  # Bytes, str
 
                     if message_type == "group":
-                        file_info = await self.bot.send_action("get_group_file_url", {"group_id": group_id, "file_id": file_id})
+                        file_info = await self.bot.get_group_file_url(group_id=group_id, file_id=file_id)
                         if not file_info:
                             continue
                         file_url = (file_info.get("data", {}) or {}).get("url")
                     elif message_type == "private":
-                        file_info = await self.bot.send_action("get_private_file_url", {"file_id": file_id})
+                        file_info = await self.bot.get_private_file_url(file_id=file_id)
                         if not file_info:
                             continue
                         file_url = (file_info.get("data", {}) or {}).get("url")
