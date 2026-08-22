@@ -12,8 +12,7 @@ from core.plugin import BasePlugin, logger, register
 class SearchPlugin(BasePlugin):
     """
     联网搜索插件：Tavily / AnySearch 双引擎
-    - hybrid（推荐）：双源并发调用，RRF + score 归一化加权融合去重
-    - auto：Tavily 有 key 时用 Tavily，否则回退 AnySearch（匿名可用）
+    - hybrid（推荐，默认）：双源并发调用，RRF + score 归一化加权融合去重；任一源不可用自动降级单源
     - tavily / anysearch：强制指定单源
     AnySearch 额外提供并行批量搜索与垂直领域目录查询（hybrid/anysearch 模式下可用）
     """
@@ -26,7 +25,6 @@ class SearchPlugin(BasePlugin):
         self._any_auto_key = ""
         self._any_base = "https://api.anysearch.com"
         self._max_results = 5
-        self._timeout = 30.0
         self._hybrid_weight = 0.4
         self.tavily_available = True
         self.anysearch_available = True
@@ -40,7 +38,10 @@ class SearchPlugin(BasePlugin):
         self._tavily_key = src.get("tavily_key") or self.plugin_cfg.get("tavily_key")
         # 搜索模式
         self._provider = str(src.get("search_provider") or self.plugin_cfg.get("search_provider", "hybrid") or "hybrid").strip().lower()
-        if self._provider not in ("tavily", "anysearch", "auto", "hybrid"):
+        if self._provider == "auto":
+            # auto 已并入 hybrid（任一源可用即自动兜底），保留旧配置兼容
+            self._provider = "hybrid"
+        if self._provider not in ("tavily", "anysearch", "hybrid"):
             self._provider = "hybrid"
         # AnySearch
         self._any_key = str(src.get("anysearch_key") or self.plugin_cfg.get("anysearch_key", "") or "").strip()
@@ -54,13 +55,8 @@ class SearchPlugin(BasePlugin):
             self._max_results = max(1, min(int(mr), 10))
         except Exception:
             self._max_results = 5
-        try:
-            to = common.get("anysearch_timeout")
-            if to is None:
-                to = self.plugin_cfg.get("anysearch_timeout", 30)
-            self._timeout = float(to)
-        except Exception:
-            self._timeout = 30.0
+        # AnySearch 超时跟随框架全局工具调用超时（bot_config.agent.tool_call_timeout），
+        # 不设独立配置项，与 1.0 版本行为对齐（由框架 wait_for 兜底）
         try:
             w = common.get("hybrid_score_weight")
             if w is None:
@@ -84,6 +80,15 @@ class SearchPlugin(BasePlugin):
         logger.info("Initializing Search Plugin mode=%s tavily=%s anysearch=%s hybrid_weight=%s",
                     self._provider, self.tavily_available, bool(self._any_key or self._any_auto_key), self._hybrid_weight)
 
+    def _tool_timeout(self) -> float:
+        """跟随框架全局工具调用超时（bot_config.agent.tool_call_timeout，默认 60s）"""
+        try:
+            t = self.ctx.config.get_config("bot_config.agent.tool_call_timeout", 60.0)
+            t = float(t)
+            return t if t > 0 else 60.0
+        except Exception:
+            return 60.0
+
     async def terminate(self):
         pass
 
@@ -104,6 +109,10 @@ class SearchPlugin(BasePlugin):
             f = self.ctx.get_plugin_data_dir() / "anysearch_auto_key.txt"
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(key, encoding="utf-8")
+            try:
+                f.chmod(0o600)
+            except OSError:
+                pass
         except Exception as e:
             logger.warning("save anysearch auto key failed: %s", e)
 
@@ -119,7 +128,7 @@ class SearchPlugin(BasePlugin):
 
     async def _any_call(self, method: str, path: str, payload: dict = None, params: list = None) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(timeout=self._tool_timeout()) as client:
                 resp = await client.request(
                     method, f"{self._any_base}{path}", json=payload, params=params,
                     headers=self._any_headers(),
@@ -132,6 +141,8 @@ class SearchPlugin(BasePlugin):
             body = resp.json()
         except Exception:
             return {"error": f"AnySearch 无效响应（HTTP {resp.status_code}）：{resp.text[:200]}"}
+        if not isinstance(body, dict):
+            return {"error": f"AnySearch 无效响应（HTTP {resp.status_code}）：非 JSON 对象"}
 
         # 匿名自动开户：message 里带自动生成的 api_key，提取并重试一次
         if resp.status_code >= 400 and body.get("code", 0) != 0:
@@ -139,7 +150,7 @@ class SearchPlugin(BasePlugin):
             if auto_key:
                 await self._save_any_auto_key(auto_key)
                 try:
-                    async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    async with httpx.AsyncClient(timeout=self._tool_timeout()) as client:
                         resp = await client.request(
                             method, f"{self._any_base}{path}", json=payload, params=params,
                             headers=self._any_headers(auto_key),
@@ -147,8 +158,9 @@ class SearchPlugin(BasePlugin):
                     body = resp.json()
                     if resp.status_code < 400 and body.get("code", 0) == 0:
                         return body
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("AnySearch retry after auto key failed: %s", e)
+                return {"error": "AnySearch 匿名开户后重试失败，请稍后重试"}
         if resp.status_code >= 400 or body.get("code", 0) != 0:
             msg = body.get("message") or f"HTTP {resp.status_code}"
             rid = body.get("request_id", "")
@@ -161,7 +173,9 @@ class SearchPlugin(BasePlugin):
             return None
         raw = raw.strip()
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
         except Exception:
             pass
         result = {}
@@ -235,7 +249,8 @@ class SearchPlugin(BasePlugin):
             return {}
         lo, hi = min(scores), max(scores)
         if hi <= lo:
-            return {i: 1.0 for i in range(len(scores))}
+            # 无区分度（含全 0）时给中性分，避免无 score 的源被系统性拔高
+            return {i: 0.5 for i in range(len(scores))}
         return {i: (s - lo) / (hi - lo) for i, s in enumerate(scores)}
 
     def _fuse_results(self, lists: list) -> list:
@@ -294,17 +309,14 @@ class SearchPlugin(BasePlugin):
     # ---------- 源选择 ----------
 
     def _resolve_mode(self) -> str:
-        """返回实际执行模式：hybrid / tavily / anysearch"""
-        if self._provider == "hybrid":
-            if self.tavily_available and (self._any_key or self._any_auto_key or True):
-                return "hybrid"
-            return "tavily" if self.tavily_available else "anysearch"
+        """返回实际执行模式：hybrid / tavily / anysearch
+        hybrid 下任一源不可用自动降级为另一单源（Tavily 无 Key 时走 AnySearch），
+        已完全覆盖原 auto 模式语义，故不再单设 auto"""
         if self._provider == "tavily":
             return "tavily" if self.tavily_available else "anysearch"
         if self._provider == "anysearch":
             return "anysearch"
-        # auto：Tavily 可用则 Tavily，否则 AnySearch
-        return "tavily" if self.tavily_available else "anysearch"
+        return "hybrid"
 
     # ---------- 工具：通用搜索 ----------
 
@@ -344,6 +356,10 @@ class SearchPlugin(BasePlugin):
                 {"source": "tavily", "results": t_res["results"]},
                 {"source": "anysearch", "results": a_res["results"]},
             ])
+            if not fused:
+                errs = [e for e in (t_res["error"], a_res["error"]) if e]
+                if errs:
+                    return "搜索失败：" + "；".join(errs)
             return self._fmt_hybrid(fused)
 
         if mode == "tavily":
@@ -380,13 +396,13 @@ class SearchPlugin(BasePlugin):
             try:
                 client = TavilyClient(self._tavily_key)
                 res = await asyncio.to_thread(
-                    client.extract, urls=url, query=query, max_results=self._max_results, extract_depth=extract_depth
+                    client.extract, urls=url, query=query, extract_depth=extract_depth
                 )
                 results = res.get("results") or []
                 if results:
                     return "".join(json.dumps(ele, ensure_ascii=False) for ele in results)
             except Exception as e:
-                logger.warning("Tavily extract failed: %s", e)
+                logger.warning("Tavily extract failed: %r", e)
 
         body = await self._any_call("POST", "/v1/extract", payload={"url": url})
         if "error" in body:
@@ -435,7 +451,10 @@ class SearchPlugin(BasePlugin):
                 q["params"] = p
             mr = it.get("max_results") or it.get("max") or max_results
             if mr:
-                q["max_results"] = max(1, min(int(mr), 10))
+                try:
+                    q["max_results"] = max(1, min(int(mr), 10))
+                except (TypeError, ValueError):
+                    return "batch_search 失败：max_results 必须是 1-10 的整数"
             normalized.append(q)
 
         async def one(item: dict) -> tuple:
@@ -444,7 +463,7 @@ class SearchPlugin(BasePlugin):
 
         results = await asyncio.gather(*(one(it) for it in normalized))
         out = []
-        for i, (q, body) in enumerate(results, 1):
+        for q, body in results:
             if "error" in body:
                 out.append(json.dumps({"query": q, "error": body["error"]}, ensure_ascii=False))
             else:
