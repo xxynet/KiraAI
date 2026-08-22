@@ -1,9 +1,15 @@
 {
   "info_intro": {
     "type": "info",
-    "name": "说明",
-    "hint": "联网搜索插件：Tavily / AnySearch 双引擎。hybrid 混合模式会并发调用两个源并按相关性融合排序去重（RRF + 归一化 score 加权）。AnySearch Key 可在 https://anysearch.com/console/api-keys 免费创建，留空则匿名访问（每日 1000 次免费额度）。",
-    "level": "info"
+    "name": "About",
+    "hint": "Web search plugin with dual engines: Tavily and AnySearch. Hybrid mode queries both sources concurrently, then deduplicates and ranks results using RRF and normalized score weighting. Create a free AnySearch API key at https://anysearch.com/console/api-keys, or leave it blank for anonymous access (1,000 free requests per day).",
+    "level": "info",
+    "locales": {
+      "zh": {
+        "name": "说明",
+        "hint": "联网搜索插件：Tavily / AnySearch 双引擎。hybrid 混合模式会并发调用两个源并按相关性融合排序去重（RRF + 归一化 score 加权）。AnySearch Key 可在 https://anysearch.com/console/api-keys 免费创建，留空则匿名访问（每日 1000 次免费额度）。"
+      }
+    }
   },
   "section_source": {
     "type": "section",
