@@ -8,6 +8,12 @@ from tavily import TavilyClient
 from core.plugin import BasePlugin, logger, register
 
 from .anysearch import AnySearchClient
+from .utils import (
+    format_anysearch_domains,
+    format_anysearch_extract,
+    format_anysearch_search,
+    format_hybrid_results,
+)
 
 
 class SearchPlugin(BasePlugin):
@@ -203,24 +209,6 @@ class SearchPlugin(BasePlugin):
         results = sorted(merged.values(), key=lambda x: x["fusion_score"], reverse=True)
         return results[: self._max_results]
 
-    @staticmethod
-    def _fmt_hybrid(results: list, total: int = None) -> str:
-        """融合结果按原版 Tavily JSON 风格输出：全量字段，source/fusion_score 附加，content 不截断"""
-        if not results:
-            return "[]"
-        out = []
-        for r in results:
-            item = {
-                "title": r["title"],
-                "url": r["url"],
-                "content": r["content"],
-                "score": round(r["fusion_score"], 4),
-                "source": ",".join(sorted(r["sources"])),
-                "fusion_score": round(r["fusion_score"], 4),
-            }
-            out.append(item)
-        return "".join(json.dumps(ele, ensure_ascii=False) for ele in out)
-
     # ---------- 源选择 ----------
 
     def _resolve_mode(self) -> str:
@@ -263,7 +251,7 @@ class SearchPlugin(BasePlugin):
             res = await self._any_search(query, sub_domain, params, topic)
             if res["error"]:
                 return f"搜索失败：{res['error']}"
-            return self._fmt_any_search({"results": res["results"]})
+            return format_anysearch_search({"results": res["results"]})
 
         mode = self._resolve_mode()
         if mode == "hybrid":
@@ -279,7 +267,7 @@ class SearchPlugin(BasePlugin):
                 errs = [e for e in (t_res["error"], a_res["error"]) if e]
                 if errs:
                     return "搜索失败：" + "；".join(errs)
-            return self._fmt_hybrid(fused)
+            return format_hybrid_results(fused)
 
         if mode == "tavily":
             res = await self._tavily_search(query, topic, search_depth)
@@ -291,7 +279,7 @@ class SearchPlugin(BasePlugin):
         res = await self._any_search(query, None, None, topic)
         if res["error"]:
             return f"搜索失败：{res['error']}"
-        return self._fmt_any_search({"results": res["results"]})
+        return format_anysearch_search({"results": res["results"]})
 
     # ---------- 工具：网页内容提取 ----------
 
@@ -349,7 +337,7 @@ class SearchPlugin(BasePlugin):
         data = body.get("data") or {}
         if not data.get("content"):
             return f"未能从 {url} 提取到正文（可能是不支持的格式或页面为空）"
-        return self._fmt_any_extract(data)
+        return format_anysearch_extract(data)
 
     # ---------- 工具：AnySearch 专属：并行批量搜索 ----------
 
@@ -411,7 +399,7 @@ class SearchPlugin(BasePlugin):
             if result["error"]:
                 out.append(json.dumps({"query": q, "error": result["error"]}, ensure_ascii=False))
             else:
-                out.append(self._fmt_any_search({"results": result["results"]}))
+                out.append(format_anysearch_search({"results": result["results"]}))
         return "\n".join(out)
 
     # ---------- 工具：AnySearch 专属：垂直领域目录 ----------
@@ -438,62 +426,9 @@ class SearchPlugin(BasePlugin):
         body = await self._any_client.get_sub_domains(ds)
         if "error" in body:
             return f"查询失败：{body['error']}"
-        return self._fmt_any_domains(body.get("data") or {})
+        return format_anysearch_domains(body.get("data") or {})
 
     def _any_enabled(self) -> bool:
         if self._provider == "tavily":
             return False
         return True
-
-    # ---------- 格式化 ----------
-
-    @staticmethod
-    def _fmt_any_search(data: dict) -> str:
-        """AnySearch 结果按原版 Tavily JSON 风格输出，保留 source/score 字段"""
-        results = data.get("results") or []
-        if not results:
-            return "[]"
-        out = []
-        for r in results:
-            out.append({
-                "title": r.get("title") or "",
-                "url": r.get("url") or "",
-                "content": r.get("content") or r.get("snippet") or "",
-                "score": r.get("score") or 0.0,
-                "source": r.get("source") or "anysearch",
-            })
-        return "".join(json.dumps(ele, ensure_ascii=False) for ele in out)
-
-    @staticmethod
-    def _fmt_any_extract(data: dict) -> str:
-        title = data.get("title") or ""
-        url = data.get("url") or ""
-        content = data.get("content") or ""
-        head = f"## {title}\n\n**来源**: {url}\n\n---\n\n" if title or url else ""
-        return head + content
-
-    @staticmethod
-    def _fmt_any_domains(data: dict) -> str:
-        domains = data.get("domains") or []
-        if not domains:
-            return "该领域暂无可用的垂直子域"
-        lines = []
-        for d in domains:
-            subs = d.get("sub_domains") or []
-            if not subs:
-                continue
-            lines.append(f"## {d.get('domain', '')}（{len(subs)} 个子域）")
-            for s in subs:
-                lines.append(f"### {s.get('sub_domain', '')}")
-                lines.append(s.get("description", ""))
-                params = s.get("params") or {}
-                if params:
-                    lines.append("")
-                    lines.append("**参数：**")
-                    entries = sorted(params.items(), key=lambda item: (item[1] or {}).get("sort_order", 0))
-                    for name, info in entries:
-                        info = info or {}
-                        req = "（必填）" if info.get("required") else ""
-                        lines.append(f"- `{name}`{req}: {info.get('description', '')}")
-                lines.append("")
-        return "\n".join(lines).rstrip()
