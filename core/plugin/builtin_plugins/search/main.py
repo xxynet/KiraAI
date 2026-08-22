@@ -346,6 +346,8 @@ class SearchPlugin(BasePlugin):
                      sub_domain: str = None, params: str = None) -> str:
         # 垂直领域查询强制走 AnySearch（Tavily 不支持）
         if sub_domain or params:
+            if not self._any_enabled():
+                return "搜索失败：垂直领域查询（sub_domain/params）仅 AnySearch 引擎支持，当前为 tavily 单源模式"
             res = await self._any_search(query, sub_domain, params, topic)
             if res["error"]:
                 return f"搜索失败：{res['error']}"
@@ -414,8 +416,8 @@ class SearchPlugin(BasePlugin):
                 logger.warning("Tavily extract failed: %r", e)
                 return f"Tavily 提取失败：{e}"
 
-        # hybrid 模式优先 Tavily，失败回落 AnySearch
-        if self.tavily_available:
+        # hybrid 模式优先 Tavily，失败回落 AnySearch；anysearch 单源直接走 AnySearch
+        if mode == "hybrid" and self.tavily_available:
             try:
                 client = TavilyClient(self._tavily_key)
                 res = await asyncio.to_thread(
