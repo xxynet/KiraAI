@@ -3,10 +3,11 @@ import json
 import re
 from typing import Literal, Optional
 
-import httpx
 from tavily import TavilyClient
 
 from core.plugin import BasePlugin, logger, register
+
+from .anysearch import AnySearchClient
 
 
 class SearchPlugin(BasePlugin):
@@ -21,9 +22,7 @@ class SearchPlugin(BasePlugin):
         super().__init__(ctx, cfg)
         self._tavily_key = None
         self._provider = "hybrid"
-        self._any_key = ""
-        self._any_auto_key = ""
-        self._any_base = "https://api.anysearch.com"
+        self._any_client = None
         self._max_results = 5
         self._hybrid_weight = 0.4
         self.tavily_available = True
@@ -44,10 +43,9 @@ class SearchPlugin(BasePlugin):
         if self._provider not in ("tavily", "anysearch", "hybrid"):
             self._provider = "hybrid"
         # AnySearch
-        self._any_key = str(src.get("anysearch_key") or self.plugin_cfg.get("anysearch_key", "") or "").strip()
+        anysearch_key = str(src.get("anysearch_key") or self.plugin_cfg.get("anysearch_key", "") or "").strip()
         base = str(src.get("anysearch_base_url") or self.plugin_cfg.get("anysearch_base_url", "") or "").strip().rstrip("/")
-        if base:
-            self._any_base = base
+        anysearch_base = base or "https://api.anysearch.com"
         try:
             mr = common.get("max_results")
             if mr is None:
@@ -68,17 +66,16 @@ class SearchPlugin(BasePlugin):
         if not self._tavily_key:
             logger.warning("Tavily API key not found. Tavily source unavailable")
             self.tavily_available = False
-        if not self._any_key:
-            # 尝试读取缓存的匿名自动 Key
-            try:
-                f = self.ctx.get_plugin_data_dir() / "anysearch_auto_key.txt"
-                if f.exists():
-                    self._any_auto_key = f.read_text(encoding="utf-8").strip()
-            except Exception:
-                pass
+        self._any_client = AnySearchClient(
+            base_url=anysearch_base,
+            api_key=anysearch_key,
+            timeout=self._tool_timeout(),
+            auto_key_path=self.ctx.get_plugin_data_dir() / "anysearch_auto_key.txt",
+        )
+        await self._any_client.initialize()
 
         logger.info("Initializing Search Plugin mode=%s tavily=%s anysearch=%s hybrid_weight=%s",
-                    self._provider, self.tavily_available, bool(self._any_key or self._any_auto_key), self._hybrid_weight)
+                    self._provider, self.tavily_available, self._any_client.has_credentials, self._hybrid_weight)
 
     def _tool_timeout(self) -> float:
         """跟随框架全局工具调用超时（bot_config.agent.tool_call_timeout，默认 60s）"""
@@ -90,82 +87,8 @@ class SearchPlugin(BasePlugin):
             return 60.0
 
     async def terminate(self):
-        pass
-
-    # ---------- AnySearch 内部逻辑 ----------
-
-    def _any_headers(self, key: str = None) -> dict:
-        h = {"Content-Type": "application/json", "X-Anysearch-Client": "kiraai/1.0.0"}
-        k = key or self._any_key or self._any_auto_key
-        if k:
-            h["Authorization"] = f"Bearer {k}"
-        return h
-
-    async def _save_any_auto_key(self, key: str):
-        if not key or key == self._any_auto_key:
-            return
-        self._any_auto_key = key
-        try:
-            f = self.ctx.get_plugin_data_dir() / "anysearch_auto_key.txt"
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(key, encoding="utf-8")
-            try:
-                f.chmod(0o600)
-            except OSError:
-                pass
-        except Exception as e:
-            logger.warning("save anysearch auto key failed: %s", e)
-
-    @staticmethod
-    def _extract_any_key(message: str) -> str:
-        if not message:
-            return ""
-        for line in message.splitlines():
-            line = line.strip()
-            if line.startswith("api_key="):
-                return line.split("=", 1)[1].strip().rstrip(".")
-        return ""
-
-    async def _any_call(self, method: str, path: str, payload: dict = None, params: list = None) -> dict:
-        try:
-            async with httpx.AsyncClient(timeout=self._tool_timeout()) as client:
-                resp = await client.request(
-                    method, f"{self._any_base}{path}", json=payload, params=params,
-                    headers=self._any_headers(),
-                )
-        except httpx.TimeoutException:
-            return {"error": "AnySearch 请求超时，请稍后重试"}
-        except httpx.HTTPError as e:
-            return {"error": f"AnySearch 网络错误：{e}"}
-        try:
-            body = resp.json()
-        except Exception:
-            return {"error": f"AnySearch 无效响应（HTTP {resp.status_code}）：{resp.text[:200]}"}
-        if not isinstance(body, dict):
-            return {"error": f"AnySearch 无效响应（HTTP {resp.status_code}）：非 JSON 对象"}
-
-        # 匿名自动开户：message 里带自动生成的 api_key，提取并重试一次
-        if resp.status_code >= 400 and body.get("code", 0) != 0:
-            auto_key = self._extract_any_key(body.get("message", ""))
-            if auto_key:
-                await self._save_any_auto_key(auto_key)
-                try:
-                    async with httpx.AsyncClient(timeout=self._tool_timeout()) as client:
-                        resp = await client.request(
-                            method, f"{self._any_base}{path}", json=payload, params=params,
-                            headers=self._any_headers(auto_key),
-                        )
-                    body = resp.json()
-                    if resp.status_code < 400 and body.get("code", 0) == 0:
-                        return body
-                except Exception as e:
-                    logger.warning("AnySearch retry after auto key failed: %s", e)
-                return {"error": "AnySearch 匿名开户后重试失败，请稍后重试"}
-        if resp.status_code >= 400 or body.get("code", 0) != 0:
-            msg = body.get("message") or f"HTTP {resp.status_code}"
-            rid = body.get("request_id", "")
-            return {"error": f"{msg}（request_id: {rid}）" if rid else msg}
-        return body
+        if self._any_client:
+            await self._any_client.close()
 
     @staticmethod
     def _parse_params(raw: Optional[str]) -> Optional[dict]:
@@ -206,26 +129,15 @@ class SearchPlugin(BasePlugin):
 
     async def _any_search(self, query: str, sub_domain: str = None, params: str = None, topic: str = "general") -> dict:
         """返回 {"results": [...], "error": None}，results 项含 url/title/content/score/source"""
-        payload = {"query": query}
-        if sub_domain:
-            payload["tag"] = sub_domain
-        p = self._parse_params(params)
-        if p:
-            payload["params"] = p
-        if topic == "news":
-            payload["language"] = "zh"
-        payload["max_results"] = self._max_results
-        body = await self._any_call("POST", "/v1/search", payload=payload)
-        if "error" in body:
-            return {"results": [], "error": body["error"]}
-        data = body.get("data") or {}
-        results = []
-        for it in (data.get("results") or []):
-            item = dict(it)
-            item["source"] = "anysearch"
-            item["score"] = float(item.get("score") or 0.0)
-            results.append(item)
-        return {"results": results, "error": None}
+        if not self._any_client:
+            return {"results": [], "error": "AnySearch 客户端未初始化"}
+        return await self._any_client.search(
+            query,
+            max_results=self._max_results,
+            sub_domain=sub_domain,
+            params=self._parse_params(params),
+            topic=topic,
+        )
 
     # ---------- 混合融合 ----------
 
@@ -429,7 +341,9 @@ class SearchPlugin(BasePlugin):
             except Exception as e:
                 logger.warning("Tavily extract failed: %r", e)
 
-        body = await self._any_call("POST", "/v1/extract", payload={"url": url})
+        if not self._any_client:
+            return "提取失败：AnySearch 客户端未初始化"
+        body = await self._any_client.extract(url)
         if "error" in body:
             return f"提取失败：{body['error']}"
         data = body.get("data") or {}
@@ -483,16 +397,21 @@ class SearchPlugin(BasePlugin):
             normalized.append(q)
 
         async def one(item: dict) -> tuple:
-            body = await self._any_call("POST", "/v1/search", payload=item)
-            return item["query"], body
+            result = await self._any_client.search(
+                item["query"],
+                max_results=item.get("max_results"),
+                sub_domain=item.get("tag"),
+                params=item.get("params"),
+            )
+            return item["query"], result
 
         results = await asyncio.gather(*(one(it) for it in normalized))
         out = []
-        for q, body in results:
-            if "error" in body:
-                out.append(json.dumps({"query": q, "error": body["error"]}, ensure_ascii=False))
+        for q, result in results:
+            if result["error"]:
+                out.append(json.dumps({"query": q, "error": result["error"]}, ensure_ascii=False))
             else:
-                out.append(self._fmt_any_search(body.get("data") or {}))
+                out.append(self._fmt_any_search({"results": result["results"]}))
         return "\n".join(out)
 
     # ---------- 工具：AnySearch 专属：垂直领域目录 ----------
@@ -514,7 +433,9 @@ class SearchPlugin(BasePlugin):
         ds = [d.strip() for d in domains.split(",") if d.strip()]
         if not ds or len(ds) > 5:
             return "get_sub_domains 失败：需提供 1-5 个领域名"
-        body = await self._any_call("GET", "/v1/sub-domains", params=[("domain", d) for d in ds])
+        if not self._any_client:
+            return "查询失败：AnySearch 客户端未初始化"
+        body = await self._any_client.get_sub_domains(ds)
         if "error" in body:
             return f"查询失败：{body['error']}"
         return self._fmt_any_domains(body.get("data") or {})
