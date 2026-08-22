@@ -87,12 +87,12 @@ if __name__ == "__main__":
         "https://edgeone.gh-proxy.org/"
     ]
 
-    test_url = "https://github.com/xxynet/KiraAI/archive/refs/tags/v2.9.1.zip"
+    test_url = "https://github.com/KiraAI-Dev/KiraAI/archive/refs/tags/v2.9.1.zip"
 
     result = asyncio.run(test_url_speed(test_url))
     logger.info(result)
 
     for proxy_url in proxies:
-        url = f"{proxy_url.rstrip('/')}/https://github.com/xxynet/KiraAI/archive/refs/tags/v2.9.1.zip"
+        url = f"{proxy_url.rstrip('/')}/https://github.com/KiraAI-Dev/KiraAI/archive/refs/tags/v2.9.1.zip"
         result = asyncio.run(test_url_speed(url))
         logger.info(result)

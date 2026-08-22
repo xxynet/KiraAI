@@ -6,7 +6,7 @@ This file provides guidance to AI agents when working with code in this reposito
 
 KiraAI is a modular, multi-platform AI "digital life" system that connects various AI models (LLM, TTS, STT, image/video generation, etc.) to chat platforms (QQ, Telegram, WeChat, Discord, Bilibili, etc.), optimized for virtual companion scenarios.
 
-- **GitHub**: https://github.com/xxynet/KiraAI
+- **GitHub**: https://github.com/KiraAI-Dev/KiraAI
 - **Docs**: https://docs.kira-ai.top
 
 Version is defined in `core/config/default.py`.

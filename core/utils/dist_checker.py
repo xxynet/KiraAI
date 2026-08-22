@@ -28,7 +28,7 @@ from core.utils.update_transaction import STAGE_PREFIX, UpdateTransaction, recov
 
 logger = get_logger("dist_checker", "blue")
 
-REPO_OWNER = "xxynet"
+REPO_OWNER = "KiraAI-Dev"
 REPO_NAME = "KiraAI"
 ASSET_NAME = "dist.zip"
 WEBUI_JOURNAL_NAME = ".kira-webui-update-journal.json"

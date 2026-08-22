@@ -386,6 +386,6 @@ async def pick_fastest_source(
 
 
 if __name__ == '__main__':
-    print(asyncio.run(get_latest_release("xxynet", "KiraAI")))
+    print(asyncio.run(get_latest_release("KiraAI-Dev", "KiraAI")))
 
-    # print(asyncio.run(get_all_releases("xxynet", "KiraAI")))
+    # print(asyncio.run(get_all_releases("KiraAI-Dev", "KiraAI")))

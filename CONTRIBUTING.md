@@ -44,9 +44,9 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 
 ### Reporting Bugs
 
-Before opening a new issue, please **[search existing issues](https://github.com/xxynet/KiraAI/issues)** to check if the same bug has already been reported. If you find an existing issue that matches yours, add your information as a comment instead of creating a duplicate.
+Before opening a new issue, please **[search existing issues](https://github.com/KiraAI-Dev/KiraAI/issues)** to check if the same bug has already been reported. If you find an existing issue that matches yours, add your information as a comment instead of creating a duplicate.
 
-If no existing issue covers your bug, [open a new issue](https://github.com/xxynet/KiraAI/issues/new) with:
+If no existing issue covers your bug, [open a new issue](https://github.com/KiraAI-Dev/KiraAI/issues/new) with:
 
 - A **clear and descriptive title**.
 - Steps to **reproduce** the problem.
@@ -56,7 +56,7 @@ If no existing issue covers your bug, [open a new issue](https://github.com/xxyn
 
 ### Suggesting Features
 
-Before suggesting a new feature, please **[search existing issues](https://github.com/xxynet/KiraAI/issues)** to see if the same idea has already been proposed. If so, add your thoughts as a comment to join the discussion.
+Before suggesting a new feature, please **[search existing issues](https://github.com/KiraAI-Dev/KiraAI/issues)** to see if the same idea has already been proposed. If so, add your thoughts as a comment to join the discussion.
 
 If your idea hasn't been proposed yet, feel free to open an issue. When proposing a new feature:
 

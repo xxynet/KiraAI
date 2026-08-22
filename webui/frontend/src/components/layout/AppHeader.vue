@@ -37,7 +37,7 @@
       </a>
       <!-- GitHub -->
       <a
-        href="https://github.com/xxynet/KiraAI"
+        href="https://github.com/KiraAI-Dev/KiraAI"
         target="_blank"
         rel="noopener noreferrer"
         class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
@@ -101,7 +101,7 @@
             <span>{{ t('header.docs') }}</span>
           </a>
           <a
-            href="https://github.com/xxynet/KiraAI"
+            href="https://github.com/KiraAI-Dev/KiraAI"
             target="_blank"
             rel="noopener noreferrer"
             class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]"

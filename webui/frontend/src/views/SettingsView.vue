@@ -284,7 +284,7 @@
           <div class="flex justify-between items-center">
             <span class="text-sm text-gray-500 dark:text-gray-400">{{ $t('settings.about_repo') }}</span>
             <a
-              href="https://github.com/xxynet/KiraAI"
+              href="https://github.com/KiraAI-Dev/KiraAI"
               target="_blank"
               class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
             >

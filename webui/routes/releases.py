@@ -74,7 +74,7 @@ class ReleasesRoutes(Routes):
             releases = _releases_cache
         else:
             try:
-                releases = await get_all_releases("xxynet", "KiraAI")
+                releases = await get_all_releases("KiraAI-Dev", "KiraAI")
             except Exception as e:
                 if _releases_cache is not None:
                     logger.warning(f"Failed to fetch releases, using stale cache: {e}")
@@ -153,7 +153,7 @@ class ReleasesRoutes(Routes):
 
                 self._set_progress(task_id, "download", "Downloading release source...", 35)
                 if not zip_path.exists():
-                    direct_url = f"https://github.com/xxynet/KiraAI/archive/refs/tags/{tag}.zip"
+                    direct_url = f"https://github.com/KiraAI-Dev/KiraAI/archive/refs/tags/{tag}.zip"
                     ranked_urls = await pick_fastest_source(direct_url)
                     if not ranked_urls:
                         raise RuntimeError("All download sources failed")
@@ -244,7 +244,7 @@ class ReleasesRoutes(Routes):
                         with zf.open(member) as src, open(target, "wb") as dst:
                             dst.write(src.read())
 
-            # GitHub zipballs have a single top-level directory (e.g. xxynet-KiraAI-abc123/)
+            # GitHub zipballs have a single top-level directory (e.g. KiraAI-Dev-KiraAI-abc123/)
             entries = list(tmp.iterdir())
             if len(entries) == 1 and entries[0].is_dir():
                 source_root = entries[0]

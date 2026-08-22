@@ -8,7 +8,7 @@
 
 [🧭 文档](https://docs.kira-ai.top/zh/)
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/) [![Releases](https://img.shields.io/github/v/release/xxynet/KiraAI)](https://github.com/xxynet/KiraAI/releases) [![Commit](https://img.shields.io/github/last-commit/xxynet/KiraAI?color=green)](https://github.com/xxynet/KiraAI/commits) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/xxynet/KiraAI) [![QQ群](https://custom-icon-badges.demolab.com/badge/QQ群-874381335-00BFFF?style=flat&logo=tencent-qq)](https://qm.qq.com/q/eZBJu9wfFC) [![Discord](https://custom-icon-badges.demolab.com/badge/Discord-KiraAI-00BFFF?style=flat&logo=icons8-discord-48)](https://discord.gg/mRNmVmFHn3)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/) [![Releases](https://img.shields.io/github/v/release/KiraAI-Dev/KiraAI)](https://github.com/KiraAI-Dev/KiraAI/releases) [![Commit](https://img.shields.io/github/last-commit/KiraAI-Dev/KiraAI?color=green)](https://github.com/KiraAI-Dev/KiraAI/commits) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/KiraAI-Dev/KiraAI) [![QQ群](https://custom-icon-badges.demolab.com/badge/QQ群-874381335-00BFFF?style=flat&logo=tencent-qq)](https://qm.qq.com/q/eZBJu9wfFC) [![Discord](https://custom-icon-badges.demolab.com/badge/Discord-KiraAI-00BFFF?style=flat&logo=icons8-discord-48)](https://discord.gg/mRNmVmFHn3)
 
 </div>
 
@@ -54,7 +54,7 @@ KiraAI，一个模块化、跨平台的 AI 数字生命项目，以数字生命�
 
 首先，确保你的电脑中安装了 Python 3.10+ 并且添加到了 `PATH` 环境变量
 
-前往 [Releases](https://github.com/xxynet/KiraAI/releases) 下载标记为 `latest` 的 Release 中的 `Source code
+前往 [Releases](https://github.com/KiraAI-Dev/KiraAI/releases) 下载标记为 `latest` 的 Release 中的 `Source code
 (zip)`
 解压并执行 `scripts/run.bat` （Windows 用户） 或执行 `scripts/run.sh` （Linux、Mac 用户）
 
@@ -147,9 +147,9 @@ KiraAI/
 
 ## 💖 Contributors
 
-<a href="https://github.com/xxynet/KiraAI/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=xxynet/KiraAI" />
+<a href="https://github.com/KiraAI-Dev/KiraAI/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=KiraAI-Dev/KiraAI" />
 </a>
 
 ## ✨ Star History
-[![RepoStars](https://repostars.dev/api/embed?repo=xxynet%2FKiraAI&theme=dark)](https://repostars.dev/?repos=xxynet%2FKiraAI&theme=dark)
+[![RepoStars](https://repostars.dev/api/embed?repo=KiraAI-Dev%2FKiraAI&theme=dark)](https://repostars.dev/?repos=KiraAI-Dev%2FKiraAI&theme=dark)
