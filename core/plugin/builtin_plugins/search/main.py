@@ -267,11 +267,14 @@ class SearchPlugin(BasePlugin):
             # score 归一化
             raw_scores = [(it.get("score") or 0.0) for it in results]
             norm_map = self._minmax_norm(raw_scores)
+            # RRF 排名分归一化到 [0,1]，与 score 同量级，否则 RRF≈0.016 会被权重淹没
+            rrf_scores = [1.0 / (self._RRF_K + r) for r in range(1, len(results) + 1)]
+            rrf_norm_map = self._minmax_norm(rrf_scores)
             for rank, it in enumerate(results, 1):
                 key = self._norm_url(it.get("url") or "")
                 if not key:
                     key = f"__title_{(it.get('title') or '')[:80].lower()}"
-                rrf = 1.0 / (self._RRF_K + rank)
+                rrf = rrf_norm_map.get(rank - 1, 0.5)
                 nscore = norm_map.get(rank - 1, 0.0)
                 fusion = self._hybrid_weight * nscore + (1.0 - self._hybrid_weight) * rrf
                 if key in merged:
@@ -311,9 +314,11 @@ class SearchPlugin(BasePlugin):
     def _resolve_mode(self) -> str:
         """返回实际执行模式：hybrid / tavily / anysearch
         hybrid 下任一源不可用自动降级为另一单源（Tavily 无 Key 时走 AnySearch），
-        已完全覆盖原 auto 模式语义，故不再单设 auto"""
+        已完全覆盖原 auto 模式语义，故不再单设 auto；
+        tavily / anysearch 为强制单源，不可用时报错而非回退"""
         if self._provider == "tavily":
-            return "tavily" if self.tavily_available else "anysearch"
+            # 显式选择 tavily 即强制单源，不可用时由调用方返回错误，不回退 AnySearch
+            return "tavily"
         if self._provider == "anysearch":
             return "anysearch"
         return "hybrid"
@@ -392,7 +397,25 @@ class SearchPlugin(BasePlugin):
     async def extract_webpage(self, event, url: str, query: str = None,
                               extract_depth: Literal["basic", "advanced"] = "basic") -> str:
         mode = self._resolve_mode()
-        if mode in ("hybrid", "tavily") and self.tavily_available:
+        if mode == "tavily":
+            # 强制单源：不可用或失败直接报错，不回退 AnySearch
+            if not self.tavily_available:
+                return "提取失败：Tavily 不可用（未配置 Key），当前为 tavily 单源模式"
+            try:
+                client = TavilyClient(self._tavily_key)
+                res = await asyncio.to_thread(
+                    client.extract, urls=url, query=query, extract_depth=extract_depth
+                )
+                results = res.get("results") or []
+                if results:
+                    return "".join(json.dumps(ele, ensure_ascii=False) for ele in results)
+                return f"未能从 {url} 提取到正文（可能是不支持的格式或页面为空）"
+            except Exception as e:
+                logger.warning("Tavily extract failed: %r", e)
+                return f"Tavily 提取失败：{e}"
+
+        # hybrid 模式优先 Tavily，失败回落 AnySearch
+        if self.tavily_available:
             try:
                 client = TavilyClient(self._tavily_key)
                 res = await asyncio.to_thread(
@@ -495,7 +518,9 @@ class SearchPlugin(BasePlugin):
         return self._fmt_any_domains(body.get("data") or {})
 
     def _any_enabled(self) -> bool:
-        return self._provider in ("hybrid", "anysearch") or not self.tavily_available
+        if self._provider == "tavily":
+            return False
+        return True
 
     # ---------- 格式化 ----------
 
