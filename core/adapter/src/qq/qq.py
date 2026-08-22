@@ -189,9 +189,9 @@ class QQAdapter(IMAdapter):
                     if not video_file_name:
                         import uuid
                         video_file_name = uuid.uuid4().hex
-                    resp = await self.bot.send_action("send_group_msg", {
-                        "group_id": group_id,
-                        "message": [
+                    resp = await self.bot.send_group_segments(
+                        group_id=group_id,
+                        message=[
                             {
                                 "type": "video",
                                 "data": {
@@ -199,8 +199,8 @@ class QQAdapter(IMAdapter):
                                     "file": video_file,
                                 }
                             }
-                        ]
-                    })
+                        ],
+                    )
                     if not isinstance(resp, dict):
                         msg_res.ok = False
                         msg_res.err = f"Failed to send video: invalid response {resp!r}"
@@ -222,20 +222,16 @@ class QQAdapter(IMAdapter):
                     merge = ele.merge
 
                     if merge:
-                        resp = await self.bot.send_action(
-                            action="send_group_msg",
-                            params={
-                                "group_id": group_id,
-                                "message": [
-                                    {
-                                        "type": "node",
-                                        "data": {
-                                            "id": x
-                                        }
-                                    } for x in forward_message_id
-                                ],
-
-                            }
+                        resp = await self.bot.send_group_segments(
+                            group_id=group_id,
+                            message=[
+                                {
+                                    "type": "node",
+                                    "data": {
+                                        "id": x
+                                    }
+                                } for x in forward_message_id
+                            ],
                         )
                         if not isinstance(resp, dict):
                             msg_res.ok = False
@@ -249,12 +245,9 @@ class QQAdapter(IMAdapter):
                         msg_res.message_id = message_id
 
                     elif len(forward_message_id) == 1:
-                        resp = await self.bot.send_action(
-                            action="forward_group_single_msg",
-                            params={
-                                "message_id": forward_message_id[0],
-                                "group_id": group_id
-                            }
+                        resp = await self.bot.forward_group_single_message(
+                            group_id=group_id,
+                            message_id=forward_message_id[0],
                         )
                         if not isinstance(resp, dict):
                             msg_res.ok = False
@@ -343,9 +336,9 @@ class QQAdapter(IMAdapter):
                     if not video_file_name:
                         import uuid
                         video_file_name = uuid.uuid4().hex
-                    resp = await self.bot.send_action("send_private_msg", {
-                        "user_id": user_id,
-                        "message": [
+                    resp = await self.bot.send_direct_segments(
+                        user_id=user_id,
+                        message=[
                             {
                                 "type": "video",
                                 "data": {
@@ -353,8 +346,8 @@ class QQAdapter(IMAdapter):
                                     "file": video_file,
                                 }
                             }
-                        ]
-                    })
+                        ],
+                    )
                     if not isinstance(resp, dict):
                         msg_res.ok = False
                         msg_res.err = f"Failed to send video: invalid response {resp!r}"
@@ -376,20 +369,16 @@ class QQAdapter(IMAdapter):
                     merge = ele.merge
 
                     if merge:
-                        resp = await self.bot.send_action(
-                            action="send_private_msg",
-                            params={
-                                "user_id": user_id,
-                                "message": [
-                                    {
-                                        "type": "node",
-                                        "data": {
-                                            "id": x
-                                        }
-                                    } for x in forward_message_id
-                                ],
-
-                            }
+                        resp = await self.bot.send_direct_segments(
+                            user_id=user_id,
+                            message=[
+                                {
+                                    "type": "node",
+                                    "data": {
+                                        "id": x
+                                    }
+                                } for x in forward_message_id
+                            ],
                         )
                         if not isinstance(resp, dict):
                             msg_res.ok = False
@@ -403,12 +392,9 @@ class QQAdapter(IMAdapter):
                         msg_res.message_id = message_id
                     elif len(forward_message_id) == 1:
 
-                        resp = await self.bot.send_action(
-                            action="forward_friend_single_msg",
-                            params={
-                                "message_id": forward_message_id[0],
-                                "user_id": user_id
-                            }
+                        resp = await self.bot.forward_direct_single_message(
+                            user_id=user_id,
+                            message_id=forward_message_id[0],
                         )
                         if not isinstance(resp, dict):
                             msg_res.ok = False
@@ -507,12 +493,12 @@ class QQAdapter(IMAdapter):
                     file_size = ele.get("data").get("file_size")  # Bytes, str
 
                     if message_type == "group":
-                        file_info = await self.bot.send_action("get_group_file_url", {"group_id": group_id, "file_id": file_id})
+                        file_info = await self.bot.get_group_file_url(group_id=group_id, file_id=file_id)
                         if not file_info:
                             continue
                         file_url = (file_info.get("data", {}) or {}).get("url")
                     elif message_type == "private":
-                        file_info = await self.bot.send_action("get_private_file_url", {"file_id": file_id})
+                        file_info = await self.bot.get_private_file_url(file_id=file_id)
                         if not file_info:
                             continue
                         file_url = (file_info.get("data", {}) or {}).get("url")

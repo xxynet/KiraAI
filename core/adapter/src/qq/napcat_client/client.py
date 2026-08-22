@@ -253,20 +253,26 @@ class NapCatWebSocketClient:
                 asyncio.create_task(func(data))
 
     async def send_group_message(self, group_id: str, msg: QQMessageChain):
+        return await self.send_group_segments(group_id=group_id, message=msg.to_list())
+
+    async def send_group_segments(self, group_id: Union[str, int], message: list[dict]):
+        """Send a pre-built OneBot message segment list to a group."""
         message_dict = {
             "group_id": group_id,
-            "message": msg.to_list()
+            "message": message
         }
-        resp = await self.send_action("send_group_msg", message_dict)
-        return resp
+        return await self.send_action("send_group_msg", message_dict)
 
     async def send_direct_message(self, user_id: str, msg: QQMessageChain):
+        return await self.send_direct_segments(user_id=user_id, message=msg.to_list())
+
+    async def send_direct_segments(self, user_id: Union[str, int], message: list[dict]):
+        """Send a pre-built OneBot message segment list to a private chat."""
         message_dict = {
             "user_id": user_id,
-            "message": msg.to_list()
+            "message": message
         }
-        resp = await self.send_action("send_private_msg", message_dict)
-        return resp
+        return await self.send_action("send_private_msg", message_dict)
 
     async def send_poke(self, user_id: Union[str, int], group_id: Union[str, int] = None):
         if group_id:
@@ -316,6 +322,31 @@ class NapCatWebSocketClient:
         }
         resp = await self.send_action("get_forward_msg", message_dict)
         return resp
+
+    async def forward_group_single_message(self, group_id: Union[str, int], message_id: Union[str, int]):
+        """Forward one existing message to a group."""
+        return await self.send_action("forward_group_single_msg", {
+            "message_id": message_id,
+            "group_id": group_id,
+        })
+
+    async def forward_direct_single_message(self, user_id: Union[str, int], message_id: Union[str, int]):
+        """Forward one existing message to a private chat."""
+        return await self.send_action("forward_friend_single_msg", {
+            "message_id": message_id,
+            "user_id": user_id,
+        })
+
+    async def get_group_file_url(self, group_id: Union[str, int], file_id: str):
+        """Get the downloadable URL for a group file."""
+        return await self.send_action("get_group_file_url", {
+            "group_id": group_id,
+            "file_id": file_id,
+        })
+
+    async def get_private_file_url(self, file_id: str):
+        """Get the downloadable URL for a private file."""
+        return await self.send_action("get_private_file_url", {"file_id": file_id})
 
     async def upload_private_file(self, user_id: str, file: str, name: str):
         message_dict = {
