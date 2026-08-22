@@ -1,20 +1,109 @@
 {
-  "tavily_key": {
-    "name": "Tavily Key",
-    "type": "string",
-    "default": null,
-    "hint": "Your Tavily key, create one in https://app.tavily.com/home ",
+  "info_intro": {
+    "type": "info",
+    "name": "About",
+    "hint": "Web search plugin with dual engines: Tavily and AnySearch. Hybrid mode queries both sources concurrently, then deduplicates and ranks results using RRF and normalized score weighting. Create a free AnySearch API key at https://anysearch.com/console/api-keys, or leave it blank for anonymous access (1,000 free requests per day).",
+    "level": "info",
     "locales": {
-      "zh": { "name": "Tavily 密钥", "hint": "你的 Tavily 密钥，在 https://app.tavily.com/home 创建" }
+      "zh": {
+        "name": "说明",
+        "hint": "联网搜索插件：Tavily / AnySearch 双引擎。hybrid 混合模式会并发调用两个源并按相关性融合排序去重（RRF + 归一化 score 加权）。AnySearch Key 可在 https://anysearch.com/console/api-keys 免费创建，留空则匿名访问（每日 1000 次免费额度）。"
+      }
     }
   },
-  "max_results": {
-    "name": "Max Results",
-    "type": "integer",
-    "default": 5,
-    "hint": "The maximum number of search results to return.",
-    "locales": {
-      "zh": { "name": "最大结果数", "hint": "返回的最大搜索结果数" }
+  "section_source": {
+    "type": "section",
+    "name": "Search Sources",
+    "collapsed": false,
+    "fields": {
+      "search_provider": {
+        "type": "enum",
+        "name": "Search Mode",
+        "default": "hybrid",
+        "options": [
+          "hybrid",
+          "tavily",
+          "anysearch"
+        ],
+        "hint": "hybrid = query both sources concurrently and merge (recommended, auto-falls back to single source if one is unavailable, equivalent to legacy auto); tavily/anysearch = force single source",
+        "locales": {
+          "zh": {
+            "name": "搜索模式",
+            "hint": "hybrid=双源并发混合返回（推荐，任一源不可用自动降级单源，等效旧 auto）；tavily/anysearch=强制单源"
+          }
+        }
+      },
+      "tavily_key": {
+        "type": "sensitive",
+        "name": "Tavily Key",
+        "default": null,
+        "hint": "Your Tavily key, create one in https://app.tavily.com/home",
+        "locales": {
+          "zh": {
+            "name": "Tavily 密钥",
+            "hint": "你的 Tavily 密钥，在 https://app.tavily.com/home 创建"
+          }
+        }
+      },
+      "anysearch_key": {
+        "type": "sensitive",
+        "name": "AnySearch Key",
+        "default": "",
+        "hint": "AnySearch API Key (starts with as_sk_). Leave blank to use anonymous access (1,000 free requests per day, lower rate limit)",
+        "locales": {
+          "zh": {
+            "name": "AnySearch 密钥",
+            "hint": "AnySearch API Key（as_sk_ 开头）。留空则匿名访问（每日 1000 次，限流较低）"
+          }
+        }
+      },
+      "anysearch_base_url": {
+        "type": "string",
+        "name": "AnySearch API Base URL",
+        "default": "https://api.anysearch.com",
+        "hint": "Default official endpoint, usually no need to change",
+        "locales": {
+          "zh": {
+            "name": "AnySearch API 地址",
+            "hint": "默认官方地址，一般无需修改"
+          }
+        }
+      }
+    }
+  },
+  "section_common": {
+    "type": "section",
+    "name": "Common Settings",
+    "collapsed": false,
+    "fields": {
+      "max_results": {
+        "type": "integer",
+        "name": "Max Results",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 10,
+        "hint": "Number of results returned for a single search (1-10); in hybrid mode this is the count after fusion and deduplication",
+        "locales": {
+          "zh": {
+            "name": "最大结果数",
+            "hint": "单次搜索最终返回的结果条数（1-10），hybrid 模式下为融合去重后的条数"
+          }
+        }
+      },
+      "hybrid_score_weight": {
+        "type": "float",
+        "name": "Hybrid Score Weight",
+        "default": 0.4,
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "hint": "Weight of the normalized score when fusing in hybrid mode; the rest goes to the RRF rank score. 0 = pure RRF, 1 = pure score",
+        "locales": {
+          "zh": {
+            "name": "混合打分权重",
+            "hint": "hybrid 融合时 score 归一化权重，其余归 RRF 排名分。0=纯 RRF，1=纯 score"
+          }
+        }
+      }
     }
   }
 }

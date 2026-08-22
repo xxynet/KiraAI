@@ -1,16 +1,16 @@
 {
-    "display_name": "Tavily Search",
+    "display_name": "Web Search",
     "plugin_id": "search",
     "uninstallable": true,
-    "version": "1.0.0",
-    "author": "xxynet",
-    "description": "A search tool that empowers llm to search the Internet via Tavily",
+    "version": "1.1.0",
+    "author": "KiraAI",
+    "description": "A dual-engine search tool (Tavily / AnySearch) that empowers LLM to search the Internet",
     "repo": null,
     "tags": ["search"],
     "locales": {
         "zh": {
-            "display_name": "Tavily 搜索",
-            "description": "通过 Tavily 赋能 LLM 搜索互联网的工具"
+            "display_name": "联网搜索",
+            "description": "双引擎联网搜索：Tavily / AnySearch 自动切换，支持垂直领域与批量搜索"
         }
     }
 }
