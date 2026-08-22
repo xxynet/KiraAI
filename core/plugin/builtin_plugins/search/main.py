@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from tavily import TavilyClient
 
 from core.plugin import BasePlugin, logger, register
+from core.utils.path_utils import get_config_path
 
 from .anysearch import AnySearchClient
 from .utils import (
@@ -36,6 +37,8 @@ class SearchPlugin(BasePlugin):
 
     async def initialize(self):
         """加载配置：Tavily Key / 搜索模式 / AnySearch 参数（section 优先，扁平兜底兼容旧配置）"""
+        if self._migrate_legacy_tavily_key():
+            self._persist_config()
         src = self.plugin_cfg.get("section_source", {}) or {}
         common = self.plugin_cfg.get("section_common", {}) or {}
 
@@ -91,6 +94,39 @@ class SearchPlugin(BasePlugin):
             return t if t > 0 else 60.0
         except Exception:
             return 60.0
+
+    def _migrate_legacy_tavily_key(self) -> bool:
+        """Move a legacy top-level ``tavily_key`` into ``section_source``.
+
+        Pre-section configs stored the Tavily key at the top level. If a top-level
+        key exists and the section slot is empty, move it in; otherwise drop the
+        stale top-level key. Idempotent, safe on every startup.
+        """
+        if "tavily_key" not in self.plugin_cfg:
+            return False
+        flat_val = self.plugin_cfg.get("tavily_key")
+        section = self.plugin_cfg.get("section_source")
+        if not isinstance(section, dict):
+            return False
+        if flat_val and not section.get("tavily_key"):
+            section["tavily_key"] = flat_val
+        del self.plugin_cfg["tavily_key"]
+        return True
+
+    def _persist_config(self):
+        """Write the in-memory plugin config back to the config file.
+
+        ``self.plugin_cfg`` is the same dict the registry keeps in memory, so
+        WebUI reads the migrated state without a reload.
+        """
+        try:
+            config_path = get_config_path() / "plugins" / "search.json"
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with config_path.open("w", encoding="utf-8") as f:
+                json.dump(self.plugin_cfg, f, indent=4, ensure_ascii=False)
+            logger.info("Migrated legacy top-level tavily_key into section_source for search plugin")
+        except Exception as e:
+            logger.error(f"Failed to persist migrated search plugin config: {e}")
 
     async def terminate(self):
         if self._any_client:
