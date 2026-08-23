@@ -179,8 +179,10 @@ class PersonaGenerator:
         request = self._build_request(messages, lang)
         tool_call_fragments: dict[int, dict] = {}
         complete_tool_calls: list[dict] = []
+        emitted_text = False
         async for chunk in self.llm_client.chat_stream(request, max_tokens=1600):
             if chunk.delta_text:
+                emitted_text = True
                 yield PersonaTextDelta(chunk.delta_text)
             for fragment in chunk.tool_calls_delta:
                 if "index" not in fragment:
@@ -201,7 +203,10 @@ class PersonaGenerator:
                     tool_call["function"]["arguments"] += function["arguments"]
 
         complete_tool_calls.extend(tool_call_fragments.values())
-        yield await self._resolve_tool_calls(complete_tool_calls)
+        if complete_tool_calls:
+            yield await self._resolve_tool_calls(complete_tool_calls)
+        elif not emitted_text:
+            raise PersonaGenerationError("Persona generator returned an empty response")
 
     @staticmethod
     def _build_request(messages: list[OpenAIMessage], lang: str | None):

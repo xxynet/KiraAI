@@ -146,7 +146,7 @@
             {{ $t('persona.generating') }}
           </div>
         </div>
-        <form v-if="canAnswerGeneratorQuestion" class="px-6 py-4 border-t border-gray-200 dark:border-gray-700" @submit.prevent="handleGeneratorAnswer()">
+        <form class="px-6 py-4 border-t border-gray-200 dark:border-gray-700" @submit.prevent="handleGeneratorAnswer()">
           <label class="sr-only" for="persona-generator-answer">{{ $t('persona.generator_answer_label') }}</label>
           <textarea
             id="persona-generator-answer"
@@ -165,31 +165,25 @@
             >
               {{ $t('persona.generator_generate_now') }}
             </button>
-            <button
-              type="submit"
-              class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
-              :disabled="generating || !generatorAnswer.trim()"
-            >
-              {{ $t('persona.generator_send') }}
-            </button>
+            <div class="flex gap-3">
+              <button
+                type="button"
+                class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                :disabled="generating"
+                @click="generatorVisible = false"
+              >
+                {{ $t('persona.modal_cancel') }}
+              </button>
+              <button
+                type="submit"
+                class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
+                :disabled="generating || !generatorAnswer.trim()"
+              >
+                {{ $t('persona.generator_send') }}
+              </button>
+            </div>
           </div>
         </form>
-        <div v-else class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between gap-3">
-          <button
-            class="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 disabled:opacity-50"
-            :disabled="generating || generatorMessages.length === 0"
-            @click="handleGeneratorAnswer(t('persona.generator_generate_request'))"
-          >
-            {{ $t('persona.generator_generate_now') }}
-          </button>
-          <button
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-            :disabled="generating"
-            @click="generatorVisible = false"
-          >
-            {{ $t('persona.modal_cancel') }}
-          </button>
-        </div>
       </div>
     </Modal>
 
@@ -349,10 +343,6 @@ const monacoLanguage = computed(() => {
 // Count Unicode code points so that emoji and other non-BMP characters
 // count as one instead of two (UTF-16 surrogate pairs).
 const charCount = computed(() => (form.value.content ? [...form.value.content].length : 0))
-const canAnswerGeneratorQuestion = computed(() => {
-  const latestMessage = generatorMessages.value[generatorMessages.value.length - 1]
-  return !latestMessage || latestMessage.role === 'user' || latestMessage.allowCustom
-})
 
 function formatLabel(fmt: string) {
   const map: Record<string, string> = {
