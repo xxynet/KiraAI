@@ -1,6 +1,10 @@
+import asyncio
 import hashlib
+
+import httpx
 import pytest
 
+from core.utils import github_api
 from core.utils.github_api import parse_github_url, verify_sha256
 
 
@@ -65,3 +69,29 @@ def test_verify_sha256_strips_whitespace():
     data = b"test"
     digest = hashlib.sha256(data).hexdigest()
     assert verify_sha256(data, f"  {digest}  ") is True
+
+
+def test_get_all_releases_follows_repository_transfer_redirect(monkeypatch):
+    old_url = "https://api.github.com/repos/xxynet/KiraAI/releases?per_page=30&page=1"
+    new_url = "https://api.github.com/repositories/1087096210/releases?per_page=30&page=1"
+    requested_urls: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if str(request.url) == old_url:
+            return httpx.Response(301, headers={"Location": new_url}, request=request)
+        if str(request.url) == new_url:
+            return httpx.Response(200, json=[], request=request)
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    real_async_client = httpx.AsyncClient
+
+    def mock_async_client(**kwargs):
+        return real_async_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(github_api.httpx, "AsyncClient", mock_async_client)
+
+    releases = asyncio.run(github_api.get_all_releases("xxynet", "KiraAI"))
+
+    assert releases == []
+    assert requested_urls == [old_url, new_url]
