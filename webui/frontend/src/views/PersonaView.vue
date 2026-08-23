@@ -75,6 +75,75 @@
       </div>
     </div>
 
+    <!-- Creation Mode Modal -->
+    <Modal v-model="createModeVisible" content-class="max-w-2xl" content-style="width: 90%;">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('persona.create_mode_title') }}</h3>
+          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="createModeVisible = false">
+            <IconClose class="w-6 h-6" />
+          </button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-6">
+          <button
+            class="text-left rounded-lg border-2 border-blue-200 dark:border-blue-800 p-5 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+            @click="openGeneratorDialog"
+          >
+            <h4 class="font-semibold text-gray-900 dark:text-gray-100">{{ $t('persona.create_with_ai') }}</h4>
+            <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">{{ $t('persona.create_with_ai_hint') }}</p>
+          </button>
+          <button
+            class="text-left rounded-lg border-2 border-gray-200 dark:border-gray-700 p-5 hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            @click="openManualCreateDialog"
+          >
+            <h4 class="font-semibold text-gray-900 dark:text-gray-100">{{ $t('persona.create_manually') }}</h4>
+            <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">{{ $t('persona.create_manually_hint') }}</p>
+          </button>
+        </div>
+      </div>
+    </Modal>
+
+    <!-- AI Generation Modal -->
+    <Modal v-model="generatorVisible" content-class="max-w-2xl" content-style="width: 90%;">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('persona.create_with_ai') }}</h3>
+          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :disabled="generating" @click="generatorVisible = false">
+            <IconClose class="w-6 h-6" />
+          </button>
+        </div>
+        <div class="p-6">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" for="persona-idea">
+            {{ $t('persona.generator_idea_label') }}
+          </label>
+          <textarea
+            id="persona-idea"
+            v-model="generatorIdea"
+            rows="5"
+            class="w-full resize-y border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            :placeholder="$t('persona.generator_idea_placeholder')"
+          />
+          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ $t('persona.generator_hint') }}</p>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            :disabled="generating"
+            @click="generatorVisible = false"
+          >
+            {{ $t('persona.modal_cancel') }}
+          </button>
+          <button
+            class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
+            :disabled="generating"
+            @click="handleGenerate"
+          >
+            {{ generating ? $t('persona.generating') : $t('persona.generate') }}
+          </button>
+        </div>
+      </div>
+    </Modal>
+
     <!-- Create/Edit Modal -->
     <Modal v-model="dialogVisible" content-class="max-w-4xl" content-style="width: 90%;">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col modal-card" style="max-height: 90vh;">
@@ -168,7 +237,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import {
-  getPersonas, createPersona, updatePersona, deletePersona, setActivePersona,
+  getPersonas, createPersona, generatePersona, updatePersona, deletePersona, setActivePersona,
 } from '@/api/persona'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -183,10 +252,14 @@ const confirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
 const switchConfirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
 
 const personas = ref<PersonaResponse[]>([])
+const createModeVisible = ref(false)
+const generatorVisible = ref(false)
 const dialogVisible = ref(false)
 const editMode = ref(false)
 const editId = ref<string | null>(null)
 const saving = ref(false)
+const generating = ref(false)
+const generatorIdea = ref('')
 
 const confirmTitle = ref('')
 const confirmMessage = ref('')
@@ -242,10 +315,41 @@ async function loadPersonas() {
 }
 
 function openCreateDialog() {
+  createModeVisible.value = true
+}
+
+function openManualCreateDialog() {
+  createModeVisible.value = false
   editMode.value = false
   editId.value = null
   form.value = { name: '', format: 'text', content: '' }
   dialogVisible.value = true
+}
+
+function openGeneratorDialog() {
+  createModeVisible.value = false
+  generatorIdea.value = ''
+  generatorVisible.value = true
+}
+
+async function handleGenerate() {
+  generating.value = true
+  try {
+    const { data } = await generatePersona(generatorIdea.value)
+    editMode.value = false
+    editId.value = null
+    form.value = {
+      name: data.name,
+      format: data.format || 'yaml',
+      content: data.content,
+    }
+    generatorVisible.value = false
+    dialogVisible.value = true
+  } catch (error: any) {
+    notify(t('persona.generate_failed') + (error?.message ? ': ' + error.message : ''), 'error')
+  } finally {
+    generating.value = false
+  }
 }
 
 function openEditDialog(persona: PersonaResponse) {

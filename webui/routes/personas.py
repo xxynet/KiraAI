@@ -1,16 +1,21 @@
+import json
 from typing import List
 
 from fastapi import Depends, HTTPException, status
 
 from core.logging_manager import get_logger
+from core.agent.message import OpenAIMessage
 from core.persona.model import PersonaInfo
+from core.prompts.persona_generator import get_persona_generator_prompt
+from core.provider import LLMRequest
 
-from webui.models import PersonaBase, PersonaResponse
+from webui.models import PersonaBase, PersonaGenerateRequest, PersonaResponse
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 from webui.utils import _generate_id
 
 logger = get_logger("webui", "blue")
+SUPPORTED_PERSONA_FORMATS = {"text", "markdown", "json", "yaml"}
 
 
 class PersonasRoutes(Routes):
@@ -49,6 +54,14 @@ class PersonasRoutes(Routes):
                 methods=["GET"],
                 endpoint=self.list_personas,
                 response_model=List[PersonaResponse],
+                tags=["personas"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/personas/generate",
+                methods=["POST"],
+                endpoint=self.generate_persona,
+                response_model=PersonaBase,
                 tags=["personas"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -171,6 +184,46 @@ class PersonasRoutes(Routes):
         if not created:
             raise HTTPException(status_code=500, detail="Failed to create persona")
         return PersonaResponse(id=created.id, name=created.name, format=created.format, content=created.content, created_at=created.created_at or 0, is_active=created.is_active or False)
+
+    async def generate_persona(self, payload: PersonaGenerateRequest):
+        """Generate a draft persona with the configured default LLM."""
+        if not self.lifecycle or not self.lifecycle.provider_manager:
+            raise HTTPException(status_code=404, detail="Provider manager not available")
+        try:
+            client = self.lifecycle.provider_manager.get_default_llm()
+            lang = self.lifecycle.kira_config.get_config("locale.lang")
+            user_idea = payload.idea.strip() or (
+                "请为我创作一个温暖、有特色、适合日常陪伴聊天的原创人设。"
+                if (lang or "").lower().startswith("zh")
+                else "Create a warm, distinctive original persona for everyday companion chats."
+            )
+            response = await client.chat(
+                LLMRequest(messages=[
+                    OpenAIMessage(role="system", content=get_persona_generator_prompt(lang)),
+                    OpenAIMessage(role="user", content=user_idea),
+                ]),
+                max_tokens=1600,
+            )
+        except Exception as exc:
+            logger.exception("Failed to generate persona")
+            raise HTTPException(status_code=502, detail="Failed to generate persona") from exc
+
+        try:
+            generated = json.loads(response.text_response)
+        except (TypeError, json.JSONDecodeError) as exc:
+            logger.warning("Persona generator returned invalid JSON")
+            raise HTTPException(status_code=502, detail="Persona generator returned an invalid response") from exc
+
+        if not isinstance(generated, dict):
+            raise HTTPException(status_code=502, detail="Persona generator returned an invalid response")
+        name = generated.get("name")
+        persona_format = generated.get("format")
+        content = generated.get("content")
+        if not all(isinstance(value, str) and value.strip() for value in (name, persona_format, content)):
+            raise HTTPException(status_code=502, detail="Persona generator returned an incomplete response")
+        if persona_format not in SUPPORTED_PERSONA_FORMATS:
+            raise HTTPException(status_code=502, detail="Persona generator returned an unsupported format")
+        return PersonaBase(name=name.strip(), format=persona_format, content=content)
 
     async def get_persona(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:

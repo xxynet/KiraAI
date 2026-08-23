@@ -152,6 +152,10 @@ class PersonaBase(BaseModel):
     content: str = ""
 
 
+class PersonaGenerateRequest(BaseModel):
+    idea: str = Field(default="", max_length=4000)
+
+
 class PersonaResponse(PersonaBase):
     id: str
     created_at: int = 0

@@ -9,6 +9,10 @@ export function createPersona(data: PersonaBase) {
   return apiClient.post<PersonaResponse>('/personas', data)
 }
 
+export function generatePersona(idea: string) {
+  return apiClient.post<PersonaBase>('/personas/generate', { idea })
+}
+
 export function getPersona(id: string) {
   return apiClient.get<PersonaResponse>(`/personas/${encodeURIComponent(id)}`)
 }
