@@ -2,6 +2,7 @@ import asyncio
 import os
 from typing import Any, Dict, Optional, Union, List
 import base64
+import logging
 import time
 import json
 
@@ -28,6 +29,16 @@ from core.chat.message_elements import (
 
 
 logger = get_logger("tg_adapter", "green")
+
+
+class _TelegramShutdownCancellationFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        exception = record.exc_info[1] if record.exc_info else None
+        return not (
+            record.name == "telegram.ext.Application"
+            and isinstance(exception, asyncio.CancelledError)
+            and record.getMessage().startswith("Fetching updates was aborted")
+        )
 
 
 class MessageSender:
@@ -74,7 +85,15 @@ class TelegramAdapter(IMAdapter):
         self.base_url = base_url
         self.base_file_url = base_file_url
 
-        self.app = ApplicationBuilder().token(self.bot_token).base_url(base_url).base_file_url(base_file_url).build()
+        self.app = (
+            ApplicationBuilder()
+            .token(self.bot_token)
+            .base_url(base_url)
+            .base_file_url(base_file_url)
+            .get_updates_connection_pool_size(2)
+            .get_updates_pool_timeout(5.0)
+            .build()
+        )
         self.message_sender = MessageSender()
 
     @staticmethod
@@ -115,14 +134,32 @@ class TelegramAdapter(IMAdapter):
 
     async def stop(self):
         """Stop the Telegram adapter asynchronously"""
-        if self.app:
-            try:
-                await self.app.updater.stop()
-                await self.app.stop()
-                await self.app.shutdown()
-                logger.info(f"Stopped listening messages for {self.config.get('bot_pid', 'your bot account')}")
-            except Exception as e:
-                logger.error(f"Error stopping Telegram adapter: {e}")
+        if not self.app:
+            return
+
+        shutdown_steps = []
+        if self.app.updater and self.app.updater.running:
+            shutdown_steps.append(("updater", self.app.updater.stop))
+        if self.app.running:
+            shutdown_steps.append(("application", self.app.stop))
+        shutdown_steps.append(("HTTP client", self.app.shutdown))
+        application_logger = logging.getLogger("telegram.ext.Application")
+        cancellation_filter = _TelegramShutdownCancellationFilter()
+        application_logger.addFilter(cancellation_filter)
+        try:
+            for component, shutdown in shutdown_steps:
+                try:
+                    await shutdown()
+                except asyncio.CancelledError:
+                    logger.warning(
+                        f"Telegram {component} stop was cancelled; continuing cleanup"
+                    )
+                except Exception as e:
+                    logger.error(f"Error stopping Telegram {component}: {e}")
+        finally:
+            application_logger.removeFilter(cancellation_filter)
+
+        logger.info(f"Stopped listening messages for {self.config.get('bot_pid', 'your bot account')}")
 
     def get_client(self):
         return self.app
