@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import AsyncIterator, TYPE_CHECKING
 
 from core.agent.message import OpenAIMessage
-from core.prompts.persona_generator import get_persona_generator_prompt
+from core.prompts.persona_generator import get_initial_persona_question, get_persona_generator_prompt
 from core.utils.tool_utils import BaseTool
 
 if TYPE_CHECKING:
@@ -150,20 +150,8 @@ class PersonaGenerator:
 
     @staticmethod
     def get_initial_question(lang: str | None) -> PersonaQuestion:
-        if (lang or "").lower().startswith("zh"):
-            return PersonaQuestion(
-                question=(
-                    "你希望创建怎样的人设？\n\n"
-                    "可填写角色定位、性格、说话风格、兴趣、背景故事或希望的互动方式。"
-                ),
-                options=[],
-                allow_custom=True,
-            )
         return PersonaQuestion(
-            question=(
-                "What kind of persona would you like to create?\n\n"
-                "You can share a role, personality, speaking style, interests, background story, or preferred interaction style."
-            ),
+            question=get_initial_persona_question(lang),
             options=[],
             allow_custom=True,
         )

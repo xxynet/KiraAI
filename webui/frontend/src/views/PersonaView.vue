@@ -112,7 +112,7 @@
             <IconClose class="w-6 h-6" />
           </button>
         </div>
-        <div class="p-6 flex-1 overflow-y-auto space-y-4">
+        <div ref="generatorConversationRef" class="p-6 flex-1 overflow-y-auto space-y-4">
           <div v-if="generatorMessages.length === 0 && generating" class="text-sm text-gray-500 dark:text-gray-400">
             {{ $t('persona.generating') }}
           </div>
@@ -282,7 +282,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import {
@@ -310,6 +310,7 @@ const editId = ref<string | null>(null)
 const saving = ref(false)
 const generating = ref(false)
 const generatorAnswer = ref('')
+const generatorConversationRef = ref<HTMLElement>()
 type GeneratorMessage = PersonaGeneratorMessage & {
   options: string[]
   allowCustom: boolean
@@ -398,6 +399,7 @@ async function handleGeneratorAnswer(answer = generatorAnswer.value) {
   const content = answer.trim()
   if (!content || generating.value) return
   generatorMessages.value.push({ role: 'user', content, options: [], allowCustom: false })
+  scrollGeneratorConversationToBottom()
   generatorAnswer.value = ''
   await advanceGenerator()
 }
@@ -426,6 +428,7 @@ function handleGeneratorStreamEvent(event: PersonaGeneratorStreamEvent) {
         role: 'assistant', content: event.content, options: [], allowCustom: false, isStreaming: true,
       })
     }
+    scrollGeneratorConversationToBottom()
     return
   }
   const lastMessage = generatorMessages.value[generatorMessages.value.length - 1]
@@ -437,6 +440,7 @@ function handleGeneratorStreamEvent(event: PersonaGeneratorStreamEvent) {
       options: event.options,
       allowCustom: event.allow_custom,
     })
+    scrollGeneratorConversationToBottom()
     return
   }
   if (event.type === 'proposal') {
@@ -448,6 +452,12 @@ function handleGeneratorStreamEvent(event: PersonaGeneratorStreamEvent) {
     return
   }
   throw new Error(event.message || t('persona.generator_invalid_response'))
+}
+
+async function scrollGeneratorConversationToBottom() {
+  await nextTick()
+  const container = generatorConversationRef.value
+  if (container) container.scrollTop = container.scrollHeight
 }
 
 function openEditDialog(persona: PersonaResponse) {
