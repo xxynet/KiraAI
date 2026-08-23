@@ -17,6 +17,15 @@ GH_PROXY_LIST = [
 ]
 
 
+def _github_client_kwargs(timeout: float, proxy: Optional[str]) -> dict:
+    # GitHub returns 301 after a repository transfer. Treat it as the
+    # documented redirect rather than surfacing it as a release-fetch error.
+    client_kwargs: dict = {"timeout": timeout, "follow_redirects": True}
+    if proxy:
+        client_kwargs["proxy"] = proxy
+    return client_kwargs
+
+
 def parse_github_url(url: str) -> Tuple[str, str]:
     """
     Parse a GitHub URL or 'owner/repo' shorthand into (owner, repo).
@@ -47,9 +56,7 @@ async def get_latest_release(owner: str, repo: str, proxy: Optional[str] = None)
     'tarball_url', 'zipball_url', 'body'])
     """
     url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
-    client_kwargs: dict = {"timeout": 10.0}
-    if proxy:
-        client_kwargs["proxy"] = proxy
+    client_kwargs = _github_client_kwargs(10.0, proxy)
 
     async with httpx.AsyncClient(**client_kwargs) as client:
         try:
@@ -89,9 +96,7 @@ async def get_all_releases(
     max_pages — safety cap to avoid excessive pagination
     """
     releases: List[dict] = []
-    client_kwargs: dict = {"timeout": 10.0}
-    if proxy:
-        client_kwargs["proxy"] = proxy
+    client_kwargs = _github_client_kwargs(10.0, proxy)
 
     async with httpx.AsyncClient(**client_kwargs) as client:
         for page in range(1, max_pages + 1):
@@ -142,9 +147,7 @@ async def get_release_assets(
     Raises httpx.HTTPError on network or API failures.
     """
     url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
-    client_kwargs: dict = {"timeout": 10.0}
-    if proxy:
-        client_kwargs["proxy"] = proxy
+    client_kwargs = _github_client_kwargs(10.0, proxy)
 
     async with httpx.AsyncClient(**client_kwargs) as client:
         resp = await client.get(url)
