@@ -86,14 +86,14 @@
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-6">
           <button
-            class="text-left rounded-lg border-2 border-blue-200 dark:border-blue-800 p-5 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+            class="text-left rounded-lg border border-blue-200 dark:border-blue-800 p-5 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
             @click="openGeneratorDialog"
           >
             <h4 class="font-semibold text-gray-900 dark:text-gray-100">{{ $t('persona.create_with_ai') }}</h4>
             <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">{{ $t('persona.create_with_ai_hint') }}</p>
           </button>
           <button
-            class="text-left rounded-lg border-2 border-gray-200 dark:border-gray-700 p-5 hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            class="text-left rounded-lg border border-gray-200 dark:border-gray-700 p-5 hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
             @click="openManualCreateDialog"
           >
             <h4 class="font-semibold text-gray-900 dark:text-gray-100">{{ $t('persona.create_manually') }}</h4>
