@@ -152,6 +152,25 @@ class PersonaBase(BaseModel):
     content: str = ""
 
 
+class PersonaGeneratorMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class PersonaGeneratorTurnRequest(BaseModel):
+    messages: List[PersonaGeneratorMessage] = Field(default_factory=list, max_length=50)
+
+
+class PersonaGeneratorTurnResponse(BaseModel):
+    type: Literal["question", "proposal"]
+    question: Optional[str] = None
+    options: List[str] = Field(default_factory=list)
+    allow_custom: bool = True
+    name: Optional[str] = None
+    format: Optional[str] = None
+    content: Optional[str] = None
+
+
 class PersonaResponse(PersonaBase):
     id: str
     created_at: int = 0

@@ -1,11 +1,20 @@
-from typing import List
+import json
+from typing import AsyncIterator, List
 
 from fastapi import Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from core.logging_manager import get_logger
+from core.agent.message import OpenAIMessage
+from core.persona import PersonaGenerationError, PersonaGenerator, PersonaQuestion, PersonaTextDelta
 from core.persona.model import PersonaInfo
 
-from webui.models import PersonaBase, PersonaResponse
+from webui.models import (
+    PersonaBase,
+    PersonaGeneratorTurnRequest,
+    PersonaGeneratorTurnResponse,
+    PersonaResponse,
+)
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 from webui.utils import _generate_id
@@ -49,6 +58,21 @@ class PersonasRoutes(Routes):
                 methods=["GET"],
                 endpoint=self.list_personas,
                 response_model=List[PersonaResponse],
+                tags=["personas"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/personas/generator/stream",
+                methods=["POST"],
+                endpoint=self.persona_generator_stream,
+                tags=["personas"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/personas/generator/turn",
+                methods=["POST"],
+                endpoint=self.persona_generator_turn,
+                response_model=PersonaGeneratorTurnResponse,
                 tags=["personas"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -171,6 +195,92 @@ class PersonasRoutes(Routes):
         if not created:
             raise HTTPException(status_code=500, detail="Failed to create persona")
         return PersonaResponse(id=created.id, name=created.name, format=created.format, content=created.content, created_at=created.created_at or 0, is_active=created.is_active or False)
+
+    async def persona_generator_turn(self, payload: PersonaGeneratorTurnRequest):
+        """Advance a persona-generation interview by one LLM tool call."""
+        if not self.lifecycle or not self.lifecycle.provider_manager:
+            raise HTTPException(status_code=404, detail="Provider manager not available")
+        try:
+            client = self._get_persona_generator_client()
+            lang = self.lifecycle.kira_config.get_config("locale.lang")
+            result = await PersonaGenerator(client).respond(
+                [OpenAIMessage(role=message.role, content=message.content) for message in payload.messages],
+                lang,
+            )
+        except PersonaGenerationError as exc:
+            logger.warning("Persona generator returned an invalid result: %s", exc)
+            raise HTTPException(status_code=502, detail="Persona generator returned an invalid response") from exc
+        except Exception as exc:
+            logger.exception("Failed to generate persona")
+            raise HTTPException(status_code=502, detail="Failed to generate persona") from exc
+        if isinstance(result, PersonaQuestion):
+            return PersonaGeneratorTurnResponse(
+                type="question",
+                question=result.question,
+                options=result.options,
+                allow_custom=result.allow_custom,
+            )
+        return PersonaGeneratorTurnResponse(
+            type="proposal",
+            name=result.name,
+            format=result.format,
+            content=result.content,
+        )
+
+    async def persona_generator_stream(self, payload: PersonaGeneratorTurnRequest):
+        """Stream one persona-generation interview turn as server-sent events."""
+        if not self.lifecycle or not self.lifecycle.provider_manager:
+            raise HTTPException(status_code=404, detail="Provider manager not available")
+
+        async def event_stream() -> AsyncIterator[str]:
+            try:
+                client = self._get_persona_generator_client()
+                lang = self.lifecycle.kira_config.get_config("locale.lang")
+                messages = [
+                    OpenAIMessage(role=message.role, content=message.content)
+                    for message in payload.messages
+                ]
+                async for result in PersonaGenerator(client).stream_respond(messages, lang):
+                    if isinstance(result, PersonaTextDelta):
+                        yield self._sse_event({"type": "text", "content": result.content})
+                    elif isinstance(result, PersonaQuestion):
+                        yield self._sse_event({
+                            "type": "question",
+                            "question": result.question,
+                            "options": result.options,
+                            "allow_custom": result.allow_custom,
+                        })
+                    else:
+                        yield self._sse_event({
+                            "type": "proposal",
+                            "name": result.name,
+                            "format": result.format,
+                            "content": result.content,
+                        })
+            except PersonaGenerationError as exc:
+                logger.warning("Persona generator returned an invalid streamed result: %s", exc)
+                yield self._sse_event({"type": "error", "message": "Persona generator returned an invalid response"})
+            except Exception:
+                logger.exception("Failed to stream persona generation")
+                yield self._sse_event({"type": "error", "message": "Failed to generate persona"})
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    def _get_persona_generator_client(self):
+        """Prefer the fast LLM configured for short persona interview turns."""
+        try:
+            return self.lifecycle.provider_manager.get_default_fast_llm()
+        except (AttributeError, TypeError, ValueError):
+            logger.debug("[persona_gen] Default fast LLM is unavailable; using default LLM instead")
+            return self.lifecycle.provider_manager.get_default_llm()
+
+    @staticmethod
+    def _sse_event(data: dict) -> str:
+        return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     async def get_persona(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:
