@@ -272,6 +272,7 @@ export default {
     generator_generate_now: '根据现有信息生成',
     generator_generate_request: '请根据目前的信息生成人设。',
     generator_failed: '人设生成对话失败',
+    generator_history_trimmed: '对话记录过长，已保留最近 {count} 条消息继续生成。',
     generator_invalid_response: 'AI 返回了无效结果',
     no_personas: '未配置人设',
     name: '名称',

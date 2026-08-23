@@ -272,6 +272,7 @@ export default {
     generator_generate_now: 'Generate with Current Details',
     generator_generate_request: 'Please generate the persona from the information so far.',
     generator_failed: 'Persona interview failed',
+    generator_history_trimmed: 'The conversation is long; the most recent {count} messages will be used to continue.',
     generator_invalid_response: 'AI returned an invalid result',
     no_personas: 'No personas configured',
     name: 'Name',

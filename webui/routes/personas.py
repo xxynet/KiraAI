@@ -274,7 +274,7 @@ class PersonasRoutes(Routes):
         """Prefer the fast LLM configured for short persona interview turns."""
         try:
             return self.lifecycle.provider_manager.get_default_fast_llm()
-        except (TypeError, ValueError):
+        except (AttributeError, TypeError, ValueError):
             logger.debug("[persona_gen] Default fast LLM is unavailable; using default LLM instead")
             return self.lifecycle.provider_manager.get_default_llm()
 

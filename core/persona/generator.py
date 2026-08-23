@@ -247,9 +247,10 @@ class PersonaGenerator:
                 await tool.execute(**json.loads(arguments))
             except (TypeError, json.JSONDecodeError, PersonaGenerationError) as exc:
                 raise PersonaGenerationError("Persona generator returned an invalid tool call") from exc
-            if question_tool.question:
-                return question_tool.question
-            if proposal_tool.proposal:
-                return proposal_tool.proposal
+
+        if proposal_tool.proposal:
+            return proposal_tool.proposal
+        if question_tool.question:
+            return question_tool.question
 
         raise PersonaGenerationError("Persona generator did not return a question or proposal")

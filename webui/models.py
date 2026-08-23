@@ -158,7 +158,7 @@ class PersonaGeneratorMessage(BaseModel):
 
 
 class PersonaGeneratorTurnRequest(BaseModel):
-    messages: List[PersonaGeneratorMessage] = Field(default_factory=list, max_length=20)
+    messages: List[PersonaGeneratorMessage] = Field(default_factory=list, max_length=50)
 
 
 class PersonaGeneratorTurnResponse(BaseModel):

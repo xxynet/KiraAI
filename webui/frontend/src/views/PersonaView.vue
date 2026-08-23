@@ -305,6 +305,8 @@ const saving = ref(false)
 const generating = ref(false)
 const generatorAnswer = ref('')
 const generatorConversationRef = ref<HTMLElement>()
+const generatorHistoryWasTrimmed = ref(false)
+const generatorHistoryLimit = 50
 type GeneratorMessage = PersonaGeneratorMessage & {
   options: string[]
   allowCustom: boolean
@@ -381,6 +383,7 @@ async function openGeneratorDialog() {
   createModeVisible.value = false
   generatorMessages.value = []
   generatorAnswer.value = ''
+  generatorHistoryWasTrimmed.value = false
   generatorVisible.value = true
   await advanceGenerator()
 }
@@ -397,8 +400,14 @@ async function handleGeneratorAnswer(answer = generatorAnswer.value) {
 async function advanceGenerator() {
   generating.value = true
   try {
+    const messages = generatorMessages.value.map(({ role, content }) => ({ role, content }))
+    const history = messages.slice(-generatorHistoryLimit)
+    if (history.length < messages.length && !generatorHistoryWasTrimmed.value) {
+      generatorHistoryWasTrimmed.value = true
+      notify(t('persona.generator_history_trimmed', { count: generatorHistoryLimit }), 'warning')
+    }
     await streamPersonaGenerator(
-      generatorMessages.value.map(({ role, content }) => ({ role, content })),
+      history,
       handleGeneratorStreamEvent,
     )
   } catch (error: any) {

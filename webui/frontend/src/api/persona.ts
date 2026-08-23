@@ -55,16 +55,24 @@ export async function streamPersonaGenerator(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  while (true) {
-    const { value, done } = await reader.read()
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
-    const events = buffer.split('\n\n')
-    buffer = events.pop() || ''
-    for (const event of events) {
-      const data = event.split('\n').find((line) => line.startsWith('data: '))?.slice(6)
-      if (data) onEvent(JSON.parse(data) as PersonaGeneratorStreamEvent)
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+      const events = buffer.split('\n\n')
+      buffer = events.pop() || ''
+      for (const event of events) {
+        const data = event.split('\n').find((line) => line.startsWith('data: '))?.slice(6)
+        if (data) onEvent(JSON.parse(data) as PersonaGeneratorStreamEvent)
+      }
+      if (done) break
     }
-    if (done) break
+  } finally {
+    try {
+      await reader.cancel()
+    } finally {
+      reader.releaseLock()
+    }
   }
 }
 
