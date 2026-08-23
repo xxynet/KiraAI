@@ -103,42 +103,91 @@
       </div>
     </Modal>
 
-    <!-- AI Generation Modal -->
+    <!-- AI Persona Interview Modal -->
     <Modal v-model="generatorVisible" content-class="max-w-2xl" content-style="width: 90%;">
-      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 80vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('persona.create_with_ai') }}</h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :disabled="generating" @click="generatorVisible = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
-        <div class="p-6">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" for="persona-idea">
-            {{ $t('persona.generator_idea_label') }}
-          </label>
-          <textarea
-            id="persona-idea"
-            v-model="generatorIdea"
-            rows="5"
-            class="w-full resize-y border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-            :placeholder="$t('persona.generator_idea_placeholder')"
-          />
-          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ $t('persona.generator_hint') }}</p>
+        <div class="p-6 flex-1 overflow-y-auto space-y-4">
+          <div v-if="generatorMessages.length === 0 && generating" class="text-sm text-gray-500 dark:text-gray-400">
+            {{ $t('persona.generating') }}
+          </div>
+          <div
+            v-for="(message, index) in generatorMessages"
+            :key="`${message.role}-${index}`"
+            class="flex"
+            :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
+          >
+            <div
+              class="max-w-[85%] rounded-lg px-4 py-3 whitespace-pre-wrap"
+              :class="message.role === 'user'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100'"
+            >
+              {{ message.content }}
+              <div v-if="message.role === 'assistant' && message.options.length" class="mt-3 flex flex-wrap gap-2">
+                <button
+                  v-for="option in message.options"
+                  :key="option"
+                  class="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:bg-gray-900 dark:text-blue-300 dark:hover:bg-blue-950/30 disabled:opacity-50"
+                  :disabled="generating || index !== generatorMessages.length - 1"
+                  @click="handleGeneratorAnswer(option)"
+                >
+                  {{ option }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-if="generatorMessages.length > 0 && generating" class="text-sm text-gray-500 dark:text-gray-400">
+            {{ $t('persona.generating') }}
+          </div>
         </div>
-        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+        <form v-if="canAnswerGeneratorQuestion" class="px-6 py-4 border-t border-gray-200 dark:border-gray-700" @submit.prevent="handleGeneratorAnswer()">
+          <label class="sr-only" for="persona-generator-answer">{{ $t('persona.generator_answer_label') }}</label>
+          <textarea
+            id="persona-generator-answer"
+            v-model="generatorAnswer"
+            rows="3"
+            class="w-full resize-y border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            :placeholder="$t('persona.generator_answer_placeholder')"
+            :disabled="generating"
+          />
+          <div class="mt-3 flex justify-between gap-3">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 disabled:opacity-50"
+              :disabled="generating || generatorMessages.length === 0"
+              @click="handleGeneratorAnswer(t('persona.generator_generate_request'))"
+            >
+              {{ $t('persona.generator_generate_now') }}
+            </button>
+            <button
+              type="submit"
+              class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
+              :disabled="generating || !generatorAnswer.trim()"
+            >
+              {{ $t('persona.generator_send') }}
+            </button>
+          </div>
+        </form>
+        <div v-else class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between gap-3">
+          <button
+            class="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 disabled:opacity-50"
+            :disabled="generating || generatorMessages.length === 0"
+            @click="handleGeneratorAnswer(t('persona.generator_generate_request'))"
+          >
+            {{ $t('persona.generator_generate_now') }}
+          </button>
           <button
             class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
             :disabled="generating"
             @click="generatorVisible = false"
           >
             {{ $t('persona.modal_cancel') }}
-          </button>
-          <button
-            class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50"
-            :disabled="generating"
-            @click="handleGenerate"
-          >
-            {{ generating ? $t('persona.generating') : $t('persona.generate') }}
           </button>
         </div>
       </div>
@@ -237,8 +286,9 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import {
-  getPersonas, createPersona, generatePersona, updatePersona, deletePersona, setActivePersona,
+  getPersonas, createPersona, streamPersonaGenerator, updatePersona, deletePersona, setActivePersona,
 } from '@/api/persona'
+import type { PersonaGeneratorMessage, PersonaGeneratorStreamEvent } from '@/api/persona'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
@@ -259,7 +309,13 @@ const editMode = ref(false)
 const editId = ref<string | null>(null)
 const saving = ref(false)
 const generating = ref(false)
-const generatorIdea = ref('')
+const generatorAnswer = ref('')
+type GeneratorMessage = PersonaGeneratorMessage & {
+  options: string[]
+  allowCustom: boolean
+  isStreaming?: boolean
+}
+const generatorMessages = ref<GeneratorMessage[]>([])
 
 const confirmTitle = ref('')
 const confirmMessage = ref('')
@@ -292,6 +348,10 @@ const monacoLanguage = computed(() => {
 // Count Unicode code points so that emoji and other non-BMP characters
 // count as one instead of two (UTF-16 surrogate pairs).
 const charCount = computed(() => (form.value.content ? [...form.value.content].length : 0))
+const canAnswerGeneratorQuestion = computed(() => {
+  const latestMessage = generatorMessages.value[generatorMessages.value.length - 1]
+  return !latestMessage || latestMessage.role === 'user' || latestMessage.allowCustom
+})
 
 function formatLabel(fmt: string) {
   const map: Record<string, string> = {
@@ -326,30 +386,68 @@ function openManualCreateDialog() {
   dialogVisible.value = true
 }
 
-function openGeneratorDialog() {
+async function openGeneratorDialog() {
   createModeVisible.value = false
-  generatorIdea.value = ''
+  generatorMessages.value = []
+  generatorAnswer.value = ''
   generatorVisible.value = true
+  await advanceGenerator()
 }
 
-async function handleGenerate() {
+async function handleGeneratorAnswer(answer = generatorAnswer.value) {
+  const content = answer.trim()
+  if (!content || generating.value) return
+  generatorMessages.value.push({ role: 'user', content, options: [], allowCustom: false })
+  generatorAnswer.value = ''
+  await advanceGenerator()
+}
+
+async function advanceGenerator() {
   generating.value = true
   try {
-    const { data } = await generatePersona(generatorIdea.value)
-    editMode.value = false
-    editId.value = null
-    form.value = {
-      name: data.name,
-      format: data.format || 'yaml',
-      content: data.content,
-    }
-    generatorVisible.value = false
-    dialogVisible.value = true
+    await streamPersonaGenerator(
+      generatorMessages.value.map(({ role, content }) => ({ role, content })),
+      handleGeneratorStreamEvent,
+    )
   } catch (error: any) {
-    notify(t('persona.generate_failed') + (error?.message ? ': ' + error.message : ''), 'error')
+    notify(t('persona.generator_failed') + (error?.message ? ': ' + error.message : ''), 'error')
   } finally {
     generating.value = false
   }
+}
+
+function handleGeneratorStreamEvent(event: PersonaGeneratorStreamEvent) {
+  if (event.type === 'text') {
+    const lastMessage = generatorMessages.value[generatorMessages.value.length - 1]
+    if (lastMessage?.role === 'assistant' && lastMessage.isStreaming) {
+      lastMessage.content += event.content
+    } else {
+      generatorMessages.value.push({
+        role: 'assistant', content: event.content, options: [], allowCustom: false, isStreaming: true,
+      })
+    }
+    return
+  }
+  const lastMessage = generatorMessages.value[generatorMessages.value.length - 1]
+  if (lastMessage?.isStreaming) lastMessage.isStreaming = false
+  if (event.type === 'question') {
+    generatorMessages.value.push({
+      role: 'assistant',
+      content: event.question,
+      options: event.options,
+      allowCustom: event.allow_custom,
+    })
+    return
+  }
+  if (event.type === 'proposal') {
+    editMode.value = false
+    editId.value = null
+    form.value = { name: event.name, format: event.format, content: event.content }
+    generatorVisible.value = false
+    dialogVisible.value = true
+    return
+  }
+  throw new Error(event.message || t('persona.generator_invalid_response'))
 }
 
 function openEditDialog(persona: PersonaResponse) {
