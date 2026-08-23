@@ -33,8 +33,14 @@ class _FakeClient:
 
 
 class _FakeProviderManager:
-    def __init__(self, tool_calls: list[dict]):
+    def __init__(self, tool_calls: list[dict], has_fast_llm: bool = True):
         self.client = _FakeClient(tool_calls)
+        self.fast_client = _FakeClient(tool_calls) if has_fast_llm else None
+
+    def get_default_fast_llm(self):
+        if self.fast_client is None:
+            raise ValueError("default_fast_llm not set")
+        return self.fast_client
 
     def get_default_llm(self):
         return self.client
@@ -46,8 +52,8 @@ class _FakeConfig:
 
 
 class _FakeLifecycle:
-    def __init__(self, tool_calls: list[dict]):
-        self.provider_manager = _FakeProviderManager(tool_calls)
+    def __init__(self, tool_calls: list[dict], has_fast_llm: bool = True):
+        self.provider_manager = _FakeProviderManager(tool_calls, has_fast_llm)
         self.kira_config = _FakeConfig()
 
 
@@ -152,9 +158,10 @@ async def test_persona_generator_streams_text_and_question():
 
 @pytest.mark.asyncio
 async def test_persona_generator_turn_returns_model_draft():
-    route = PersonasRoutes(None, _FakeLifecycle([_proposal_tool_call(
+    lifecycle = _FakeLifecycle([_proposal_tool_call(
         '{"name":"Luna","format":"markdown","content":"# Luna"}'
-    )]))
+    )])
+    route = PersonasRoutes(None, lifecycle)
 
     result = await route.persona_generator_turn(PersonaGeneratorTurnRequest(messages=[
         PersonaGeneratorMessage(role="user", content="A calm companion"),
@@ -164,6 +171,23 @@ async def test_persona_generator_turn_returns_model_draft():
     assert result.name == "Luna"
     assert result.format == "markdown"
     assert result.content == "# Luna"
+    assert lifecycle.provider_manager.fast_client.request is not None
+    assert lifecycle.provider_manager.client.request is None
+
+
+@pytest.mark.asyncio
+async def test_persona_generator_turn_falls_back_to_default_llm():
+    lifecycle = _FakeLifecycle([_proposal_tool_call(
+        '{"name":"Luna","format":"markdown","content":"# Luna"}'
+    )], has_fast_llm=False)
+    route = PersonasRoutes(None, lifecycle)
+
+    result = await route.persona_generator_turn(PersonaGeneratorTurnRequest(messages=[
+        PersonaGeneratorMessage(role="user", content="A calm companion"),
+    ]))
+
+    assert result.type == "proposal"
+    assert lifecycle.provider_manager.client.request is not None
 
 
 @pytest.mark.asyncio

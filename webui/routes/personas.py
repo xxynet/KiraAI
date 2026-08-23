@@ -201,7 +201,7 @@ class PersonasRoutes(Routes):
         if not self.lifecycle or not self.lifecycle.provider_manager:
             raise HTTPException(status_code=404, detail="Provider manager not available")
         try:
-            client = self.lifecycle.provider_manager.get_default_llm()
+            client = self._get_persona_generator_client()
             lang = self.lifecycle.kira_config.get_config("locale.lang")
             result = await PersonaGenerator(client).respond(
                 [OpenAIMessage(role=message.role, content=message.content) for message in payload.messages],
@@ -234,7 +234,7 @@ class PersonasRoutes(Routes):
 
         async def event_stream() -> AsyncIterator[str]:
             try:
-                client = self.lifecycle.provider_manager.get_default_llm()
+                client = self._get_persona_generator_client()
                 lang = self.lifecycle.kira_config.get_config("locale.lang")
                 messages = [
                     OpenAIMessage(role=message.role, content=message.content)
@@ -269,6 +269,14 @@ class PersonasRoutes(Routes):
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    def _get_persona_generator_client(self):
+        """Prefer the fast LLM configured for short persona interview turns."""
+        try:
+            return self.lifecycle.provider_manager.get_default_fast_llm()
+        except (TypeError, ValueError):
+            logger.debug("[persona_gen] Default fast LLM is unavailable; using default LLM instead")
+            return self.lifecycle.provider_manager.get_default_llm()
 
     @staticmethod
     def _sse_event(data: dict) -> str:
