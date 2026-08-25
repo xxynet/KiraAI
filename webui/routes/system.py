@@ -18,6 +18,13 @@ class SystemRoutes(Routes):
                 tags=["system"],
                 dependencies=[Depends(require_auth)],
             ),
+            RouteDefinition(
+                path="/api/system/shutdown",
+                methods=["POST"],
+                endpoint=self.shutdown,
+                tags=["system"],
+                dependencies=[Depends(require_auth)],
+            ),
         ]
 
     async def restart(self):
@@ -28,3 +35,12 @@ class SystemRoutes(Routes):
         import asyncio
         asyncio.get_running_loop().call_later(0.5, os._exit, RESTART_EXIT_CODE)
         return {"status": "restarting"}
+
+    async def shutdown(self):
+        """Stop normally so the supervisor can exit with its child."""
+        await self.lifecycle.stop()
+        if self.lifecycle.uvicorn_server:
+            self.lifecycle.uvicorn_server.should_exit = True
+        import asyncio
+        asyncio.get_running_loop().call_later(0.5, os._exit, 0)
+        return {"status": "shutting_down"}
