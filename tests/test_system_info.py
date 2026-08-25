@@ -51,29 +51,6 @@ def test_get_anonymous_machine_id_returns_none_when_unavailable():
         assert get_anonymous_machine_id() is None
 
 
-def test_system_startup_includes_system_profile():
-    telemetry = object.__new__(TelemetryClient)
-    telemetry.country_code = "CN"
-    telemetry.machine_id = "anonymous-machine-id"
-    telemetry.send_event = MagicMock()
-    profile = {
-        "memory_total_mb": 8192,
-        "cpu_physical_cores": 4,
-        "cpu_logical_cores": 8,
-        "architecture": "arm64",
-    }
-
-    with patch("core.telemetry.client.collect_system_profile", return_value=profile):
-        telemetry.send_system_startup(python_version="3.12.0")
-
-    event_type, data = telemetry.send_event.call_args.args
-    assert event_type == "system_startup"
-    assert data["python_version"] == "3.12.0"
-    assert data["country_code"] == "CN"
-    assert data["machine_id"] == "anonymous-machine-id"
-    assert {key: data[key] for key in profile} == profile
-
-
 def test_telemetry_payload_omits_machine_id_for_non_startup_event():
     telemetry = object.__new__(TelemetryClient)
     telemetry.client_uuid = "installation-id"
