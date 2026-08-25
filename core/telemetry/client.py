@@ -47,6 +47,7 @@ class TelemetryClient:
         self.client_uuid: Optional[str] = self.telemetry_config.get("client_uuid")
         self.secret_key: Optional[str] = self.telemetry_config.get("secret_key")
         self.machine_id: Optional[str] = None
+        self.launch_source = "launcher" if os.environ.get("KIRA_LAUNCH_SOURCE") == "launcher" else "core"
 
         self.server_url: str = os.environ.get("KIRA_TELEMETRY_SERVER", "https://telemetry.kira-ai.top/api/v1")
         self.heartbeat_interval: int = 300  # 5 minutes
@@ -140,7 +141,7 @@ class TelemetryClient:
             started_ts = self.stats.get_stats("started_ts") if self.stats else None
             if started_ts:
                 uptime_ms = int((datetime.now(timezone.utc).timestamp() - started_ts) * 1000)
-                self.send_event(TelemetryEventType.SYSTEM_SHUTDOWN, {"uptime_duration_ms": uptime_ms})
+                self.send_system_shutdown(uptime_ms)
 
             # Restart worker if it already exited but events remain in queue
             if self._worker_task is None or (self._worker_task.done() and not self._send_queue.empty()):
@@ -416,6 +417,7 @@ class TelemetryClient:
             "kira_ai_version": VERSION,
             "python_version": python_version or sys_platform.python_version(),
             "platform": sys_platform.platform(),
+            "launch_source": self.launch_source,
         }
         data.update(collect_system_profile())
         if self.machine_id:
@@ -427,6 +429,7 @@ class TelemetryClient:
     def send_system_shutdown(self, uptime_duration_ms: int) -> None:
         self.send_event(TelemetryEventType.SYSTEM_SHUTDOWN, {
             "uptime_duration_ms": uptime_duration_ms,
+            "launch_source": self.launch_source,
         })
 
     def send_heartbeat(self, uptime_ms: int, active_connections: int = 0) -> None:
