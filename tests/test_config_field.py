@@ -17,6 +17,7 @@ from core.config.config_field import (
     ModelSelectField,
     MultiSelectField,
     SectionField,
+    InfoField,
     create_field_from_schema,
     build_fields,
 )
@@ -111,6 +112,11 @@ def test_multi_select_field():
     assert f.default == ["a"]
 
 
+def test_multi_select_field_omits_empty_options():
+    f = MultiSelectField("k", "Name", "hint", options=[])
+    assert "options" not in f.to_dict()
+
+
 def test_section_field():
     child = StringField("child_k", "Child", "hint", default="v")
     f = SectionField("sec", "Section", "hint", fields=[child], collapsed=True)
@@ -118,6 +124,11 @@ def test_section_field():
     assert d["collapsed"] is True
     assert "child_k" in d["fields"]
     assert d["fields"]["child_k"]["type"] == "string"
+
+
+def test_info_field():
+    f = InfoField("info", "Info", "hint", level="warning")
+    assert f.to_dict()["level"] == "warning"
 
 
 def test_locales_included():

@@ -49,20 +49,6 @@ class BaseConfigField:
         }
         if self.locales:
             data["locales"] = self.locales
-        if isinstance(self, EnumField):
-            data["options"] = list(self.options)
-        if isinstance(self, MultiSelectField):
-            if getattr(self, "options", None):
-                data["options"] = list(self.options)
-        if isinstance(self, SectionField):
-            data["collapsed"] = self.collapsed
-            data["fields"] = {f.key: f.to_dict() for f in self.fields}
-        if isinstance(self, EditorField) and getattr(self, "language", None):
-            data["language"] = self.language
-        if isinstance(self, ModelSelectField) and getattr(self, "model_type", None):
-            data["model_type"] = self.model_type
-        if isinstance(self, InfoField):
-            data["level"] = self.level
         return data
 
 
@@ -109,6 +95,11 @@ class EnumField(BaseConfigField):
         super().__init__(key, name, hint, default if default in options else options[0], locales)
         self.options = list(options)
 
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data["options"] = list(self.options)
+        return data
+
 
 class SwitchField(BaseConfigField):
     type = ConfigType.Switch
@@ -145,6 +136,12 @@ class EditorField(BaseConfigField):
         super().__init__(key, name, hint, default, locales)
         self.language = language
 
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        if self.language:
+            data["language"] = self.language
+        return data
+
 
 class TextareaField(BaseConfigField):
     type = ConfigType.Textarea
@@ -160,6 +157,12 @@ class ModelSelectField(BaseConfigField):
         super().__init__(key, name, hint, default, locales)
         self.model_type = model_type
 
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        if self.model_type:
+            data["model_type"] = self.model_type
+        return data
+
 
 class MultiSelectField(BaseConfigField):
     type = ConfigType.MultiSelect
@@ -167,6 +170,12 @@ class MultiSelectField(BaseConfigField):
     def __init__(self, key: str, name: str, hint: str, options, default=None, locales: dict = None):
         super().__init__(key, name, hint, default if isinstance(default, list) else [], locales)
         self.options = list(options)
+
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        if self.options:
+            data["options"] = list(self.options)
+        return data
 
 
 class PersonaSelectField(BaseConfigField):
@@ -184,6 +193,12 @@ class SectionField(BaseConfigField):
         self.fields = fields or []
         self.collapsed = collapsed
 
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data["collapsed"] = self.collapsed
+        data["fields"] = {field.key: field.to_dict() for field in self.fields}
+        return data
+
 
 class InfoField(BaseConfigField):
     """Read-only informational field, no data storage."""
@@ -192,6 +207,11 @@ class InfoField(BaseConfigField):
     def __init__(self, key: str, name: str, hint: str, level: str = "info", locales: dict = None):
         super().__init__(key, name, hint, default=None, locales=locales)
         self.level = level
+
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data["level"] = self.level
+        return data
 
 
 def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
