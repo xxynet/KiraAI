@@ -14,7 +14,7 @@ set "USE_UV=0"
 where uv >nul 2>nul
 if not errorlevel 1 (
     set "USE_UV=1"
-    echo uv detected. Using uv with Python 3.11.
+    echo uv detected. Using uv.
 ) else (
     echo uv not found. Falling back to the system Python.
 )

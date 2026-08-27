@@ -15,7 +15,7 @@ fi
 USE_UV=0
 if command -v uv >/dev/null 2>&1; then
   USE_UV=1
-  echo "uv detected. Using uv with Python 3.11."
+  echo "uv detected. Using uv."
 else
   echo "uv not found. Falling back to the system Python."
 fi
