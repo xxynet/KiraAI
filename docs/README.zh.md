@@ -52,7 +52,7 @@ KiraAI，一个模块化、跨平台的 AI 数字生命项目，以数字生命�
 > [!NOTE]
 > 如需使用其他部署方案，请参考 [部署文档](https://docs.kira-ai.top/zh/deployment/windows.html)
 
-首先，确保你的电脑中安装了 Python 3.10+ 并且添加到了 `PATH` 环境变量
+首先，确保你的电脑中安装了 Python 3.10+ 并且添加到了 `PATH` 环境变量。也可以安装 [uv](https://docs.astral.sh/uv/)；它可在需要时自动提供推荐的 Python 3.11 运行时。
 
 前往 [Releases](https://github.com/KiraAI-Dev/KiraAI/releases) 下载标记为 `latest` 的 Release 中的 `Source code
 (zip)`
@@ -97,6 +97,28 @@ python main.py --webui-dir webui/static/dist --ignore-webui-version-check
 可通过以下方式启动 KiraAI（venv）：
 - Windows 批处理：`scripts\run.bat`
 - Linux 脚本：`scripts/run.sh`（先赋予可执行权限）
+
+安装了 `uv` 时，启动脚本会自动使用它。若需要手动创建相同环境：
+
+```bash
+uv venv venv --python 3.11 --seed
+```
+
+随后安装依赖并启动 KiraAI：
+
+```powershell
+# Windows
+uv pip install --python .\venv\Scripts\python.exe -r requirements.txt
+.\venv\Scripts\python.exe main.py
+```
+
+```bash
+# macOS / Linux
+uv pip install --python venv/bin/python -r requirements.txt
+venv/bin/python main.py
+```
+
+`--seed` 会在 `venv` 中保留 `pip`，以便插件在运行时安装其自身依赖。
 
 Linux 赋权并运行：
 ```bash

@@ -10,9 +10,22 @@ if exist ".venv" if not exist "venv" (
     rename .venv venv
 )
 
+set "USE_UV=0"
+where uv >nul 2>nul
+if not errorlevel 1 (
+    set "USE_UV=1"
+    echo uv detected. Using uv with Python 3.11.
+) else (
+    echo uv not found. Falling back to the system Python.
+)
+
 if not exist "venv" (
     echo [1/3] Creating virtual environment...
-    python -m venv venv
+    if "!USE_UV!"=="1" (
+        uv venv venv --python 3.11 --seed
+    ) else (
+        python -m venv venv
+    )
     if errorlevel 1 (
         echo Failed to create virtual environment.
         pause
@@ -56,13 +69,22 @@ if defined MIRROR (
     set "MIRROR=-i https://pypi.org/simple/"
 )
 
-python -m pip install --upgrade pip !MIRROR!
+if "!USE_UV!"=="1" (
+    uv pip install --python ".\venv\Scripts\python.exe" --upgrade pip !MIRROR!
+) else (
+    python -m pip install --upgrade pip !MIRROR!
+)
 if errorlevel 1 (
     echo Failed to upgrade pip.
     pause
     exit /b 1
 )
-pip install -r requirements.txt !MIRROR!
+
+if "!USE_UV!"=="1" (
+    uv pip install --python ".\venv\Scripts\python.exe" -r requirements.txt !MIRROR!
+) else (
+    python -m pip install -r requirements.txt !MIRROR!
+)
 if errorlevel 1 (
     echo Failed to install dependencies.
     pause

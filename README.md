@@ -52,7 +52,7 @@ KiraAI, a modular, multi-platform AI digital life that connects various AI model
 > [!NOTE]
 > For other deployment options, see the [Deployment Guide](https://docs.kira-ai.top/deployment/windows.html).
 
-First of all, you need to have Python 3.10+ installed and in the `PATH` environment variable
+First of all, install Python 3.10+ and add it to the `PATH` environment variable. Alternatively, install [uv](https://docs.astral.sh/uv/); it can provide the preferred Python 3.11 runtime automatically.
 
 Go to [Releases](https://github.com/KiraAI-Dev/KiraAI/releases) and download `Source code
 (zip)` from the release tagged latest
@@ -98,6 +98,28 @@ Re-run `npm run build` after pulling frontend changes.
 You can start KiraAI via (venv):
 - Batch script: `scripts\run.bat`
 - Linux script: `scripts/run.sh` (make executable first)
+
+When `uv` is installed, the scripts automatically use it. To create the same environment manually:
+
+```bash
+uv venv venv --python 3.11 --seed
+```
+
+Then install dependencies and start KiraAI:
+
+```powershell
+# Windows
+uv pip install --python .\venv\Scripts\python.exe -r requirements.txt
+.\venv\Scripts\python.exe main.py
+```
+
+```bash
+# macOS / Linux
+uv pip install --python venv/bin/python -r requirements.txt
+venv/bin/python main.py
+```
+
+`--seed` keeps `pip` in `venv`, which lets plugins install their own dependencies at runtime.
 
 Make Linux script executable and run:
 ```bash

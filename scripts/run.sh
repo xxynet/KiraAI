@@ -12,6 +12,14 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   PYTHON_BIN="python"
 fi
 
+USE_UV=0
+if command -v uv >/dev/null 2>&1; then
+  USE_UV=1
+  echo "uv detected. Using uv with Python 3.11."
+else
+  echo "uv not found. Falling back to the system Python."
+fi
+
 # Step 1: Migrate .venv -> venv (backward compatibility)
 if [ -d .venv ] && [ ! -d venv ]; then
   echo "[compat] Renaming .venv to venv..."
@@ -21,7 +29,11 @@ fi
 # Step 1: Create venv if missing
 if [ ! -d venv ]; then
   echo "[1/3] Creating virtual environment..."
-  "$PYTHON_BIN" -m venv venv
+  if [ "$USE_UV" -eq 1 ]; then
+    uv venv venv --python 3.11 --seed
+  else
+    "$PYTHON_BIN" -m venv venv
+  fi
 else
   echo "Virtual environment already exists."
 fi
@@ -80,9 +92,18 @@ else
   MIRROR="-i https://pypi.org/simple/"
 fi
 
-python -m pip install --upgrade pip $MIRROR
+if [ "$USE_UV" -eq 1 ]; then
+  uv pip install --python "venv/bin/python" --upgrade pip $MIRROR
+else
+  python -m pip install --upgrade pip $MIRROR
+fi
+
 if [ -f requirements.txt ]; then
-  pip install -r requirements.txt $MIRROR
+  if [ "$USE_UV" -eq 1 ]; then
+    uv pip install --python "venv/bin/python" -r requirements.txt $MIRROR
+  else
+    python -m pip install -r requirements.txt $MIRROR
+  fi
 else
   echo "requirements.txt not found, skipping dependency installation."
 fi
