@@ -12,29 +12,21 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   PYTHON_BIN="python"
 fi
 
+USE_UV=0
+if command -v uv >/dev/null 2>&1; then
+  USE_UV=1
+  echo "uv detected. Using uv."
+else
+  echo "uv not found. Falling back to the system Python."
+fi
+
 # Step 1: Migrate .venv -> venv (backward compatibility)
 if [ -d .venv ] && [ ! -d venv ]; then
   echo "[compat] Renaming .venv to venv..."
   mv .venv venv
 fi
 
-# Step 1: Create venv if missing
-if [ ! -d venv ]; then
-  echo "[1/3] Creating virtual environment..."
-  "$PYTHON_BIN" -m venv venv
-else
-  echo "Virtual environment already exists."
-fi
-
-# Step 2: Activate venv
-echo "[2/3] Activating virtual environment..."
-# shellcheck disable=SC1091
-source venv/bin/activate
-
-# Step 3: Test pip mirrors and select fastest
-echo "[3/3] Testing pip mirrors..."
-
-MIRROR=""
+MIRROR_URL=""
 BEST_SPEED=0
 
 test_mirror() {
@@ -60,29 +52,74 @@ test_mirror() {
     echo "    $name ... ${ms}ms, $fmt_speed"
     if (( speed_int > BEST_SPEED )); then
       BEST_SPEED=$speed_int
-      MIRROR="-i $url"
+      MIRROR_URL="$url"
     fi
   else
     echo "    $name ... unreachable"
   fi
 }
 
+echo "[1/4] Testing pip mirrors..."
 test_mirror "pypi.org" "https://pypi.org/simple/"
 test_mirror "pypi.tuna.tsinghua.edu.cn" "https://pypi.tuna.tsinghua.edu.cn/simple/"
 test_mirror "mirrors.aliyun.com" "https://mirrors.aliyun.com/pypi/simple/"
 test_mirror "mirrors.cloud.tencent.com" "https://mirrors.cloud.tencent.com/pypi/simple/"
 
 echo
-if [ -n "$MIRROR" ]; then
-  echo "  Selected: $MIRROR"
+if [ -n "$MIRROR_URL" ]; then
+  echo "  Selected: $MIRROR_URL"
+else
+  echo "  No package index is reachable."
+fi
+
+# Step 1: Create venv if missing
+if [ ! -d venv ]; then
+  echo "[2/4] Creating virtual environment..."
+  if [ "$USE_UV" -eq 1 ]; then
+    if [ -n "$MIRROR_URL" ]; then
+      if ! uv venv venv --python 3.11 --seed --index-url "$MIRROR_URL"; then
+        echo "uv failed to create the virtual environment. Falling back to the system Python."
+        USE_UV=0
+        "$PYTHON_BIN" -m venv --clear venv
+      fi
+    else
+      echo "Skipping uv environment creation because no package index was selected."
+      USE_UV=0
+      "$PYTHON_BIN" -m venv venv
+    fi
+  else
+    "$PYTHON_BIN" -m venv venv
+  fi
+else
+  echo "Virtual environment already exists."
+fi
+
+# Step 2: Activate venv
+echo "[3/4] Activating virtual environment..."
+# shellcheck disable=SC1091
+source venv/bin/activate
+
+# Step 3: Install dependencies
+echo "[4/4] Installing dependencies..."
+if [ -n "$MIRROR_URL" ]; then
+  MIRROR="-i $MIRROR_URL"
 else
   echo "  All mirrors unreachable, using default PyPI."
   MIRROR="-i https://pypi.org/simple/"
 fi
 
-python -m pip install --upgrade pip $MIRROR
+if [ "$USE_UV" -eq 1 ]; then
+  uv pip install --python "venv/bin/python" --upgrade pip $MIRROR
+else
+  python -m pip install --upgrade pip $MIRROR
+fi
+
 if [ -f requirements.txt ]; then
-  pip install -r requirements.txt $MIRROR
+  if [ "$USE_UV" -eq 1 ]; then
+    uv pip install --python "venv/bin/python" -r requirements.txt $MIRROR
+  else
+    python -m pip install -r requirements.txt $MIRROR
+  fi
 else
   echo "requirements.txt not found, skipping dependency installation."
 fi

@@ -83,6 +83,24 @@ If your idea hasn't been proposed yet, feel free to open an issue. When proposin
 
 ### Backend
 
+The launch scripts automatically prefer `uv` when it is installed. They create a `venv` environment with Python 3.11 and retain pip so plugins can install runtime dependencies. For manual setup with uv:
+
+```bash
+uv venv venv --python 3.11 --seed
+```
+
+```powershell
+# Windows
+uv pip install --python .\venv\Scripts\python.exe -r requirements.txt
+```
+
+```bash
+# macOS / Linux
+uv pip install --python venv/bin/python -r requirements.txt
+```
+
+Without uv, use the existing Python and pip workflow:
+
 ```bash
 # Create and activate a virtual environment (recommended)
 python -m venv venv

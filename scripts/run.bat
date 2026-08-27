@@ -10,29 +10,18 @@ if exist ".venv" if not exist "venv" (
     rename .venv venv
 )
 
-if not exist "venv" (
-    echo [1/3] Creating virtual environment...
-    python -m venv venv
-    if errorlevel 1 (
-        echo Failed to create virtual environment.
-        pause
-        exit /b 1
-    )
+set "USE_UV=0"
+where uv >nul 2>nul
+if not errorlevel 1 (
+    set "USE_UV=1"
+    echo uv detected. Using uv.
 ) else (
-    echo Virtual environment already exists.
+    echo uv not found. Falling back to the system Python.
 )
 
-echo [2/3] Activating virtual environment...
-call .\venv\Scripts\activate.bat
-if errorlevel 1 (
-    echo Failed to activate virtual environment.
-    pause
-    exit /b 1
-)
+echo [1/4] Testing pip mirrors...
 
-echo [3/3] Testing pip mirrors...
-
-set "MIRROR="
+set "MIRROR_URL="
 set "BEST_SPEED=0"
 
 for %%M in (
@@ -49,20 +38,71 @@ for %%M in (
 )
 
 echo.
-if defined MIRROR (
-    echo   Selected: !MIRROR!
+if defined MIRROR_URL (
+    echo   Selected: !MIRROR_URL!
+) else (
+    echo   No package index is reachable.
+)
+
+if not exist "venv" (
+    echo [2/4] Creating virtual environment...
+    if "!USE_UV!"=="1" (
+        if defined MIRROR_URL (
+            uv venv venv --python 3.11 --seed --index-url "!MIRROR_URL!"
+            if errorlevel 1 (
+                echo uv failed to create the virtual environment. Falling back to the system Python.
+                set "USE_UV=0"
+                python -m venv --clear venv
+            )
+        ) else (
+            echo Skipping uv environment creation because no package index was selected.
+            set "USE_UV=0"
+            python -m venv venv
+        )
+    ) else (
+        python -m venv venv
+    )
+    if errorlevel 1 (
+        echo Failed to create virtual environment.
+        pause
+        exit /b 1
+    )
+) else (
+    echo Virtual environment already exists.
+)
+
+echo [3/4] Activating virtual environment...
+call .\venv\Scripts\activate.bat
+if errorlevel 1 (
+    echo Failed to activate virtual environment.
+    pause
+    exit /b 1
+)
+
+echo [4/4] Installing dependencies...
+if defined MIRROR_URL (
+    set "MIRROR=-i !MIRROR_URL!"
 ) else (
     echo   All mirrors unreachable, using default PyPI.
     set "MIRROR=-i https://pypi.org/simple/"
 )
 
-python -m pip install --upgrade pip !MIRROR!
+if "!USE_UV!"=="1" (
+    uv pip install --python ".\venv\Scripts\python.exe" --upgrade pip !MIRROR!
+) else (
+    python -m pip install --upgrade pip !MIRROR!
+)
 if errorlevel 1 (
     echo Failed to upgrade pip.
     pause
     exit /b 1
 )
-pip install -r requirements.txt !MIRROR!
+
+if "!USE_UV!"=="1" (
+    uv pip install --python ".\venv\Scripts\python.exe" -r requirements.txt !MIRROR!
+) else (
+    python -m pip install -r requirements.txt !MIRROR!
+)
 if errorlevel 1 (
     echo Failed to install dependencies.
     pause
@@ -81,7 +121,7 @@ if defined OK (
     call :parse_ms "!T!" MS
     call :format_speed !SPEED_INT! FMT
     echo     !NAME! ... !MS!ms, !FMT!
-    if !SPEED_INT! gtr !BEST_SPEED! (set "BEST_SPEED=!SPEED_INT!" & set "MIRROR=-i !URL!")
+    if !SPEED_INT! gtr !BEST_SPEED! (set "BEST_SPEED=!SPEED_INT!" & set "MIRROR_URL=!URL!")
 ) else (
     echo     !NAME! ... unreachable
 )
