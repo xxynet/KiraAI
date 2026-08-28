@@ -692,9 +692,6 @@ class PluginsRoutes(Routes):
                     for item in self._extract_plugins(raw_data):
                         v = item.get("version")
                         pid = item.get("plugin_id")
-                        if item.get("commit_sha_invalid"):
-                            logger.warning("Ignoring plugin store update with invalid commit SHA: %s", pid)
-                            continue
                         if v and pid:
                             commit_sha = item.get("commit_sha")
                             store_versions[str(pid)] = (
@@ -877,7 +874,6 @@ class PluginsRoutes(Routes):
                     category_locales=item.get("category_locales") or {},
                     repo=item.get("repo"),
                     commit_sha=item.get("commit_sha"),
-                    commit_sha_invalid=item.get("commit_sha_invalid", False),
                     release_tag=item.get("release_tag"),
                     icon=item.get("icon"),
                     icon_dark=item.get("icon_dark"),
@@ -969,7 +965,6 @@ class PluginsRoutes(Routes):
             category_locales = category_info.get("locales") if isinstance(category_info, dict) else None
             repo = raw.get("repo") or raw.get("repo_url")
             raw_commit_sha = raw.get("commit_sha")
-            commit_sha_invalid = False
             if raw_commit_sha is None:
                 commit_sha = None
             elif isinstance(raw_commit_sha, str):
@@ -980,10 +975,8 @@ class PluginsRoutes(Routes):
                     commit_sha = normalized_commit_sha
                 else:
                     commit_sha = None
-                    commit_sha_invalid = True
             else:
                 commit_sha = None
-                commit_sha_invalid = True
             release_tag = raw.get("release_tag")
             icon = raw.get("icon")
             icon_dark = raw.get("icon_dark") or raw.get("icon-dark")
@@ -1007,7 +1000,6 @@ class PluginsRoutes(Routes):
                 "category_locales": category_locales if isinstance(category_locales, dict) else {},
                 "repo": str(repo) if repo else None,
                 "commit_sha": commit_sha,
-                "commit_sha_invalid": commit_sha_invalid,
                 "release_tag": str(release_tag) if isinstance(release_tag, str) else None,
                 "icon": str(icon) if isinstance(icon, str) else None,
                 "icon_dark": str(icon_dark) if isinstance(icon_dark, str) else None,

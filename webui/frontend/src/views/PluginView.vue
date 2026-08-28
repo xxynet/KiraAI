@@ -569,10 +569,8 @@
           :icon-dark="item.icon_dark"
           :tags="item.tags"
           :core-version="item.core_version"
-          :error="item.commit_sha_invalid ? t('pluginStore.invalid_commit_sha') : null"
           :installed="item.installed"
           :installing="storeInstallTarget?.id === item.id && storeInstallTask?.status === 'installing'"
-          :install-blocked="item.commit_sha_invalid"
           :has-update="item.installed && pluginUpdates.has(item.id)"
           :latest-version="pluginUpdates.get(item.id)?.latest_version ?? null"
           :updating="updatingPlugins.has(item.id)"
@@ -1305,7 +1303,9 @@ async function handleCheckUpdates(silent = false) {
 
 async function handleUpdatePlugin(plugin: PluginItem, commitSha?: string | null) {
   updateTargetPlugin.value = plugin
-  updateTargetCommitSha.value = commitSha ?? pluginUpdates.value.get(plugin.id)?.commit_sha ?? null
+  updateTargetCommitSha.value = commitSha === undefined
+    ? pluginUpdates.value.get(plugin.id)?.commit_sha ?? null
+    : commitSha
   updateDialogVisible.value = true
 }
 
@@ -2106,7 +2106,7 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
 }
 
 function handleStoreInstall(item: PluginStoreItem) {
-  if (item.installed || item.commit_sha_invalid) return
+  if (item.installed) return
   storeInstallTarget.value = item
   storeInstallTask.value = null
   storeInstallSilent.value = false
@@ -2225,7 +2225,6 @@ async function cancelStoreInstall() {
 }
 
 async function handleStoreUpdate(item: PluginStoreItem) {
-  if (item.commit_sha_invalid) return
   const plugin = plugins.value.find(p => p.id === item.id)
   if (!plugin) return
   await handleUpdatePlugin(plugin, item.commit_sha)

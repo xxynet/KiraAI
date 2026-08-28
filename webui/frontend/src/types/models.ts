@@ -278,7 +278,6 @@ export interface PluginStoreItem {
   category_locales?: Record<string, Record<string, string>>
   repo?: string | null
   commit_sha?: string | null
-  commit_sha_invalid?: boolean
   release_tag?: string | null
   icon?: string | null
   icon_dark?: string | null

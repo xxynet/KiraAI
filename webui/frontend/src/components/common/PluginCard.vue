@@ -161,11 +161,11 @@
           v-else
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
-          :class="installed || installBlocked
+          :class="installed
             ? 'border-gray-200 text-gray-400 cursor-default dark:border-gray-700 dark:text-gray-500'
             : 'border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/30'"
-          :disabled="installed || installing || installBlocked"
-          @click.stop="!installed && !installing && !installBlocked && emit('install')"
+          :disabled="installed || installing"
+          @click.stop="!installed && !installing && emit('install')"
         >
           <span v-if="installing" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />
@@ -209,7 +209,6 @@ const props = withDefaults(defineProps<{
   // store mode
   installed?: boolean
   installing?: boolean
-  installBlocked?: boolean
 }>(), {
   version: '',
   author: '',
@@ -230,7 +229,6 @@ const props = withDefaults(defineProps<{
   updating: false,
   installed: false,
   installing: false,
-  installBlocked: false,
 })
 
 const emit = defineEmits<{

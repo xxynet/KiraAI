@@ -314,7 +314,6 @@ class PluginStoreItemResponse(BaseModel):
     category_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     repo: Optional[str] = None
     commit_sha: Optional[str] = None
-    commit_sha_invalid: bool = False
     release_tag: Optional[str] = None
     icon: Optional[str] = None
     icon_dark: Optional[str] = None

@@ -121,11 +121,10 @@ def test_extract_plugins_preserves_pinned_source_fields():
     })
 
     assert plugins[0]["commit_sha"] == commit_sha
-    assert plugins[0]["commit_sha_invalid"] is False
     assert plugins[0]["release_tag"] == "v1.2.3"
 
 
-def test_extract_plugins_marks_invalid_commit_sha():
+def test_extract_plugins_falls_back_to_head_for_invalid_commit_sha():
     plugins = PluginsRoutes._extract_plugins({
         "plugins": {
             "example": {
@@ -136,11 +135,10 @@ def test_extract_plugins_marks_invalid_commit_sha():
     })
 
     assert plugins[0]["commit_sha"] is None
-    assert plugins[0]["commit_sha_invalid"] is True
 
 
 @pytest.mark.asyncio
-async def test_update_check_ignores_invalid_catalog_commit_sha(tmp_path, monkeypatch):
+async def test_update_check_falls_back_to_head_for_invalid_catalog_commit_sha(tmp_path, monkeypatch):
     source = {
         "id": "source-1",
         "url": "https://store.example/plugins.json",
@@ -178,5 +176,5 @@ async def test_update_check_ignores_invalid_catalog_commit_sha(tmp_path, monkeyp
 
     result = await routes.check_plugin_updates()
 
-    assert result[0].has_update is False
+    assert result[0].has_update is True
     assert result[0].commit_sha is None
