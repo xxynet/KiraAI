@@ -273,6 +273,17 @@ class PluginInstallGithubRequest(BaseModel):
     repo_url: str
     proxy: Optional[str] = None
     gh_proxy: Optional[str] = None
+    commit_sha: Optional[str] = None
+
+    @field_validator("commit_sha")
+    @classmethod
+    def validate_commit_sha(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if len(normalized) != 40 or any(char not in "0123456789abcdef" for char in normalized):
+            raise ValueError("commit_sha must be a full 40-character Git commit SHA")
+        return normalized
 
 
 class PluginInstallResult(PluginItem):
@@ -284,6 +295,7 @@ class PluginInstallTask(BaseModel):
 
     task_id: str
     repo_url: str
+    commit_sha: Optional[str] = None
     status: Literal["installing", "completed", "failed", "cancelled"]
     stage: Literal["downloading", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
     plugin_id: Optional[str] = None
@@ -301,6 +313,8 @@ class PluginStoreItemResponse(BaseModel):
     category_name: Optional[str] = None
     category_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     repo: Optional[str] = None
+    commit_sha: Optional[str] = None
+    release_tag: Optional[str] = None
     icon: Optional[str] = None
     icon_dark: Optional[str] = None
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
@@ -314,12 +328,24 @@ class PluginUpdateCheckItem(BaseModel):
     plugin_id: str
     current_version: str = ""
     latest_version: Optional[str] = None
+    commit_sha: Optional[str] = None
     has_update: bool = False
     error: Optional[str] = None
 
 
 class PluginUpdateRequest(BaseModel):
     gh_proxy: Optional[str] = None
+    commit_sha: Optional[str] = None
+
+    @field_validator("commit_sha")
+    @classmethod
+    def validate_commit_sha(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if len(normalized) != 40 or any(char not in "0123456789abcdef" for char in normalized):
+            raise ValueError("commit_sha must be a full 40-character Git commit SHA")
+        return normalized
 
 
 class PluginStoreFetchRequest(BaseModel):

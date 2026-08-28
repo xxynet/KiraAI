@@ -1102,6 +1102,7 @@ const checkingUpdates = ref(false)
 const updatingPlugins = ref(new Set<string>())
 const updateDialogVisible = ref(false)
 const updateTargetPlugin = ref<PluginItem | null>(null)
+const updateTargetCommitSha = ref<string | null>(null)
 const pluginDetailsVisible = ref(false)
 const selectedPlugin = ref<PluginItem | PluginStoreItem | null>(null)
 const pluginReadme = ref<string | null>(null)
@@ -1300,8 +1301,11 @@ async function handleCheckUpdates(silent = false) {
   }
 }
 
-async function handleUpdatePlugin(plugin: PluginItem) {
+async function handleUpdatePlugin(plugin: PluginItem, commitSha?: string | null) {
   updateTargetPlugin.value = plugin
+  updateTargetCommitSha.value = commitSha === undefined
+    ? pluginUpdates.value.get(plugin.id)?.commit_sha ?? null
+    : commitSha
   updateDialogVisible.value = true
 }
 
@@ -1314,10 +1318,15 @@ function resolveGhProxy(): string | undefined {
 async function confirmUpdate() {
   const plugin = updateTargetPlugin.value
   if (!plugin) return
+  const commitSha = updateTargetCommitSha.value
+  updateTargetCommitSha.value = null
   updateDialogVisible.value = false
   updatingPlugins.value.add(plugin.id)
   try {
-    await apiUpdatePlugin(plugin.id, { gh_proxy: resolveGhProxy() })
+    await apiUpdatePlugin(plugin.id, {
+      gh_proxy: resolveGhProxy(),
+      commit_sha: commitSha,
+    })
     pluginUpdates.value.delete(plugin.id)
     notify(t('plugin.update_success'), 'success')
     await loadPlugins()
@@ -1844,6 +1853,17 @@ const STORE_INSTALL_POLL_INTERVAL_MS = 1000
 const STORE_INSTALL_MAX_POLL_FAILURES = 3
 let storeInstallPollTimer: ReturnType<typeof setTimeout> | null = null
 let storeInstallPollFailures = 0
+
+function normalizeCommitSha(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase()
+  return normalized || null
+}
+
+function matchesStoreInstallTask(item: PluginStoreItem, task: PluginInstallTask | null | undefined): boolean {
+  return item.repo === task?.repo_url
+    && normalizeCommitSha(item.commit_sha) === normalizeCommitSha(task?.commit_sha)
+}
+
 const storeInstallIcon = computed(() => {
   const item = storeInstallTarget.value
   return isDark.value ? item?.icon_dark || item?.icon : item?.icon || null
@@ -2061,7 +2081,9 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
       installed: installedIds.has(item.id),
     }))
     if (storeInstallTask.value && !storeInstallTarget.value) {
-      storeInstallTarget.value = storePlugins.value.find(item => item.repo === storeInstallTask.value?.repo_url) || null
+      storeInstallTarget.value = storePlugins.value.find(item =>
+        matchesStoreInstallTask(item, storeInstallTask.value),
+      ) || null
     }
     storePage.value = 1
     if (storeCategory.value !== 'all' && !storePlugins.value.some(item => item.category?.trim() === storeCategory.value)) {
@@ -2118,7 +2140,11 @@ async function startStoreInstall() {
     return
   }
   try {
-    const response = await startGithubInstallTask({ repo_url: item.repo, gh_proxy: resolveStoreInstallProxy() })
+    const response = await startGithubInstallTask({
+      repo_url: item.repo,
+      gh_proxy: resolveStoreInstallProxy(),
+      commit_sha: item.commit_sha,
+    })
     storeInstallTask.value = response.data
     startStoreInstallPolling()
   } catch (e: any) {
@@ -2201,7 +2227,7 @@ async function cancelStoreInstall() {
 async function handleStoreUpdate(item: PluginStoreItem) {
   const plugin = plugins.value.find(p => p.id === item.id)
   if (!plugin) return
-  await handleUpdatePlugin(plugin)
+  await handleUpdatePlugin(plugin, item.commit_sha)
 }
 
 onMounted(async () => {
@@ -2219,7 +2245,7 @@ onMounted(async () => {
     const task = response.data
     if (!task) return
     storeInstallTask.value = task
-    const matchingItem = storePlugins.value.find(item => item.repo === task.repo_url)
+    const matchingItem = storePlugins.value.find(item => matchesStoreInstallTask(item, task))
     if (matchingItem) storeInstallTarget.value = matchingItem
     startStoreInstallPolling()
   }).catch(() => {})

@@ -70,6 +70,6 @@ export function checkPluginUpdates() {
   return apiClient.post<PluginUpdateCheckItem[]>('/plugins/updates/check')
 }
 
-export function updatePlugin(pluginId: string, data?: { gh_proxy?: string | null }) {
+export function updatePlugin(pluginId: string, data?: { gh_proxy?: string | null; commit_sha?: string | null }) {
   return apiClient.post<PluginInstallResult>(`/plugins/${encodeURIComponent(pluginId)}/update`, data || {})
 }

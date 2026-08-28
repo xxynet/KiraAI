@@ -49,6 +49,7 @@ async def install_from_github(
     plugins_dir: Path,
     proxy: Optional[str] = None,
     gh_proxy: Optional[str] = None,
+    commit_sha: Optional[str] = None,
     is_plugin_installed: Optional[Callable[[str], bool]] = None,
     target_dir: Optional[Path] = None,
     expected_plugin_id: Optional[str] = None,
@@ -59,6 +60,8 @@ async def install_from_github(
     proxy    — HTTP/SOCKS proxy forwarded to download_file
     gh_proxy — GitHub reverse-proxy URL prefix (e.g. "https://ghproxy.com/")
                The direct archive link is appended to this prefix.
+    commit_sha — optional immutable 40-character Git commit SHA. When omitted,
+                 the repository HEAD archive is downloaded for backward compatibility.
     is_plugin_installed — callback used to reject an archive whose manifest
                           declares an already registered plugin ID.
     target_dir — existing plugin directory to replace. Used by updates when
@@ -71,7 +74,12 @@ async def install_from_github(
     Raises ConnectionError for network failures.
     """
     owner, repo = parse_github_url(repo_url)
-    direct_url = f"https://github.com/{owner}/{repo}/archive/HEAD.zip"
+    if commit_sha is not None:
+        commit_sha = commit_sha.strip().lower()
+        if len(commit_sha) != 40 or any(char not in "0123456789abcdef" for char in commit_sha):
+            raise ValueError("commit_sha must be a full 40-character Git commit SHA")
+    archive_ref = commit_sha or "HEAD"
+    direct_url = f"https://github.com/{owner}/{repo}/archive/{archive_ref}.zip"
 
     if gh_proxy == "auto":
         ranked = await pick_fastest_source(direct_url, proxy=proxy)

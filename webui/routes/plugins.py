@@ -448,6 +448,7 @@ class PluginsRoutes(Routes):
                 plugin_manager.plugin_dir,
                 proxy=payload.proxy,
                 gh_proxy=payload.gh_proxy,
+                commit_sha=payload.commit_sha,
                 is_plugin_installed=plugin_manager.has_plugin,
             )
         except PluginAlreadyInstalledError as e:
@@ -474,6 +475,7 @@ class PluginsRoutes(Routes):
         task_data: Dict[str, Any] = {
             "task_id": task_id,
             "repo_url": payload.repo_url,
+            "commit_sha": payload.commit_sha,
             "status": "installing",
             "stage": "downloading",
             "plugin_id": None,
@@ -552,6 +554,7 @@ class PluginsRoutes(Routes):
                     plugin_manager.plugin_dir,
                     proxy=payload.proxy,
                     gh_proxy=payload.gh_proxy,
+                    commit_sha=payload.commit_sha,
                     is_plugin_installed=plugin_manager.has_plugin,
                 )
                 task_data["stage"] = "installing_dependencies"
@@ -652,7 +655,7 @@ class PluginsRoutes(Routes):
         db_service = getattr(self.lifecycle, "db_service", None)
 
         # Get store version map from the current store source (with 10-min cache)
-        store_versions: Dict[str, str] = {}
+        store_versions: Dict[str, tuple[str, Optional[str]]] = {}
         store_fetch_error: Optional[str] = None
         if db_service:
             try:
@@ -690,7 +693,10 @@ class PluginsRoutes(Routes):
                         v = item.get("version")
                         pid = item.get("plugin_id")
                         if v and pid:
-                            store_versions[str(pid)] = str(v)
+                            commit_sha = item.get("commit_sha")
+                            store_versions[str(pid)] = (
+                                str(v), str(commit_sha) if isinstance(commit_sha, str) else None,
+                            )
             except Exception as e:
                 store_fetch_error = f"Failed to fetch store data: {e}"
                 logger.warning(store_fetch_error)
@@ -703,13 +709,15 @@ class PluginsRoutes(Routes):
             pid = info.plugin_id
             installed_ver = info.version
             latest_ver: Optional[str] = None
+            commit_sha: Optional[str] = None
             err: Optional[str] = None
 
             if pid in store_versions:
-                store_ver = store_versions[pid]
+                store_ver, store_commit_sha = store_versions[pid]
                 try:
                     if _compare_versions(installed_ver, store_ver):
                         latest_ver = store_ver
+                        commit_sha = store_commit_sha
                 except Exception as e:
                     err = str(e)
             elif store_fetch_error:
@@ -719,6 +727,7 @@ class PluginsRoutes(Routes):
                 plugin_id=pid,
                 current_version=installed_ver,
                 latest_version=latest_ver,
+                commit_sha=commit_sha,
                 has_update=latest_ver is not None,
                 error=err,
             ))
@@ -753,6 +762,7 @@ class PluginsRoutes(Routes):
                 info.repo,
                 plugin_manager.plugin_dir,
                 gh_proxy=payload.gh_proxy,
+                commit_sha=payload.commit_sha,
                 target_dir=plugin_dir,
                 expected_plugin_id=plugin_id,
             )
@@ -863,6 +873,8 @@ class PluginsRoutes(Routes):
                     category_name=item.get("category_name"),
                     category_locales=item.get("category_locales") or {},
                     repo=item.get("repo"),
+                    commit_sha=item.get("commit_sha"),
+                    release_tag=item.get("release_tag"),
                     icon=item.get("icon"),
                     icon_dark=item.get("icon_dark"),
                     locales=item.get("locales") or {},
@@ -952,6 +964,20 @@ class PluginsRoutes(Routes):
             category_name = category_info.get("name") if isinstance(category_info, dict) else None
             category_locales = category_info.get("locales") if isinstance(category_info, dict) else None
             repo = raw.get("repo") or raw.get("repo_url")
+            raw_commit_sha = raw.get("commit_sha")
+            if raw_commit_sha is None:
+                commit_sha = None
+            elif isinstance(raw_commit_sha, str):
+                normalized_commit_sha = raw_commit_sha.strip().lower()
+                if len(normalized_commit_sha) == 40 and all(
+                    character in "0123456789abcdef" for character in normalized_commit_sha
+                ):
+                    commit_sha = normalized_commit_sha
+                else:
+                    commit_sha = None
+            else:
+                commit_sha = None
+            release_tag = raw.get("release_tag")
             icon = raw.get("icon")
             icon_dark = raw.get("icon_dark") or raw.get("icon-dark")
             github_data = raw.get("github_data")
@@ -973,6 +999,8 @@ class PluginsRoutes(Routes):
                 "category_name": str(category_name) if category_name else None,
                 "category_locales": category_locales if isinstance(category_locales, dict) else {},
                 "repo": str(repo) if repo else None,
+                "commit_sha": commit_sha,
+                "release_tag": str(release_tag) if isinstance(release_tag, str) else None,
                 "icon": str(icon) if isinstance(icon, str) else None,
                 "icon_dark": str(icon_dark) if isinstance(icon_dark, str) else None,
                 "locales": locales if isinstance(locales, dict) else {},
