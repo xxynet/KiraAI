@@ -569,8 +569,10 @@
           :icon-dark="item.icon_dark"
           :tags="item.tags"
           :core-version="item.core_version"
+          :error="item.commit_sha_invalid ? t('pluginStore.invalid_commit_sha') : null"
           :installed="item.installed"
           :installing="storeInstallTarget?.id === item.id && storeInstallTask?.status === 'installing'"
+          :install-blocked="item.commit_sha_invalid"
           :has-update="item.installed && pluginUpdates.has(item.id)"
           :latest-version="pluginUpdates.get(item.id)?.latest_version ?? null"
           :updating="updatingPlugins.has(item.id)"
@@ -1316,12 +1318,14 @@ function resolveGhProxy(): string | undefined {
 async function confirmUpdate() {
   const plugin = updateTargetPlugin.value
   if (!plugin) return
+  const commitSha = updateTargetCommitSha.value
+  updateTargetCommitSha.value = null
   updateDialogVisible.value = false
   updatingPlugins.value.add(plugin.id)
   try {
     await apiUpdatePlugin(plugin.id, {
       gh_proxy: resolveGhProxy(),
-      commit_sha: updateTargetCommitSha.value,
+      commit_sha: commitSha,
     })
     pluginUpdates.value.delete(plugin.id)
     notify(t('plugin.update_success'), 'success')
@@ -1330,7 +1334,6 @@ async function confirmUpdate() {
     notify(t('plugin.update_failed'), 'error')
   } finally {
     updatingPlugins.value.delete(plugin.id)
-    updateTargetCommitSha.value = null
   }
 }
 
@@ -1850,6 +1853,17 @@ const STORE_INSTALL_POLL_INTERVAL_MS = 1000
 const STORE_INSTALL_MAX_POLL_FAILURES = 3
 let storeInstallPollTimer: ReturnType<typeof setTimeout> | null = null
 let storeInstallPollFailures = 0
+
+function normalizeCommitSha(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase()
+  return normalized || null
+}
+
+function matchesStoreInstallTask(item: PluginStoreItem, task: PluginInstallTask | null | undefined): boolean {
+  return item.repo === task?.repo_url
+    && normalizeCommitSha(item.commit_sha) === normalizeCommitSha(task?.commit_sha)
+}
+
 const storeInstallIcon = computed(() => {
   const item = storeInstallTarget.value
   return isDark.value ? item?.icon_dark || item?.icon : item?.icon || null
@@ -2068,7 +2082,7 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
     }))
     if (storeInstallTask.value && !storeInstallTarget.value) {
       storeInstallTarget.value = storePlugins.value.find(item =>
-        item.repo === storeInstallTask.value?.repo_url && item.commit_sha === storeInstallTask.value?.commit_sha,
+        matchesStoreInstallTask(item, storeInstallTask.value),
       ) || null
     }
     storePage.value = 1
@@ -2092,7 +2106,7 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
 }
 
 function handleStoreInstall(item: PluginStoreItem) {
-  if (item.installed) return
+  if (item.installed || item.commit_sha_invalid) return
   storeInstallTarget.value = item
   storeInstallTask.value = null
   storeInstallSilent.value = false
@@ -2211,6 +2225,7 @@ async function cancelStoreInstall() {
 }
 
 async function handleStoreUpdate(item: PluginStoreItem) {
+  if (item.commit_sha_invalid) return
   const plugin = plugins.value.find(p => p.id === item.id)
   if (!plugin) return
   await handleUpdatePlugin(plugin, item.commit_sha)
@@ -2231,9 +2246,7 @@ onMounted(async () => {
     const task = response.data
     if (!task) return
     storeInstallTask.value = task
-    const matchingItem = storePlugins.value.find(item =>
-      item.repo === task.repo_url && item.commit_sha === task.commit_sha,
-    )
+    const matchingItem = storePlugins.value.find(item => matchesStoreInstallTask(item, task))
     if (matchingItem) storeInstallTarget.value = matchingItem
     startStoreInstallPolling()
   }).catch(() => {})

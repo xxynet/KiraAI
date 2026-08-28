@@ -512,6 +512,7 @@ export default {
     installing: 'Installing...',
     install_success: 'Plugin installed successfully',
     install_failed: 'Failed to install plugin',
+    invalid_commit_sha: 'Plugin catalog contains an invalid commit SHA.',
     install_status_failed: 'Unable to retrieve installation status. Please refresh the plugin store later.',
     install_details_title: 'Install Plugin',
     install_silent: 'Continue silently',
