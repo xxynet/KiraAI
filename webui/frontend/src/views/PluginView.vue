@@ -1102,6 +1102,7 @@ const checkingUpdates = ref(false)
 const updatingPlugins = ref(new Set<string>())
 const updateDialogVisible = ref(false)
 const updateTargetPlugin = ref<PluginItem | null>(null)
+const updateTargetCommitSha = ref<string | null>(null)
 const pluginDetailsVisible = ref(false)
 const selectedPlugin = ref<PluginItem | PluginStoreItem | null>(null)
 const pluginReadme = ref<string | null>(null)
@@ -1300,8 +1301,9 @@ async function handleCheckUpdates(silent = false) {
   }
 }
 
-async function handleUpdatePlugin(plugin: PluginItem) {
+async function handleUpdatePlugin(plugin: PluginItem, commitSha?: string | null) {
   updateTargetPlugin.value = plugin
+  updateTargetCommitSha.value = commitSha ?? pluginUpdates.value.get(plugin.id)?.commit_sha ?? null
   updateDialogVisible.value = true
 }
 
@@ -1317,7 +1319,10 @@ async function confirmUpdate() {
   updateDialogVisible.value = false
   updatingPlugins.value.add(plugin.id)
   try {
-    await apiUpdatePlugin(plugin.id, { gh_proxy: resolveGhProxy() })
+    await apiUpdatePlugin(plugin.id, {
+      gh_proxy: resolveGhProxy(),
+      commit_sha: updateTargetCommitSha.value,
+    })
     pluginUpdates.value.delete(plugin.id)
     notify(t('plugin.update_success'), 'success')
     await loadPlugins()
@@ -1325,6 +1330,7 @@ async function confirmUpdate() {
     notify(t('plugin.update_failed'), 'error')
   } finally {
     updatingPlugins.value.delete(plugin.id)
+    updateTargetCommitSha.value = null
   }
 }
 
@@ -2061,7 +2067,9 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
       installed: installedIds.has(item.id),
     }))
     if (storeInstallTask.value && !storeInstallTarget.value) {
-      storeInstallTarget.value = storePlugins.value.find(item => item.repo === storeInstallTask.value?.repo_url) || null
+      storeInstallTarget.value = storePlugins.value.find(item =>
+        item.repo === storeInstallTask.value?.repo_url && item.commit_sha === storeInstallTask.value?.commit_sha,
+      ) || null
     }
     storePage.value = 1
     if (storeCategory.value !== 'all' && !storePlugins.value.some(item => item.category?.trim() === storeCategory.value)) {
@@ -2118,7 +2126,11 @@ async function startStoreInstall() {
     return
   }
   try {
-    const response = await startGithubInstallTask({ repo_url: item.repo, gh_proxy: resolveStoreInstallProxy() })
+    const response = await startGithubInstallTask({
+      repo_url: item.repo,
+      gh_proxy: resolveStoreInstallProxy(),
+      commit_sha: item.commit_sha,
+    })
     storeInstallTask.value = response.data
     startStoreInstallPolling()
   } catch (e: any) {
@@ -2201,7 +2213,7 @@ async function cancelStoreInstall() {
 async function handleStoreUpdate(item: PluginStoreItem) {
   const plugin = plugins.value.find(p => p.id === item.id)
   if (!plugin) return
-  await handleUpdatePlugin(plugin)
+  await handleUpdatePlugin(plugin, item.commit_sha)
 }
 
 onMounted(async () => {
@@ -2219,7 +2231,9 @@ onMounted(async () => {
     const task = response.data
     if (!task) return
     storeInstallTask.value = task
-    const matchingItem = storePlugins.value.find(item => item.repo === task.repo_url)
+    const matchingItem = storePlugins.value.find(item =>
+      item.repo === task.repo_url && item.commit_sha === task.commit_sha,
+    )
     if (matchingItem) storeInstallTarget.value = matchingItem
     startStoreInstallPolling()
   }).catch(() => {})

@@ -216,6 +216,7 @@ export interface PluginInstallGithubRequest {
   repo_url: string
   proxy?: string | null
   gh_proxy?: string | null
+  commit_sha?: string | null
 }
 
 export interface PluginInstallResult extends PluginItem {
@@ -225,6 +226,7 @@ export interface PluginInstallResult extends PluginItem {
 export interface PluginInstallTask {
   task_id: string
   repo_url: string
+  commit_sha?: string | null
   status: 'installing' | 'completed' | 'failed' | 'cancelled'
   stage: 'downloading' | 'installing_dependencies' | 'loading' | 'completed' | 'failed' | 'cancelled'
   plugin_id?: string | null
@@ -275,6 +277,8 @@ export interface PluginStoreItem {
   category_name?: string | null
   category_locales?: Record<string, Record<string, string>>
   repo?: string | null
+  commit_sha?: string | null
+  release_tag?: string | null
   icon?: string | null
   icon_dark?: string | null
   downloads?: number
@@ -289,6 +293,7 @@ export interface PluginUpdateCheckItem {
   plugin_id: string
   current_version: string
   latest_version: string | null
+  commit_sha?: string | null
   has_update: boolean
   error: string | null
 }

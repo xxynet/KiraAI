@@ -99,3 +99,19 @@ def test_extract_plugins_preserves_tags_and_core_version():
 
     assert plugins[0]["tags"] == ["utility", "network"]
     assert plugins[0]["core_version"] == ">=2.29.0"
+
+
+def test_extract_plugins_preserves_pinned_source_fields():
+    commit_sha = "a" * 40
+    plugins = PluginsRoutes._extract_plugins({
+        "plugins": {
+            "example": {
+                "plugin_id": "example",
+                "commit_sha": commit_sha,
+                "release_tag": "v1.2.3",
+            },
+        },
+    })
+
+    assert plugins[0]["commit_sha"] == commit_sha
+    assert plugins[0]["release_tag"] == "v1.2.3"

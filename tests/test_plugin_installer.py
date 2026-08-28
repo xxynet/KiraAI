@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -72,3 +73,27 @@ def test_update_rejects_a_changed_plugin_id_before_replacing_files(tmp_path, mon
 
     assert stale_file.read_text(encoding="utf-8") == "old plugin"
     assert not (legacy_dir / "main.py").exists()
+
+
+def test_install_from_github_downloads_the_requested_commit(tmp_path, monkeypatch):
+    downloaded_urls = []
+
+    async def fake_download(url, target, proxy=None):
+        downloaded_urls.append(url)
+        Path(target).write_bytes(_plugin_archive("plugin-id"))
+
+    monkeypatch.setattr(plugin_installer, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(plugin_installer, "download_file", fake_download)
+    commit_sha = "a" * 40
+
+    asyncio.run(
+        plugin_installer.install_from_github(
+            "https://github.com/example/plugin",
+            tmp_path / "plugins",
+            commit_sha=commit_sha,
+        )
+    )
+
+    assert downloaded_urls == [
+        f"https://github.com/example/plugin/archive/{commit_sha}.zip"
+    ]
