@@ -1,0 +1,24 @@
+/* Semantic text utilities for gradual migration away from Tailwind gray overrides. */
+.text-theme-high {
+  color: var(--color-text-high);
+}
+
+.text-theme-strong {
+  color: var(--color-text-strong);
+}
+
+.text-theme-body {
+  color: var(--color-text-body);
+}
+
+.text-theme-supporting {
+  color: var(--color-text-supporting);
+}
+
+.text-theme-subtle {
+  color: var(--color-text-subtle);
+}
+
+.text-theme-faint {
+  color: var(--color-text-faint);
+}

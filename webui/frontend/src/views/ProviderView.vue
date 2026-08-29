@@ -3,7 +3,7 @@
     <!-- Left: Provider List -->
     <div class="w-full md:w-1/3 max-h-64 md:max-h-none bg-white rounded-lg shadow p-6 flex flex-col overflow-hidden">
       <div class="flex justify-between items-center mb-6 flex-shrink-0">
-        <h3 class="text-lg font-semibold text-gray-800">
+        <h3 class="text-lg font-semibold text-theme-strong">
           {{ $t('pages.provider.title') }}
         </h3>
         <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" @click="openCreateDialog">
@@ -14,8 +14,8 @@
 
       <div v-if="providers.length === 0" class="flex justify-center items-center py-12 flex-1">
         <div class="text-center">
-          <IconCpu class="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p class="text-gray-500 text-sm">{{ $t('provider.no_providers') }}</p>
+          <IconCpu class="w-16 h-16 text-theme-faint mx-auto mb-4" />
+          <p class="text-theme-subtle text-sm">{{ $t('provider.no_providers') }}</p>
         </div>
       </div>
 
@@ -34,13 +34,13 @@
                 :alt="''"
                 class="w-5 h-5 object-contain"
               />
-              <IconCpu v-else class="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <IconCpu v-else class="w-5 h-5 text-theme-subtle" />
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ provider.name }}</div>
-              <div class="text-xs text-gray-500">{{ localizeProviderType(provider) }}</div>
+              <div class="text-sm font-medium text-theme-high truncate">{{ provider.name }}</div>
+              <div class="text-xs text-theme-subtle">{{ localizeProviderType(provider) }}</div>
             </div>
-            <span class="px-2 py-1 text-xs rounded-full" :class="provider.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'">
+            <span class="px-2 py-1 text-xs rounded-full" :class="provider.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-theme-strong dark:bg-gray-700'">
               {{ provider.status }}
             </span>
           </div>
@@ -51,8 +51,8 @@
     <div class="w-full md:w-2/3 bg-white rounded-lg shadow p-6 flex flex-col">
       <div v-if="!selectedId" class="flex justify-center items-center flex-1">
         <div class="text-center">
-          <IconCpu class="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p class="text-gray-500">{{ $t('provider.select_provider') }}</p>
+          <IconCpu class="w-16 h-16 text-theme-faint mx-auto mb-4" />
+          <p class="text-theme-subtle">{{ $t('provider.select_provider') }}</p>
           <button
             class="mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
             @click="goToModelConfig"
@@ -64,14 +64,14 @@
 
       <div v-else class="flex flex-col flex-1 overflow-y-auto pr-2">
         <div class="border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
-          <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100 truncate">{{ selectedProvider?.name }}</h3>
-          <p class="text-sm text-gray-500 mt-1 truncate">{{ selectedProvider && localizeProviderType(selectedProvider) }}</p>
+          <h3 class="text-xl font-semibold text-theme-strong truncate">{{ selectedProvider?.name }}</h3>
+          <p class="text-sm text-theme-subtle mt-1 truncate">{{ selectedProvider && localizeProviderType(selectedProvider) }}</p>
         </div>
 
         <!-- Provider Config Fields -->
         <div class="space-y-4 mb-6">
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('provider.name') }}</label>
+            <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('provider.name') }}</label>
             <UiInput v-model="providerName" class="w-full rounded-lg px-3 py-2 transition-colors" />
           </div>
           <div v-if="providerSchema && Object.keys(providerSchema.provider_config || providerSchema).length > 0">
@@ -82,8 +82,8 @@
             />
           </div>
           <div v-else-if="schemaError" class="text-red-500 dark:text-red-400 py-2">{{ $t('provider.schema_error') }}</div>
-          <div v-else-if="schemaLoading" class="text-center text-gray-500 py-4">{{ $t('provider.schema_loading') }}</div>
-          <div v-else class="text-gray-500 dark:text-gray-400 py-2">{{ $t('provider.schema_none') }}</div>
+          <div v-else-if="schemaLoading" class="text-center text-theme-subtle py-4">{{ $t('provider.schema_loading') }}</div>
+          <div v-else class="text-theme-subtle py-2">{{ $t('provider.schema_none') }}</div>
           <div class="flex justify-end space-x-3 pt-2">
             <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50" :disabled="saving || schemaError" @click="saveProviderConfig">
               {{ $t('provider.save') }}
@@ -96,7 +96,7 @@
 
         <!-- Model Groups -->
         <div v-if="selectedProvider?.supported_model_types?.length" class="space-y-3">
-          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('provider.model_groups') }}</h4>
+          <h4 class="text-sm font-semibold text-theme-body mb-3">{{ $t('provider.model_groups') }}</h4>
           <div
             v-for="modelType in selectedProvider.supported_model_types"
             :key="modelType"
@@ -107,8 +107,8 @@
               @click="toggleModelGroup(modelType)"
             >
               <div class="flex items-center">
-                <IconChevronDown class="w-5 h-5 text-gray-500 dark:text-gray-400 mr-2 transition-transform duration-200" :class="{ 'rotate-180': activeModelGroups.includes(modelType) }" />
-                <span class="font-medium text-gray-700 dark:text-gray-200">{{ $t(`provider.model_group_${modelType}`) }}</span>
+                <IconChevronDown class="w-5 h-5 text-theme-subtle mr-2 transition-transform duration-200" :class="{ 'rotate-180': activeModelGroups.includes(modelType) }" />
+                <span class="font-medium text-theme-body">{{ $t(`provider.model_group_${modelType}`) }}</span>
               </div>
               <div class="flex items-center gap-1">
                 <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors" @click.stop="openAddModelDialog(modelType)">

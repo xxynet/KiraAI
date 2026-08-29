@@ -1,6 +1,7 @@
 @import './tokens.css';
 @import './components/custom-select.css';
 @import './components/form-controls.css';
+@import './components/theme-text.css';
 
 @tailwind base;
 @tailwind components;
