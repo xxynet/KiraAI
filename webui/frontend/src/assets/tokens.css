@@ -18,6 +18,7 @@
   --color-hover: rgba(0, 0, 0, 0.05);
 
   --color-border: rgba(209, 213, 219, 0.8);
+  --color-control-border: rgba(209, 213, 219, 0.8);
   --color-border-subtle: rgba(209, 213, 219, 0.5);
   --color-border-strong: rgba(156, 163, 175, 0.5);
   --color-overlay-border: rgba(255, 255, 255, 0.3);
@@ -62,6 +63,7 @@
   --color-hover: rgba(255, 255, 255, 0.1);
 
   --color-border: rgba(75, 85, 99, 0.3);
+  --color-control-border: rgba(75, 85, 99, 0.4);
   --color-border-subtle: rgba(75, 85, 99, 0.2);
   --color-border-strong: rgba(75, 85, 99, 0.3);
   --color-overlay-border: rgba(75, 85, 99, 0.3);

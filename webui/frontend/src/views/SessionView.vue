@@ -86,11 +86,11 @@
       <div class="px-6 py-4 flex-1 overflow-y-auto">
         <div class="mb-4">
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('sessions.name') }}</label>
-          <input v-model="sessionTitle" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+          <UiInput v-model="sessionTitle" class="w-full rounded-lg px-3 py-2" />
         </div>
         <div class="mb-4">
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('sessions.description') }}</label>
-          <textarea v-model="sessionDescription" rows="2" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-none"></textarea>
+          <UiTextarea v-model="sessionDescription" rows="2" class="w-full rounded-lg px-3 py-2 resize-none" />
         </div>
         <div class="mb-4">
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('sessions.session_data') }}</label>
@@ -138,6 +138,8 @@ import { getSessions, getSession, updateSession, deleteSession } from '@/api/ses
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { IconPlus, IconClose, IconCopy } from '@/components/icons'
 import type { SessionItem } from '@/types'
 

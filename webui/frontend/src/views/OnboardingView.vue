@@ -32,7 +32,7 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300" for="timezone">{{ t('onboarding.timezone') }}</label>
-            <input id="timezone" v-model="timezone" type="text" class="w-full h-10 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" :placeholder="t('onboarding.timezone_placeholder')">
+            <UiInput id="timezone" v-model="timezone" class="w-full h-10 rounded-lg px-3 py-2 transition-colors" :placeholder="t('onboarding.timezone_placeholder')" />
             <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('onboarding.timezone_hint') }}</p>
           </div>
           <button type="submit" class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563eb] transition-all duration-200 active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-500">
@@ -86,6 +86,7 @@ import { useI18n } from 'vue-i18n'
 import { completeOnboarding } from '@/api/onboarding'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import Modal from '@/components/common/Modal.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import ProviderView from '@/views/ProviderView.vue'
 import AdapterView from '@/views/AdapterView.vue'
 import ConfigView from '@/views/ConfigView.vue'

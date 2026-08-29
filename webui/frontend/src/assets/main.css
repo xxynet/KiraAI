@@ -1,5 +1,6 @@
 @import './tokens.css';
 @import './components/custom-select.css';
+@import './components/form-controls.css';
 
 @tailwind base;
 @tailwind components;
@@ -17,8 +18,7 @@
   }
 }
 
-.provider-item,
-.custom-select-trigger {
+.provider-item {
   transition-property: border-color;
   transition-duration: 150ms;
   transition-timing-function: ease-in-out;
@@ -253,9 +253,9 @@ textarea.transition-colors {
 }
 
 /* ==================== Form Inputs ==================== */
-input:not([type="checkbox"], [type="radio"]),
+input:not([type="checkbox"], [type="radio"]):not(.ui-input),
 select,
-textarea {
+textarea:not(.ui-textarea) {
   background-color: var(--color-surface-raised) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -263,9 +263,9 @@ textarea {
   color: var(--color-text-primary);
 }
 
-.dark input::placeholder,
+.dark input:not(.ui-input)::placeholder,
 .dark select::placeholder,
-.dark textarea::placeholder {
+.dark textarea:not(.ui-textarea)::placeholder {
   color: var(--color-text-muted);
 }
 
@@ -273,38 +273,38 @@ textarea {
   border-color: rgba(75, 85, 99, 0.4) !important;
 }
 
-input:not([type="checkbox"], [type="radio"]):hover,
+input:not([type="checkbox"], [type="radio"]):not(.ui-input):hover,
 select:hover,
-textarea:hover,
-.dark input:not([type="checkbox"], [type="radio"]):hover,
+textarea:not(.ui-textarea):hover,
+.dark input:not([type="checkbox"], [type="radio"]):not(.ui-input):hover,
 .dark select:hover,
-.dark textarea:hover {
+.dark textarea:not(.ui-textarea):hover {
   border-color: var(--color-accent) !important;
 }
 
-input:not([type="checkbox"], [type="radio"]):focus,
-input:not([type="checkbox"], [type="radio"]):focus-visible,
+input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus,
+input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus-visible,
 select:focus,
 select:focus-visible,
-textarea:focus,
-textarea:focus-visible,
-.dark input:not([type="checkbox"], [type="radio"]):focus,
-.dark input:not([type="checkbox"], [type="radio"]):focus-visible,
+textarea:not(.ui-textarea):focus,
+textarea:not(.ui-textarea):focus-visible,
+.dark input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus,
+.dark input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus-visible,
 .dark select:focus,
 .dark select:focus-visible,
-.dark textarea:focus,
-.dark textarea:focus-visible {
+.dark textarea:not(.ui-textarea):focus,
+.dark textarea:not(.ui-textarea):focus-visible {
   outline: none;
   border-color: var(--color-accent) !important;
   box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
 }
 
-input:not([type="checkbox"], [type="radio"]):focus:hover,
+input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus:hover,
 select:focus:hover,
-textarea:focus:hover,
-.dark input:not([type="checkbox"], [type="radio"]):focus:hover,
+textarea:not(.ui-textarea):focus:hover,
+.dark input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus:hover,
 .dark select:focus:hover,
-.dark textarea:focus:hover {
+.dark textarea:not(.ui-textarea):focus:hover {
   border-color: var(--color-accent) !important;
   box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
 }

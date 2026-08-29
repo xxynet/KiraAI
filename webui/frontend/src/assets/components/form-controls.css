@@ -1,0 +1,28 @@
+/* Opt-in native form-control styles used by the UiInput and UiTextarea components. */
+.ui-input,
+.ui-textarea {
+  background-color: var(--color-surface-raised);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--color-control-border);
+  color: var(--color-text-primary);
+}
+
+:root.dark .ui-input::placeholder,
+:root.dark .ui-textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+.ui-input:hover,
+.ui-textarea:hover {
+  border-color: var(--color-accent);
+}
+
+.ui-input:focus,
+.ui-input:focus-visible,
+.ui-textarea:focus,
+.ui-textarea:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
+}
