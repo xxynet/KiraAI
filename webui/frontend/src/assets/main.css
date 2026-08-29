@@ -56,23 +56,23 @@ button,
 }
 
 .dark .sidebar-gradient h1 {
-  color: #f9fafb;
+  color: var(--color-sidebar-heading);
 }
 
 .dark .sidebar-gradient p {
-  color: #d1d5db;
+  color: var(--color-sidebar-copy);
 }
 
 /* Sidebar borders in dark mode - use subtle gray instead of blue */
 .dark .sidebar-gradient .border-blue-200\/30 {
-  border-color: rgb(191 219 254 / 0.3);
+  border-color: var(--color-sidebar-accent-border);
 }
 
 /* ==================== Sidebar Overlay ==================== */
 .sidebar-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--color-overlay-scrim);
   z-index: 40;
   opacity: 0;
   pointer-events: none;
@@ -134,16 +134,16 @@ button,
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background-color: rgba(59, 130, 246, 0.4);
+  background-color: var(--color-accent-indicator);
   display: block;
   transition: all 0.2s ease-in-out;
 }
 
 .nav-item.active .nav-dot {
-  background-color: rgb(59, 130, 246);
+  background-color: var(--color-accent-indicator-active);
   width: 6px;
   height: 6px;
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+  box-shadow: var(--shadow-accent-indicator);
 }
 
 /* ==================== Modal Cards ==================== */
@@ -285,7 +285,7 @@ button,
 
 .log-entry {
   padding: 4px 8px;
-  border-bottom: 1px solid rgba(107, 114, 128, 0.2);
+  border-bottom: 1px solid var(--color-log-divider);
   line-height: 1.6;
 }
 
@@ -294,11 +294,7 @@ button,
 }
 
 .log-entry:hover {
-  background-color: rgba(0, 0, 0, 0.03);
-}
-
-.dark .log-entry:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--color-log-hover);
 }
 
 /* Old webui log container parity */
@@ -307,23 +303,13 @@ button,
   font-size: 18px;
   white-space: pre-wrap;
   word-break: break-all;
-  background-color: #f9fafb !important;
-  color: #1f2937;
-  border: 1px solid #6b7280;
+  background-color: var(--color-log-surface) !important;
+  color: var(--color-log-text);
+  border: 1px solid var(--color-log-border);
 }
 
 #log-container p {
-  color: #9ca3af;
-}
-
-.dark #log-container {
-  background-color: rgba(31, 41, 55, 0.8) !important;
-  color: #e5e7eb;
-  border-color: #4b5563;
-}
-
-.dark #log-container p {
-  color: #6b7280;
+  color: var(--color-log-muted);
 }
 
 /* ==================== Session Card ==================== */
@@ -333,7 +319,7 @@ button,
 
 .session-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-session-hover);
 }
 
 /* ==================== Provider Item ==================== */
@@ -342,18 +328,18 @@ button,
 }
 
 .dark .provider-item:hover {
-  background-color: rgba(75, 85, 99, 0.3);
+  background-color: var(--color-item-hover);
 }
 
 .dark .provider-item.bg-blue-50 {
-  background-color: rgba(59, 130, 246, 0.15) !important;
-  border-color: rgba(59, 130, 246, 0.3);
+  background-color: var(--color-accent-selected) !important;
+  border-color: var(--color-accent-selected-border);
 }
 
 /* ==================== Monaco Editor ==================== */
 .monaco-container {
   height: 500px;
-  border: 1px solid rgba(107, 114, 128, 0.3);
+  border: 1px solid var(--color-editor-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -366,7 +352,7 @@ button,
   width: 0;
   height: 2px;
   z-index: 9999;
-  background: #60a5fa;
+  background: var(--color-route-loading);
   border-radius: 0 2px 2px 0;
   /* transition only set on .loading and .completing — idle snaps instantly */
 }
@@ -381,14 +367,10 @@ button,
   transition: width 0.3s ease;
 }
 
-.dark .route-loading-bar {
-  background: #3b82f6;
-}
-
 /* ==================== Loading Spinner ==================== */
 .loading-spinner {
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid #3498db;
+  border: 3px solid var(--color-spinner-track);
+  border-top: 3px solid var(--color-spinner-accent);
   border-radius: 50%;
   width: 40px;
   height: 40px;
