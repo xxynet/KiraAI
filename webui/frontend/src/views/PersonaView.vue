@@ -2,7 +2,7 @@
   <div>
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
-      <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
+      <h3 class="text-lg font-semibold text-theme-strong">
         {{ $t('pages.persona.title') }}
       </h3>
       <button
@@ -17,8 +17,8 @@
     <!-- Empty State -->
     <div v-if="personas.length === 0" class="flex justify-center items-center py-12">
       <div class="text-center">
-        <IconUser class="w-16 h-16 text-gray-400 mx-auto mb-4" />
-        <p class="text-gray-500">{{ $t('persona.no_personas') }}</p>
+        <IconUser class="w-16 h-16 text-theme-faint mx-auto mb-4" />
+        <p class="text-theme-subtle">{{ $t('persona.no_personas') }}</p>
       </div>
     </div>
 
@@ -32,7 +32,7 @@
         <div>
           <div class="flex items-start justify-between mb-3 min-w-0">
             <div class="flex items-center min-w-0">
-              <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100 mr-2 truncate">{{ persona.name }}</h4>
+              <h4 class="text-base font-semibold text-theme-high mr-2 truncate">{{ persona.name }}</h4>
               <span
                 class="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 flex-shrink-0"
               >
@@ -40,13 +40,13 @@
               </span>
             </div>
           </div>
-          <p class="text-sm text-gray-600 dark:text-gray-300 mb-4 line-clamp-3">
+          <p class="text-sm text-theme-supporting mb-4 line-clamp-3">
             {{ persona.content || $t('persona.no_content') }}
           </p>
         </div>
         <div class="flex justify-end space-x-3 mt-2">
           <button
-            class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition-colors"
             @click="openEditDialog(persona)"
           >
             {{ $t('persona.edit') }}
@@ -79,8 +79,8 @@
     <Modal v-model="createModeVisible" content-class="max-w-2xl" content-style="width: 90%;">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('persona.create_mode_title') }}</h3>
-          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="createModeVisible = false">
+          <h3 class="text-lg font-semibold text-theme-strong">{{ $t('persona.create_mode_title') }}</h3>
+          <button class="text-theme-faint text-theme-faint-hover" @click="createModeVisible = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
@@ -89,15 +89,15 @@
             class="text-left rounded-lg border border-blue-200 dark:border-blue-800 p-5 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
             @click="openGeneratorDialog"
           >
-            <h4 class="font-semibold text-gray-900 dark:text-gray-100">{{ $t('persona.create_with_ai') }}</h4>
-            <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">{{ $t('persona.create_with_ai_hint') }}</p>
+            <h4 class="font-semibold text-theme-high">{{ $t('persona.create_with_ai') }}</h4>
+            <p class="mt-2 text-sm text-theme-supporting">{{ $t('persona.create_with_ai_hint') }}</p>
           </button>
           <button
             class="text-left rounded-lg border border-gray-200 dark:border-gray-700 p-5 hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
             @click="openManualCreateDialog"
           >
-            <h4 class="font-semibold text-gray-900 dark:text-gray-100">{{ $t('persona.create_manually') }}</h4>
-            <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">{{ $t('persona.create_manually_hint') }}</p>
+            <h4 class="font-semibold text-theme-high">{{ $t('persona.create_manually') }}</h4>
+            <p class="mt-2 text-sm text-theme-supporting">{{ $t('persona.create_manually_hint') }}</p>
           </button>
         </div>
       </div>
@@ -107,13 +107,13 @@
     <Modal v-model="generatorVisible" content-class="max-w-2xl" content-style="width: 90%;">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 80vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('persona.create_with_ai') }}</h3>
-          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :disabled="generating" @click="generatorVisible = false">
+          <h3 class="text-lg font-semibold text-theme-strong">{{ $t('persona.create_with_ai') }}</h3>
+          <button class="text-theme-faint text-theme-faint-hover" :disabled="generating" @click="generatorVisible = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div ref="generatorConversationRef" class="p-6 flex-1 overflow-y-auto space-y-4">
-          <div v-if="generatorMessages.length === 0 && generating" class="text-sm text-gray-500 dark:text-gray-400">
+          <div v-if="generatorMessages.length === 0 && generating" class="text-sm text-theme-subtle">
             {{ $t('persona.generating') }}
           </div>
           <div
@@ -126,7 +126,7 @@
               class="max-w-[85%] rounded-lg px-4 py-3 whitespace-pre-wrap"
               :class="message.role === 'user'
                 ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100'"
+                : 'bg-gray-100 text-theme-strong dark:bg-gray-800'"
             >
               {{ message.content }}
               <div v-if="message.role === 'assistant' && message.options.length" class="mt-3 flex flex-wrap gap-2">
@@ -142,7 +142,7 @@
               </div>
             </div>
           </div>
-          <div v-if="generatorMessages.length > 0 && generating" class="text-sm text-gray-500 dark:text-gray-400">
+          <div v-if="generatorMessages.length > 0 && generating" class="text-sm text-theme-subtle">
             {{ $t('persona.generating') }}
           </div>
         </div>
@@ -168,7 +168,7 @@
             <div class="flex gap-3">
               <button
                 type="button"
-                class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                 :disabled="generating"
                 @click="generatorVisible = false"
               >
@@ -191,16 +191,16 @@
     <Modal v-model="dialogVisible" content-class="max-w-4xl" content-style="width: 90%;">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col modal-card" style="max-height: 90vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
+          <h3 class="text-lg font-semibold text-theme-strong">
             {{ editMode ? $t('persona.edit_title') : $t('persona.modal_title') }}
           </h3>
-          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="dialogVisible = false">
+          <button class="text-theme-faint text-theme-faint-hover" @click="dialogVisible = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label class="block text-sm font-medium text-theme-body mb-2">
               {{ $t('persona.modal_name_label') }}
             </label>
             <UiInput
@@ -211,7 +211,7 @@
             />
           </div>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label class="block text-sm font-medium text-theme-body mb-2">
               {{ $t('persona.format') }}
             </label>
             <CustomSelect
@@ -222,10 +222,10 @@
           </div>
           <div class="mb-4">
             <div class="flex justify-between items-center mb-2">
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label class="block text-sm font-medium text-theme-body">
                 {{ $t('persona.modal_content_label') }}
               </label>
-              <span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+              <span class="text-xs text-theme-subtle tabular-nums">
                 {{ t('persona.char_count', { count: charCount }) }}
               </span>
             </div>
@@ -238,7 +238,7 @@
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
           <button
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             @click="dialogVisible = false"
           >
             {{ $t('persona.modal_cancel') }}
