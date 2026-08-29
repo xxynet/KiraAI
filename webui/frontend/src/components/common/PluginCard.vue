@@ -14,14 +14,14 @@
           <img :src="displayIcon" :alt="''" class="h-full w-full object-contain" />
         </div>
         <div class="min-w-0">
-          <div class="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">{{ name || id }}</div>
-          <div v-if="version || author" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <div class="text-base font-semibold text-theme-high truncate">{{ name || id }}</div>
+          <div v-if="version || author" class="mt-1 text-xs text-theme-subtle">
             {{ version ? `v${version}` : '' }}{{ version && author ? ' · ' : '' }}{{ author || '' }}
             <span v-if="hasUpdate" class="ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400">
               {{ $t('plugin.update_available') }}
             </span>
           </div>
-          <div v-if="coreVersion" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          <div v-if="coreVersion" class="mt-1 text-xs text-theme-faint">
             {{ $t('plugin.core_version') }}: {{ coreVersion }}
           </div>
           <div v-if="status === 'installing'" class="mt-2 flex items-center gap-1.5 text-xs">
@@ -34,7 +34,7 @@
           </div>
           <div v-else-if="status === 'pending'" class="mt-2 flex items-center gap-1.5 text-xs">
             <span class="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
-            <span class="text-gray-500 dark:text-gray-400">{{ $t('plugin.status_pending') }}</span>
+            <span class="text-theme-subtle">{{ $t('plugin.status_pending') }}</span>
           </div>
           <div v-if="error" class="mt-2 min-w-0 flex items-start gap-1.5 rounded-md bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-600 dark:text-red-400 overflow-hidden">
             <IconInfo class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
@@ -49,7 +49,7 @@
           :href="safeRepo"
           target="_blank"
           rel="noopener noreferrer"
-          class="inline-flex items-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors mt-1"
+          class="inline-flex items-center text-theme-subtle text-theme-subtle-hover transition-colors mt-1"
           :title="$t('plugin.repo_link')"
           @click.stop
         >
@@ -71,7 +71,7 @@
         </button>
       </div>
     </div>
-    <p v-if="description" class="text-sm text-gray-600 dark:text-gray-300 line-clamp-3 mb-3">
+    <p v-if="description" class="text-sm text-theme-supporting line-clamp-3 mb-3">
       {{ description }}
     </p>
     <div v-if="tags && tags.length" class="flex flex-wrap gap-1.5 mb-3">
@@ -84,7 +84,7 @@
       </span>
     </div>
     <div class="mt-auto">
-      <div v-if="mode === 'installed'" class="text-xs font-mono text-gray-400 dark:text-gray-500 break-all mb-3">{{ id }}</div>
+      <div v-if="mode === 'installed'" class="text-xs font-mono text-theme-faint break-all mb-3">{{ id }}</div>
       <!-- Installed mode: Configure / Reload / Uninstall buttons -->
       <div v-if="mode === 'installed'" class="flex items-center justify-end space-x-3">
         <button
@@ -92,7 +92,7 @@
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
           :class="updating
-            ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
+            ? 'border-gray-200 text-theme-faint cursor-wait dark:border-gray-700'
             : 'border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30'"
           :disabled="updating"
           @click.stop="!updating && emit('update')"
@@ -106,7 +106,7 @@
         <button
           v-if="!error"
           type="button"
-          class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
+          class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition-colors"
           @click.stop="emit('configure')"
         >
           {{ $t('plugin.configure') }}
@@ -116,8 +116,8 @@
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
           :class="reloading
-            ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
-            : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'"
+            ? 'border-gray-200 text-theme-faint cursor-wait dark:border-gray-700'
+            : 'border-gray-300 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800'"
           :disabled="reloading"
           @click.stop="!reloading && emit('reload')"
         >
@@ -132,7 +132,7 @@
           class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
           :class="uninstallable
             ? 'border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30'
-            : 'border-gray-200 text-gray-300 cursor-not-allowed dark:border-gray-700 dark:text-gray-600'"
+            : 'border-gray-200 text-theme-faint cursor-not-allowed dark:border-gray-700'"
           :disabled="!uninstallable"
           @click.stop="uninstallable && emit('uninstall')"
         >
@@ -146,7 +146,7 @@
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
           :class="updating
-            ? 'border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-500'
+            ? 'border-gray-200 text-theme-faint cursor-wait dark:border-gray-700'
             : 'border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30'"
           :disabled="updating"
           @click.stop="!updating && emit('update')"
@@ -162,7 +162,7 @@
           type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
           :class="installed
-            ? 'border-gray-200 text-gray-400 cursor-default dark:border-gray-700 dark:text-gray-500'
+            ? 'border-gray-200 text-theme-faint cursor-default dark:border-gray-700'
             : 'border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/30'"
           :disabled="installed || installing"
           @click.stop="!installed && !installing && emit('install')"

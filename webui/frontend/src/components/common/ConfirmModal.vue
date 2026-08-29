@@ -12,10 +12,10 @@
             <IconWarning v-else class="w-6 h-6 text-red-600 dark:text-red-400" />
           </div>
           <div>
-            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
+            <h3 class="text-lg font-semibold text-theme-strong">
               {{ title }}
             </h3>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <p class="text-sm text-theme-subtle mt-1">
               {{ message }}
             </p>
           </div>
@@ -24,7 +24,7 @@
       </div>
       <div class="px-6 pb-6 flex justify-end space-x-3">
         <button
-          class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           @click="onCancel"
         >
           {{ cancelText }}

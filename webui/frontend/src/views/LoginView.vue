@@ -13,7 +13,7 @@
       @click="toggleTheme"
     >
       <IconSun v-if="appStore.isDark" class="w-6 h-6 text-yellow-500" />
-      <IconMoon v-else class="w-6 h-6 text-gray-700" />
+      <IconMoon v-else class="w-6 h-6 text-theme-body" />
     </button>
 
     <!-- Login Container -->
@@ -25,20 +25,20 @@
           <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4 shadow-lg">
             <IconLightning class="w-8 h-8 text-white" />
           </div>
-          <h1 class="text-3xl font-bold text-gray-900 mb-2 dark:text-white">{{ $t('login.title') }}</h1>
-          <p class="text-gray-600 dark:text-gray-400">{{ $t('login.subtitle') }}</p>
+          <h1 class="text-3xl font-bold text-theme-high mb-2">{{ $t('login.title') }}</h1>
+          <p class="text-theme-supporting">{{ $t('login.subtitle') }}</p>
         </div>
 
         <!-- Login Form -->
         <form @submit.prevent="handleLogin" class="space-y-6">
           <!-- Access Token Input -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+            <label class="block text-sm font-medium text-theme-body mb-2">
               {{ $t('login.access_token') }}
             </label>
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <IconKey class="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                <IconKey class="h-5 w-5 text-theme-faint" />
               </div>
               <UiInput
                 v-model="accessToken"
@@ -49,7 +49,7 @@
                 :placeholder="$t('login.placeholder')"
               />
             </div>
-            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            <p class="mt-2 text-xs text-theme-subtle">
               {{ $t('login.token_hint') }}
             </p>
           </div>
@@ -78,7 +78,7 @@
 
         <!-- Footer -->
         <div class="mt-8 text-center">
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-theme-subtle">
             KiraAI WebUI
           </p>
         </div>

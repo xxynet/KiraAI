@@ -7,7 +7,7 @@
       class="plugin-page-iframe"
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
     />
-    <div v-else class="flex items-center justify-center h-64 text-gray-500">
+    <div v-else class="flex items-center justify-center h-64 text-theme-subtle">
       <p>{{ $t('pluginPage.invalid_config') }}</p>
     </div>
   </div>

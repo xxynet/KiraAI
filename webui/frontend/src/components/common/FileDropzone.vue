@@ -16,15 +16,15 @@
       <IconCheck class="w-10 h-10 text-green-500 dark:text-green-400" />
     </div>
     <div v-else>
-      <IconUpload class="w-10 h-10 text-gray-400 dark:text-gray-500" />
+      <IconUpload class="w-10 h-10 text-theme-faint" />
     </div>
     <p
       class="text-sm"
-      :class="hasFile ? 'text-green-700 dark:text-green-300 font-medium' : 'text-gray-600 dark:text-gray-300'"
+      :class="hasFile ? 'text-green-700 dark:text-green-300 font-medium' : 'text-theme-supporting'"
     >
       {{ fileName || titleText }}
     </p>
-    <p v-if="hasFile" class="text-xs text-gray-400 dark:text-gray-500">
+    <p v-if="hasFile" class="text-xs text-theme-faint">
       {{ reselectText }}
     </p>
   </div>

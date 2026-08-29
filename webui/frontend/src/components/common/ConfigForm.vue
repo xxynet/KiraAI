@@ -11,7 +11,7 @@
           <div class="flex flex-col gap-4">
             <template v-for="(field, key) in entry.fields" :key="key">
               <div v-if="field" class="mb-0">
-                <label v-if="!isInfoLike(field.type)" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label v-if="!isInfoLike(field.type)" class="block text-sm font-medium text-theme-body mb-1">
                   {{ labelFor(field, key as string) }}
                 </label>
 
@@ -88,7 +88,7 @@
                     :placeholder="hintFor(field)"
                     @update:model-value="updateSectionField(entry.key, key as string, $event)"
                   />
-                  <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" @click="toggleSensitive(entry.key + '.' + key)">
+                  <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-theme-faint text-theme-faint-hover focus:outline-none" @click="toggleSensitive(entry.key + '.' + key)">
                     <IconEye v-if="!sensitiveVisible[entry.key + '.' + key]" class="w-4 h-4" />
                     <IconEyeOff v-else class="w-4 h-4" />
                   </button>
@@ -145,7 +145,7 @@
                   @update:model-value="updateSectionField(entry.key, key as string, $event)"
                 />
 
-                <p v-if="hintFor(field) && !isInfoLike(field.type)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(field) }}</p>
+                <p v-if="hintFor(field) && !isInfoLike(field.type)" class="text-xs text-theme-subtle mt-1">{{ hintFor(field) }}</p>
               </div>
             </template>
           </div>
@@ -154,7 +154,7 @@
 
       <!-- Ungrouped field -->
       <div v-else class="mb-4">
-        <label v-if="!isInfoLike(entry.field.type)" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        <label v-if="!isInfoLike(entry.field.type)" class="block text-sm font-medium text-theme-body mb-1">
           {{ labelFor(entry.field, entry.key) }}
         </label>
 
@@ -231,7 +231,7 @@
             :placeholder="hintFor(entry.field)"
             @update:model-value="updateField(entry.key, $event)"
           />
-          <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" @click="toggleSensitive(entry.key)">
+          <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-theme-faint text-theme-faint-hover focus:outline-none" @click="toggleSensitive(entry.key)">
             <IconEye v-if="!sensitiveVisible[entry.key]" class="w-4 h-4" />
             <IconEyeOff v-else class="w-4 h-4" />
           </button>
@@ -288,7 +288,7 @@
           @update:model-value="updateField(entry.key, $event)"
         />
 
-        <p v-if="hintFor(entry.field) && !isInfoLike(entry.field.type)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(entry.field) }}</p>
+        <p v-if="hintFor(entry.field) && !isInfoLike(entry.field.type)" class="text-xs text-theme-subtle mt-1">{{ hintFor(entry.field) }}</p>
       </div>
     </template>
   </div>
