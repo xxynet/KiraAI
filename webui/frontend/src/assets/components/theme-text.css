@@ -22,3 +22,7 @@
 .text-theme-faint {
   color: var(--color-text-faint);
 }
+
+.text-theme-faint-hover:hover {
+  color: var(--color-text-faint-hover);
+}

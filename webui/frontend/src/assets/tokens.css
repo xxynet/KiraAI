@@ -16,6 +16,7 @@
   --color-text-supporting: #4b5563;
   --color-text-subtle: #6b7280;
   --color-text-faint: #9ca3af;
+  --color-text-faint-hover: #4b5563;
   --color-text-secondary: #374151;
   --color-text-emphasis: #111827;
   --color-text-muted: #9ca3af;
@@ -71,6 +72,7 @@
   --color-text-supporting: #cbd5e1;
   --color-text-subtle: #b4bcc8;
   --color-text-faint: #6b7280;
+  --color-text-faint-hover: #8b93a1;
   --color-text-secondary: #e5e7eb;
   --color-text-emphasis: #f9fafb;
   --color-text-muted: #9ca3af;
