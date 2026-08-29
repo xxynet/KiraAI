@@ -17,13 +17,12 @@
       <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         <!-- Search -->
         <div class="relative">
-          <input
+          <UiInput
             ref="searchInputRef"
             v-model="searchTerm"
-            type="text"
             :placeholder="$t('configuration.search_placeholder')"
             :aria-label="$t('configuration.search_aria_label')"
-            class="w-full sm:w-56 border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-2 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            class="w-full sm:w-56 rounded-lg pl-9 pr-3 py-2 text-sm transition-colors"
           />
           <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         </div>
@@ -354,6 +353,7 @@ import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import InfoCallout from '@/components/common/InfoCallout.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import {
   IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
   IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown, IconClock,
@@ -366,7 +366,7 @@ const props = defineProps<{ initialTab?: string }>()
 const searchTerm = ref('')
 const saving = ref(false)
 const loading = ref(false)
-const searchInputRef = ref<HTMLInputElement | null>(null)
+const searchInputRef = ref<InstanceType<typeof UiInput> | null>(null)
 const activeTab = ref('life')
 
 // Data

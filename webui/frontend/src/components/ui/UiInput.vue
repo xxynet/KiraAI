@@ -1,5 +1,6 @@
 <template>
   <input
+    ref="inputRef"
     :type="type"
     class="ui-input"
     :value="modelValue ?? ''"
@@ -11,6 +12,8 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+
 defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(defineProps<{
@@ -19,6 +22,7 @@ const props = withDefaults(defineProps<{
     number?: boolean
     trim?: boolean
   }
+  coerceNumber?: boolean
   type?: string
 }>(), {
   modelModifiers: () => ({}),
@@ -30,13 +34,14 @@ const emit = defineEmits<{
 }>()
 
 let isComposing = false
+const inputRef = ref<HTMLInputElement>()
 
 function getModelValue(event: Event): string | number {
   let value = (event.target as HTMLInputElement).value
   if (props.modelModifiers.trim) {
     value = value.trim()
   }
-  if (props.modelModifiers.number || props.type === 'number') {
+  if (props.modelModifiers.number || (props.coerceNumber !== false && props.type === 'number')) {
     const numericValue = Number(value)
     return value === '' || Number.isNaN(numericValue) ? value : numericValue
   }
@@ -54,4 +59,18 @@ function handleCompositionEnd(event: CompositionEvent) {
   isComposing = false
   emit('update:modelValue', getModelValue(event))
 }
+
+function focus(options?: FocusOptions) {
+  inputRef.value?.focus(options)
+}
+
+function blur() {
+  inputRef.value?.blur()
+}
+
+defineExpose({
+  blur,
+  focus,
+  inputElement: inputRef,
+})
 </script>

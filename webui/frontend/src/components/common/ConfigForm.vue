@@ -68,25 +68,26 @@
                   </label>
                 </div>
 
-                <input
+                <UiInput
                   v-else-if="isNumberLike(field.type)"
                   type="number"
-                  :value="drafts[entry.key + '.' + key] ?? ''"
+                  :model-value="drafts[entry.key + '.' + key] ?? ''"
+                  :coerce-number="false"
                   :step="field.type === 'integer' ? '1' : '0.01'"
-                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  class="w-full rounded-lg px-3 py-2 transition-colors"
                   :placeholder="hintFor(field)"
-                  @input="drafts[entry.key + '.' + key] = ($event.target as HTMLInputElement).value"
+                  @update:model-value="drafts[entry.key + '.' + key] = String($event)"
                   @blur="commitSectionNumberDraft(entry.key, key as string, field)"
-                >
+                />
 
                 <div v-else-if="field.type === 'sensitive'" class="relative">
-                  <input
+                  <UiInput
                     :type="sensitiveVisible[entry.key + '.' + key] ? 'text' : 'password'"
-                    :value="sectionFieldValue(entry.key, key as string, field) ?? ''"
-                    class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 pr-10 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                    :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
+                    class="w-full rounded-lg px-3 py-2 pr-10 transition-colors"
                     :placeholder="hintFor(field)"
-                    @input="updateSectionField(entry.key, key as string, ($event.target as HTMLInputElement).value)"
-                  >
+                    @update:model-value="updateSectionField(entry.key, key as string, $event)"
+                  />
                   <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" @click="toggleSensitive(entry.key + '.' + key)">
                     <IconEye v-if="!sensitiveVisible[entry.key + '.' + key]" class="w-4 h-4" />
                     <IconEyeOff v-else class="w-4 h-4" />
@@ -109,22 +110,22 @@
                   @update:modelValue="updateSectionField(entry.key, key as string, $event)"
                 />
 
-                <textarea
+                <UiTextarea
                   v-else-if="isTextareaLike(field.type)"
-                  :value="sectionFieldValue(entry.key, key as string, field) ?? ''"
+                  :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
                   rows="4"
-                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  class="w-full rounded-lg px-3 py-2 transition-colors"
                   :placeholder="hintFor(field)"
-                  @input="updateSectionField(entry.key, key as string, ($event.target as HTMLTextAreaElement).value)"
+                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
                 />
 
                 <div v-else-if="isJsonLike(field.type)">
-                  <textarea
-                    :value="drafts[entry.key + '.' + key]"
+                  <UiTextarea
+                    :model-value="drafts[entry.key + '.' + key]"
                     rows="5"
-                    class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                    class="w-full rounded-lg px-3 py-2 transition-colors"
                     :placeholder="hintFor(field)"
-                    @input="onSectionDraftInput(entry.key, key as string, ($event.target as HTMLTextAreaElement).value, field)"
+                    @update:model-value="onSectionDraftInput(entry.key, key as string, $event, field)"
                     @blur="onSectionDraftBlur(entry.key, key as string, field)"
                   />
                 </div>
@@ -136,14 +137,13 @@
                   :hint="hintFor(field)"
                 />
 
-                <input
+                <UiInput
                   v-else
-                  type="text"
-                  :value="stringValue(sectionFieldValue(entry.key, key as string, field))"
-                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  :model-value="stringValue(sectionFieldValue(entry.key, key as string, field))"
+                  class="w-full rounded-lg px-3 py-2 transition-colors"
                   :placeholder="hintFor(field)"
-                  @input="updateSectionField(entry.key, key as string, ($event.target as HTMLInputElement).value)"
-                >
+                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
+                />
 
                 <p v-if="hintFor(field) && !isInfoLike(field.type)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(field) }}</p>
               </div>
@@ -211,25 +211,26 @@
           </label>
         </div>
 
-        <input
+        <UiInput
           v-else-if="isNumberLike(entry.field.type)"
           type="number"
-          :value="drafts[entry.key] ?? ''"
+          :model-value="drafts[entry.key] ?? ''"
+          :coerce-number="false"
           :step="entry.field.type === 'integer' ? '1' : '0.01'"
-          class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          class="w-full rounded-lg px-3 py-2 transition-colors"
           :placeholder="hintFor(entry.field)"
-          @input="drafts[entry.key] = ($event.target as HTMLInputElement).value"
+          @update:model-value="drafts[entry.key] = String($event)"
           @blur="commitNumberDraft(entry.key, entry.field)"
-        >
+        />
 
         <div v-else-if="entry.field.type === 'sensitive'" class="relative">
-          <input
+          <UiInput
             :type="sensitiveVisible[entry.key] ? 'text' : 'password'"
-            :value="fieldValue(entry.key, entry.field) ?? ''"
-            class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 pr-10 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            :model-value="fieldValue(entry.key, entry.field) ?? ''"
+            class="w-full rounded-lg px-3 py-2 pr-10 transition-colors"
             :placeholder="hintFor(entry.field)"
-            @input="updateField(entry.key, ($event.target as HTMLInputElement).value)"
-          >
+            @update:model-value="updateField(entry.key, $event)"
+          />
           <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" @click="toggleSensitive(entry.key)">
             <IconEye v-if="!sensitiveVisible[entry.key]" class="w-4 h-4" />
             <IconEyeOff v-else class="w-4 h-4" />
@@ -252,22 +253,22 @@
           @update:modelValue="updateField(entry.key, $event)"
         />
 
-        <textarea
+        <UiTextarea
           v-else-if="isTextareaLike(entry.field.type)"
-          :value="fieldValue(entry.key, entry.field) ?? ''"
+          :model-value="fieldValue(entry.key, entry.field) ?? ''"
           rows="4"
-          class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          class="w-full rounded-lg px-3 py-2 transition-colors"
           :placeholder="hintFor(entry.field)"
-          @input="updateField(entry.key, ($event.target as HTMLTextAreaElement).value)"
+          @update:model-value="updateField(entry.key, $event)"
         />
 
         <div v-else-if="isJsonLike(entry.field.type)">
-          <textarea
-            :value="drafts[entry.key]"
+          <UiTextarea
+            :model-value="drafts[entry.key]"
             rows="5"
-            class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            class="w-full rounded-lg px-3 py-2 transition-colors"
             :placeholder="hintFor(entry.field)"
-            @input="onDraftInput(entry.key, ($event.target as HTMLTextAreaElement).value, entry.field)"
+            @update:model-value="onDraftInput(entry.key, $event, entry.field)"
             @blur="onDraftBlur(entry.key, entry.field)"
           />
         </div>
@@ -279,14 +280,13 @@
           :hint="hintFor(entry.field)"
         />
 
-        <input
+        <UiInput
           v-else
-          type="text"
-          :value="stringValue(fieldValue(entry.key, entry.field))"
-          class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          :model-value="stringValue(fieldValue(entry.key, entry.field))"
+          class="w-full rounded-lg px-3 py-2 transition-colors"
           :placeholder="hintFor(entry.field)"
-          @input="updateField(entry.key, ($event.target as HTMLInputElement).value)"
-        >
+          @update:model-value="updateField(entry.key, $event)"
+        />
 
         <p v-if="hintFor(entry.field) && !isInfoLike(entry.field.type)" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ hintFor(entry.field) }}</p>
       </div>
@@ -304,6 +304,8 @@ import TagInput from '@/components/common/TagInput.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import InfoCallout from '@/components/common/InfoCallout.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { IconEye, IconEyeOff } from '@/components/icons'
 import { getProviders, getModels } from '@/api/provider'
 import { getPersonas } from '@/api/persona'

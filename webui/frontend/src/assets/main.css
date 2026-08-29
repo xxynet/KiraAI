@@ -176,6 +176,13 @@ textarea.transition-colors {
   -webkit-backdrop-filter: none !important;
 }
 
+/* Keep form controls raised above the solid surface of dark modal cards. */
+.dark .modal-card input:not([type="checkbox"], [type="radio"]),
+.dark .modal-card select,
+.dark .modal-card textarea {
+  background-color: var(--color-surface-raised) !important;
+}
+
 /* ==================== Glass Cards ==================== */
 .glass-card,
 .bg-white.rounded-lg.shadow {
@@ -253,9 +260,9 @@ textarea.transition-colors {
 }
 
 /* ==================== Form Inputs ==================== */
-input:not([type="checkbox"], [type="radio"]):not(.ui-input),
+input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)),
 select,
-textarea:not(.ui-textarea) {
+textarea:where(:not(.ui-textarea)) {
   background-color: var(--color-surface-raised) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -263,9 +270,9 @@ textarea:not(.ui-textarea) {
   color: var(--color-text-primary);
 }
 
-.dark input:not(.ui-input)::placeholder,
+.dark input:where(:not(.ui-input))::placeholder,
 .dark select::placeholder,
-.dark textarea:not(.ui-textarea)::placeholder {
+.dark textarea:where(:not(.ui-textarea))::placeholder {
   color: var(--color-text-muted);
 }
 
@@ -273,38 +280,38 @@ textarea:not(.ui-textarea) {
   border-color: rgba(75, 85, 99, 0.4) !important;
 }
 
-input:not([type="checkbox"], [type="radio"]):not(.ui-input):hover,
+input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):hover,
 select:hover,
-textarea:not(.ui-textarea):hover,
-.dark input:not([type="checkbox"], [type="radio"]):not(.ui-input):hover,
+textarea:where(:not(.ui-textarea)):hover,
+.dark input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):hover,
 .dark select:hover,
-.dark textarea:not(.ui-textarea):hover {
+.dark textarea:where(:not(.ui-textarea)):hover {
   border-color: var(--color-accent) !important;
 }
 
-input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus,
-input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus-visible,
+input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus,
+input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus-visible,
 select:focus,
 select:focus-visible,
-textarea:not(.ui-textarea):focus,
-textarea:not(.ui-textarea):focus-visible,
-.dark input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus,
-.dark input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus-visible,
+textarea:where(:not(.ui-textarea)):focus,
+textarea:where(:not(.ui-textarea)):focus-visible,
+.dark input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus,
+.dark input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus-visible,
 .dark select:focus,
 .dark select:focus-visible,
-.dark textarea:not(.ui-textarea):focus,
-.dark textarea:not(.ui-textarea):focus-visible {
+.dark textarea:where(:not(.ui-textarea)):focus,
+.dark textarea:where(:not(.ui-textarea)):focus-visible {
   outline: none;
   border-color: var(--color-accent) !important;
   box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
 }
 
-input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus:hover,
+input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus:hover,
 select:focus:hover,
-textarea:not(.ui-textarea):focus:hover,
-.dark input:not([type="checkbox"], [type="radio"]):not(.ui-input):focus:hover,
+textarea:where(:not(.ui-textarea)):focus:hover,
+.dark input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus:hover,
 .dark select:focus:hover,
-.dark textarea:not(.ui-textarea):focus:hover {
+.dark textarea:where(:not(.ui-textarea)):focus:hover {
   border-color: var(--color-accent) !important;
   box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
 }
