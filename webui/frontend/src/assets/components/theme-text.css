@@ -19,6 +19,10 @@
   color: var(--color-text-subtle);
 }
 
+.text-theme-subtle-hover:hover {
+  color: var(--color-text-subtle-hover);
+}
+
 .text-theme-faint {
   color: var(--color-text-faint);
 }

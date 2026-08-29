@@ -1,7 +1,7 @@
 <template>
   <div class="glass-card rounded-lg shadow p-6">
     <div class="flex justify-between items-center mb-6">
-      <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('sessions.title') }}</h3>
+      <h3 class="text-lg font-semibold text-theme-strong">{{ $t('sessions.title') }}</h3>
       <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" @click="handleNewSession">
         <IconPlus class="w-5 h-5 mr-2" />
         <span>{{ $t('sessions.new') }}</span>
@@ -10,8 +10,8 @@
 
     <div v-if="sessions.length === 0" class="flex justify-center items-center py-12">
       <div class="text-center">
-        <ChatDotRound class="w-16 h-16 text-gray-400 mx-auto mb-4" />
-        <p class="text-gray-500 dark:text-gray-400">{{ $t('sessions.no_sessions') }}</p>
+        <ChatDotRound class="w-16 h-16 text-theme-faint mx-auto mb-4" />
+        <p class="text-theme-subtle">{{ $t('sessions.no_sessions') }}</p>
       </div>
     </div>
 
@@ -19,21 +19,21 @@
       <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
         <thead class="bg-gray-50 dark:bg-gray-800">
           <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ $t('sessions.name') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ $t('sessions.adapter_name') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ $t('sessions.session_type') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ $t('sessions.session_id') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ $t('sessions.message_count') }}</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ $t('sessions.actions') }}</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.name') }}</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.adapter_name') }}</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.session_type') }}</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.session_id') }}</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.message_count') }}</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.actions') }}</th>
           </tr>
         </thead>
         <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
           <tr v-for="session in sessions" :key="resolveSessionId(session)" class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
             <td class="px-6 py-4 whitespace-nowrap">
-              <div class="text-sm font-medium text-gray-900 dark:text-gray-100" :title="getDisplayTitleSource(session)">{{ getDisplayTitle(session) }}</div>
+              <div class="text-sm font-medium text-theme-high" :title="getDisplayTitleSource(session)">{{ getDisplayTitle(session) }}</div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
-              <div class="text-sm text-gray-500 dark:text-gray-400">{{ session.adapter_name }}</div>
+              <div class="text-sm text-theme-subtle">{{ session.adapter_name }}</div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
               <span class="px-2 py-1 text-xs rounded-full" :class="getSessionTypeColor(session.session_type)">
@@ -42,10 +42,10 @@
             </td>
             <td class="px-6 py-4">
               <div class="flex items-center gap-2 max-w-xs">
-                <div class="text-sm text-gray-500 dark:text-gray-400 font-mono break-all">{{ session.session_id || session.id }}</div>
+                <div class="text-sm text-theme-subtle font-mono break-all">{{ session.session_id || session.id }}</div>
                 <button
                   type="button"
-                  class="session-copy-button shrink-0 text-gray-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+                  class="session-copy-button shrink-0 text-theme-faint hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
                   :title="$t('sessions.copy_session_id')"
                   :aria-label="$t('sessions.copy_session_id')"
                   @click="copySessionId(session)"
@@ -55,7 +55,7 @@
               </div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
-              <div class="text-sm text-gray-500 dark:text-gray-400">{{ session.message_count }}</div>
+              <div class="text-sm text-theme-subtle">{{ session.message_count }}</div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
               <button class="text-blue-600 hover:text-blue-900 dark:hover:text-blue-300 mr-3" @click="editSession(session)">{{ $t('sessions.edit') }}</button>
@@ -73,27 +73,27 @@
     content-class="max-w-6xl"
     content-style="max-height: 95vh;"
   >
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl flex flex-col max-h-[95vh]">
+    <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl flex flex-col max-h-[95vh] modal-card">
       <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
         <div class="flex-1 min-w-0">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('sessions.modal_title') }}</h3>
-          <p class="text-sm text-gray-500 dark:text-gray-400 truncate mt-1">{{ currentSessionId }}</p>
+          <h3 class="text-lg font-semibold text-theme-strong">{{ $t('sessions.modal_title') }}</h3>
+          <p class="text-sm text-theme-subtle truncate mt-1">{{ currentSessionId }}</p>
         </div>
-        <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-4" @click="editorVisible = false">
+        <button class="text-theme-faint text-theme-faint-hover ml-4" @click="editorVisible = false">
           <IconClose class="w-6 h-6" />
         </button>
       </div>
       <div class="px-6 py-4 flex-1 overflow-y-auto">
         <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('sessions.name') }}</label>
+          <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('sessions.name') }}</label>
           <UiInput v-model="sessionTitle" class="w-full rounded-lg px-3 py-2" />
         </div>
         <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('sessions.description') }}</label>
+          <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('sessions.description') }}</label>
           <UiTextarea v-model="sessionDescription" rows="2" class="w-full rounded-lg px-3 py-2 resize-none" />
         </div>
         <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('sessions.session_data') }}</label>
+          <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('sessions.session_data') }}</label>
           <MonacoEditor
             v-model="editorContent"
             language="json"
@@ -105,11 +105,11 @@
         </div>
       </div>
       <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
-        <div class="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+        <div class="flex items-center space-x-2 text-sm text-theme-subtle">
           <span>{{ $t('sessions.message_count') }}: {{ messageCount }}</span>
         </div>
         <div class="flex space-x-3">
-          <button class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="editorVisible = false">{{ $t('sessions.modal_cancel') }}</button>
+          <button class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="editorVisible = false">{{ $t('sessions.modal_cancel') }}</button>
           <button class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" :disabled="saving" @click="handleSave">
             <span v-if="saving">{{ $t('sessions.save') }}...</span>
             <span v-else>{{ $t('sessions.modal_save') }}</span>
@@ -236,7 +236,7 @@ function getSessionTypeLabel(type: string): string {
 function getSessionTypeColor(type: string): string {
   if (type === 'dm') return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
   if (type === 'gm') return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-  return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+  return 'bg-gray-100 text-theme-strong dark:bg-gray-700'
 }
 
 function handleNewSession() {

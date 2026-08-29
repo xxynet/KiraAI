@@ -981,7 +981,7 @@
 
     <!-- MCP Config Dialog -->
     <Modal v-model="mcpDialogVisible" content-class="max-w-4xl">
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 95vh;">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col modal-card" style="max-height: 95vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ mcpEditMode ? $t('plugin.mcp_edit') : $t('plugin.mcp_add') }}</h3>
           <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="mcpDialogVisible = false">

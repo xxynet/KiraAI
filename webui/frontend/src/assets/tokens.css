@@ -15,6 +15,7 @@
   --color-text-body: #374151;
   --color-text-supporting: #4b5563;
   --color-text-subtle: #6b7280;
+  --color-text-subtle-hover: #374151;
   --color-text-faint: #9ca3af;
   --color-text-faint-hover: #4b5563;
   --color-text-secondary: #374151;
@@ -71,6 +72,7 @@
   --color-text-body: #e5e7eb;
   --color-text-supporting: #cbd5e1;
   --color-text-subtle: #b4bcc8;
+  --color-text-subtle-hover: #8b93a1;
   --color-text-faint: #6b7280;
   --color-text-faint-hover: #8b93a1;
   --color-text-secondary: #e5e7eb;

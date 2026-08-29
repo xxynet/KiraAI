@@ -3,7 +3,7 @@
     <!-- Toolbar -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
       <div class="flex items-center space-x-3">
-        <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('configuration.title') }}</h3>
+        <h3 class="text-lg font-semibold text-theme-strong">{{ $t('configuration.title') }}</h3>
         <Transition name="modified-badge">
           <span
             v-if="modifiedFields.size > 0"
@@ -24,7 +24,7 @@
             :aria-label="$t('configuration.search_aria_label')"
             class="w-full sm:w-56 rounded-lg pl-9 pr-3 py-2 text-sm transition-colors"
           />
-          <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-theme-faint" />
         </div>
 
         <!-- Actions -->
@@ -34,7 +34,7 @@
             :disabled="undoStack.length === 0"
             :aria-label="$t('configuration.undo_aria')"
             :title="$t('configuration.undo_aria')"
-            class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            class="p-2 rounded-lg text-theme-subtle hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             @click="undo"
           >
             <IconUndo class="w-4 h-4" />
@@ -44,7 +44,7 @@
             :disabled="redoStack.length === 0"
             :aria-label="$t('configuration.redo_aria')"
             :title="$t('configuration.redo_aria')"
-            class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            class="p-2 rounded-lg text-theme-subtle hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             @click="redo"
           >
             <IconRedo class="w-4 h-4" />
@@ -53,7 +53,7 @@
             type="button"
             :aria-label="$t('configuration.reset_aria')"
             :title="$t('configuration.reset_aria')"
-            class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            class="p-2 rounded-lg text-theme-subtle hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             @click="loadConfig"
           >
             <IconRefresh class="w-4 h-4" />
@@ -63,7 +63,7 @@
             type="button"
             :aria-label="$t('configuration.expand_all_aria')"
             :title="$t('configuration.expand_all_aria')"
-            class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            class="p-2 rounded-lg text-theme-subtle hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             @click="expandAll"
           >
             <IconExpand class="w-4 h-4" />
@@ -72,7 +72,7 @@
             type="button"
             :aria-label="$t('configuration.collapse_all_aria')"
             :title="$t('configuration.collapse_all_aria')"
-            class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            class="p-2 rounded-lg text-theme-subtle hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             @click="collapseAll"
           >
             <IconCollapse class="w-4 h-4" />
@@ -103,7 +103,7 @@
           class="relative flex items-center space-x-2 px-4 py-2.5 text-sm font-medium transition-colors duration-150 whitespace-nowrap border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           :class="activeTab === tab.id
             ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
-            : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'"
+            : 'text-theme-subtle text-theme-subtle-hover border-transparent hover:border-gray-300 dark:hover:border-gray-600'"
           @click="switchTab(tab.id)"
         >
           <component :is="tab.icon" class="w-4 h-4" />
@@ -135,9 +135,9 @@
         @keydown.space.prevent="toggleGroup(group.id)"
       >
         <div class="flex items-center space-x-3 min-w-0">
-          <component :is="group.icon" class="w-5 h-5 text-gray-500 dark:text-gray-400 shrink-0" />
+          <component :is="group.icon" class="w-5 h-5 text-theme-subtle shrink-0" />
           <div class="min-w-0">
-            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center">
+            <h4 class="text-sm font-semibold text-theme-strong flex items-center">
               <span v-html="highlightSearch($t(group.labelKey, group.labelFallback))" />
               <Transition name="modified-badge">
                 <span
@@ -147,11 +147,11 @@
                 ></span>
               </Transition>
             </h4>
-            <p class="text-xs text-gray-500 dark:text-gray-400 truncate" v-html="highlightSearch($t(group.descKey, group.descFallback))" />
+            <p class="text-xs text-theme-subtle truncate" v-html="highlightSearch($t(group.descKey, group.descFallback))" />
           </div>
         </div>
         <IconChevronDown
-          class="w-5 h-5 text-gray-400 dark:text-gray-500 transform transition-transform duration-200 shrink-0 ml-2"
+          class="w-5 h-5 text-theme-faint transform transition-transform duration-200 shrink-0 ml-2"
           :class="{ 'rotate-180': !collapsedGroups.has(group.id) }"
         />
       </div>
@@ -170,13 +170,13 @@
             :class="{ 'config-field-modified': modifiedFields.has(field.key) }"
           >
             <div class="flex-shrink-0">
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-100 flex items-center">
+              <div class="text-sm font-medium text-theme-strong flex items-center">
                 <span v-html="highlightSearch($t(field.labelKey, field.labelFallback))" />
                 <Transition name="modified-badge">
                   <span v-if="modifiedFields.has(field.key)" class="ml-2 text-xs text-amber-500 font-normal">{{ $t('configuration.modified') }}</span>
                 </Transition>
               </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400" v-html="highlightSearch($t(field.hintKey, field.hintFallback))" />
+              <div class="text-xs text-theme-subtle" v-html="highlightSearch($t(field.hintKey, field.hintFallback))" />
             </div>
             <div class="flex flex-col sm:flex-row gap-2 md:gap-3">
               <div class="w-full sm:w-40">
@@ -224,7 +224,7 @@
             <label
               v-if="field.type !== 'info'"
               class="block text-sm font-medium mb-1"
-              :class="validationErrors[field.key] ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'"
+              :class="validationErrors[field.key] ? 'text-red-600 dark:text-red-400' : 'text-theme-body'"
               :title="field.key"
             >
               <span v-html="highlightSearch($t(field.labelKey, field.labelFallback))" />
@@ -310,7 +310,7 @@
 
             <p
               v-if="field.hintKey && !validationErrors[field.key] && field.type !== 'info'"
-              class="text-xs mt-1 text-gray-500 dark:text-gray-400"
+              class="text-xs mt-1 text-theme-subtle"
               v-html="highlightSearch($t(field.hintKey, field.hintFallback))"
             />
             <p
@@ -327,7 +327,7 @@
     <!-- No results for search -->
     <div
       v-if="searchTerm && currentTabGroups.length === 0"
-      class="text-center py-12 text-gray-400 dark:text-gray-500"
+      class="text-center py-12 text-theme-faint"
     >
       <IconSearch class="w-8 h-8 mx-auto mb-2 opacity-50" />
       <p class="text-sm">{{ $t('configuration.no_results', 'No matching settings found') }}</p>
@@ -335,7 +335,7 @@
 
     <!-- Bottom keyboard hints -->
     <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
-      <p class="text-xs text-gray-400 dark:text-gray-500 text-center">
+      <p class="text-xs text-theme-faint text-center">
         <kbd class="kbd-hint">Ctrl+Z</kbd> {{ $t('configuration.shortcut_undo') }}
         <kbd class="kbd-hint">Ctrl+Shift+Z</kbd> {{ $t('configuration.shortcut_redo') }}
         <kbd class="kbd-hint">Ctrl+S</kbd> {{ $t('configuration.shortcut_save') }}
