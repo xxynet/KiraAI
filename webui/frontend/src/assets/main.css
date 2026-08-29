@@ -247,10 +247,6 @@ button,
   background-color: var(--color-selection);
 }
 
-::-moz-selection {
-  background-color: var(--color-selection);
-}
-
 .dark .border-gray-300 {
   border-color: rgba(75, 85, 99, 0.4) !important;
 }
