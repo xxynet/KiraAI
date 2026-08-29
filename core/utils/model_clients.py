@@ -1,10 +1,11 @@
 from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError, NOT_GIVEN
 import base64
 import time
+from pathlib import Path
 from typing import AsyncGenerator, Optional
 
 from core.provider import ModelInfo
-from core.provider import LLMModelClient, TTSModelClient, ImageModelClient, EmbeddingModelClient
+from core.provider import LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.chat.message_elements import Record
 from core.config.default import VERSION
@@ -224,3 +225,52 @@ class OpenAICompatibleTTSClient(TTSModelClient):
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str)
+
+
+class OpenAICompatibleSTTClient(STTModelClient):
+    """Speech-to-text client for OpenAI-compatible transcription APIs."""
+
+    def __init__(self, model: ModelInfo):
+        super().__init__(model)
+
+    def _build_client(self) -> AsyncOpenAI:
+        provider_config = self.model.provider_config or {}
+        model_config = self.model.model_config or {}
+        section_advanced = provider_config.get("section_advanced")
+        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
+        if not isinstance(default_headers, dict) or not default_headers:
+            default_headers = None
+        timeout = model_config.get("timeout", 120)
+        return AsyncOpenAI(
+            api_key=provider_config.get("api_key", ""),
+            base_url=provider_config.get("base_url", ""),
+            default_headers=default_headers,
+            timeout=timeout,
+        )
+
+    def _build_request_kwargs(self, record_path: str, **overrides) -> dict:
+        model_config = self.model.model_config or {}
+        request_kwargs = {
+            "model": self.model.model_id,
+            "file": Path(record_path),
+        }
+        for field in ("language", "prompt"):
+            value = model_config.get(field)
+            if value:
+                request_kwargs[field] = value
+        request_kwargs.update(overrides)
+        return request_kwargs
+
+    async def speech_to_text(self, record: Record, **kwargs) -> str:
+        if record is None:
+            return ""
+
+        record_path = await record.to_path()
+        if not record_path:
+            raise ValueError("Speech recognition received an empty audio record")
+
+        client = self._build_client()
+        response = await client.audio.transcriptions.create(
+            **self._build_request_kwargs(record_path, **kwargs)
+        )
+        return response.text or ""

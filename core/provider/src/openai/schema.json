@@ -83,6 +83,36 @@
         }
       }
     },
+    "stt": {
+      "timeout": {
+        "name": "Timeout",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "Request timeout in seconds",
+        "locales": {
+          "zh": { "name": "超时", "hint": "请求超时时间（秒）" }
+        }
+      },
+      "language": {
+        "name": "Language",
+        "type": "string",
+        "default": null,
+        "hint": "Optional ISO-639-1 language code to improve transcription accuracy",
+        "locales": {
+          "zh": { "name": "语言", "hint": "可选的 ISO-639-1 语言代码，用于提高转写准确度" }
+        }
+      },
+      "prompt": {
+        "name": "Prompt",
+        "type": "string",
+        "default": null,
+        "hint": "Optional guidance for transcription style or vocabulary",
+        "locales": {
+          "zh": { "name": "提示词", "hint": "可选的转写风格或词汇提示" }
+        }
+      }
+    },
     "image": {
       "timeout": {
         "name": "Timeout",
