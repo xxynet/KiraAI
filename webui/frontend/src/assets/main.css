@@ -401,17 +401,6 @@ button,
   100% { transform: rotate(360deg); }
 }
 
-/* ==================== Dark Mode Overrides ====================
-   Colors chosen to meet WCAG 2.1 AA contrast (4.5:1 body, 3:1 large/UI)
-   against .glass-card effective background (~ #22303f @ 78% over #16161a). */
-.dark .text-gray-900 { color: #f9fafb !important; } /* 18:1 */
-.dark .text-gray-800 { color: #f3f4f6 !important; } /* 16:1 */
-.dark .text-gray-700 { color: #e5e7eb !important; } /* 13:1 */
-.dark .text-gray-600 { color: #cbd5e1 !important; } /*  9:1 */
-.dark .text-gray-500 { color: #b4bcc8 !important; } /*  6.1:1 — AA */
-.dark .text-gray-400 { color: #6b7280 !important; } /*  old webui match  */
-.dark .text-gray-300 { color: #8b93a1 !important; } /* for decorative only */
-
 /* Stat / badge colors — brightened so icons & tag text remain legible */
 .dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.2) !important; }
 .dark .bg-green-100 { background-color: rgba(34, 197, 94, 0.2) !important; }
