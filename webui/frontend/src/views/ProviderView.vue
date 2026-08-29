@@ -3,7 +3,7 @@
     <!-- Left: Provider List -->
     <div class="w-full md:w-1/3 max-h-64 md:max-h-none bg-white rounded-lg shadow p-6 flex flex-col overflow-hidden">
       <div class="flex justify-between items-center mb-6 flex-shrink-0">
-        <h3 class="text-lg font-semibold text-gray-800">
+        <h3 class="text-lg font-semibold text-theme-strong">
           {{ $t('pages.provider.title') }}
         </h3>
         <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center" @click="openCreateDialog">
@@ -14,8 +14,8 @@
 
       <div v-if="providers.length === 0" class="flex justify-center items-center py-12 flex-1">
         <div class="text-center">
-          <IconCpu class="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p class="text-gray-500 text-sm">{{ $t('provider.no_providers') }}</p>
+          <IconCpu class="w-16 h-16 text-theme-faint mx-auto mb-4" />
+          <p class="text-theme-subtle text-sm">{{ $t('provider.no_providers') }}</p>
         </div>
       </div>
 
@@ -34,13 +34,13 @@
                 :alt="''"
                 class="w-5 h-5 object-contain"
               />
-              <IconCpu v-else class="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <IconCpu v-else class="w-5 h-5 text-theme-subtle" />
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ provider.name }}</div>
-              <div class="text-xs text-gray-500">{{ localizeProviderType(provider) }}</div>
+              <div class="text-sm font-medium text-theme-high truncate">{{ provider.name }}</div>
+              <div class="text-xs text-theme-subtle">{{ localizeProviderType(provider) }}</div>
             </div>
-            <span class="px-2 py-1 text-xs rounded-full" :class="provider.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'">
+            <span class="px-2 py-1 text-xs rounded-full" :class="provider.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-theme-strong dark:bg-gray-700'">
               {{ provider.status }}
             </span>
           </div>
@@ -51,8 +51,8 @@
     <div class="w-full md:w-2/3 bg-white rounded-lg shadow p-6 flex flex-col">
       <div v-if="!selectedId" class="flex justify-center items-center flex-1">
         <div class="text-center">
-          <IconCpu class="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p class="text-gray-500">{{ $t('provider.select_provider') }}</p>
+          <IconCpu class="w-16 h-16 text-theme-faint mx-auto mb-4" />
+          <p class="text-theme-subtle">{{ $t('provider.select_provider') }}</p>
           <button
             class="mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
             @click="goToModelConfig"
@@ -64,15 +64,15 @@
 
       <div v-else class="flex flex-col flex-1 overflow-y-auto pr-2">
         <div class="border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
-          <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100 truncate">{{ selectedProvider?.name }}</h3>
-          <p class="text-sm text-gray-500 mt-1 truncate">{{ selectedProvider && localizeProviderType(selectedProvider) }}</p>
+          <h3 class="text-xl font-semibold text-theme-strong truncate">{{ selectedProvider?.name }}</h3>
+          <p class="text-sm text-theme-subtle mt-1 truncate">{{ selectedProvider && localizeProviderType(selectedProvider) }}</p>
         </div>
 
         <!-- Provider Config Fields -->
         <div class="space-y-4 mb-6">
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('provider.name') }}</label>
-            <input v-model="providerName" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" />
+            <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('provider.name') }}</label>
+            <UiInput v-model="providerName" class="w-full rounded-lg px-3 py-2 transition-colors" />
           </div>
           <div v-if="providerSchema && Object.keys(providerSchema.provider_config || providerSchema).length > 0">
             <ConfigForm
@@ -82,8 +82,8 @@
             />
           </div>
           <div v-else-if="schemaError" class="text-red-500 dark:text-red-400 py-2">{{ $t('provider.schema_error') }}</div>
-          <div v-else-if="schemaLoading" class="text-center text-gray-500 py-4">{{ $t('provider.schema_loading') }}</div>
-          <div v-else class="text-gray-500 dark:text-gray-400 py-2">{{ $t('provider.schema_none') }}</div>
+          <div v-else-if="schemaLoading" class="text-center text-theme-subtle py-4">{{ $t('provider.schema_loading') }}</div>
+          <div v-else class="text-theme-subtle py-2">{{ $t('provider.schema_none') }}</div>
           <div class="flex justify-end space-x-3 pt-2">
             <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50" :disabled="saving || schemaError" @click="saveProviderConfig">
               {{ $t('provider.save') }}
@@ -96,7 +96,7 @@
 
         <!-- Model Groups -->
         <div v-if="selectedProvider?.supported_model_types?.length" class="space-y-3">
-          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('provider.model_groups') }}</h4>
+          <h4 class="text-sm font-semibold text-theme-body mb-3">{{ $t('provider.model_groups') }}</h4>
           <div
             v-for="modelType in selectedProvider.supported_model_types"
             :key="modelType"
@@ -107,8 +107,8 @@
               @click="toggleModelGroup(modelType)"
             >
               <div class="flex items-center">
-                <IconChevronDown class="w-5 h-5 text-gray-500 dark:text-gray-400 mr-2 transition-transform duration-200" :class="{ 'rotate-180': activeModelGroups.includes(modelType) }" />
-                <span class="font-medium text-gray-700 dark:text-gray-200">{{ $t(`provider.model_group_${modelType}`) }}</span>
+                <IconChevronDown class="w-5 h-5 text-theme-subtle mr-2 transition-transform duration-200" :class="{ 'rotate-180': activeModelGroups.includes(modelType) }" />
+                <span class="font-medium text-theme-body">{{ $t(`provider.model_group_${modelType}`) }}</span>
               </div>
               <div class="flex items-center gap-1">
                 <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors" @click.stop="openAddModelDialog(modelType)">
@@ -126,7 +126,7 @@
                   :key="modelId"
                   class="flex items-center justify-between py-1 border-b border-gray-100 dark:border-gray-800 last:border-b-0"
                 >
-                  <span class="flex-1 text-sm text-gray-800 dark:text-gray-100">{{ modelId }}</span>
+                  <span class="flex-1 text-sm text-theme-strong">{{ modelId }}</span>
                   <div class="flex items-center space-x-2">
                     <button
                       class="p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors disabled:opacity-50"
@@ -146,11 +146,11 @@
                   </div>
                 </div>
               </div>
-              <div v-else class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+              <div v-else class="text-sm text-theme-subtle text-center py-4">
                 {{ $t('provider.no_models') }}
               </div>
               <div class="mt-2 flex items-center gap-2">
-                <button class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="openAddModelDialog(modelType)">
+                <button class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="openAddModelDialog(modelType)">
                   + {{ $t('provider.add_model') }}
                 </button>
                 <button class="px-3 py-1.5 text-sm border border-green-300 dark:border-green-600 rounded-lg text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors flex items-center" @click="openFetchRemoteModels(modelType)">
@@ -168,18 +168,18 @@
     <Modal v-model="createDialogVisible" content-class="max-w-md">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col modal-card" style="max-height: 90vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('provider.add') }}</h3>
-          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="createDialogVisible = false">
+          <h3 class="text-lg font-semibold text-theme-strong">{{ $t('provider.add') }}</h3>
+          <button class="text-theme-faint text-theme-faint-hover" @click="createDialogVisible = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('provider.name') }}</label>
-            <input v-model="createForm.name" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" :placeholder="$t('provider.name_placeholder') || 'Enter provider name...'" />
+            <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('provider.name') }}</label>
+            <UiInput v-model="createForm.name" type="text" class="w-full rounded-lg px-3 py-2" :placeholder="$t('provider.name_placeholder') || 'Enter provider name...'" />
           </div>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('provider.type') }}</label>
+            <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('provider.type') }}</label>
             <CustomSelect
               v-model="createForm.type"
               :options="providerTypes.map(type => ({
@@ -197,7 +197,7 @@
           </div>
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
-          <button class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="createDialogVisible = false">{{ $t('provider.cancel') }}</button>
+          <button class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="createDialogVisible = false">{{ $t('provider.cancel') }}</button>
           <button class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" :disabled="creating" @click="handleCreate">{{ $t('provider.save') }}</button>
         </div>
       </div>
@@ -207,37 +207,37 @@
     <Modal v-model="modelDialogVisible" content-class="max-w-md">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full modal-card flex flex-col" style="max-height: 90vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ modelEditMode ? $t('provider.edit_model') : $t('provider.add_model') }}</h3>
-          <button class="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300" @click="modelDialogVisible = false">
+          <h3 class="text-lg font-semibold text-theme-strong">{{ modelEditMode ? $t('provider.edit_model') : $t('provider.add_model') }}</h3>
+          <button class="text-theme-faint text-theme-faint-hover" @click="modelDialogVisible = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
           <!-- Model type label -->
           <div class="mb-2">
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ $t(`provider.model_group_${modelForm.model_type}`) }}</p>
+            <p class="text-sm text-theme-subtle">{{ $t(`provider.model_group_${modelForm.model_type}`) }}</p>
           </div>
           <div class="mb-4">
             <div class="flex items-center mb-2">
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ $t('provider.model_id') }}</label>
+              <label class="block text-sm font-medium text-theme-body">{{ $t('provider.model_id') }}</label>
               <div class="relative ml-1 group">
                 <button type="button" class="p-0.5" :aria-label="$t('provider.model_id_tooltip')">
-                  <IconInfo class="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-help" />
+                  <IconInfo class="w-4 h-4 text-theme-faint cursor-help" />
                 </button>
                 <div role="tooltip" class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
                   {{ $t('provider.model_id_tooltip') }}
                 </div>
               </div>
             </div>
-            <input v-model="modelForm.model_id" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" :placeholder="$t('provider.model_id_placeholder')" :disabled="modelEditMode" />
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ $t('provider.model_id_hint') }}</p>
+            <UiInput v-model="modelForm.model_id" type="text" class="w-full rounded-lg px-3 py-2 transition-colors" :placeholder="$t('provider.model_id_placeholder')" :disabled="modelEditMode" />
+            <p class="text-xs text-theme-subtle mt-1">{{ $t('provider.model_id_hint') }}</p>
           </div>
           <div v-if="modelSchema">
             <ConfigForm ref="modelConfigFormRef" v-model="modelForm.config" :schema="modelSchema" />
           </div>
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
-          <button class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="modelDialogVisible = false">{{ $t('provider.cancel') }}</button>
+          <button class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="modelDialogVisible = false">{{ $t('provider.cancel') }}</button>
           <button class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" :disabled="addingModel" @click="handleAddModel">{{ $t('provider.save') }}</button>
         </div>
       </div>
@@ -266,8 +266,8 @@
     <Modal v-model="remoteModelDialogVisible" content-class="max-w-2xl">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col modal-card" style="max-height: 80vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('provider.fetch_remote_models') }}</h3>
-          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="remoteModelDialogVisible = false">
+          <h3 class="text-lg font-semibold text-theme-strong">{{ $t('provider.fetch_remote_models') }}</h3>
+          <button class="text-theme-faint text-theme-faint-hover" @click="remoteModelDialogVisible = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
@@ -275,24 +275,24 @@
           <!-- Loading -->
           <div v-if="remoteModelsLoading" class="flex justify-center items-center py-12">
             <IconSpinner class="animate-spin h-8 w-8 text-blue-600" />
-            <span class="ml-3 text-gray-600 dark:text-gray-400">{{ $t('provider.fetch_remote_loading') }}</span>
+            <span class="ml-3 text-theme-supporting">{{ $t('provider.fetch_remote_loading') }}</span>
           </div>
           <!-- Empty -->
           <div v-else-if="remoteModels.length === 0" class="flex justify-center items-center py-12">
-            <p class="text-gray-500 dark:text-gray-400">{{ $t('provider.fetch_remote_empty') }}</p>
+            <p class="text-theme-subtle">{{ $t('provider.fetch_remote_empty') }}</p>
           </div>
           <!-- Model list -->
           <template v-else>
             <!-- Search + Select all -->
             <div class="flex items-center gap-3 mb-3 flex-shrink-0">
-              <input
+              <UiInput
                 v-model="remoteModelSearch"
                 type="text"
                 :placeholder="$t('provider.search_model')"
-                class="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                class="flex-1 rounded-lg px-3 py-2 text-sm transition-colors"
               />
               <button
-                class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors whitespace-nowrap"
+                class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors whitespace-nowrap"
                 @click="toggleAllRemoteModels"
               >
                 {{ filteredRemoteModels.every(m => m.selected) ? $t('provider.deselect_all') : $t('provider.select_all') }}
@@ -314,17 +314,17 @@
                   @change="model.selected = !model.selected"
                 />
                 <div class="flex-1 min-w-0">
-                  <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ model.name || model.id }}</div>
-                  <div v-if="model.name && model.name !== model.id" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{{ model.id }}</div>
-                  <div v-if="model.description" class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{{ model.description }}</div>
+                  <div class="text-sm font-medium text-theme-high truncate">{{ model.name || model.id }}</div>
+                  <div v-if="model.name && model.name !== model.id" class="text-xs text-theme-subtle mt-0.5 truncate">{{ model.id }}</div>
+                  <div v-if="model.description" class="text-xs text-theme-subtle mt-1 line-clamp-2">{{ model.description }}</div>
                 </div>
               </div>
-              <div v-if="filteredRemoteModels.length === 0" class="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+              <div v-if="filteredRemoteModels.length === 0" class="px-4 py-6 text-center text-sm text-theme-subtle">
                 {{ $t('provider.fetch_remote_no_match') }}
               </div>
             </div>
             <!-- Selected count -->
-            <div class="mt-3 text-sm text-gray-600 dark:text-gray-400 flex-shrink-0">
+            <div class="mt-3 text-sm text-theme-supporting flex-shrink-0">
               {{ $t('provider.selected_count', { count: selectedRemoteModelCount }) }}
               <span v-if="remoteModelExistingIds.size > 0" class="ml-2">
                 · {{ $t('provider.existing_count', { count: remoteModelExistingIds.size }) }}
@@ -334,7 +334,7 @@
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3 flex-shrink-0">
           <button
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             @click="remoteModelDialogVisible = false"
           >{{ $t('provider.cancel') }}</button>
           <button
@@ -365,6 +365,7 @@ import ConfigForm from '@/components/common/ConfigForm.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { IconClose, IconPlus, IconCpu, IconChevronDown, IconRefresh, IconSpinner, IconPulse, IconSliders, IconInfo } from '@/components/icons'
 import type { ProviderResponse, ProviderType } from '@/types'
 

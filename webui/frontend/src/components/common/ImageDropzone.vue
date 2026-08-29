@@ -15,11 +15,11 @@
       @change="onFileInputChange"
     />
     <template v-if="!modelValue">
-      <IconImage class="w-8 h-8 text-gray-400 mx-auto mb-2" />
-      <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+      <IconImage class="w-8 h-8 text-theme-faint mx-auto mb-2" />
+      <p class="text-sm font-medium text-theme-body">
         {{ titleText }}
       </p>
-      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+      <p class="text-xs text-theme-subtle mt-1">
         {{ subtitleText }}
       </p>
     </template>
@@ -28,7 +28,7 @@
       <p class="text-sm font-medium text-emerald-600 dark:text-emerald-400">
         {{ selectedPrefix }}{{ modelValue.name }}
       </p>
-      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+      <p class="text-xs text-theme-subtle mt-1">
         {{ selectedHint }}
       </p>
     </template>

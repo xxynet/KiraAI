@@ -13,16 +13,16 @@
       <div class="flex items-center space-x-3 min-w-0">
         <slot name="icon" />
         <div class="min-w-0">
-          <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">
+          <h4 class="text-sm font-semibold text-theme-strong">
             {{ title }}
           </h4>
-          <p v-if="description" class="text-xs text-gray-500 dark:text-gray-400 truncate">
+          <p v-if="description" class="text-xs text-theme-subtle truncate">
             {{ description }}
           </p>
         </div>
       </div>
       <IconChevronDown
-        class="w-5 h-5 text-gray-400 dark:text-gray-500 transform transition-transform duration-200 shrink-0 ml-2"
+        class="w-5 h-5 text-theme-faint transform transition-transform duration-200 shrink-0 ml-2"
         :class="{ 'rotate-180': !isCollapsed }"
       />
     </div>

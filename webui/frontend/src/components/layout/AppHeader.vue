@@ -2,13 +2,13 @@
   <header class="app-header px-6 py-4 flex items-center justify-between shadow-sm">
     <div class="flex items-center">
       <button
-        class="sidebar-menu-btn p-1.5 mr-3 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        class="sidebar-menu-btn p-1.5 mr-3 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-theme-subtle transition-colors"
         aria-label="Toggle menu"
         @click="$emit('toggle-sidebar')"
       >
         <IconHamburger class="w-6 h-6" />
       </button>
-      <h2 class="text-2xl font-semibold text-gray-800 dark:text-white">
+      <h2 class="text-2xl font-semibold text-theme-strong">
         {{ title }}
       </h2>
     </div>
@@ -17,7 +17,7 @@
       <button
         type="button"
         class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] transition-colors"
-        :class="hasNewVersion ? 'text-blue-500 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'"
+        :class="hasNewVersion ? 'text-blue-500 dark:text-blue-400' : 'text-theme-subtle'"
         :aria-label="t('header.releases')"
         :title="t('header.releases')"
         @click="openReleases"
@@ -29,7 +29,7 @@
         :href="t('header.docs_url')"
         target="_blank"
         rel="noopener noreferrer"
-        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-theme-subtle transition-colors"
         :aria-label="t('header.docs')"
         :title="t('header.docs')"
       >
@@ -40,7 +40,7 @@
         href="https://github.com/KiraAI-Dev/KiraAI"
         target="_blank"
         rel="noopener noreferrer"
-        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-theme-subtle transition-colors"
         aria-label="GitHub"
       >
         <IconGithub class="w-6 h-6" />
@@ -48,7 +48,7 @@
       <!-- Theme Toggle -->
       <button
         type="button"
-        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-theme-subtle transition-colors"
         :aria-label="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')"
         :title="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')"
         @click="handleThemeToggle"
@@ -58,7 +58,7 @@
       </button>
       <!-- Logout -->
       <button
-        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-theme-subtle transition-colors"
         :aria-label="t('header.logout')"
         :title="t('header.logout')"
         @click="handleLogout"
@@ -71,7 +71,7 @@
       <button
         ref="mobileMenuTrigger"
         type="button"
-        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-gray-500 dark:text-gray-400 transition-colors"
+        class="p-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-theme-subtle transition-colors"
         :aria-label="t('header.more_actions')"
         :title="t('header.more_actions')"
         :aria-expanded="mobileMenuOpen"
@@ -84,7 +84,7 @@
         <div
           v-if="mobileMenuOpen"
           id="mobile-header-menu-panel"
-          class="mobile-header-menu-panel absolute right-0 top-full mt-2 min-w-48 rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-600 shadow-lg dark:border-gray-700 dark:bg-[#1b1b1f]/95 dark:text-gray-300"
+          class="mobile-header-menu-panel absolute right-0 top-full mt-2 min-w-48 rounded-xl border border-gray-200 bg-white/95 p-1.5 text-theme-supporting shadow-lg dark:border-gray-700 dark:bg-[#1b1b1f]/95"
         >
           <button type="button" class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" @click="openReleases">
             <IconDownload class="w-5 h-5" :class="hasNewVersion ? 'text-blue-500 dark:text-blue-400' : ''" />

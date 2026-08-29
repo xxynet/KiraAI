@@ -1,0 +1,59 @@
+/* Opt-in native form-control styles used by the UiInput and UiTextarea components. */
+.ui-input,
+.ui-textarea {
+  background-color: var(--color-surface-raised);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--color-control-border);
+  color: var(--color-text-primary);
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease-in-out;
+}
+
+/* Keep focus-ring animation when Tailwind's transition-colors utility is present. */
+.ui-input.transition-colors,
+.ui-textarea.transition-colors {
+  transition: all 0.2s ease-in-out;
+}
+
+:root.dark .ui-input::placeholder,
+:root.dark .ui-textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+.ui-input:hover,
+.ui-textarea:hover {
+  border-color: var(--color-accent);
+}
+
+.ui-input:disabled,
+.ui-textarea:disabled {
+  background-color: var(--color-control-disabled-surface);
+  color: var(--color-control-disabled-text);
+  cursor: not-allowed;
+}
+
+.ui-input:focus,
+.ui-input:focus-visible,
+.ui-textarea:focus,
+.ui-textarea:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
+}
+
+.ui-input--invalid,
+.ui-input--invalid:hover,
+.ui-textarea--invalid,
+.ui-textarea--invalid:hover {
+  border-color: var(--color-danger-border);
+}
+
+.ui-input--invalid:focus,
+.ui-input--invalid:focus-visible,
+.ui-textarea--invalid:focus,
+.ui-textarea--invalid:focus-visible {
+  border-color: var(--color-danger-border);
+  box-shadow: 0 0 0 2px var(--color-danger-focus-ring);
+}

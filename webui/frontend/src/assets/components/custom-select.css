@@ -1,0 +1,146 @@
+/* Shared by CustomSelect and CustomMultiSelect. */
+.custom-select {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  user-select: none;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: var(--color-surface-raised);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  min-height: 40px;
+}
+
+.custom-select-trigger:hover {
+  background-color: var(--color-surface-raised-hover);
+  border-color: var(--color-accent);
+}
+
+.custom-select-trigger.active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
+}
+
+.custom-select-trigger.has-value {
+  color: var(--color-text-emphasis);
+}
+
+.custom-select-trigger.placeholder {
+  color: var(--color-text-muted);
+}
+
+.custom-select-trigger.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.custom-select-arrow {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.2s ease-in-out;
+  flex-shrink: 0;
+}
+
+.custom-select-arrow.active,
+.custom-select-trigger.active .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-options {
+  position: fixed;
+  background-color: var(--color-surface-overlay);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-overlay-border);
+  border-radius: 13px;
+  box-shadow: var(--shadow-overlay);
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 6px;
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+.custom-select-options.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.custom-select-option {
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.2;
+  color: var(--color-text-secondary);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.custom-select-option:hover,
+.custom-select-option.active {
+  background-color: var(--color-accent-subtle);
+  color: var(--color-text-secondary);
+}
+
+.custom-select-option.selected {
+  background-color: transparent;
+  color: var(--color-text-accent);
+  font-weight: 550;
+}
+
+.custom-select-option.selected:hover,
+.custom-select-option.selected.active {
+  background-color: var(--color-accent-subtle);
+  color: var(--color-text-accent);
+}
+
+.custom-select-options::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-select-options::-webkit-scrollbar-track {
+  background: var(--color-scrollbar-track-subtle);
+  border-radius: 3px;
+}
+
+.custom-select-options::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb-subtle);
+  border-radius: 3px;
+}
+
+.custom-select-options::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-thumb-subtle-hover);
+}
+
+.custom-select-trigger:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
+}
+
+.custom-select-trigger.active:hover,
+.custom-select-trigger:focus:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
+}

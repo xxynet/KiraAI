@@ -5,8 +5,8 @@
       <div class="glass-card rounded-lg p-6">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-600">{{ $t('overview.runtime_duration') }}</p>
-            <p class="text-2xl font-bold text-gray-900 mt-2">{{ formattedUptime }}</p>
+            <p class="text-sm text-theme-supporting">{{ $t('overview.runtime_duration') }}</p>
+            <p class="text-2xl font-bold text-theme-high mt-2">{{ formattedUptime }}</p>
           </div>
           <div class="bg-blue-100 rounded-full p-3">
             <IconClock class="w-6 h-6 text-blue-600" />
@@ -18,8 +18,8 @@
       <div class="glass-card rounded-lg p-6">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-600">{{ $t('overview.total_messages') }}</p>
-            <p class="text-2xl font-bold text-gray-900 mt-2">{{ overview?.total_messages ?? 0 }}</p>
+            <p class="text-sm text-theme-supporting">{{ $t('overview.total_messages') }}</p>
+            <p class="text-2xl font-bold text-theme-high mt-2">{{ overview?.total_messages ?? 0 }}</p>
           </div>
           <div class="bg-green-100 rounded-full p-3">
             <IconChat class="w-6 h-6 text-green-600" />
@@ -31,8 +31,8 @@
       <div class="glass-card rounded-lg p-6">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-600">{{ $t('overview.adapter_count') }}</p>
-            <p class="text-2xl font-bold text-gray-900 mt-2">
+            <p class="text-sm text-theme-supporting">{{ $t('overview.adapter_count') }}</p>
+            <p class="text-2xl font-bold text-theme-high mt-2">
               {{ overview?.active_adapters ?? 0 }} / {{ overview?.total_adapters ?? 0 }}
             </p>
           </div>
@@ -46,8 +46,8 @@
       <div class="glass-card rounded-lg p-6">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-600">{{ $t('overview.memory_usage') }}</p>
-            <p class="text-2xl font-bold text-gray-900 mt-2">
+            <p class="text-sm text-theme-supporting">{{ $t('overview.memory_usage') }}</p>
+            <p class="text-2xl font-bold text-theme-high mt-2">
               {{ overview?.memory_usage ?? 0 }} MB
             </p>
           </div>
@@ -62,45 +62,45 @@
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
       <!-- Line chart: hourly messages (wider) -->
       <div class="glass-card rounded-lg p-6 lg:col-span-3">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.hourly_messages') }}</h3>
+        <h3 class="text-lg font-semibold text-theme-strong mb-4">{{ $t('overview.hourly_messages') }}</h3>
         <div ref="lineChartRef" class="w-full" style="height: 300px"></div>
       </div>
       <!-- Pie chart: platform distribution -->
       <div class="glass-card rounded-lg p-6 lg:col-span-2">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.platform_distribution') }}</h3>
+        <h3 class="text-lg font-semibold text-theme-strong mb-4">{{ $t('overview.platform_distribution') }}</h3>
         <div ref="pieChartRef" class="w-full" style="height: 300px"></div>
       </div>
     </div>
 
     <!-- LLM Stats -->
     <div class="glass-card rounded-lg p-6 mb-6">
-      <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ $t('overview.llm_title') }}</h3>
+      <h3 class="text-lg font-semibold text-theme-strong mb-4">{{ $t('overview.llm_title') }}</h3>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
-          <p class="text-xs text-gray-500">{{ $t('overview.llm_calls') }}</p>
-          <p class="text-xl font-bold text-gray-900">{{ llmCalls }}</p>
+          <p class="text-xs text-theme-subtle">{{ $t('overview.llm_calls') }}</p>
+          <p class="text-xl font-bold text-theme-high">{{ llmCalls }}</p>
         </div>
         <div>
-          <p class="text-xs text-gray-500">{{ $t('overview.llm_tokens') }}</p>
-          <p class="text-xl font-bold text-gray-900">{{ llmTokens }}</p>
+          <p class="text-xs text-theme-subtle">{{ $t('overview.llm_tokens') }}</p>
+          <p class="text-xl font-bold text-theme-high">{{ llmTokens }}</p>
         </div>
         <div>
-          <p class="text-xs text-gray-500">{{ $t('overview.llm_success_rate') }}</p>
-          <p class="text-xl font-bold text-gray-900">{{ llmSuccessRate }}</p>
+          <p class="text-xs text-theme-subtle">{{ $t('overview.llm_success_rate') }}</p>
+          <p class="text-xl font-bold text-theme-high">{{ llmSuccessRate }}</p>
         </div>
         <div>
-          <p class="text-xs text-gray-500">{{ $t('overview.llm_avg_response') }}</p>
-          <p class="text-xl font-bold text-gray-900">{{ llmAvgResponse }}</p>
+          <p class="text-xs text-theme-subtle">{{ $t('overview.llm_avg_response') }}</p>
+          <p class="text-xl font-bold text-theme-high">{{ llmAvgResponse }}</p>
         </div>
       </div>
       <!-- Model Usage Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4" v-if="llmShowModelChart">
         <div>
-          <p class="text-xs text-gray-500 mb-1">{{ $t('overview.pie_tooltip_model_usage') }}</p>
+          <p class="text-xs text-theme-subtle mb-1">{{ $t('overview.pie_tooltip_model_usage') }}</p>
           <div ref="modelChartRef" class="w-full" style="height: 200px"></div>
         </div>
         <div>
-          <p class="text-xs text-gray-500 mb-1">{{ $t('overview.llm_tokens') }}</p>
+          <p class="text-xs text-theme-subtle mb-1">{{ $t('overview.llm_tokens') }}</p>
           <div ref="tokenChartRef" class="w-full" style="height: 200px"></div>
         </div>
       </div>
@@ -112,8 +112,8 @@
       <div v-for="w in smallWidgets" :key="w.widget_id" class="glass-card rounded-lg p-6">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-600">{{ resolveWidgetLabel(w.label) }}</p>
-            <p class="text-2xl font-bold text-gray-900 mt-2">{{ w.content }}</p>
+            <p class="text-sm text-theme-supporting">{{ resolveWidgetLabel(w.label) }}</p>
+            <p class="text-2xl font-bold text-theme-high mt-2">{{ w.content }}</p>
           </div>
           <div class="rounded-full p-3" :class="widgetBgClass(w.color)">
             <component :is="resolveWidgetIcon(w.icon)"
@@ -126,7 +126,7 @@
     <!-- Plugin Widgets: Wide Cards -->
     <template v-for="w in wideWidgets" :key="w.widget_id">
       <div class="glass-card rounded-lg p-6 mb-6">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+        <h3 class="text-lg font-semibold text-theme-strong mb-4">
           {{ resolveWidgetLabel(w.label) }}
         </h3>
         <div class="widget-html-content" v-html="DOMPurify.sanitize(w.content)"></div>
@@ -235,7 +235,7 @@ const widgetFgClasses: Record<string, string> = {
   purple: 'text-purple-600',
   yellow: 'text-yellow-600',
   red:    'text-red-600',
-  gray:   'text-gray-600',
+  gray:   'text-theme-supporting',
 }
 
 function widgetBgClass(color: string) {

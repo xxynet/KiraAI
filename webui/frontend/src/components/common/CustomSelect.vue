@@ -346,7 +346,7 @@ onUnmounted(() => {
 }
 
 .custom-select-option.highlighted {
-  background-color: rgba(59, 130, 246, 0.1);
+  background-color: var(--color-accent-subtle);
 }
 
 .custom-select-option-label {
@@ -360,11 +360,5 @@ onUnmounted(() => {
 .select-check {
   flex-shrink: 0;
   margin-left: auto;
-}
-</style>
-
-<style>
-.dark .custom-select-option.highlighted {
-  background-color: rgba(59, 130, 246, 0.2);
 }
 </style>

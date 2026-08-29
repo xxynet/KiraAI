@@ -4,7 +4,7 @@
       <!-- Header -->
       <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-white">
+          <h3 class="text-lg font-semibold text-theme-strong">
             {{ t('header.releases_title') }}
           </h3>
           <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
@@ -12,7 +12,7 @@
           </span>
         </div>
         <button
-          class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 transition-colors"
+          class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-theme-faint transition-colors"
           @click="show = false"
         >
           <IconClose class="w-5 h-5" />
@@ -25,8 +25,8 @@
         <div v-if="updateProgress" class="mx-6 mt-5 rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <p class="font-medium text-gray-800 dark:text-gray-100">{{ t('header.update_progress_title') }}</p>
-              <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ updateProgress.message }}</p>
+              <p class="font-medium text-theme-strong">{{ t('header.update_progress_title') }}</p>
+              <p class="mt-1 text-sm text-theme-supporting">{{ updateProgress.message }}</p>
             </div>
             <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-300">{{ updateProgress.overall_percent }}%</span>
           </div>
@@ -55,7 +55,7 @@
 
         <!-- Error -->
         <div v-else-if="error" class="p-6 text-center">
-          <p class="text-gray-500 dark:text-gray-400 mb-3">{{ t('header.fetch_error') }}</p>
+          <p class="text-theme-subtle mb-3">{{ t('header.fetch_error') }}</p>
           <button
             class="px-4 py-1.5 text-sm rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-colors"
             @click="emit('retry')"
@@ -65,7 +65,7 @@
         </div>
 
         <!-- Empty -->
-        <div v-else-if="releases.length === 0" class="p-6 text-center text-gray-500 dark:text-gray-400">
+        <div v-else-if="releases.length === 0" class="p-6 text-center text-theme-subtle">
           {{ t('header.no_releases') }}
         </div>
 
@@ -80,7 +80,7 @@
             <div class="flex items-start justify-between mb-2">
               <div>
                 <div class="flex items-center gap-2 flex-wrap">
-                  <span class="font-semibold text-gray-800 dark:text-white">
+                  <span class="font-semibold text-theme-strong">
                     {{ release.name || release.tag_name }}
                   </span>
                   <span
@@ -102,7 +102,7 @@
                     {{ t('header.prerelease') }}
                   </span>
                 </div>
-                <span class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 block">
+                <span class="text-xs text-theme-faint mt-0.5 block">
                   {{ formatDate(release.published_at) }}
                 </span>
               </div>
@@ -120,7 +120,7 @@
             <!-- Release body -->
             <div
               v-if="release.body"
-              class="release-body text-sm text-gray-600 dark:text-gray-400 line-clamp-4 mb-2"
+              class="release-body text-sm text-theme-supporting line-clamp-4 mb-2"
               v-html="renderMarkdown(release.body)"
             />
 
@@ -224,8 +224,8 @@ function actionButtonClass(release: ReleaseItem): string {
       : 'bg-blue-500 hover:bg-blue-600 text-white'
   }
   return isDownloading
-    ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+    ? 'bg-gray-200 dark:bg-gray-700 text-theme-faint cursor-not-allowed'
+    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-theme-body'
 }
 
 function actionButtonText(release: ReleaseItem): string {
@@ -353,7 +353,7 @@ function stageText(status: string): string {
 function stageClass(status: string): string {
   if (status === 'done') return 'text-green-600 dark:text-green-400'
   if (status === 'running') return 'text-blue-600 dark:text-blue-300'
-  return 'text-gray-500 dark:text-gray-400'
+  return 'text-theme-subtle'
 }
 
 onBeforeUnmount(() => {

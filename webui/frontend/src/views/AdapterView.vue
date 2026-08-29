@@ -2,7 +2,7 @@
   <div>
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
-      <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
+      <h3 class="text-lg font-semibold text-theme-strong">
         {{ $t('pages.adapter.title') }}
       </h3>
       <button
@@ -17,8 +17,8 @@
     <!-- Empty State -->
     <div v-if="adapters.length === 0" class="flex justify-center items-center py-12">
       <div class="text-center">
-        <IconTerminal class="w-16 h-16 text-gray-400 mx-auto mb-4" />
-        <p class="text-gray-500">{{ $t('adapter.no_adapters') }}</p>
+        <IconTerminal class="w-16 h-16 text-theme-faint mx-auto mb-4" />
+        <p class="text-theme-subtle">{{ $t('adapter.no_adapters') }}</p>
       </div>
     </div>
 
@@ -32,17 +32,17 @@
         <div class="flex items-start justify-between mb-4">
           <div class="min-w-0 flex-1">
             <div class="flex items-center min-w-0">
-              <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100 mr-2 truncate">{{ adapter.name }}</h4>
+              <h4 class="text-base font-semibold text-theme-high mr-2 truncate">{{ adapter.name }}</h4>
               <span
                 class="px-2 py-0.5 text-xs rounded-full flex-shrink-0"
                 :class="adapter.status === 'active'
                   ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                  : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'"
+                  : 'bg-gray-100 text-theme-strong dark:bg-gray-700'"
               >
                 {{ adapter.status }}
               </span>
             </div>
-            <div class="mt-1 flex items-center gap-2 min-w-0 text-sm text-gray-500 dark:text-gray-400">
+            <div class="mt-1 flex items-center gap-2 min-w-0 text-sm text-theme-subtle">
               <img
                 v-if="adapterIcon(adapter)"
                 :src="adapterIcon(adapter)"
@@ -57,12 +57,12 @@
             @update:model-value="toggleStatus(adapter)"
           />
         </div>
-        <p v-if="adapter.description" class="text-sm text-gray-600 dark:text-gray-300 mb-4 break-words line-clamp-3">
+        <p v-if="adapter.description" class="text-sm text-theme-supporting mb-4 break-words line-clamp-3">
           {{ adapter.description }}
         </p>
         <div class="flex justify-end space-x-3 mt-4">
           <button
-            class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition-colors"
             @click="openEditDialog(adapter)"
           >
             {{ $t('adapter.edit') }}
@@ -81,27 +81,27 @@
     <Modal v-model="dialogVisible" content-class="max-w-md">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col modal-card" style="max-height: 90vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
+          <h3 class="text-lg font-semibold text-theme-strong">
             {{ editMode ? $t('adapter.edit_title') : $t('adapter.add') }}
           </h3>
-          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="dialogVisible = false">
+          <button class="text-theme-faint text-theme-faint-hover" @click="dialogVisible = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label class="block text-sm font-medium text-theme-body mb-2">
               {{ $t('adapter.modal_name_label') }}
             </label>
-            <input
+            <UiInput
               v-model="form.name"
               type="text"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              class="w-full rounded-lg px-3 py-2 transition-colors"
               :placeholder="$t('adapter.name')"
             />
           </div>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label class="block text-sm font-medium text-theme-body mb-2">
               {{ $t('adapter.modal_platform_label') }}
             </label>
             <CustomSelect
@@ -113,18 +113,18 @@
             />
           </div>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label class="block text-sm font-medium text-theme-body mb-2">
               {{ $t('adapter.modal_desc_label') }}
             </label>
-            <textarea
+            <UiTextarea
               v-model="form.description"
               rows="2"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors resize-none"
+              class="w-full rounded-lg px-3 py-2 transition-colors resize-none"
               :placeholder="$t('adapter.modal_desc_placeholder')"
             />
           </div>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label class="block text-sm font-medium text-theme-body mb-2">
               {{ $t('adapter.modal_status_label') }}
             </label>
             <div class="flex items-center">
@@ -132,13 +132,13 @@
             </div>
           </div>
           <div v-if="adapterSchema">
-            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{{ $t('adapter.config') }}</h4>
+            <h4 class="text-sm font-semibold text-theme-body mb-2">{{ $t('adapter.config') }}</h4>
             <ConfigForm ref="configFormRef" v-model="form.config" :schema="adapterSchema" />
           </div>
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
           <button
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             @click="dialogVisible = false"
           >
             {{ $t('adapter.modal_cancel') }}
@@ -180,6 +180,8 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { IconPlus, IconTerminal, IconClose } from '@/components/icons'
 import type { AdapterPlatform, AdapterResponse } from '@/types'
 

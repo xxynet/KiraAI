@@ -5,7 +5,7 @@
     :disabled="disabled"
     @click="toggle"
   >
-    <span class="mr-2 text-xs text-gray-500 dark:text-gray-400 select-none">
+    <span class="mr-2 text-xs text-theme-subtle select-none">
       {{ modelValue ? $t('common.on') : $t('common.off') }}
     </span>
     <span

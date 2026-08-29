@@ -2,7 +2,7 @@
   <div class="bg-white rounded-lg shadow p-6 dark:bg-gray-800 dark:shadow-gray-900/50">
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
-      <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('logs.title') }}</h3>
+      <h3 class="text-lg font-semibold text-theme-strong">{{ $t('logs.title') }}</h3>
       <div class="flex flex-wrap gap-2 justify-end">
         <!-- Freeze the stream so the list stops moving while reading -->
         <button
@@ -26,7 +26,7 @@
           class="px-4 py-2 rounded-lg border transition-colors flex items-center whitespace-nowrap"
           :class="autoScroll
             ? 'border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-500'
-            : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+            : 'border-gray-300 text-theme-supporting dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
           :aria-pressed="autoScroll"
           @click="toggleAutoScroll"
         >
@@ -89,25 +89,25 @@
     <Modal v-model="showInstallPanel" content-class="max-w-md">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('logs.install_deps') }}</h3>
-          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="showInstallPanel = false">
+          <h3 class="text-lg font-semibold text-theme-strong">{{ $t('logs.install_deps') }}</h3>
+          <button type="button" class="text-theme-faint text-theme-faint-hover" @click="showInstallPanel = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-5 flex-1 overflow-y-auto">
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('logs.install_packages_label') }}</label>
-            <textarea
+            <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('logs.install_packages_label') }}</label>
+            <UiTextarea
               v-model="installPackagesInput"
               :placeholder="$t('logs.install_packages_placeholder')"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              class="w-full rounded-lg px-3 py-2 font-mono text-sm resize-none transition-colors"
               rows="3"
               @keydown.ctrl.enter="handleInstall"
-            ></textarea>
+            />
           </div>
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
-          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="showInstallPanel = false">{{ $t('logs.install_close') }}</button>
+          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="showInstallPanel = false">{{ $t('logs.install_close') }}</button>
           <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center" :disabled="isInstalling" @click="handleInstall">
             <IconSpinner v-if="isInstalling" class="w-5 h-5 mr-2 animate-spin" />
             <IconPackage v-else class="w-5 h-5 mr-2" />
@@ -127,7 +127,7 @@
         @scroll.passive="onScroll"
       >
         <div v-if="visibleLogs.length === 0 && pendingCount === 0" class="flex justify-center items-center h-full">
-          <p class="text-gray-500 dark:text-gray-400">{{ $t('logs.no_logs') }}</p>
+          <p class="text-theme-subtle">{{ $t('logs.no_logs') }}</p>
         </div>
         <div
           v-for="log in visibleLogs"
@@ -135,7 +135,7 @@
           data-log-entry
           class="font-mono text-base whitespace-normal break-words"
         >
-          <span class="text-gray-500 dark:text-gray-400">[{{ log.timestamp }}]</span> <span :class="logLevelColor(log.level)" class="font-semibold whitespace-pre-wrap">{{ padLevel(log.level) }}</span> <span v-if="log.logger" :style="{ color: log.color || '#3b82f6' }" class="font-semibold">[{{ log.logger }}]</span> <span class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ log.message }}</span>
+          <span class="text-theme-subtle">[{{ log.timestamp }}]</span> <span :class="logLevelColor(log.level)" class="font-semibold whitespace-pre-wrap">{{ padLevel(log.level) }}</span> <span v-if="log.logger" :style="{ color: log.color || '#3b82f6' }" class="font-semibold">[{{ log.logger }}]</span> <span class="text-theme-body whitespace-pre-wrap">{{ log.message }}</span>
         </div>
       </div>
 
@@ -171,6 +171,7 @@ import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
 import { notify } from '@/composables/useNotification'
 import { IconTrash, IconRefresh, IconDownload, IconPackage, IconSpinner, IconClose } from '@/components/icons'
 import Modal from '@/components/common/Modal.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import type { LogEntry } from '@/types'
 
 // A stable, monotonically increasing id per row. Using the array index as the
@@ -378,7 +379,7 @@ function logLevelColor(level: string) {
   if (l === 'warning') return 'text-yellow-600 dark:text-yellow-400'
   if (l === 'info') return 'text-green-600 dark:text-green-400'
   if (l === 'debug') return 'text-cyan-600 dark:text-cyan-400'
-  return 'text-gray-500 dark:text-gray-400'
+  return 'text-theme-subtle'
 }
 
 function padLevel(level: string): string {

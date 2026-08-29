@@ -1,9 +1,9 @@
 <template>
-  <aside class="sidebar-gradient min-h-screen flex flex-col text-gray-800" :class="{ 'sidebar-open': open }">
+  <aside class="sidebar-gradient min-h-screen flex flex-col text-theme-strong" :class="{ 'sidebar-open': open }">
     <!-- Logo -->
     <div class="p-6 border-b border-blue-200/30">
-      <h1 class="text-2xl font-bold text-gray-800">{{ $t('app.title') }}</h1>
-      <p id="app-version" class="text-sm text-gray-600 mt-1">{{ appVersion }}</p>
+      <h1 class="text-2xl font-bold text-theme-strong">{{ $t('app.title') }}</h1>
+      <p id="app-version" class="text-sm text-theme-supporting mt-1">{{ appVersion }}</p>
     </div>
 
     <!-- Navigation -->

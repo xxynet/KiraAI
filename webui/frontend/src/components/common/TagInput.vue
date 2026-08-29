@@ -121,9 +121,9 @@ function cancelEdit() {
   gap: 4px;
   padding: 6px 10px;
   min-height: 38px;
-  border: 1px solid rgba(209, 213, 219, 0.8);
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
-  background-color: rgba(255, 255, 255, 0.7);
+  background-color: var(--color-surface-raised);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   cursor: text;
@@ -132,16 +132,16 @@ function cancelEdit() {
 }
 
 .tag-input-wrapper:focus-within {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
 }
 
 .tag-input-tag {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  background-color: rgba(59, 130, 246, 0.15);
-  color: #1d4ed8;
+  background-color: var(--color-accent-tag);
+  color: var(--color-text-accent);
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
@@ -150,7 +150,7 @@ function cancelEdit() {
 }
 
 .tag-input-tag:hover {
-  background-color: rgba(59, 130, 246, 0.25);
+  background-color: var(--color-accent-tag-hover);
 }
 
 .tag-input-tag-remove {
@@ -170,43 +170,50 @@ function cancelEdit() {
   display: inline-flex;
   padding: 2px 6px;
   font-size: 12px;
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-raised) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--color-control-border) !important;
   border-radius: 4px;
   outline: none;
   min-width: 40px;
 }
 
+.tag-input-edit:hover,
+.tag-input-edit:focus,
+.tag-input-edit:focus-visible {
+  border-color: var(--color-accent) !important;
+}
+
+.tag-input-edit:focus,
+.tag-input-edit:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
+}
+
 .tag-input-field {
   flex: 1 1 80px;
   min-width: 80px;
-  border: none !important;
+  color: var(--color-text-primary);
+  caret-color: var(--color-text-primary);
+  background-color: var(--color-surface-raised) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid transparent !important;
   outline: none !important;
-  background: transparent !important;
-  backdrop-filter: none !important;
   box-shadow: none !important;
   font-size: 14px;
   line-height: 1.4;
   padding: 0;
-}
-</style>
-
-<style>
-.dark .tag-input-wrapper {
-  background-color: rgba(31, 41, 55, 0.7) !important;
-  border-color: rgba(75, 85, 99, 0.3);
-  color: #f9fafb;
+  transition: border-color 0.15s ease-in-out;
 }
 
-.dark .tag-input-wrapper:focus-within {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+.tag-input-field:focus,
+.tag-input-field:focus-visible {
+  border-color: var(--color-border-strong) !important;
 }
 
-.dark .tag-input-tag {
-  background-color: rgba(30, 58, 138, 0.3);
-  color: #93c5fd;
-}
-
-.dark .tag-input-tag:hover {
-  background-color: rgba(30, 58, 138, 0.45);
+.tag-input-field::placeholder {
+  color: var(--color-text-muted);
 }
 </style>

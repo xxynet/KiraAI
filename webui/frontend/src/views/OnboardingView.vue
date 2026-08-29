@@ -6,7 +6,7 @@
 
     <button type="button" class="fixed top-4 right-4 z-50 p-2 rounded-lg bg-white/70 backdrop-blur-md border border-white/30 shadow-lg hover:bg-white/90 transition-all duration-200 dark:bg-gray-800/70 dark:border-gray-700/30 dark:hover:bg-gray-800/90" :aria-label="appStore.isDark ? t('header.switch_to_light') : t('header.switch_to_dark')" @click="appStore.toggleTheme">
       <IconSun v-if="appStore.isDark" class="w-6 h-6 text-yellow-500" />
-      <IconMoon v-else class="w-6 h-6 text-gray-700" />
+      <IconMoon v-else class="w-6 h-6 text-theme-body" />
     </button>
 
     <div class="relative z-10 w-full max-w-md">
@@ -15,8 +15,8 @@
           <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4 shadow-lg">
             <IconLightning class="w-8 h-8 text-white" />
           </div>
-          <h1 class="text-3xl font-bold text-gray-900 mb-2 dark:text-white">{{ t('onboarding.title') }}</h1>
-          <p class="text-gray-600 dark:text-gray-400">{{ step === 1 ? t('onboarding.description') : t('onboarding.configuration_description') }}</p>
+          <h1 class="text-3xl font-bold text-theme-high mb-2">{{ t('onboarding.title') }}</h1>
+          <p class="text-theme-supporting">{{ step === 1 ? t('onboarding.description') : t('onboarding.configuration_description') }}</p>
         </div>
 
         <div class="flex items-center justify-center gap-2 mb-8" :aria-label="t('onboarding.progress')">
@@ -26,14 +26,14 @@
 
         <form v-if="step === 1" class="-mx-1 min-h-0 flex-1 space-y-6 overflow-y-auto px-1 py-1" @submit.prevent="goToConfigurationStep">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300" for="backend-language">{{ t('onboarding.system_language') }}</label>
+            <label class="block text-sm font-medium text-theme-body mb-2" for="backend-language">{{ t('onboarding.system_language') }}</label>
             <CustomSelect id="backend-language" v-model="language" :options="languageOptions" />
-            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('onboarding.system_language_hint') }}</p>
+            <p class="mt-2 text-xs text-theme-subtle">{{ t('onboarding.system_language_hint') }}</p>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300" for="timezone">{{ t('onboarding.timezone') }}</label>
-            <input id="timezone" v-model="timezone" type="text" class="w-full h-10 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" :placeholder="t('onboarding.timezone_placeholder')">
-            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('onboarding.timezone_hint') }}</p>
+            <label class="block text-sm font-medium text-theme-body mb-2" for="timezone">{{ t('onboarding.timezone') }}</label>
+            <UiInput id="timezone" v-model="timezone" class="w-full h-10 rounded-lg px-3 py-2 transition-colors" :placeholder="t('onboarding.timezone_placeholder')" />
+            <p class="mt-2 text-xs text-theme-subtle">{{ t('onboarding.timezone_hint') }}</p>
           </div>
           <button type="submit" class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563eb] transition-all duration-200 active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-500">
             {{ t('onboarding.next') }}
@@ -41,14 +41,14 @@
         </form>
 
         <div v-else class="-mx-1 min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-1">
-          <p class="text-sm text-gray-600 dark:text-gray-400">{{ t('onboarding.configuration_hint') }}</p>
+          <p class="text-sm text-theme-supporting">{{ t('onboarding.configuration_hint') }}</p>
           <button v-for="item in configurationItems" :key="item.key" type="button" class="w-full flex items-center gap-4 p-4 text-left rounded-xl border border-gray-200 bg-white/70 hover:border-blue-400 hover:bg-blue-50/70 transition-colors dark:border-gray-700 dark:bg-gray-800/70 dark:hover:border-blue-500 dark:hover:bg-gray-700" @click="openConfiguration(item.key)">
             <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">{{ item.order }}</span>
-            <span class="flex-1"><span class="block font-medium text-gray-900 dark:text-white">{{ t(item.titleKey) }}</span><span class="block mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t(item.descriptionKey) }}</span></span>
+            <span class="flex-1"><span class="block font-medium text-theme-high">{{ t(item.titleKey) }}</span><span class="block mt-1 text-xs text-theme-subtle">{{ t(item.descriptionKey) }}</span></span>
             <span class="text-blue-600 dark:text-blue-400" aria-hidden="true">→</span>
           </button>
           <div class="flex gap-3 pt-2">
-            <button type="button" class="flex-1 py-3 px-4 border border-gray-300 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" @click="step = 1">{{ t('onboarding.back') }}</button>
+            <button type="button" class="flex-1 py-3 px-4 border border-gray-300 rounded-xl text-sm font-medium text-theme-body hover:bg-gray-50 transition-colors dark:border-gray-600 dark:hover:bg-gray-700" @click="step = 1">{{ t('onboarding.back') }}</button>
             <button type="button" class="flex-1 flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] transition-all duration-200 disabled:opacity-50 dark:bg-blue-600 dark:hover:bg-blue-700" :disabled="loading" @click="handleSubmit">
               <span>{{ loading ? t('onboarding.saving') : t('onboarding.finish') }}</span>
               <IconSpinner v-if="loading" class="animate-spin ml-2 h-5 w-5 text-white" />
@@ -59,15 +59,15 @@
         <div v-if="errorMessage" class="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl dark:bg-red-900/20 dark:border-red-800/30">
           <div class="flex items-center"><IconInfo class="w-5 h-5 text-red-600 mr-2 dark:text-red-400" /><span class="text-sm text-red-700 dark:text-red-300">{{ errorMessage }}</span></div>
         </div>
-        <div class="mt-8 text-center"><p class="text-xs text-gray-500 dark:text-gray-400">KiraAI WebUI</p></div>
+        <div class="mt-8 text-center"><p class="text-xs text-theme-subtle">KiraAI WebUI</p></div>
       </div>
     </div>
 
     <Modal v-model="configurationModalVisible" content-class="max-w-6xl" content-style="max-height: 90vh">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ selectedConfigurationTitle }}</h2>
-          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :aria-label="t('onboarding.close_configuration')" @click="configurationModalVisible = false">
+          <h2 class="text-lg font-semibold text-theme-strong">{{ selectedConfigurationTitle }}</h2>
+          <button type="button" class="text-theme-faint text-theme-faint-hover" :aria-label="t('onboarding.close_configuration')" @click="configurationModalVisible = false">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
@@ -86,6 +86,7 @@ import { useI18n } from 'vue-i18n'
 import { completeOnboarding } from '@/api/onboarding'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import Modal from '@/components/common/Modal.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import ProviderView from '@/views/ProviderView.vue'
 import AdapterView from '@/views/AdapterView.vue'
 import ConfigView from '@/views/ConfigView.vue'

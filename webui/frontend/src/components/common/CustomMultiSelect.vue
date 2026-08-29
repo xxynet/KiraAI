@@ -325,8 +325,8 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  background-color: rgba(59, 130, 246, 0.15);
-  color: #1d4ed8;
+  background-color: var(--color-accent-tag);
+  color: var(--color-text-accent);
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
@@ -363,17 +363,6 @@ onUnmounted(() => {
 }
 
 .custom-select-option.highlighted {
-  background-color: rgba(59, 130, 246, 0.1);
-}
-</style>
-
-<style>
-.dark .custom-select-tag {
-  background-color: rgba(30, 58, 138, 0.3);
-  color: #93c5fd;
-}
-
-.dark .custom-select-option.highlighted {
-  background-color: rgba(59, 130, 246, 0.2);
+  background-color: var(--color-accent-subtle);
 }
 </style>

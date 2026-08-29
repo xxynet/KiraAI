@@ -2,7 +2,7 @@
   <div>
     <!-- Title -->
     <div class="flex items-center mb-6">
-      <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ $t('settings.title') }}</h3>
+      <h3 class="text-lg font-semibold text-theme-strong">{{ $t('settings.title') }}</h3>
     </div>
 
     <!-- Tabs -->
@@ -12,7 +12,7 @@
         :key="tab.key"
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-        :class="activeTab === tab.key ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'"
+        :class="activeTab === tab.key ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = tab.key"
       >
         {{ tab.label }}
@@ -24,10 +24,10 @@
       <!-- Storage Overview -->
       <div>
         <div class="flex items-center justify-between mb-4">
-          <h4 class="text-base font-semibold text-gray-800 dark:text-gray-100">{{ $t('settings.storage_title') }}</h4>
+          <h4 class="text-base font-semibold text-theme-strong">{{ $t('settings.storage_title') }}</h4>
           <button
             type="button"
-            class="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            class="px-3 py-1.5 text-xs font-medium text-theme-supporting bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             :disabled="storageLoading"
             @click="fetchStorageInfo"
           >
@@ -43,30 +43,30 @@
           <!-- Data Path -->
           <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
             <div class="flex justify-between items-center">
-              <span class="text-sm text-gray-500 dark:text-gray-400">{{ $t('settings.storage_data_path') }}</span>
-              <span class="text-sm font-mono font-medium text-gray-800 dark:text-gray-200 break-all text-right max-w-[70%]">{{ storageInfo.data_path }}</span>
+              <span class="text-sm text-theme-subtle">{{ $t('settings.storage_data_path') }}</span>
+              <span class="text-sm font-mono font-medium text-theme-strong break-all text-right max-w-[70%]">{{ storageInfo.data_path }}</span>
             </div>
             <div class="flex justify-between items-center mt-2">
-              <span class="text-sm text-gray-500 dark:text-gray-400">{{ $t('settings.storage_total_size') }}</span>
-              <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.total_size_bytes) }}</span>
+              <span class="text-sm text-theme-subtle">{{ $t('settings.storage_total_size') }}</span>
+              <span class="text-sm font-medium text-theme-strong">{{ formatBytes(storageInfo.total_size_bytes) }}</span>
             </div>
           </div>
 
           <!-- Disk Usage -->
           <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
-            <h5 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('settings.storage_disk_usage') }}</h5>
+            <h5 class="text-sm font-semibold text-theme-body mb-3">{{ $t('settings.storage_disk_usage') }}</h5>
             <div class="space-y-2">
               <div class="flex justify-between text-sm">
-                <span class="text-gray-500 dark:text-gray-400">{{ $t('settings.storage_disk_total') }}</span>
-                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.disk_total_bytes) }}</span>
+                <span class="text-theme-subtle">{{ $t('settings.storage_disk_total') }}</span>
+                <span class="font-medium text-theme-strong">{{ formatBytes(storageInfo.disk_total_bytes) }}</span>
               </div>
               <div class="flex justify-between text-sm">
-                <span class="text-gray-500 dark:text-gray-400">{{ $t('settings.storage_disk_used') }}</span>
-                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(storageInfo.disk_used_bytes) }}</span>
+                <span class="text-theme-subtle">{{ $t('settings.storage_disk_used') }}</span>
+                <span class="font-medium text-theme-strong">{{ formatBytes(storageInfo.disk_used_bytes) }}</span>
               </div>
               <div class="flex justify-between text-sm">
-                <span class="text-gray-500 dark:text-gray-400">{{ $t('settings.storage_disk_free') }}</span>
-                <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatBytes(diskFreeBytes) }}</span>
+                <span class="text-theme-subtle">{{ $t('settings.storage_disk_free') }}</span>
+                <span class="font-medium text-theme-strong">{{ formatBytes(diskFreeBytes) }}</span>
               </div>
               <!-- Progress bar -->
               <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3 mt-2">
@@ -76,7 +76,7 @@
                   :style="{ width: diskUsagePercent + '%' }"
                 ></div>
               </div>
-              <div class="text-right text-xs text-gray-500 dark:text-gray-400">
+              <div class="text-right text-xs text-theme-subtle">
                 {{ diskUsagePercent.toFixed(1) }}%
               </div>
             </div>
@@ -84,23 +84,23 @@
 
           <!-- Directory Breakdown -->
           <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-            <h5 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $t('settings.storage_directories') }}</h5>
-            <div v-if="storageInfo.directories.length === 0" class="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+            <h5 class="text-sm font-semibold text-theme-body mb-3">{{ $t('settings.storage_directories') }}</h5>
+            <div v-if="storageInfo.directories.length === 0" class="text-sm text-theme-faint text-center py-4">
               {{ $t('settings.storage_no_data') }}
             </div>
             <table v-else class="w-full text-sm">
               <thead>
                 <tr class="border-b border-gray-200 dark:border-gray-600">
-                  <th class="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">{{ $t('settings.storage_dir_name') }}</th>
-                  <th class="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">{{ $t('settings.storage_dir_size') }}</th>
-                  <th class="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">{{ $t('settings.storage_dir_files') }}</th>
+                  <th class="text-left py-2 text-theme-subtle font-medium">{{ $t('settings.storage_dir_name') }}</th>
+                  <th class="text-right py-2 text-theme-subtle font-medium">{{ $t('settings.storage_dir_size') }}</th>
+                  <th class="text-right py-2 text-theme-subtle font-medium">{{ $t('settings.storage_dir_files') }}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="dir in storageInfo.directories" :key="dir.name" class="border-b border-gray-100 dark:border-gray-700 last:border-0">
-                  <td class="py-2 font-mono text-gray-800 dark:text-gray-200">{{ dir.name }}</td>
-                  <td class="py-2 text-right text-gray-600 dark:text-gray-300">{{ formatBytes(dir.size_bytes) }}</td>
-                  <td class="py-2 text-right text-gray-600 dark:text-gray-300">{{ dir.file_count }}</td>
+                  <td class="py-2 font-mono text-theme-strong">{{ dir.name }}</td>
+                  <td class="py-2 text-right text-theme-supporting">{{ formatBytes(dir.size_bytes) }}</td>
+                  <td class="py-2 text-right text-theme-supporting">{{ dir.file_count }}</td>
                 </tr>
               </tbody>
             </table>
@@ -110,7 +110,7 @@
 
       <!-- Backup & Restore -->
       <div>
-        <h4 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ $t('settings.backup_title') }}</h4>
+        <h4 class="text-base font-semibold text-theme-strong mb-4">{{ $t('settings.backup_title') }}</h4>
 
         <div class="flex flex-wrap gap-3 mb-4">
           <button
@@ -124,7 +124,7 @@
 
           <button
             type="button"
-            class="px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            class="px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-theme-body rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             @click="restoreModalVisible = true"
           >
             {{ $t('settings.restore_title') }}
@@ -133,7 +133,7 @@
 
         <!-- Backup List -->
         <div v-if="backupList.length > 0">
-          <h5 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{{ $t('settings.backup_list') }}</h5>
+          <h5 class="text-sm font-semibold text-theme-body mb-2">{{ $t('settings.backup_list') }}</h5>
           <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg divide-y divide-gray-100 dark:divide-gray-700">
             <div
               v-for="backup in backupList"
@@ -141,8 +141,8 @@
               class="flex items-center justify-between px-4 py-3"
             >
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-mono text-gray-800 dark:text-gray-200 truncate">{{ backup.filename }}</p>
-                <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                <p class="text-sm font-mono text-theme-strong truncate">{{ backup.filename }}</p>
+                <p class="text-xs text-theme-faint mt-0.5">
                   {{ formatBytes(backup.size_bytes) }} &middot; {{ formatDate(backup.created_at) }}
                 </p>
               </div>
@@ -173,7 +173,7 @@
             </div>
           </div>
         </div>
-        <div v-else class="text-sm text-gray-400 dark:text-gray-500 text-center py-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+        <div v-else class="text-sm text-theme-faint text-center py-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
           {{ $t('settings.backup_no_backups') }}
         </div>
       </div>
@@ -182,8 +182,8 @@
     <!-- System Tab -->
     <div v-show="activeTab === 'system'" class="space-y-6">
       <div>
-        <h4 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ $t('settings.system_title') }}</h4>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{{ $t('settings.system_restart_desc') }}</p>
+        <h4 class="text-base font-semibold text-theme-strong mb-4">{{ $t('settings.system_title') }}</h4>
+        <p class="text-sm text-theme-subtle mb-4">{{ $t('settings.system_restart_desc') }}</p>
         <button
           type="button"
           class="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -196,8 +196,8 @@
 
       <!-- Change Access Token -->
       <div v-if="authEnabled">
-        <h4 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ $t('settings.token_title') }}</h4>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{{ $t('settings.token_desc') }}</p>
+        <h4 class="text-base font-semibold text-theme-strong mb-4">{{ $t('settings.token_title') }}</h4>
+        <p class="text-sm text-theme-subtle mb-4">{{ $t('settings.token_desc') }}</p>
         <button
           type="button"
           class="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -211,20 +211,20 @@
     <!-- Custom CSS/JS Tab -->
     <div v-show="activeTab === 'custom'" class="space-y-6">
       <div>
-        <label for="custom-webui-title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        <label for="custom-webui-title" class="block text-sm font-medium text-theme-body mb-2">
           {{ $t('settings.custom_webui_title') }}
         </label>
-        <input
+        <UiInput
           id="custom-webui-title"
           v-model="customWebUITitle"
           type="text"
-          class="w-full px-3 py-2 text-sm text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          class="w-full px-3 py-2 text-sm rounded-lg"
           :placeholder="$t('settings.custom_webui_title_placeholder')"
         />
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        <label class="block text-sm font-medium text-theme-body mb-2">
           {{ $t('settings.custom_css') }}
         </label>
         <div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;">
@@ -237,7 +237,7 @@
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        <label class="block text-sm font-medium text-theme-body mb-2">
           {{ $t('settings.custom_js') }}
         </label>
         <div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;">
@@ -267,22 +267,22 @@
         <div class="w-20 h-20 rounded-2xl overflow-hidden mb-4 shadow-lg">
           <img src="/icon.png" alt="KiraAI" class="w-full h-full object-cover" />
         </div>
-        <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">KiraAI</h2>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ $t('settings.about_tagline') }}</p>
+        <h2 class="text-2xl font-bold text-theme-strong">KiraAI</h2>
+        <p class="text-sm text-theme-subtle mt-1">{{ $t('settings.about_tagline') }}</p>
       </div>
 
       <div class="max-w-md mx-auto space-y-4">
         <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 space-y-3">
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-500 dark:text-gray-400">{{ $t('settings.about_version') }}</span>
-            <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ projectVersion }}</span>
+            <span class="text-sm text-theme-subtle">{{ $t('settings.about_version') }}</span>
+            <span class="text-sm font-medium text-theme-strong">{{ projectVersion }}</span>
           </div>
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-500 dark:text-gray-400">{{ $t('settings.about_license') }}</span>
-            <span class="text-sm font-medium text-gray-800 dark:text-gray-200">AGPL-3.0</span>
+            <span class="text-sm text-theme-subtle">{{ $t('settings.about_license') }}</span>
+            <span class="text-sm font-medium text-theme-strong">AGPL-3.0</span>
           </div>
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-500 dark:text-gray-400">{{ $t('settings.about_repo') }}</span>
+            <span class="text-sm text-theme-subtle">{{ $t('settings.about_repo') }}</span>
             <a
               href="https://github.com/KiraAI-Dev/KiraAI"
               target="_blank"
@@ -292,7 +292,7 @@
             </a>
           </div>
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-500 dark:text-gray-400">{{ $t('header.docs') }}</span>
+            <span class="text-sm text-theme-subtle">{{ $t('header.docs') }}</span>
             <a
               :href="$t('header.docs_url')"
               target="_blank"
@@ -304,13 +304,13 @@
         </div>
 
         <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 space-y-3">
-          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ $t('settings.about_community') }}</h4>
+          <h4 class="text-sm font-semibold text-theme-body">{{ $t('settings.about_community') }}</h4>
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-500 dark:text-gray-400">QQ {{ $t('settings.about_group') }}</span>
-            <span class="text-sm font-medium text-gray-800 dark:text-gray-200">874381335</span>
+            <span class="text-sm text-theme-subtle">QQ {{ $t('settings.about_group') }}</span>
+            <span class="text-sm font-medium text-theme-strong">874381335</span>
           </div>
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-500 dark:text-gray-400">Discord</span>
+            <span class="text-sm text-theme-subtle">Discord</span>
             <a
               href="https://discord.gg/mRNmVmFHn3"
               target="_blank"
@@ -360,10 +360,10 @@
     <Modal v-model="restoreModalVisible" content-class="max-w-lg">
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl">
         <div class="px-6 py-4">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
+          <h3 class="text-lg font-semibold text-theme-strong mb-2">
             {{ $t('settings.restore_title') }}
           </h3>
-          <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          <p class="text-sm text-theme-subtle mb-4">
             {{ $t('settings.restore_upload_hint') }}
           </p>
           <FileDropzone
@@ -378,7 +378,7 @@
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
           <button
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             @click="restoreModalVisible = false"
           >
             {{ $t('settings.backup_confirm_cancel') }}
@@ -408,6 +408,7 @@ import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { applyWebUITitle, CUSTOM_WEBUI_TITLE_KEY } from '@/utils/customWebUI'
 import {
   getStorageInfo,
