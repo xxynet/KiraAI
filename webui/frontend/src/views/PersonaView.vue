@@ -148,11 +148,11 @@
         </div>
         <form class="px-6 py-4 border-t border-gray-200 dark:border-gray-700" @submit.prevent="handleGeneratorAnswer()">
           <label class="sr-only" for="persona-generator-answer">{{ $t('persona.generator_answer_label') }}</label>
-          <textarea
+          <UiTextarea
             id="persona-generator-answer"
             v-model="generatorAnswer"
             rows="3"
-            class="w-full resize-y border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            class="w-full resize-y rounded-lg px-3 py-2 transition-colors"
             :placeholder="$t('persona.generator_answer_placeholder')"
             :disabled="generating"
           />
@@ -203,10 +203,10 @@
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               {{ $t('persona.modal_name_label') }}
             </label>
-            <input
+            <UiInput
               v-model="form.name"
               type="text"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              class="w-full rounded-lg px-3 py-2 transition-colors"
               :placeholder="$t('persona.name')"
             />
           </div>
@@ -287,6 +287,8 @@ import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { IconPlus, IconUser, IconClose } from '@/components/icons'
 import type { PersonaResponse } from '@/types'
 

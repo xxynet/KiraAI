@@ -93,10 +93,10 @@
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               {{ $t('adapter.modal_name_label') }}
             </label>
-            <input
+            <UiInput
               v-model="form.name"
               type="text"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              class="w-full rounded-lg px-3 py-2 transition-colors"
               :placeholder="$t('adapter.name')"
             />
           </div>
@@ -116,10 +116,10 @@
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               {{ $t('adapter.modal_desc_label') }}
             </label>
-            <textarea
+            <UiTextarea
               v-model="form.description"
               rows="2"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors resize-none"
+              class="w-full rounded-lg px-3 py-2 transition-colors resize-none"
               :placeholder="$t('adapter.modal_desc_placeholder')"
             />
           </div>
@@ -180,6 +180,8 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { IconPlus, IconTerminal, IconClose } from '@/components/icons'
 import type { AdapterPlatform, AdapterResponse } from '@/types'
 

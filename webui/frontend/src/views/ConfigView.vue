@@ -234,34 +234,34 @@
             </label>
 
             <!-- Integer -->
-            <input
+            <UiInput
               v-if="field.type === 'integer'"
-              :value="getFieldValue(field.key)"
+              :model-value="getFieldValue(field.key)"
               type="number"
               step="1"
               :min="field.validation?.min"
               :max="field.validation?.max"
               :placeholder="$t(field.hintKey, field.hintFallback)"
-              class="w-full border rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 transition-colors duration-150"
-              :class="validationErrors[field.key] ? 'border-red-400 dark:border-red-500 focus:ring-red-500' : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500'"
-              @input="(e) => setFieldValue(field.key, (e.target as HTMLInputElement).value === '' ? null : Number((e.target as HTMLInputElement).value))"
+              :invalid="Boolean(validationErrors[field.key])"
+              class="w-full rounded-lg px-3 py-2 transition-colors duration-150"
+              @update:model-value="value => setFieldValue(field.key, value === '' ? null : Number(value))"
               @blur="validateField(field.key)"
-            >
+            />
 
             <!-- Float -->
-            <input
+            <UiInput
               v-else-if="field.type === 'float'"
-              :value="getFieldValue(field.key)"
+              :model-value="getFieldValue(field.key)"
               type="number"
               step="0.1"
               :min="field.validation?.min"
               :max="field.validation?.max"
               :placeholder="$t(field.hintKey, field.hintFallback)"
-              class="w-full border rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 transition-colors duration-150"
-              :class="validationErrors[field.key] ? 'border-red-400 dark:border-red-500 focus:ring-red-500' : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500'"
-              @input="(e) => setFieldValue(field.key, (e.target as HTMLInputElement).value === '' ? null : Number((e.target as HTMLInputElement).value))"
+              :invalid="Boolean(validationErrors[field.key])"
+              class="w-full rounded-lg px-3 py-2 transition-colors duration-150"
+              @update:model-value="value => setFieldValue(field.key, value === '' ? null : Number(value))"
               @blur="validateField(field.key)"
-            >
+            />
 
             <!-- Boolean / Switch -->
             <button
@@ -297,16 +297,16 @@
             />
 
             <!-- String -->
-            <input
+            <UiInput
               v-else
-              :value="getFieldValue(field.key)"
+              :model-value="getFieldValue(field.key)"
               type="text"
               :placeholder="$t(field.hintKey, field.hintFallback)"
-              class="w-full border rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 transition-colors duration-150"
-              :class="validationErrors[field.key] ? 'border-red-400 dark:border-red-500 focus:ring-red-500' : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500'"
-              @input="(e) => setFieldValue(field.key, (e.target as HTMLInputElement).value)"
+              :invalid="Boolean(validationErrors[field.key])"
+              class="w-full rounded-lg px-3 py-2 transition-colors duration-150"
+              @update:model-value="value => setFieldValue(field.key, value)"
               @blur="validateField(field.key)"
-            >
+            />
 
             <p
               v-if="field.hintKey && !validationErrors[field.key] && field.type !== 'info'"

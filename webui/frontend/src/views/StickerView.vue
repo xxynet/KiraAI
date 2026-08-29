@@ -101,19 +101,19 @@
           <!-- ID (add editable / edit read-only) -->
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ID</label>
-            <input
+            <UiInput
               v-if="!editMode"
               v-model="form.id"
               type="text"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              class="w-full rounded-lg px-3 py-2 transition-colors"
               :placeholder="$t('sticker.name')"
             />
-            <input
+            <UiInput
               v-else
-              :value="form.id"
+              :model-value="form.id"
               type="text"
               disabled
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+              class="w-full rounded-lg px-3 py-2"
             />
           </div>
           <!-- Description -->
@@ -121,10 +121,10 @@
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               {{ $t('sticker.description') }}
             </label>
-            <input
+            <UiInput
               v-model="form.desc"
               type="text"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              class="w-full rounded-lg px-3 py-2 transition-colors"
               :placeholder="$t('sticker.description')"
             />
           </div>
@@ -171,6 +171,7 @@ import {
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import ImageDropzone from '@/components/common/ImageDropzone.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { IconPlus, IconWarning, IconImage, IconClose } from '@/components/icons'
 import type { StickerItem } from '@/types'
 

@@ -18,6 +18,13 @@
   border-color: var(--color-accent);
 }
 
+.ui-input:disabled,
+.ui-textarea:disabled {
+  background-color: var(--color-control-disabled-surface);
+  color: var(--color-control-disabled-text);
+  cursor: not-allowed;
+}
+
 .ui-input:focus,
 .ui-input:focus-visible,
 .ui-textarea:focus,
@@ -25,4 +32,19 @@
   outline: none;
   border-color: var(--color-accent);
   box-shadow: 0 0 0 2px var(--color-focus-ring);
+}
+
+.ui-input--invalid,
+.ui-input--invalid:hover,
+.ui-textarea--invalid,
+.ui-textarea--invalid:hover {
+  border-color: var(--color-danger-border);
+}
+
+.ui-input--invalid:focus,
+.ui-input--invalid:focus-visible,
+.ui-textarea--invalid:focus,
+.ui-textarea--invalid:focus-visible {
+  border-color: var(--color-danger-border);
+  box-shadow: 0 0 0 2px var(--color-danger-focus-ring);
 }

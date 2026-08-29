@@ -3,6 +3,7 @@
     ref="inputRef"
     :type="type"
     class="ui-input"
+    :class="{ 'ui-input--invalid': invalid }"
     :value="modelValue ?? ''"
     v-bind="$attrs"
     @compositionstart="isComposing = true"
@@ -23,6 +24,7 @@ const props = withDefaults(defineProps<{
     trim?: boolean
   }
   coerceNumber?: boolean
+  invalid?: boolean
   type?: string
 }>(), {
   modelModifiers: () => ({}),

@@ -214,11 +214,11 @@
         <label for="custom-webui-title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           {{ $t('settings.custom_webui_title') }}
         </label>
-        <input
+        <UiInput
           id="custom-webui-title"
           v-model="customWebUITitle"
           type="text"
-          class="w-full px-3 py-2 text-sm text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          class="w-full px-3 py-2 text-sm rounded-lg"
           :placeholder="$t('settings.custom_webui_title_placeholder')"
         />
       </div>
@@ -408,6 +408,7 @@ import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { applyWebUITitle, CUSTOM_WEBUI_TITLE_KEY } from '@/utils/customWebUI'
 import {
   getStorageInfo,

@@ -13,32 +13,32 @@
       <div class="px-6 py-4 flex-1 overflow-y-auto space-y-4">
         <div>
           <label for="modal-token-old" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('settings.token_old') }}</label>
-          <input
+          <UiInput
             id="modal-token-old"
             v-model="oldToken"
             type="password"
             :placeholder="$t('settings.token_old_placeholder')"
-            class="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200"
+            class="w-full px-3 py-2 rounded-lg"
           />
         </div>
         <div>
           <label for="modal-token-new" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('settings.token_new') }}</label>
-          <input
+          <UiInput
             id="modal-token-new"
             v-model="newToken"
             type="password"
             :placeholder="$t('settings.token_new_placeholder')"
-            class="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200"
+            class="w-full px-3 py-2 rounded-lg"
           />
         </div>
         <div>
           <label for="modal-token-confirm" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('settings.token_confirm') }}</label>
-          <input
+          <UiInput
             id="modal-token-confirm"
             v-model="confirmToken"
             type="password"
             :placeholder="$t('settings.token_confirm_placeholder')"
-            class="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200"
+            class="w-full px-3 py-2 rounded-lg"
           />
         </div>
       </div>
@@ -70,6 +70,7 @@ import { useChangeTokenModal } from '@/composables/useChangeTokenModal'
 import { changeAccessToken } from '@/api/settings'
 import Modal from './Modal.vue'
 import ConfirmModal from './ConfirmModal.vue'
+import UiInput from '../ui/UiInput.vue'
 
 const { t } = useI18n()
 const router = useRouter()

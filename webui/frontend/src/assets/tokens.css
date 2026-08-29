@@ -19,6 +19,8 @@
 
   --color-border: rgba(209, 213, 219, 0.8);
   --color-control-border: rgba(209, 213, 219, 0.8);
+  --color-control-disabled-surface: #f3f4f6;
+  --color-control-disabled-text: #6b7280;
   --color-border-subtle: rgba(209, 213, 219, 0.5);
   --color-border-strong: rgba(156, 163, 175, 0.5);
   --color-overlay-border: rgba(255, 255, 255, 0.3);
@@ -31,6 +33,8 @@
   --color-accent-tag: rgba(59, 130, 246, 0.15);
   --color-accent-tag-hover: rgba(59, 130, 246, 0.25);
   --color-focus-ring: rgba(59, 130, 246, 0.5);
+  --color-danger-border: #f87171;
+  --color-danger-focus-ring: rgba(239, 68, 68, 0.5);
   --color-selection: rgba(59, 130, 246, 0.25);
 
   --color-scrollbar-track: #f1f1f1;
@@ -64,6 +68,8 @@
 
   --color-border: rgba(75, 85, 99, 0.3);
   --color-control-border: rgba(75, 85, 99, 0.4);
+  --color-control-disabled-surface: #1f2937;
+  --color-control-disabled-text: #9ca3af;
   --color-border-subtle: rgba(75, 85, 99, 0.2);
   --color-border-strong: rgba(75, 85, 99, 0.3);
   --color-overlay-border: rgba(75, 85, 99, 0.3);
@@ -76,6 +82,8 @@
   --color-accent-tag: rgba(30, 58, 138, 0.3);
   --color-accent-tag-hover: rgba(30, 58, 138, 0.45);
   --color-focus-ring: rgba(59, 130, 246, 0.5);
+  --color-danger-border: #ef4444;
+  --color-danger-focus-ring: rgba(239, 68, 68, 0.5);
   --color-selection: rgba(59, 130, 246, 0.45);
 
   --color-scrollbar-track: #374151;

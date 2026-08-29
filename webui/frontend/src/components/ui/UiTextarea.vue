@@ -1,6 +1,7 @@
 <template>
   <textarea
     class="ui-textarea"
+    :class="{ 'ui-textarea--invalid': invalid }"
     :value="modelValue ?? ''"
     v-bind="$attrs"
     @compositionstart="isComposing = true"
@@ -17,6 +18,7 @@ const props = withDefaults(defineProps<{
   modelModifiers?: {
     trim?: boolean
   }
+  invalid?: boolean
 }>(), {
   modelModifiers: () => ({}),
 })

@@ -176,7 +176,7 @@
         <div class="px-6 py-4 flex-1 overflow-y-auto">
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('provider.name') }}</label>
-            <input v-model="createForm.name" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" :placeholder="$t('provider.name_placeholder') || 'Enter provider name...'" />
+            <UiInput v-model="createForm.name" type="text" class="w-full rounded-lg px-3 py-2" :placeholder="$t('provider.name_placeholder') || 'Enter provider name...'" />
           </div>
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('provider.type') }}</label>
@@ -229,7 +229,7 @@
                 </div>
               </div>
             </div>
-            <input v-model="modelForm.model_id" type="text" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors" :placeholder="$t('provider.model_id_placeholder')" :disabled="modelEditMode" />
+            <UiInput v-model="modelForm.model_id" type="text" class="w-full rounded-lg px-3 py-2 transition-colors" :placeholder="$t('provider.model_id_placeholder')" :disabled="modelEditMode" />
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ $t('provider.model_id_hint') }}</p>
           </div>
           <div v-if="modelSchema">
@@ -285,11 +285,11 @@
           <template v-else>
             <!-- Search + Select all -->
             <div class="flex items-center gap-3 mb-3 flex-shrink-0">
-              <input
+              <UiInput
                 v-model="remoteModelSearch"
                 type="text"
                 :placeholder="$t('provider.search_model')"
-                class="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                class="flex-1 rounded-lg px-3 py-2 text-sm transition-colors"
               />
               <button
                 class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors whitespace-nowrap"

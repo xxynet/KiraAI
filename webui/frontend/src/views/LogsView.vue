@@ -97,13 +97,13 @@
         <div class="px-6 py-5 flex-1 overflow-y-auto">
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('logs.install_packages_label') }}</label>
-            <textarea
+            <UiTextarea
               v-model="installPackagesInput"
               :placeholder="$t('logs.install_packages_placeholder')"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              class="w-full rounded-lg px-3 py-2 font-mono text-sm resize-none transition-colors"
               rows="3"
               @keydown.ctrl.enter="handleInstall"
-            ></textarea>
+            />
           </div>
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
@@ -171,6 +171,7 @@ import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
 import { notify } from '@/composables/useNotification'
 import { IconTrash, IconRefresh, IconDownload, IconPackage, IconSpinner, IconClose } from '@/components/icons'
 import Modal from '@/components/common/Modal.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import type { LogEntry } from '@/types'
 
 // A stable, monotonically increasing id per row. Using the array index as the

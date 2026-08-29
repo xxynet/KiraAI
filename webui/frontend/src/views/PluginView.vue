@@ -70,12 +70,12 @@
           <span>{{ $t('common.refresh') }}</span>
         </button>
         <div class="relative w-full sm:ml-auto sm:w-56">
-          <input
+          <UiInput
             v-model="pluginsSearchTerm"
             type="text"
             :placeholder="$t('plugin.search_placeholder')"
             :aria-label="$t('plugin.search_placeholder')"
-            class="w-full border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            class="w-full rounded-lg pl-9 pr-3 py-1.5 text-sm transition-colors"
           />
           <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         </div>
@@ -483,12 +483,12 @@
             </div>
           </label>
           <div class="relative w-full sm:w-56">
-            <input
+            <UiInput
               v-model="storeSearchTerm"
               type="text"
               :placeholder="$t('plugin.search_placeholder')"
               :aria-label="$t('plugin.search_placeholder')"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              class="w-full rounded-lg pl-9 pr-3 py-1.5 text-sm transition-colors"
             />
             <IconSearch class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           </div>
@@ -661,21 +661,21 @@
             <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
               <div class="mb-3">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('pluginStore.source_name') }}</label>
-                <input
+                <UiInput
                   v-model="newSourceName"
                   type="text"
                   :placeholder="$t('pluginStore.source_name_placeholder')"
-                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                >
+                  class="w-full rounded-lg px-3 py-2 transition-colors"
+                />
               </div>
               <div class="mb-3">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ $t('pluginStore.source_url') }}</label>
-                <input
+                <UiInput
                   v-model="newSourceUrl"
                   type="text"
                   :placeholder="$t('pluginStore.source_url_placeholder')"
-                  class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                >
+                  class="w-full rounded-lg px-3 py-2 transition-colors"
+                />
               </div>
             </div>
           </div>
@@ -774,12 +774,12 @@
           <div v-show="installTab === 'github'">
             <div class="mb-4">
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('plugin.repo_url') }}</label>
-              <input
+              <UiInput
                 v-model="installForm.repo_url"
                 type="text"
                 placeholder="https://github.com/owner/repo"
-                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-              >
+                class="w-full rounded-lg px-3 py-2 transition-colors"
+              />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -991,18 +991,18 @@
         <div class="px-6 py-4 flex-1 overflow-y-auto space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('plugin.mcp_name') }}</label>
-            <input
+            <UiInput
               v-model="mcpForm.name"
               type="text"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-            >
+              class="w-full rounded-lg px-3 py-2 transition-colors"
+            />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ $t('plugin.mcp_description') }}</label>
-            <textarea
+            <UiTextarea
               v-model="mcpForm.description"
               rows="2"
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors resize-none"
+              class="w-full rounded-lg px-3 py-2 transition-colors resize-none"
             />
           </div>
           <div>
@@ -1053,6 +1053,8 @@ import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
 import AlertHint from '@/components/common/AlertHint.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 
 import {
   getPlugins, getPluginConfig, getPluginReadme, updatePluginConfig,
