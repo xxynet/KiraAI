@@ -1,0 +1,72 @@
+/* Semantic theme tokens shared by the WebUI. */
+:root {
+  --color-page: #f2f2f3;
+  --color-surface: #ffffff;
+  --color-surface-raised: rgba(255, 255, 255, 0.7);
+  --color-surface-raised-hover: rgba(255, 255, 255, 0.85);
+  --color-surface-overlay: rgba(255, 255, 255, 0.95);
+  --color-header: rgba(255, 255, 255, 0.2);
+  --color-sidebar: rgba(255, 255, 255, 0.72);
+  --color-sidebar-border: rgba(255, 255, 255, 0.2);
+
+  --color-text-primary: #24141d;
+  --color-text-secondary: #374151;
+  --color-text-muted: #9ca3af;
+  --color-text-on-accent: #ffffff;
+  --color-hover: rgba(0, 0, 0, 0.05);
+
+  --color-border: rgba(209, 213, 219, 0.8);
+  --color-border-subtle: rgba(209, 213, 219, 0.5);
+  --color-border-strong: rgba(156, 163, 175, 0.5);
+
+  --color-accent: #3b82f6;
+  --color-accent-strong: #3864d5;
+  --color-accent-soft: rgba(197, 213, 246, 0.7);
+  --color-accent-soft-hover: rgba(197, 213, 246, 0.8);
+  --color-accent-subtle: rgba(59, 130, 246, 0.1);
+  --color-focus-ring: rgba(59, 130, 246, 0.5);
+  --color-selection: rgba(59, 130, 246, 0.25);
+
+  --color-scrollbar-track: #f1f1f1;
+  --color-scrollbar-thumb: #888888;
+  --color-scrollbar-thumb-hover: #555555;
+
+  --shadow-card: 0 4px 15px rgba(0, 0, 0, 0.05);
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+:root.dark {
+  --color-page: #16161a;
+  --color-surface: #111827;
+  --color-surface-raised: rgba(31, 41, 55, 0.7);
+  --color-surface-raised-hover: rgba(31, 41, 55, 0.85);
+  --color-surface-overlay: rgba(31, 41, 55, 0.95);
+  --color-header: rgba(0, 0, 0, 0.2);
+  --color-sidebar: rgba(0, 0, 0, 0.15);
+  --color-sidebar-border: rgba(255, 255, 255, 0.05);
+
+  --color-text-primary: #f9fafb;
+  --color-text-secondary: #e5e7eb;
+  --color-text-muted: #9ca3af;
+  --color-text-on-accent: #93c5fd;
+  --color-hover: rgba(255, 255, 255, 0.1);
+
+  --color-border: rgba(75, 85, 99, 0.3);
+  --color-border-subtle: rgba(75, 85, 99, 0.2);
+  --color-border-strong: rgba(75, 85, 99, 0.3);
+
+  --color-accent: #3b82f6;
+  --color-accent-strong: #93c5fd;
+  --color-accent-soft: rgba(59, 130, 246, 0.3);
+  --color-accent-soft-hover: rgba(59, 130, 246, 0.4);
+  --color-accent-subtle: rgba(59, 130, 246, 0.2);
+  --color-focus-ring: rgba(59, 130, 246, 0.5);
+  --color-selection: rgba(59, 130, 246, 0.45);
+
+  --color-scrollbar-track: #374151;
+  --color-scrollbar-thumb: #6b7280;
+  --color-scrollbar-thumb-hover: #9ca3af;
+
+  --shadow-card: 0 4px 15px rgba(0, 0, 0, 0.2);
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
