@@ -170,21 +170,50 @@ function cancelEdit() {
   display: inline-flex;
   padding: 2px 6px;
   font-size: 12px;
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-raised) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--color-control-border) !important;
   border-radius: 4px;
   outline: none;
   min-width: 40px;
 }
 
+.tag-input-edit:hover,
+.tag-input-edit:focus,
+.tag-input-edit:focus-visible {
+  border-color: var(--color-accent) !important;
+}
+
+.tag-input-edit:focus,
+.tag-input-edit:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
+}
+
 .tag-input-field {
   flex: 1 1 80px;
   min-width: 80px;
-  border: none !important;
+  color: var(--color-text-primary);
+  caret-color: var(--color-text-primary);
+  background-color: var(--color-surface-raised) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid transparent !important;
   outline: none !important;
-  background: transparent !important;
-  backdrop-filter: none !important;
   box-shadow: none !important;
   font-size: 14px;
   line-height: 1.4;
   padding: 0;
+  transition: border-color 0.15s ease-in-out;
+}
+
+.tag-input-field:focus,
+.tag-input-field:focus-visible {
+  border-color: var(--color-border-strong) !important;
+}
+
+.tag-input-field::placeholder {
+  color: var(--color-text-muted);
 }
 </style>

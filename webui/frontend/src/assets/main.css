@@ -25,19 +25,10 @@
 }
 
 button,
-.nav-item,
-input,
-select,
-textarea {
+.nav-item {
   transition-property: color, background-color, border-color, box-shadow, opacity, transform;
   transition-duration: 150ms;
   transition-timing-function: ease-in-out;
-}
-
-input.transition-colors,
-select.transition-colors,
-textarea.transition-colors {
-  transition: all 0.2s ease-in-out;
 }
 
 /* ==================== Page Background ==================== */
@@ -259,61 +250,8 @@ textarea.transition-colors {
   background-color: var(--color-selection);
 }
 
-/* ==================== Form Inputs ==================== */
-input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)),
-select,
-textarea:where(:not(.ui-textarea)) {
-  background-color: var(--color-surface-raised) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-}
-
-.dark input:where(:not(.ui-input))::placeholder,
-.dark select::placeholder,
-.dark textarea:where(:not(.ui-textarea))::placeholder {
-  color: var(--color-text-muted);
-}
-
 .dark .border-gray-300 {
   border-color: rgba(75, 85, 99, 0.4) !important;
-}
-
-input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):hover,
-select:hover,
-textarea:where(:not(.ui-textarea)):hover,
-.dark input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):hover,
-.dark select:hover,
-.dark textarea:where(:not(.ui-textarea)):hover {
-  border-color: var(--color-accent) !important;
-}
-
-input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus,
-input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus-visible,
-select:focus,
-select:focus-visible,
-textarea:where(:not(.ui-textarea)):focus,
-textarea:where(:not(.ui-textarea)):focus-visible,
-.dark input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus,
-.dark input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus-visible,
-.dark select:focus,
-.dark select:focus-visible,
-.dark textarea:where(:not(.ui-textarea)):focus,
-.dark textarea:where(:not(.ui-textarea)):focus-visible {
-  outline: none;
-  border-color: var(--color-accent) !important;
-  box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
-}
-
-input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus:hover,
-select:focus:hover,
-textarea:where(:not(.ui-textarea)):focus:hover,
-.dark input:not([type="checkbox"], [type="radio"]):where(:not(.ui-input)):focus:hover,
-.dark select:focus:hover,
-.dark textarea:where(:not(.ui-textarea)):focus:hover {
-  border-color: var(--color-accent) !important;
-  box-shadow: 0 0 0 2px var(--color-focus-ring) !important;
 }
 
 /* Protect Monaco Editor internal textarea from global textarea styles */

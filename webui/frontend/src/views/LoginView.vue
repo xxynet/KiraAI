@@ -40,14 +40,14 @@
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <IconKey class="h-5 w-5 text-gray-400 dark:text-gray-500" />
               </div>
-              <input
+              <UiInput
                 v-model="accessToken"
                 type="password"
                 required
                 autocomplete="off"
-                class="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/50 backdrop-blur-sm transition-all duration-200 dark:border-gray-600 dark:bg-gray-700/50 dark:text-white dark:placeholder-gray-400 dark:focus:ring-blue-400"
+                class="block w-full pl-10 pr-3 py-3 rounded-xl transition-all duration-200"
                 :placeholder="$t('login.placeholder')"
-              >
+              />
             </div>
             <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
               {{ $t('login.token_hint') }}
@@ -93,6 +93,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from 'vue-i18n'
+import UiInput from '@/components/ui/UiInput.vue'
 import { IconSun, IconMoon, IconLightning, IconKey, IconSpinner, IconInfo } from '@/components/icons'
 
 const { t } = useI18n()
