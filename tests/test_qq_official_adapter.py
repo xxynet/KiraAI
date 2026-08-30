@@ -46,6 +46,32 @@ def make_adapter(permission_mode="allow_list"):
     )
 
 
+def test_qq_official_defers_botpy_client_creation():
+    adapter = make_adapter()
+
+    assert adapter.client is None
+
+
+def test_qq_official_bounds_reply_state_per_conversation(monkeypatch):
+    adapter = make_adapter()
+    monkeypatch.setattr(qq_official, "QQ_OFFICIAL_MAX_REPLY_IDS_PER_CONVERSATION", 2)
+    target_id = "user-openid"
+    raw_message_ids = ["message-1", "message-2", "message-3"]
+    display_message_ids = []
+    for raw_message_id in raw_message_ids:
+        display_message_ids.append(
+            adapter._remember_reply_id(False, target_id, raw_message_id)
+        )
+        adapter._send_locks[(False, target_id, raw_message_id)] = object()
+
+    expired_key = (False, target_id, raw_message_ids[0])
+    assert (False, target_id, display_message_ids[0]) not in adapter._reply_id_aliases
+    assert expired_key not in adapter._reply_msg_seqs
+    assert expired_key not in adapter._send_locks
+    assert (False, target_id, display_message_ids[1]) in adapter._reply_id_aliases
+    assert (False, target_id, display_message_ids[2]) in adapter._reply_id_aliases
+
+
 @pytest.mark.asyncio
 async def test_qq_official_allow_list_uses_openids():
     adapter = make_adapter()
@@ -156,6 +182,39 @@ async def test_qq_official_uploads_and_sends_local_file():
     assert sent_payloads[0]["media"]["file_uuid"] == "file-uuid"
     assert sent_payloads[0]["content"] is None
 
+
+@pytest.mark.asyncio
+async def test_qq_official_group_file_keeps_reply_message_id():
+    adapter = make_adapter()
+    uploads = []
+    sent_payloads = []
+
+    async def request(_, json):
+        uploads.append(json)
+        return {"file_uuid": "file-uuid", "file_info": "file-info", "ttl": 60}
+
+    async def post_group_message(**payload):
+        sent_payloads.append(payload)
+        return {"id": "sent-group-file"}
+
+    adapter.client = SimpleNamespace(
+        api=SimpleNamespace(
+            _http=SimpleNamespace(request=request),
+            post_group_message=post_group_message,
+        )
+    )
+    adapter._client_task = SimpleNamespace(done=lambda: False)
+    adapter._group_reply_ids["group-openid"] = "incoming-group-message-id"
+
+    result = await adapter.send_group_message(
+        "group-openid", MessageChain([File(str(Path(__file__).resolve()), name="test.py")])
+    )
+
+    assert result.ok
+    assert uploads[0]["group_openid"] == "group-openid"
+    assert sent_payloads[0]["msg_type"] == 7
+    assert sent_payloads[0]["msg_id"] == "incoming-group-message-id"
+    assert sent_payloads[0]["media"]["file_uuid"] == "file-uuid"
 
 @pytest.mark.asyncio
 async def test_qq_official_uses_short_message_id_alias_for_llm_and_reply():

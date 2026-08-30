@@ -5,6 +5,7 @@ import io
 import mimetypes
 import secrets
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -37,6 +38,7 @@ logger = get_logger("qq_official_adapter", "blue")
 QQ_OFFICIAL_BIND_HOST = "q.qq.com"
 QQ_OFFICIAL_QR_TIMEOUT_SECONDS = 300
 QQ_OFFICIAL_QR_POLL_INTERVAL_SECONDS = 2
+QQ_OFFICIAL_MAX_REPLY_IDS_PER_CONVERSATION = 100
 
 
 @dataclass
@@ -84,11 +86,14 @@ class QQOfficialAdapter(IMAdapter):
         self._reply_msg_seqs: dict[tuple[bool, str, str], int] = {}
         self._send_locks: dict[tuple[bool, str, str], asyncio.Lock] = {}
         self._reply_id_aliases: dict[tuple[bool, str, str], str] = {}
+        self._reply_alias_lrus: dict[
+            tuple[bool, str], OrderedDict[str, str]
+        ] = {}
         self._client_task: Optional[asyncio.Task] = None
         self._login_task: Optional[asyncio.Task] = None
         self._login_session: Optional[QQOfficialLoginSession] = None
         self._shutdown_event = asyncio.Event()
-        self.client = _QQOfficialClient(self) if botpy else None
+        self.client = None
 
     async def start(self):
         if botpy is None:
@@ -105,6 +110,8 @@ class QQOfficialAdapter(IMAdapter):
             return
         if self._client_task and not self._client_task.done():
             return
+        if self.client is None:
+            self.client = _QQOfficialClient(self)
         self._client_task = asyncio.create_task(
             self._run_client(), name=f"qq-official:{self.info.name}"
         )
@@ -512,8 +519,24 @@ class QQOfficialAdapter(IMAdapter):
     def _remember_reply_id(self, is_group: bool, target_id: str, message_id: str) -> str:
         display_message_id = self._display_message_id(message_id)
         reply_key = (is_group, target_id, message_id)
+        conversation_key = (is_group, target_id)
+        aliases = self._reply_alias_lrus.setdefault(conversation_key, OrderedDict())
+        previous_message_id = aliases.pop(display_message_id, None)
+        if previous_message_id and previous_message_id != message_id:
+            previous_key = (is_group, target_id, previous_message_id)
+            self._reply_msg_seqs.pop(previous_key, None)
+            self._send_locks.pop(previous_key, None)
+        aliases[display_message_id] = message_id
         self._reply_id_aliases[(is_group, target_id, display_message_id)] = message_id
         self._reply_msg_seqs[reply_key] = 0
+        while len(aliases) > QQ_OFFICIAL_MAX_REPLY_IDS_PER_CONVERSATION:
+            expired_display_id, expired_message_id = aliases.popitem(last=False)
+            self._reply_id_aliases.pop(
+                (is_group, target_id, expired_display_id), None
+            )
+            expired_key = (is_group, target_id, expired_message_id)
+            self._reply_msg_seqs.pop(expired_key, None)
+            self._send_locks.pop(expired_key, None)
         return display_message_id
 
     def _resolve_reply_id(
@@ -577,6 +600,7 @@ class QQOfficialAdapter(IMAdapter):
                 if is_group:
                     payload: dict[str, Any] = {
                         "msg_type": 7 if media else 0,
+                        "msg_id": reply_id,
                         "msg_seq": msg_seq,
                         "content": content or None,
                     }
