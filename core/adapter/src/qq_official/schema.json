@@ -1,0 +1,87 @@
+{
+  "setup_info": {
+    "name": "Create or Connect a QQ Official Bot",
+    "type": "info",
+    "level": "info",
+    "hint": "Create or manage a bot in the QQ Bot Open Platform: https://q.qq.com. Then enter its AppID and AppSecret below. Alternatively, leave both fields empty and enable this adapter to bind a bot by QR code. Do not leave only one credential empty.",
+    "locales": {
+      "zh": {
+        "name": "创建或接入 QQ 官方机器人",
+        "hint": "请前往 QQ 机器人开放平台创建或管理机器人：https://q.qq.com。创建后可在下方填写 AppID 与 AppSecret；也可以将两项同时留空并启用适配器，通过手机 QQ 扫码绑定。请勿只留空其中一项。"
+      }
+    }
+  },
+  "app_id": {
+    "name": "App ID",
+    "type": "string",
+    "default": "",
+    "hint": "AppID from QQ Bot Open Platform. Leave AppID and AppSecret empty to log in by QR code",
+    "locales": {
+      "zh": { "name": "AppID", "hint": "QQ 机器人开放平台的 AppID；与 AppSecret 同时留空时启动扫码登录" }
+    }
+  },
+  "app_secret": {
+    "name": "App Secret",
+    "type": "string",
+    "default": "",
+    "hint": "AppSecret from QQ Bot Open Platform. Leave AppID and AppSecret empty to log in by QR code",
+    "locales": {
+      "zh": { "name": "AppSecret", "hint": "QQ 机器人开放平台的 AppSecret；与 AppID 同时留空时启动扫码登录" }
+    }
+  },
+  "sandbox": {
+    "name": "Sandbox Mode",
+    "type": "switch",
+    "default": false,
+    "hint": "Use the QQ Bot Open Platform sandbox environment",
+    "locales": {
+      "zh": { "name": "沙箱模式", "hint": "使用 QQ 机器人开放平台沙箱环境" }
+    }
+  },
+  "permission_mode": {
+    "name": "Permission Mode",
+    "type": "string",
+    "options": ["allow_list", "deny_list"],
+    "default": "allow_list",
+    "hint": "Allow list or deny list",
+    "locales": {
+      "zh": { "name": "权限模式", "hint": "白名单或黑名单" }
+    }
+  },
+  "group_allow_list": {
+    "name": "Group Allow List",
+    "type": "list",
+    "default": [],
+    "hint": "QQ group openids allowed when permission mode is allow_list",
+    "locales": {
+      "zh": { "name": "群聊白名单", "hint": "白名单模式下允许的群 OpenID" }
+    }
+  },
+  "user_allow_list": {
+    "name": "User Allow List",
+    "type": "list",
+    "default": [],
+    "hint": "QQ user openids allowed when permission mode is allow_list",
+    "locales": {
+      "zh": { "name": "用户白名单", "hint": "白名单模式下允许的用户 OpenID" }
+    }
+  },
+  "group_deny_list": {
+    "name": "Group Deny List",
+    "type": "list",
+    "default": [],
+    "hint": "QQ group openids blocked when permission mode is deny_list",
+    "locales": {
+      "zh": { "name": "群聊黑名单", "hint": "黑名单模式下禁止的群 OpenID" }
+    }
+  },
+  "user_deny_list": {
+    "name": "User Deny List",
+    "type": "list",
+    "default": [],
+    "hint": "QQ user openids blocked when permission mode is deny_list",
+    "locales": {
+      "zh": { "name": "用户黑名单", "hint": "黑名单模式下禁止的用户 OpenID" }
+    }
+  }
+}
