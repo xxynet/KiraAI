@@ -121,9 +121,9 @@
             <label class="block text-sm font-medium text-theme-body mb-2">
               {{ $t('sticker.description') }}
             </label>
-            <UiInput
+            <UiTextarea
               v-model="form.desc"
-              type="text"
+              rows="4"
               class="w-full rounded-lg px-3 py-2 transition-colors"
               :placeholder="$t('sticker.description')"
             />
@@ -172,6 +172,7 @@ import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import ImageDropzone from '@/components/common/ImageDropzone.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { IconPlus, IconWarning, IconImage, IconClose } from '@/components/icons'
 import type { StickerItem } from '@/types'
 
