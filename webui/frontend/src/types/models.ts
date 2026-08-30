@@ -311,6 +311,15 @@ export interface ConfigurationData {
 }
 
 // Session types — mirrors webui/routes/sessions.py
+export interface SessionCapabilities {
+  image_recognition: { enabled: boolean; mode: 'vlm_description' | 'native'; desc_prompt: string }
+  stt: { enabled: boolean }
+  tts: { enabled: boolean }
+  image_generation: { enabled: boolean }
+  video_generation: { enabled: boolean }
+  forward_parsing: { enabled: boolean }
+}
+
 export interface SessionItem {
   id: string
   adapter_name: string
@@ -318,6 +327,7 @@ export interface SessionItem {
   session_id: string
   title?: string
   description?: string
+  capabilities?: SessionCapabilities | null
   message_count: number
 }
 

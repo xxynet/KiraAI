@@ -235,9 +235,13 @@ class MessageProcessor:
         await self.event_bus.publish(batch_msg)
         return True
 
-    async def message_format_to_text(self, message_chain: MessageChain):
+    async def message_format_to_text(self, message_chain: MessageChain, session_id: Optional[str] = None):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
+        capabilities = self.session_manager.get_effective_capabilities(
+            session_id, self.kira_config.get_config("bot_config.capabilities", {})
+        ) if session_id else self.kira_config.get_config("bot_config.capabilities", {})
+        image_recognition = capabilities.get("image_recognition", {})
         for ele in message_chain:
             if isinstance(ele, Text):
                 message_str += ele.text
@@ -252,10 +256,7 @@ class MessageProcessor:
                 else:
                     message_str += f"[At {ele.pid}]"
             elif isinstance(ele, Image):
-                image_mode = self.kira_config.get_config(
-                    "bot_config.capabilities.image_recognition.mode",
-                    "vlm_description",
-                )
+                image_mode = image_recognition.get("mode", "vlm_description")
                 if image_mode == "native":
                     ele.caption = "attached image"
                     message_str += "[Image attached]"
@@ -275,7 +276,7 @@ class MessageProcessor:
                             vlm_model = self.provider_mgr.get_default_vlm()
 
                             # Check if image recognition is enabled
-                            caps = self.kira_config.get_config("bot_config.capabilities.image_recognition", {})
+                            caps = image_recognition
                             if caps.get("enabled", True):
                                 img_prompt = caps.get("desc_prompt", "").strip() or None
                                 img_desc = await desc_img(
@@ -317,10 +318,7 @@ class MessageProcessor:
                     logger.warning(f"Failed to save image: {e}")
                     message_str += f"[Image {str(ele.caption)}]"
             elif isinstance(ele, Sticker):
-                image_mode = self.kira_config.get_config(
-                    "bot_config.capabilities.image_recognition.mode",
-                    "vlm_description",
-                )
+                image_mode = image_recognition.get("mode", "vlm_description")
                 if image_mode == "native":
                     ele.caption = "attached sticker"
                     message_str += "[Sticker attached]"
@@ -340,7 +338,7 @@ class MessageProcessor:
                             vlm_model = self.provider_mgr.get_default_vlm()
 
                             # Check if image recognition is enabled
-                            caps = self.kira_config.get_config("bot_config.capabilities.image_recognition", {})
+                            caps = image_recognition
                             if caps.get("enabled", True):
                                 sticker_prompt = caps.get("desc_prompt", "").strip() or None
                                 sticker_desc = await desc_img(
@@ -373,26 +371,26 @@ class MessageProcessor:
             elif isinstance(ele, Reply):
                 if ele.chain:
                     ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
-                    reply_content = await self.message_format_to_text(ele.chain)
+                    reply_content = await self.message_format_to_text(ele.chain, session_id)
                     message_str += f"[Reply ID: {ele.message_id} content: {reply_content}]"
                 elif ele.message_content:
                     message_str += f"[Reply ID: {ele.message_id} content: {ele.message_content}]"
                 else:
                     message_str += f"[Reply ID: {ele.message_id}]"
             elif isinstance(ele, Forward):
-                caps = self.kira_config.get_config("bot_config.capabilities.forward_parsing", {})
+                caps = capabilities.get("forward_parsing", {})
                 if not caps.get("enabled", True):
                     message_str += "[Forward message]"
                 elif ele.chains:
                     forward_contents = ""
                     for i, chain in enumerate(ele.chains):
                         ele.chains[i].message_list = [x for x in chain if not isinstance(x, Forward)]
-                        forward_content = await self.message_format_to_text(ele.chains[i])
+                        forward_content = await self.message_format_to_text(ele.chains[i], session_id)
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
                 try:
-                    caps = self.kira_config.get_config("bot_config.capabilities.stt", {})
+                    caps = capabilities.get("stt", {})
                     if caps.get("enabled", True):
                         stt_client = self.provider_mgr.get_default_stt()
                         if not stt_client:
@@ -559,7 +557,7 @@ class MessageProcessor:
         for message in event.messages:
             for image in self._iter_message_images(message.chain):
                 await compress_image_element(image, compression_config)
-            message_str = await self.message_format_to_text(message.chain)
+            message_str = await self.message_format_to_text(message.chain, sid)
             message.message_str = message_str
 
         # EventType.ON_IM_BATCH_MESSAGE

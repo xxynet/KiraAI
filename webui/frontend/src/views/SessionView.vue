@@ -99,6 +99,32 @@
           />
         </div>
         <div class="mb-4">
+          <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('sessions.capabilities') }}</label>
+          <div class="flex gap-2">
+            <button type="button" class="px-3 py-2 rounded-lg text-sm" :class="capabilityMode === 'global' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-theme-body dark:bg-gray-700'" @click="capabilityMode = 'global'">{{ $t('sessions.capabilities_global') }}</button>
+            <button type="button" class="px-3 py-2 rounded-lg text-sm" :class="capabilityMode === 'custom' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-theme-body dark:bg-gray-700'" @click="capabilityMode = 'custom'">{{ $t('sessions.capabilities_custom') }}</button>
+          </div>
+          <p class="text-xs text-theme-subtle mt-2">{{ capabilityMode === 'global' ? $t('sessions.capabilities_global_hint') : $t('sessions.capabilities_custom_hint') }}</p>
+          <div v-if="capabilityMode === 'custom'" class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.image_recognition.enabled = !sessionCapabilities.image_recognition.enabled"><span>{{ $t('configuration.message.image_recognition_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.image_recognition.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.image_recognition.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
+            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.stt.enabled = !sessionCapabilities.stt.enabled"><span>{{ $t('configuration.message.stt_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.stt.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.stt.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
+            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.tts.enabled = !sessionCapabilities.tts.enabled"><span>{{ $t('configuration.message.tts_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.tts.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.tts.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
+            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.image_generation.enabled = !sessionCapabilities.image_generation.enabled"><span>{{ $t('configuration.message.image_generation_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.image_generation.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.image_generation.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
+            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.video_generation.enabled = !sessionCapabilities.video_generation.enabled"><span>{{ $t('configuration.message.video_generation_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.video_generation.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.video_generation.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
+            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.forward_parsing.enabled = !sessionCapabilities.forward_parsing.enabled"><span>{{ $t('configuration.message.forward_parsing_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.forward_parsing.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.forward_parsing.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
+            <div>
+              <label class="block text-sm text-theme-body mb-1">{{ $t('configuration.message.image_recognition_mode') }}</label>
+              <CustomSelect
+                v-model="sessionCapabilities.image_recognition.mode"
+                :options="[{ value: 'vlm_description', label: $t('configuration.message.image_recognition_mode_vlm') }, { value: 'native', label: $t('configuration.message.image_recognition_mode_native') }]"
+                height="42px"
+              />
+            </div>
+            <div><label class="block text-sm text-theme-body mb-1">{{ $t('configuration.message.desc_prompt') }}</label><UiInput v-model="sessionCapabilities.image_recognition.desc_prompt" class="w-full rounded-lg px-3 py-2" /></div>
+          </div>
+        </div>
+
+        <div class="mb-4">
           <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('sessions.session_data') }}</label>
           <MonacoEditor
             v-model="editorContent"
@@ -149,13 +175,15 @@ import { useI18n } from 'vue-i18n'
 import { ChatDotRound } from '@element-plus/icons-vue'
 import { notify } from '@/composables/useNotification'
 import { getSessions, getSession, updateSession, deleteSession } from '@/api/session'
+import { getConfiguration } from '@/api/config'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import CustomSelect from '@/components/common/CustomSelect.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { IconPlus, IconClose, IconCopy } from '@/components/icons'
-import type { SessionItem } from '@/types'
+import type { SessionCapabilities, SessionItem } from '@/types'
 
 const { t } = useI18n()
 const sessions = ref<SessionItem[]>([])
@@ -170,6 +198,20 @@ const clearConfirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
 const confirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
 const sessionToClear = ref<SessionItem | null>(null)
 const sessionToDelete = ref<SessionItem | null>(null)
+const createDefaultCapabilities = (): SessionCapabilities => ({
+  image_recognition: { enabled: true, mode: 'vlm_description', desc_prompt: '' },
+  stt: { enabled: true },
+  tts: { enabled: true },
+  image_generation: { enabled: true },
+  video_generation: { enabled: false },
+  forward_parsing: { enabled: true },
+})
+const capabilityMode = ref<'global' | 'custom'>('global')
+const sessionCapabilities = ref<SessionCapabilities>(createDefaultCapabilities())
+
+function cloneCapabilities(capabilities: SessionCapabilities): SessionCapabilities {
+  return JSON.parse(JSON.stringify(capabilities)) as SessionCapabilities
+}
 
 async function loadSessions() {
   try {
@@ -267,10 +309,14 @@ async function editSession(session: SessionItem) {
   }
   currentSessionId.value = id
   try {
-    const res = await getSession(id)
+    const [res, configRes] = await Promise.all([getSession(id), getConfiguration()])
     const data = res.data
     sessionTitle.value = data.title || ''
     sessionDescription.value = data.description || ''
+    const globalCapabilities = configRes.data.configuration.bot_config?.capabilities as SessionCapabilities | undefined
+    capabilityMode.value = data.capabilities ? 'custom' : 'global'
+    sessionCapabilities.value = cloneCapabilities(data.capabilities || globalCapabilities || createDefaultCapabilities())
+
     messageCount.value = data.messages?.length || 0
     editorContent.value = JSON.stringify(data.messages || [], null, 2)
     editorVisible.value = true
@@ -298,6 +344,7 @@ async function handleSave() {
     await updateSession(currentSessionId.value, {
       title: sessionTitle.value,
       description: sessionDescription.value,
+      capabilities: capabilityMode.value === 'custom' ? sessionCapabilities.value : null,
       messages,
     })
     notify(t('sessions.save_success'), 'success')

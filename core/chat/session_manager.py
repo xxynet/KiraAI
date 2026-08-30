@@ -162,6 +162,40 @@ class SessionManager:
                 session_data["description"] = description
             self._save_memory()
 
+    @staticmethod
+    def _merge_capabilities(global_capabilities: dict, overrides: dict) -> dict:
+        merged = copy.deepcopy(global_capabilities)
+        for key, value in overrides.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = SessionManager._merge_capabilities(merged[key], value)
+            else:
+                merged[key] = copy.deepcopy(value)
+        return merged
+
+    def get_effective_capabilities(self, session: str, global_capabilities: dict) -> dict:
+        """Return session-specific capabilities, falling back to global settings."""
+        global_config = copy.deepcopy(global_capabilities) if isinstance(global_capabilities, dict) else {}
+        with self.memory_lock:
+            session_data = self.chat_memory.get(session, {})
+            overrides = session_data.get("capabilities") if isinstance(session_data, dict) else None
+            overrides = copy.deepcopy(overrides) if isinstance(overrides, dict) else None
+        if overrides is None:
+            return global_config
+        return self._merge_capabilities(global_config, overrides)
+
+    def update_session_capabilities(self, session: str, capabilities: Optional[dict]):
+        """Persist custom capabilities, or remove them to follow global settings."""
+        if capabilities is not None and not isinstance(capabilities, dict):
+            raise ValueError("Session capabilities must be an object or null")
+        self._ensure_session_data(session)
+        with self.memory_lock:
+            session_data = self.chat_memory[session]
+            if capabilities is None:
+                session_data.pop("capabilities", None)
+            else:
+                session_data["capabilities"] = copy.deepcopy(capabilities)
+            self._save_memory()
+
     def get_memory_count(self, session: str) -> int:
         if session not in self.chat_memory:
             return 0

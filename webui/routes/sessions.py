@@ -88,6 +88,7 @@ class SessionsRoutes(Routes):
             "session_id": session_key,
             "title": title,
             "description": description,
+            "capabilities": session_meta.get("capabilities"),
             "messages": memory,
         }
 
@@ -97,6 +98,8 @@ class SessionsRoutes(Routes):
 
         messages = payload.get("messages")
         title = payload.get("title")
+        capabilities_provided = "capabilities" in payload
+        capabilities = payload.get("capabilities")
         description = payload.get("description")
 
         if messages is not None:
@@ -106,6 +109,13 @@ class SessionsRoutes(Routes):
             self.lifecycle.session_manager.update_session_info(
                 session_id, title=title, description=description
             )
+        if capabilities_provided:
+            if capabilities is not None and not isinstance(capabilities, dict):
+                raise HTTPException(status_code=400, detail="Capabilities must be an object or null")
+            self.lifecycle.session_manager.update_session_capabilities(
+                session_id, capabilities
+            )
+
 
         parts = session_id.split(":")
         if len(parts) >= 3:
@@ -117,6 +127,7 @@ class SessionsRoutes(Routes):
             session_type = ""
             session_key = session_id
 
+        session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})
         return {
             "id": session_id,
             "adapter_name": adapter_name,
@@ -124,6 +135,7 @@ class SessionsRoutes(Routes):
             "session_id": session_key,
             "title": title if title is not None else "",
             "description": description if description is not None else "",
+            "capabilities": session_meta.get("capabilities"),
             "messages": messages,
         }
 
