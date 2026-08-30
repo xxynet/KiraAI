@@ -12,7 +12,7 @@ from core.adapter.adapter_info import AdapterInfo
 from core.adapter.src.qq_official import qq_official
 from core.adapter.src.qq_official.qq_official import QQOfficialAdapter
 from core.chat import MessageChain
-from core.chat.message_elements import At, Emoji, Image, Record, Reply, Text
+from core.chat.message_elements import At, Emoji, File, Image, Record, Reply, Text
 
 
 def test_qq_official_schema_starts_with_setup_info():
@@ -87,7 +87,7 @@ def test_qq_official_maps_amr_attachment_to_record():
         ],
     )
 
-    chain = QQOfficialAdapter._message_chain(message)
+    chain = make_adapter()._message_chain(message, is_group=False, target_id="user-openid")
 
     assert isinstance(chain.message_list[0], Record)
     assert not isinstance(chain.message_list[0], Image)
@@ -120,6 +120,43 @@ async def test_qq_official_increments_msg_seq_for_multiple_replies():
 
 
 @pytest.mark.asyncio
+async def test_qq_official_uploads_and_sends_local_file():
+    adapter = make_adapter()
+    uploads = []
+    sent_payloads = []
+
+    async def request(_, json):
+        uploads.append(json)
+        return {"file_uuid": "file-uuid", "file_info": "file-info", "ttl": 60}
+
+    async def post_c2c_message(**payload):
+        sent_payloads.append(payload)
+        return {"id": "sent-file"}
+
+    adapter.client = SimpleNamespace(
+        api=SimpleNamespace(
+            _http=SimpleNamespace(request=request),
+            post_c2c_message=post_c2c_message,
+        )
+    )
+    adapter._client_task = SimpleNamespace(done=lambda: False)
+    adapter._direct_reply_ids["user-openid"] = "incoming-message-id"
+    file_path = str(Path(__file__).resolve())
+
+    result = await adapter.send_direct_message(
+        "user-openid", MessageChain([File(file_path, name="test.py")])
+    )
+
+    assert result.ok
+    assert uploads[0]["file_type"] == 4
+    assert uploads[0]["file_name"] == "test.py"
+    assert uploads[0]["file_data"]
+    assert sent_payloads[0]["msg_type"] == 7
+    assert sent_payloads[0]["media"]["file_uuid"] == "file-uuid"
+    assert sent_payloads[0]["content"] is None
+
+
+@pytest.mark.asyncio
 async def test_qq_official_uses_short_message_id_alias_for_llm_and_reply():
     adapter = make_adapter()
     raw_message_id = "ROBOT1.0_" + "x" * 300
@@ -142,6 +179,46 @@ async def test_qq_official_uses_short_message_id_alias_for_llm_and_reply():
         "user-openid",
         MessageChain([Reply(display_message_id), Text("reply")]),
     ) == raw_message_id
+
+
+@pytest.mark.asyncio
+async def test_qq_official_reads_quoted_message_with_short_reply_id():
+    adapter = make_adapter()
+    raw_quote_id = "ROBOT1.0_" + "q" * 300
+    message = SimpleNamespace(
+        id="incoming-message-id",
+        content="我的回复",
+        attachments=[],
+        author=SimpleNamespace(user_openid="user-openid"),
+        message_type=103,
+        message_reference=SimpleNamespace(message_id=raw_quote_id),
+        msg_elements=[
+            SimpleNamespace(
+                id=raw_quote_id,
+                content="被引用的内容",
+                attachments=[],
+            )
+        ],
+    )
+
+    await adapter._handle_direct_message(message)
+
+    event = adapter._event_queue.get_nowait()
+    reply, text = event.message.chain.message_list
+    assert isinstance(reply, Reply)
+    assert reply.message_id.startswith("qqo-")
+    assert raw_quote_id not in reply.message_id
+    assert isinstance(reply.chain.message_list[0], Text)
+    assert reply.chain.message_list[0].text == "被引用的内容"
+    assert isinstance(text, Text)
+    assert text.text == "我的回复"
+    assert adapter._resolve_reply_id(
+        False,
+        "user-openid",
+        MessageChain([Reply(reply.message_id), Text("reply")]),
+    ) == raw_quote_id
+
+
 @pytest.mark.asyncio
 async def test_qq_official_empty_credentials_start_qr_login(monkeypatch):
     adapter = make_adapter()

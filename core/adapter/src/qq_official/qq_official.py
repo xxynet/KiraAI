@@ -15,8 +15,10 @@ from Crypto.Cipher import AES
 
 try:
     import botpy
+    from botpy.http import Route
 except ImportError:
     botpy = None
+    Route = None
 
 try:
     import qrcode as qrcode_lib
@@ -54,7 +56,7 @@ class _QQOfficialClient(botpy.Client if botpy else object):
         super().__init__(
             intents=intents,
             is_sandbox=adapter.sandbox,
-            bot_log=None,
+            bot_log=False,
         )
 
     async def on_group_at_message_create(self, message):
@@ -288,17 +290,22 @@ class QQOfficialAdapter(IMAdapter):
         return is_listed if self.permission_mode == "allow_list" else not is_listed
 
     @staticmethod
-    def _message_chain(message) -> MessageChain:
+    def _field_value(value: Any, field: str, default: Any = None) -> Any:
+        if isinstance(value, dict):
+            return value.get(field, default)
+        return getattr(value, field, default)
+
+    @classmethod
+    def _content_elements(cls, content: Optional[str], attachments: list[Any]) -> list[Any]:
         elements: list[Any] = []
-        content = getattr(message, "content", None)
         if content:
             elements.append(Text(content))
-        for attachment in getattr(message, "attachments", []) or []:
-            url = getattr(attachment, "url", None)
+        for attachment in attachments or []:
+            url = cls._field_value(attachment, "url")
             if not url:
                 continue
-            name = getattr(attachment, "filename", None)
-            content_type = str(getattr(attachment, "content_type", "") or "").lower()
+            name = cls._field_value(attachment, "filename")
+            content_type = str(cls._field_value(attachment, "content_type", "") or "").lower()
             guessed_type, _ = mimetypes.guess_type(name or "")
             guessed_mime = (guessed_type or "").lower()
             mime = (
@@ -319,12 +326,60 @@ class QQOfficialAdapter(IMAdapter):
                         File(
                             url,
                             name=name,
-                            size=str(getattr(attachment, "size", "") or "") or None,
+                            size=str(cls._field_value(attachment, "size", "") or "") or None,
                             mime=mime or None,
                         )
                     )
             except ValueError:
                 elements.append(Text("[Attachment]"))
+        return elements
+
+    @classmethod
+    def _quoted_message_details(cls, message) -> tuple[str, Optional[str], list[Any]]:
+        message_reference = cls._field_value(message, "message_reference")
+        quoted_message_id = str(
+            cls._field_value(message_reference, "message_id", "") or ""
+        )
+        quoted_content: Optional[str] = None
+        quoted_attachments: list[Any] = []
+        try:
+            is_quoted_message = int(cls._field_value(message, "message_type", 0) or 0) == 103
+        except (TypeError, ValueError):
+            is_quoted_message = False
+        message_elements = cls._field_value(message, "msg_elements", [])
+        if is_quoted_message and isinstance(message_elements, list) and message_elements:
+            quoted_element = message_elements[0]
+            quoted_message_id = quoted_message_id or str(
+                cls._field_value(quoted_element, "id")
+                or cls._field_value(quoted_element, "message_id", "")
+                or ""
+            )
+            quoted_content = cls._field_value(quoted_element, "content")
+            quoted_attachments = cls._field_value(quoted_element, "attachments", []) or []
+        return quoted_message_id, quoted_content, quoted_attachments
+
+    def _message_chain(self, message, is_group: bool, target_id: str) -> MessageChain:
+        elements: list[Any] = []
+        quoted_message_id, quoted_content, quoted_attachments = self._quoted_message_details(message)
+        if quoted_message_id or quoted_content or quoted_attachments:
+            display_message_id = (
+                self._remember_reply_id(is_group, target_id, quoted_message_id)
+                if quoted_message_id
+                else ""
+            )
+            quoted_chain = self._content_elements(quoted_content, quoted_attachments)
+            elements.append(
+                Reply(
+                    display_message_id,
+                    chain=MessageChain(quoted_chain) if quoted_chain else None,
+                )
+            )
+        elements.extend(
+            self._content_elements(
+                self._field_value(message, "content"),
+                self._field_value(message, "attachments", []) or [],
+            )
+        )
         return MessageChain(elements or [Text("[Unsupported message]")])
 
     async def _handle_group_message(self, message):
@@ -348,7 +403,7 @@ class QQOfficialAdapter(IMAdapter):
                     is_mentioned=True,
                     message_id=display_message_id or message_id,
                     self_id=self.app_id,
-                    chain=self._message_chain(message),
+                    chain=self._message_chain(message, is_group=True, target_id=group_id),
                 ),
                 timestamp=int(time.time()),
             )
@@ -373,7 +428,7 @@ class QQOfficialAdapter(IMAdapter):
                     is_mentioned=True,
                     message_id=display_message_id or message_id,
                     self_id=self.app_id,
-                    chain=self._message_chain(message),
+                    chain=self._message_chain(message, is_group=False, target_id=user_id),
                 ),
                 timestamp=int(time.time()),
             )
@@ -391,6 +446,8 @@ class QQOfficialAdapter(IMAdapter):
                 parts.append(element.emoji_desc or "")
             elif isinstance(element, Reply):
                 continue
+            elif isinstance(element, File):
+                continue
             else:
                 parts.append("[Unsupported message element]")
         return "".join(parts).strip()
@@ -402,6 +459,49 @@ class QQOfficialAdapter(IMAdapter):
         else:
             value = getattr(result, "id", None) or getattr(result, "message_id", None)
         return str(value) if value is not None else None
+
+    async def _upload_file(
+        self, target_id: str, file_element: File, is_group: bool
+    ) -> Optional[Any]:
+        """Upload a file and return the QQ media payload."""
+        if not self.client:
+            return None
+        if file_element.file_type == "url":
+            if is_group:
+                return await self.client.api.post_group_file(
+                    group_openid=target_id,
+                    file_type=4,
+                    url=file_element.file,
+                    srv_send_msg=False,
+                )
+            return await self.client.api.post_c2c_file(
+                openid=target_id,
+                file_type=4,
+                url=file_element.file,
+                srv_send_msg=False,
+            )
+
+        if Route is None:
+            raise RuntimeError("qq-botpy is required to upload local files")
+        file_path = await file_element.to_path()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
+        payload: dict[str, Any] = {
+            "file_type": 4,
+            "file_data": base64.b64encode(file_data).decode("ascii"),
+            "srv_send_msg": False,
+        }
+        file_name = file_element.guess_name()
+        if file_name:
+            payload["file_name"] = file_name
+        if is_group:
+            payload["group_openid"] = target_id
+            route = Route(
+                "POST", "/v2/groups/{group_openid}/files", group_openid=target_id
+            )
+        else:
+            payload["openid"] = target_id
+            route = Route("POST", "/v2/users/{openid}/files", openid=target_id)
+        return await self.client.api._http.request(route, json=payload)
 
     @staticmethod
     def _display_message_id(message_id: str) -> str:
@@ -443,7 +543,12 @@ class QQOfficialAdapter(IMAdapter):
         if not self.client or not self._client_task or self._client_task.done():
             return KiraIMSentResult(ok=False, err="QQ official bot is not connected")
         content = self._text_content(send_message_obj)
-        if not content:
+        file_elements = [element for element in send_message_obj if isinstance(element, File)]
+        if len(file_elements) > 1:
+            return KiraIMSentResult(
+                ok=False, err="QQ official bot can send only one file per message"
+            )
+        if not content and not file_elements:
             return KiraIMSentResult(ok=False, err="QQ official bot cannot send an empty message")
         reply_id = self._resolve_reply_id(is_group, target_id, send_message_obj)
         if not reply_id:
@@ -451,27 +556,47 @@ class QQOfficialAdapter(IMAdapter):
                 ok=False,
                 err="QQ official bot needs a received message before replying to this conversation",
             )
+        media = None
+        if file_elements:
+            try:
+                media = await self._upload_file(target_id, file_elements[0], is_group)
+            except Exception as exc:
+                logger.error(f"Failed to upload QQ official file: {exc}")
+                return KiraIMSentResult(
+                    ok=False, err=f"Failed to upload QQ official file: {exc}"
+                )
+            if not media:
+                return KiraIMSentResult(
+                    ok=False, err="QQ official file upload returned no media"
+                )
         send_key = (is_group, target_id, reply_id)
         lock = self._send_locks.setdefault(send_key, asyncio.Lock())
         async with lock:
             msg_seq = self._reply_msg_seqs.get(send_key, 0) + 1
             try:
                 if is_group:
+                    payload: dict[str, Any] = {
+                        "msg_type": 7 if media else 0,
+                        "msg_seq": msg_seq,
+                        "content": content or None,
+                    }
+                    if media:
+                        payload["media"] = media
+                    else:
+                        payload["msg_id"] = reply_id
                     result = await self.client.api.post_group_message(
-                        group_openid=target_id,
-                        msg_type=0,
-                        msg_id=reply_id,
-                        msg_seq=msg_seq,
-                        content=content,
+                        group_openid=target_id, **payload
                     )
                 else:
-                    result = await self.client.api.post_c2c_message(
-                        openid=target_id,
-                        msg_type=0,
-                        msg_id=reply_id,
-                        msg_seq=msg_seq,
-                        content=content,
-                    )
+                    payload = {
+                        "msg_type": 7 if media else 0,
+                        "msg_id": reply_id,
+                        "msg_seq": msg_seq,
+                        "content": content or None,
+                    }
+                    if media:
+                        payload["media"] = media
+                    result = await self.client.api.post_c2c_message(openid=target_id, **payload)
                 self._reply_msg_seqs[send_key] = msg_seq
                 message_id = self._result_message_id(result)
                 display_message_id = (
