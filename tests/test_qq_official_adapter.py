@@ -74,7 +74,8 @@ def test_qq_official_text_content_omits_reply_metadata():
     assert content == "Hello @Alice!."
 
 
-def test_qq_official_maps_amr_attachment_to_record():
+@pytest.mark.asyncio
+async def test_qq_official_maps_amr_attachment_to_record():
     message = SimpleNamespace(
         content="",
         attachments=[
