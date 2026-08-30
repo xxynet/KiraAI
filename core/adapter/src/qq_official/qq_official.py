@@ -1,9 +1,12 @@
 import asyncio
 import base64
+import hashlib
 import io
+import mimetypes
 import secrets
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional, Union
 from urllib.parse import quote
 
@@ -23,7 +26,7 @@ except ImportError:
 from core.adapter.adapter_utils import IMAdapter
 from core.chat import KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain
 from core.chat import Group, User
-from core.chat.message_elements import At, Emoji, Image, Reply, Text
+from core.chat.message_elements import At, Emoji, File, Image, Record, Reply, Text, Video
 from core.logging_manager import get_logger
 
 
@@ -73,9 +76,12 @@ class QQOfficialAdapter(IMAdapter):
         self.app_id = str(self.config.get("app_id", "")).strip()
         self.app_secret = str(self.config.get("app_secret", "")).strip()
         self.sandbox = bool(self.config.get("sandbox", False))
-        self.message_types = ["text", "at", "reply", "emoji"]
+        self.message_types = ["text", "img", "at", "reply", "record", "file", "video", "emoji"]
         self._group_reply_ids: dict[str, str] = {}
         self._direct_reply_ids: dict[str, str] = {}
+        self._reply_msg_seqs: dict[tuple[bool, str, str], int] = {}
+        self._send_locks: dict[tuple[bool, str, str], asyncio.Lock] = {}
+        self._reply_id_aliases: dict[tuple[bool, str, str], str] = {}
         self._client_task: Optional[asyncio.Task] = None
         self._login_task: Optional[asyncio.Task] = None
         self._login_session: Optional[QQOfficialLoginSession] = None
@@ -289,11 +295,36 @@ class QQOfficialAdapter(IMAdapter):
             elements.append(Text(content))
         for attachment in getattr(message, "attachments", []) or []:
             url = getattr(attachment, "url", None)
-            if url:
-                try:
-                    elements.append(Image(url, name=getattr(attachment, "filename", None)))
-                except ValueError:
-                    elements.append(Text("[Attachment]"))
+            if not url:
+                continue
+            name = getattr(attachment, "filename", None)
+            content_type = str(getattr(attachment, "content_type", "") or "").lower()
+            guessed_type, _ = mimetypes.guess_type(name or "")
+            guessed_mime = (guessed_type or "").lower()
+            mime = (
+                guessed_mime
+                if content_type in {"", "application/octet-stream", "binary/octet-stream"}
+                else content_type
+            )
+            suffix = Path(name or "").suffix.lower()
+            try:
+                if mime.startswith("image/"):
+                    elements.append(Image(url, name=name, mime=mime))
+                elif mime.startswith("audio/") or suffix in {".amr", ".silk", ".ogg", ".mp3", ".wav", ".m4a", ".aac", ".flac"}:
+                    elements.append(Record(url, name=name, mime=mime or None))
+                elif mime.startswith("video/"):
+                    elements.append(Video(url, name=name, mime=mime))
+                else:
+                    elements.append(
+                        File(
+                            url,
+                            name=name,
+                            size=str(getattr(attachment, "size", "") or "") or None,
+                            mime=mime or None,
+                        )
+                    )
+            except ValueError:
+                elements.append(Text("[Attachment]"))
         return MessageChain(elements or [Text("[Unsupported message]")])
 
     async def _handle_group_message(self, message):
@@ -302,8 +333,10 @@ class QQOfficialAdapter(IMAdapter):
         if not group_id or not user_id or not self._is_allowed(group_id, is_group=True):
             return
         message_id = str(getattr(message, "id", "") or "")
+        display_message_id = ""
         if message_id:
             self._group_reply_ids[group_id] = message_id
+            display_message_id = self._remember_reply_id(True, group_id, message_id)
         self.publish(
             KiraMessageEvent(
                 adapter=self.info,
@@ -313,7 +346,7 @@ class QQOfficialAdapter(IMAdapter):
                     group=Group(group_id=group_id, group_name=group_id),
                     sender=User(user_id=user_id, nickname=user_id),
                     is_mentioned=True,
-                    message_id=message_id,
+                    message_id=display_message_id or message_id,
                     self_id=self.app_id,
                     chain=self._message_chain(message),
                 ),
@@ -326,8 +359,10 @@ class QQOfficialAdapter(IMAdapter):
         if not user_id or not self._is_allowed(user_id, is_group=False):
             return
         message_id = str(getattr(message, "id", "") or "")
+        display_message_id = ""
         if message_id:
             self._direct_reply_ids[user_id] = message_id
+            display_message_id = self._remember_reply_id(False, user_id, message_id)
         self.publish(
             KiraMessageEvent(
                 adapter=self.info,
@@ -336,7 +371,7 @@ class QQOfficialAdapter(IMAdapter):
                     timestamp=int(time.time()),
                     sender=User(user_id=user_id, nickname=user_id),
                     is_mentioned=True,
-                    message_id=message_id,
+                    message_id=display_message_id or message_id,
                     self_id=self.app_id,
                     chain=self._message_chain(message),
                 ),
@@ -368,6 +403,30 @@ class QQOfficialAdapter(IMAdapter):
             value = getattr(result, "id", None) or getattr(result, "message_id", None)
         return str(value) if value is not None else None
 
+    @staticmethod
+    def _display_message_id(message_id: str) -> str:
+        """Return a short stable ID suitable for the LLM context."""
+        digest = hashlib.sha256(message_id.encode("utf-8")).hexdigest()[:10]
+        return f"qqo-{digest}"
+
+    def _remember_reply_id(self, is_group: bool, target_id: str, message_id: str) -> str:
+        display_message_id = self._display_message_id(message_id)
+        reply_key = (is_group, target_id, message_id)
+        self._reply_id_aliases[(is_group, target_id, display_message_id)] = message_id
+        self._reply_msg_seqs[reply_key] = 0
+        return display_message_id
+
+    def _resolve_reply_id(
+        self, is_group: bool, target_id: str, send_message_obj: MessageChain
+    ) -> Optional[str]:
+        for element in send_message_obj:
+            if isinstance(element, Reply):
+                return self._reply_id_aliases.get(
+                    (is_group, target_id, element.message_id), element.message_id
+                )
+        reply_ids = self._group_reply_ids if is_group else self._direct_reply_ids
+        return reply_ids.get(target_id)
+
     async def send_group_message(
         self, group_id: Union[int, str], send_message_obj: MessageChain
     ) -> Optional[KiraIMSentResult]:
@@ -386,24 +445,42 @@ class QQOfficialAdapter(IMAdapter):
         content = self._text_content(send_message_obj)
         if not content:
             return KiraIMSentResult(ok=False, err="QQ official bot cannot send an empty message")
-        reply_ids = self._group_reply_ids if is_group else self._direct_reply_ids
-        reply_id = reply_ids.get(target_id)
+        reply_id = self._resolve_reply_id(is_group, target_id, send_message_obj)
         if not reply_id:
             return KiraIMSentResult(
                 ok=False,
                 err="QQ official bot needs a received message before replying to this conversation",
             )
-        try:
-            if is_group:
-                result = await self.client.api.post_group_message(
-                    group_openid=target_id, msg_type=0, msg_id=reply_id, content=content
+        send_key = (is_group, target_id, reply_id)
+        lock = self._send_locks.setdefault(send_key, asyncio.Lock())
+        async with lock:
+            msg_seq = self._reply_msg_seqs.get(send_key, 0) + 1
+            try:
+                if is_group:
+                    result = await self.client.api.post_group_message(
+                        group_openid=target_id,
+                        msg_type=0,
+                        msg_id=reply_id,
+                        msg_seq=msg_seq,
+                        content=content,
+                    )
+                else:
+                    result = await self.client.api.post_c2c_message(
+                        openid=target_id,
+                        msg_type=0,
+                        msg_id=reply_id,
+                        msg_seq=msg_seq,
+                        content=content,
+                    )
+                self._reply_msg_seqs[send_key] = msg_seq
+                message_id = self._result_message_id(result)
+                display_message_id = (
+                    self._remember_reply_id(is_group, target_id, message_id)
+                    if message_id
+                    else None
                 )
-            else:
-                result = await self.client.api.post_c2c_message(
-                    openid=target_id, msg_type=0, msg_id=reply_id, content=content
-                )
-            return KiraIMSentResult(message_id=self._result_message_id(result))
-        except Exception as exc:
-            scope = "group" if is_group else "direct"
-            logger.error(f"Failed to send QQ official {scope} message: {exc}")
-            return KiraIMSentResult(ok=False, err=f"Failed to send QQ official message: {exc}")
+                return KiraIMSentResult(message_id=display_message_id)
+            except Exception as exc:
+                scope = "group" if is_group else "direct"
+                logger.error(f"Failed to send QQ official {scope} message: {exc}")
+                return KiraIMSentResult(ok=False, err=f"Failed to send QQ official message: {exc}")
