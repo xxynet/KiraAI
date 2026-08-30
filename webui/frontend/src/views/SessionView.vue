@@ -59,6 +59,7 @@
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
               <button class="text-blue-600 hover:text-blue-900 dark:hover:text-blue-300 mr-3" @click="editSession(session)">{{ $t('sessions.edit') }}</button>
+              <button class="text-amber-600 hover:text-amber-900 dark:hover:text-amber-600 mr-3" @click="handleClear(session)">{{ $t('sessions.clear') }}</button>
               <button class="text-red-600 hover:text-red-900 dark:hover:text-red-300" @click="handleDelete(session)">{{ $t('sessions.delete') }}</button>
             </td>
           </tr>
@@ -70,7 +71,7 @@
   <!-- Session Editor Modal -->
   <Modal
     v-model="editorVisible"
-    content-class="max-w-6xl"
+    content-class="max-w-4xl"
     content-style="max-height: 95vh;"
   >
     <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl flex flex-col max-h-[95vh] modal-card">
@@ -90,7 +91,12 @@
         </div>
         <div class="mb-4">
           <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('sessions.description') }}</label>
-          <UiTextarea v-model="sessionDescription" rows="2" class="w-full rounded-lg px-3 py-2 resize-none" />
+          <UiTextarea
+            v-model="sessionDescription"
+            :placeholder="$t('sessions.description_placeholder')"
+            rows="2"
+            class="w-full rounded-lg px-3 py-2 resize-none"
+          />
         </div>
         <div class="mb-4">
           <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('sessions.session_data') }}</label>
@@ -118,6 +124,14 @@
       </div>
     </div>
   </Modal>
+  <ConfirmModal
+    ref="clearConfirmModalRef"
+    :title="$t('sessions.clear_confirm_title')"
+    :message="$t('sessions.clear_confirm_message')"
+    :cancel-text="$t('sessions.modal_cancel')"
+    :confirm-text="$t('sessions.clear')"
+    @confirm="onClearConfirmed"
+  />
 
   <ConfirmModal
     ref="confirmModalRef"
@@ -152,7 +166,9 @@ const sessionTitle = ref('')
 const sessionDescription = ref('')
 const messageCount = ref(0)
 const saving = ref(false)
+const clearConfirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
 const confirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
+const sessionToClear = ref<SessionItem | null>(null)
 const sessionToDelete = ref<SessionItem | null>(null)
 
 async function loadSessions() {
@@ -220,7 +236,7 @@ function getDisplayTitleSource(session: SessionItem): string {
 
 function getDisplayTitle(session: SessionItem): string {
   const source = getDisplayTitleSource(session)
-  const maxLength = 32
+  const maxLength = 20
   if (source.length > maxLength) {
     return source.slice(0, maxLength) + '...'
   }
@@ -297,6 +313,30 @@ async function handleSave() {
 function handleDelete(session: SessionItem) {
   sessionToDelete.value = session
   confirmModalRef.value?.open()
+}
+
+function handleClear(session: SessionItem) {
+  sessionToClear.value = session
+  clearConfirmModalRef.value?.open()
+}
+
+async function onClearConfirmed() {
+  if (!sessionToClear.value) return
+  const id = resolveSessionId(sessionToClear.value)
+  if (!id) {
+    notify(t('sessions.clear_failed'), 'error')
+    sessionToClear.value = null
+    return
+  }
+  try {
+    await updateSession(id, { messages: [] })
+    notify(t('sessions.clear_success'), 'success')
+    await loadSessions()
+  } catch {
+    notify(t('sessions.clear_failed'), 'error')
+  } finally {
+    sessionToClear.value = null
+  }
 }
 
 async function onDeleteConfirmed() {
