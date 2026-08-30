@@ -202,6 +202,22 @@ class OpenAICompatibleTTSClient(TTSModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
+    def _build_request_kwargs(self, text: str, **overrides) -> dict:
+        model_config = self.model.model_config or {}
+        section_advanced = model_config.get("section_advanced") or {}
+        extra_body = section_advanced.get("extra_body")
+
+        request_kwargs = {
+            "model": self.model.model_id,
+            "voice": model_config.get("voice_name", ""),
+            "input": text,
+            "response_format": "mp3",
+        }
+        if isinstance(extra_body, dict) and extra_body:
+            request_kwargs["extra_body"] = extra_body
+        request_kwargs.update(overrides)
+        return request_kwargs
+
     async def text_to_speech(self, text: str, **kwargs) -> Record:
         section_advanced = self.model.provider_config.get("section_advanced")
         default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
@@ -214,10 +230,7 @@ class OpenAICompatibleTTSClient(TTSModelClient):
         )
 
         async with client.audio.speech.with_streaming_response.create(
-                model=self.model.model_id,
-                voice=self.model.model_config.get("voice_name", ""),
-                input=text,
-                response_format="mp3"
+                **self._build_request_kwargs(text, **kwargs)
         ) as response:
             audio_bytes = b""
             async for chunk in response.iter_bytes():
