@@ -1,0 +1,15 @@
+{
+  "name": "QQ Official",
+  "display_name": "QQ Official Bot",
+  "version": "1.0.0",
+  "author": "KiraAI",
+  "description": "QQ Official Bot OpenAPI adapter",
+  "repo": null,
+  "icon": "icon.svg",
+  "locales": {
+    "zh": {
+      "display_name": "QQ 官方机器人",
+      "description": "通过 QQ 机器人开放平台接入群聊和好友私聊"
+    }
+  }
+}
