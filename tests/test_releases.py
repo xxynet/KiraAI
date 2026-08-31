@@ -118,14 +118,15 @@ def test_repository_does_not_track_runtime_data() -> None:
     if git_executable is None:
         raise RuntimeError("git executable is required for this test")
     tracked_paths = subprocess.run(
-        [git_executable, "ls-files", "--", "data"],
+        [git_executable, "ls-files"],
         cwd=project_root,
         check=True,
         capture_output=True,
         text=True,
-    ).stdout.strip()
+    ).stdout.splitlines()
 
-    assert not tracked_paths
+    runtime_data_paths = [path for path in tracked_paths if path.partition("/")[0].casefold() == "data"]
+    assert not runtime_data_paths
 
 
 def test_apply_update_stages_on_application_filesystem(tmp_path: Path, monkeypatch) -> None:
