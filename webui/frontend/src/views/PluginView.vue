@@ -939,16 +939,17 @@
           <div v-if="configLoading" class="flex justify-center items-center py-12">
             <IconSpinner class="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" />
           </div>
-          <div v-else-if="pluginConfigSchema">
+          <div v-else-if="hasPluginConfigFields">
             <ConfigForm ref="configFormRef" v-model="pluginConfigValues" :schema="pluginConfigSchema" />
           </div>
           <div v-else class="text-center py-8 text-theme-faint">
-            {{ $t('plugin.no_config') }}
+            <CircleCheck class="mx-auto mb-3 h-10 w-10" />
+            <p>{{ $t('plugin.no_config') }}</p>
           </div>
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
           <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="pluginConfigVisible = false">{{ $t('plugin.cancel') }}</button>
-          <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="!pluginConfigSchema || savingConfig" @click="savePluginConfig">{{ $t('plugin.save') }}</button>
+          <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="!hasPluginConfigFields || savingConfig" @click="savePluginConfig">{{ $t('plugin.save') }}</button>
         </div>
       </div>
     </Modal>
@@ -1044,6 +1045,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { CircleCheck } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { useLocalized } from '@/composables/useLocalized'
@@ -1151,6 +1153,9 @@ const configPluginName = ref('')
 const configFormRef = ref<InstanceType<typeof ConfigForm> | null>(null)
 const configLoading = ref(false)
 const savingConfig = ref(false)
+const hasPluginConfigFields = computed(() =>
+  !!pluginConfigSchema.value && Object.keys(pluginConfigSchema.value).length > 0
+)
 
 // MCP
 const mcpServers = ref<McpServerItem[]>([])
@@ -1458,7 +1463,7 @@ async function savePluginConfig() {
   // Guard: the "no_config" placeholder leaves pluginConfigValues empty.
   // Posting {} back would wipe any legitimately-managed config for a plugin
   // that has no schema, so refuse to save instead of overwriting.
-  if (!pluginConfigSchema.value) return
+  if (!hasPluginConfigFields.value) return
   const validateRes = configFormRef.value?.validate()
   if (validateRes && !validateRes.valid) {
     notify(validateRes.message!, 'error')
