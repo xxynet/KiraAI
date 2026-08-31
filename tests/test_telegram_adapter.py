@@ -199,23 +199,19 @@ async def test_discord_stop_closes_gateway_before_cancelling_bot_task():
 
 
 @pytest.mark.asyncio
-async def test_discord_stop_propagates_outer_cancellation_after_closing_gateway():
-    task_release = asyncio.Event()
+async def test_discord_stop_propagates_caller_cancellation_racing_with_bot_task():
+    close_release = asyncio.Event()
     gateway_closed = asyncio.Event()
-    task_cancelled = asyncio.Event()
 
-    async def wait_after_cancellation():
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            task_cancelled.set()
-            await task_release.wait()
+    async def wait_for_cancellation():
+        await asyncio.Event().wait()
 
     async def close_bot():
         gateway_closed.set()
+        await close_release.wait()
 
     adapter = DiscordAdapter.__new__(DiscordAdapter)
-    adapter._bot_task = asyncio.create_task(wait_after_cancellation())
+    adapter._bot_task = asyncio.create_task(wait_for_cancellation())
     adapter.bot = SimpleNamespace(
         is_closed=Mock(return_value=False),
         close=AsyncMock(side_effect=close_bot),
@@ -226,11 +222,11 @@ async def test_discord_stop_propagates_outer_cancellation_after_closing_gateway(
     await asyncio.sleep(0)
     stop_task = asyncio.create_task(adapter.stop())
     await gateway_closed.wait()
-    await task_cancelled.wait()
-    stop_task.cancel()
+    adapter._bot_task.add_done_callback(lambda _: stop_task.cancel())
+    close_release.set()
 
     with pytest.raises(asyncio.CancelledError):
         await stop_task
 
-    task_release.set()
-    await adapter._bot_task
+    with pytest.raises(asyncio.CancelledError):
+        await adapter._bot_task

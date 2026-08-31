@@ -228,11 +228,19 @@ class DiscordAdapter(IMAdapter):
         finally:
             if self._bot_task and not self._bot_task.done():
                 self._bot_task.cancel()
+
+                async def wait_for_bot_task():
+                    try:
+                        await self._bot_task
+                    except asyncio.CancelledError:
+                        pass
+
+                waiter = asyncio.create_task(wait_for_bot_task())
                 try:
-                    await asyncio.shield(self._bot_task)
+                    await asyncio.shield(waiter)
                 except asyncio.CancelledError:
-                    if not self._bot_task.cancelled():
-                        raise
+                    waiter.cancel()
+                    raise
 
         if self.bot:
             self.logger.info(f"Stopped Discord adapter for {self.config.get('bot_pid', 'bot')}")
