@@ -222,14 +222,27 @@ class DiscordAdapter(IMAdapter):
 
     async def stop(self):
         """Stop the Discord adapter."""
-        if self._bot_task and not self._bot_task.done():
-            self._bot_task.cancel()
-            try:
-                await self._bot_task
-            except asyncio.CancelledError:
-                pass
-        if self.bot and not self.bot.is_closed():
-            await self.bot.close()
+        try:
+            if self.bot and not self.bot.is_closed():
+                await self.bot.close()
+        finally:
+            if self._bot_task and not self._bot_task.done():
+                self._bot_task.cancel()
+
+                async def wait_for_bot_task():
+                    try:
+                        await self._bot_task
+                    except asyncio.CancelledError:
+                        pass
+
+                waiter = asyncio.create_task(wait_for_bot_task())
+                try:
+                    await asyncio.shield(waiter)
+                except asyncio.CancelledError:
+                    waiter.cancel()
+                    raise
+
+        if self.bot:
             self.logger.info(f"Stopped Discord adapter for {self.config.get('bot_pid', 'bot')}")
 
     def get_client(self) -> discord.Bot:

@@ -9,6 +9,7 @@ from core.adapter.src.telegram.telegram import (
     TelegramAdapter,
     _TelegramShutdownCancellationFilter,
 )
+from core.adapter.src.discord.discord import DiscordAdapter
 from core.adapter.adapter_registry import AdapterManager
 from core.adapter.adapter_info import AdapterInfo
 
@@ -165,3 +166,67 @@ async def test_stop_continues_after_application_stop_is_cancelled():
     updater_stop.assert_awaited_once()
     application_stop.assert_awaited_once()
     application_shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_discord_stop_closes_gateway_before_cancelling_bot_task():
+    events = []
+
+    async def wait_for_cancellation():
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            events.append("bot-task-cancelled")
+            raise
+
+    async def close_bot():
+        events.append("bot-closed")
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._bot_task = asyncio.create_task(wait_for_cancellation())
+    adapter.bot = SimpleNamespace(
+        is_closed=Mock(return_value=False),
+        close=AsyncMock(side_effect=close_bot),
+    )
+    adapter.config = {"bot_pid": "test-bot"}
+    adapter.logger = Mock()
+
+    await asyncio.sleep(0)
+    await adapter.stop()
+
+    adapter.bot.close.assert_awaited_once()
+    assert events == ["bot-closed", "bot-task-cancelled"]
+
+
+@pytest.mark.asyncio
+async def test_discord_stop_propagates_caller_cancellation_racing_with_bot_task():
+    close_release = asyncio.Event()
+    gateway_closed = asyncio.Event()
+
+    async def wait_for_cancellation():
+        await asyncio.Event().wait()
+
+    async def close_bot():
+        gateway_closed.set()
+        await close_release.wait()
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._bot_task = asyncio.create_task(wait_for_cancellation())
+    adapter.bot = SimpleNamespace(
+        is_closed=Mock(return_value=False),
+        close=AsyncMock(side_effect=close_bot),
+    )
+    adapter.config = {"bot_pid": "test-bot"}
+    adapter.logger = Mock()
+
+    await asyncio.sleep(0)
+    stop_task = asyncio.create_task(adapter.stop())
+    await gateway_closed.wait()
+    adapter._bot_task.add_done_callback(lambda _: stop_task.cancel())
+    close_release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await stop_task
+
+    with pytest.raises(asyncio.CancelledError):
+        await adapter._bot_task
