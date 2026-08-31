@@ -100,16 +100,15 @@ class DefaultChatPlugin(BasePlugin):
             raise
         finally:
             current_task = asyncio.current_task()
-            if self.session_tasks.get(sid) is not current_task:
-                return
-            self.session_tasks.pop(sid, None)
-            if event.is_set() and not self._terminating:
-                self.session_tasks[sid] = asyncio.create_task(
-                    self._debounce_loop(sid, event),
-                    name=f"chat_debounce_{sid}",
-                )
-            else:
-                self.session_events.pop(sid, None)
+            if self.session_tasks.get(sid) is current_task:
+                self.session_tasks.pop(sid, None)
+                if event.is_set() and not self._terminating:
+                    self.session_tasks[sid] = asyncio.create_task(
+                        self._debounce_loop(sid, event),
+                        name=f"chat_debounce_{sid}",
+                    )
+                else:
+                    self.session_events.pop(sid, None)
 
     @on.llm_request(priority=Priority.MEDIUM)
     async def inject_group_prompt(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):

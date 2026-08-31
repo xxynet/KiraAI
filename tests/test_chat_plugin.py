@@ -34,6 +34,7 @@ async def test_terminate_cancels_pending_debounce_tasks():
     await plugin.terminate()
 
     assert task.done()
+    assert task.cancelled()
     assert plugin.session_tasks == {}
     assert plugin.session_events == {}
 
