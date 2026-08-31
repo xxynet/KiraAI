@@ -235,13 +235,23 @@ class MessageProcessor:
         await self.event_bus.publish(batch_msg)
         return True
 
-    async def message_format_to_text(self, message_chain: MessageChain, session_id: Optional[str] = None):
+    async def message_format_to_text(self, message_chain: MessageChain, session_id: Optional[str] = None, capabilities: Optional[dict] = None):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
-        capabilities = self.session_manager.get_effective_capabilities(
-            session_id, self.kira_config.get_config("bot_config.capabilities", {})
-        ) if session_id else self.kira_config.get_config("bot_config.capabilities", {})
+        if capabilities is None:
+            global_capabilities = self.kira_config.get_config("bot_config.capabilities", {})
+            if not isinstance(global_capabilities, dict):
+                global_capabilities = {}
+            capabilities = self.session_manager.get_effective_capabilities(
+                session_id, global_capabilities
+            ) if session_id and hasattr(self, "session_manager") else global_capabilities
+        if not isinstance(capabilities, dict):
+            capabilities = {}
         image_recognition = capabilities.get("image_recognition", {})
+        if not isinstance(image_recognition, dict) or not image_recognition:
+            image_recognition = {
+                "mode": self.kira_config.get_config("bot_config.capabilities.image_recognition.mode", "vlm_description")
+            }
         for ele in message_chain:
             if isinstance(ele, Text):
                 message_str += ele.text
@@ -371,7 +381,7 @@ class MessageProcessor:
             elif isinstance(ele, Reply):
                 if ele.chain:
                     ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
-                    reply_content = await self.message_format_to_text(ele.chain, session_id)
+                    reply_content = await self.message_format_to_text(ele.chain, session_id, capabilities)
                     message_str += f"[Reply ID: {ele.message_id} content: {reply_content}]"
                 elif ele.message_content:
                     message_str += f"[Reply ID: {ele.message_id} content: {ele.message_content}]"
@@ -385,7 +395,7 @@ class MessageProcessor:
                     forward_contents = ""
                     for i, chain in enumerate(ele.chains):
                         ele.chains[i].message_list = [x for x in chain if not isinstance(x, Forward)]
-                        forward_content = await self.message_format_to_text(ele.chains[i], session_id)
+                        forward_content = await self.message_format_to_text(ele.chains[i], session_id, capabilities)
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
@@ -549,15 +559,23 @@ class MessageProcessor:
         compression_config = self.kira_config.get_config(
             "bot_config.image_compression", {}
         )
-        image_mode = self.kira_config.get_config(
-            "bot_config.capabilities.image_recognition.mode",
-            "vlm_description",
-        )
+        global_capabilities = self.kira_config.get_config("bot_config.capabilities", {})
+        if not isinstance(global_capabilities, dict):
+            global_capabilities = {}
+        capabilities = self.session_manager.get_effective_capabilities(
+            sid, global_capabilities
+        ) if hasattr(self, "session_manager") else global_capabilities
+        if not isinstance(capabilities, dict):
+            capabilities = global_capabilities
+        image_recognition = capabilities.get("image_recognition", {})
+        image_mode = image_recognition.get(
+            "mode", self.kira_config.get_config("bot_config.capabilities.image_recognition.mode", "vlm_description")
+        ) if isinstance(image_recognition, dict) else "vlm_description"
 
         for message in event.messages:
             for image in self._iter_message_images(message.chain):
                 await compress_image_element(image, compression_config)
-            message_str = await self.message_format_to_text(message.chain, sid)
+            message_str = await self.message_format_to_text(message.chain, sid, capabilities)
             message.message_str = message_str
 
         # EventType.ON_IM_BATCH_MESSAGE
