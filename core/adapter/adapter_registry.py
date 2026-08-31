@@ -32,6 +32,7 @@ class AdapterManager:
     def __init__(self, kira_config: KiraConfig, event_queue: asyncio.Queue):
         self.kira_config = kira_config
         self._adapters: dict[str, Union[IMAdapter, SocialMediaAdapter]] = {}
+        self._adapter_tasks: dict[str, asyncio.Task] = {}
         self.adas_config: dict = kira_config.get("adapters", {}) or {}
         self.event_queue = event_queue
 
@@ -64,6 +65,43 @@ class AdapterManager:
             manifest_dir, manifest.get("icon-dark" if dark else "icon"),
         )
 
+    @classmethod
+    def register_adapter_type(cls, platform: str, adapter_cls: Type[Union[IMAdapter, SocialMediaAdapter]], manifest: dict, manifest_dir: Path, schema: Optional[list[BaseConfigField]] = None) -> None:
+        """Register an Adapter type supplied by a plugin."""
+        if not isinstance(platform, str) or not platform.strip():
+            raise ValueError("Adapter platform must be a non-empty string")
+        if not inspect.isclass(adapter_cls) or not issubclass(adapter_cls, (IMAdapter, SocialMediaAdapter)):
+            raise TypeError("Adapter class must inherit from IMAdapter or SocialMediaAdapter")
+        if not isinstance(manifest, dict) or (schema is not None and not isinstance(schema, list)):
+            raise TypeError("Adapter manifest must be a dict and schema must be a list")
+        platform = platform.strip()
+        existing = cls._registry.get(platform)
+        if existing is not None and existing is not adapter_cls:
+            raise ValueError(f"Adapter platform '{platform}' is already registered")
+        cls._registry[platform] = adapter_cls
+        cls._manifests[platform] = manifest.copy()
+        cls._manifest_dirs[platform] = Path(manifest_dir)
+        cls._schemas[platform] = copy.deepcopy(schema) if schema else []
+
+    @classmethod
+    def unregister_adapter_type(cls, platform: str, adapter_cls: Type[Union[IMAdapter, SocialMediaAdapter]]) -> bool:
+        """Remove a plugin Adapter type without affecting another owner."""
+        if cls._registry.get(platform) is not adapter_cls:
+            return False
+        cls._registry.pop(platform, None)
+        cls._manifests.pop(platform, None)
+        cls._manifest_dirs.pop(platform, None)
+        cls._schemas.pop(platform, None)
+        return True
+
+    async def stop_adapter_instances_by_platform(self, platform: str) -> int:
+        """Stop runtime instances while preserving their stored configuration."""
+        stopped = 0
+        for name, adapter in list(self._adapters.items()):
+            if getattr(getattr(adapter, "info", None), "platform", None) == platform:
+                await self.stop_adapter(name)
+                stopped += 1
+        return stopped
     def get_adapter_info(self, adapter_id: str) -> Optional[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {})
         config_entry = adapters_config.get(adapter_id)
@@ -299,6 +337,8 @@ class AdapterManager:
             logger.error(f"Adapter config not found after generation for {adapter_id}")
             return None
 
+        old_entry = copy.deepcopy(config_entry)
+
         if config:
             entry_config = config_entry.get("config") or {}
             entry_config.update(config)
@@ -311,6 +351,18 @@ class AdapterManager:
         enabled = status == "active"
         config_entry["enabled"] = enabled
 
+        if enabled:
+            try:
+                info = self.get_adapter_info(adapter_id)
+                if not info:
+                    raise RuntimeError(f"Failed to read adapter info for {adapter_id}")
+                await self.register_adapter(info)
+            except Exception:
+                adapters_config[adapter_id] = old_entry
+                self.kira_config["adapters"] = adapters_config
+                self.adas_config = adapters_config
+                raise
+
         adapters_config[adapter_id] = config_entry
         self.kira_config["adapters"] = adapters_config
         try:
@@ -321,13 +373,6 @@ class AdapterManager:
 
         self.adas_config = adapters_config
 
-        if enabled:
-            try:
-                info = self.get_adapter_info(adapter_id)
-                if info:
-                    await self.register_adapter(info)
-            except Exception as e:
-                logger.error(f"Failed to start adapter {adapter_id} after creation: {e}")
 
         info = self.get_adapter_info(adapter_id)
         if not info:
@@ -350,6 +395,7 @@ class AdapterManager:
             return None
 
         old_enabled = bool(config_entry.get("enabled", False))
+        old_entry = copy.deepcopy(config_entry)
         old_config = copy.deepcopy(config_entry.get("config") or {})
         old_name = config_entry.get("name") or adapter_id
         old_desc = config_entry.get("desc") or ""
@@ -374,6 +420,21 @@ class AdapterManager:
         if status:
             config_entry["enabled"] = status == "active"
 
+        new_enabled = bool(config_entry.get("enabled", False))
+        name_for_runtime = config_entry.get("name") or adapter_id
+
+        if new_enabled and not old_enabled:
+            try:
+                info = self.get_adapter_info(adapter_id)
+                if not info:
+                    raise RuntimeError(f"Failed to read adapter info for {adapter_id}")
+                await self.register_adapter(info)
+            except Exception:
+                adapters_config[adapter_id] = old_entry
+                self.kira_config["adapters"] = adapters_config
+                self.adas_config = adapters_config
+                raise
+
         adapters_config[adapter_id] = config_entry
         self.kira_config["adapters"] = adapters_config
         try:
@@ -383,17 +444,6 @@ class AdapterManager:
             return None
 
         self.adas_config = adapters_config
-
-        new_enabled = bool(config_entry.get("enabled", False))
-        name_for_runtime = config_entry.get("name") or adapter_id
-
-        if new_enabled and not old_enabled:
-            try:
-                info = self.get_adapter_info(adapter_id)
-                if info:
-                    await self.register_adapter(info)
-            except Exception as e:
-                logger.error(f"Failed to start adapter {adapter_id} after update: {e}")
 
         if old_enabled and new_enabled:
             new_config = config_entry.get("config") or {}
@@ -424,17 +474,60 @@ class AdapterManager:
         logger.info(f"Adapter configuration saved for {name_for_runtime}")
         return info
 
+    def _handle_adapter_start_failure(
+        self,
+        name: str,
+        adapter: Union[IMAdapter, SocialMediaAdapter],
+        error: BaseException,
+    ) -> None:
+        """Remove a failed adapter and persist it as disabled when possible."""
+        if self._adapters.get(name) is adapter:
+            self._adapters.pop(name, None)
+
+        adapter_id = getattr(getattr(adapter, "info", None), "adapter_id", None)
+        if not adapter_id:
+            return
+        adapters_config = self.kira_config.get("adapters", {}) or {}
+        config_entry = adapters_config.get(adapter_id)
+        if not isinstance(config_entry, dict):
+            return
+        config_entry["enabled"] = False
+        adapters_config[adapter_id] = config_entry
+        self.kira_config["adapters"] = adapters_config
+        self.adas_config = adapters_config
+        try:
+            self.kira_config.save_config()
+        except Exception as exc:
+            logger.error(f"Failed to persist disabled adapter {adapter_id}: {exc}")
+        logger.error(f"Adapter {name} stopped after a start failure: {error}")
+
+    def _handle_adapter_start_task_completion(
+        self,
+        name: str,
+        adapter: Union[IMAdapter, SocialMediaAdapter],
+        task: asyncio.Task,
+    ) -> None:
+        """Release a completed startup task and record asynchronous failures."""
+        if self._adapter_tasks.get(name) is task:
+            self._adapter_tasks.pop(name, None)
+        if task.cancelled():
+            logger.info(f"Adapter {name} start task was cancelled")
+            return
+        try:
+            task.result()
+            logger.info(f"Started adapter {name}")
+        except Exception as exc:
+            self._handle_adapter_start_failure(name, adapter, exc)
+
     async def register_adapter(self, info: AdapterInfo):
         platform = info.platform
         name = info.name or info.adapter_id
         if not platform:
-            logger.error(f"Adapter {name} has no platform configured")
-            return
+            raise ValueError(f"Adapter {name} has no platform configured")
 
         adapter_cls = self.get_adapter_class(platform)
         if not adapter_cls:
-            logger.error(f"No adapter registered for platform {platform}")
-            return
+            raise ValueError(f"No adapter registered for platform {platform}")
 
         if not info.enabled:
             return
@@ -445,25 +538,46 @@ class AdapterManager:
             elif issubclass(adapter_cls, SocialMediaAdapter):
                 instance = adapter_cls(info, self.event_queue)
             else:
-                logger.error(f"Adapter class for platform {platform} is not a valid adapter type")
-                return
+                raise TypeError(f"Adapter class for platform {platform} is not a valid adapter type")
         except Exception as e:
-            logger.error(f"Failed to instantiate adapter {name}: {e}")
-            return
+            raise RuntimeError(f"Failed to instantiate adapter {name}") from e
 
         self._adapters[name] = instance
-        await self.start_adapter(name)
-
-    async def start_adapter(self, name):
-        """start an adapter by specified adapter name"""
         try:
-            task = asyncio.create_task(self._adapters[name].start())
-            task.add_done_callback(lambda t: logger.info(f"Started adapter {name}"))
-        except Exception as e:
-            logger.error(f"Failed to start adapter {name}: {e}")
+            await self.start_adapter(name)
+        except Exception:
+            self._adapters.pop(name, None)
+            raise
+
+    async def start_adapter(self, name: str):
+        """Start an adapter and retain its task until startup completes."""
+        adapter = self._adapters.get(name)
+        if not adapter:
+            raise KeyError(f"Adapter {name} is not registered")
+
+        task = asyncio.create_task(adapter.start())
+        self._adapter_tasks[name] = task
+        task.add_done_callback(
+            lambda completed_task: self._handle_adapter_start_task_completion(
+                name, adapter, completed_task
+            )
+        )
+        await asyncio.sleep(0)
+        if task.done():
+            task.result()
 
     async def stop_adapter(self, name: str):
-        """stop an adapter by specified adapter name"""
+        """Stop an adapter and cancel any still-running startup task."""
+        task = self._adapter_tasks.pop(name, None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                logger.error(f"Adapter {name} failed while stopping its start task: {exc}")
+
         adapter = self._adapters.get(name)
         if adapter:
             await adapter.stop()

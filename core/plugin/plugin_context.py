@@ -116,6 +116,49 @@ class PluginContext:
             return client
         return
 
+    async def register_provider(self, relative_path: str) -> str:
+        """Register a Provider directory for the calling plugin."""
+        frame = inspect.currentframe().f_back
+        plugin_id = None
+        if frame and self.plugin_mgr:
+            module_name = frame.f_globals.get("__name__", "")
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(module_name)
+        if not plugin_id:
+            raise RuntimeError("Plugin context is not associated with a loaded plugin")
+        return await self.plugin_mgr.register_plugin_provider(plugin_id, relative_path)
+
+    async def unregister_provider(self, provider_format: str) -> bool:
+        """Unregister a Provider type owned by the calling plugin."""
+        frame = inspect.currentframe().f_back
+        plugin_id = None
+        if frame and self.plugin_mgr:
+            module_name = frame.f_globals.get("__name__", "")
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(module_name)
+        if not plugin_id:
+            raise RuntimeError("Plugin context is not associated with a loaded plugin")
+        return await self.plugin_mgr.unregister_plugin_provider(plugin_id, provider_format)
+
+    async def register_adapter(self, relative_path: str) -> str:
+        """Register an Adapter directory for the calling plugin."""
+        frame = inspect.currentframe().f_back
+        plugin_id = None
+        if frame and self.plugin_mgr:
+            module_name = frame.f_globals.get("__name__", "")
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(module_name)
+        if not plugin_id:
+            raise RuntimeError("Plugin context is not associated with a loaded plugin")
+        return await self.plugin_mgr.register_plugin_adapter(plugin_id, relative_path)
+
+    async def unregister_adapter(self, platform: str) -> bool:
+        """Unregister an Adapter type owned by the calling plugin."""
+        frame = inspect.currentframe().f_back
+        plugin_id = None
+        if frame and self.plugin_mgr:
+            module_name = frame.f_globals.get("__name__", "")
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(module_name)
+        if not plugin_id:
+            raise RuntimeError("Plugin context is not associated with a loaded plugin")
+        return await self.plugin_mgr.unregister_plugin_adapter(plugin_id, platform)
     def get_default_embedding_client(self) -> Optional[EmbeddingModelClient]:
         client = self.provider_mgr.get_default_embedding()
         if isinstance(client, EmbeddingModelClient):

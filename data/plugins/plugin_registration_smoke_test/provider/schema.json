@@ -1,0 +1,11 @@
+{
+  "provider_config": {
+    "label": {
+      "name": "Label",
+      "type": "string",
+      "default": "smoke-test",
+      "hint": "No-op configuration field for registration testing."
+    }
+  },
+  "model_config": {}
+}

@@ -85,6 +85,45 @@ class ProviderManager:
             manifest_dir, manifest.get("icon-dark" if dark else "icon"),
         )
 
+    @classmethod
+    def register_provider_type(cls, provider_format: str, provider_cls: Type[BaseProvider], manifest: dict, manifest_dir: Path, schema: Optional[dict] = None) -> None:
+        """Register a Provider type supplied by a plugin."""
+        if not isinstance(provider_format, str) or not provider_format.strip():
+            raise ValueError("Provider format must be a non-empty string")
+        if not inspect.isclass(provider_cls) or not issubclass(provider_cls, BaseProvider):
+            raise TypeError("Provider class must inherit from BaseProvider")
+        if not isinstance(manifest, dict) or (schema is not None and not isinstance(schema, dict)):
+            raise TypeError("Provider manifest and schema must be dictionaries")
+        provider_format = provider_format.strip()
+        existing = cls._registry.get(provider_format)
+        if existing is not None and existing is not provider_cls:
+            raise ValueError(f"Provider format '{provider_format}' is already registered")
+        cls._registry[provider_format] = provider_cls
+        cls._manifests[provider_format] = manifest.copy()
+        cls._manifest_dirs[provider_format] = Path(manifest_dir)
+        cls._schemas[provider_format] = copy.deepcopy(schema) if schema else {}
+
+    @classmethod
+    def unregister_provider_type(cls, provider_format: str, provider_cls: Type[BaseProvider]) -> bool:
+        """Remove a plugin Provider type without affecting another owner."""
+        if cls._registry.get(provider_format) is not provider_cls:
+            return False
+        cls._registry.pop(provider_format, None)
+        cls._manifests.pop(provider_format, None)
+        cls._manifest_dirs.pop(provider_format, None)
+        cls._schemas.pop(provider_format, None)
+        return True
+
+    def remove_provider_instances_by_format(self, provider_format: str) -> int:
+        """Remove runtime instances while preserving their stored configuration."""
+        removed = 0
+        configs = self.kira_config.get("providers", {}) or {}
+        for provider_id in list(self._providers):
+            if isinstance(configs.get(provider_id), dict) and configs[provider_id].get("format") == provider_format:
+                self._providers.pop(provider_id, None)
+                removed += 1
+        return removed
+
     def get_model_client(
         self,
         provider_id: str,
