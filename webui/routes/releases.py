@@ -26,6 +26,8 @@ logger = get_logger("releases", "green")
 RESTART_EXIT_CODE = 42
 RESTART_DELAY_SECONDS = 0.5  # Allow HTTP response to flush before hard exit
 RESTART_PROGRESS_GRACE_SECONDS = 2.0  # Let the browser observe the restarting state first
+# Runtime data is user-owned and must never be replaced by a source update.
+PROTECTED_SOURCE_UPDATE_ITEMS = frozenset({"data"})
 _install_lock = asyncio.Lock()
 
 _RELEASES_CACHE_TTL = 300  # 5 minutes
@@ -252,7 +254,11 @@ class ReleasesRoutes(Routes):
                 source_root = tmp
 
             # Collect what the zip contains (top-level names only)
-            zip_items: list[str] = [item.name for item in source_root.iterdir()]
+            zip_items: list[str] = [
+                item.name for item in source_root.iterdir() if item.name not in PROTECTED_SOURCE_UPDATE_ITEMS
+            ]
+            if not zip_items:
+                raise ValueError("Update archive does not contain any application files")
 
             # Place staging inside root: root.parent can be a different Docker
             # mount, which makes rename() fail with EXDEV (cross-device link).

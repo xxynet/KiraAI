@@ -37,6 +37,27 @@ def test_apply_update_replaces_files_and_leaves_legacy_backups_untouched(tmp_pat
     assert stale_file_artifact.exists()
 
 
+def test_apply_update_never_replaces_runtime_data(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "app"
+    root.mkdir()
+    (root / "main.py").write_text("old application", encoding="utf-8")
+    (root / "data" / "config").mkdir(parents=True)
+    (root / "data" / "config" / "settings.json").write_text("user settings", encoding="utf-8")
+
+    archive = tmp_path / "update.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("KiraAI-release/main.py", "new application")
+        zf.writestr("KiraAI-release/data/plugins/example/manifest.json", "release data")
+
+    monkeypatch.setattr(releases, "get_root_path", lambda: root)
+
+    releases.ReleasesRoutes._apply_update(archive)
+
+    assert (root / "main.py").read_text(encoding="utf-8") == "new application"
+    assert (root / "data" / "config" / "settings.json").read_text(encoding="utf-8") == "user settings"
+    assert not (root / "data" / "plugins" / "example").exists()
+
+
 def test_apply_update_stages_on_application_filesystem(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "app"
     root.mkdir()
