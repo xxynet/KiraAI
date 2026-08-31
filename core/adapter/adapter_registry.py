@@ -32,6 +32,7 @@ class AdapterManager:
     def __init__(self, kira_config: KiraConfig, event_queue: asyncio.Queue):
         self.kira_config = kira_config
         self._adapters: dict[str, Union[IMAdapter, SocialMediaAdapter]] = {}
+        self._adapter_tasks: dict[str, asyncio.Task] = {}
         self.adas_config: dict = kira_config.get("adapters", {}) or {}
         self.event_queue = event_queue
 
@@ -473,6 +474,51 @@ class AdapterManager:
         logger.info(f"Adapter configuration saved for {name_for_runtime}")
         return info
 
+    def _handle_adapter_start_failure(
+        self,
+        name: str,
+        adapter: Union[IMAdapter, SocialMediaAdapter],
+        error: BaseException,
+    ) -> None:
+        """Remove a failed adapter and persist it as disabled when possible."""
+        if self._adapters.get(name) is adapter:
+            self._adapters.pop(name, None)
+
+        adapter_id = getattr(getattr(adapter, "info", None), "adapter_id", None)
+        if not adapter_id:
+            return
+        adapters_config = self.kira_config.get("adapters", {}) or {}
+        config_entry = adapters_config.get(adapter_id)
+        if not isinstance(config_entry, dict):
+            return
+        config_entry["enabled"] = False
+        adapters_config[adapter_id] = config_entry
+        self.kira_config["adapters"] = adapters_config
+        self.adas_config = adapters_config
+        try:
+            self.kira_config.save_config()
+        except Exception as exc:
+            logger.error(f"Failed to persist disabled adapter {adapter_id}: {exc}")
+        logger.error(f"Adapter {name} stopped after a start failure: {error}")
+
+    def _handle_adapter_start_task_completion(
+        self,
+        name: str,
+        adapter: Union[IMAdapter, SocialMediaAdapter],
+        task: asyncio.Task,
+    ) -> None:
+        """Release a completed startup task and record asynchronous failures."""
+        if self._adapter_tasks.get(name) is task:
+            self._adapter_tasks.pop(name, None)
+        if task.cancelled():
+            logger.info(f"Adapter {name} start task was cancelled")
+            return
+        try:
+            task.result()
+            logger.info(f"Started adapter {name}")
+        except Exception as exc:
+            self._handle_adapter_start_failure(name, adapter, exc)
+
     async def register_adapter(self, info: AdapterInfo):
         platform = info.platform
         name = info.name or info.adapter_id
@@ -504,30 +550,34 @@ class AdapterManager:
             raise
 
     async def start_adapter(self, name: str):
-        """Start an adapter by specified adapter name."""
+        """Start an adapter and retain its task until startup completes."""
         adapter = self._adapters.get(name)
         if not adapter:
             raise KeyError(f"Adapter {name} is not registered")
 
         task = asyncio.create_task(adapter.start())
+        self._adapter_tasks[name] = task
+        task.add_done_callback(
+            lambda completed_task: self._handle_adapter_start_task_completion(
+                name, adapter, completed_task
+            )
+        )
         await asyncio.sleep(0)
         if task.done():
             task.result()
 
-        def log_completion(completed_task: asyncio.Task):
-            if completed_task.cancelled():
-                logger.info(f"Adapter {name} start task was cancelled")
-                return
-            try:
-                completed_task.result()
-                logger.info(f"Started adapter {name}")
-            except Exception as exc:
-                logger.error(f"Adapter {name} stopped after a start failure: {exc}")
-
-        task.add_done_callback(log_completion)
-
     async def stop_adapter(self, name: str):
-        """stop an adapter by specified adapter name"""
+        """Stop an adapter and cancel any still-running startup task."""
+        task = self._adapter_tasks.pop(name, None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                logger.error(f"Adapter {name} failed while stopping its start task: {exc}")
+
         adapter = self._adapters.get(name)
         if adapter:
             await adapter.stop()

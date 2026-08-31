@@ -835,7 +835,11 @@ class PluginManager:
     @staticmethod
     def _find_component_class(module, base_types: tuple[type, ...], kind: str) -> type:
         for _, candidate in inspect.getmembers(module, inspect.isclass):
-            if issubclass(candidate, base_types) and candidate not in base_types:
+            if (
+                candidate.__module__ == module.__name__
+                and issubclass(candidate, base_types)
+                and candidate not in base_types
+            ):
                 return candidate
         names = ", ".join(base_type.__name__ for base_type in base_types)
         raise ValueError(f"No {kind} class inheriting from {names} found in {module.__name__}")
@@ -922,20 +926,39 @@ class PluginManager:
         for adapter_id in (self.ctx.config.get("adapters", {}) or {}):
             info = self.ctx.adapter_mgr.get_adapter_info(adapter_id)
             if info and info.platform == platform:
-                await self.ctx.adapter_mgr.register_adapter(info)
+                try:
+                    await self.ctx.adapter_mgr.register_adapter(info)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to restore adapter {adapter_id} for plugin {plugin_id}: {e}"
+                    )
         logger.info(f"Registered Adapter platform {platform} from plugin {plugin_id}")
         return platform
 
     async def unregister_plugin_adapter(self, plugin_id: str, platform: str) -> bool:
+        """Remove a plugin-owned Adapter after its runtime instances stop."""
         if not self.ctx or not self.ctx.adapter_mgr:
             raise RuntimeError("Adapter manager is not available")
-        metadata = _ensure_components(plugin_id).unregister_adapter(platform)
+        comp = _ensure_components(plugin_id)
+        metadata = comp.adapters.get(platform)
         if metadata is None:
             return False
-        await self.ctx.adapter_mgr.stop_adapter_instances_by_platform(platform)
+        try:
+            await self.ctx.adapter_mgr.stop_adapter_instances_by_platform(platform)
+        except Exception as e:
+            logger.error(
+                f"Failed to stop Adapter platform {platform} for plugin {plugin_id}: {e}"
+            )
+            return False
         removed = self.ctx.adapter_mgr.unregister_adapter_type(platform, metadata["class"])
+        if not removed:
+            logger.error(
+                f"Failed to unregister Adapter platform {platform} for plugin {plugin_id}"
+            )
+            return False
+        comp.unregister_adapter(platform)
         logger.info(f"Unregistered Adapter platform {platform} from plugin {plugin_id}")
-        return removed
+        return True
 
     def get_plugin_tools(self, plugin_name: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         if plugin_name is None:
@@ -1622,9 +1645,25 @@ class PluginManager:
         if not comp:
             return
         for platform in list(comp.adapters):
-            await self.unregister_plugin_adapter(plugin_id, platform)
+            try:
+                if not await self.unregister_plugin_adapter(plugin_id, platform):
+                    logger.error(
+                        f"Adapter platform {platform} was not cleaned up for plugin {plugin_id}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Failed to clean up Adapter platform {platform} for plugin {plugin_id}: {e}"
+                )
         for provider_format in list(comp.providers):
-            await self.unregister_plugin_provider(plugin_id, provider_format)
+            try:
+                if not await self.unregister_plugin_provider(plugin_id, provider_format):
+                    logger.error(
+                        f"Provider format {provider_format} was not cleaned up for plugin {plugin_id}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Failed to clean up Provider format {provider_format} for plugin {plugin_id}: {e}"
+                )
 
     def _cleanup_plugin_registration(self, plugin_id: str) -> None:
         comp = _plugin_components.get(plugin_id)
