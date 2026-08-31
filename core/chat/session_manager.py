@@ -156,9 +156,9 @@ class SessionManager:
         self._ensure_session_data(session)
         with self.memory_lock:
             session_data = self.chat_memory[session]
-            if title:
+            if title is not None:
                 session_data["title"] = title
-            if description:
+            if description is not None:
                 session_data["description"] = description
             self._save_memory()
 

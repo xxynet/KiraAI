@@ -53,6 +53,21 @@ def test_session_manager_receives_event_bus_through_constructor(tmp_path, monkey
     assert manager.event_bus is event_bus
 
 
+def test_update_session_info_allows_clearing_description(tmp_path):
+    manager = build_session_manager(tmp_path, [])
+    manager.chat_memory["adapter:dm:user"]["title"] = "Existing title"
+    manager.chat_memory["adapter:dm:user"]["description"] = "Existing description"
+
+    manager.update_session_info("adapter:dm:user", description="")
+
+    session_data = manager.chat_memory["adapter:dm:user"]
+    assert session_data["title"] == "Existing title"
+    assert session_data["description"] == ""
+    assert '"description": ""' in (
+        tmp_path / "chat_memory.json"
+    ).read_text(encoding="utf-8")
+
+
 async def wait_for_event_tasks(manager):
     if manager._background_tasks:
         await asyncio.gather(*tuple(manager._background_tasks))
