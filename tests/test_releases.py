@@ -1,5 +1,6 @@
 import io
 import asyncio
+import shutil
 import subprocess
 import tempfile
 import zipfile
@@ -52,6 +53,7 @@ def test_apply_update_never_replaces_runtime_data(tmp_path: Path, monkeypatch) -
 
     monkeypatch.setattr(releases, "get_root_path", lambda: root)
     monkeypatch.setattr(releases, "get_data_path", lambda: root / "data")
+    monkeypatch.setattr(releases, "get_configured_data_path", lambda: root / "data")
 
     releases.ReleasesRoutes._apply_update(archive)
 
@@ -77,6 +79,7 @@ def test_apply_update_never_replaces_custom_runtime_data(tmp_path: Path, monkeyp
 
     monkeypatch.setattr(releases, "get_root_path", lambda: root)
     monkeypatch.setattr(releases, "get_data_path", lambda: runtime_data)
+    monkeypatch.setattr(releases, "get_configured_data_path", lambda: runtime_data)
 
     releases.ReleasesRoutes._apply_update(archive)
 
@@ -85,10 +88,37 @@ def test_apply_update_never_replaces_custom_runtime_data(tmp_path: Path, monkeyp
     assert (runtime_data / "config" / "settings.json").read_text(encoding="utf-8") == "user settings"
 
 
+def test_apply_update_never_replaces_data_dir_alias(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "app"
+    root.mkdir()
+    runtime_data = root / "data"
+    (runtime_data / "config").mkdir(parents=True)
+    (runtime_data / "config" / "settings.json").write_text("user settings", encoding="utf-8")
+    data_alias = root / "data-alias"
+
+    archive = tmp_path / "update.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("KiraAI-release/main.py", "new application")
+        zf.writestr("KiraAI-release/data-alias/config/settings.json", "release data")
+
+    monkeypatch.setattr(releases, "get_root_path", lambda: root)
+    monkeypatch.setattr(releases, "get_data_path", lambda: runtime_data)
+    monkeypatch.setattr(releases, "get_configured_data_path", lambda: data_alias)
+
+    releases.ReleasesRoutes._apply_update(archive)
+
+    assert (root / "main.py").read_text(encoding="utf-8") == "new application"
+    assert (runtime_data / "config" / "settings.json").read_text(encoding="utf-8") == "user settings"
+    assert not data_alias.exists()
+
+
 def test_repository_does_not_track_runtime_data() -> None:
     project_root = Path(__file__).resolve().parents[1]
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        raise RuntimeError("git executable is required for this test")
     tracked_paths = subprocess.run(
-        ["git", "ls-files", "--", "data"],
+        [git_executable, "ls-files", "--", "data"],
         cwd=project_root,
         check=True,
         capture_output=True,

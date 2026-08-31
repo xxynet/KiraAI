@@ -15,7 +15,7 @@ from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_requirements
 from core.utils.dist_checker import apply_dist_archive, download_dist_archive
 from core.utils.github_api import download_asset, get_all_releases, pick_fastest_source
-from core.utils.path_utils import get_data_path, get_root_path
+from core.utils.path_utils import get_configured_data_path, get_data_path, get_root_path
 from core.utils.update_transaction import STAGE_PREFIX, UpdateTransaction
 from webui.models import DownloadReleaseRequest, ReleaseUpdateProgress, ReleasesResponse
 from webui.routes.auth import require_auth
@@ -31,14 +31,15 @@ RESTART_PROGRESS_GRACE_SECONDS = 2.0  # Let the browser observe the restarting s
 def _get_protected_source_update_items(root: Path) -> frozenset[str]:
     """Return source paths that must never replace user-owned runtime data."""
     protected_items = {"data"}
-    data_path = get_data_path().resolve()
-    try:
-        relative_data_path = data_path.relative_to(root.resolve())
-    except ValueError:
-        return frozenset(protected_items)
-    if not relative_data_path.parts:
-        raise ValueError("Source updates are unsafe when the runtime data directory is the application root")
-    protected_items.add(relative_data_path.parts[0].casefold())
+    root = root.resolve()
+    for data_path in (get_data_path(), get_configured_data_path()):
+        try:
+            relative_data_path = data_path.absolute().relative_to(root)
+        except ValueError:
+            continue
+        if not relative_data_path.parts:
+            raise ValueError("Source updates are unsafe when the runtime data directory is the application root")
+        protected_items.add(relative_data_path.parts[0].casefold())
     return frozenset(protected_items)
 
 
