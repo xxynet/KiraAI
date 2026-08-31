@@ -26,8 +26,22 @@ logger = get_logger("releases", "green")
 RESTART_EXIT_CODE = 42
 RESTART_DELAY_SECONDS = 0.5  # Allow HTTP response to flush before hard exit
 RESTART_PROGRESS_GRACE_SECONDS = 2.0  # Let the browser observe the restarting state first
-# Runtime data is user-owned and must never be replaced by a source update.
-PROTECTED_SOURCE_UPDATE_ITEMS = frozenset({"data"})
+
+
+def _get_protected_source_update_items(root: Path) -> frozenset[str]:
+    """Return source paths that must never replace user-owned runtime data."""
+    protected_items = {"data"}
+    data_path = get_data_path().resolve()
+    try:
+        relative_data_path = data_path.relative_to(root.resolve())
+    except ValueError:
+        return frozenset(protected_items)
+    if not relative_data_path.parts:
+        raise ValueError("Source updates are unsafe when the runtime data directory is the application root")
+    protected_items.add(relative_data_path.parts[0].casefold())
+    return frozenset(protected_items)
+
+
 _install_lock = asyncio.Lock()
 
 _RELEASES_CACHE_TTL = 300  # 5 minutes
@@ -253,9 +267,11 @@ class ReleasesRoutes(Routes):
             else:
                 source_root = tmp
 
-            # Collect what the zip contains (top-level names only)
+            # Collect what the zip contains (top-level names only). Runtime data
+            # is excluded even if it was accidentally committed to a release.
+            protected_items = _get_protected_source_update_items(root)
             zip_items: list[str] = [
-                item.name for item in source_root.iterdir() if item.name not in PROTECTED_SOURCE_UPDATE_ITEMS
+                item.name for item in source_root.iterdir() if item.name.casefold() not in protected_items
             ]
             if not zip_items:
                 raise ValueError("Update archive does not contain any application files")
