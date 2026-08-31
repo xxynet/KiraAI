@@ -22,6 +22,8 @@ from .adapter_utils import IMAdapter, SocialMediaAdapter
 
 logger = get_logger("adapter", "blue")
 
+ADAPTER_STOP_TIMEOUT = 15.0
+
 
 class AdapterManager:
     _registry: Dict[str, Type[Union[IMAdapter, SocialMediaAdapter]]] = {}
@@ -572,7 +574,14 @@ class AdapterManager:
         if task and not task.done():
             task.cancel()
             try:
-                await task
+                await asyncio.wait_for(
+                    asyncio.shield(task), timeout=ADAPTER_STOP_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"Adapter {name} start task did not finish after cancellation within "
+                    f"{ADAPTER_STOP_TIMEOUT:.0f}s; continuing application shutdown"
+                )
             except asyncio.CancelledError:
                 pass
             except Exception as exc:
@@ -580,8 +589,17 @@ class AdapterManager:
 
         adapter = self._adapters.get(name)
         if adapter:
-            await adapter.stop()
-            self._adapters.pop(name, None)
+            try:
+                await asyncio.wait_for(adapter.stop(), timeout=ADAPTER_STOP_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"Adapter {name} stop timed out after {ADAPTER_STOP_TIMEOUT:.0f}s; "
+                    "continuing application shutdown"
+                )
+            except Exception as exc:
+                logger.error(f"Adapter {name} failed while stopping: {exc}")
+            finally:
+                self._adapters.pop(name, None)
             logger.info(f"Stopped adapter {name}")
 
     async def delete_adapter(self, adapter_id: str) -> bool:
@@ -595,10 +613,9 @@ class AdapterManager:
 
         if name_value in self._adapters:
             try:
-                await self._adapters[name_value].stop()
+                await self.stop_adapter(name_value)
             except Exception as e:
                 logger.error(f"Failed to stop adapter {adapter_id} before deletion: {e}")
-            self._adapters.pop(name_value, None)
 
         del adapters_config[adapter_id]
         self.kira_config["adapters"] = adapters_config
@@ -614,8 +631,8 @@ class AdapterManager:
 
     async def stop_adapters(self):
         """stop all running adapters"""
-        for ada in self._adapters:
-            await self._adapters[ada].stop()
+        for name in list(self._adapters):
+            await self.stop_adapter(name)
 
     def get_adapters(self) -> dict[str, Union[IMAdapter, SocialMediaAdapter]]:
         """return the entire dict where adapters are registered"""

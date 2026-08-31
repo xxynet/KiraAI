@@ -30,6 +30,8 @@ from core.chat.message_elements import (
 
 logger = get_logger("tg_adapter", "green")
 
+TELEGRAM_SHUTDOWN_TIMEOUT = 5.0
+
 
 class _TelegramShutdownCancellationFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -149,8 +151,18 @@ class TelegramAdapter(IMAdapter):
         try:
             for component, shutdown in shutdown_steps:
                 try:
-                    await shutdown()
+                    await asyncio.wait_for(
+                        shutdown(), timeout=TELEGRAM_SHUTDOWN_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"Telegram {component} stop timed out after "
+                        f"{TELEGRAM_SHUTDOWN_TIMEOUT:.0f}s; continuing cleanup"
+                    )
                 except asyncio.CancelledError:
+                    current_task = asyncio.current_task()
+                    if current_task is not None and current_task.cancelling():
+                        raise
                     logger.warning(
                         f"Telegram {component} stop was cancelled; continuing cleanup"
                     )
