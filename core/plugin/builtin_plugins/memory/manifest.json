@@ -2,15 +2,15 @@
     "display_name": "Simple Memory",
     "plugin_id": "kira_plugin_simple_memory",
     "uninstallable": true,
-    "version": "1.0.0",
+    "version": "2.0.0",
     "author": "KiraAI",
-    "description": "Default & simple long term memory implementation, disable it before using third party memory plugins.",
+    "description": "Structured long-term memory with SQLAlchemy, language-neutral n-gram recall, and legacy core.txt migration.",
     "repo": null,
     "tags": ["memory"],
     "locales": {
         "zh": {
             "display_name": "简单记忆",
-            "description": "默认的简单长期记忆实现，使用第三方记忆插件前请先禁用此插件"
+            "description": "基于 SQLAlchemy 和通用 n-gram 检索的结构化长期记忆，兼容旧版 core.txt 迁移"
         }
     }
 }
