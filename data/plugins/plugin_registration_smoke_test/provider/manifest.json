@@ -1,5 +1,0 @@
-{
-  "name": "plugin-registration-smoke-provider",
-  "display_name": "Plugin Registration Smoke Provider",
-  "description": "Minimal Provider registered by the plugin lifecycle."
-}

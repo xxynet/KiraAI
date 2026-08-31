@@ -1,5 +1,0 @@
-{
-  "name": "plugin-registration-smoke-adapter",
-  "display_name": "Plugin Registration Smoke Adapter",
-  "description": "Minimal Adapter registered by the plugin lifecycle."
-}
