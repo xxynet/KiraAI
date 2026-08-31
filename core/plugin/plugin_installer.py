@@ -138,7 +138,7 @@ async def install_from_zip(
     """
     temp_zip = _temp_dir() / f"upload_{uuid.uuid4().hex[:8]}.zip"
     try:
-        temp_zip.write_bytes(zip_bytes)
+        await asyncio.to_thread(temp_zip.write_bytes, zip_bytes)
     except Exception as e:
         temp_zip.unlink(missing_ok=True)
         raise IOError(f"Failed to write uploaded zip to temp: {e}") from e
@@ -205,6 +205,26 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
 # ---------------------------------------------------------------------------
 
 async def _extract_and_install(
+    temp_zip: Path,
+    plugins_dir: Path,
+    preferred_name: str = "",
+    is_plugin_installed: Optional[Callable[[str], bool]] = None,
+    target_dir: Optional[Path] = None,
+    expected_plugin_id: Optional[str] = None,
+) -> Path:
+    """Extract and install a plugin archive without blocking the event loop."""
+    return await asyncio.to_thread(
+        _extract_and_install_sync,
+        temp_zip,
+        plugins_dir,
+        preferred_name,
+        is_plugin_installed,
+        target_dir,
+        expected_plugin_id,
+    )
+
+
+def _extract_and_install_sync(
     temp_zip: Path,
     plugins_dir: Path,
     preferred_name: str = "",
