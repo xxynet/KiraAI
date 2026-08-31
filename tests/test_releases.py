@@ -1,5 +1,7 @@
 import io
 import asyncio
+import shutil
+import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
@@ -35,6 +37,96 @@ def test_apply_update_replaces_files_and_leaves_legacy_backups_untouched(tmp_pat
     assert (root / "assets" / "new.txt").read_text(encoding="utf-8") == "new asset"
     assert stale_dir_artifact.exists()
     assert stale_file_artifact.exists()
+
+
+def test_apply_update_never_replaces_runtime_data(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "app"
+    root.mkdir()
+    (root / "main.py").write_text("old application", encoding="utf-8")
+    (root / "data" / "config").mkdir(parents=True)
+    (root / "data" / "config" / "settings.json").write_text("user settings", encoding="utf-8")
+
+    archive = tmp_path / "update.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("KiraAI-release/main.py", "new application")
+        zf.writestr("KiraAI-release/Data/plugins/example/manifest.json", "release data")
+
+    monkeypatch.setattr(releases, "get_root_path", lambda: root)
+    monkeypatch.setattr(releases, "get_data_path", lambda: root / "data")
+    monkeypatch.setattr(releases, "get_configured_data_path", lambda: root / "data")
+
+    releases.ReleasesRoutes._apply_update(archive)
+
+    assert (root / "main.py").read_text(encoding="utf-8") == "new application"
+    assert (root / "data" / "config" / "settings.json").read_text(encoding="utf-8") == "user settings"
+    assert not (root / "data" / "plugins" / "example").exists()
+
+
+def test_apply_update_never_replaces_custom_runtime_data(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "app"
+    root.mkdir()
+    (root / "data" / "config").mkdir(parents=True)
+    (root / "data" / "config" / "settings.json").write_text("default user settings", encoding="utf-8")
+    runtime_data = root / "runtime-state"
+    (runtime_data / "config").mkdir(parents=True)
+    (runtime_data / "config" / "settings.json").write_text("user settings", encoding="utf-8")
+
+    archive = tmp_path / "update.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("KiraAI-release/main.py", "new application")
+        zf.writestr("KiraAI-release/Data/config/settings.json", "release default data")
+        zf.writestr("KiraAI-release/runtime-state/config/settings.json", "release data")
+
+    monkeypatch.setattr(releases, "get_root_path", lambda: root)
+    monkeypatch.setattr(releases, "get_data_path", lambda: runtime_data)
+    monkeypatch.setattr(releases, "get_configured_data_path", lambda: runtime_data)
+
+    releases.ReleasesRoutes._apply_update(archive)
+
+    assert (root / "main.py").read_text(encoding="utf-8") == "new application"
+    assert (root / "data" / "config" / "settings.json").read_text(encoding="utf-8") == "default user settings"
+    assert (runtime_data / "config" / "settings.json").read_text(encoding="utf-8") == "user settings"
+
+
+def test_apply_update_never_replaces_data_dir_alias(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "app"
+    root.mkdir()
+    runtime_data = root / "data"
+    (runtime_data / "config").mkdir(parents=True)
+    (runtime_data / "config" / "settings.json").write_text("user settings", encoding="utf-8")
+    data_alias = root / "data-alias"
+
+    archive = tmp_path / "update.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("KiraAI-release/main.py", "new application")
+        zf.writestr("KiraAI-release/data-alias/config/settings.json", "release data")
+
+    monkeypatch.setattr(releases, "get_root_path", lambda: root)
+    monkeypatch.setattr(releases, "get_data_path", lambda: runtime_data)
+    monkeypatch.setattr(releases, "get_configured_data_path", lambda: data_alias)
+
+    releases.ReleasesRoutes._apply_update(archive)
+
+    assert (root / "main.py").read_text(encoding="utf-8") == "new application"
+    assert (runtime_data / "config" / "settings.json").read_text(encoding="utf-8") == "user settings"
+    assert not data_alias.exists()
+
+
+def test_repository_does_not_track_runtime_data() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        raise RuntimeError("git executable is required for this test")
+    tracked_paths = subprocess.run(
+        [git_executable, "ls-files"],
+        cwd=project_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+
+    runtime_data_paths = [path for path in tracked_paths if path.partition("/")[0].casefold() == "data"]
+    assert not runtime_data_paths
 
 
 def test_apply_update_stages_on_application_filesystem(tmp_path: Path, monkeypatch) -> None:

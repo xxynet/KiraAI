@@ -3,6 +3,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Optional
 
 # ─── Path overrides (set once via init_paths at startup) ─────────────────────
+_configured_data_dir: Optional[Path] = None
 _data_dir: Optional[Path] = None
 _webui_dir: Optional[Path] = None
 
@@ -15,9 +16,10 @@ def init_paths(
     Set path overrides from CLI arguments.  Must be called once at startup,
     before any other module reads paths.
     """
-    global _data_dir, _webui_dir
+    global _configured_data_dir, _data_dir, _webui_dir
     if data_dir is not None:
-        _data_dir = Path(data_dir).resolve()
+        _configured_data_dir = Path(data_dir).absolute()
+        _data_dir = _configured_data_dir.resolve()
     if webui_dir is not None:
         _webui_dir = Path(webui_dir).resolve()
 
@@ -29,6 +31,11 @@ def get_root_path() -> Path:
 def get_data_path() -> Path:
     """Return the data directory.  Defaults to ``<cwd>/data``."""
     return _data_dir if _data_dir is not None else get_root_path() / "data"
+
+
+def get_configured_data_path() -> Path:
+    """Return the configured data path without resolving symlinks or junctions."""
+    return _configured_data_dir if _configured_data_dir is not None else get_root_path() / "data"
 
 
 def get_webui_dist_path() -> Path:

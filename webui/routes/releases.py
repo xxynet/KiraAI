@@ -15,7 +15,7 @@ from core.logging_manager import get_logger
 from core.plugin.plugin_installer import install_requirements
 from core.utils.dist_checker import apply_dist_archive, download_dist_archive
 from core.utils.github_api import download_asset, get_all_releases, pick_fastest_source
-from core.utils.path_utils import get_data_path, get_root_path
+from core.utils.path_utils import get_configured_data_path, get_data_path, get_root_path
 from core.utils.update_transaction import STAGE_PREFIX, UpdateTransaction
 from webui.models import DownloadReleaseRequest, ReleaseUpdateProgress, ReleasesResponse
 from webui.routes.auth import require_auth
@@ -26,6 +26,23 @@ logger = get_logger("releases", "green")
 RESTART_EXIT_CODE = 42
 RESTART_DELAY_SECONDS = 0.5  # Allow HTTP response to flush before hard exit
 RESTART_PROGRESS_GRACE_SECONDS = 2.0  # Let the browser observe the restarting state first
+
+
+def _get_protected_source_update_items(root: Path) -> frozenset[str]:
+    """Return source paths that must never replace user-owned runtime data."""
+    protected_items = {"data"}
+    root = root.resolve()
+    for data_path in (get_data_path(), get_configured_data_path()):
+        try:
+            relative_data_path = data_path.absolute().relative_to(root)
+        except ValueError:
+            continue
+        if not relative_data_path.parts:
+            raise ValueError("Source updates are unsafe when the runtime data directory is the application root")
+        protected_items.add(relative_data_path.parts[0].casefold())
+    return frozenset(protected_items)
+
+
 _install_lock = asyncio.Lock()
 
 _RELEASES_CACHE_TTL = 300  # 5 minutes
@@ -251,8 +268,14 @@ class ReleasesRoutes(Routes):
             else:
                 source_root = tmp
 
-            # Collect what the zip contains (top-level names only)
-            zip_items: list[str] = [item.name for item in source_root.iterdir()]
+            # Collect what the zip contains (top-level names only). Runtime data
+            # is excluded even if it was accidentally committed to a release.
+            protected_items = _get_protected_source_update_items(root)
+            zip_items: list[str] = [
+                item.name for item in source_root.iterdir() if item.name.casefold() not in protected_items
+            ]
+            if not zip_items:
+                raise ValueError("Update archive does not contain any application files")
 
             # Place staging inside root: root.parent can be a different Docker
             # mount, which makes rename() fail with EXDEV (cross-device link).
