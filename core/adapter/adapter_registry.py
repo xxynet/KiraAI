@@ -64,6 +64,43 @@ class AdapterManager:
             manifest_dir, manifest.get("icon-dark" if dark else "icon"),
         )
 
+    @classmethod
+    def register_adapter_type(cls, platform: str, adapter_cls: Type[Union[IMAdapter, SocialMediaAdapter]], manifest: dict, manifest_dir: Path, schema: Optional[list[BaseConfigField]] = None) -> None:
+        """Register an Adapter type supplied by a plugin."""
+        if not isinstance(platform, str) or not platform.strip():
+            raise ValueError("Adapter platform must be a non-empty string")
+        if not inspect.isclass(adapter_cls) or not issubclass(adapter_cls, (IMAdapter, SocialMediaAdapter)):
+            raise TypeError("Adapter class must inherit from IMAdapter or SocialMediaAdapter")
+        if not isinstance(manifest, dict) or (schema is not None and not isinstance(schema, list)):
+            raise TypeError("Adapter manifest must be a dict and schema must be a list")
+        platform = platform.strip()
+        existing = cls._registry.get(platform)
+        if existing is not None and existing is not adapter_cls:
+            raise ValueError(f"Adapter platform '{platform}' is already registered")
+        cls._registry[platform] = adapter_cls
+        cls._manifests[platform] = manifest.copy()
+        cls._manifest_dirs[platform] = Path(manifest_dir)
+        cls._schemas[platform] = copy.deepcopy(schema) if schema else []
+
+    @classmethod
+    def unregister_adapter_type(cls, platform: str, adapter_cls: Type[Union[IMAdapter, SocialMediaAdapter]]) -> bool:
+        """Remove a plugin Adapter type without affecting another owner."""
+        if cls._registry.get(platform) is not adapter_cls:
+            return False
+        cls._registry.pop(platform, None)
+        cls._manifests.pop(platform, None)
+        cls._manifest_dirs.pop(platform, None)
+        cls._schemas.pop(platform, None)
+        return True
+
+    async def stop_adapter_instances_by_platform(self, platform: str) -> int:
+        """Stop runtime instances while preserving their stored configuration."""
+        stopped = 0
+        for name, adapter in list(self._adapters.items()):
+            if getattr(getattr(adapter, "info", None), "platform", None) == platform:
+                await self.stop_adapter(name)
+                stopped += 1
+        return stopped
     def get_adapter_info(self, adapter_id: str) -> Optional[AdapterInfo]:
         adapters_config = self.kira_config.get("adapters", {})
         config_entry = adapters_config.get(adapter_id)

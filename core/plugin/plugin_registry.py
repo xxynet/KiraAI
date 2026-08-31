@@ -15,6 +15,9 @@ from packaging.version import Version, InvalidVersion
 from core.utils.path_utils import get_data_path, get_config_path, resolve_manifest_icon_path
 from core.logging_manager import get_logger
 from core.config.config_field import BaseConfigField, SectionField, build_fields
+from core.provider import BaseProvider, ProviderManager
+from core.adapter import AdapterManager
+from core.adapter.adapter_utils import IMAdapter, SocialMediaAdapter
 from core.config import VERSION
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
@@ -170,9 +173,11 @@ class PluginComponents:
     widgets: List[dict] = field(default_factory=list)
     widget_funcs: Dict[str, Callable] = field(default_factory=dict)
 
+    providers: Dict[str, dict] = field(default_factory=dict)
+    adapters: Dict[str, dict] = field(default_factory=dict)
     def has_any(self) -> bool:
         return bool(self.tools or self.tags or self.hooks or self.pages
-                    or self.api_routes or self.ws_routes or self.static_dirs or self.widgets)
+                    or self.api_routes or self.ws_routes or self.static_dirs or self.widgets or self.providers or self.adapters)
 
     def register_tool(self, name: str, description: str, params: dict, func: Callable):
         self.tools[name] = {
@@ -255,6 +260,17 @@ class PluginComponents:
             "size": size,
         })
         self.widget_funcs[widget_id] = func
+    def register_provider(self, provider_format: str, metadata: dict) -> None:
+        self.providers[provider_format] = metadata
+
+    def unregister_provider(self, provider_format: str) -> Optional[dict]:
+        return self.providers.pop(provider_format, None)
+
+    def register_adapter(self, platform: str, metadata: dict) -> None:
+        self.adapters[platform] = metadata
+
+    def unregister_adapter(self, platform: str) -> Optional[dict]:
+        return self.adapters.pop(platform, None)
 
 
 _plugin_components: Dict[str, PluginComponents] = {}
@@ -766,6 +782,160 @@ class PluginManager:
 
     def get_plugin_components(self) -> Dict[str, PluginComponents]:
         return dict(_plugin_components)
+
+    def _resolve_plugin_component_dir(self, plugin_id: str, relative_path: str) -> Path:
+        plugin_root = _plugin_module_paths.get(plugin_id)
+        if plugin_root is None:
+            raise ValueError(f"Plugin '{plugin_id}' has no registered root directory")
+        candidate = Path(relative_path)
+        if candidate.is_absolute():
+            raise ValueError("Plugin component path must be relative to the plugin root")
+        component_dir = (plugin_root / candidate).resolve()
+        if not component_dir.is_relative_to(plugin_root.resolve()):
+            raise ValueError("Plugin component path must stay inside the plugin root")
+        if not component_dir.is_dir():
+            raise ValueError(f"Plugin component directory does not exist: {relative_path}")
+        return component_dir
+
+    def _load_plugin_component_module(self, plugin_id: str, component_dir: Path, kind: str):
+        plugin_root = _plugin_module_paths[plugin_id].resolve()
+        package_name = f"plugins.{plugin_root.name}"
+        package_dir = plugin_root
+        for part in component_dir.relative_to(plugin_root).parts:
+            package_name = f"{package_name}.{part}"
+            package_dir = package_dir / part
+            if package_name not in sys.modules:
+                package = types.ModuleType(package_name)
+                package.__path__ = [str(package_dir)]
+                sys.modules[package_name] = package
+
+        script_path = component_dir / f"{kind}.py"
+        if not script_path.exists():
+            script_path = component_dir / "__init__.py"
+        if not script_path.exists():
+            raise ValueError(f"No {kind}.py or __init__.py found in {component_dir}")
+
+        module_name = f"{package_name}.__kira_{kind}__"
+        module = sys.modules.get(module_name)
+        if module is not None:
+            return module
+        spec = importlib.util.spec_from_file_location(module_name, script_path)
+        if not spec or not spec.loader:
+            raise ValueError(f"Failed to create module spec for {script_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
+        _module_to_plugin[module_name] = plugin_id
+        return module
+
+    @staticmethod
+    def _find_component_class(module, base_types: tuple[type, ...], kind: str) -> type:
+        for _, candidate in inspect.getmembers(module, inspect.isclass):
+            if issubclass(candidate, base_types) and candidate not in base_types:
+                return candidate
+        names = ", ".join(base_type.__name__ for base_type in base_types)
+        raise ValueError(f"No {kind} class inheriting from {names} found in {module.__name__}")
+
+    async def register_plugin_provider(self, plugin_id: str, relative_path: str) -> str:
+        if not self.ctx or not self.ctx.provider_mgr:
+            raise RuntimeError("Provider manager is not available")
+        component_dir = self._resolve_plugin_component_dir(plugin_id, relative_path)
+        manifest_path = component_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise ValueError(f"Provider manifest not found: {relative_path}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        provider_format = str(manifest.get("name") or "").strip()
+        if not provider_format:
+            raise ValueError("Provider manifest must define a name")
+        comp = _ensure_components(plugin_id)
+        existing = comp.providers.get(provider_format)
+        if existing:
+            if existing["path"] == component_dir:
+                return provider_format
+            raise ValueError(f"Plugin already registered Provider format '{provider_format}'")
+        module = self._load_plugin_component_module(plugin_id, component_dir, "provider")
+        provider_cls = self._find_component_class(module, (BaseProvider,), "Provider")
+        raw_schema = {}
+        schema_path = component_dir / "schema.json"
+        if schema_path.exists():
+            raw_schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        schema = {
+            "provider_config": build_fields(raw_schema.get("provider_config") or {}),
+            "model_config": {
+                model_type: build_fields(fields)
+                for model_type, fields in (raw_schema.get("model_config") or {}).items()
+                if isinstance(fields, dict)
+            },
+        }
+        self.ctx.provider_mgr.register_provider_type(
+            provider_format, provider_cls, manifest, component_dir, schema
+        )
+        comp.register_provider(provider_format, {"path": component_dir, "class": provider_cls})
+        for provider_id, config in (self.ctx.config.get("providers", {}) or {}).items():
+            if isinstance(config, dict) and config.get("format") == provider_format:
+                self.ctx.provider_mgr.set_provider(provider_id, config)
+        logger.info(f"Registered Provider format {provider_format} from plugin {plugin_id}")
+        return provider_format
+
+    async def unregister_plugin_provider(self, plugin_id: str, provider_format: str) -> bool:
+        if not self.ctx or not self.ctx.provider_mgr:
+            raise RuntimeError("Provider manager is not available")
+        metadata = _ensure_components(plugin_id).unregister_provider(provider_format)
+        if metadata is None:
+            return False
+        self.ctx.provider_mgr.remove_provider_instances_by_format(provider_format)
+        removed = self.ctx.provider_mgr.unregister_provider_type(provider_format, metadata["class"])
+        logger.info(f"Unregistered Provider format {provider_format} from plugin {plugin_id}")
+        return removed
+
+    async def register_plugin_adapter(self, plugin_id: str, relative_path: str) -> str:
+        if not self.ctx or not self.ctx.adapter_mgr:
+            raise RuntimeError("Adapter manager is not available")
+        component_dir = self._resolve_plugin_component_dir(plugin_id, relative_path)
+        manifest_path = component_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise ValueError(f"Adapter manifest not found: {relative_path}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        platform = str(manifest.get("name") or "").strip()
+        if not platform:
+            raise ValueError("Adapter manifest must define a name")
+        comp = _ensure_components(plugin_id)
+        existing = comp.adapters.get(platform)
+        if existing:
+            if existing["path"] == component_dir:
+                return platform
+            raise ValueError(f"Plugin already registered Adapter platform '{platform}'")
+        module = self._load_plugin_component_module(plugin_id, component_dir, "adapter")
+        adapter_cls = self._find_component_class(module, (IMAdapter, SocialMediaAdapter), "Adapter")
+        raw_schema = {}
+        schema_path = component_dir / "schema.json"
+        if schema_path.exists():
+            raw_schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        self.ctx.adapter_mgr.register_adapter_type(
+            platform, adapter_cls, manifest, component_dir, build_fields(raw_schema)
+        )
+        comp.register_adapter(platform, {"path": component_dir, "class": adapter_cls})
+        for adapter_id in (self.ctx.config.get("adapters", {}) or {}):
+            info = self.ctx.adapter_mgr.get_adapter_info(adapter_id)
+            if info and info.platform == platform:
+                await self.ctx.adapter_mgr.register_adapter(info)
+        logger.info(f"Registered Adapter platform {platform} from plugin {plugin_id}")
+        return platform
+
+    async def unregister_plugin_adapter(self, plugin_id: str, platform: str) -> bool:
+        if not self.ctx or not self.ctx.adapter_mgr:
+            raise RuntimeError("Adapter manager is not available")
+        metadata = _ensure_components(plugin_id).unregister_adapter(platform)
+        if metadata is None:
+            return False
+        await self.ctx.adapter_mgr.stop_adapter_instances_by_platform(platform)
+        removed = self.ctx.adapter_mgr.unregister_adapter_type(platform, metadata["class"])
+        logger.info(f"Unregistered Adapter platform {platform} from plugin {plugin_id}")
+        return removed
 
     def get_plugin_tools(self, plugin_name: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         if plugin_name is None:
@@ -1447,11 +1617,19 @@ class PluginManager:
             self._web_app.openapi_schema = None
             logger.debug(f"Removed {removed} route(s) for plugin {plugin_id}")
 
+    async def _cleanup_plugin_runtime_components(self, plugin_id: str) -> None:
+        comp = _plugin_components.get(plugin_id)
+        if not comp:
+            return
+        for platform in list(comp.adapters):
+            await self.unregister_plugin_adapter(plugin_id, platform)
+        for provider_format in list(comp.providers):
+            await self.unregister_plugin_provider(plugin_id, provider_format)
+
     def _cleanup_plugin_registration(self, plugin_id: str) -> None:
         comp = _plugin_components.get(plugin_id)
         if not comp:
             return
-
         # clean up tool registration
         if self.ctx and getattr(self.ctx, "tool_mgr", None):
             for tool_name in list(comp.tools.keys()):
@@ -1651,6 +1829,7 @@ class PluginManager:
                 logger.info(f"Terminated plugin {plugin_id}")
             except Exception as e:
                 logger.error(f"Error terminating plugin {plugin_id}: {e}")
+            await self._cleanup_plugin_runtime_components(plugin_id)
             self._cleanup_plugin_registration(plugin_id)
             return
 
@@ -1664,6 +1843,7 @@ class PluginManager:
         self.plugin_instances.clear()
         self.plugin_configs.clear()
         for name in list(_plugin_components.keys()):
+            await self._cleanup_plugin_runtime_components(name)
             self._cleanup_plugin_registration(name)
 
     async def uninstall_plugin(self, plugin_id: str) -> None:
