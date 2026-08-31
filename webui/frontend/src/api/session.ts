@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { SessionItem, SessionDetail } from '@/types'
+import type { SessionItem, SessionDetail, SessionCapabilities } from '@/types'
 
 export function getSessions() {
   return apiClient.get<{ sessions: SessionItem[] }>('/sessions')
@@ -9,7 +9,7 @@ export function getSession(id: string) {
   return apiClient.get<SessionDetail>(`/sessions/${encodeURIComponent(id)}`)
 }
 
-export function updateSession(id: string, data: { title?: string; description?: string; messages?: any[]; metadata?: Record<string, any> }) {
+export function updateSession(id: string, data: { title?: string; description?: string; capabilities?: SessionCapabilities | null; messages?: any[]; metadata?: Record<string, any> }) {
   return apiClient.put(`/sessions/${encodeURIComponent(id)}`, data)
 }
 

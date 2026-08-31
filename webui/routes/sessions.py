@@ -41,6 +41,33 @@ class SessionsRoutes(Routes):
             ),
         ]
 
+    @staticmethod
+    def _validate_capabilities_payload(capabilities: object) -> None:
+        """Validate a session capability override before mutating session data."""
+        if capabilities is None:
+            return
+        if not isinstance(capabilities, dict):
+            raise HTTPException(status_code=400, detail="Capabilities must be an object or null")
+
+        capability_schema = {
+            "image_recognition": {"enabled": bool, "mode": str, "desc_prompt": str},
+            "tts": {"enabled": bool},
+            "stt": {"enabled": bool},
+            "image_generation": {"enabled": bool},
+            "video_generation": {"enabled": bool},
+            "forward_parsing": {"enabled": bool},
+        }
+        for group_name, group_config in capabilities.items():
+            expected_fields = capability_schema.get(group_name)
+            if expected_fields is None or not isinstance(group_config, dict):
+                raise HTTPException(status_code=400, detail=f"Invalid capability group: {group_name}")
+            for field_name, field_value in group_config.items():
+                expected_type = expected_fields.get(field_name)
+                if expected_type is None or not isinstance(field_value, expected_type):
+                    raise HTTPException(status_code=400, detail=f"Invalid capability field: {group_name}.{field_name}")
+            if group_name == "image_recognition" and group_config.get("mode") not in (None, "vlm_description", "native"):
+                raise HTTPException(status_code=400, detail="Invalid image recognition mode")
+
     async def list_sessions(self):
         if not self.lifecycle or not self.lifecycle.session_manager:
             return {"sessions": []}
@@ -88,6 +115,7 @@ class SessionsRoutes(Routes):
             "session_id": session_key,
             "title": title,
             "description": description,
+            "capabilities": session_meta.get("capabilities"),
             "messages": memory,
         }
 
@@ -97,7 +125,11 @@ class SessionsRoutes(Routes):
 
         messages = payload.get("messages")
         title = payload.get("title")
+        capabilities_provided = "capabilities" in payload
+        capabilities = payload.get("capabilities")
         description = payload.get("description")
+        if capabilities_provided:
+            self._validate_capabilities_payload(capabilities)
 
         if messages is not None:
             self.lifecycle.session_manager.write_memory(session_id, messages)
@@ -106,6 +138,11 @@ class SessionsRoutes(Routes):
             self.lifecycle.session_manager.update_session_info(
                 session_id, title=title, description=description
             )
+        if capabilities_provided:
+            self.lifecycle.session_manager.update_session_capabilities(
+                session_id, capabilities
+            )
+
 
         parts = session_id.split(":")
         if len(parts) >= 3:
@@ -117,6 +154,7 @@ class SessionsRoutes(Routes):
             session_type = ""
             session_key = session_id
 
+        session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})
         return {
             "id": session_id,
             "adapter_name": adapter_name,
@@ -124,6 +162,7 @@ class SessionsRoutes(Routes):
             "session_id": session_key,
             "title": title if title is not None else "",
             "description": description if description is not None else "",
+            "capabilities": session_meta.get("capabilities"),
             "messages": messages,
         }
 

@@ -62,6 +62,7 @@ class DefaultPlugin(BasePlugin):
     async def inject_builtin_tags(self, event: KiraMessageBatchEvent, _, tag_set: TagSet):
         """Inject builtin tags, respecting capability toggles"""
         message_types = event.message_types
+        capabilities = self.ctx.get_session_capabilities(event.sid)
         if "text" in message_types:
             tag_set.register(TextTag)
         if "at" in message_types:
@@ -69,11 +70,11 @@ class DefaultPlugin(BasePlugin):
         if "reply" in message_types:
             tag_set.register(ReplyTag)
         if "img" in message_types:
-            caps = self.ctx.config.get_config("bot_config.capabilities.image_generation", {})
+            caps = capabilities.get("image_generation", {})
             if caps.get("enabled", True):
                 tag_set.register(ImgTag(ctx=self.ctx))
         if "record" in message_types:
-            caps = self.ctx.config.get_config("bot_config.capabilities.tts", {})
+            caps = capabilities.get("tts", {})
             if caps.get("enabled", True):
                 tag_set.register(RecordTag(ctx=self.ctx))
         if "emoji" in message_types:
@@ -82,13 +83,13 @@ class DefaultPlugin(BasePlugin):
         if "poke" in message_types:
             tag_set.register(PokeTag)
         if "selfie" in message_types:
-            caps = self.ctx.config.get_config("bot_config.capabilities.image_generation", {})
+            caps = capabilities.get("image_generation", {})
             if caps.get("enabled", True):
                 tag_set.register(SelfieTag(ctx=self.ctx))
         if "file" in message_types:
             tag_set.register(build_file_tag())
         if "video" in message_types:
-            caps = self.ctx.config.get_config("bot_config.capabilities.video_generation", {})
+            caps = capabilities.get("video_generation", {})
             if caps.get("enabled", False):
                 tag_set.register(VideoTag(ctx=self.ctx))
         if "forward" in message_types:

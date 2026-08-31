@@ -73,6 +73,10 @@ class PluginContext:
     def get_buffer(self, sid: str):
         buffer = self.message_processor.session_buffer.get_buffer(sid)
         return buffer
+    def get_session_capabilities(self, sid: str) -> dict:
+        global_capabilities = self.config.get_config("bot_config.capabilities", {})
+        return self.session_mgr.get_effective_capabilities(sid, global_capabilities)
+
     
     async def flush_session_messages(self, sid: str):
         await self.message_processor.flush_session_messages(sid)
