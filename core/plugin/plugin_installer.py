@@ -43,6 +43,22 @@ def _temp_dir() -> Path:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+async def _run_thread_worker(func: Callable, *args):
+    """Run blocking work in a thread and settle it before propagating cancellation."""
+    worker = asyncio.create_task(asyncio.to_thread(func, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+            except Exception as exc:
+                logger.warning(f"Background plugin installer worker failed during cancellation: {exc}")
+                break
+        raise
+
 
 async def install_from_github(
     repo_url: str,
@@ -138,19 +154,26 @@ async def install_from_zip(
     """
     temp_zip = _temp_dir() / f"upload_{uuid.uuid4().hex[:8]}.zip"
     try:
-        temp_zip.write_bytes(zip_bytes)
+        await _run_thread_worker(temp_zip.write_bytes, zip_bytes)
+    except asyncio.CancelledError:
+        temp_zip.unlink(missing_ok=True)
+        raise
     except Exception as e:
         temp_zip.unlink(missing_ok=True)
         raise IOError(f"Failed to write uploaded zip to temp: {e}") from e
 
-    return await _extract_and_install(
-        temp_zip,
-        plugins_dir,
-        preferred_name=preferred_name,
-        is_plugin_installed=is_plugin_installed,
-        target_dir=target_dir,
-        expected_plugin_id=expected_plugin_id,
-    )
+    try:
+        return await _extract_and_install(
+            temp_zip,
+            plugins_dir,
+            preferred_name=preferred_name,
+            is_plugin_installed=is_plugin_installed,
+            target_dir=target_dir,
+            expected_plugin_id=expected_plugin_id,
+        )
+    except asyncio.CancelledError:
+        temp_zip.unlink(missing_ok=True)
+        raise
 
 
 async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = None) -> List[str]:
@@ -205,6 +228,26 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
 # ---------------------------------------------------------------------------
 
 async def _extract_and_install(
+    temp_zip: Path,
+    plugins_dir: Path,
+    preferred_name: str = "",
+    is_plugin_installed: Optional[Callable[[str], bool]] = None,
+    target_dir: Optional[Path] = None,
+    expected_plugin_id: Optional[str] = None,
+) -> Path:
+    """Extract and install a plugin archive without blocking the event loop."""
+    return await _run_thread_worker(
+        _extract_and_install_sync,
+        temp_zip,
+        plugins_dir,
+        preferred_name,
+        is_plugin_installed,
+        target_dir,
+        expected_plugin_id,
+    )
+
+
+def _extract_and_install_sync(
     temp_zip: Path,
     plugins_dir: Path,
     preferred_name: str = "",

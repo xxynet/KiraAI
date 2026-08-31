@@ -12,6 +12,7 @@ class DefaultChatPlugin(BasePlugin):
         super().__init__(ctx, cfg)
         self.session_events: dict[str, asyncio.Event] = {}
         self.session_tasks: dict[str, asyncio.Task] = {}
+        self._terminating = False
         bot_cfg = ctx.config["bot_config"].get("bot", {})
         self.debounce_interval = float(bot_cfg.get("max_message_interval", 1.5))
         self.max_buffer_messages = int(bot_cfg.get("max_buffer_messages", 3))
@@ -24,16 +25,24 @@ class DefaultChatPlugin(BasePlugin):
         self.waking_words = cfg.get("waking_words", [])
     
     async def initialize(self):
+        self._terminating = False
         logger.info(f"[Default Chat] initialize")
     
     async def terminate(self):
-        """
-        Cleanup when plugin is terminated
-        """
-        pass
+        """Cancel all pending debounce tasks before the plugin is unloaded."""
+        self._terminating = True
+        tasks = list(self.session_tasks.values())
+        self.session_tasks.clear()
+        self.session_events.clear()
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     @on.im_message(priority=Priority.HIGH)
     async def handle_msg(self, event: KiraMessageEvent):
+        if self._terminating:
+            return
 
         # === Check waking words ===
         for m in event.message.chain:
@@ -67,27 +76,45 @@ class DefaultChatPlugin(BasePlugin):
         if sid not in self.session_events:
             self.session_events[sid] = asyncio.Event()
         if sid not in self.session_tasks:
-            self.session_tasks[sid] = asyncio.create_task(self._debounce_loop(sid))
+            self.session_tasks[sid] = asyncio.create_task(
+                self._debounce_loop(sid, self.session_events[sid]),
+                name=f"chat_debounce_{sid}",
+            )
         self.session_events[sid].set()
 
-    async def _debounce_loop(self, sid: str):
-        event = self.session_events[sid]
-        while True:
-            await event.wait()
-            event.clear()
-            try:
+    async def _debounce_loop(self, sid: str, event: asyncio.Event):
+        try:
+            while True:
+                if self._terminating:
+                    return
+                await event.wait()
+                event.clear()
                 await asyncio.sleep(self.debounce_interval)
-            except asyncio.CancelledError:
-                break
-            if event.is_set() and not self.receive_unmentioned:
-                continue
-            buffer_len = self.ctx.message_processor.get_session_buffer_length(sid)
-            if buffer_len == 0:
-                continue
-            try:
-                await self.ctx.message_processor.flush_session_messages(sid)
-            except Exception:
-                logger.exception(f"[Debounce] Error flushing session {sid}")
+                if self._terminating:
+                    return
+                if event.is_set() and not self.receive_unmentioned:
+                    continue
+                buffer_len = self.ctx.message_processor.get_session_buffer_length(sid)
+                if buffer_len == 0:
+                    return
+                try:
+                    await self.ctx.message_processor.flush_session_messages(sid)
+                except Exception:
+                    logger.exception(f"[Debounce] Error flushing session {sid}")
+                return
+        except asyncio.CancelledError:
+            raise
+        finally:
+            current_task = asyncio.current_task()
+            if self.session_tasks.get(sid) is current_task:
+                self.session_tasks.pop(sid, None)
+                if event.is_set() and not self._terminating:
+                    self.session_tasks[sid] = asyncio.create_task(
+                        self._debounce_loop(sid, event),
+                        name=f"chat_debounce_{sid}",
+                    )
+                else:
+                    self.session_events.pop(sid, None)
 
     @on.llm_request(priority=Priority.MEDIUM)
     async def inject_group_prompt(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):

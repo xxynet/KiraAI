@@ -120,10 +120,12 @@ class DefaultStickerPlugin(BasePlugin):
 
     async def _scan_once(self):
         logger.info("Scanning unregistered stickers")
-        sticker_files = [
-            f for f in os.listdir(self.sticker_mgr.sticker_folder)
-            if f.lower().endswith(STICKER_EXTENSIONS)
-        ]
+        sticker_files = await asyncio.to_thread(
+            lambda: [
+                f for f in os.listdir(self.sticker_mgr.sticker_folder)
+                if f.lower().endswith(STICKER_EXTENSIONS)
+            ]
+        )
         pending = [
             f for f in sticker_files
             if f not in self.sticker_mgr.sticker_paths

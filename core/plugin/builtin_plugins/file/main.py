@@ -351,6 +351,32 @@ class FilePlugin(BasePlugin):
             return None
         return normalized
 
+    @staticmethod
+    def _read_file_lines(path: Path) -> list[str]:
+        return path.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    @staticmethod
+    def _read_file_text(path: Path) -> str:
+        return path.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _write_file_text(path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    @staticmethod
+    def _list_directory(path: Path) -> list[str]:
+        return sorted(os.listdir(path))
+
+    @staticmethod
+    def _find_files(path: Path, pattern: str) -> list[Path]:
+        matches = path.glob(pattern)
+        return sorted(
+            (match for match in matches if match.is_file()),
+            key=lambda match: match.stat().st_mtime,
+            reverse=True,
+        )
+
     @register.tool(
         "read_file",
         "Read a plain text file (txt, html, py, etc..) in allowed read paths",
@@ -385,8 +411,7 @@ class FilePlugin(BasePlugin):
 
         try:
             abs_path = self._resolve_path(path)
-            with open(abs_path, 'r', encoding="utf-8") as f:
-                file_lines = f.readlines()
+            file_lines = await asyncio.to_thread(self._read_file_lines, abs_path)
             if offset > len(file_lines) or offset < 1:
                 return "Offset out of range"
 
@@ -437,8 +462,7 @@ class FilePlugin(BasePlugin):
 
         try:
             abs_path = self._resolve_path(path)
-            with open(abs_path, 'w', encoding="utf-8") as f:
-                f.write(content)
+            await asyncio.to_thread(self._write_file_text, abs_path, content)
             return "File written successfully"
         except Exception as e:
             return f"Failed to write file: {e}"
@@ -478,9 +502,7 @@ class FilePlugin(BasePlugin):
 
         try:
             abs_path = self._resolve_path(path)
-
-            with open(abs_path, 'r', encoding="utf-8") as f:
-                content = f.read()
+            content = await asyncio.to_thread(self._read_file_text, abs_path)
 
             if old_text == "":
                 return "Error: old_text must not be empty."
@@ -492,11 +514,8 @@ class FilePlugin(BasePlugin):
 
             new_content = content.replace(old_text, new_text)
 
-            abs_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(abs_path, 'w', encoding="utf-8") as f:
-                f.write(new_content)
-
-                return f"Successfully edited file: {path}, {replacements} replacement(s) made."
+            await asyncio.to_thread(self._write_file_text, abs_path, new_content)
+            return f"Successfully edited file: {path}, {replacements} replacement(s) made."
         except Exception as e:
             return f"Failed to edit file: {str(e)}"
 
@@ -530,8 +549,7 @@ class FilePlugin(BasePlugin):
 
         try:
             abs_path = self._resolve_path(path)
-
-            files = sorted(os.listdir(abs_path))
+            files = await asyncio.to_thread(self._list_directory, abs_path)
 
             if offset < 1 or offset > len(files):
                 return "offset out of range"
@@ -829,7 +847,8 @@ class FilePlugin(BasePlugin):
             return f"Path not found: {path}"
 
         if self._has_ripgrep():
-            return self._grep_with_rg(
+            return await asyncio.to_thread(
+                self._grep_with_rg,
                 pattern, abs_path, output_mode, context,
                 case_insensitive, glob, multiline, limit,
             )
@@ -902,14 +921,7 @@ class FilePlugin(BasePlugin):
             if not abs_path.is_dir():
                 return f"Not a directory: {path}"
 
-            matches = sorted(
-                abs_path.glob(pattern),
-                key=lambda p: p.stat().st_mtime if p.is_file() else 0,
-                reverse=True,
-            )
-
-            # Filter to files only
-            files = [m for m in matches if m.is_file()]
+            files = await asyncio.to_thread(self._find_files, abs_path, pattern)
 
             if not files:
                 return "No files found."
