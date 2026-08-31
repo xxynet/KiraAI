@@ -574,7 +574,14 @@ class AdapterManager:
         if task and not task.done():
             task.cancel()
             try:
-                await task
+                await asyncio.wait_for(
+                    asyncio.shield(task), timeout=ADAPTER_STOP_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"Adapter {name} start task did not finish after cancellation within "
+                    f"{ADAPTER_STOP_TIMEOUT:.0f}s; continuing application shutdown"
+                )
             except asyncio.CancelledError:
                 pass
             except Exception as exc:
@@ -606,10 +613,9 @@ class AdapterManager:
 
         if name_value in self._adapters:
             try:
-                await self._adapters[name_value].stop()
+                await self.stop_adapter(name_value)
             except Exception as e:
                 logger.error(f"Failed to stop adapter {adapter_id} before deletion: {e}")
-            self._adapters.pop(name_value, None)
 
         del adapters_config[adapter_id]
         self.kira_config["adapters"] = adapters_config
