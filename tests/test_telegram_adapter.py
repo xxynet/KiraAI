@@ -9,6 +9,7 @@ from core.adapter.src.telegram.telegram import (
     TelegramAdapter,
     _TelegramShutdownCancellationFilter,
 )
+from core.adapter.adapter_registry import AdapterManager
 from core.adapter.adapter_info import AdapterInfo
 
 
@@ -116,6 +117,33 @@ async def test_stop_continues_after_updater_stop_times_out(monkeypatch):
     updater_stop.assert_awaited_once()
     application_stop.assert_awaited_once()
     application_shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_adapter_stop_timeout_propagates_to_telegram_stop(monkeypatch):
+    monkeypatch.setattr("core.adapter.adapter_registry.ADAPTER_STOP_TIMEOUT", 0.01)
+    adapter = TelegramAdapter.__new__(TelegramAdapter)
+    updater_stop = AsyncMock(side_effect=asyncio.Event().wait)
+    application_stop = AsyncMock()
+    application_shutdown = AsyncMock()
+    adapter.app = SimpleNamespace(
+        updater=SimpleNamespace(running=True, stop=updater_stop),
+        running=True,
+        stop=application_stop,
+        shutdown=application_shutdown,
+    )
+    adapter.config = {"bot_pid": "test-bot"}
+
+    manager = AdapterManager.__new__(AdapterManager)
+    manager._adapter_tasks = {}
+    manager._adapters = {"telegram-test": adapter}
+
+    await manager.stop_adapter("telegram-test")
+
+    updater_stop.assert_awaited_once()
+    application_stop.assert_not_awaited()
+    application_shutdown.assert_not_awaited()
+    assert "telegram-test" not in manager._adapters
 
 
 @pytest.mark.asyncio

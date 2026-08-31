@@ -160,6 +160,9 @@ class TelegramAdapter(IMAdapter):
                         f"{TELEGRAM_SHUTDOWN_TIMEOUT:.0f}s; continuing cleanup"
                     )
                 except asyncio.CancelledError:
+                    current_task = asyncio.current_task()
+                    if current_task is not None and current_task.cancelling():
+                        raise
                     logger.warning(
                         f"Telegram {component} stop was cancelled; continuing cleanup"
                     )
