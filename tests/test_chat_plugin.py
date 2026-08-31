@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -54,3 +54,37 @@ async def test_completed_debounce_task_releases_session_state():
     plugin.ctx.message_processor.flush_session_messages.assert_awaited_once_with(sid)
     assert sid not in plugin.session_tasks
     assert sid not in plugin.session_events
+
+
+@pytest.mark.anyio
+async def test_terminate_rejects_messages_arriving_during_cleanup():
+    plugin = _plugin()
+    sid = "test:dm:1"
+    cancellation_received = asyncio.Event()
+    release = asyncio.Event()
+
+    async def wait_for_termination():
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancellation_received.set()
+            await release.wait()
+            raise
+
+    task = asyncio.create_task(wait_for_termination())
+    plugin.session_events[sid] = asyncio.Event()
+    plugin.session_tasks[sid] = task
+    terminate_task = asyncio.create_task(plugin.terminate())
+    await cancellation_received.wait()
+
+    event = SimpleNamespace(buffer=Mock(), flush=Mock())
+    try:
+        await plugin.handle_msg(event)
+        event.buffer.assert_not_called()
+        event.flush.assert_not_called()
+        assert plugin.session_tasks == {}
+        assert plugin.session_events == {}
+    finally:
+        release.set()
+
+    await terminate_task

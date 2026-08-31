@@ -41,6 +41,8 @@ class DefaultChatPlugin(BasePlugin):
 
     @on.im_message(priority=Priority.HIGH)
     async def handle_msg(self, event: KiraMessageEvent):
+        if self._terminating:
+            return
 
         # === Check waking words ===
         for m in event.message.chain:
@@ -83,9 +85,13 @@ class DefaultChatPlugin(BasePlugin):
     async def _debounce_loop(self, sid: str, event: asyncio.Event):
         try:
             while True:
+                if self._terminating:
+                    return
                 await event.wait()
                 event.clear()
                 await asyncio.sleep(self.debounce_interval)
+                if self._terminating:
+                    return
                 if event.is_set() and not self.receive_unmentioned:
                     continue
                 buffer_len = self.ctx.message_processor.get_session_buffer_length(sid)

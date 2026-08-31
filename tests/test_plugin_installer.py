@@ -119,12 +119,57 @@ async def test_cancelled_upload_waits_for_writer_and_cleans_temp_file(tmp_path, 
     )
     await asyncio.to_thread(started.wait)
 
-    install_task.cancel()
-    await asyncio.sleep(0)
-    assert not install_task.done()
-
-    release.set()
+    try:
+        install_task.cancel()
+        await asyncio.sleep(0)
+        assert not install_task.done()
+        install_task.cancel()
+        await asyncio.sleep(0)
+        assert not install_task.done()
+    finally:
+        release.set()
     with pytest.raises(asyncio.CancelledError):
         await install_task
 
     assert not list((tmp_path / "temp").glob("upload_*.zip"))
+
+
+@pytest.mark.anyio
+async def test_cancelled_extraction_waits_for_worker_after_repeated_cancellation(
+    tmp_path, monkeypatch
+):
+    temp_zip = tmp_path / "temp" / "upload_test.zip"
+    temp_zip.parent.mkdir(parents=True)
+    temp_zip.write_bytes(b"archive")
+    started = threading.Event()
+    release = threading.Event()
+    worker_finished = threading.Event()
+
+    def blocking_extract(path: Path, *_args):
+        started.set()
+        try:
+            release.wait()
+        finally:
+            path.unlink(missing_ok=True)
+            worker_finished.set()
+
+    monkeypatch.setattr(plugin_installer, "_extract_and_install_sync", blocking_extract)
+    install_task = asyncio.create_task(
+        plugin_installer._extract_and_install(temp_zip, tmp_path / "plugins")
+    )
+    await asyncio.to_thread(started.wait)
+
+    try:
+        install_task.cancel()
+        await asyncio.sleep(0)
+        assert not install_task.done()
+        install_task.cancel()
+        await asyncio.sleep(0)
+        assert not install_task.done()
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await install_task
+
+    assert worker_finished.is_set()
+    assert not temp_zip.exists()

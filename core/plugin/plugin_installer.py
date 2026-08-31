@@ -49,10 +49,14 @@ async def _run_thread_worker(func: Callable, *args):
     try:
         return await asyncio.shield(worker)
     except asyncio.CancelledError:
-        try:
-            await asyncio.shield(worker)
-        except Exception as exc:
-            logger.warning(f"Background plugin installer worker failed during cancellation: {exc}")
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+            except Exception as exc:
+                logger.warning(f"Background plugin installer worker failed during cancellation: {exc}")
+                break
         raise
 
 
