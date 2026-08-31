@@ -336,6 +336,8 @@ class AdapterManager:
             logger.error(f"Adapter config not found after generation for {adapter_id}")
             return None
 
+        old_entry = copy.deepcopy(config_entry)
+
         if config:
             entry_config = config_entry.get("config") or {}
             entry_config.update(config)
@@ -348,6 +350,18 @@ class AdapterManager:
         enabled = status == "active"
         config_entry["enabled"] = enabled
 
+        if enabled:
+            try:
+                info = self.get_adapter_info(adapter_id)
+                if not info:
+                    raise RuntimeError(f"Failed to read adapter info for {adapter_id}")
+                await self.register_adapter(info)
+            except Exception:
+                adapters_config[adapter_id] = old_entry
+                self.kira_config["adapters"] = adapters_config
+                self.adas_config = adapters_config
+                raise
+
         adapters_config[adapter_id] = config_entry
         self.kira_config["adapters"] = adapters_config
         try:
@@ -358,13 +372,6 @@ class AdapterManager:
 
         self.adas_config = adapters_config
 
-        if enabled:
-            try:
-                info = self.get_adapter_info(adapter_id)
-                if info:
-                    await self.register_adapter(info)
-            except Exception as e:
-                logger.error(f"Failed to start adapter {adapter_id} after creation: {e}")
 
         info = self.get_adapter_info(adapter_id)
         if not info:
@@ -387,6 +394,7 @@ class AdapterManager:
             return None
 
         old_enabled = bool(config_entry.get("enabled", False))
+        old_entry = copy.deepcopy(config_entry)
         old_config = copy.deepcopy(config_entry.get("config") or {})
         old_name = config_entry.get("name") or adapter_id
         old_desc = config_entry.get("desc") or ""
@@ -411,6 +419,21 @@ class AdapterManager:
         if status:
             config_entry["enabled"] = status == "active"
 
+        new_enabled = bool(config_entry.get("enabled", False))
+        name_for_runtime = config_entry.get("name") or adapter_id
+
+        if new_enabled and not old_enabled:
+            try:
+                info = self.get_adapter_info(adapter_id)
+                if not info:
+                    raise RuntimeError(f"Failed to read adapter info for {adapter_id}")
+                await self.register_adapter(info)
+            except Exception:
+                adapters_config[adapter_id] = old_entry
+                self.kira_config["adapters"] = adapters_config
+                self.adas_config = adapters_config
+                raise
+
         adapters_config[adapter_id] = config_entry
         self.kira_config["adapters"] = adapters_config
         try:
@@ -420,17 +443,6 @@ class AdapterManager:
             return None
 
         self.adas_config = adapters_config
-
-        new_enabled = bool(config_entry.get("enabled", False))
-        name_for_runtime = config_entry.get("name") or adapter_id
-
-        if new_enabled and not old_enabled:
-            try:
-                info = self.get_adapter_info(adapter_id)
-                if info:
-                    await self.register_adapter(info)
-            except Exception as e:
-                logger.error(f"Failed to start adapter {adapter_id} after update: {e}")
 
         if old_enabled and new_enabled:
             new_config = config_entry.get("config") or {}
@@ -465,13 +477,11 @@ class AdapterManager:
         platform = info.platform
         name = info.name or info.adapter_id
         if not platform:
-            logger.error(f"Adapter {name} has no platform configured")
-            return
+            raise ValueError(f"Adapter {name} has no platform configured")
 
         adapter_cls = self.get_adapter_class(platform)
         if not adapter_cls:
-            logger.error(f"No adapter registered for platform {platform}")
-            return
+            raise ValueError(f"No adapter registered for platform {platform}")
 
         if not info.enabled:
             return
@@ -482,22 +492,39 @@ class AdapterManager:
             elif issubclass(adapter_cls, SocialMediaAdapter):
                 instance = adapter_cls(info, self.event_queue)
             else:
-                logger.error(f"Adapter class for platform {platform} is not a valid adapter type")
-                return
+                raise TypeError(f"Adapter class for platform {platform} is not a valid adapter type")
         except Exception as e:
-            logger.error(f"Failed to instantiate adapter {name}: {e}")
-            return
+            raise RuntimeError(f"Failed to instantiate adapter {name}") from e
 
         self._adapters[name] = instance
-        await self.start_adapter(name)
-
-    async def start_adapter(self, name):
-        """start an adapter by specified adapter name"""
         try:
-            task = asyncio.create_task(self._adapters[name].start())
-            task.add_done_callback(lambda t: logger.info(f"Started adapter {name}"))
-        except Exception as e:
-            logger.error(f"Failed to start adapter {name}: {e}")
+            await self.start_adapter(name)
+        except Exception:
+            self._adapters.pop(name, None)
+            raise
+
+    async def start_adapter(self, name: str):
+        """Start an adapter by specified adapter name."""
+        adapter = self._adapters.get(name)
+        if not adapter:
+            raise KeyError(f"Adapter {name} is not registered")
+
+        task = asyncio.create_task(adapter.start())
+        await asyncio.sleep(0)
+        if task.done():
+            task.result()
+
+        def log_completion(completed_task: asyncio.Task):
+            if completed_task.cancelled():
+                logger.info(f"Adapter {name} start task was cancelled")
+                return
+            try:
+                completed_task.result()
+                logger.info(f"Started adapter {name}")
+            except Exception as exc:
+                logger.error(f"Adapter {name} stopped after a start failure: {exc}")
+
+        task.add_done_callback(log_completion)
 
     async def stop_adapter(self, name: str):
         """stop an adapter by specified adapter name"""
