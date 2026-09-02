@@ -167,7 +167,8 @@
         <div
           v-for="server in mcpServers"
           :key="server.id"
-          class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col"
+          class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col cursor-pointer transition-shadow hover:shadow-md"
+          @click="openMcpTools(server)"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
@@ -184,7 +185,7 @@
               class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
               :class="server.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
               :aria-pressed="server.enabled ? 'true' : 'false'"
-              @click="toggleMcp(server)"
+              @click.stop="toggleMcp(server)"
             >
               <span
                 class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
@@ -202,14 +203,14 @@
             <button
               type="button"
               class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition-colors"
-              @click="openMcpEdit(server)"
+              @click.stop="openMcpEdit(server)"
             >
               {{ $t('plugin.mcp_edit') }}
             </button>
             <button
               type="button"
               class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
-              @click="handleDeleteMcp(server.id)"
+              @click.stop="handleDeleteMcp(server.id)"
             >
               {{ $t('plugin.mcp_delete') }}
             </button>
@@ -1027,6 +1028,31 @@
       </div>
     </Modal>
 
+    <!-- MCP Tools Dialog -->
+    <Modal v-model="mcpToolsDialogVisible" content-class="max-w-2xl">
+      <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col modal-card" style="max-height: 80vh;">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-theme-strong">{{ $t('plugin.mcp_tools_title', { name: selectedMcpServer?.name || selectedMcpServer?.id || '' }) }}</h3>
+          <button type="button" class="text-theme-faint text-theme-faint-hover" @click="mcpToolsDialogVisible = false">
+            <IconClose class="w-6 h-6" />
+          </button>
+        </div>
+        <div class="px-6 py-4 flex-1 overflow-y-auto">
+          <div v-if="mcpToolsLoading" class="flex justify-center py-8">
+            <IconSpinner class="w-6 h-6 animate-spin text-theme-faint" />
+          </div>
+          <p v-else-if="mcpToolsError" class="text-sm text-red-500">{{ mcpToolsError }}</p>
+          <p v-else-if="mcpTools.length === 0" class="py-4 text-center text-sm text-theme-subtle">{{ $t('plugin.mcp_tools_empty') }}</p>
+          <div v-else class="space-y-3">
+            <div v-for="tool in mcpTools" :key="tool.name" class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <code class="text-sm font-medium text-theme-high">{{ tool.name }}</code>
+              <p v-if="tool.description" class="mt-1 text-sm text-theme-supporting whitespace-pre-wrap">{{ tool.description }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Modal>
+
     <!-- Confirm Modal -->
     <ConfirmModal
       ref="confirmModalRef"
@@ -1076,7 +1102,7 @@ import {
   checkPluginUpdates, updatePlugin as apiUpdatePlugin,
 } from '@/api/plugin'
 import {
-  getMcpServers, getMcpServerConfig, createMcpServer, updateMcpServerConfig,
+  getMcpServers, getMcpServerConfig, getMcpServerTools, createMcpServer, updateMcpServerConfig,
   deleteMcpServer, toggleMcpServer,
 } from '@/api/mcp'
 import {
@@ -1092,7 +1118,7 @@ import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
   IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch, IconDownload, IconTrash,
 } from '@/components/icons'
-import type { PluginItem, McpServerItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem, PluginInstallTask } from '@/types'
+import type { PluginItem, McpServerItem, McpToolItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem, PluginInstallTask } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
@@ -1180,6 +1206,11 @@ const mcpTemplates: Record<McpTemplate, Record<string, unknown>> = {
   streamable_http: { type: 'streamable_http', url: '', headers: {} },
 }
 const mcpTemplate = ref<McpTemplate>('stdio')
+const mcpToolsDialogVisible = ref(false)
+const selectedMcpServer = ref<McpServerItem | null>(null)
+const mcpTools = ref<McpToolItem[]>([])
+const mcpToolsLoading = ref(false)
+const mcpToolsError = ref<string | null>(null)
 const mcpTemplateOptions = computed(() => [
   { value: 'stdio', label: t('plugin.mcp_template_stdio') },
   { value: 'sse', label: t('plugin.mcp_template_sse') },
@@ -1574,6 +1605,30 @@ async function toggleMcp(server: McpServerItem) {
     notify(detail ? `${t('plugin.mcp_toggle_failed')}: ${detail}` : t('plugin.mcp_toggle_failed'), 'error')
   } finally {
     await loadMcpServers()
+  }
+}
+
+async function openMcpTools(server: McpServerItem) {
+  selectedMcpServer.value = server
+  mcpTools.value = []
+  mcpToolsError.value = null
+  mcpToolsDialogVisible.value = true
+  mcpToolsLoading.value = true
+
+  try {
+    const res = await getMcpServerTools(server.id)
+    if (selectedMcpServer.value?.id === server.id) {
+      mcpTools.value = Array.isArray(res.data) ? res.data : []
+    }
+  } catch (e: any) {
+    if (selectedMcpServer.value?.id === server.id) {
+      const detail = e?.response?.data?.detail
+      mcpToolsError.value = detail ? `${t('plugin.mcp_tools_load_failed')}: ${detail}` : t('plugin.mcp_tools_load_failed')
+    }
+  } finally {
+    if (selectedMcpServer.value?.id === server.id) {
+      mcpToolsLoading.value = false
+    }
   }
 }
 

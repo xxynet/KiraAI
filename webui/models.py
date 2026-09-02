@@ -384,6 +384,12 @@ class McpServerItem(BaseModel):
     tools_count: int = 0
 
 
+class McpToolItem(BaseModel):
+    name: str
+    description: str = ""
+    parameters: Any = Field(default_factory=dict)
+
+
 class McpServerConfigUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None

@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { McpServerItem, McpServerCreateRequest, McpServerConfigUpdateRequest } from '@/types'
+import type { McpServerItem, McpServerCreateRequest, McpServerConfigUpdateRequest, McpToolItem } from '@/types'
 
 export function getMcpServers() {
   return apiClient.get<McpServerItem[]>('/mcp-servers')
@@ -11,6 +11,10 @@ export function createMcpServer(data: McpServerCreateRequest) {
 
 export function getMcpServerConfig(serverId: string) {
   return apiClient.get<any>(`/mcp-servers/${encodeURIComponent(serverId)}/config`)
+}
+
+export function getMcpServerTools(serverId: string) {
+  return apiClient.get<McpToolItem[]>(`/mcp-servers/${encodeURIComponent(serverId)}/tools`)
 }
 
 export function updateMcpServerConfig(serverId: string, data: McpServerConfigUpdateRequest) {

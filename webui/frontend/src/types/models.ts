@@ -244,6 +244,12 @@ export interface McpServerItem {
   tools_count: number
 }
 
+export interface McpToolItem {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
 export interface McpServerCreateRequest {
   name: string
   description?: string | null
