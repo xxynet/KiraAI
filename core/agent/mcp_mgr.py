@@ -1,16 +1,19 @@
 import json
 import asyncio
 import uuid
-from typing import Optional, Literal
+from typing import Any, Optional, Literal
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 from fastmcp import Client
 
 from .func_tool_manager import FuncToolManager
+from .tool import ToolResult
+from core.chat.message_elements import File, Image, Record
 from core.utils.path_utils import get_config_path
 
 from core.logging_manager import get_logger
 
-logger = get_logger("mcp", "orange")
+logger = get_logger("mcp_mgr", "orange")
 
 MCP_CONFIG_PATH = get_config_path() / "mcp.json"
 
@@ -602,9 +605,113 @@ class MCPManager:
                 )
                 await self.close_connection(server.id)
                 raise
-            return str(result)
+            return self._parse_tool_result(result)
 
         return _wrapped
+
+    @staticmethod
+    def _get_result_field(value: Any, field_name: str, default: Any = None) -> Any:
+        """Read an MCP field from either a Pydantic model or a dict."""
+        if isinstance(value, dict):
+            return value.get(field_name, default)
+        return getattr(value, field_name, default)
+
+    @staticmethod
+    def _resource_name(uri: Any) -> Optional[str]:
+        if uri is None:
+            return None
+        return urlparse(str(uri)).path.rsplit("/", 1)[-1] or None
+
+    @classmethod
+    def _media_attachment(
+        cls, data: Any, mime_type: Any, name: Optional[str] = None
+    ) -> Image | Record | File | None:
+        if not isinstance(data, str) or not data:
+            return None
+
+        mime = mime_type if isinstance(mime_type, str) and mime_type else "application/octet-stream"
+        media = data if data.startswith(("data:", "http://", "https://", "file:///")) else f"data:{mime};base64,{data}"
+        if mime.startswith("image/"):
+            return Image(image=media, mime=mime, name=name)
+        if mime.startswith("audio/"):
+            return Record(record=media, mime=mime, name=name)
+        return File(file=media, mime=mime, name=name)
+
+    @classmethod
+    def _parse_tool_result(cls, result: Any) -> ToolResult:
+        """Convert an MCP tool result into KiraAI text and media attachments."""
+        content_blocks = cls._get_result_field(result, "content")
+        if not isinstance(content_blocks, list):
+            return ToolResult(text=str(result))
+
+        text_parts: list[str] = []
+        attachments: list[Image | Record | File] = []
+
+        for block in content_blocks:
+            block_type = cls._get_result_field(block, "type")
+            if block_type == "text":
+                text = cls._get_result_field(block, "text")
+                if isinstance(text, str) and text:
+                    text_parts.append(text)
+                continue
+
+            if block_type in ("image", "audio"):
+                attachment = cls._media_attachment(
+                    cls._get_result_field(block, "data"),
+                    cls._get_result_field(block, "mimeType"),
+                )
+                if attachment:
+                    attachments.append(attachment)
+                continue
+
+            if block_type == "resource":
+                resource = cls._get_result_field(block, "resource")
+                uri = cls._get_result_field(resource, "uri")
+                resource_text = cls._get_result_field(resource, "text")
+                if isinstance(resource_text, str):
+                    text_parts.append(resource_text)
+                    continue
+                attachment = cls._media_attachment(
+                    cls._get_result_field(resource, "blob"),
+                    cls._get_result_field(resource, "mimeType"),
+                    cls._resource_name(uri),
+                )
+                if attachment:
+                    attachments.append(attachment)
+                else:
+                    text_parts.append("[MCP returned an empty embedded resource]")
+                continue
+
+            if block_type == "resource_link":
+                uri = cls._get_result_field(block, "uri")
+                uri_string = str(uri) if uri is not None else ""
+                mime_type = cls._get_result_field(block, "mimeType")
+                if uri_string.startswith(("http://", "https://", "file:///")):
+                    attachment = cls._media_attachment(uri_string, mime_type, cls._resource_name(uri_string))
+                    if attachment:
+                        attachments.append(attachment)
+                        continue
+                if uri_string:
+                    text_parts.append(f"MCP resource: {uri_string}")
+                else:
+                    text_parts.append("[MCP returned a resource link without a URI]")
+                continue
+
+            text_parts.append(f"[MCP returned unsupported content block: {block_type or 'unknown'}]")
+
+        structured_content = cls._get_result_field(
+            result,
+            "structured_content",
+            cls._get_result_field(result, "structuredContent"),
+        )
+        if structured_content is not None:
+            try:
+                structured_text = json.dumps(structured_content, ensure_ascii=False, indent=2, default=str)
+            except (TypeError, ValueError):
+                structured_text = str(structured_content)
+            text_parts.append(f"Structured result:\n{structured_text}")
+
+        return ToolResult(text="\n".join(text_parts), attachments=attachments)
 
     async def list_tools(self, server: MCPServer, keep_connection: Optional[bool] = None):
         """Refresh server.tools.

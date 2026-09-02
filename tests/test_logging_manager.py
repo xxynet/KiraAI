@@ -330,6 +330,15 @@ class TestSetupLogging:
         setup_logging(log_level="INVALID")
         assert logger.handlers[0].level == logging.INFO
 
+    def test_silences_mcp_debug_logger(self):
+        mcp_logger = logging.getLogger("mcp")
+        previous_level = mcp_logger.level
+        try:
+            mcp_logger.setLevel(logging.DEBUG)
+            setup_logging(log_level="DEBUG")
+            assert mcp_logger.level == logging.WARNING
+        finally:
+            mcp_logger.setLevel(previous_level)
     def test_invalid_max_size_defaults_to_10(self, tmp_path):
         setup_logging(log_file_max_size="not_a_number")
         assert lm._log_file_max_size == 10

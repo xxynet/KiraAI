@@ -144,6 +144,10 @@ def setup_logging(log_level: str = "INFO", log_file_path: str = None, log_file_m
     _log_file_max_size = log_file_max_size
 
     level = _LEVEL_MAP.get(log_level.upper(), logging.INFO)
+
+    # MCP DEBUG responses can contain complete base64 media payloads.
+    logging.getLogger("mcp").setLevel(logging.WARNING)
+
     log_file = str(Path(_log_file_path or f"{get_data_path()}/log.log").resolve())
     max_bytes = _log_file_max_size * 1024 * 1024
 
