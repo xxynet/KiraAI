@@ -1007,6 +1007,15 @@
             />
           </div>
           <div>
+            <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('plugin.mcp_template') }}</label>
+            <CustomSelect
+              :model-value="mcpTemplate"
+              :options="mcpTemplateOptions"
+              @update:model-value="onMcpTemplateChange"
+            />
+            <p class="mt-1 text-xs text-theme-faint">{{ $t('plugin.mcp_template_hint') }}</p>
+          </div>
+          <div>
             <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('plugin.mcp_config') }}</label>
             <MonacoEditor v-model="mcpConfigJson" language="json" height="300px" />
           </div>
@@ -1164,6 +1173,18 @@ const mcpEditMode = ref(false)
 const mcpEditId = ref<string | null>(null)
 const mcpForm = ref({ name: '', description: '' })
 const mcpConfigJson = ref('{}')
+type McpTemplate = 'stdio' | 'sse' | 'streamable_http'
+const mcpTemplates: Record<McpTemplate, Record<string, unknown>> = {
+  stdio: { type: 'stdio', command: '', args: [], env: {} },
+  sse: { type: 'sse', url: '', headers: {} },
+  streamable_http: { type: 'streamable_http', url: '', headers: {} },
+}
+const mcpTemplate = ref<McpTemplate>('stdio')
+const mcpTemplateOptions = computed(() => [
+  { value: 'stdio', label: t('plugin.mcp_template_stdio') },
+  { value: 'sse', label: t('plugin.mcp_template_sse') },
+  { value: 'streamable_http', label: t('plugin.mcp_template_streamable_http') },
+])
 const savingMcp = ref(false)
 
 // Skills
@@ -1560,17 +1581,40 @@ function openMcpCreate() {
   mcpEditMode.value = false
   mcpEditId.value = null
   mcpForm.value = { name: '', description: '' }
-  mcpConfigJson.value = '{}'
+  mcpTemplate.value = 'stdio'
+  applyMcpTemplate()
   mcpDialogVisible.value = true
+}
+
+function getMcpTemplate(config: Record<string, unknown>): McpTemplate {
+  if (config.type === 'sse' || config.type === 'streamable_http' || config.type === 'stdio') {
+    return config.type
+  }
+  if (typeof config.url === 'string') {
+    return config.url.endsWith('/sse') ? 'sse' : 'streamable_http'
+  }
+  return 'stdio'
+}
+
+function applyMcpTemplate() {
+  mcpConfigJson.value = JSON.stringify(mcpTemplates[mcpTemplate.value], null, 2)
+}
+
+function onMcpTemplateChange(template: string) {
+  if (template !== 'stdio' && template !== 'sse' && template !== 'streamable_http') return
+  mcpTemplate.value = template
+  applyMcpTemplate()
 }
 
 async function openMcpEdit(server: McpServerItem) {
   try {
     const res = await getMcpServerConfig(server.id)
+    const config = res.data?.config ?? {}
     mcpEditMode.value = true
     mcpEditId.value = server.id
     mcpForm.value = { name: res.data?.name || server.name, description: res.data?.description || server.description || '' }
-    mcpConfigJson.value = JSON.stringify(res.data?.config ?? {}, null, 2)
+    mcpTemplate.value = getMcpTemplate(config)
+    mcpConfigJson.value = JSON.stringify(config, null, 2)
     mcpDialogVisible.value = true
   } catch (e: any) {
     // Abort opening the editor — a lossy fallback built from list fields
