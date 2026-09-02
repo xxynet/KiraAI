@@ -4,7 +4,7 @@ from typing import Dict, List
 from fastapi import Depends, HTTPException
 
 from core.logging_manager import get_logger
-from webui.models import McpServerConfigUpdateRequest, McpServerCreateRequest, McpServerItem
+from webui.models import McpServerConfigUpdateRequest, McpServerCreateRequest, McpServerItem, McpToolItem
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 
@@ -41,6 +41,14 @@ class McpRoutes(Routes):
                 path="/api/mcp-servers/{server_id}/config",
                 methods=["GET"],
                 endpoint=self.get_mcp_server_config,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/mcp-servers/{server_id}/tools",
+                methods=["GET"],
+                endpoint=self.list_mcp_server_tools,
+                response_model=List[McpToolItem],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -170,6 +178,31 @@ class McpRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to load MCP config file for {server_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to load MCP config file")
+
+    async def list_mcp_server_tools(self, server_id: str):
+        if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
+            raise HTTPException(status_code=503, detail="MCP manager not available")
+        try:
+            server = next(
+                (item for item in self.lifecycle.mcp_manager.servers if item.id == server_id),
+                None,
+            )
+            if server is None:
+                raise ValueError(f"MCP server {server_id} not found")
+            return [
+                McpToolItem(
+                    name=str(tool.get("name", "")),
+                    description=str(tool.get("description", "") or ""),
+                    parameters=tool.get("parameters", {}),
+                )
+                for tool in server.tools
+                if tool.get("name")
+            ]
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        except Exception as e:
+            logger.error(f"Failed to list MCP tools for {server_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to list MCP tools") from e
 
     async def update_mcp_server_config(
         self,
