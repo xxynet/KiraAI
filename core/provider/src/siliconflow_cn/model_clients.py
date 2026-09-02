@@ -3,6 +3,8 @@ from io import BytesIO
 from typing import Optional
 import httpx
 import base64
+import mimetypes
+import os
 import time
 
 from core.provider import ModelInfo
@@ -62,9 +64,17 @@ class SiliconflowSTTClient(STTModelClient):
 
         audio_data = base64.b64decode(audio_base64)
         audio_file = BytesIO(audio_data)
-        audio_file.name = "audio.wav"
+        filename = record.guess_name() or "audio.wav"
+        extension = os.path.splitext(filename)[1].lower()
+        mime = (
+            record.mime
+            or mimetypes.guess_type(filename)[0]
+            or {".amr": "audio/amr", ".silk": "audio/silk"}.get(extension)
+            or "application/octet-stream"
+        )
+        audio_file.name = filename
 
-        files = {"file": audio_file}
+        files = {"file": (filename, audio_file, mime)}
         payload = {"model": self.model.model_id}
         headers = {"Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}"}
 
