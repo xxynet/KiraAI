@@ -179,9 +179,82 @@ async def test_qq_official_uploads_and_sends_local_file():
     assert uploads[0]["file_name"] == "test.py"
     assert uploads[0]["file_data"]
     assert sent_payloads[0]["msg_type"] == 7
-    assert sent_payloads[0]["media"]["file_uuid"] == "file-uuid"
+    assert sent_payloads[0]["media"] == {"file_info": "file-info"}
     assert sent_payloads[0]["content"] is None
 
+
+@pytest.mark.asyncio
+async def test_qq_official_uploads_and_sends_local_image():
+    adapter = make_adapter()
+    uploads = []
+    sent_payloads = []
+
+    async def request(_, json):
+        uploads.append(json)
+        return {"file_uuid": "image-uuid", "file_info": "image-info", "ttl": 60}
+
+    async def post_c2c_message(**payload):
+        sent_payloads.append(payload)
+        return {"id": "sent-image"}
+
+    adapter.client = SimpleNamespace(
+        api=SimpleNamespace(
+            _http=SimpleNamespace(request=request),
+            post_c2c_message=post_c2c_message,
+        )
+    )
+    adapter._client_task = SimpleNamespace(done=lambda: False)
+    adapter._direct_reply_ids["user-openid"] = "incoming-message-id"
+
+    result = await adapter.send_direct_message(
+        "user-openid", MessageChain([Image(str(Path(__file__).resolve()), name="image.jpg")])
+    )
+
+    assert result.ok
+    assert uploads[0]["file_type"] == 1
+    assert uploads[0]["file_name"] == "image.jpg"
+    assert uploads[0]["file_data"]
+    assert sent_payloads[0]["msg_type"] == 7
+    assert sent_payloads[0]["media"] == {"file_info": "image-info"}
+
+
+@pytest.mark.asyncio
+async def test_qq_official_uploads_and_sends_image_url():
+    adapter = make_adapter()
+    uploads = []
+    sent_payloads = []
+
+    async def post_c2c_file(**payload):
+        uploads.append(payload)
+        return {"file_uuid": "image-uuid", "file_info": "image-info", "ttl": 60}
+
+    async def post_c2c_message(**payload):
+        sent_payloads.append(payload)
+        return {"id": "sent-image"}
+
+    adapter.client = SimpleNamespace(
+        api=SimpleNamespace(
+            post_c2c_file=post_c2c_file,
+            post_c2c_message=post_c2c_message,
+        )
+    )
+    adapter._client_task = SimpleNamespace(done=lambda: False)
+    adapter._direct_reply_ids["user-openid"] = "incoming-message-id"
+
+    result = await adapter.send_direct_message(
+        "user-openid", MessageChain([Image("https://example.com/image.png")])
+    )
+
+    assert result.ok
+    assert uploads == [{
+        "openid": "user-openid",
+        "file_type": 1,
+        "url": "https://example.com/image.png",
+        "srv_send_msg": False,
+    }]
+    assert sent_payloads[0]["msg_type"] == 7
+    assert sent_payloads[0]["media"] == {"file_info": "image-info"}
+    assert sent_payloads[0]["content"] is None
 
 @pytest.mark.asyncio
 async def test_qq_official_group_file_keeps_reply_message_id():
@@ -214,7 +287,7 @@ async def test_qq_official_group_file_keeps_reply_message_id():
     assert uploads[0]["group_openid"] == "group-openid"
     assert sent_payloads[0]["msg_type"] == 7
     assert sent_payloads[0]["msg_id"] == "incoming-group-message-id"
-    assert sent_payloads[0]["media"]["file_uuid"] == "file-uuid"
+    assert sent_payloads[0]["media"] == {"file_info": "file-info"}
 
 @pytest.mark.asyncio
 async def test_qq_official_uses_short_message_id_alias_for_llm_and_reply():

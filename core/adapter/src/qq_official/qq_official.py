@@ -453,11 +453,22 @@ class QQOfficialAdapter(IMAdapter):
                 parts.append(element.emoji_desc or "")
             elif isinstance(element, Reply):
                 continue
-            elif isinstance(element, File):
+            elif isinstance(element, (File, Image)):
                 continue
             else:
                 parts.append("[Unsupported message element]")
         return "".join(parts).strip()
+
+    @staticmethod
+    def _media_payload(upload_result: Any) -> Optional[dict[str, str]]:
+        """Build the rich-media payload expected by QQ's message API."""
+        if isinstance(upload_result, dict):
+            file_info = upload_result.get("file_info")
+        else:
+            file_info = getattr(upload_result, "file_info", None)
+        if not isinstance(file_info, str) or not file_info:
+            return None
+        return {"file_info": file_info}
 
     @staticmethod
     def _result_message_id(result: Any) -> Optional[str]:
@@ -468,36 +479,37 @@ class QQOfficialAdapter(IMAdapter):
         return str(value) if value is not None else None
 
     async def _upload_file(
-        self, target_id: str, file_element: File, is_group: bool
+        self, target_id: str, media_element: File | Image, is_group: bool
     ) -> Optional[Any]:
-        """Upload a file and return the QQ media payload."""
+        """Upload a file or image and return the QQ media payload."""
         if not self.client:
             return None
-        if file_element.file_type == "url":
+        file_type = 1 if isinstance(media_element, Image) else 4
+        if media_element.file_type == "url":
             if is_group:
                 return await self.client.api.post_group_file(
                     group_openid=target_id,
-                    file_type=4,
-                    url=file_element.file,
+                    file_type=file_type,
+                    url=media_element.file,
                     srv_send_msg=False,
                 )
             return await self.client.api.post_c2c_file(
                 openid=target_id,
-                file_type=4,
-                url=file_element.file,
+                file_type=file_type,
+                url=media_element.file,
                 srv_send_msg=False,
             )
 
         if Route is None:
             raise RuntimeError("qq-botpy is required to upload local files")
-        file_path = await file_element.to_path()
+        file_path = await media_element.to_path()
         file_data = await asyncio.to_thread(Path(file_path).read_bytes)
         payload: dict[str, Any] = {
-            "file_type": 4,
+            "file_type": file_type,
             "file_data": base64.b64encode(file_data).decode("ascii"),
             "srv_send_msg": False,
         }
-        file_name = file_element.guess_name()
+        file_name = media_element.guess_name()
         if file_name:
             payload["file_name"] = file_name
         if is_group:
@@ -566,12 +578,14 @@ class QQOfficialAdapter(IMAdapter):
         if not self.client or not self._client_task or self._client_task.done():
             return KiraIMSentResult(ok=False, err="QQ official bot is not connected")
         content = self._text_content(send_message_obj)
-        file_elements = [element for element in send_message_obj if isinstance(element, File)]
-        if len(file_elements) > 1:
+        media_elements = [
+            element for element in send_message_obj if isinstance(element, (File, Image))
+        ]
+        if len(media_elements) > 1:
             return KiraIMSentResult(
-                ok=False, err="QQ official bot can send only one file per message"
+                ok=False, err="QQ official bot can send only one media item per message"
             )
-        if not content and not file_elements:
+        if not content and not media_elements:
             return KiraIMSentResult(ok=False, err="QQ official bot cannot send an empty message")
         reply_id = self._resolve_reply_id(is_group, target_id, send_message_obj)
         if not reply_id:
@@ -580,17 +594,18 @@ class QQOfficialAdapter(IMAdapter):
                 err="QQ official bot needs a received message before replying to this conversation",
             )
         media = None
-        if file_elements:
+        if media_elements:
             try:
-                media = await self._upload_file(target_id, file_elements[0], is_group)
+                upload_result = await self._upload_file(target_id, media_elements[0], is_group)
+                media = self._media_payload(upload_result)
             except Exception as exc:
-                logger.error(f"Failed to upload QQ official file: {exc}")
+                logger.error(f"Failed to upload QQ official media: {exc}")
                 return KiraIMSentResult(
-                    ok=False, err=f"Failed to upload QQ official file: {exc}"
+                    ok=False, err=f"Failed to upload QQ official media: {exc}"
                 )
             if not media:
                 return KiraIMSentResult(
-                    ok=False, err="QQ official file upload returned no media"
+                    ok=False, err="QQ official media upload returned no file_info"
                 )
         send_key = (is_group, target_id, reply_id)
         lock = self._send_locks.setdefault(send_key, asyncio.Lock())
