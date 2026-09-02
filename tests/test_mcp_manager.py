@@ -1,6 +1,10 @@
 """Tests for MCPManager persistent connection handling."""
 
 import pytest
+from mcp.types import AudioContent, BlobResourceContents, CallToolResult, EmbeddedResource, ImageContent, ResourceLink, TextContent
+
+from core.agent.tool import ToolResult
+from core.chat.message_elements import File, Image, Record
 
 import core.agent.mcp_mgr as mcp_mgr
 from core.agent.mcp_mgr import MCPManager, MCPServer
@@ -98,7 +102,7 @@ async def test_tool_calls_reuse_one_connection(manager):
     manager.add_server(server)
 
     func = manager._make_mcp_func(server, "echo")
-    await func(x=1)
+    result = await func(x=1)
     await func(x=2)
     await func(x=3)
 
@@ -108,6 +112,7 @@ async def test_tool_calls_reuse_one_connection(manager):
     assert client.enter_count == 1
     assert len(client.calls) == 3
     assert client.connected is True
+    assert result.text == 'result:echo'
 
 
 @pytest.mark.anyio
@@ -122,7 +127,7 @@ async def test_reconnects_after_connection_drop(manager):
     FakeClient.instances[0].connected = False
 
     result = await func(x=2)
-    assert result == "result:echo"
+    assert result.text == 'result:echo'
     # a fresh client was built for the reconnect
     assert len(FakeClient.instances) == 2
     assert FakeClient.instances[1].connected is True
@@ -192,7 +197,7 @@ async def test_next_call_recovers_after_connection_death(manager):
         await func(x=1)
 
     # the next call builds a fresh connection and succeeds
-    assert await func(x=2) == "result:echo"
+    assert (await func(x=2)).text == 'result:echo'
     assert len(FakeClient.instances) == 2
     assert manager._clients[server.id] is FakeClient.instances[1]
 
@@ -328,3 +333,40 @@ async def test_enable_server_fails_when_unreachable(manager, monkeypatch):
     assert manager.mcp_config["mcpServers"][server.id].get("enabled") is not True
     assert manager.tool_manager.registered == {}
     assert server.id not in manager._clients
+
+
+def test_mcp_result_is_converted_to_kira_tool_result():
+    result = CallToolResult(
+        content=[
+            TextContent(type="text", text="Generated media"),
+            ImageContent(type="image", data="aW1hZ2U=", mimeType="image/png"),
+            AudioContent(type="audio", data="YXVkaW8=", mimeType="audio/mpeg"),
+            EmbeddedResource(
+                type="resource",
+                resource=BlobResourceContents(
+                    uri="resource://reports/summary.pdf",
+                    mimeType="application/pdf",
+                    blob="ZmlsZQ==",
+                ),
+            ),
+            ResourceLink(
+                type="resource_link",
+                name="remote-image",
+                uri="https://example.com/generated.png",
+                mimeType="image/png",
+            ),
+        ],
+        structuredContent={"status": "ok"},
+    )
+
+    parsed = MCPManager._parse_tool_result(result)
+
+    assert isinstance(parsed, ToolResult)
+    assert parsed.text == 'Generated media\nStructured result:\n{\n  "status": "ok"\n}'
+    assert [type(attachment) for attachment in parsed.attachments] == [Image, Record, File, Image]
+    assert parsed.attachments[0].mime == "image/png"
+    assert parsed.attachments[1].mime == "audio/mpeg"
+    assert parsed.attachments[2].name == "summary.pdf"
+    assert parsed.attachments[3].file == "https://example.com/generated.png"
+    assert "aW1hZ2U=" not in parsed.text
+    assert "YXVkaW8=" not in parsed.text

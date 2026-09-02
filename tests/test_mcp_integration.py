@@ -102,7 +102,7 @@ async def test_server_recovers_after_crash(flaky_env):
         ping = manager._make_mcp_func(server, "ping_tool")
         transfer = manager._make_mcp_func(server, "transfer")
 
-        assert "pong" in await ping()
+        assert "pong" in (await ping()).text
 
         with pytest.raises(McpError):
             await transfer(amount=1)
@@ -111,7 +111,7 @@ async def test_server_recovers_after_crash(flaky_env):
         assert server.id not in manager._clients
 
         # a fresh subprocess is spawned and the server is usable again
-        assert "pong" in await ping()
+        assert "pong" in (await ping()).text
         assert _ledger_entries(ledger) == ["transfer 1"]
     finally:
         await manager.shutdown()
