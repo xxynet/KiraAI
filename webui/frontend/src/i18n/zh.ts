@@ -404,7 +404,6 @@ export default {
     mcp_template_streamable_http: '可流式 HTTP',
     mcp_template_hint: '切换模板会替换下方的 JSON 配置。',
     mcp_tools_title: '{name} 的 MCP 工具',
-    mcp_tools_view: '查看工具',
     mcp_tools_empty: '该 MCP 服务器当前没有可用工具',
     mcp_tools_load_failed: '加载 MCP 工具列表失败',
     mcp_config: 'MCP 配置（JSON）',

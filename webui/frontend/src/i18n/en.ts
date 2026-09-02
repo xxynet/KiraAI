@@ -404,7 +404,6 @@ export default {
     mcp_template_streamable_http: 'Streamable HTTP',
     mcp_template_hint: 'Switching templates replaces the JSON configuration below.',
     mcp_tools_title: '{name} MCP Tools',
-    mcp_tools_view: 'View tools',
     mcp_tools_empty: 'This MCP server currently has no available tools',
     mcp_tools_load_failed: 'Failed to load MCP tool list',
     mcp_config: 'MCP Config (JSON)',
