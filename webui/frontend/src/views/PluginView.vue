@@ -167,8 +167,7 @@
         <div
           v-for="server in mcpServers"
           :key="server.id"
-          class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col cursor-pointer transition-shadow hover:shadow-md"
-          @click="openMcpTools(server)"
+          class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
@@ -196,8 +195,15 @@
           <p v-if="server.description" class="text-sm text-theme-supporting line-clamp-3 mb-3">
             {{ server.description }}
           </p>
-          <div class="mt-2 text-xs text-theme-subtle">
-            {{ $t('plugin.mcp_tools_label') }}: {{ server.tools_count }}
+          <div class="mt-2 flex items-center justify-between text-xs text-theme-subtle">
+            <span>{{ $t('plugin.mcp_tools_label') }}: {{ server.tools_count }}</span>
+            <button
+              type="button"
+              class="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              @click="openMcpTools(server)"
+            >
+              {{ $t('plugin.mcp_tools_view') }}
+            </button>
           </div>
           <div class="mt-4 flex items-center justify-end space-x-3 mt-auto">
             <button
