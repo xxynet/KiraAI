@@ -1959,6 +1959,21 @@ class PluginManager:
         if cleaned:
             logger.debug(f"Cleaned {cleaned} module(s) for plugin {plugin_id}")
 
+    async def prepare_plugin_reload(self, plugin_id: str) -> None:
+        """Stop a plugin and clear its runtime state before re-importing it."""
+        # 1. Terminate the running instance
+
+        plugin_id = str(plugin_id)
+        await self.terminate(plugin_id)
+        # 2. Remove class / schema / error registrations
+
+        _plugin_classes.pop(plugin_id, None)
+        _plugin_schemas.pop(plugin_id, None)
+        _plugin_load_errors.pop(plugin_id, None)
+        # 3. Purge the plugin's own modules from sys.modules
+
+        self._cleanup_plugin_modules(plugin_id)
+
     async def reload(self, plugin_id: Optional[str] = None):
         """
         Reload all plugins or reload a specific user plugin.
@@ -1968,17 +1983,7 @@ class PluginManager:
             plugin_id = str(plugin_id)
             logger.info(f"Reloading plugin {plugin_id}...")
 
-            # 1. Terminate the running instance
-            await self.terminate(plugin_id)
-
-            # 2. Remove class / schema / error registrations
-            _plugin_classes.pop(plugin_id, None)
-            _plugin_schemas.pop(plugin_id, None)
-            _plugin_load_errors.pop(plugin_id, None)
-
-            # 3. Purge the plugin's own modules from sys.modules
-            self._cleanup_plugin_modules(plugin_id)
-
+            await self.prepare_plugin_reload(plugin_id)
             # 4. Re-import from disk
             plugin_dir = _plugin_module_paths.get(plugin_id)
             if plugin_dir and plugin_dir.exists():

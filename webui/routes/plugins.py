@@ -773,6 +773,8 @@ class PluginsRoutes(Routes):
 
         warnings = await install_requirements(plugin_dir, pypi_mirror=self._get_pypi_mirror())
 
+        await plugin_manager.prepare_plugin_reload(plugin_id)
+
         new_plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
         if not new_plugin_id:
             raise HTTPException(status_code=500, detail="Plugin files were installed but failed to load after update")
