@@ -116,12 +116,35 @@ async function handleLogin() {
   errorMsg.value = ''
   try {
     await authStore.login(trimmedToken)
+  } catch (error) {
+    errorMsg.value = loginErrorText(error)
+    loading.value = false
+    return
+  }
+  // Login succeeded: navigate. Keep navigation separate so a rejected
+  // router.push (navigation error / aborted navigation) is never misreported
+  // as a token or backend-unreachable failure - auth already succeeded here.
+  try {
     await router.push('/overview')
   } catch {
-    errorMsg.value = t('login.error')
+    // navigation failed after successful auth; leave any prior message intact
+    // rather than blaming the access token or the backend.
   } finally {
     loading.value = false
   }
+}
+
+// Distinguish login failure causes:
+//  - backend up, returned 401           → the access token is genuinely wrong/expired
+//  - backend up, other HTTP error (5xx) → backend error
+//  - no HTTP response at all            → unreachable (backend not running / wrong
+//                                         host or port / request timeout)
+function loginErrorText(error: unknown): string {
+  const e = error as { response?: { status?: number } } | undefined
+  if (e?.response && typeof e.response.status === 'number') {
+    return e.response.status === 401 ? t('login.error') : t('login.server_error')
+  }
+  return t('login.server_unreachable')
 }
 
 function toggleTheme() {
