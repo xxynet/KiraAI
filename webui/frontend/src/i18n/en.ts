@@ -957,6 +957,8 @@ export default {
     token_hint: 'See your access token in the terminal output',
     submit: 'Login',
     error: 'Login failed. Please check your access token.',
+    server_unreachable: 'Cannot reach the server. Please confirm the KiraAI backend is running, or check the address and port.',
+    server_error: 'The server returned an error. Please retry later or check the backend logs.',
     token_required: 'Please enter an access token.',
   },
   onboarding: {

@@ -958,6 +958,8 @@ export default {
     token_hint: '在终端输出中查看您的令牌',
     submit: '登录',
     error: '登录失败，请检查您的访问令牌。',
+    server_unreachable: '无法连接服务器。请确认 KiraAI 后端已启动，或检查地址与端口是否正确。',
+    server_error: '服务器异常，无法登录。请稍后重试或查看后端日志。',
     token_required: '请输入访问令牌。',
   },
   onboarding: {
