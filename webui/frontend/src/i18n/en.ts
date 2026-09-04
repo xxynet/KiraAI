@@ -958,6 +958,8 @@ export default {
     submit: 'Login',
     error: 'Login failed. Please check your access token.',
     token_required: 'Please enter an access token.',
+    server_unreachable: 'Cannot reach the server. Please make sure the KiraAI backend is running, or check the address and port.',
+    server_error: 'Server error, unable to log in. Please try again later or check the backend logs.',
   },
   onboarding: {
     progress: 'Onboarding progress',

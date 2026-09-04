@@ -89,6 +89,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { isAxiosError } from 'axios'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
@@ -117,8 +118,20 @@ async function handleLogin() {
   try {
     await authStore.login(trimmedToken)
     await router.push('/overview')
-  } catch {
-    errorMsg.value = t('login.error')
+  } catch (err) {
+    if (isAxiosError(err)) {
+      // err.response present means the backend answered; its absence means the
+      // request never got through (backend not started, network failure, or timeout).
+      if (err.response?.status === 401) {
+        errorMsg.value = t('login.error')
+      } else if (err.response) {
+        errorMsg.value = t('login.server_error')
+      } else {
+        errorMsg.value = t('login.server_unreachable')
+      }
+    } else {
+      errorMsg.value = t('login.error')
+    }
   } finally {
     loading.value = false
   }

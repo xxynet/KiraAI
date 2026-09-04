@@ -959,6 +959,8 @@ export default {
     submit: '登录',
     error: '登录失败，请检查您的访问令牌。',
     token_required: '请输入访问令牌。',
+    server_unreachable: '无法连接服务器。请确认 KiraAI 后端已启动，或检查地址与端口是否正确。',
+    server_error: '服务器异常，无法登录。请稍后重试或查看后端日志。',
   },
   onboarding: {
     progress: '引导进度',
