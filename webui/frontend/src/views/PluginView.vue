@@ -1282,11 +1282,63 @@ async function openPluginDetails(plugin: PluginItem | PluginStoreItem) {
 function renderMarkdown(text: string): string {
   const sanitized = DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
   const parsedDocument = new DOMParser().parseFromString(sanitized, 'text/html')
+  const repoUrl = pluginDetailsRepo.value
   parsedDocument.querySelectorAll('a').forEach(link => {
+    const href = link.getAttribute('href')
+    if (href && repoUrl) link.setAttribute('href', resolveReadmeUrl(href, repoUrl, false))
     link.target = '_blank'
     link.rel = 'noopener noreferrer'
   })
+  parsedDocument.querySelectorAll('img').forEach(img => {
+    const src = img.getAttribute('src')
+    if (src && repoUrl) img.setAttribute('src', resolveReadmeUrl(src, repoUrl, true))
+  })
   return parsedDocument.body.innerHTML
+}
+
+// A plugin README is authored inside its repository, so relative URLs must be
+// rewritten against the repository base instead of resolving against the
+// WebUI origin. GitHub repos get default-branch URLs (raw for images, blob
+// for links); other hosts fall back to generic URL joining.
+function resolveReadmeUrl(raw: string, repoUrl: string, isImage: boolean): string {
+  let candidate = raw.trim()
+  if (!candidate || candidate.startsWith('#')) return raw
+  if (candidate.startsWith('//')) candidate = `https:${candidate}`
+  try {
+    // Parseable without a base means the URL is already absolute (http:, mailto:, ...).
+    new URL(candidate)
+    return raw
+  } catch {
+    // Relative reference — resolve it below.
+  }
+  try {
+    // Resolve ./, ../ and percent-encoding against a neutral root first.
+    const resolved = new URL(candidate, 'https://readme.invalid/')
+    const path = resolved.pathname + resolved.search + resolved.hash
+    const repo = parseGitHubRepoUrl(repoUrl)
+    if (repo) {
+      return isImage
+        ? `https://raw.githubusercontent.com/${repo.owner}/${repo.name}/HEAD${path}`
+        : `https://github.com/${repo.owner}/${repo.name}/blob/HEAD${path}`
+    }
+    const base = repoUrl.endsWith('/') ? repoUrl : `${repoUrl}/`
+    return new URL(candidate, base).toString()
+  } catch {
+    return raw
+  }
+}
+
+function parseGitHubRepoUrl(repoUrl: string): { owner: string; name: string } | null {
+  try {
+    const url = new URL(repoUrl)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+    if (url.hostname !== 'github.com' && url.hostname !== 'www.github.com') return null
+    const segments = url.pathname.split('/').filter(Boolean)
+    if (segments.length < 2) return null
+    return { owner: segments[0], name: segments[1].replace(/\.git$/, '') }
+  } catch {
+    return null
+  }
 }
 
 function onConfirmAction() {
