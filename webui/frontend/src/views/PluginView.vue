@@ -2413,16 +2413,23 @@ onMounted(async () => {
 </script>
 
 <style>
+/* GitHub-style README rendering: h1/h2 carry a bottom rule, and images stay
+   inline so multi-image paragraphs (badge rows) flow on one line instead of
+   being stacked by Tailwind preflight's img { display: block }. */
 .plugin-readme h1,
 .plugin-readme h2,
 .plugin-readme h3 {
-  margin: 1em 0 0.5em;
+  margin: 1.5em 0 0.5em;
   font-weight: 600;
 }
 
-.plugin-readme h1 { font-size: 1.25em; }
-.plugin-readme h2 { font-size: 1.125em; }
-.plugin-readme h3 { font-size: 1em; }
+.plugin-readme h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid rgb(229 231 235); }
+.plugin-readme h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid rgb(229 231 235); }
+.plugin-readme h3 { font-size: 1.25em; }
+.plugin-readme h4 { margin: 1.5em 0 0.5em; font-size: 1em; font-weight: 600; }
+
+.dark .plugin-readme h1,
+.dark .plugin-readme h2 { border-bottom-color: rgb(55 65 81); }
 
 .plugin-readme p,
 .plugin-readme ul,
@@ -2443,7 +2450,7 @@ onMounted(async () => {
 .plugin-readme th,
 .plugin-readme td { border: 1px solid rgb(229 231 235); padding: 0.5em 0.75em; text-align: left; }
 .plugin-readme th { background: rgb(249 250 251); font-weight: 600; }
-.plugin-readme img { max-width: 100%; height: auto; }
+.plugin-readme img { display: inline; vertical-align: middle; max-width: 100%; height: auto; }
 
 .dark .plugin-readme pre { background: rgb(31 41 55); color: rgb(229 231 235); }
 .dark .plugin-readme code { background: rgb(31 41 55); }
