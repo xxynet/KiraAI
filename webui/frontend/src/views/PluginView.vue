@@ -1285,6 +1285,9 @@ function renderMarkdown(text: string): string {
   const repoUrl = pluginDetailsRepo.value
   parsedDocument.querySelectorAll('a').forEach(link => {
     const href = link.getAttribute('href')
+    // Fragment-only links point at anchors inside the rendered README itself;
+    // keep them in the current document instead of opening a new tab.
+    if (href && href.startsWith('#')) return
     if (href && repoUrl) link.setAttribute('href', resolveReadmeUrl(href, repoUrl, false))
     link.target = '_blank'
     link.rel = 'noopener noreferrer'
