@@ -43,6 +43,10 @@ export function isPersonaSelectLike(type: string): boolean {
   return type === 'persona_select'
 }
 
+export function isSessionSelectLike(type: string): boolean {
+  return type === 'session_select'
+}
+
 export function isMultiSelectLike(type: string): boolean {
   return type === 'multi_select'
 }

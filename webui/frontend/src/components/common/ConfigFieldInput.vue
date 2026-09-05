@@ -7,7 +7,7 @@
     <CustomMultiSelect
       v-if="isMultiSelectLike(field.type)"
       :modelValue="(value as string[]) ?? []"
-      :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
+      :options="multiOptions"
       :placeholder="hint || 'Select...'"
       @update:modelValue="update($event)"
     />
@@ -33,6 +33,14 @@
       :model-value="value ?? ''"
       :options="personaOptions || []"
       :placeholder="t('config.select_persona')"
+      @update:model-value="update($event)"
+    />
+
+    <CustomSelect
+      v-else-if="isSessionSelectLike(field.type)"
+      :model-value="value ?? ''"
+      :options="sessionOptions || []"
+      :placeholder="t('config.select_session')"
       @update:model-value="update($event)"
     />
 
@@ -153,6 +161,7 @@ import {
   isMultiSelectLike,
   isNumberLike,
   isPersonaSelectLike,
+  isSessionSelectLike,
   isTextareaLike,
   optionsFor,
 } from '@/utils/configFieldTypes'
@@ -178,6 +187,8 @@ const props = defineProps<{
   modelOptions?: { value: string; label: string }[]
   /** Options for persona_select fields, loaded by the parent */
   personaOptions?: { value: string; label: string }[]
+  /** Options for session_select fields, loaded by the parent */
+  sessionOptions?: { value: string; label: string }[]
 }>()
 
 const emit = defineEmits<{
@@ -212,6 +223,19 @@ const monacoLanguage = computed(() => {
   if (type === 'yaml') return 'yaml'
   if (type === 'editor') return props.field?.language || 'plaintext'
   return 'plaintext'
+})
+
+/**
+ * Options for multi_select fields: a dynamic source (model / persona /
+ * session) reuses the option lists loaded by the parent, minus the
+ * single-select placeholder entry; otherwise falls back to static options.
+ */
+const multiOptions = computed<{ value: string; label: string }[]>(() => {
+  const field = props.field
+  if (field?.source === 'model') return (props.modelOptions || []).filter(o => o.value !== '')
+  if (field?.source === 'persona') return (props.personaOptions || []).filter(o => o.value !== '')
+  if (field?.source === 'session') return (props.sessionOptions || []).filter(o => o.value !== '')
+  return optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))
 })
 
 /** Serialized draft representation for draft-based types, null when not applicable */

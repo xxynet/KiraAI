@@ -19,6 +19,7 @@
                 :value="sectionFieldValue(entry.key, key as string, field)"
                 :model-options="modelOptionsFor(field)"
                 :persona-options="personaSelectOptions"
+                :session-options="sessionSelectOptions"
                 @change="updateSectionField(entry.key, key as string, $event)"
               />
             </template>
@@ -37,6 +38,7 @@
         :value="fieldValue(entry.key, entry.field)"
         :model-options="modelOptionsFor(entry.field)"
         :persona-options="personaSelectOptions"
+        :session-options="sessionSelectOptions"
         @change="updateField(entry.key, $event)"
       />
     </template>
@@ -51,7 +53,8 @@ import ConfigFieldInput from '@/components/common/ConfigFieldInput.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import { getProviders, getModels } from '@/api/provider'
 import { getPersonas } from '@/api/persona'
-import { isInfoLike, isModelSelectLike, isPersonaSelectLike, isSectionLike } from '@/utils/configFieldTypes'
+import { getSessions } from '@/api/session'
+import { isInfoLike, isModelSelectLike, isPersonaSelectLike, isSessionSelectLike, isSectionLike } from '@/utils/configFieldTypes'
 
 const props = defineProps<{
   modelValue: Record<string, any>
@@ -67,6 +70,7 @@ const { localize } = useLocalized()
 
 const modelSelectOptions = reactive<Record<string, { value: string; label: string }[]>>({})
 const personaSelectOptions = reactive<{ value: string; label: string }[]>([])
+const sessionSelectOptions = reactive<{ value: string; label: string }[]>([])
 const sectionCollapsed = reactive<Record<string, boolean>>({})
 
 /** Field input instances keyed by unique draft key, for validation */
@@ -194,7 +198,8 @@ async function loadModelSelectOptions() {
   const modelTypes = new Set<string>()
   for (const dk in schema) {
     const { field } = schema[dk]
-    if (field && isModelSelectLike(field.type)) {
+    if (!field) continue
+    if (isModelSelectLike(field.type) || field.source === 'model') {
       modelTypes.add(field.model_type || 'llm')
     }
   }
@@ -234,7 +239,7 @@ async function loadModelSelectOptions() {
 
 async function loadPersonaSelectOptions() {
   const schema = allDataFields.value
-  const hasPersonaSelect = Object.values(schema).some(({ field }) => field && isPersonaSelectLike(field.type))
+  const hasPersonaSelect = Object.values(schema).some(({ field }) => field && (isPersonaSelectLike(field.type) || field.source === 'persona'))
   if (!hasPersonaSelect || personaSelectOptions.length > 0) return
 
   try {
@@ -250,10 +255,29 @@ async function loadPersonaSelectOptions() {
   }
 }
 
+async function loadSessionSelectOptions() {
+  const schema = allDataFields.value
+  const hasSessionSelect = Object.values(schema).some(({ field }) => field && (isSessionSelectLike(field.type) || field.source === 'session'))
+  if (!hasSessionSelect || sessionSelectOptions.length > 0) return
+
+  try {
+    const res = await getSessions()
+    const sessions = res.data?.sessions || []
+    sessionSelectOptions.length = 0
+    sessionSelectOptions.push({ value: '', label: t('config.select_session') })
+    for (const s of sessions) {
+      sessionSelectOptions.push({ value: s.id, label: s.title || s.session_id || s.id })
+    }
+  } catch (e) {
+    console.warn('Failed to load session options:', e)
+  }
+}
+
 watch(() => effectiveSchema.value, () => {
   applyDefaults()
   loadModelSelectOptions()
   loadPersonaSelectOptions()
+  loadSessionSelectOptions()
   const schema = effectiveSchema.value
   for (const key in schema) {
     const field = schema[key]

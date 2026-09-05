@@ -16,6 +16,7 @@ from core.config.config_field import (
     TextareaField,
     ModelSelectField,
     MultiSelectField,
+    SessionSelectField,
     SectionField,
     InfoField,
     create_field_from_schema,
@@ -280,6 +281,34 @@ def test_create_field_model_select():
 def test_create_field_multi_select():
     f = create_field_from_schema("k", {"type": "multi_select", "options": ["a"]})
     assert isinstance(f, MultiSelectField)
+
+
+def test_create_field_multi_select_model_source():
+    f = create_field_from_schema("k", {"type": "multi_select", "source": "model", "model_type": "tts"})
+    assert isinstance(f, MultiSelectField)
+    d = f.to_dict()
+    assert d["source"] == "model"
+    assert d["model_type"] == "tts"
+    assert "options" not in d
+
+
+def test_create_field_multi_select_persona_source():
+    f = create_field_from_schema("k", {"type": "multi_select", "source": "persona"})
+    assert isinstance(f, MultiSelectField)
+    d = f.to_dict()
+    assert d["source"] == "persona"
+    assert "model_type" not in d
+
+
+def test_create_field_multi_select_without_source_has_no_source_key():
+    f = create_field_from_schema("k", {"type": "multi_select", "options": ["a"]})
+    assert "source" not in f.to_dict()
+
+
+def test_create_field_session_select():
+    f = create_field_from_schema("k", {"type": "session_select"})
+    assert isinstance(f, SessionSelectField)
+    assert f.to_dict()["type"] == "session_select"
 
 
 def test_create_field_section():

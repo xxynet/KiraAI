@@ -17,6 +17,7 @@ class ConfigType(Enum):
     ModelSelect = "model_select"
     MultiSelect = "multi_select"
     PersonaSelect = "persona_select"
+    SessionSelect = "session_select"
     Section = "section"
     Info = "info"
 
@@ -195,19 +196,39 @@ class ModelSelectField(BaseConfigField):
 class MultiSelectField(BaseConfigField):
     type = ConfigType.MultiSelect
 
-    def __init__(self, key: str, name: str, hint: str, options, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, options=None, default=None, source: str = None, model_type: str = None, locales: dict = None):
+        """
+        Multi-select field with static options or dynamic ones.
+
+        :param source: Optional dynamic option source: "model", "persona" or "session".
+            When set, options are loaded at runtime and ``options`` may be empty.
+        :param model_type: Model category used when source is "model" (e.g. "llm", "tts").
+        """
         super().__init__(key, name, hint, default if isinstance(default, list) else [], locales)
-        self.options = list(options)
+        self.options = list(options) if options else []
+        self.source = source
+        self.model_type = model_type
 
     def to_dict(self) -> dict:
         data = super().to_dict()
         if self.options:
             data["options"] = list(self.options)
+        if self.source:
+            data["source"] = self.source
+            if self.source == "model" and self.model_type:
+                data["model_type"] = self.model_type
         return data
 
 
 class PersonaSelectField(BaseConfigField):
     type = ConfigType.PersonaSelect
+
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+        super().__init__(key, name, hint, default, locales)
+
+
+class SessionSelectField(BaseConfigField):
+    type = ConfigType.SessionSelect
 
     def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
         super().__init__(key, name, hint, default, locales)
@@ -293,10 +314,15 @@ def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
         return ModelSelectField(key=key, name=name, hint=hint, model_type=model_type, default=default, locales=locales)
 
     if field_type == "multi_select":
-        return MultiSelectField(key=key, name=name, hint=hint, options=options or [], default=default, locales=locales)
+        source = schema.get("source")
+        model_type = schema.get("model_type", "llm") if source == "model" else None
+        return MultiSelectField(key=key, name=name, hint=hint, options=options, default=default, source=source, model_type=model_type, locales=locales)
 
     if field_type == "persona_select":
         return PersonaSelectField(key=key, name=name, hint=hint, default=default, locales=locales)
+
+    if field_type == "session_select":
+        return SessionSelectField(key=key, name=name, hint=hint, default=default, locales=locales)
 
     if field_type == "section":
         collapsed = schema.get("collapsed", False)

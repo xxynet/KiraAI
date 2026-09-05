@@ -947,6 +947,7 @@ export default {
     load_error: 'Failed to load configuration',
     select_model: '— Select model —',
     select_persona: 'Select Persona',
+    select_session: 'Select Session',
     json_invalid: 'Invalid JSON in field "{field}": {error}',
   },
   login: {
