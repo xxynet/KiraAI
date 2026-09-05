@@ -17,7 +17,7 @@
     "collapsed": false,
     "fields": {
       "search_provider": {
-        "type": "enum",
+        "type": "string",
         "name": "Search Mode",
         "default": "hybrid",
         "options": [
