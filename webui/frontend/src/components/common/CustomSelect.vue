@@ -3,7 +3,7 @@
     <!-- Trigger -->
     <div
       class="custom-select-trigger"
-      :class="{ active: isOpen, 'has-value': !!modelValue, placeholder: !modelValue, disabled: props.disabled }"
+      :class="{ active: isOpen, 'has-value': hasValue, placeholder: !hasValue, disabled: props.disabled }"
       :style="props.height ? { height: props.height, minHeight: props.height } : undefined"
       @click.stop="toggleDropdown"
       @keydown.enter.prevent="onEnter"
@@ -90,6 +90,9 @@ const emit = defineEmits<{
 }>()
 
 const { isDark } = useTheme()
+
+// truthiness would treat a selected numeric 0 as empty
+const hasValue = computed(() => props.modelValue !== '' && props.modelValue !== null && props.modelValue !== undefined)
 
 const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()

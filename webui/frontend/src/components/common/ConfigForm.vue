@@ -176,7 +176,12 @@ function applyDefaults() {
     const { field, sectionKey, fieldKey } = schema[dk]
     if (!field) continue
     if (sectionKey) {
-      if (!result[sectionKey] || typeof result[sectionKey] !== 'object') result[sectionKey] = {}
+      if (!result[sectionKey] || typeof result[sectionKey] !== 'object') {
+        result[sectionKey] = {}
+      } else if (result[sectionKey] === props.modelValue[sectionKey]) {
+        // copy before writing so the nested object inside props.modelValue is not mutated
+        result[sectionKey] = { ...result[sectionKey] }
+      }
       if (result[sectionKey][fieldKey] === undefined && field.default !== undefined) {
         result[sectionKey][fieldKey] = field.default
         changed = true

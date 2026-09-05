@@ -244,10 +244,12 @@ function serializeDraftValue(val: any, type: string): string | null {
     return val !== undefined && val !== null ? String(val) : ''
   }
   if (isMonacoLike(type)) {
-    return type === 'json' && typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val ?? '')
+    if (val === undefined || val === null) return ''
+    return type === 'json' && typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)
   }
   if (isJsonLike(type)) {
-    return typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
+    if (val === undefined || val === null) return ''
+    return typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)
   }
   return null
 }
