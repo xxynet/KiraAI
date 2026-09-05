@@ -264,7 +264,9 @@ function initDraft() {
 watch(() => props.field, initDraft, { immediate: true, deep: true })
 
 // Sync external model value changes into the draft, unless the change
-// originated from this field's own commit (tracked by lastSynced)
+// originated from this field's own commit (tracked by lastSynced).
+// Deep watching keeps in-place nested edits (json/object values) in sync,
+// matching the pre-refactor whole-form deep watch behavior.
 watch(() => props.value, (val) => {
   const serialized = serializeDraftValue(val, props.field?.type)
   if (serialized === null) return
@@ -272,7 +274,7 @@ watch(() => props.value, (val) => {
     draft.value = serialized
     lastSynced.value = serialized
   }
-})
+}, { deep: true })
 
 function update(v: any) {
   emit('change', v)
