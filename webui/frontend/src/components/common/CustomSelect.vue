@@ -71,14 +71,14 @@ import { IconCheck, IconChevronDown } from '@/components/icons'
 import { useTheme } from '@/composables/useTheme'
 
 interface Option {
-  value: string
+  value: string | number
   label: string
   icon?: string | null
   iconDark?: string | null
 }
 
 const props = defineProps<{
-  modelValue: string
+  modelValue: string | number
   options: Option[]
   placeholder?: string
   disabled?: boolean
@@ -86,7 +86,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string]
+  'update:modelValue': [value: any]
 }>()
 
 const { isDark } = useTheme()

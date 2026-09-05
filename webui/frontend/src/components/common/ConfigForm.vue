@@ -26,7 +26,7 @@
                 <CustomSelect
                   v-else-if="hasOptions(field)"
                   :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
-                  :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
+                  :options="optionsFor(field).map((opt: any) => ({ value: opt, label: String(opt) }))"
                   :placeholder="hintFor(field) || 'Select...'"
                   @update:model-value="updateSectionField(entry.key, key as string, $event)"
                 />
@@ -169,7 +169,7 @@
         <CustomSelect
           v-else-if="hasOptions(entry.field)"
           :model-value="fieldValue(entry.key, entry.field) ?? ''"
-          :options="optionsFor(entry.field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
+          :options="optionsFor(entry.field).map((opt: any) => ({ value: opt, label: String(opt) }))"
           :placeholder="hintFor(entry.field) || 'Select...'"
           @update:model-value="updateField(entry.key, $event)"
         />

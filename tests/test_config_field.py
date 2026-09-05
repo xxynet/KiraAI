@@ -149,9 +149,11 @@ def test_create_field_string():
     assert f.default == "v"
 
 
-def test_create_field_text_with_options_becomes_enum():
+def test_create_field_text_with_options():
     f = create_field_from_schema("k", {"type": "text", "options": ["a", "b"]})
-    assert isinstance(f, EnumField)
+    assert isinstance(f, StringField)
+    assert f.options == ["a", "b"]
+    assert f.default == "a"
 
 
 def test_create_field_sensitive():
@@ -189,6 +191,58 @@ def test_create_field_switch():
     f = create_field_from_schema("k", {"type": "switch", "default": True})
     assert isinstance(f, SwitchField)
     assert f.default is True
+
+
+def test_create_field_string_with_options():
+    f = create_field_from_schema("k", {"type": "string", "options": ["a", "b"], "default": "b"})
+    assert isinstance(f, StringField)
+    assert f.default == "b"
+    d = f.to_dict()
+    assert d["type"] == "string"
+    assert d["options"] == ["a", "b"]
+
+
+def test_create_field_string_with_options_default_fallback():
+    f = create_field_from_schema("k", {"type": "string", "options": ["a", "b"], "default": "zzz"})
+    assert isinstance(f, StringField)
+    assert f.default == "a"
+
+
+def test_create_field_integer_with_options():
+    f = create_field_from_schema("k", {"type": "integer", "options": [8080, 9090], "default": 9090})
+    assert isinstance(f, IntField)
+    assert f.default == 9090
+    assert f.to_dict()["options"] == [8080, 9090]
+
+
+def test_create_field_integer_with_options_default_fallback():
+    f = create_field_from_schema("k", {"type": "integer", "options": [8080, 9090]})
+    assert isinstance(f, IntField)
+    assert f.default == 8080
+
+
+def test_create_field_float_with_options():
+    f = create_field_from_schema("k", {"type": "float", "options": [0.5, 1.5], "default": 1.5})
+    assert isinstance(f, FloatField)
+    assert f.default == 1.5
+    assert f.to_dict()["options"] == [0.5, 1.5]
+
+
+def test_scalar_field_without_options_omits_options_key():
+    f = StringField("k", "Name", "hint", default="v")
+    assert "options" not in f.to_dict()
+
+
+def test_create_field_bool_alias():
+    f = create_field_from_schema("k", {"type": "bool", "default": True})
+    assert isinstance(f, SwitchField)
+    assert f.default is True
+
+
+def test_create_field_boolean_alias():
+    f = create_field_from_schema("k", {"type": "boolean"})
+    assert isinstance(f, SwitchField)
+    assert f.default is False
 
 
 def test_create_field_json():

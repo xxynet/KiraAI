@@ -7,7 +7,7 @@ class ConfigType(Enum):
     Float = "float"
     Sensitive = "sensitive"
     List = "list"
-    Enum = "enum"
+    Enum = "enum"  # Deprecated: use string/integer/float with options
     Switch = "switch"
     Json = "json"
     Markdown = "markdown"
@@ -51,26 +51,50 @@ class BaseConfigField:
             data["locales"] = self.locales
         return data
 
+    def _apply_options(self, data: dict) -> dict:
+        """Attach the options list to serialized data when the field defines choices."""
+        if getattr(self, "options", None):
+            data["options"] = list(self.options)
+        return data
+
 
 class StringField(BaseConfigField):
     type = ConfigType.String
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, options: list = None, locales: dict = None):
+        if options:
+            default = default if default in options else options[0]
         super().__init__(key, name, hint, default, locales)
+        self.options = list(options) if options else None
+
+    def to_dict(self) -> dict:
+        return self._apply_options(super().to_dict())
 
 
 class IntField(BaseConfigField):
     type = ConfigType.Integer
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, options: list = None, locales: dict = None):
+        if options:
+            default = default if default in options else options[0]
         super().__init__(key, name, hint, default, locales)
+        self.options = list(options) if options else None
+
+    def to_dict(self) -> dict:
+        return self._apply_options(super().to_dict())
 
 
 class FloatField(BaseConfigField):
     type = ConfigType.Float
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, options: list = None, locales: dict = None):
+        if options:
+            default = default if default in options else options[0]
         super().__init__(key, name, hint, default, locales)
+        self.options = list(options) if options else None
+
+    def to_dict(self) -> dict:
+        return self._apply_options(super().to_dict())
 
 
 class SensitiveField(BaseConfigField):
@@ -89,6 +113,10 @@ class ListField(BaseConfigField):
 
 
 class EnumField(BaseConfigField):
+    """Deprecated: use StringField/IntField/FloatField with ``options`` instead.
+
+    Kept for backward compatibility with existing plugin config schemas.
+    """
     type = ConfigType.Enum
 
     def __init__(self, key: str, name: str, hint: str, options, default=None, locales: dict = None):
@@ -223,26 +251,25 @@ def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     locales = schema.get("locales", {})
 
     if field_type in ("string", "text"):
-        if options:
-            return EnumField(key=key, name=name, hint=hint, options=options, default=default, locales=locales)
-        return StringField(key=key, name=name, hint=hint, default=default, locales=locales)
+        return StringField(key=key, name=name, hint=hint, default=default, options=options, locales=locales)
 
     if field_type == "sensitive":
         return SensitiveField(key=key, name=name, hint=hint, default=default, locales=locales)
 
     if field_type in ("integer", "int"):
-        return IntField(key=key, name=name, hint=hint, default=default, locales=locales)
+        return IntField(key=key, name=name, hint=hint, default=default, options=options, locales=locales)
 
     if field_type == "float":
-        return FloatField(key=key, name=name, hint=hint, default=default, locales=locales)
+        return FloatField(key=key, name=name, hint=hint, default=default, options=options, locales=locales)
 
     if field_type == "list":
         return ListField(key=key, name=name, hint=hint, default=default, locales=locales)
 
+    # Deprecated: use string/integer/float with options instead.
     if field_type == "enum":
         return EnumField(key=key, name=name, hint=hint, default=default, options=options, locales=locales)
 
-    if field_type == "switch":
+    if field_type in ("switch", "bool", "boolean"):
         return SwitchField(key=key, name=name, hint=hint, default=default, locales=locales)
 
     if field_type == "json":
