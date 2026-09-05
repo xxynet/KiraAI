@@ -10,286 +10,37 @@
         >
           <div class="flex flex-col gap-4">
             <template v-for="(field, key) in entry.fields" :key="key">
-              <div v-if="field" class="mb-0">
-                <label v-if="!isInfoLike(field.type)" class="block text-sm font-medium text-theme-body mb-1">
-                  {{ labelFor(field, key as string) }}
-                </label>
-
-                <CustomMultiSelect
-                  v-if="isMultiSelectLike(field.type)"
-                  :modelValue="(sectionFieldValue(entry.key, key as string, field) as string[]) ?? []"
-                  :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
-                  :placeholder="hintFor(field) || 'Select...'"
-                  @update:modelValue="updateSectionField(entry.key, key as string, $event)"
-                />
-
-                <CustomSelect
-                  v-else-if="hasOptions(field)"
-                  :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
-                  :options="optionsFor(field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
-                  :placeholder="hintFor(field) || 'Select...'"
-                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
-                />
-
-                <CustomSelect
-                  v-else-if="isModelSelectLike(field.type)"
-                  :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
-                  :options="modelSelectOptions[field.model_type || 'llm'] || []"
-                  :placeholder="t('configuration.select_model')"
-                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
-                />
-
-                <CustomSelect
-                  v-else-if="isPersonaSelectLike(field.type)"
-                  :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
-                  :options="personaSelectOptions"
-                  :placeholder="t('config.select_persona')"
-                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
-                />
-
-                <div v-else-if="isBoolLike(field.type)" class="flex items-center">
-                  <input
-                    :id="'config-switch-' + entry.key + '-' + key"
-                    type="checkbox"
-                    class="sr-only"
-                    :checked="!!sectionFieldValue(entry.key, key as string, field)"
-                    @change="updateSectionField(entry.key, key as string, ($event.target as HTMLInputElement).checked)"
-                  >
-                  <label
-                    :for="'config-switch-' + entry.key + '-' + key"
-                    class="relative inline-flex items-center h-5 w-9 rounded-full cursor-pointer transition-colors"
-                    :class="sectionFieldValue(entry.key, key as string, field) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'"
-                    @click.prevent="updateSectionField(entry.key, key as string, !sectionFieldValue(entry.key, key as string, field))"
-                  >
-                    <span
-                      class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition-transform"
-                      :class="sectionFieldValue(entry.key, key as string, field) ? 'translate-x-5' : 'translate-x-0'"
-                    />
-                  </label>
-                </div>
-
-                <UiInput
-                  v-else-if="isNumberLike(field.type)"
-                  type="number"
-                  :model-value="drafts[entry.key + '.' + key] ?? ''"
-                  :coerce-number="false"
-                  :step="field.type === 'integer' ? '1' : '0.01'"
-                  class="w-full rounded-lg px-3 py-2 transition-colors"
-                  :placeholder="hintFor(field)"
-                  @update:model-value="drafts[entry.key + '.' + key] = String($event)"
-                  @blur="commitSectionNumberDraft(entry.key, key as string, field)"
-                />
-
-                <div v-else-if="field.type === 'sensitive'" class="relative">
-                  <UiInput
-                    :type="sensitiveVisible[entry.key + '.' + key] ? 'text' : 'password'"
-                    :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
-                    class="w-full rounded-lg px-3 py-2 pr-10 transition-colors"
-                    :placeholder="hintFor(field)"
-                    @update:model-value="updateSectionField(entry.key, key as string, $event)"
-                  />
-                  <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-theme-faint text-theme-faint-hover focus:outline-none" @click="toggleSensitive(entry.key + '.' + key)">
-                    <IconEye v-if="!sensitiveVisible[entry.key + '.' + key]" class="w-4 h-4" />
-                    <IconEyeOff v-else class="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div v-else-if="isMonacoLike(field.type)" style="height: 200px;">
-                  <MonacoEditor
-                    :modelValue="drafts[entry.key + '.' + key] ?? ''"
-                    :language="monacoLang(field)"
-                    :height="200"
-                    @update:modelValue="updateSectionMonacoDraft(entry.key, key as string, $event, field.type)"
-                  />
-                </div>
-
-                <TagInput
-                  v-else-if="isListLike(field.type)"
-                  :modelValue="(sectionFieldValue(entry.key, key as string, field) as string[]) ?? []"
-                  :placeholder="hintFor(field)"
-                  @update:modelValue="updateSectionField(entry.key, key as string, $event)"
-                />
-
-                <UiTextarea
-                  v-else-if="isTextareaLike(field.type)"
-                  :model-value="sectionFieldValue(entry.key, key as string, field) ?? ''"
-                  rows="4"
-                  class="w-full rounded-lg px-3 py-2 transition-colors"
-                  :placeholder="hintFor(field)"
-                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
-                />
-
-                <div v-else-if="isJsonLike(field.type)">
-                  <UiTextarea
-                    :model-value="drafts[entry.key + '.' + key]"
-                    rows="5"
-                    class="w-full rounded-lg px-3 py-2 transition-colors"
-                    :placeholder="hintFor(field)"
-                    @update:model-value="onSectionDraftInput(entry.key, key as string, $event, field)"
-                    @blur="onSectionDraftBlur(entry.key, key as string, field)"
-                  />
-                </div>
-
-                <InfoCallout
-                  v-else-if="isInfoLike(field.type)"
-                  :level="field.level"
-                  :label="labelFor(field, key as string)"
-                  :hint="hintFor(field)"
-                />
-
-                <UiInput
-                  v-else
-                  :model-value="stringValue(sectionFieldValue(entry.key, key as string, field))"
-                  class="w-full rounded-lg px-3 py-2 transition-colors"
-                  :placeholder="hintFor(field)"
-                  @update:model-value="updateSectionField(entry.key, key as string, $event)"
-                />
-
-                <p v-if="hintFor(field) && !isInfoLike(field.type)" class="text-xs text-theme-subtle mt-1">{{ hintFor(field) }}</p>
-              </div>
+              <ConfigFieldInput
+                v-if="field"
+                :ref="(el: any) => setFieldRef(entry.key + '.' + key, el)"
+                :field="field"
+                :field-key="key as string"
+                :uid="entry.key + '.' + key"
+                :value="sectionFieldValue(entry.key, key as string, field)"
+                :model-options="modelOptionsFor(field)"
+                :persona-options="personaSelectOptions"
+                :session-options="sessionSelectOptions"
+                @change="updateSectionField(entry.key, key as string, $event)"
+              />
             </template>
           </div>
         </CollapsibleSection>
       </div>
 
       <!-- Ungrouped field -->
-      <div v-else class="mb-4">
-        <label v-if="!isInfoLike(entry.field.type)" class="block text-sm font-medium text-theme-body mb-1">
-          {{ labelFor(entry.field, entry.key) }}
-        </label>
-
-        <CustomMultiSelect
-          v-if="isMultiSelectLike(entry.field.type)"
-          :modelValue="(fieldValue(entry.key, entry.field) as string[]) ?? []"
-          :options="optionsFor(entry.field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
-          :placeholder="hintFor(entry.field) || 'Select...'"
-          @update:modelValue="updateField(entry.key, $event)"
-        />
-
-        <CustomSelect
-          v-else-if="hasOptions(entry.field)"
-          :model-value="fieldValue(entry.key, entry.field) ?? ''"
-          :options="optionsFor(entry.field).map((opt: any) => ({ value: String(opt), label: String(opt) }))"
-          :placeholder="hintFor(entry.field) || 'Select...'"
-          @update:model-value="updateField(entry.key, $event)"
-        />
-
-        <CustomSelect
-          v-else-if="isModelSelectLike(entry.field.type)"
-          :model-value="fieldValue(entry.key, entry.field) ?? ''"
-          :options="modelSelectOptions[entry.field.model_type || 'llm'] || []"
-          :placeholder="t('configuration.select_model')"
-          @update:model-value="updateField(entry.key, $event)"
-        />
-
-        <CustomSelect
-          v-else-if="isPersonaSelectLike(entry.field.type)"
-          :model-value="fieldValue(entry.key, entry.field) ?? ''"
-          :options="personaSelectOptions"
-          :placeholder="t('config.select_persona')"
-          @update:model-value="updateField(entry.key, $event)"
-        />
-
-        <div v-else-if="isBoolLike(entry.field.type)" class="flex items-center">
-          <input
-            :id="'config-switch-' + entry.key"
-            type="checkbox"
-            class="sr-only"
-            :checked="!!fieldValue(entry.key, entry.field)"
-            @change="updateField(entry.key, ($event.target as HTMLInputElement).checked)"
-          >
-          <label
-            :for="'config-switch-' + entry.key"
-            class="relative inline-flex items-center h-5 w-9 rounded-full cursor-pointer transition-colors"
-            :class="fieldValue(entry.key, entry.field) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'"
-            @click.prevent="updateField(entry.key, !fieldValue(entry.key, entry.field))"
-          >
-            <span
-              class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition-transform"
-              :class="fieldValue(entry.key, entry.field) ? 'translate-x-5' : 'translate-x-0'"
-            />
-          </label>
-        </div>
-
-        <UiInput
-          v-else-if="isNumberLike(entry.field.type)"
-          type="number"
-          :model-value="drafts[entry.key] ?? ''"
-          :coerce-number="false"
-          :step="entry.field.type === 'integer' ? '1' : '0.01'"
-          class="w-full rounded-lg px-3 py-2 transition-colors"
-          :placeholder="hintFor(entry.field)"
-          @update:model-value="drafts[entry.key] = String($event)"
-          @blur="commitNumberDraft(entry.key, entry.field)"
-        />
-
-        <div v-else-if="entry.field.type === 'sensitive'" class="relative">
-          <UiInput
-            :type="sensitiveVisible[entry.key] ? 'text' : 'password'"
-            :model-value="fieldValue(entry.key, entry.field) ?? ''"
-            class="w-full rounded-lg px-3 py-2 pr-10 transition-colors"
-            :placeholder="hintFor(entry.field)"
-            @update:model-value="updateField(entry.key, $event)"
-          />
-          <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-theme-faint text-theme-faint-hover focus:outline-none" @click="toggleSensitive(entry.key)">
-            <IconEye v-if="!sensitiveVisible[entry.key]" class="w-4 h-4" />
-            <IconEyeOff v-else class="w-4 h-4" />
-          </button>
-        </div>
-
-        <div v-else-if="isMonacoLike(entry.field.type)" style="height: 200px;">
-          <MonacoEditor
-            :modelValue="drafts[entry.key] ?? ''"
-            :language="monacoLang(entry.field)"
-            :height="200"
-            @update:modelValue="updateMonacoDraft(entry.key, $event, entry.field.type)"
-          />
-        </div>
-
-        <TagInput
-          v-else-if="isListLike(entry.field.type)"
-          :modelValue="(fieldValue(entry.key, entry.field) as string[]) ?? []"
-          :placeholder="hintFor(entry.field)"
-          @update:modelValue="updateField(entry.key, $event)"
-        />
-
-        <UiTextarea
-          v-else-if="isTextareaLike(entry.field.type)"
-          :model-value="fieldValue(entry.key, entry.field) ?? ''"
-          rows="4"
-          class="w-full rounded-lg px-3 py-2 transition-colors"
-          :placeholder="hintFor(entry.field)"
-          @update:model-value="updateField(entry.key, $event)"
-        />
-
-        <div v-else-if="isJsonLike(entry.field.type)">
-          <UiTextarea
-            :model-value="drafts[entry.key]"
-            rows="5"
-            class="w-full rounded-lg px-3 py-2 transition-colors"
-            :placeholder="hintFor(entry.field)"
-            @update:model-value="onDraftInput(entry.key, $event, entry.field)"
-            @blur="onDraftBlur(entry.key, entry.field)"
-          />
-        </div>
-
-        <InfoCallout
-          v-else-if="isInfoLike(entry.field.type)"
-          :level="entry.field.level"
-          :label="labelFor(entry.field, entry.key)"
-          :hint="hintFor(entry.field)"
-        />
-
-        <UiInput
-          v-else
-          :model-value="stringValue(fieldValue(entry.key, entry.field))"
-          class="w-full rounded-lg px-3 py-2 transition-colors"
-          :placeholder="hintFor(entry.field)"
-          @update:model-value="updateField(entry.key, $event)"
-        />
-
-        <p v-if="hintFor(entry.field) && !isInfoLike(entry.field.type)" class="text-xs text-theme-subtle mt-1">{{ hintFor(entry.field) }}</p>
-      </div>
+      <ConfigFieldInput
+        v-else
+        :ref="(el: any) => setFieldRef(entry.key, el)"
+        class="mb-4"
+        :field="entry.field"
+        :field-key="entry.key"
+        :uid="entry.key"
+        :value="fieldValue(entry.key, entry.field)"
+        :model-options="modelOptionsFor(entry.field)"
+        :persona-options="personaSelectOptions"
+        :session-options="sessionSelectOptions"
+        @change="updateField(entry.key, $event)"
+      />
     </template>
   </div>
 </template>
@@ -298,17 +49,12 @@
 import { reactive, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
-import CustomSelect from '@/components/common/CustomSelect.vue'
-import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
-import TagInput from '@/components/common/TagInput.vue'
+import ConfigFieldInput from '@/components/common/ConfigFieldInput.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
-import MonacoEditor from '@/components/common/MonacoEditor.vue'
-import InfoCallout from '@/components/common/InfoCallout.vue'
-import UiInput from '@/components/ui/UiInput.vue'
-import UiTextarea from '@/components/ui/UiTextarea.vue'
-import { IconEye, IconEyeOff } from '@/components/icons'
 import { getProviders, getModels } from '@/api/provider'
 import { getPersonas } from '@/api/persona'
+import { getSessions } from '@/api/session'
+import { isInfoLike, isModelSelectLike, isPersonaSelectLike, isSessionSelectLike, isSectionLike } from '@/utils/configFieldTypes'
 
 const props = defineProps<{
   modelValue: Record<string, any>
@@ -322,11 +68,13 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const { localize } = useLocalized()
 
-const drafts = reactive<Record<string, string>>({})
-const sensitiveVisible = reactive<Record<string, boolean>>({})
 const modelSelectOptions = reactive<Record<string, { value: string; label: string }[]>>({})
 const personaSelectOptions = reactive<{ value: string; label: string }[]>([])
+const sessionSelectOptions = reactive<{ value: string; label: string }[]>([])
 const sectionCollapsed = reactive<Record<string, boolean>>({})
+
+/** Field input instances keyed by unique draft key, for validation */
+const fieldRefs = new Map<string, any>()
 
 const effectiveSchema = computed<Record<string, any>>(() => {
   const s = props.schema
@@ -356,7 +104,7 @@ interface DataFieldEntry {
   fieldKey: string
 }
 
-/** Map keyed by draftKey: "fieldKey" for ungrouped, "sectionKey.fieldKey" for section fields */
+/** Map keyed by unique key: "fieldKey" for ungrouped, "sectionKey.fieldKey" for section fields */
 const allDataFields = computed(() => {
   const { entries } = groupedSchema.value
   const all: Record<string, DataFieldEntry> = {}
@@ -375,14 +123,13 @@ const allDataFields = computed(() => {
   return all
 })
 
-const lastSynced = reactive<Record<string, string>>({})
-
-const TEXTAREA_TYPES = new Set(['textarea'])
-const MONACO_TYPES = new Set(['json', 'markdown', 'yaml', 'editor'])
-const LIST_TYPES = new Set(['list'])
-const NUMBER_TYPES = new Set(['integer', 'float', 'number'])
-const BOOL_TYPES = new Set(['switch', 'boolean'])
-const JSON_TYPES = new Set(['object', 'array'])
+function setFieldRef(key: string, el: any) {
+  if (el) {
+    fieldRefs.set(key, el)
+  } else {
+    fieldRefs.delete(key)
+  }
+}
 
 function labelFor(field: any, key: string): string {
   const fallback = field?.name || field?.title || key
@@ -395,57 +142,60 @@ function hintFor(field: any): string | undefined {
   return localize(field, 'hint', fallback)
 }
 
-function optionsFor(field: any): any[] {
-  const raw = field?.options ?? field?.enum
-  return Array.isArray(raw) ? raw : []
+function modelOptionsFor(field: any): { value: string; label: string }[] {
+  return modelSelectOptions[field?.model_type || 'llm'] || []
 }
 
-function hasOptions(field: any): boolean {
-  return optionsFor(field).length > 0
+/** Return modelValue[key] if present, otherwise field.default */
+function fieldValue(key: string, field: any): any {
+  if (props.modelValue[key] !== undefined) return props.modelValue[key]
+  return field?.default
 }
 
-function isTextareaLike(type: string): boolean {
-  return TEXTAREA_TYPES.has(type)
+function sectionFieldValue(sectionKey: string, key: string, field: any): any {
+  const section = props.modelValue[sectionKey]
+  if (section && typeof section === 'object' && section[key] !== undefined) return section[key]
+  return field?.default
 }
 
-function isMonacoLike(type: string): boolean {
-  return MONACO_TYPES.has(type)
+function updateField(key: string, value: any) {
+  emit('update:modelValue', { ...props.modelValue, [key]: value })
 }
 
-function isListLike(type: string): boolean {
-  return LIST_TYPES.has(type)
+function updateSectionField(sectionKey: string, key: string, value: any) {
+  const section = { ...(props.modelValue[sectionKey] || {}), [key]: value }
+  emit('update:modelValue', { ...props.modelValue, [sectionKey]: section })
 }
 
-function isNumberLike(type: string): boolean {
-  return NUMBER_TYPES.has(type)
-}
-
-function isBoolLike(type: string): boolean {
-  return BOOL_TYPES.has(type)
-}
-
-function isJsonLike(type: string): boolean {
-  return JSON_TYPES.has(type)
-}
-
-function isModelSelectLike(type: string): boolean {
-  return type === 'model_select'
-}
-
-function isPersonaSelectLike(type: string): boolean {
-  return type === 'persona_select'
-}
-
-function isMultiSelectLike(type: string): boolean {
-  return type === 'multi_select'
-}
-
-function isSectionLike(type: string): boolean {
-  return type === 'section'
-}
-
-function isInfoLike(type: string): boolean {
-  return type === 'info'
+/** Apply field.defaults to modelValue for any missing keys */
+function applyDefaults() {
+  const schema = allDataFields.value
+  const result = { ...props.modelValue }
+  let changed = false
+  for (const dk in schema) {
+    const { field, sectionKey, fieldKey } = schema[dk]
+    if (!field) continue
+    if (sectionKey) {
+      if (!result[sectionKey] || typeof result[sectionKey] !== 'object') {
+        result[sectionKey] = {}
+      } else if (result[sectionKey] === props.modelValue[sectionKey]) {
+        // copy before writing so the nested object inside props.modelValue is not mutated
+        result[sectionKey] = { ...result[sectionKey] }
+      }
+      if (result[sectionKey][fieldKey] === undefined && field.default !== undefined) {
+        result[sectionKey][fieldKey] = field.default
+        changed = true
+      }
+    } else {
+      if (result[fieldKey] === undefined && field.default !== undefined) {
+        result[fieldKey] = field.default
+        changed = true
+      }
+    }
+  }
+  if (changed) {
+    emit('update:modelValue', result)
+  }
 }
 
 async function loadModelSelectOptions() {
@@ -453,7 +203,8 @@ async function loadModelSelectOptions() {
   const modelTypes = new Set<string>()
   for (const dk in schema) {
     const { field } = schema[dk]
-    if (field && isModelSelectLike(field.type)) {
+    if (!field) continue
+    if (isModelSelectLike(field.type) || field.source === 'model') {
       modelTypes.add(field.model_type || 'llm')
     }
   }
@@ -493,7 +244,7 @@ async function loadModelSelectOptions() {
 
 async function loadPersonaSelectOptions() {
   const schema = allDataFields.value
-  const hasPersonaSelect = Object.values(schema).some(({ field }) => field && isPersonaSelectLike(field.type))
+  const hasPersonaSelect = Object.values(schema).some(({ field }) => field && (isPersonaSelectLike(field.type) || field.source === 'persona'))
   if (!hasPersonaSelect || personaSelectOptions.length > 0) return
 
   try {
@@ -509,85 +260,33 @@ async function loadPersonaSelectOptions() {
   }
 }
 
-function monacoLang(field: any): string {
-  const type = field?.type
-  if (type === 'json') return 'json'
-  if (type === 'markdown') return 'markdown'
-  if (type === 'yaml') return 'yaml'
-  if (type === 'editor') return field?.language || 'plaintext'
-  return 'plaintext'
-}
-
-function stringValue(v: unknown): string {
-  if (v === null || v === undefined) return ''
-  return typeof v === 'object' ? JSON.stringify(v) : String(v)
-}
-
-/** Return modelValue[key] if present, otherwise field.default */
-function fieldValue(key: string, field: any): any {
-  if (props.modelValue[key] !== undefined) return props.modelValue[key]
-  return field?.default
-}
-
-function sectionFieldValue(sectionKey: string, key: string, field: any): any {
-  const section = props.modelValue[sectionKey]
-  if (section && typeof section === 'object' && section[key] !== undefined) return section[key]
-  return field?.default
-}
-
-/** Apply field.defaults to modelValue for any missing keys */
-function applyDefaults() {
+async function loadSessionSelectOptions() {
   const schema = allDataFields.value
-  const result = { ...props.modelValue }
-  let changed = false
-  for (const dk in schema) {
-    const { field, sectionKey, fieldKey } = schema[dk]
-    if (!field) continue
-    if (sectionKey) {
-      if (!result[sectionKey] || typeof result[sectionKey] !== 'object') result[sectionKey] = {}
-      if (result[sectionKey][fieldKey] === undefined && field.default !== undefined) {
-        result[sectionKey][fieldKey] = field.default
-        changed = true
-      }
-    } else {
-      if (result[fieldKey] === undefined && field.default !== undefined) {
-        result[fieldKey] = field.default
-        changed = true
-      }
-    }
-  }
-  if (changed) {
-    emit('update:modelValue', result)
-  }
-}
+  const hasSessionSelect = Object.values(schema).some(({ field }) => field && (isSessionSelectLike(field.type) || field.source === 'session'))
+  if (!hasSessionSelect || sessionSelectOptions.length > 0) return
 
-function initDrafts() {
-  const schema = allDataFields.value
-
-  for (const dk in schema) {
-    const { field, sectionKey, fieldKey } = schema[dk]
-    if (!field) continue
-    const val = sectionKey ? sectionFieldValue(sectionKey, fieldKey, field) : fieldValue(fieldKey, field)
-    if (isNumberLike(field.type)) {
-      drafts[dk] = val !== undefined && val !== null ? String(val) : ''
-      lastSynced[dk] = drafts[dk]
-    } else if (isMonacoLike(field.type)) {
-      const serialized = field.type === 'json' && typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val ?? '')
-      drafts[dk] = serialized
-      lastSynced[dk] = serialized
-    } else if (isJsonLike(field.type)) {
-      const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
-      drafts[dk] = serialized
-      lastSynced[dk] = serialized
+  try {
+    const res = await getSessions()
+    const sessions = res.data?.sessions || []
+    sessionSelectOptions.length = 0
+    sessionSelectOptions.push({ value: '', label: t('config.select_session') })
+    for (const s of sessions) {
+      const internalId = s.id || [s.adapter_name, s.session_type, s.session_id].filter(Boolean).join(':')
+      sessionSelectOptions.push({
+        value: internalId,
+        label: s.title ? `${s.title} (${internalId})` : internalId,
+      })
     }
+  } catch (e) {
+    console.warn('Failed to load session options:', e)
   }
 }
 
 watch(() => effectiveSchema.value, () => {
-  initDrafts()
   applyDefaults()
   loadModelSelectOptions()
   loadPersonaSelectOptions()
+  loadSessionSelectOptions()
   const schema = effectiveSchema.value
   for (const key in schema) {
     const field = schema[key]
@@ -597,176 +296,7 @@ watch(() => effectiveSchema.value, () => {
   }
 }, { immediate: true, deep: true })
 
-watch(() => props.modelValue, () => {
-  const schema = allDataFields.value
-  for (const dk in schema) {
-    const { field, sectionKey, fieldKey } = schema[dk]
-    if (!field) continue
-    const val = sectionKey ? sectionFieldValue(sectionKey, fieldKey, field) : fieldValue(fieldKey, field)
-    if (isNumberLike(field.type)) {
-      const serialized = val !== undefined && val !== null ? String(val) : ''
-      if (serialized !== lastSynced[dk]) {
-        drafts[dk] = serialized
-        lastSynced[dk] = serialized
-      }
-    } else if (isMonacoLike(field.type)) {
-      const serialized = field.type === 'json' && typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val ?? '')
-      if (serialized !== lastSynced[dk]) {
-        drafts[dk] = serialized
-        lastSynced[dk] = serialized
-      }
-    } else if (isJsonLike(field.type)) {
-      const serialized = typeof val === 'object' ? JSON.stringify(val, null, 2) : (val ?? '')
-      if (serialized !== lastSynced[dk]) {
-        drafts[dk] = serialized
-        lastSynced[dk] = serialized
-      }
-    }
-  }
-}, { deep: true })
-
-function updateField(key: string, value: any) {
-  emit('update:modelValue', { ...props.modelValue, [key]: value })
-}
-
-function updateSectionField(sectionKey: string, key: string, value: any) {
-  const section = { ...(props.modelValue[sectionKey] || {}), [key]: value }
-  emit('update:modelValue', { ...props.modelValue, [sectionKey]: section })
-}
-
-function updateMonacoDraft(key: string, val: string, type: string) {
-  drafts[key] = val
-  if (type === 'json') {
-    try {
-      const parsed = JSON.parse(val)
-      lastSynced[key] = val
-      emit('update:modelValue', { ...props.modelValue, [key]: parsed })
-    } catch {
-      // Keep draft as-is; validation deferred to save
-    }
-  } else {
-    lastSynced[key] = val
-    emit('update:modelValue', { ...props.modelValue, [key]: val })
-  }
-}
-
-
-function commitNumberDraft(key: string, field: any) {
-  const raw = drafts[key]
-  const empty = raw === '' || raw === null || raw === undefined
-  const parsed = empty ? null : Number(raw)
-  if (!empty) {
-    if (!Number.isFinite(parsed)) return
-    if (field?.type === 'integer' && !Number.isInteger(parsed)) return
-  }
-  lastSynced[key] = raw ?? ''
-  emit('update:modelValue', { ...props.modelValue, [key]: parsed })
-}
-
-function onDraftInput(key: string, val: string, field: any) {
-  drafts[key] = val
-  try {
-    const parsed = JSON.parse(val)
-    if (isValidType(parsed, field.type)) {
-      lastSynced[key] = val
-      emit('update:modelValue', { ...props.modelValue, [key]: parsed })
-    }
-  } catch {
-    // Allow typing — don't emit until valid
-  }
-}
-
-function onDraftBlur(key: string, field: any) {
-  if (!drafts[key] || !drafts[key].trim()) {
-    emit('update:modelValue', { ...props.modelValue, [key]: null })
-    return
-  }
-  try {
-    const parsed = JSON.parse(drafts[key])
-    if (isValidType(parsed, field.type)) {
-      emit('update:modelValue', { ...props.modelValue, [key]: parsed })
-    }
-  } catch {
-    // Keep draft as-is; validation deferred to save
-  }
-}
-
-function isValidType(parsed: any, type: string): boolean {
-  if (type === 'object' || type === 'json') {
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-  }
-  if (type === 'array' || type === 'list') {
-    return Array.isArray(parsed)
-  }
-  return true
-}
-
-function toggleSensitive(key: string) {
-  sensitiveVisible[key] = !sensitiveVisible[key]
-}
-
-function commitSectionNumberDraft(sectionKey: string, key: string, field: any) {
-  const dk = sectionKey + '.' + key
-  const raw = drafts[dk]
-  const empty = raw === '' || raw === null || raw === undefined
-  const parsed = empty ? null : Number(raw)
-  if (!empty) {
-    if (!Number.isFinite(parsed)) return
-    if (field?.type === 'integer' && !Number.isInteger(parsed)) return
-  }
-  lastSynced[dk] = raw ?? ''
-  updateSectionField(sectionKey, key, parsed)
-}
-
-function updateSectionMonacoDraft(sectionKey: string, key: string, val: string, type: string) {
-  const dk = sectionKey + '.' + key
-  drafts[dk] = val
-  if (type === 'json') {
-    try {
-      const parsed = JSON.parse(val)
-      lastSynced[dk] = val
-      updateSectionField(sectionKey, key, parsed)
-    } catch {
-      // Keep draft as-is; validation deferred to save
-    }
-  } else {
-    lastSynced[dk] = val
-    updateSectionField(sectionKey, key, val)
-  }
-}
-
-function onSectionDraftInput(sectionKey: string, key: string, val: string, field: any) {
-  const dk = sectionKey + '.' + key
-  drafts[dk] = val
-  try {
-    const parsed = JSON.parse(val)
-    if (isValidType(parsed, field.type)) {
-      lastSynced[dk] = val
-      updateSectionField(sectionKey, key, parsed)
-    }
-  } catch {
-    // Allow typing — don't emit until valid
-  }
-}
-
-function onSectionDraftBlur(sectionKey: string, key: string, field: any) {
-  const dk = sectionKey + '.' + key
-  if (!drafts[dk] || !drafts[dk].trim()) {
-    updateSectionField(sectionKey, key, null)
-    return
-  }
-  try {
-    const parsed = JSON.parse(drafts[dk])
-    if (isValidType(parsed, field.type)) {
-      updateSectionField(sectionKey, key, parsed)
-    }
-  } catch {
-    // Keep draft as-is; validation deferred to save
-  }
-}
-
 function validate(): { valid: boolean; message?: string } {
-  const schema = allDataFields.value
   const result = { ...props.modelValue }
   // Deep-copy section dicts so nested writes don't mutate props
   for (const entry of groupedSchema.value.entries) {
@@ -775,66 +305,20 @@ function validate(): { valid: boolean; message?: string } {
     }
   }
 
-  for (const dk in schema) {
-    const { field, sectionKey, fieldKey } = schema[dk]
-    if (!field) continue
-    const label = labelFor(field, fieldKey)
-
-    const setResult = (v: any) => {
+  for (const dk in allDataFields.value) {
+    const { sectionKey, fieldKey } = allDataFields.value[dk]
+    const child = fieldRefs.get(dk)
+    if (!child) continue
+    const res = child.validate()
+    if (!res.valid) {
+      return { valid: false, message: res.message }
+    }
+    if (res.value !== undefined) {
       if (sectionKey) {
         if (!result[sectionKey] || typeof result[sectionKey] !== 'object') result[sectionKey] = {}
-        result[sectionKey][fieldKey] = v
+        result[sectionKey][fieldKey] = res.value
       } else {
-        result[fieldKey] = v
-      }
-    }
-
-    // Number / integer / float
-    if (isNumberLike(field.type)) {
-      const raw = drafts[dk]
-      if (raw === '' || raw === undefined) {
-        setResult(null)
-      } else {
-        const parsed = Number(raw)
-        if (!Number.isFinite(parsed)) {
-          return { valid: false, message: `${label}: ${t('configform.invalid_number')}` }
-        }
-        if (field.type === 'integer' && !Number.isInteger(parsed)) {
-          return { valid: false, message: `${label}: ${t('configform.invalid_number')}` }
-        }
-        setResult(parsed)
-      }
-    }
-
-    // Monaco JSON
-    if (isMonacoLike(field.type) && field.type === 'json') {
-      const val = drafts[dk]
-      if (!val || !val.trim()) {
-        setResult(null)
-      } else {
-        try {
-          setResult(JSON.parse(val))
-        } catch {
-          return { valid: false, message: `${label}: ${t('configform.invalid_json')}` }
-        }
-      }
-    }
-
-    // Object / array
-    if (isJsonLike(field.type)) {
-      const val = drafts[dk]
-      if (!val || !val.trim()) {
-        setResult(null)
-      } else {
-        try {
-          const parsed = JSON.parse(val)
-          if (!isValidType(parsed, field.type)) {
-            return { valid: false, message: `${label}: ${t('configform.expected_type', { type: field.type })}` }
-          }
-          setResult(parsed)
-        } catch {
-          return { valid: false, message: `${label}: ${t('configform.invalid_json')}` }
-        }
+        result[fieldKey] = res.value
       }
     }
   }

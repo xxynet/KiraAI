@@ -3,7 +3,7 @@
     <!-- Trigger -->
     <div
       class="custom-select-trigger"
-      :class="{ active: isOpen, 'has-value': !!modelValue, placeholder: !modelValue, disabled: props.disabled }"
+      :class="{ active: isOpen, 'has-value': hasValue, placeholder: !hasValue, disabled: props.disabled }"
       :style="props.height ? { height: props.height, minHeight: props.height } : undefined"
       @click.stop="toggleDropdown"
       @keydown.enter.prevent="onEnter"
@@ -71,14 +71,14 @@ import { IconCheck, IconChevronDown } from '@/components/icons'
 import { useTheme } from '@/composables/useTheme'
 
 interface Option {
-  value: string
+  value: string | number
   label: string
   icon?: string | null
   iconDark?: string | null
 }
 
 const props = defineProps<{
-  modelValue: string
+  modelValue: string | number
   options: Option[]
   placeholder?: string
   disabled?: boolean
@@ -86,10 +86,13 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string]
+  'update:modelValue': [value: any]
 }>()
 
 const { isDark } = useTheme()
+
+// truthiness would treat a selected numeric 0 as empty
+const hasValue = computed(() => props.modelValue !== '' && props.modelValue !== null && props.modelValue !== undefined)
 
 const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()

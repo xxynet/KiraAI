@@ -948,6 +948,7 @@ export default {
     load_error: '加载配置失败',
     select_model: '— 请选择模型 —',
     select_persona: '选择人设',
+    select_session: '选择会话',
     json_invalid: '字段"{field}"包含无效的 JSON：{error}',
   },
   login: {

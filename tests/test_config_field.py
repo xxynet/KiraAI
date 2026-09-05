@@ -16,6 +16,7 @@ from core.config.config_field import (
     TextareaField,
     ModelSelectField,
     MultiSelectField,
+    SessionSelectField,
     SectionField,
     InfoField,
     create_field_from_schema,
@@ -149,9 +150,11 @@ def test_create_field_string():
     assert f.default == "v"
 
 
-def test_create_field_text_with_options_becomes_enum():
+def test_create_field_text_with_options():
     f = create_field_from_schema("k", {"type": "text", "options": ["a", "b"]})
-    assert isinstance(f, EnumField)
+    assert isinstance(f, StringField)
+    assert f.options == ["a", "b"]
+    assert f.default == "a"
 
 
 def test_create_field_sensitive():
@@ -191,6 +194,58 @@ def test_create_field_switch():
     assert f.default is True
 
 
+def test_create_field_string_with_options():
+    f = create_field_from_schema("k", {"type": "string", "options": ["a", "b"], "default": "b"})
+    assert isinstance(f, StringField)
+    assert f.default == "b"
+    d = f.to_dict()
+    assert d["type"] == "string"
+    assert d["options"] == ["a", "b"]
+
+
+def test_create_field_string_with_options_default_fallback():
+    f = create_field_from_schema("k", {"type": "string", "options": ["a", "b"], "default": "zzz"})
+    assert isinstance(f, StringField)
+    assert f.default == "a"
+
+
+def test_create_field_integer_with_options():
+    f = create_field_from_schema("k", {"type": "integer", "options": [8080, 9090], "default": 9090})
+    assert isinstance(f, IntField)
+    assert f.default == 9090
+    assert f.to_dict()["options"] == [8080, 9090]
+
+
+def test_create_field_integer_with_options_default_fallback():
+    f = create_field_from_schema("k", {"type": "integer", "options": [8080, 9090]})
+    assert isinstance(f, IntField)
+    assert f.default == 8080
+
+
+def test_create_field_float_with_options():
+    f = create_field_from_schema("k", {"type": "float", "options": [0.5, 1.5], "default": 1.5})
+    assert isinstance(f, FloatField)
+    assert f.default == 1.5
+    assert f.to_dict()["options"] == [0.5, 1.5]
+
+
+def test_scalar_field_without_options_omits_options_key():
+    f = StringField("k", "Name", "hint", default="v")
+    assert "options" not in f.to_dict()
+
+
+def test_create_field_bool_alias():
+    f = create_field_from_schema("k", {"type": "bool", "default": True})
+    assert isinstance(f, SwitchField)
+    assert f.default is True
+
+
+def test_create_field_boolean_alias():
+    f = create_field_from_schema("k", {"type": "boolean"})
+    assert isinstance(f, SwitchField)
+    assert f.default is False
+
+
 def test_create_field_json():
     f = create_field_from_schema("k", {"type": "json"})
     assert isinstance(f, JsonField)
@@ -226,6 +281,34 @@ def test_create_field_model_select():
 def test_create_field_multi_select():
     f = create_field_from_schema("k", {"type": "multi_select", "options": ["a"]})
     assert isinstance(f, MultiSelectField)
+
+
+def test_create_field_multi_select_model_source():
+    f = create_field_from_schema("k", {"type": "multi_select", "source": "model", "model_type": "tts"})
+    assert isinstance(f, MultiSelectField)
+    d = f.to_dict()
+    assert d["source"] == "model"
+    assert d["model_type"] == "tts"
+    assert "options" not in d
+
+
+def test_create_field_multi_select_persona_source():
+    f = create_field_from_schema("k", {"type": "multi_select", "source": "persona"})
+    assert isinstance(f, MultiSelectField)
+    d = f.to_dict()
+    assert d["source"] == "persona"
+    assert "model_type" not in d
+
+
+def test_create_field_multi_select_without_source_has_no_source_key():
+    f = create_field_from_schema("k", {"type": "multi_select", "options": ["a"]})
+    assert "source" not in f.to_dict()
+
+
+def test_create_field_session_select():
+    f = create_field_from_schema("k", {"type": "session_select"})
+    assert isinstance(f, SessionSelectField)
+    assert f.to_dict()["type"] == "session_select"
 
 
 def test_create_field_section():
