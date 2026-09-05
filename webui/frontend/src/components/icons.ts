@@ -45,7 +45,7 @@ export const IconPlus = svgIcon(
 )
 
 export const IconLogout = svgIcon(
-  '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6A2.25 2.25 0 005.25 5.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M18 12H9m9 0l-3-3m3 3l-3 3" />',
+  '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.5 21h-2a3 3 0 01-3-3V6a3 3 0 013-3h2M16.5 8.25L20.25 12l-3.75 3.75M20.25 12H10.5" />',
 )
 
 export const IconExternalLink = svgIcon(
