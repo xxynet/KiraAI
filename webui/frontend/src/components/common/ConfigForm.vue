@@ -266,7 +266,11 @@ async function loadSessionSelectOptions() {
     sessionSelectOptions.length = 0
     sessionSelectOptions.push({ value: '', label: t('config.select_session') })
     for (const s of sessions) {
-      sessionSelectOptions.push({ value: s.id, label: s.title || s.session_id || s.id })
+      const internalId = s.id || [s.adapter_name, s.session_type, s.session_id].filter(Boolean).join(':')
+      sessionSelectOptions.push({
+        value: internalId,
+        label: s.title ? `${s.title} (${internalId})` : internalId,
+      })
     }
   } catch (e) {
     console.warn('Failed to load session options:', e)
