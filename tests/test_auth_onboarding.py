@@ -10,7 +10,13 @@ from pydantic import ValidationError
 from webui import models
 from webui.models import OnboardingCompleteRequest, OnboardingTokenSetupRequest
 from webui.routes.auth import AuthRoutes
-from webui.utils import _access_token_fingerprint, _verify_jwt_token
+from webui.utils import (
+    _access_token_fingerprint,
+    _is_token_setup_done,
+    _mark_token_setup_done,
+    _update_access_token,
+    _verify_jwt_token,
+)
 
 
 class Config(dict):
@@ -53,7 +59,7 @@ async def test_onboarding_requires_available_config():
 
 
 @pytest.mark.anyio
-async def test_onboarding_status_and_completion_round_trip():
+async def test_onboarding_status_and_completion_round_trip(patch_token_setup):
     config = Config({'onboarding': {'completed': False, 'version': 3}})
     routes = make_routes(config)
 
@@ -188,3 +194,17 @@ async def test_setup_token_rejected_after_setup_already_done(patch_token_setup):
     with pytest.raises(HTTPException):
         await routes.setup_onboarding_token(OnboardingTokenSetupRequest(token=None), make_request())
     assert patch_token_setup['updated_tokens'] == []
+
+
+def test_token_setup_persistence_round_trip(monkeypatch, tmp_path):
+    monkeypatch.setattr('webui.utils.get_data_path', lambda: tmp_path)
+
+    assert _is_token_setup_done() is False
+    _mark_token_setup_done()
+    _mark_token_setup_done()  # re-marking must not corrupt the file
+    assert _is_token_setup_done() is True
+
+    _update_access_token('brand-new-token')
+    saved = json.loads((tmp_path / 'webui.json').read_text(encoding='utf-8'))
+    assert saved['access_token'] == 'brand-new-token'
+    assert saved['token_setup_done'] is True

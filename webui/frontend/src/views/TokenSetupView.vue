@@ -133,7 +133,7 @@ async function handleSave() {
     }
     finishSetup()
   } catch (error: unknown) {
-    errorMessage.value = resolveError(error)
+    handleSetupError(error)
   } finally {
     loading.value = false
   }
@@ -147,19 +147,25 @@ async function handleSkip() {
     await setupOnboardingToken({ token: null })
     finishSetup()
   } catch (error: unknown) {
-    errorMessage.value = resolveError(error)
+    handleSetupError(error)
   } finally {
     loading.value = false
   }
 }
 
-function resolveError(error: unknown): string {
+function handleSetupError(error: unknown) {
   const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null
-  if (typeof detail === 'string') {
-    if (detail.includes('reserved')) return t('tokenSetup.token_reserved')
-    if (detail.includes('already completed')) return t('tokenSetup.already_completed')
+  if (typeof detail === 'string' && detail.includes('already completed')) {
+    // Setup or onboarding finished elsewhere (e.g. another tab) while this
+    // page's guard cache was stale — sync the cache and let the router
+    // resolve onward instead of stranding the user on an error.
+    markTokenSetupDone()
+    router.push('/onboarding')
+    return
   }
-  return t('tokenSetup.save_error')
+  errorMessage.value = typeof detail === 'string' && detail.includes('reserved')
+    ? t('tokenSetup.token_reserved')
+    : t('tokenSetup.save_error')
 }
 </script>
 

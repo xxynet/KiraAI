@@ -282,12 +282,16 @@ class SettingsRoutes(Routes):
         if request.app.state.disable_auth:
             raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
         current_token = request.app.state.access_token
-        if body.old_token != current_token:
+        # Strip like the first-run setup endpoint does, so pasted tokens with
+        # stray whitespace compare and persist identically in both flows.
+        old_token = body.old_token.strip()
+        new_token = body.new_token.strip()
+        if old_token != current_token:
             raise HTTPException(status_code=400, detail="Old token is incorrect")
-        if not body.new_token or len(body.new_token) < 6:
+        if not new_token or len(new_token) < 6:
             raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
-        if body.new_token == "disabled":
+        if new_token == "disabled":
             raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
-        _update_access_token(body.new_token)
-        request.app.state.access_token = body.new_token
+        _update_access_token(new_token)
+        request.app.state.access_token = new_token
         return {"success": True}
