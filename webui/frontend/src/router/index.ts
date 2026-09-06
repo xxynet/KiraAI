@@ -4,13 +4,21 @@ import { getOnboardingStatus } from '@/api/onboarding'
 
 let authEnabled: boolean | null = null
 let onboardingCompleted: boolean | null = null
+let tokenSetupRequired: boolean | null = null
 
 export function markOnboardingCompleted() {
   onboardingCompleted = true
 }
 
+// Called after the first-run token setup page sets or skips the token, so the
+// cached guard state doesn't bounce the user back to the same page.
+export function markTokenSetupDone() {
+  tokenSetupRequired = false
+}
+
 export function resetOnboardingStatus() {
   onboardingCompleted = null
+  tokenSetupRequired = null
 }
 
 const router = createRouter({
@@ -21,6 +29,11 @@ const router = createRouter({
       name: 'Login',
       component: () => import('@/views/LoginView.vue'),
       meta: { public: true },
+    },
+    {
+      path: '/setup-token',
+      name: 'SetupToken',
+      component: () => import('@/views/TokenSetupView.vue'),
     },
     {
       path: '/onboarding',
@@ -101,9 +114,18 @@ router.beforeEach(async (to) => {
     if (onboardingCompleted === null) {
       const { data } = await getOnboardingStatus()
       onboardingCompleted = data.completed
+      tokenSetupRequired = data.token_setup_required
     }
-    if (!onboardingCompleted && to.name !== 'Onboarding') return '/onboarding'
-    if (onboardingCompleted && to.name === 'Onboarding') return '/overview'
+    if (!onboardingCompleted) {
+      // First run: the token-setup page comes before the onboarding wizard.
+      if (tokenSetupRequired) {
+        if (to.name !== 'SetupToken') return '/setup-token'
+      } else if (to.name !== 'Onboarding') {
+        return '/onboarding'
+      }
+    } else if (to.name === 'Onboarding' || to.name === 'SetupToken') {
+      return '/overview'
+    }
   } catch {
     // Let the destination render so existing API error handling can surface
     // a backend availability problem instead of trapping the user in a loop.

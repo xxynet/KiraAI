@@ -21,11 +21,21 @@ export interface AuthConfigResponse {
 export interface OnboardingStatusResponse {
   completed: boolean
   version: number
+  token_setup_required: boolean
 }
 
 export interface OnboardingCompleteRequest {
   lang: 'en' | 'zh'
   timezone?: string | null
+}
+
+export interface OnboardingTokenSetupRequest {
+  token?: string | null
+}
+
+export interface OnboardingTokenSetupResponse {
+  skipped: boolean
+  access_token?: string | null
 }
 
 export interface OverviewWidget {

@@ -12,11 +12,20 @@ from webui.models import (
     LoginResponse,
     OnboardingCompleteRequest,
     OnboardingStatusResponse,
+    OnboardingTokenSetupRequest,
+    OnboardingTokenSetupResponse,
     TokenLoginRequest,
     VersionResponse,
 )
 from webui.routes.base import RouteDefinition, Routes
-from webui.utils import _access_token_fingerprint, _create_jwt_token, verify_session_token
+from webui.utils import (
+    _access_token_fingerprint,
+    _create_jwt_token,
+    _is_token_setup_done,
+    _mark_token_setup_done,
+    _update_access_token,
+    verify_session_token,
+)
 
 
 async def require_auth(
@@ -159,6 +168,14 @@ class AuthRoutes(Routes):
                 tags=["onboarding"],
                 dependencies=[Depends(require_auth)],
             ),
+            RouteDefinition(
+                path="/api/onboarding/setup-token",
+                methods=["POST"],
+                endpoint=self.setup_onboarding_token,
+                response_model=OnboardingTokenSetupResponse,
+                tags=["onboarding"],
+                dependencies=[Depends(require_auth)],
+            ),
         ]
 
     def register_spa_fallback(self):
@@ -286,10 +303,63 @@ class AuthRoutes(Routes):
 
     async def get_onboarding_status(self):
         onboarding = self._get_onboarding_config()
+        completed = bool(onboarding.get("completed", False))
         return OnboardingStatusResponse(
-            completed=bool(onboarding.get("completed", False)),
+            completed=completed,
             version=onboarding.get("version", 1),
+            token_setup_required=(
+                not self.disable_auth
+                and not completed
+                and not _is_token_setup_done()
+            ),
         )
+
+    async def setup_onboarding_token(self, payload: OnboardingTokenSetupRequest, request: Request):
+        """First-run access-token setup: replace the auto-generated token or skip.
+
+        Only reachable before onboarding completes — afterwards token changes
+        must go through /settings/change-token which re-verifies the old token.
+        Setting a token rotates it in webui.json + app.state and re-mints the
+        session JWT (and cookie) so the current login survives the rotation.
+        """
+        if self.disable_auth:
+            raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
+        if self._get_onboarding_config().get("completed", False):
+            raise HTTPException(status_code=400, detail="Onboarding already completed")
+
+        if not payload.token or not payload.token.strip():
+            _mark_token_setup_done()
+            return OnboardingTokenSetupResponse(skipped=True)
+
+        new_token = payload.token.strip()
+        if len(new_token) < 6:
+            raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
+        if new_token == "disabled":
+            raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
+
+        _update_access_token(new_token)
+        request.app.state.access_token = new_token
+        _mark_token_setup_done()
+        access_token = _create_jwt_token(
+            data={
+                "sub": "admin",
+                "auth_mode": "enabled",
+                "tv": _access_token_fingerprint(new_token),
+            },
+            expires_delta=timedelta(days=5),
+        )
+        resp = JSONResponse(
+            content=OnboardingTokenSetupResponse(skipped=False, access_token=access_token).model_dump()
+        )
+        resp.set_cookie(
+            key="kira_token",
+            value=access_token,
+            path="/",
+            httponly=True,
+            samesite="lax",
+            max_age=5 * 24 * 3600,  # 5 days, matches JWT expiry
+        )
+        return resp
 
     async def complete_onboarding(self, payload: OnboardingCompleteRequest):
         onboarding = self._get_onboarding_config()
