@@ -184,6 +184,9 @@ class TokenLoginRequest(BaseModel):
 class OnboardingStatusResponse(BaseModel):
     completed: bool
     version: int
+    # True only while onboarding is still pending and the first-run
+    # access-token setup page (set or skip) has not been visited yet.
+    token_setup_required: bool = False
 
 
 class OnboardingCompleteRequest(BaseModel):
@@ -203,6 +206,19 @@ class OnboardingCompleteRequest(BaseModel):
         except (OSError, ZoneInfoNotFoundError) as exc:
             raise ValueError("Invalid IANA timezone") from exc
         return value
+
+
+class OnboardingTokenSetupRequest(BaseModel):
+    # None/empty means "skip for now"; a value replaces the auto-generated
+    # access token during first-run setup.
+    token: Optional[str] = None
+
+
+class OnboardingTokenSetupResponse(BaseModel):
+    skipped: bool
+    # Fresh session JWT re-minted against the new access token; only present
+    # when a token was actually set (skipping keeps the current session).
+    access_token: Optional[str] = None
 
 
 class ChangeTokenRequest(BaseModel):

@@ -124,6 +124,20 @@ def _update_access_token(new_token: str) -> None:
     _save_webui_config(config)
 
 
+def _is_token_setup_done() -> bool:
+    """Whether the first-run access-token setup step was completed or skipped."""
+    return bool(_load_webui_config().get("token_setup_done", False))
+
+
+def _mark_token_setup_done() -> None:
+    """Record in webui.json that the first-run token setup page was visited."""
+    config = _load_webui_config()
+    if config.get("token_setup_done"):
+        return
+    config["token_setup_done"] = True
+    _save_webui_config(config)
+
+
 def _access_token_fingerprint(token: str) -> str:
     """Derive a short, stable fingerprint of the current access token.
 
