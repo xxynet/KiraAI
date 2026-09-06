@@ -157,7 +157,7 @@ function resolveError(error: unknown): string {
   const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null
   if (typeof detail === 'string') {
     if (detail.includes('reserved')) return t('tokenSetup.token_reserved')
-    if (detail.includes('Onboarding already completed')) return t('tokenSetup.already_completed')
+    if (detail.includes('already completed')) return t('tokenSetup.already_completed')
   }
   return t('tokenSetup.save_error')
 }

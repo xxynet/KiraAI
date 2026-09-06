@@ -173,3 +173,18 @@ async def test_setup_token_rejected_after_onboarding_completed(patch_token_setup
         await routes.setup_onboarding_token(OnboardingTokenSetupRequest(token='new-token'), make_request())
     assert exc_info.value.status_code == 400
     assert patch_token_setup['updated_tokens'] == []
+
+
+@pytest.mark.anyio
+async def test_setup_token_rejected_after_setup_already_done(patch_token_setup):
+    routes = make_routes(Config({'onboarding': {'completed': False}}))
+    patch_token_setup['done'] = True
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.setup_onboarding_token(OnboardingTokenSetupRequest(token='new-token'), make_request())
+    assert exc_info.value.status_code == 400
+    assert 'already completed' in exc_info.value.detail
+
+    with pytest.raises(HTTPException):
+        await routes.setup_onboarding_token(OnboardingTokenSetupRequest(token=None), make_request())
+    assert patch_token_setup['updated_tokens'] == []

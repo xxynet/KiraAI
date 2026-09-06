@@ -317,15 +317,18 @@ class AuthRoutes(Routes):
     async def setup_onboarding_token(self, payload: OnboardingTokenSetupRequest, request: Request):
         """First-run access-token setup: replace the auto-generated token or skip.
 
-        Only reachable before onboarding completes — afterwards token changes
-        must go through /settings/change-token which re-verifies the old token.
-        Setting a token rotates it in webui.json + app.state and re-mints the
-        session JWT (and cookie) so the current login survives the rotation.
+        One-shot and only reachable before onboarding completes — afterwards
+        token changes must go through /settings/change-token which re-verifies
+        the old token. Setting a token rotates it in webui.json + app.state and
+        re-mints the session JWT (and cookie) so the current login survives
+        the rotation.
         """
         if self.disable_auth:
             raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
         if self._get_onboarding_config().get("completed", False):
             raise HTTPException(status_code=400, detail="Onboarding already completed")
+        if _is_token_setup_done():
+            raise HTTPException(status_code=400, detail="Token setup already completed")
 
         if not payload.token or not payload.token.strip():
             _mark_token_setup_done()
