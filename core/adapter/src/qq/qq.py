@@ -679,7 +679,12 @@ class QQAdapter(IMAdapter):
                     self.logger.warning(f"未定义的 Emoji ID: {ele.emoji_id}")
             elif isinstance(ele, Sticker):
                 sticker_base64 = await ele.to_base64()
-                message_chain_elements.append(QQMessageType.Image(f"base64://{sticker_base64}"))
+                message_chain_elements.append(
+                    QQMessageType.Sticker(
+                        ele.sticker_id or "",
+                        f"base64://{sticker_base64}",
+                    )
+                )
             elif isinstance(ele, At):
                 val = ele.pid
                 message_chain_elements.append(QQMessageType.At(val))
