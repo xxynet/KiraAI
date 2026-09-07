@@ -158,7 +158,8 @@ class QQMessageChain:
                     "type": "image",
                     "data": {
                         "file": file_param,
-                        "summary": "[动画表情]"
+                        "summary": "[动画表情]",
+                        "sub_type": 1,
                     }
                 })
             elif isinstance(ele, QQMessageType.Record):
