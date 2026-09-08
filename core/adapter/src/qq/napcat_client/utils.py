@@ -104,11 +104,9 @@ class QQMessageChain:
                 elif ele.base64:
                     if ele.base64.startswith("base64://"):
                         file_param = ele.base64
-                    elif re.match(r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,", ele.base64):
-                        m = re.match(r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,(.*)", ele.base64)
-                        file_param = f"base64://{m.group(2)}"
                     else:
-                        file_param = ""
+                        m = re.match(r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,(.*)", ele.base64)
+                        file_param = f"base64://{m.group(2)}" if m else ""
                 else:
                     file_param = ""
 
@@ -149,11 +147,9 @@ class QQMessageChain:
             elif isinstance(ele, QQMessageType.Sticker):
                 if ele.sticker_bs64.startswith("base64://"):
                     file_param = ele.sticker_bs64
-                elif re.match(r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,", ele.sticker_bs64):
-                    m = re.match(r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,(.*)", ele.sticker_bs64)
-                    file_param = f"base64://{m.group(2)}"
                 else:
-                    file_param = ""
+                    m = re.match(r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,(.*)", ele.sticker_bs64)
+                    file_param = f"base64://{m.group(2)}" if m else ""
                 msg_list.append({
                     "type": "image",
                     "data": {
@@ -165,11 +161,9 @@ class QQMessageChain:
             elif isinstance(ele, QQMessageType.Record):
                 if ele.bs64.startswith("base64://"):
                     file_param = ele.bs64
-                elif re.match(r"data:(.*)/(.*);base64,", ele.bs64):
-                    m = re.match(r"data:(.*)/(.*);base64,(.*)", ele.bs64)
-                    file_param = f"base64://{m.group(3)}"
                 else:
-                    file_param = ""
+                    m = re.match(r"data:(.*)/(.*);base64,(.*)", ele.bs64)
+                    file_param = f"base64://{m.group(3)}" if m else ""
                 msg_list.append({
                     "type": "record",
                     "data": {
