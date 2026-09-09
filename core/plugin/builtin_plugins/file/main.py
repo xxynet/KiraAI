@@ -948,7 +948,7 @@ class FilePlugin(BasePlugin):
 
     @register.tool(
         "exec",
-        "Execute a shell command, DO NOT execute any harmful commands",
+        "Execute a shell command. Proactively narrow its output to the current goal and retrieve only enough information to make the needed judgment. Prefer the command's own filtering, quantity, range, or summary capabilities; avoid dumping complete logs, large files, recursive directory listings, or other irrelevant content. Expand the scope gradually only when the available information is insufficient. DO NOT execute any harmful commands.",
         {
             "type": "object",
             "properties": {
