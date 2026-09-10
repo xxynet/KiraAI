@@ -17,7 +17,7 @@
           :title="pageTitle"
           @toggle-sidebar="toggleSidebar"
         />
-        <PageContainer :class="{ 'flex-1 min-h-0 !p-0': route.meta.pluginPage }">
+        <PageContainer :class="{ 'flex-1 min-h-0 !p-0 !max-w-none': route.meta.pluginPage }">
           <router-view v-slot="{ Component, route: r }">
             <transition name="page-fade">
               <component :is="Component" :key="r.fullPath" />
@@ -60,7 +60,7 @@ function closeSidebar() {
 
 // Auto-close sidebar on navigation for mobile
 watch(() => route.path, () => {
-  if (window.innerWidth <= 768) {
+  if (window.innerWidth <= 1024) {
     sidebarOpen.value = false
   }
 })

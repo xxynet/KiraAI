@@ -121,7 +121,7 @@ function isActive(path: string): boolean {
   width: 16rem;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .sidebar-gradient {
     position: fixed;
     top: 0;

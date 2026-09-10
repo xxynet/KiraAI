@@ -282,7 +282,7 @@ async function handleLogout() {
   transform: translateY(-0.5rem) scale(0.96);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .header-actions {
     display: none;
   }
