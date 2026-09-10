@@ -1017,5 +1017,6 @@ export default {
     invalid_json: 'Invalid JSON',
     expected_type: 'Expected {type}',
     invalid_number: 'Please enter a valid number',
+    invalid_integer: 'Please enter a whole number',
   },
 }
