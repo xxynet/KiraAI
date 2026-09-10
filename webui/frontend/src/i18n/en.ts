@@ -648,6 +648,7 @@ export default {
     hints: {
       chat_info: 'More chat settings are available in the active message plugin config under Add-ons → Plugins',
       max_memory_length: 'Maximum number of messages retained in context window',
+      memory_overflow_discard_count: 'Number of oldest messages discarded each time the context limit is exceeded. Values beyond the maximum context length are capped automatically.',
       message_merge_interval: 'Seconds to wait after receiving a message; new messages during this window are merged and processed together',
       max_buffer_messages: 'Maximum number of messages to buffer before processing',
       min_message_interval: 'Minimum interval in seconds between messages',
@@ -694,6 +695,7 @@ export default {
     message: {
       chat_info: 'More Chat Settings',
       max_memory_length: 'Max Context Length',
+      memory_overflow_discard_count: 'Overflow Discard Count',
       message_merge_interval: 'Message Merge Interval',
       max_buffer_messages: 'Max Buffer Messages',
       min_message_interval: 'Min Message Interval',
@@ -1015,5 +1017,6 @@ export default {
     invalid_json: 'Invalid JSON',
     expected_type: 'Expected {type}',
     invalid_number: 'Please enter a valid number',
+    invalid_integer: 'Please enter a whole number',
   },
 }

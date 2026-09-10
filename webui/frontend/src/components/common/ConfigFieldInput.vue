@@ -369,8 +369,11 @@ function validate(): { valid: boolean; message?: string; value?: any } {
       return { valid: true, value: null }
     }
     const parsed = Number(raw)
-    if (!Number.isFinite(parsed) || (type === 'integer' && !Number.isInteger(parsed))) {
+    if (!Number.isFinite(parsed)) {
       return { valid: false, message: `${label.value}: ${t('configform.invalid_number')}` }
+    }
+    if (type === 'integer' && !Number.isInteger(parsed)) {
+      return { valid: false, message: `${label.value}: ${t('configform.invalid_integer')}` }
     }
     return { valid: true, value: parsed }
   }
