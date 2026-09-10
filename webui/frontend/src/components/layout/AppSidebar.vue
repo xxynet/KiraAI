@@ -1,5 +1,10 @@
 <template>
-  <aside class="sidebar-gradient min-h-screen flex flex-col text-theme-strong" :class="{ 'sidebar-open': open, 'sidebar-collapsed': !open }">
+  <aside
+    class="sidebar-gradient min-h-screen flex flex-col text-theme-strong"
+    :class="{ 'sidebar-open': open, 'sidebar-collapsed': !open }"
+    :inert="!open"
+    :aria-hidden="!open"
+  >
     <!-- Logo -->
     <div class="p-6 border-b border-blue-200/30">
       <h1 class="text-2xl font-bold text-theme-strong">{{ $t('app.title') }}</h1>
