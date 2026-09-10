@@ -90,13 +90,6 @@ button,
   }
 }
 
-/* ==================== Sidebar Menu Button ==================== */
-@media (min-width: 1025px) {
-  .sidebar-menu-btn {
-    display: none !important;
-  }
-}
-
 /* ==================== Navigation ==================== */
 .nav-item {
   color: var(--color-text-primary);
