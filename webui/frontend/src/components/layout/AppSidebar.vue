@@ -1,5 +1,10 @@
 <template>
-  <aside class="sidebar-gradient min-h-screen flex flex-col text-theme-strong" :class="{ 'sidebar-open': open }">
+  <aside
+    class="sidebar-gradient min-h-screen flex flex-col text-theme-strong"
+    :class="{ 'sidebar-open': open, 'sidebar-collapsed': !open }"
+    :inert="!open"
+    :aria-hidden="!open"
+  >
     <!-- Logo -->
     <div class="p-6 border-b border-blue-200/30">
       <h1 class="text-2xl font-bold text-theme-strong">{{ $t('app.title') }}</h1>
@@ -119,9 +124,18 @@ function isActive(path: string): boolean {
 <style scoped>
 .sidebar-gradient {
   width: 16rem;
+  overflow: hidden;
+  transition: width 0.25s ease;
 }
 
-@media (max-width: 768px) {
+@media (min-width: 1025px) {
+  .sidebar-gradient.sidebar-collapsed {
+    width: 0;
+    border-right-width: 0;
+  }
+}
+
+@media (max-width: 1024px) {
   .sidebar-gradient {
     position: fixed;
     top: 0;
@@ -131,6 +145,7 @@ function isActive(path: string): boolean {
     transform: translateX(-100%);
     transition: transform 0.25s ease;
   }
+
   .sidebar-gradient.sidebar-open {
     transform: translateX(0);
   }

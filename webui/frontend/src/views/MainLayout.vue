@@ -15,9 +15,10 @@
       <main class="flex-1 flex flex-col" :class="route.meta.pluginPage ? 'overflow-hidden' : 'overflow-auto'">
         <AppHeader
           :title="pageTitle"
+          :sidebar-open="sidebarOpen"
           @toggle-sidebar="toggleSidebar"
         />
-        <PageContainer :class="{ 'flex-1 min-h-0 !p-0': route.meta.pluginPage }">
+        <PageContainer :class="{ 'flex-1 min-h-0 !p-0 !max-w-none': route.meta.pluginPage }">
           <router-view v-slot="{ Component, route: r }">
             <transition name="page-fade">
               <component :is="Component" :key="r.fullPath" />
@@ -31,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRouteLoading } from '@/composables/useRouteLoading'
 import { useI18n } from 'vue-i18n'
@@ -48,7 +49,7 @@ const pluginMenuStore = usePluginMenuStore()
 
 const { phase: routePhase } = useRouteLoading()
 
-const sidebarOpen = ref(false)
+const sidebarOpen = ref(window.innerWidth > 1024)
 
 function toggleSidebar() {
   sidebarOpen.value = !sidebarOpen.value
@@ -58,9 +59,16 @@ function closeSidebar() {
   sidebarOpen.value = false
 }
 
+function handleResize() {
+  if (window.innerWidth <= 1024) closeSidebar()
+}
+
+onMounted(() => window.addEventListener('resize', handleResize))
+onUnmounted(() => window.removeEventListener('resize', handleResize))
+
 // Auto-close sidebar on navigation for mobile
 watch(() => route.path, () => {
-  if (window.innerWidth <= 768) {
+  if (window.innerWidth <= 1024) {
     sidebarOpen.value = false
   }
 })

@@ -4,6 +4,7 @@
       <button
         class="sidebar-menu-btn p-1.5 mr-3 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-theme-subtle transition-colors"
         aria-label="Toggle menu"
+        :aria-expanded="sidebarOpen"
         @click="$emit('toggle-sidebar')"
       >
         <IconHamburger class="w-6 h-6" />
@@ -149,7 +150,7 @@ import {
   IconHamburger, IconMoreVertical, IconDownload, IconBook, IconGithub, IconMoon, IconSun, IconLogout,
 } from '@/components/icons'
 
-defineProps<{ title: string }>()
+defineProps<{ title: string; sidebarOpen: boolean }>()
 defineEmits<{ 'toggle-sidebar': [] }>()
 
 const { t } = useI18n()
@@ -282,7 +283,7 @@ async function handleLogout() {
   transform: translateY(-0.5rem) scale(0.96);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .header-actions {
     display: none;
   }
