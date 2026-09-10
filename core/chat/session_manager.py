@@ -36,7 +36,6 @@ class SessionManager:
         self.db = db
         self.kira_config = kira_config
         self.event_bus = event_bus
-        self.max_memory_length = int(kira_config["bot_config"].get("bot").get("max_memory_length"))
         self.chat_memory_path = CHAT_MEMORY_PATH
 
         self.memory_lock = Lock()
@@ -248,16 +247,35 @@ class SessionManager:
 
             session_data["timestamp"] = int(time.time())
             session_data["memory"].append(new_chunk)
-            if len(session_data["memory"]) > self.max_memory_length:
-                session_data["memory"] = session_data["memory"][-self.max_memory_length:]
+            max_memory_length, overflow_discard_count = self._get_memory_limits()
+            discarded_memory = []
+            if len(session_data["memory"]) > max_memory_length:
+                overflow_count = len(session_data["memory"]) - max_memory_length
+                discard_count = overflow_count + overflow_discard_count - 1
+                discarded_memory = copy.deepcopy(session_data["memory"][:discard_count])
+                session_data["memory"] = session_data["memory"][discard_count:]
             saved = self._save_memory(self.chat_memory, self.chat_memory_path)
             published_chunk = copy.deepcopy(new_chunk)
         if saved:
             self._publish_session_event(
                 "session_memory_updated",
-                {"session": session, "new_chunk": published_chunk},
+                {
+                    "session": session,
+                    "new_chunk": published_chunk,
+                    "discarded_memory": discarded_memory,
+                },
             )
         logger.info(f"Memory updated for {session}")
+
+    def _get_memory_limits(self) -> tuple[int, int]:
+        """Read the current memory-limit settings so WebUI updates apply immediately."""
+        bot_config = self.kira_config["bot_config"].get("bot", {})
+        max_memory_length = int(bot_config.get("max_memory_length"))
+        configured_discard_count = int(bot_config.get("memory_overflow_discard_count", 1))
+        overflow_discard_count = max(
+            1, min(configured_discard_count, max_memory_length)
+        )
+        return max_memory_length, overflow_discard_count
 
     def _publish_session_event(self, event_type: str, payload: dict) -> None:
         """Queue a session lifecycle event after its state has been persisted."""

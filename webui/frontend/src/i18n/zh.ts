@@ -649,6 +649,7 @@ export default {
     hints: {
       chat_info: '更多聊天设置位于「附加功能 → 插件」中已启用的消息插件配置中',
       max_memory_length: '上下文窗口中保留的最大消息数',
+      memory_overflow_discard_count: '上下文达到上限后，每次从最早历史中丢弃的消息数；超出最大上下文长度时会自动按最大长度限制。',
       message_merge_interval: '收到消息后等待合并的秒数，期间新消息会被合并后统一处理',
       max_buffer_messages: '处理前缓冲的最大消息数',
       min_message_interval: '消息之间的最小间隔秒数',
@@ -695,6 +696,7 @@ export default {
     message: {
       chat_info: '更多聊天设置',
       max_memory_length: '最大上下文长度',
+      memory_overflow_discard_count: '上下文溢出丢弃条数',
       message_merge_interval: '消息合并间隔',
       max_buffer_messages: '最大缓冲消息数',
       min_message_interval: '最小消息间隔',
