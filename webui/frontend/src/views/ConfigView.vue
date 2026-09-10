@@ -799,6 +799,10 @@ function validateField(key: string) {
     validationErrors.value[key] = t('configuration.validation.required')
     return
   }
+  if (field.type === 'integer' && !Number.isInteger(value)) {
+    validationErrors.value[key] = t('configuration.validation.integer')
+    return
+  }
   if (v.min !== undefined && typeof value === 'number' && value < v.min) {
     validationErrors.value[key] = t('configuration.validation.min', { min: v.min })
     return
