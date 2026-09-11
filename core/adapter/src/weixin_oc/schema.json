@@ -66,7 +66,7 @@
     "name": "Permission Mode",
     "type": "string",
     "options": ["allow_list", "deny_list"],
-    "default": "allow_list",
+    "default": "deny_list",
     "hint": "Allow list or deny list mode",
     "locales": {
       "zh": { "name": "权限模式", "hint": "白名单或黑名单模式" }
