@@ -1,13 +1,13 @@
 {
   "setup_info": {
-    "name": "Create or Connect a QQ Official Bot",
+    "name": "Configure a QQ Official Bot",
     "type": "info",
     "level": "info",
-    "hint": "Create or manage a bot in the QQ Bot Open Platform: https://q.qq.com. Then enter its AppID and AppSecret below. Alternatively, leave both fields empty and enable this adapter to bind a bot by QR code. Do not leave only one credential empty.",
+    "hint": "Click Show QR Code above and scan it with mobile QQ to bind a bot and fill in AppID and AppSecret automatically. You can also create or manage a bot at https://q.qq.com and enter its credentials manually below.",
     "locales": {
       "zh": {
-        "name": "创建或接入 QQ 官方机器人",
-        "hint": "请前往 QQ 机器人开放平台创建或管理机器人：https://q.qq.com。创建后可在下方填写 AppID 与 AppSecret；也可以将两项同时留空并启用适配器，通过手机 QQ 扫码绑定。请勿只留空其中一项。"
+        "name": "配置 QQ 官方机器人",
+        "hint": "点击上方“显示二维码”，使用手机 QQ 扫码绑定后会自动填写 AppID 与 AppSecret；也可以前往 QQ 机器人开放平台（https://q.qq.com）创建或管理机器人，并在下方手动填写凭据。"
       }
     }
   },
@@ -15,18 +15,18 @@
     "name": "App ID",
     "type": "string",
     "default": "",
-    "hint": "AppID from QQ Bot Open Platform. Leave AppID and AppSecret empty to log in by QR code",
+    "hint": "AppID from QQ Bot Open Platform; filled automatically after QR-code login or entered manually",
     "locales": {
-      "zh": { "name": "AppID", "hint": "QQ 机器人开放平台的 AppID；与 AppSecret 同时留空时启动扫码登录" }
+      "zh": { "name": "AppID", "hint": "QQ 机器人开放平台的 AppID；扫码登录后自动填写，也可手动输入" }
     }
   },
   "app_secret": {
     "name": "App Secret",
     "type": "string",
     "default": "",
-    "hint": "AppSecret from QQ Bot Open Platform. Leave AppID and AppSecret empty to log in by QR code",
+    "hint": "AppSecret from QQ Bot Open Platform; filled automatically after QR-code login or entered manually",
     "locales": {
-      "zh": { "name": "AppSecret", "hint": "QQ 机器人开放平台的 AppSecret；与 AppID 同时留空时启动扫码登录" }
+      "zh": { "name": "AppSecret", "hint": "QQ 机器人开放平台的 AppSecret；扫码登录后自动填写，也可手动输入" }
     }
   },
   "sandbox": {
