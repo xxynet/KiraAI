@@ -132,6 +132,49 @@
             </div>
           </div>
           <div v-if="adapterSchema">
+            <div
+              v-if="supportsQRCodeLogin && !editMode"
+              class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <h4 class="text-sm font-semibold text-theme-strong">{{ $t('adapter.qrcode_login') }}</h4>
+                  <p class="mt-1 text-xs text-theme-subtle">{{ $t('adapter.qrcode_login_hint') }}</p>
+                </div>
+                <button
+                  v-if="['idle', 'expired', 'denied', 'error'].includes(qrLoginStatus)"
+                  type="button"
+                  class="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                  :disabled="qrLoginLoading"
+                  @click="startQRCodeLogin"
+                >
+                  {{ qrLoginStatus === 'idle' ? $t('adapter.qrcode_start') : $t('adapter.qrcode_retry') }}
+                </button>
+              </div>
+
+              <div v-if="qrLoginStatus === 'starting'" class="mt-4 flex items-center justify-center gap-2 py-6 text-sm text-theme-subtle">
+                <span class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></span>
+                {{ $t('adapter.qrcode_starting') }}
+              </div>
+
+              <div v-else-if="qrLoginImage" class="mt-4 flex flex-col items-center">
+                <img
+                  :src="qrLoginImage"
+                  :alt="$t('adapter.qrcode_login')"
+                  class="h-52 w-52 rounded-lg bg-white p-2"
+                />
+                <p
+                  class="mt-2 text-center text-sm"
+                  :class="qrLoginStatus === 'confirmed' ? 'text-green-600 dark:text-green-400' : 'text-theme-subtle'"
+                >
+                  {{ qrLoginStatusText }}
+                </p>
+              </div>
+
+              <p v-if="qrLoginMessage && qrLoginStatus !== 'confirmed'" class="mt-2 text-xs text-red-600 dark:text-red-400">
+                {{ qrLoginMessage }}
+              </p>
+            </div>
             <h4 class="text-sm font-semibold text-theme-body mb-2">{{ $t('adapter.config') }}</h4>
             <ConfigForm ref="configFormRef" v-model="form.config" :schema="adapterSchema" />
           </div>
@@ -166,7 +209,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
 import { useTheme } from '@/composables/useTheme'
@@ -174,6 +217,7 @@ import { notify } from '@/composables/useNotification'
 import {
   getAdapters, getAdapterPlatforms, getAdapterSchema,
   createAdapter, updateAdapter, deleteAdapter,
+  startAdapterQRCodeLogin, pollAdapterQRCodeLogin, cancelAdapterQRCodeLogin,
 } from '@/api/adapter'
 import ConfigForm from '@/components/common/ConfigForm.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -183,7 +227,7 @@ import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { IconPlus, IconTerminal, IconClose } from '@/components/icons'
-import type { AdapterPlatform, AdapterResponse } from '@/types'
+import type { AdapterPlatform, AdapterResponse, QRCodeLoginStatus } from '@/types'
 
 const { t } = useI18n()
 const { localize } = useLocalized()
@@ -202,12 +246,44 @@ const adapterSchema = ref<any>(null)
 const schemaLoadError = ref(false)
 const saving = ref(false)
 const formActive = ref(false)
+type QRLoginViewStatus = 'idle' | 'starting' | QRCodeLoginStatus
+const qrLoginStatus = ref<QRLoginViewStatus>('idle')
+const qrLoginSessionId = ref('')
+const qrLoginImage = ref('')
+const qrLoginMessage = ref('')
+let qrLoginPollTimer: ReturnType<typeof setTimeout> | null = null
+let qrLoginRequestId = 0
 let platformChangeId = 0
 
 const confirmTitle = ref('')
 const confirmMessage = ref('')
 let deleteTargetId: string | null = null
 
+const form = ref({
+  name: '',
+  platform: '',
+  description: '',
+  config: {} as Record<string, any>,
+})
+
+const selectedPlatformDetails = computed(() =>
+  platformDetails.value.find(item => item.id === form.value.platform)
+)
+const supportsQRCodeLogin = computed(() =>
+  selectedPlatformDetails.value?.login_method === 'qrcode'
+)
+const qrLoginLoading = computed(() => qrLoginStatus.value === 'starting')
+const qrLoginStatusText = computed(() => {
+  switch (qrLoginStatus.value) {
+    case 'starting': return t('adapter.qrcode_starting')
+    case 'pending': return t('adapter.qrcode_pending')
+    case 'confirmed': return t('adapter.qrcode_confirmed')
+    case 'expired': return t('adapter.qrcode_expired')
+    case 'denied': return t('adapter.qrcode_denied')
+    case 'error': return t('adapter.qrcode_failed')
+    default: return ''
+  }
+})
 const platformOptions = computed(() =>
   platforms.value.map(id => {
     const platform = platformDetails.value.find(item => item.id === id)
@@ -228,12 +304,90 @@ function adapterIcon(adapter: AdapterResponse): string | undefined {
     : adapter.platform_icon || undefined
 }
 
-const form = ref({
-  name: '',
-  platform: '',
-  description: '',
-  config: {} as Record<string, any>,
-})
+function clearQRCodeLoginTimer() {
+  if (qrLoginPollTimer) {
+    clearTimeout(qrLoginPollTimer)
+    qrLoginPollTimer = null
+  }
+}
+
+function qrLoginErrorMessage(error: any): string {
+  return error?.response?.data?.detail || error?.message || t('adapter.qrcode_failed')
+}
+
+async function disposeQRCodeLogin() {
+  const sessionId = qrLoginSessionId.value
+  ++qrLoginRequestId
+  clearQRCodeLoginTimer()
+  qrLoginSessionId.value = ''
+  qrLoginImage.value = ''
+  qrLoginMessage.value = ''
+  qrLoginStatus.value = 'idle'
+  if (sessionId) {
+    try {
+      await cancelAdapterQRCodeLogin(sessionId)
+    } catch {
+      // The server may already have expired the session.
+    }
+  }
+}
+
+function scheduleQRCodeLoginPoll(requestId: number, intervalSeconds: number) {
+  clearQRCodeLoginTimer()
+  qrLoginPollTimer = setTimeout(() => {
+    void pollQRCodeLogin(requestId, intervalSeconds)
+  }, Math.max(intervalSeconds, 1) * 1000)
+}
+
+async function pollQRCodeLogin(requestId: number, intervalSeconds: number) {
+  const sessionId = qrLoginSessionId.value
+  if (!sessionId || requestId !== qrLoginRequestId) return
+  try {
+    const res = await pollAdapterQRCodeLogin(sessionId)
+    if (requestId !== qrLoginRequestId) return
+    const result = res.data
+    qrLoginStatus.value = result.status
+    qrLoginMessage.value = result.message || ''
+    if (result.status === 'confirmed') {
+      form.value.config = {
+        ...form.value.config,
+        ...(result.config_patch || {}),
+      }
+      notify(t('adapter.qrcode_confirmed'), 'success')
+      return
+    }
+    if (result.status === 'pending') {
+      scheduleQRCodeLoginPoll(requestId, intervalSeconds)
+    }
+  } catch (error: any) {
+    if (requestId !== qrLoginRequestId) return
+    qrLoginStatus.value = 'error'
+    qrLoginMessage.value = qrLoginErrorMessage(error)
+  }
+}
+
+async function startQRCodeLogin() {
+  const platform = form.value.platform
+  if (!platform || !supportsQRCodeLogin.value) return
+  await disposeQRCodeLogin()
+  const requestId = ++qrLoginRequestId
+  qrLoginStatus.value = 'starting'
+  try {
+    const res = await startAdapterQRCodeLogin(platform, form.value.config)
+    if (requestId !== qrLoginRequestId) {
+      await cancelAdapterQRCodeLogin(res.data.session_id)
+      return
+    }
+    qrLoginSessionId.value = res.data.session_id
+    qrLoginImage.value = res.data.qrcode_image
+    qrLoginStatus.value = res.data.status
+    scheduleQRCodeLoginPoll(requestId, res.data.poll_interval)
+  } catch (error: any) {
+    if (requestId !== qrLoginRequestId) return
+    qrLoginStatus.value = 'error'
+    qrLoginMessage.value = qrLoginErrorMessage(error)
+  }
+}
 
 async function loadAdapters() {
   try {
@@ -268,6 +422,7 @@ function localizePlatform(
 }
 
 function openCreateDialog() {
+  void disposeQRCodeLogin()
   editMode.value = false
   editId.value = null
   form.value = { name: '', platform: '', description: '', config: {} }
@@ -308,6 +463,7 @@ function deepClone<T>(obj: T): T {
 }
 
 async function onPlatformChange(platform: string, preserveConfig = false) {
+  await disposeQRCodeLogin()
   if (!platform) { ++platformChangeId; adapterSchema.value = null; schemaLoadError.value = false; return }
   adapterSchema.value = null
   schemaLoadError.value = false
@@ -410,9 +566,14 @@ async function onConfirmDelete() {
   }
 }
 
+watch(dialogVisible, (visible) => {
+  if (!visible) void disposeQRCodeLogin()
+})
+
+onBeforeUnmount(() => {
+  void disposeQRCodeLogin()
+})
 onMounted(() => {
   loadAdapters()
 })
 </script>
-
-

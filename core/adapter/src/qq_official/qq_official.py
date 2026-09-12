@@ -32,6 +32,8 @@ from core.chat import Group, User
 from core.chat.message_elements import At, Emoji, File, Image, Record, Reply, Text, Video
 from core.logging_manager import get_logger
 
+from .qr_login import QQOfficialQRCodeLoginHandler
+
 
 logger = get_logger("qq_official_adapter", "blue")
 
@@ -74,6 +76,19 @@ class _QQOfficialClient(botpy.Client if botpy else object):
 
 class QQOfficialAdapter(IMAdapter):
     """QQ official bot adapter backed by the QQ Bot Open Platform Gateway."""
+
+    @classmethod
+    def create_qrcode_login_handler(
+        cls,
+        config: dict[str, Any],
+    ) -> QQOfficialQRCodeLoginHandler:
+        return QQOfficialQRCodeLoginHandler(
+            config,
+            bind_host=QQ_OFFICIAL_BIND_HOST,
+            generate_bind_key=cls._generate_bind_key,
+            post_binding_json=cls._post_binding_json,
+            decrypt_secret=cls._decrypt_bound_secret,
+        )
 
     def __init__(self, info, event_bus: asyncio.Queue):
         super().__init__(info, event_bus)

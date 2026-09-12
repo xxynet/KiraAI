@@ -146,6 +146,9 @@ class AdapterResponse(AdapterBase):
     platform_icon_dark: Optional[str] = None
 
 
+class QRCodeLoginStartRequest(BaseModel):
+    config: Dict = Field(default_factory=dict)
+
 class PersonaBase(BaseModel):
     name: str
     format: str = "text"

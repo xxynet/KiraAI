@@ -27,6 +27,7 @@ from core.chat.message_elements import (
 from core.chat import User
 from core.utils.path_utils import get_data_path
 
+from .qr_login import WeixinOCQRCodeLoginHandler
 from .weixin_oc_client import WeixinOCClient
 
 
@@ -70,6 +71,13 @@ class WeixinOCAdapter(IMAdapter):
     注意：个人微信不支持群聊，只能发送私聊消息
     """
     
+    @classmethod
+    def create_qrcode_login_handler(
+        cls,
+        config: dict[str, Any],
+    ) -> WeixinOCQRCodeLoginHandler:
+        return WeixinOCQRCodeLoginHandler(config)
+
     IMAGE_ITEM_TYPE = 2
     VOICE_ITEM_TYPE = 3
     FILE_ITEM_TYPE = 4
