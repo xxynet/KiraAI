@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Union, Optional, List, TYPE_CHECKING
+from typing import Any, Union, Optional, List, TYPE_CHECKING
 
 from core.adapter.adapter_info import AdapterInfo
 
 if TYPE_CHECKING:
+    from core.adapter.qr_login import QRCodeLoginHandler
     from core.chat.message_utils import KiraMessageEvent, MessageChain
     from core.chat.message_utils import KiraIMSentResult
 
@@ -55,6 +56,14 @@ class IMAdapter(ABC):
                 self.user_list = user_deny_list
         else:
             self.permission_mode = "allow_list"
+
+    @classmethod
+    def create_qrcode_login_handler(
+        cls,
+        config: dict[str, Any],
+    ) -> "QRCodeLoginHandler | None":
+        """Create a QR-code login handler when the adapter supports it."""
+        return None
 
     @abstractmethod
     async def start(self):
@@ -105,6 +114,14 @@ class SocialMediaAdapter(ABC):
         self.config = info.config
         self.emoji_dict: Optional[dict] = None
         self.event_bus = event_bus
+
+    @classmethod
+    def create_qrcode_login_handler(
+        cls,
+        config: dict[str, Any],
+    ) -> "QRCodeLoginHandler | None":
+        """Create a QR-code login handler when the adapter supports it."""
+        return None
 
     @abstractmethod
     async def start(self):

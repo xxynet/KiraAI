@@ -150,6 +150,22 @@ export interface AdapterPlatform {
   locales: Record<string, Record<string, string>>
   icon?: string | null
   icon_dark?: string | null
+  login_method?: string | null
+}
+export type QRCodeLoginStatus = 'pending' | 'confirmed' | 'expired' | 'denied' | 'error'
+
+export interface QRCodeLoginStartResponse {
+  session_id: string
+  status: QRCodeLoginStatus
+  qrcode_image: string
+  poll_interval: number
+  expires_in: number
+}
+
+export interface QRCodeLoginPollResponse {
+  status: QRCodeLoginStatus
+  config_patch: Record<string, any>
+  message: string
 }
 
 export interface AdapterResponse extends AdapterBase {

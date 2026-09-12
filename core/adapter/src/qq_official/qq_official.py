@@ -1,15 +1,12 @@
 import asyncio
 import base64
 import hashlib
-import io
 import mimetypes
 import secrets
 import time
 from collections import OrderedDict
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
-from urllib.parse import quote
 
 import httpx
 from Crypto.Cipher import AES
@@ -21,32 +18,20 @@ except ImportError:
     botpy = None
     Route = None
 
-try:
-    import qrcode as qrcode_lib
-except ImportError:
-    qrcode_lib = None
-
 from core.adapter.adapter_utils import IMAdapter
 from core.chat import KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain
 from core.chat import Group, User
 from core.chat.message_elements import At, Emoji, File, Image, Record, Reply, Text, Video
 from core.logging_manager import get_logger
 
+from .qr_login import QQOfficialQRCodeLoginHandler
+
 
 logger = get_logger("qq_official_adapter", "blue")
 
 QQ_OFFICIAL_BIND_HOST = "q.qq.com"
-QQ_OFFICIAL_QR_TIMEOUT_SECONDS = 300
-QQ_OFFICIAL_QR_POLL_INTERVAL_SECONDS = 2
 QQ_OFFICIAL_MAX_REPLY_IDS_PER_CONVERSATION = 100
 
-
-@dataclass
-class QQOfficialLoginSession:
-    """In-memory state for one QQ official bot QR binding task."""
-
-    task_id: str
-    bind_key: str
 
 
 class _QQOfficialClient(botpy.Client if botpy else object):
@@ -75,6 +60,19 @@ class _QQOfficialClient(botpy.Client if botpy else object):
 class QQOfficialAdapter(IMAdapter):
     """QQ official bot adapter backed by the QQ Bot Open Platform Gateway."""
 
+    @classmethod
+    def create_qrcode_login_handler(
+        cls,
+        config: dict[str, Any],
+    ) -> QQOfficialQRCodeLoginHandler:
+        return QQOfficialQRCodeLoginHandler(
+            config,
+            bind_host=QQ_OFFICIAL_BIND_HOST,
+            generate_bind_key=cls._generate_bind_key,
+            post_binding_json=cls._post_binding_json,
+            decrypt_secret=cls._decrypt_bound_secret,
+        )
+
     def __init__(self, info, event_bus: asyncio.Queue):
         super().__init__(info, event_bus)
         self.app_id = str(self.config.get("app_id", "")).strip()
@@ -90,23 +88,17 @@ class QQOfficialAdapter(IMAdapter):
             tuple[bool, str], OrderedDict[str, str]
         ] = {}
         self._client_task: Optional[asyncio.Task] = None
-        self._login_task: Optional[asyncio.Task] = None
-        self._login_session: Optional[QQOfficialLoginSession] = None
-        self._shutdown_event = asyncio.Event()
         self.client = None
 
     async def start(self):
         if botpy is None:
             logger.error("QQ official bot requires qq-botpy. Install project dependencies first.")
             return
-        if not self.app_id and not self.app_secret:
-            if not self._login_task or self._login_task.done():
-                self._login_task = asyncio.create_task(
-                    self._run_qr_login(), name=f"qq-official-login:{self.info.name}"
-                )
-            return
         if not self.app_id or not self.app_secret:
-            logger.error("QQ official bot AppID and AppSecret must both be configured")
+            logger.error(
+                "QQ official bot AppID and AppSecret must both be configured; "
+                "use QR-code login in WebUI before enabling the adapter"
+            )
             return
         if self._client_task and not self._client_task.done():
             return
@@ -163,118 +155,7 @@ class QQOfficialAdapter(IMAdapter):
             raise RuntimeError("QQ official bot binding response is missing data")
         return result
 
-    async def _start_qr_login_session(self) -> QQOfficialLoginSession:
-        bind_key = self._generate_bind_key()
-        result = await self._post_binding_json(
-            "/lite/create_bind_task", {"key": bind_key}
-        )
-        task_id = str(result.get("task_id", "")).strip()
-        if not task_id:
-            raise RuntimeError("QQ official bot binding response is missing task_id")
-        login_session = QQOfficialLoginSession(task_id=task_id, bind_key=bind_key)
-        self._login_session = login_session
-        self._display_qr_code(
-            f"https://{QQ_OFFICIAL_BIND_HOST}/qqbot/openclaw/connect.html?"
-            f"task_id={quote(task_id, safe='')}&_wv=2"
-        )
-        return login_session
-
-    async def _poll_qr_login_session(
-        self, login_session: QQOfficialLoginSession
-    ) -> dict[str, Any]:
-        return await self._post_binding_json(
-            "/lite/poll_bind_result", {"task_id": login_session.task_id}
-        )
-
-    def _display_qr_code(self, url: str) -> None:
-        """Render the official binding URL in the application log."""
-        logger.info(
-            "QQ official bot QR code is ready. Scan this URL with mobile QQ: %s", url
-        )
-        if qrcode_lib is None:
-            return
-        try:
-            qr = qrcode_lib.QRCode(border=1)
-            qr.add_data(url)
-            qr.make(fit=True)
-            buffer = io.StringIO()
-            qr.print_ascii(out=buffer, tty=False)
-            logger.info("QQ official bot terminal QR code:\n%s", buffer.getvalue())
-        except Exception as exc:
-            logger.warning(f"Failed to render QQ official bot QR code: {exc}")
-
-    async def _run_qr_login(self) -> None:
-        while not self._shutdown_event.is_set() and not self.app_id and not self.app_secret:
-            try:
-                login_session = await self._start_qr_login_session()
-                started_at = time.monotonic()
-                while not self._shutdown_event.is_set():
-                    if time.monotonic() - started_at >= QQ_OFFICIAL_QR_TIMEOUT_SECONDS:
-                        logger.warning("QQ official bot QR code expired; generating a new one")
-                        break
-                    result = await self._poll_qr_login_session(login_session)
-                    try:
-                        status = int(result.get("status", 0))
-                    except (TypeError, ValueError):
-                        status = 0
-                    if status == 2:
-                        self.app_id = str(result.get("bot_appid", "")).strip()
-                        encrypted_secret = str(result.get("bot_encrypt_secret", "")).strip()
-                        self.app_secret = self._decrypt_bound_secret(
-                            encrypted_secret, login_session.bind_key
-                        )
-                        if not self.app_id or not self.app_secret:
-                            raise RuntimeError("QQ official bot QR login returned incomplete credentials")
-                        scanner_openid = str(result.get("user_openid", "")).strip()
-                        if (
-                            scanner_openid
-                            and self.permission_mode == "allow_list"
-                            and scanner_openid not in {str(entry) for entry in self.user_list}
-                        ):
-                            self.user_list.append(scanner_openid)
-                            self.info.config["user_allow_list"] = list(self.user_list)
-                        await self._save_credentials()
-                        logger.info("QQ official bot QR login completed and credentials were saved")
-                        await self.start()
-                        return
-                    if status == 3:
-                        logger.warning("QQ official bot QR code expired; generating a new one")
-                        break
-                    await asyncio.sleep(QQ_OFFICIAL_QR_POLL_INTERVAL_SECONDS)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.error(f"QQ official bot QR login failed: {exc}")
-                await asyncio.sleep(5)
-
-    async def _save_credentials(self) -> None:
-        """Persist scanned credentials using the same adapter config flow as Weixin."""
-        try:
-            self.info.config["app_id"] = self.app_id
-            self.info.config["app_secret"] = self.app_secret
-            from core.config.config_loader import KiraConfig
-
-            kira_config = KiraConfig()
-            adapters = kira_config.get("adapters", {})
-            entry = adapters.get(self.info.adapter_id)
-            if not entry:
-                logger.warning("QQ official bot adapter was not found in configuration")
-                return
-            entry["config"] = dict(self.info.config)
-            kira_config.save_config()
-        except Exception as exc:
-            logger.error(f"Failed to save QQ official bot credentials: {exc}")
-
     async def stop(self):
-        self._shutdown_event.set()
-        if self._login_task and not self._login_task.done():
-            self._login_task.cancel()
-            try:
-                await self._login_task
-            except asyncio.CancelledError:
-                pass
-        self._login_task = None
-        self._login_session = None
         if self.client:
             try:
                 await self.client.close()
