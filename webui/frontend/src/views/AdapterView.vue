@@ -133,7 +133,7 @@
           </div>
           <div v-if="adapterSchema">
             <div
-              v-if="supportsQRCodeLogin && !editMode"
+              v-if="supportsQRCodeLogin"
               class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"
             >
               <div class="flex items-center justify-between gap-3">
