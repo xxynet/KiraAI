@@ -1,9 +1,11 @@
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from core.adapter.adapter_info import AdapterInfo
 from core.adapter.qr_login import (
     QRCodeLoginHandler,
     QRCodeLoginPollResult,
@@ -11,6 +13,7 @@ from core.adapter.qr_login import (
 )
 from core.adapter.src.qq_official.qr_login import QQOfficialQRCodeLoginHandler
 from core.adapter.src.weixin_oc.qr_login import WeixinOCQRCodeLoginHandler
+from core.adapter.src.weixin_oc.weixin_oc import WeixinOCAdapter
 from webui.models import QRCodeLoginStartRequest
 from webui.routes.adapters import AdaptersRoutes
 
@@ -93,6 +96,35 @@ async def test_weixin_oc_qrcode_handler_returns_config_patch(monkeypatch):
         "weixin_oc_base_url": "https://example.weixin.test",
     }
     assert closed == 2
+
+
+@pytest.mark.asyncio
+async def test_weixin_oc_empty_token_does_not_start_adapter(monkeypatch):
+    adapter = WeixinOCAdapter(
+        AdapterInfo(
+            adapter_id="weixin-oc-test",
+            enabled=True,
+            name="weixin_oc",
+            platform="weixin_oc",
+            config={},
+        ),
+        asyncio.Queue(),
+    )
+    run_loop_started = False
+
+    async def fake_run_loop():
+        nonlocal run_loop_started
+        run_loop_started = True
+
+    monkeypatch.setattr(adapter, "_run_loop", fake_run_loop)
+
+    await adapter.start()
+    await asyncio.sleep(0)
+
+    assert adapter.token is None
+    assert not run_loop_started
+    assert not hasattr(adapter, "_login_session")
+    await adapter.client.close()
 
 
 class _FakeQRCodeLoginHandler(QRCodeLoginHandler):
