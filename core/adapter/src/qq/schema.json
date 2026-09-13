@@ -1,4 +1,13 @@
 {
+  "docs_link": {
+    "name": "文档",
+    "type": "info",
+    "level": "info",
+    "hint": "详见 [QQ 适配器](https://docs.kira-ai.top/zh/configuration/adapter/qq.html) 的配置说明。",
+    "locales": {
+      "en": { "name": "Documentation", "hint": "See the [QQ Adapter](https://docs.kira-ai.top/configuration/adapter/qq.html) guide for setup and configuration details." }
+    }
+  },
   "bot_pid": {
     "name": "Bot QQ",
     "type": "string",
