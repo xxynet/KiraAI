@@ -102,7 +102,7 @@
         </div>
       </div>
 
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <PluginCard
           v-for="plugin in filteredPlugins"
           :key="plugin.id"
@@ -163,7 +163,7 @@
         </div>
       </div>
 
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div
           v-for="server in mcpServers"
           :key="server.id"
@@ -254,7 +254,7 @@
         </div>
       </div>
 
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div
           v-for="skill in skills"
           :key="skill.id"
@@ -555,7 +555,7 @@
       </div>
 
       <!-- Plugin Cards Grid -->
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <PluginCard
           v-for="item in paginatedStorePlugins"
           :key="item.id"
