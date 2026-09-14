@@ -53,6 +53,13 @@ class McpRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
+                path="/api/mcp-servers/{server_id}/tools/{tool_name}/enabled",
+                methods=["POST"],
+                endpoint=self.set_mcp_tool_enabled,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/mcp-servers/{server_id}/config",
                 methods=["PUT"],
                 endpoint=self.update_mcp_server_config,
@@ -194,6 +201,7 @@ class McpRoutes(Routes):
                     name=str(tool.get("name", "")),
                     description=str(tool.get("description", "") or ""),
                     parameters=tool.get("parameters", {}),
+                    enabled=tool.get("name") not in server.disabled_tools,
                 )
                 for tool in server.tools
                 if tool.get("name")
@@ -203,6 +211,24 @@ class McpRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to list MCP tools for {server_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to list MCP tools") from e
+
+    async def set_mcp_tool_enabled(self, server_id: str, tool_name: str, payload: Dict):
+        if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
+            raise HTTPException(status_code=503, detail="MCP manager not available")
+        if "enabled" not in payload or not isinstance(payload["enabled"], bool):
+            raise HTTPException(status_code=400, detail="Invalid payload: 'enabled' must be a boolean")
+        enabled = payload["enabled"]
+        try:
+            manager = self.lifecycle.mcp_manager
+            manager.set_tool_enabled(server_id=server_id, tool_name=tool_name, enabled=enabled)
+            return {"server_id": server_id, "tool_name": tool_name, "enabled": enabled}
+        except HTTPException:
+            raise
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        except Exception as e:
+            logger.error(f"Failed to set MCP tool enabled state for {server_id}/{tool_name}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update MCP tool state") from e
 
     async def update_mcp_server_config(
         self,

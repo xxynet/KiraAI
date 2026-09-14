@@ -407,6 +407,7 @@ class McpToolItem(BaseModel):
     name: str
     description: str = ""
     parameters: Any = Field(default_factory=dict)
+    enabled: bool = True
 
 
 class McpServerConfigUpdateRequest(BaseModel):

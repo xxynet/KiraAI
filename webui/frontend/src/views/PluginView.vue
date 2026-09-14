@@ -1040,9 +1040,27 @@
           <p v-else-if="mcpToolsError" class="text-sm text-red-500">{{ mcpToolsError }}</p>
           <p v-else-if="mcpTools.length === 0" class="py-4 text-center text-sm text-theme-subtle">{{ $t('plugin.mcp_tools_empty') }}</p>
           <div v-else class="space-y-3">
+            <p class="text-xs text-theme-faint">{{ $t('plugin.mcp_tool_toggle_hint') }}</p>
             <div v-for="tool in mcpTools" :key="tool.name" class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-              <code class="text-sm font-medium text-theme-high">{{ tool.name }}</code>
-              <p v-if="tool.description" class="mt-1 text-sm text-theme-supporting whitespace-pre-wrap">{{ tool.description }}</p>
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <code class="text-sm font-medium text-theme-high">{{ tool.name }}</code>
+                  <p v-if="tool.description" class="mt-1 text-sm text-theme-supporting whitespace-pre-wrap">{{ tool.description }}</p>
+                </div>
+                <button
+                  type="button"
+                  class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
+                  :class="tool.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
+                  :aria-pressed="tool.enabled ? 'true' : 'false'"
+                  :aria-label="$t('plugin.mcp_tool_toggle_label', { name: tool.name })"
+                  @click="toggleMcpToolItem(tool)"
+                >
+                  <span
+                    class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                    :class="tool.enabled ? 'translate-x-4' : 'translate-x-0'"
+                  />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1098,7 +1116,7 @@ import {
 } from '@/api/plugin'
 import {
   getMcpServers, getMcpServerConfig, getMcpServerTools, createMcpServer, updateMcpServerConfig,
-  deleteMcpServer, toggleMcpServer,
+  deleteMcpServer, toggleMcpServer, toggleMcpTool,
 } from '@/api/mcp'
 import {
   getSkills, toggleSkill as apiToggleSkill, refreshSkills as apiRefreshSkills, uploadSkill as apiUploadSkill,
@@ -1614,6 +1632,20 @@ async function openMcpTools(server: McpServerItem) {
     if (selectedMcpServer.value?.id === server.id) {
       mcpToolsLoading.value = false
     }
+  }
+}
+
+async function toggleMcpToolItem(tool: McpToolItem) {
+  if (!selectedMcpServer.value) return
+  const serverId = selectedMcpServer.value.id
+  const previous = tool.enabled
+  tool.enabled = !previous
+  try {
+    await toggleMcpTool(serverId, tool.name, !previous)
+  } catch (e: any) {
+    tool.enabled = previous
+    const detail = e?.response?.data?.detail
+    notify(detail ? `${t('plugin.mcp_tool_toggle_failed')}: ${detail}` : t('plugin.mcp_tool_toggle_failed'), 'error')
   }
 }
 
