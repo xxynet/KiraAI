@@ -136,7 +136,10 @@ class MCPManager:
             enabled = server_config.get("enabled", False)
             name = server_config.get("name") or server_id
             description = server_config.get("description") or ""
-            disabled_tools = self.mcp_config.get("_disabledTools", {}).get(server_id) or []
+            disabled_section = self.mcp_config.get("_disabledTools")
+            if not isinstance(disabled_section, dict):
+                disabled_section = {}
+            disabled_tools = disabled_section.get(server_id) or []
             if not isinstance(disabled_tools, list):
                 disabled_tools = []
 
@@ -599,6 +602,8 @@ class MCPManager:
             disabled_section = {}
 
         tool = next((t for t in target_server.tools if t.get("name") == tool_name), None)
+        if tool is None:
+            raise ValueError(f"MCP tool {tool_name} not found on server {target_server.name}")
 
         if enabled:
             if tool_name in target_server.disabled_tools:

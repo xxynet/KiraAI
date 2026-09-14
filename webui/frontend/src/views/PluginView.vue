@@ -1049,10 +1049,11 @@
                 </div>
                 <button
                   type="button"
-                  class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
+                  class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   :class="tool.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
                   :aria-pressed="tool.enabled ? 'true' : 'false'"
                   :aria-label="$t('plugin.mcp_tool_toggle_label', { name: tool.name })"
+                  :disabled="mcpToolPending.has(tool.name)"
                   @click="toggleMcpToolItem(tool)"
                 >
                   <span
@@ -1635,17 +1636,22 @@ async function openMcpTools(server: McpServerItem) {
   }
 }
 
+const mcpToolPending = ref<Set<string>>(new Set())
+
 async function toggleMcpToolItem(tool: McpToolItem) {
-  if (!selectedMcpServer.value) return
+  if (!selectedMcpServer.value || mcpToolPending.value.has(tool.name)) return
   const serverId = selectedMcpServer.value.id
   const previous = tool.enabled
   tool.enabled = !previous
+  mcpToolPending.value.add(tool.name)
   try {
     await toggleMcpTool(serverId, tool.name, !previous)
   } catch (e: any) {
     tool.enabled = previous
     const detail = e?.response?.data?.detail
     notify(detail ? `${t('plugin.mcp_tool_toggle_failed')}: ${detail}` : t('plugin.mcp_tool_toggle_failed'), 'error')
+  } finally {
+    mcpToolPending.value.delete(tool.name)
   }
 }
 

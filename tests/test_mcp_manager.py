@@ -455,3 +455,21 @@ async def test_delete_server_cleans_up_disabled_tools_section(manager):
     config = manager.load_config()
     assert "srv1" not in config["mcpServers"]
     assert "_disabledTools" not in config
+
+
+def test_load_servers_tolerates_malformed_disabled_tools_section(manager):
+    manager.mcp_config = {
+        "mcpServers": {"srv1": {"command": "echo", "enabled": True}},
+        "_disabledTools": [],
+    }
+    manager.save_server_config()
+    manager.load_servers()
+    assert manager.servers[0].disabled_tools == []
+
+
+def test_set_tool_enabled_rejects_unknown_tool(manager):
+    _seed_server_with_tools(manager)
+    with pytest.raises(ValueError):
+        manager.set_tool_enabled("srv1", "nonexistent_tool", False)
+    # nothing was persisted
+    assert "_disabledTools" not in manager.load_config()
