@@ -274,6 +274,7 @@ export interface McpToolItem {
   name: string
   description: string
   parameters: Record<string, unknown>
+  enabled: boolean
 }
 
 export interface McpServerCreateRequest {
