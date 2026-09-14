@@ -101,7 +101,9 @@ class SessionsRoutes(Routes):
         if len(parts) < 3:
             raise HTTPException(status_code=400, detail="Invalid session id format")
 
-        memory = self.lifecycle.session_manager.read_memory(session_id)
+        memory = self.lifecycle.session_manager.get_existing_memory_snapshot(session_id)
+        if memory is None:
+            raise HTTPException(status_code=404, detail="Session not found")
 
         adapter_name, session_type, session_key = parts[0], parts[1], ":".join(parts[2:])
         session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})

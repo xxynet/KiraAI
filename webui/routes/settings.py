@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import tempfile
@@ -111,6 +112,9 @@ class SettingsRoutes(Routes):
     # ── Storage ──────────────────────────────────────────────────────────────
 
     async def get_storage_info(self):
+        return await asyncio.to_thread(self._collect_storage_info)
+
+    def _collect_storage_info(self) -> StorageInfoResponse:
         data_path = get_data_path()
         disk = shutil.disk_usage(data_path)
 
@@ -143,6 +147,9 @@ class SettingsRoutes(Routes):
     # ── Backup ───────────────────────────────────────────────────────────────
 
     async def create_backup(self):
+        return await asyncio.to_thread(self._create_backup_sync)
+
+    def _create_backup_sync(self) -> BackupCreateResponse:
         data_path = get_data_path()
         backup_dir = _get_backup_dir()
         backup_dir.mkdir(parents=True, exist_ok=True)
@@ -220,7 +227,7 @@ class SettingsRoutes(Routes):
         if backup_path.resolve().parent != _get_backup_dir().resolve():
             raise HTTPException(status_code=400, detail="Invalid filename")
 
-        return self._do_restore(backup_path)
+        return await asyncio.to_thread(self._do_restore, backup_path)
 
     # ── Restore ──────────────────────────────────────────────────────────────
 
@@ -274,7 +281,7 @@ class SettingsRoutes(Routes):
             raise HTTPException(status_code=400, detail="Only .zip files are accepted")
 
         file.file.seek(0)
-        return self._do_restore(file.file)
+        return await asyncio.to_thread(self._do_restore, file.file)
 
     # ── Access Token ────────────────────────────────────────────────────────
 
