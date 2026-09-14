@@ -45,6 +45,11 @@ def _calc_dir_size(path: Path) -> tuple[int, int]:
 
 
 class SettingsRoutes(Routes):
+    # Serializes backup creation and restore jobs so concurrent maintenance
+    # requests cannot overlap (same-second backups share a timestamped path,
+    # and restores copy into the same data directory).
+    _maintenance_lock = asyncio.Lock()
+
     def get_routes(self):
         return [
             RouteDefinition(
@@ -147,7 +152,8 @@ class SettingsRoutes(Routes):
     # ── Backup ───────────────────────────────────────────────────────────────
 
     async def create_backup(self):
-        return await asyncio.to_thread(self._create_backup_sync)
+        async with self._maintenance_lock:
+            return await asyncio.to_thread(self._create_backup_sync)
 
     def _create_backup_sync(self) -> BackupCreateResponse:
         data_path = get_data_path()
@@ -227,7 +233,8 @@ class SettingsRoutes(Routes):
         if backup_path.resolve().parent != _get_backup_dir().resolve():
             raise HTTPException(status_code=400, detail="Invalid filename")
 
-        return await asyncio.to_thread(self._do_restore, backup_path)
+        async with self._maintenance_lock:
+            return await asyncio.to_thread(self._do_restore, backup_path)
 
     # ── Restore ──────────────────────────────────────────────────────────────
 
@@ -281,7 +288,8 @@ class SettingsRoutes(Routes):
             raise HTTPException(status_code=400, detail="Only .zip files are accepted")
 
         file.file.seek(0)
-        return await asyncio.to_thread(self._do_restore, file.file)
+        async with self._maintenance_lock:
+            return await asyncio.to_thread(self._do_restore, file.file)
 
     # ── Access Token ────────────────────────────────────────────────────────
 
