@@ -1049,11 +1049,10 @@
                 </div>
                 <button
                   type="button"
-                  class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
                   :class="tool.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
                   :aria-pressed="tool.enabled ? 'true' : 'false'"
                   :aria-label="$t('plugin.mcp_tool_toggle_label', { name: tool.name })"
-                  :disabled="mcpToolPending.has(tool.name)"
                   @click="toggleMcpToolItem(tool)"
                 >
                   <span
