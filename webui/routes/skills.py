@@ -95,8 +95,11 @@ class SkillsRoutes(Routes):
 
         try:
             skills_info = skills_manager.skills_info
+            sizes = await asyncio.gather(
+                *(asyncio.to_thread(self._folder_size, skill.path) for skill in skills_info)
+            )
             items: List[SkillItem] = []
-            for skill in skills_info:
+            for skill, size_bytes in zip(skills_info, sizes):
                 items.append(
                     SkillItem(
                         id=str(skill.name),
@@ -104,7 +107,7 @@ class SkillsRoutes(Routes):
                         description=str(skill.description),
                         enabled=bool(skill.enabled),
                         path=str(skill.path),
-                        size_bytes=self._folder_size(skill.path),
+                        size_bytes=size_bytes,
                     )
                 )
             return items
