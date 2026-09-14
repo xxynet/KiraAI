@@ -79,8 +79,8 @@ def test_update_rejects_a_changed_plugin_id_before_replacing_files(tmp_path, mon
 def test_install_from_github_downloads_the_requested_commit(tmp_path, monkeypatch):
     downloaded_urls = []
 
-    async def fake_download(url, target, proxy=None):
-        downloaded_urls.append(url)
+    async def fake_download(url, target, proxy=None, max_bytes=None):
+        downloaded_urls.append((url, max_bytes))
         Path(target).write_bytes(_plugin_archive("plugin-id"))
 
     monkeypatch.setattr(plugin_installer, "get_data_path", lambda: tmp_path)
@@ -95,9 +95,10 @@ def test_install_from_github_downloads_the_requested_commit(tmp_path, monkeypatc
         )
     )
 
-    assert downloaded_urls == [
-        f"https://github.com/example/plugin/archive/{commit_sha}.zip"
-    ]
+    assert downloaded_urls == [(
+        f"https://github.com/example/plugin/archive/{commit_sha}.zip",
+        plugin_installer.MAX_PLUGIN_ARCHIVE_BYTES,
+    )]
 
 
 @pytest.mark.anyio
@@ -173,3 +174,47 @@ async def test_cancelled_extraction_waits_for_worker_after_repeated_cancellation
 
     assert worker_finished.is_set()
     assert not temp_zip.exists()
+
+
+def test_install_from_zip_rejects_oversized_archive_before_writing(tmp_path, monkeypatch):
+    monkeypatch.setattr(plugin_installer, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(plugin_installer, "MAX_PLUGIN_ARCHIVE_BYTES", 1)
+
+    with pytest.raises(ValueError, match="size limit"):
+        asyncio.run(plugin_installer.install_from_zip(b"PK", tmp_path / "plugins"))
+
+    assert not (tmp_path / "temp").exists()
+
+
+def test_install_from_zip_rejects_excessive_uncompressed_content(tmp_path, monkeypatch):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("plugin-main/manifest.json", json.dumps({"plugin_id": "plugin-id"}))
+        archive.writestr("plugin-main/main.py", "x" * 500)
+        for index in range(10):
+            archive.writestr(f"plugin-main/module_{index}.py", "x" * 500)
+    zip_bytes = buffer.getvalue()
+
+    monkeypatch.setattr(plugin_installer, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(plugin_installer, "MAX_PLUGIN_ARCHIVE_BYTES", len(zip_bytes) + 1)
+
+    with pytest.raises(ValueError, match="uncompressed size limit"):
+        asyncio.run(plugin_installer.install_from_zip(zip_bytes, tmp_path / "plugins"))
+
+    assert not (tmp_path / "plugins").exists()
+
+
+def test_install_rejects_excessive_zip_directory_before_extracting(tmp_path, monkeypatch):
+    monkeypatch.setattr(plugin_installer, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(plugin_installer, "MAX_PLUGIN_ARCHIVE_FILE_COUNT", 1)
+
+    with pytest.raises(ValueError, match="file limit"):
+        asyncio.run(plugin_installer.install_from_zip(_plugin_archive("plugin-id"), tmp_path / "plugins"))
+
+
+def test_install_rejects_oversized_zip_central_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(plugin_installer, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(plugin_installer, "MAX_PLUGIN_ARCHIVE_CENTRAL_DIRECTORY_BYTES", 1)
+
+    with pytest.raises(ValueError, match="central directory"):
+        asyncio.run(plugin_installer.install_from_zip(_plugin_archive("plugin-id"), tmp_path / "plugins"))

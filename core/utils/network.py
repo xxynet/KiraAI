@@ -7,15 +7,37 @@ from core.logging_manager import get_logger
 logger = get_logger("network", "cyan")
 
 
-async def download_file(url: str, path: str, proxy: Optional[str] = None, timeout: float = 60.0):
+async def download_file(
+    url: str,
+    path: str,
+    proxy: Optional[str] = None,
+    timeout: float = 60.0,
+    max_bytes: Optional[int] = None,
+):
+    if max_bytes is not None and max_bytes <= 0:
+        raise ValueError("max_bytes must be a positive integer")
+
     client_kwargs: dict = {"follow_redirects": True, "timeout": timeout}
     if proxy:
         client_kwargs["proxy"] = proxy
     async with httpx.AsyncClient(**client_kwargs) as client:
         async with client.stream("GET", url) as resp:
             resp.raise_for_status()
+            content_length = resp.headers.get("content-length")
+            if max_bytes is not None and content_length:
+                try:
+                    declared_size = int(content_length)
+                except ValueError:
+                    declared_size = None
+                if declared_size is not None and declared_size > max_bytes:
+                    raise ValueError(f"Download exceeds the {max_bytes} byte limit")
+
+            downloaded_bytes = 0
             with open(path, "wb") as f:
                 async for chunk in resp.aiter_bytes():
+                    downloaded_bytes += len(chunk)
+                    if max_bytes is not None and downloaded_bytes > max_bytes:
+                        raise ValueError(f"Download exceeds the {max_bytes} byte limit")
                     f.write(chunk)
         return resp
 
