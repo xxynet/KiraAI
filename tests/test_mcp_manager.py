@@ -416,6 +416,19 @@ def test_set_tool_enabled_persists_and_updates_registration(manager):
     assert "_disabledTools" not in config
 
 
+def test_reenabling_one_tool_keeps_other_disabled_tools(manager):
+    server = _seed_server_with_tools(manager)
+
+    manager.set_tool_enabled("srv1", "tool_a", False)
+    manager.set_tool_enabled("srv1", "tool_b", False)
+    assert server.disabled_tools == ["tool_a", "tool_b"]
+
+    manager.set_tool_enabled("srv1", "tool_a", True)
+    # tool_b must remain disabled both in memory and on disk
+    assert server.disabled_tools == ["tool_b"]
+    assert manager.load_config()["_disabledTools"] == {"srv1": ["tool_b"]}
+
+
 def test_get_tool_server_map_skips_disabled_tools(manager):
     server = _seed_server_with_tools(manager)
     server.disabled_tools = ["tool_a"]

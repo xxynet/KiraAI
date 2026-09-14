@@ -603,7 +603,10 @@ class MCPManager:
         if enabled:
             if tool_name in target_server.disabled_tools:
                 target_server.disabled_tools.remove(tool_name)
-            disabled_section.pop(server_id, None)
+            if target_server.disabled_tools:
+                disabled_section[server_id] = list(target_server.disabled_tools)
+            else:
+                disabled_section.pop(server_id, None)
             if target_server.enabled and tool and tool_name not in self.tool_manager.tool_set:
                 self.tool_manager.register_tool(
                     name=tool_name,
