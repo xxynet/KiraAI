@@ -16,6 +16,7 @@ import uvicorn
 
 from core.lifecycle import KiraLifecycle
 from core.utils.path_utils import get_data_path, get_webui_dist_path
+from webui.middleware import MAX_PLUGIN_UPLOAD_BYTES, PluginUploadSizeLimitMiddleware
 from webui.utils import _get_or_generate_access_token
 from webui.routes.auth import AuthRoutes
 from webui.routes.releases import ReleasesRoutes
@@ -77,6 +78,11 @@ class KiraWebUI:
         self.webui_dir = Path(__file__).parent
         self.dist_dir = dist_dir or get_webui_dist_path()
         self.sticker_dir = get_data_path() / "sticker"
+
+        self.app.add_middleware(
+            PluginUploadSizeLimitMiddleware,
+            max_bytes=MAX_PLUGIN_UPLOAD_BYTES,
+        )
 
         # Setup CORS.
         # Auth is carried by the Authorization: Bearer header (and a

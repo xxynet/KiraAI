@@ -202,3 +202,19 @@ def test_install_from_zip_rejects_excessive_uncompressed_content(tmp_path, monke
         asyncio.run(plugin_installer.install_from_zip(zip_bytes, tmp_path / "plugins"))
 
     assert not (tmp_path / "plugins").exists()
+
+
+def test_install_rejects_excessive_zip_directory_before_extracting(tmp_path, monkeypatch):
+    monkeypatch.setattr(plugin_installer, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(plugin_installer, "MAX_PLUGIN_ARCHIVE_FILE_COUNT", 1)
+
+    with pytest.raises(ValueError, match="file limit"):
+        asyncio.run(plugin_installer.install_from_zip(_plugin_archive("plugin-id"), tmp_path / "plugins"))
+
+
+def test_install_rejects_oversized_zip_central_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(plugin_installer, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(plugin_installer, "MAX_PLUGIN_ARCHIVE_CENTRAL_DIRECTORY_BYTES", 1)
+
+    with pytest.raises(ValueError, match="central directory"):
+        asyncio.run(plugin_installer.install_from_zip(_plugin_archive("plugin-id"), tmp_path / "plugins"))

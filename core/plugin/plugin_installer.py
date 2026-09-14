@@ -32,6 +32,7 @@ logger = get_logger("plugin_installer", "cyan")
 MAX_PLUGIN_ARCHIVE_BYTES = 50 * 1024 * 1024
 MAX_PLUGIN_ARCHIVE_FILE_COUNT = 10_000
 MAX_PLUGIN_ARCHIVE_COMPRESSION_RATIO = 100
+MAX_PLUGIN_ARCHIVE_CENTRAL_DIRECTORY_BYTES = 512 * 1024
 
 
 class PluginAlreadyInstalledError(ValueError):
@@ -242,6 +243,21 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _validate_zip_directory(temp_zip: Path) -> None:
+    """Reject oversized ZIP directories before ``ZipFile`` parses their entries."""
+    with temp_zip.open("rb") as archive:
+        end_record = zipfile._EndRecData(archive)
+
+    if not end_record:
+        raise zipfile.BadZipFile("File is not a zip file")
+    if end_record[zipfile._ECD_ENTRIES_TOTAL] > MAX_PLUGIN_ARCHIVE_FILE_COUNT:
+        raise ValueError(
+            f"Plugin archive exceeds the {MAX_PLUGIN_ARCHIVE_FILE_COUNT} file limit"
+        )
+    if end_record[zipfile._ECD_SIZE] > MAX_PLUGIN_ARCHIVE_CENTRAL_DIRECTORY_BYTES:
+        raise ValueError("Plugin archive central directory exceeds the 512 KiB size limit")
+
+
 async def _extract_and_install(
     temp_zip: Path,
     plugins_dir: Path,
@@ -280,15 +296,14 @@ def _extract_and_install_sync(
     staging: Optional[Path] = None
     try:
         try:
+            if temp_zip.stat().st_size > MAX_PLUGIN_ARCHIVE_BYTES:
+                raise ValueError("Plugin archive exceeds the 50 MiB size limit")
+            _validate_zip_directory(temp_zip)
             zf = zipfile.ZipFile(temp_zip)
         except zipfile.BadZipFile as e:
             raise ValueError(f"Not a valid zip archive: {e}") from e
 
         with zf:
-            archive_size = temp_zip.stat().st_size
-            if archive_size > MAX_PLUGIN_ARCHIVE_BYTES:
-                raise ValueError("Plugin archive exceeds the 50 MiB size limit")
-
             members = zf.infolist()
             if len(members) > MAX_PLUGIN_ARCHIVE_FILE_COUNT:
                 raise ValueError(
