@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import (
+    MAX_PLUGIN_ARCHIVE_BYTES,
     PluginAlreadyInstalledError,
     install_from_github,
     install_from_zip,
@@ -594,7 +595,9 @@ class PluginsRoutes(Routes):
 
         plugin_manager = self.lifecycle.plugin_manager
 
-        zip_bytes = await file.read()
+        zip_bytes = await file.read(MAX_PLUGIN_ARCHIVE_BYTES + 1)
+        if len(zip_bytes) > MAX_PLUGIN_ARCHIVE_BYTES:
+            raise HTTPException(status_code=413, detail="Plugin archive exceeds the 50 MiB size limit")
         async with self._plugin_install_guard():
             return await self._install_from_upload_locked(zip_bytes, plugin_manager)
 

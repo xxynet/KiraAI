@@ -29,6 +29,10 @@ from core.utils.path_utils import get_data_path, is_within_directory
 
 logger = get_logger("plugin_installer", "cyan")
 
+MAX_PLUGIN_ARCHIVE_BYTES = 50 * 1024 * 1024
+MAX_PLUGIN_ARCHIVE_FILE_COUNT = 10_000
+MAX_PLUGIN_ARCHIVE_COMPRESSION_RATIO = 100
+
 
 class PluginAlreadyInstalledError(ValueError):
     """Raised when an archive declares a plugin already registered at runtime."""
@@ -112,8 +116,16 @@ async def install_from_github(
         logger.info(f"Proxy: {gh_proxy}")
 
     try:
-        await download_file(url, str(temp_zip), proxy=proxy)
+        await download_file(
+            url,
+            str(temp_zip),
+            proxy=proxy,
+            max_bytes=MAX_PLUGIN_ARCHIVE_BYTES,
+        )
     except asyncio.CancelledError:
+        temp_zip.unlink(missing_ok=True)
+        raise
+    except ValueError:
         temp_zip.unlink(missing_ok=True)
         raise
     except Exception as e:
@@ -152,6 +164,9 @@ async def install_from_zip(
     Returns the installed plugin directory.
     Raises ValueError if the archive is invalid or manifest.json is missing.
     """
+    if len(zip_bytes) > MAX_PLUGIN_ARCHIVE_BYTES:
+        raise ValueError("Plugin archive exceeds the 50 MiB size limit")
+
     temp_zip = _temp_dir() / f"upload_{uuid.uuid4().hex[:8]}.zip"
     try:
         await _run_thread_worker(temp_zip.write_bytes, zip_bytes)
@@ -270,7 +285,34 @@ def _extract_and_install_sync(
             raise ValueError(f"Not a valid zip archive: {e}") from e
 
         with zf:
-            names = zf.namelist()
+            archive_size = temp_zip.stat().st_size
+            if archive_size > MAX_PLUGIN_ARCHIVE_BYTES:
+                raise ValueError("Plugin archive exceeds the 50 MiB size limit")
+
+            members = zf.infolist()
+            if len(members) > MAX_PLUGIN_ARCHIVE_FILE_COUNT:
+                raise ValueError(
+                    f"Plugin archive exceeds the {MAX_PLUGIN_ARCHIVE_FILE_COUNT} file limit"
+                )
+
+            total_uncompressed_size = 0
+            for item in members:
+                if item.is_dir():
+                    continue
+                if item.file_size > MAX_PLUGIN_ARCHIVE_BYTES:
+                    raise ValueError("A plugin archive file exceeds the 50 MiB size limit")
+                if item.file_size and (
+                    item.compress_size == 0
+                    or item.file_size / item.compress_size > MAX_PLUGIN_ARCHIVE_COMPRESSION_RATIO
+                ):
+                    raise ValueError(
+                        f"Plugin archive entry exceeds the {MAX_PLUGIN_ARCHIVE_COMPRESSION_RATIO}:1 compression ratio limit"
+                    )
+                total_uncompressed_size += item.file_size
+                if total_uncompressed_size > MAX_PLUGIN_ARCHIVE_BYTES:
+                    raise ValueError("Plugin archive exceeds the 50 MiB uncompressed size limit")
+
+            names = [item.filename for item in members]
 
             # Detect a single wrapping top-level directory (GitHub archive style)
             top_entries = {n.split("/")[0] for n in names if n.split("/")[0]}
@@ -302,7 +344,7 @@ def _extract_and_install_sync(
             staging = _temp_dir() / f"extract_{uuid.uuid4().hex[:8]}_{plugin_id}"
             staging.mkdir(parents=True, exist_ok=True)
 
-            for item in zf.infolist():
+            for item in members:
                 rel_path = item.filename[len(prefix):]
                 if not rel_path or rel_path.endswith("/"):
                     continue
