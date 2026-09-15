@@ -72,6 +72,14 @@ class KiraStepResult:
 
 
 @dataclass
+class KiraFinalResult:
+    """Aggregated output of one complete message turn, spanning all agent steps."""
+    # Per-step results in execution order, so plugins can tell a single-step turn from
+    # a multi-step (tool-calling) one. Sent messages and raw output live on each entry.
+    step_results: list[KiraStepResult]
+
+
+@dataclass
 class KiraMessageEvent:
     message_types: list
     timestamp: int
