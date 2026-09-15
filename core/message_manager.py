@@ -16,7 +16,7 @@ from core.logging_manager import get_logger
 from core.utils.common_utils import desc_img, speech_to_text
 from core.utils.path_utils import get_data_path
 from core.chat.message_utils import KiraIMMessage, KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent, MessageChain
-from core.chat.message_utils import KiraIMSentResult, KiraStepResult
+from core.chat.message_utils import KiraIMSentResult, KiraStepResult, KiraFinalResult
 from core.prompt_manager import Prompt
 
 from core.chat.message_elements import (
@@ -752,6 +752,9 @@ class MessageProcessor:
             model_group=model_group,
         )
 
+        # Accumulates per-step results so ON_FINAL_RESULT can report the whole turn
+        turn_steps: list[KiraStepResult] = []
+
         async def send_llm_text(resp: LLMResponse) -> bool:
             """Process and send LLM text response. Returns False if stopped, True to continue."""
             text = resp.text_response
@@ -766,6 +769,9 @@ class MessageProcessor:
                     raw_output = self._add_message_ids(text, message_results)
                     logger.info(f"LLM -> {sid}: {raw_output}")
             step_result = KiraStepResult(message_results=message_results, raw_output=raw_output)
+            # Record the step before dispatching, so ON_FINAL_RESULT still sees messages
+            # that were already sent even if a handler stops the turn below.
+            turn_steps.append(step_result)
             # EventType.ON_STEP_RESULT
             step_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_STEP_RESULT)
             for step_handler in step_handlers:
@@ -810,6 +816,17 @@ class MessageProcessor:
                 break
 
             # Process tool calls if existed
+
+        # EventType.ON_FINAL_RESULT
+        # Fired once per turn, after the agent loop finished. Calling event.stop() here
+        # cannot unsend already-delivered messages; it only suppresses the remaining handlers.
+        final_result = KiraFinalResult(step_results=turn_steps)
+        final_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_FINAL_RESULT)
+        for handler in final_handlers:
+            await handler.exec_handler(event, final_result)
+            if event.is_stopped:
+                logger.info(f"Event {event.event_id} stopped while ON_FINAL_RESULT stage")
+                break
 
         # Save new memory
         self.session_manager.update_memory(sid, new_messages)
