@@ -1,5 +1,11 @@
 import apiClient from './client'
-import type { AdapterBase, AdapterPlatform, AdapterResponse } from '@/types'
+import type {
+  AdapterBase,
+  AdapterPlatform,
+  AdapterResponse,
+  QRCodeLoginPollResponse,
+  QRCodeLoginStartResponse,
+} from '@/types'
 import type { AxiosPromise } from 'axios'
 
 export function getAdapterPlatforms(details: true): AxiosPromise<AdapterPlatform[]>
@@ -33,4 +39,24 @@ export function updateAdapter(id: string, data: Partial<AdapterBase>) {
 
 export function deleteAdapter(id: string) {
   return apiClient.delete(`/adapters/${encodeURIComponent(id)}`)
+}
+
+export function startAdapterQRCodeLogin(platform: string, config: Record<string, any>) {
+  return apiClient.post<QRCodeLoginStartResponse>(
+    `/adapters/login/qrcode/${encodeURIComponent(platform)}`,
+    { config },
+  )
+}
+
+export function pollAdapterQRCodeLogin(sessionId: string) {
+  return apiClient.get<QRCodeLoginPollResponse>(
+    `/adapters/login/qrcode/session/${encodeURIComponent(sessionId)}`,
+    { timeout: 45000 },
+  )
+}
+
+export function cancelAdapterQRCodeLogin(sessionId: string) {
+  return apiClient.delete(
+    `/adapters/login/qrcode/session/${encodeURIComponent(sessionId)}`,
+  )
 }

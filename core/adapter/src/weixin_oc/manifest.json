@@ -6,6 +6,7 @@
     "description": "个人微信适配器 (OpenClaw)",
     "repo": null,
     "icon": "icon.svg",
+    "login_method": "qrcode",
     "locales": {
         "zh": {
             "display_name": "个人微信",

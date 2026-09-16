@@ -1,12 +1,9 @@
 import asyncio
-import base64
 import json
-import secrets
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from Crypto.Cipher import AES
 
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.src.qq_official import qq_official
@@ -353,52 +350,14 @@ async def test_qq_official_reads_quoted_message_with_short_reply_id():
 
 
 @pytest.mark.asyncio
-async def test_qq_official_empty_credentials_start_qr_login(monkeypatch):
+async def test_qq_official_empty_credentials_do_not_start_adapter(monkeypatch):
     adapter = make_adapter()
     adapter.app_id = ""
     adapter.app_secret = ""
-    displayed_urls = []
-    saved = False
-    started = False
+    monkeypatch.setattr(qq_official, "botpy", object())
 
-    bind_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
-    secret = "scanned-secret"
-    nonce = secrets.token_bytes(12)
-    cipher = AES.new(base64.b64decode(bind_key), AES.MODE_GCM, nonce=nonce)
-    ciphertext, tag = cipher.encrypt_and_digest(secret.encode("utf-8"))
-    encrypted_secret = base64.b64encode(nonce + ciphertext + tag).decode("ascii")
+    await adapter.start()
 
-    async def fake_start_session():
-        adapter._display_qr_code("https://q.qq.com/qqbot/connect")
-        return qq_official.QQOfficialLoginSession("task-id", bind_key)
-
-    async def fake_poll_session(_):
-        return {
-            "status": 2,
-            "bot_appid": "scanned-app-id",
-            "bot_encrypt_secret": encrypted_secret,
-            "user_openid": "scanner-openid",
-        }
-
-    async def fake_save_credentials():
-        nonlocal saved
-        saved = True
-
-    async def fake_start():
-        nonlocal started
-        started = True
-
-    monkeypatch.setattr(adapter, "_display_qr_code", displayed_urls.append)
-    monkeypatch.setattr(adapter, "_start_qr_login_session", fake_start_session)
-    monkeypatch.setattr(adapter, "_poll_qr_login_session", fake_poll_session)
-    monkeypatch.setattr(adapter, "_save_credentials", fake_save_credentials)
-    monkeypatch.setattr(adapter, "start", fake_start)
-
-    await adapter._run_qr_login()
-
-    assert displayed_urls == ["https://q.qq.com/qqbot/connect"]
-    assert adapter.app_id == "scanned-app-id"
-    assert adapter.app_secret == "scanned-secret"
-    assert "scanner-openid" in adapter.user_list
-    assert saved
-    assert started
+    assert adapter.client is None
+    assert adapter._client_task is None
+    assert not hasattr(adapter, "_login_task")

@@ -65,15 +65,26 @@ class FakeClient:
         ]
 
 
+class FakeToolSet:
+    def __init__(self):
+        self.names = set()
+
+    def __contains__(self, name):
+        return name in self.names
+
+
 class FakeFuncToolManager:
     def __init__(self):
         self.registered = {}
+        self.tool_set = FakeToolSet()
 
     def register_tool(self, name, description, parameters, func):
         self.registered[name] = func
+        self.tool_set.names.add(name)
 
     def unregister_tool(self, name):
         self.registered.pop(name, None)
+        self.tool_set.names.discard(name)
 
 
 @pytest.fixture
@@ -370,3 +381,95 @@ def test_mcp_result_is_converted_to_kira_tool_result():
     assert parsed.attachments[3].file == "https://example.com/generated.png"
     assert "aW1hZ2U=" not in parsed.text
     assert "YXVkaW8=" not in parsed.text
+
+
+def _seed_server_with_tools(manager, server_id="srv1"):
+    server = _make_server(server_id=server_id, enabled=True)
+    server.tools = [
+        {"name": "tool_a", "description": "", "parameters": {}},
+        {"name": "tool_b", "description": "", "parameters": {}},
+    ]
+    manager.servers.append(server)
+    manager.mcp_config = {"mcpServers": {server_id: {"command": "echo", "enabled": True}}}
+    manager.save_server_config()
+    return server
+
+
+def test_set_tool_enabled_persists_and_updates_registration(manager):
+    server = _seed_server_with_tools(manager)
+
+    manager.set_tool_enabled("srv1", "tool_a", False)
+    assert server.disabled_tools == ["tool_a"]
+    config = manager.load_config()
+    assert config["_disabledTools"] == {"srv1": ["tool_a"]}
+    # the per-server config stays untouched (standard MCP format)
+    assert "disabledTools" not in config["mcpServers"]["srv1"]
+
+    # enabling registers the tool with the LLM tool set again
+    manager.tool_manager.register_tool("tool_a", "", {}, lambda: None)
+    manager.set_tool_enabled("srv1", "tool_a", False)
+    assert "tool_a" not in manager.tool_manager.registered
+    manager.set_tool_enabled("srv1", "tool_a", True)
+    assert "tool_a" in manager.tool_manager.registered
+    assert server.disabled_tools == []
+    config = manager.load_config()
+    assert "_disabledTools" not in config
+
+
+def test_reenabling_one_tool_keeps_other_disabled_tools(manager):
+    server = _seed_server_with_tools(manager)
+
+    manager.set_tool_enabled("srv1", "tool_a", False)
+    manager.set_tool_enabled("srv1", "tool_b", False)
+    assert server.disabled_tools == ["tool_a", "tool_b"]
+
+    manager.set_tool_enabled("srv1", "tool_a", True)
+    # tool_b must remain disabled both in memory and on disk
+    assert server.disabled_tools == ["tool_b"]
+    assert manager.load_config()["_disabledTools"] == {"srv1": ["tool_b"]}
+
+
+def test_get_tool_server_map_skips_disabled_tools(manager):
+    server = _seed_server_with_tools(manager)
+    server.disabled_tools = ["tool_a"]
+    assert manager.get_tool_server_map() == {"tool_b": "srv1"}
+
+
+def test_load_servers_reads_disabled_tools(manager):
+    manager.mcp_config = {
+        "mcpServers": {"srv1": {"command": "echo", "enabled": True}},
+        "_disabledTools": {"srv1": ["tool_a", 42]},
+    }
+    manager.save_server_config()
+    manager.load_servers()
+    assert manager.servers[0].disabled_tools == ["tool_a"]
+
+
+@pytest.mark.anyio
+async def test_delete_server_cleans_up_disabled_tools_section(manager):
+    _seed_server_with_tools(manager)
+    manager.set_tool_enabled("srv1", "tool_a", False)
+    assert manager.load_config().get("_disabledTools") == {"srv1": ["tool_a"]}
+
+    await manager.delete_server("srv1")
+    config = manager.load_config()
+    assert "srv1" not in config["mcpServers"]
+    assert "_disabledTools" not in config
+
+
+def test_load_servers_tolerates_malformed_disabled_tools_section(manager):
+    manager.mcp_config = {
+        "mcpServers": {"srv1": {"command": "echo", "enabled": True}},
+        "_disabledTools": [],
+    }
+    manager.save_server_config()
+    manager.load_servers()
+    assert manager.servers[0].disabled_tools == []
+
+
+def test_set_tool_enabled_rejects_unknown_tool(manager):
+    _seed_server_with_tools(manager)
+    with pytest.raises(ValueError):
+        manager.set_tool_enabled("srv1", "nonexistent_tool", False)
+    # nothing was persisted
+    assert "_disabledTools" not in manager.load_config()

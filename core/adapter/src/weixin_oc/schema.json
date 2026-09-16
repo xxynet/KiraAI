@@ -1,4 +1,13 @@
 {
+  "docs_link": {
+    "name": "Documentation",
+    "type": "info",
+    "level": "info",
+    "hint": "See the [WeChat Adapter](https://docs.kira-ai.top/configuration/adapter/wechat.html) guide for setup and configuration details.",
+    "locales": {
+      "zh": { "name": "文档", "hint": "详见 [个人微信适配器](https://docs.kira-ai.top/zh/configuration/adapter/wechat.html) 的配置说明。" }
+    }
+  },
   "weixin_oc_base_url": {
     "name": "API Base URL",
     "type": "string",
@@ -66,7 +75,7 @@
     "name": "Permission Mode",
     "type": "string",
     "options": ["allow_list", "deny_list"],
-    "default": "allow_list",
+    "default": "deny_list",
     "hint": "Allow list or deny list mode",
     "locales": {
       "zh": { "name": "权限模式", "hint": "白名单或黑名单模式" }

@@ -100,13 +100,16 @@
           </div>
           <!-- ID (add editable / edit read-only) -->
           <div class="mb-4">
-            <label class="block text-sm font-medium text-theme-body mb-2">ID</label>
+            <label class="block text-sm font-medium text-theme-body mb-2">
+              ID
+              <span v-if="!editMode" class="text-xs font-normal text-theme-faint ml-1">{{ $t('sticker.optional') }}</span>
+            </label>
             <UiInput
               v-if="!editMode"
               v-model="form.id"
               type="text"
               class="w-full rounded-lg px-3 py-2 transition-colors"
-              :placeholder="$t('sticker.name')"
+              :placeholder="$t('sticker.id_placeholder')"
             />
             <UiInput
               v-else
@@ -120,12 +123,13 @@
           <div class="mb-4">
             <label class="block text-sm font-medium text-theme-body mb-2">
               {{ $t('sticker.description') }}
+              <span v-if="!editMode" class="text-xs font-normal text-theme-faint ml-1">{{ $t('sticker.optional') }}</span>
             </label>
             <UiTextarea
               v-model="form.desc"
               rows="4"
               class="w-full rounded-lg px-3 py-2 transition-colors"
-              :placeholder="$t('sticker.description')"
+              :placeholder="editMode ? $t('sticker.description') : $t('sticker.desc_placeholder')"
             />
           </div>
         </div>

@@ -47,6 +47,9 @@ class MCPServer:
     env: Optional[dict] = field(default_factory=dict)
 
     tools: list = field(default_factory=list)
+    # names of tools disabled by the user; they are not registered to the
+    # LLM tool set so their schemas do not consume tokens.
+    disabled_tools: list = field(default_factory=list)
 
     def to_dict(self):
         server_cfg: dict = {}
@@ -133,13 +136,20 @@ class MCPManager:
             enabled = server_config.get("enabled", False)
             name = server_config.get("name") or server_id
             description = server_config.get("description") or ""
+            disabled_section = self.mcp_config.get("_disabledTools")
+            if not isinstance(disabled_section, dict):
+                disabled_section = {}
+            disabled_tools = disabled_section.get(server_id) or []
+            if not isinstance(disabled_tools, list):
+                disabled_tools = []
 
             server = MCPServer(
                 type=server_type,
                 id=server_id,
                 enabled=enabled,
                 name=name,
-                description=description
+                description=description,
+                disabled_tools=[t for t in disabled_tools if isinstance(t, str)],
             )
 
             if server_type == "stdio":
@@ -426,6 +436,12 @@ class MCPManager:
 
         servers.pop(server_id)
         self.mcp_config["mcpServers"] = servers
+        disabled_section = self.mcp_config.get("_disabledTools")
+        if isinstance(disabled_section, dict) and disabled_section.pop(server_id, None) is not None:
+            if disabled_section:
+                self.mcp_config["_disabledTools"] = disabled_section
+            else:
+                self.mcp_config.pop("_disabledTools", None)
         self.save_server_config()
         self.load_servers()
 
@@ -437,7 +453,8 @@ class MCPManager:
         for server in self.servers:
             if server.enabled:
                 for tool in server.tools:
-                    mapping[tool.get("name")] = server.id
+                    if tool.get("name") not in server.disabled_tools:
+                        mapping[tool.get("name")] = server.id
         return mapping
 
     def get_server_scope(self, server_id: str) -> Optional[dict]:
@@ -516,6 +533,8 @@ class MCPManager:
 
         for tool in target_server.tools:
             tool_name = tool.get("name")
+            if tool_name in target_server.disabled_tools:
+                continue
             tool_names.append(tool_name)
 
             func = self._make_mcp_func(target_server, tool_name)
@@ -558,6 +577,62 @@ class MCPManager:
 
         logger.info(f"Disabled MCP Server {target_server.name}")
 
+    def set_tool_enabled(self, server_id: str, tool_name: str, enabled: bool):
+        """Enable/disable a single tool of a server.
+
+        Disabled tool names are persisted in mcp.json's top-level
+        "_disabledTools" section (mirroring "_scope"), keyed by server id.
+        When the server is enabled, the tool is also (un)registered from the
+        LLM tool set immediately so the change takes effect without a restart.
+        """
+        target_server = None
+        for server in self.servers:
+            if server.id == server_id:
+                target_server = server
+                break
+        if not target_server:
+            raise ValueError(f"MCP server {server_id} not found")
+
+        config = self.load_config()
+        servers = config.get("mcpServers")
+        if not isinstance(servers, dict) or server_id not in servers:
+            raise ValueError(f"MCP server {server_id} not found")
+        disabled_section = config.get("_disabledTools")
+        if not isinstance(disabled_section, dict):
+            disabled_section = {}
+
+        tool = next((t for t in target_server.tools if t.get("name") == tool_name), None)
+        if tool is None:
+            raise ValueError(f"MCP tool {tool_name} not found on server {target_server.name}")
+
+        if enabled:
+            if tool_name in target_server.disabled_tools:
+                target_server.disabled_tools.remove(tool_name)
+            if target_server.disabled_tools:
+                disabled_section[server_id] = list(target_server.disabled_tools)
+            else:
+                disabled_section.pop(server_id, None)
+            if target_server.enabled and tool and tool_name not in self.tool_manager.tool_set:
+                self.tool_manager.register_tool(
+                    name=tool_name,
+                    description=tool.get("description"),
+                    parameters=tool.get("parameters"),
+                    func=self._make_mcp_func(target_server, tool_name),
+                )
+        else:
+            if tool_name not in target_server.disabled_tools:
+                target_server.disabled_tools.append(tool_name)
+            disabled_section[server_id] = list(target_server.disabled_tools)
+            if target_server.enabled:
+                self.tool_manager.unregister_tool(tool_name)
+
+        if disabled_section:
+            config["_disabledTools"] = disabled_section
+        else:
+            config.pop("_disabledTools", None)
+        self.mcp_config = config
+        self.save_server_config()
+
     async def init_mcp(self):
         self.mcp_config = self.load_config()
         self.load_servers()
@@ -570,6 +645,8 @@ class MCPManager:
                 tool_names = []
                 for tool in server.tools:
                     tool_name = tool.get("name")
+                    if tool_name in server.disabled_tools:
+                        continue
                     tool_names.append(tool_name)
                     func = self._make_mcp_func(server, tool_name)
                     self.tool_manager.register_tool(

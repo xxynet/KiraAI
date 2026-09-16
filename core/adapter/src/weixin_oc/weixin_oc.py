@@ -3,14 +3,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-import io
 import time
 import uuid
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import quote
-
-import qrcode as qrcode_lib
 
 from core.adapter.adapter_utils import IMAdapter
 from core.logging_manager import get_logger
@@ -27,28 +23,9 @@ from core.chat.message_elements import (
 from core.chat import User
 from core.utils.path_utils import get_data_path
 
+from .qr_login import WeixinOCQRCodeLoginHandler
 from .weixin_oc_client import WeixinOCClient
 
-
-class OpenClawLoginSession:
-    """登录会话状态"""
-    def __init__(
-        self,
-        session_key: str,
-        qrcode: str,
-        qrcode_img_content: str,
-        started_at: float,
-    ):
-        self.session_key = session_key
-        self.qrcode = qrcode
-        self.qrcode_img_content = qrcode_img_content
-        self.started_at = started_at
-        self.status = "wait"
-        self.bot_token = None
-        self.account_id = None
-        self.base_url = None
-        self.user_id = None
-        self.error = None
 
 
 class TypingSessionState:
@@ -70,6 +47,13 @@ class WeixinOCAdapter(IMAdapter):
     注意：个人微信不支持群聊，只能发送私聊消息
     """
     
+    @classmethod
+    def create_qrcode_login_handler(
+        cls,
+        config: dict[str, Any],
+    ) -> WeixinOCQRCodeLoginHandler:
+        return WeixinOCQRCodeLoginHandler(config)
+
     IMAGE_ITEM_TYPE = 2
     VOICE_ITEM_TYPE = 3
     FILE_ITEM_TYPE = 4
@@ -92,17 +76,13 @@ class WeixinOCAdapter(IMAdapter):
                 "https://novac2c.cdn.weixin.qq.com/c2c",
             )
         ).rstrip("/")
-        self.bot_type = str(self.config.get("weixin_oc_bot_type", "3"))
         self.api_timeout_ms = int(self.config.get("weixin_oc_api_timeout_ms", 15000))
         self.long_poll_timeout_ms = int(
             self.config.get("weixin_oc_long_poll_timeout_ms", 35000)
         )
-        self.qr_poll_interval = max(1, int(self.config.get("weixin_oc_qr_poll_interval", 1)))
         
         self._shutdown_event = asyncio.Event()
-        self._login_session: OpenClawLoginSession | None = None
         self._sync_buf = ""
-        self._qr_expired_count = 0
         self._context_tokens: dict[str, str] = {}
         self._typing_states: dict[str, TypingSessionState] = {}
         self._last_inbound_error = ""
@@ -128,7 +108,7 @@ class WeixinOCAdapter(IMAdapter):
         if self.token:
             self.logger.info("weixin_oc adapter loaded with existing token")
         else:
-            self.logger.info("weixin_oc adapter initialized, waiting for QR login")
+            self.logger.warning("weixin_oc adapter initialized without a bot token")
 
     def _sync_client_state(self) -> None:
         self.client.base_url = self.base_url
@@ -480,13 +460,12 @@ class WeixinOCAdapter(IMAdapter):
             # 会话超时(errcode=-14)需要重新登录
             if int(errcode) == -14:
                 self.logger.warning(
-                    "weixin_oc(%s): session timeout, clearing token for re-login",
+                    "weixin_oc(%s): session timeout, clearing invalid token",
                     self.info.name,
                 )
                 self.token = None
                 self._sync_buf = ""
                 self._context_tokens.clear()
-                self._login_session = None
                 await self._save_account_state()
                 return
             self.logger.warning(
@@ -639,116 +618,6 @@ class WeixinOCAdapter(IMAdapter):
             [self._build_plain_text_item(text)],
         )
 
-    async def _start_login_session(self) -> OpenClawLoginSession:
-        endpoint = "ilink/bot/get_bot_qrcode"
-        params = {"bot_type": self.bot_type}
-        self.logger.info("weixin_oc(%s): requesting QR code from %s", self.info.name, endpoint)
-        data = await self.client.request_json(
-            "GET",
-            endpoint,
-            params=params,
-            token_required=False,
-            timeout_ms=15_000,
-        )
-        qrcode = str(data.get("qrcode", "")).strip()
-        qrcode_url = str(data.get("qrcode_img_content", "")).strip()
-        if not qrcode or not qrcode_url:
-            raise RuntimeError("qrcode response missing qrcode or qrcode_img_content")
-        qr_console_url = (
-            f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
-            f"{quote(qrcode_url)}"
-        )
-        self.logger.info(
-            "weixin_oc(%s): QR session started, qr_link=%s 请使用手机微信扫码登录",
-            self.info.name,
-            qr_console_url,
-        )
-        try:
-            qr = qrcode_lib.QRCode(border=1)
-            qr.add_data(qrcode_url)
-            qr.make(fit=True)
-            qr_buffer = io.StringIO()
-            qr.print_ascii(out=qr_buffer, tty=False)
-            self.logger.info(
-                "weixin_oc(%s): terminal QR code:\n%s",
-                self.info.name,
-                qr_buffer.getvalue(),
-            )
-        except Exception as e:
-            self.logger.warning(
-                "weixin_oc(%s): failed to render terminal QR code: %s",
-                self.info.name,
-                e,
-            )
-        login_session = OpenClawLoginSession(
-            session_key=str(uuid.uuid4()),
-            qrcode=qrcode,
-            qrcode_img_content=qrcode_url,
-            started_at=time.time(),
-        )
-        self._login_session = login_session
-        self._qr_expired_count = 0
-        self._last_inbound_error = ""
-        return login_session
-
-    async def _poll_qr_status(self, login_session: OpenClawLoginSession) -> None:
-        endpoint = "ilink/bot/get_qrcode_status"
-        self.logger.debug("weixin_oc(%s): polling qrcode status", self.info.name)
-        data = await self.client.request_json(
-            "GET",
-            endpoint,
-            params={"qrcode": login_session.qrcode},
-            token_required=False,
-            timeout_ms=self.long_poll_timeout_ms,
-            headers={"iLink-App-ClientVersion": "1"},
-        )
-        status = str(data.get("status", "wait")).strip()
-        login_session.status = status
-        if status == "expired":
-            self._qr_expired_count += 1
-            if self._qr_expired_count > 3:
-                login_session.error = "二维码已过期，超过重试次数"
-                self._login_session = None
-                return
-            self.logger.warning(
-                "weixin_oc(%s): qr expired, refreshing (%s/3)",
-                self.info.name,
-                self._qr_expired_count,
-            )
-            new_session = await self._start_login_session()
-            self._login_session = new_session
-            return
-
-        if status == "confirmed":
-            bot_token = data.get("bot_token")
-            account_id = data.get("ilink_bot_id")
-            base_url = data.get("baseurl")
-            user_id = data.get("ilink_user_id")
-            if not bot_token:
-                login_session.error = "登录成功但未返回 bot_token"
-                return
-            login_session.bot_token = str(bot_token)
-            login_session.account_id = str(account_id) if account_id else None
-            login_session.base_url = str(base_url) if base_url else self.base_url
-            login_session.user_id = str(user_id) if user_id else None
-            self.token = login_session.bot_token
-            self.account_id = login_session.account_id
-            if login_session.base_url:
-                self.base_url = login_session.base_url.rstrip("/")
-            await self._save_account_state()
-            self.logger.info(
-                "weixin_oc(%s): login confirmed, account=%s",
-                self.info.name,
-                self.account_id or "",
-            )
-
-    def _is_login_session_valid(
-        self, login_session: OpenClawLoginSession | None
-    ) -> bool:
-        if not login_session:
-            return False
-        return (time.time() - login_session.started_at) * 1000 < 5 * 60_000
-
     async def _save_account_state(self) -> None:
         """保存登录状态到配置文件"""
         try:
@@ -773,54 +642,25 @@ class WeixinOCAdapter(IMAdapter):
         self._sync_client_state()
 
     async def start(self):
+        if not self.token:
+            self.logger.error(
+                "weixin_oc(%s): bot token is required; use QR-code login in "
+                "WebUI before enabling the adapter",
+                self.info.name,
+            )
+            return
         asyncio.create_task(self._run_loop())
 
     async def _run_loop(self) -> None:
         try:
             while not self._shutdown_event.is_set():
                 if not self.token:
-                    if not self._is_login_session_valid(self._login_session):
-                        try:
-                            self._login_session = await self._start_login_session()
-                            self._qr_expired_count = 0
-                        except Exception as e:
-                            self.logger.error(
-                                "weixin_oc(%s): start login failed: %s",
-                                self.info.name,
-                                e,
-                            )
-                            await asyncio.sleep(5)
-                            continue
-
-                    current_login = self._login_session
-                    if current_login is None:
-                        continue
-
-                    try:
-                        await self._poll_qr_status(current_login)
-                    except asyncio.TimeoutError:
-                        self.logger.debug(
-                            "weixin_oc(%s): qr status long-poll timeout",
-                            self.info.name,
-                        )
-                    except Exception as e:
-                        self.logger.error(
-                            "weixin_oc(%s): poll qr status failed: %s",
-                            self.info.name,
-                            e,
-                        )
-                        current_login.error = str(e)
-                        await asyncio.sleep(2)
-
-                    if self.token:
-                        continue
-
-                    if current_login.error:
-                        await asyncio.sleep(2)
-                    else:
-                        await asyncio.sleep(self.qr_poll_interval)
-                    continue
-
+                    self.logger.error(
+                        "weixin_oc(%s): bot token is no longer valid; update "
+                        "credentials in WebUI before enabling the adapter again",
+                        self.info.name,
+                    )
+                    return
                 try:
                     await self._poll_inbound_updates()
                 except asyncio.TimeoutError:
@@ -878,7 +718,7 @@ class WeixinOCAdapter(IMAdapter):
         
         if not self.token:
             msg_res.ok = False
-            msg_res.err = "未登录，请先扫码登录"
+            msg_res.err = "未登录，请先在 WebUI 配置中扫码登录"
             return msg_res
         
         pending_text = ""

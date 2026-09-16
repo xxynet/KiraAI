@@ -1,9 +1,10 @@
-VERSION = "v2.34.1"
+VERSION = "v2.34.4"
 
 DEFAULT_CONFIG = {
     "bot_config": {
         "bot": {
             "max_memory_length": 10,
+            "memory_overflow_discard_count": 1,
             "max_message_interval": 2,
             "max_buffer_messages": 5,
             "min_message_delay": 2,

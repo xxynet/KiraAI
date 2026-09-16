@@ -6,6 +6,7 @@
   "description": "QQ Official Bot OpenAPI adapter",
   "repo": null,
   "icon": "icon.svg",
+  "login_method": "qrcode",
   "locales": {
     "zh": {
       "display_name": "QQ 官方机器人",

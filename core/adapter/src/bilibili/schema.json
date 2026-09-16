@@ -1,4 +1,13 @@
 {
+  "docs_link": {
+    "name": "Documentation",
+    "type": "info",
+    "level": "info",
+    "hint": "See the [BiliBili Adapter](https://docs.kira-ai.top/configuration/adapter/bilibili.html) guide for setup and configuration details.",
+    "locales": {
+      "zh": { "name": "文档", "hint": "详见 [BiliBili 适配器](https://docs.kira-ai.top/zh/configuration/adapter/bilibili.html) 的配置说明。" }
+    }
+  },
   "bot_uid": {
     "name": "Bot UID",
     "type": "string",

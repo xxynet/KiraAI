@@ -13,6 +13,9 @@ from webui.routes.base import RouteDefinition, Routes
 
 logger = get_logger("webui", "blue")
 
+# Upper bound for uploaded sticker files (20 MB)
+MAX_STICKER_UPLOAD_BYTES = 20 * 1024 * 1024
+
 
 class StickersRoutes(Routes):
     def get_routes(self):
@@ -88,10 +91,12 @@ class StickersRoutes(Routes):
         if not file or not file.filename:
             raise HTTPException(status_code=400, detail="Sticker file is required")
         try:
-            file_bytes = await file.read()
+            file_bytes = await file.read(MAX_STICKER_UPLOAD_BYTES + 1)
         except Exception as e:
             logger.error(f"Failed to read uploaded sticker file: {e}")
             raise HTTPException(status_code=500, detail="Failed to read sticker file")
+        if len(file_bytes) > MAX_STICKER_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Sticker file exceeds the size limit")
         sticker_id = id.strip() if id else None
         desc = description.strip() if description else None
         if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):

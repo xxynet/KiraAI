@@ -84,16 +84,9 @@ button,
   pointer-events: auto;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1025px) {
   .sidebar-overlay {
     display: none;
-  }
-}
-
-/* ==================== Sidebar Menu Button ==================== */
-@media (min-width: 769px) {
-  .sidebar-menu-btn {
-    display: none !important;
   }
 }
 

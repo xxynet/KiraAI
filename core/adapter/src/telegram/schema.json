@@ -1,4 +1,13 @@
 {
+  "docs_link": {
+    "name": "Documentation",
+    "type": "info",
+    "level": "info",
+    "hint": "See the [Telegram Adapter](https://docs.kira-ai.top/configuration/adapter/telegram.html) guide for setup and configuration details.",
+    "locales": {
+      "zh": { "name": "文档", "hint": "详见 [Telegram 适配器](https://docs.kira-ai.top/zh/configuration/adapter/telegram.html) 的配置说明。" }
+    }
+  },
   "bot_pid": {
     "name": "Bot Username",
     "type": "string",

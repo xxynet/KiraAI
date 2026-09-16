@@ -19,7 +19,9 @@ class RecordingEventBus:
         self.events.append(event)
 
 
-def build_session_manager(tmp_path, memory, max_memory_length=10):
+def build_session_manager(
+    tmp_path, memory, max_memory_length=10, memory_overflow_discard_count=1
+):
     manager = object.__new__(SessionManager)
     manager.chat_memory = {
         "adapter:dm:user": {
@@ -30,7 +32,14 @@ def build_session_manager(tmp_path, memory, max_memory_length=10):
         }
     }
     manager.chat_memory_path = str(tmp_path / "chat_memory.json")
-    manager.max_memory_length = max_memory_length
+    manager.kira_config = {
+        "bot_config": {
+            "bot": {
+                "max_memory_length": max_memory_length,
+                "memory_overflow_discard_count": memory_overflow_discard_count,
+            }
+        }
+    }
     manager.memory_lock = Lock()
     manager._background_tasks = set()
     manager.event_bus = RecordingEventBus()
@@ -68,13 +77,48 @@ def test_update_session_info_allows_clearing_description(tmp_path):
     ).read_text(encoding="utf-8")
 
 
+def test_update_memory_discards_configured_count_when_memory_is_full(tmp_path):
+    memory = [[{"role": "user", "content": str(index)}] for index in range(5)]
+    manager = build_session_manager(
+        tmp_path, memory, max_memory_length=5, memory_overflow_discard_count=2
+    )
+
+    manager.update_memory("adapter:dm:user", [{"role": "user", "content": "5"}])
+
+    retained_contents = [chunk[0]["content"] for chunk in manager.chat_memory["adapter:dm:user"]["memory"]]
+    assert retained_contents == ["2", "3", "4", "5"]
+
+
+def test_update_memory_discards_configured_count_after_existing_overflow(tmp_path):
+    memory = [[{"role": "user", "content": str(index)}] for index in range(7)]
+    manager = build_session_manager(
+        tmp_path, memory, max_memory_length=5, memory_overflow_discard_count=2
+    )
+
+    manager.update_memory("adapter:dm:user", [{"role": "user", "content": "7"}])
+
+    retained_contents = [chunk[0]["content"] for chunk in manager.chat_memory["adapter:dm:user"]["memory"]]
+    assert retained_contents == ["4", "5", "6", "7"]
+
+
+def test_update_memory_uses_limit_lowered_at_runtime(tmp_path):
+    memory = [[{"role": "user", "content": str(index)}] for index in range(5)]
+    manager = build_session_manager(tmp_path, memory, max_memory_length=5)
+    manager.kira_config["bot_config"]["bot"]["max_memory_length"] = 3
+
+    manager.update_memory("adapter:dm:user", [{"role": "user", "content": "5"}])
+
+    retained_contents = [chunk[0]["content"] for chunk in manager.chat_memory["adapter:dm:user"]["memory"]]
+    assert retained_contents == ["3", "4", "5"]
+
+
 async def wait_for_event_tasks(manager):
     if manager._background_tasks:
         await asyncio.gather(*tuple(manager._background_tasks))
 
 
 @pytest.mark.asyncio
-async def test_update_memory_publishes_only_new_chunk_after_persistence(tmp_path):
+async def test_update_memory_publishes_new_and_discarded_memory_after_persistence(tmp_path):
     manager = build_session_manager(tmp_path, [[{"role": "user", "content": "old"}]])
     new_chunk = [{"role": "user", "content": "new"}]
 
@@ -83,8 +127,30 @@ async def test_update_memory_publishes_only_new_chunk_after_persistence(tmp_path
 
     event = manager.event_bus.events[0]
     assert event.event_type == "session_memory_updated"
-    assert event.payload == {"session": "adapter:dm:user", "new_chunk": new_chunk}
+    assert event.payload == {
+        "session": "adapter:dm:user",
+        "new_chunk": new_chunk,
+        "discarded_memory": [],
+    }
     assert '"new"' in (tmp_path / "chat_memory.json").read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_update_memory_publishes_truncated_memory_after_persistence(tmp_path):
+    memory = [[{"role": "user", "content": str(index)}] for index in range(5)]
+    manager = build_session_manager(
+        tmp_path, memory, max_memory_length=5, memory_overflow_discard_count=2
+    )
+    new_chunk = [{"role": "user", "content": "5"}]
+
+    manager.update_memory("adapter:dm:user", new_chunk)
+    await wait_for_event_tasks(manager)
+
+    assert manager.event_bus.events[0].payload == {
+        "session": "adapter:dm:user",
+        "new_chunk": new_chunk,
+        "discarded_memory": memory[:2],
+    }
 
 
 @pytest.mark.asyncio

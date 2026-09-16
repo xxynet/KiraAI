@@ -25,6 +25,10 @@ export function toggleMcpServer(serverId: string, enabled: boolean) {
   return apiClient.post(`/mcp-servers/${encodeURIComponent(serverId)}/enabled`, { enabled })
 }
 
+export function toggleMcpTool(serverId: string, toolName: string, enabled: boolean) {
+  return apiClient.post(`/mcp-servers/${encodeURIComponent(serverId)}/tools/${encodeURIComponent(toolName)}/enabled`, { enabled })
+}
+
 export function deleteMcpServer(serverId: string) {
   return apiClient.delete(`/mcp-servers/${encodeURIComponent(serverId)}`)
 }
