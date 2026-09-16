@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import shutil
 import asyncio
 import posixpath
@@ -16,7 +17,11 @@ from core.chat import KiraMessageBatchEvent, MessageChain
 from core.chat.message_elements import Text
 from core.provider import LLMRequest
 
-from core.utils.path_utils import get_data_path, get_root_path
+from core.utils.path_utils import get_config_path, get_data_path, get_root_path
+
+PLUGIN_ID = "agent"
+# Plugin id used before this plugin was renamed from "file" to "agent"
+LEGACY_PLUGIN_ID = "file"
 
 restricted_paths = ['~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/', '.pem',
                     '.p12', 'key', 'secret', 'password', 'token', 'credential']
@@ -50,9 +55,12 @@ class BackgroundExecTask:
     notify_on_completion: bool = False
 
 
-class FilePlugin(BasePlugin):
+class AgentPlugin(BasePlugin):
     """
-    FilePlugin
+    AgentPlugin
+
+    Gives the AI agent-style access to the local environment: file operations
+    and shell command execution, both guarded by session and path permissions.
     """
     
     def __init__(self, ctx, cfg: dict):
@@ -70,6 +78,7 @@ class FilePlugin(BasePlugin):
         self._background_notice_tasks: set[asyncio.Task] = set()
 
     async def initialize(self):
+        self._migrate_legacy_config()
         self.allowed_sessions = self.plugin_cfg.get("allowed_sessions", [])
         self.allowed_exec_sessions = self.plugin_cfg.get("allowed_exec_sessions", [])
         self.exec_deny_list = self.plugin_cfg.get("exec_deny_list", [])
@@ -87,6 +96,68 @@ class FilePlugin(BasePlugin):
         extra_write = extra_paths_cfg.get("extra_write_paths", [])
         self.allowed_read_paths = tuple(base_read + extra_read)
         self.allowed_write_paths = tuple(base_write + extra_write)
+
+    def _migrate_legacy_config(self) -> bool:
+        """Inherit settings from the config file written before the rename.
+
+        This plugin used to be called ``file``, so existing installations already
+        configured sessions, extra paths and timeouts in ``file.json``. The newly
+        generated ``agent.json`` only holds schema defaults, so the legacy values
+        win. The legacy file is deleted once, and only once, the migrated config
+        is safely on disk, which makes this a run-once migration and keeps any
+        later WebUI edits authoritative.
+        """
+        legacy_path = get_config_path() / "plugins" / f"{LEGACY_PLUGIN_ID}.json"
+        if not legacy_path.exists():
+            return False
+
+        try:
+            with legacy_path.open("r", encoding="utf-8") as f:
+                legacy_cfg = json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to read legacy plugin config {legacy_path}: {e}")
+            return False
+
+        if not isinstance(legacy_cfg, dict):
+            logger.warning(f"Ignoring legacy plugin config {legacy_path}: not a JSON object")
+            return False
+
+        for key, value in legacy_cfg.items():
+            self.plugin_cfg[key] = value
+
+        if not self._persist_config():
+            # Keep the legacy file so the settings are never lost on a failed write
+            logger.error(
+                f"Kept {legacy_path.name}: migrated settings could not be persisted "
+                f"to the {PLUGIN_ID} plugin config"
+            )
+            return False
+
+        try:
+            legacy_path.unlink()
+        except OSError as e:
+            logger.warning(f"Failed to remove migrated legacy config {legacy_path}: {e}")
+        logger.info(
+            f"Migrated {len(legacy_cfg)} setting(s) from {legacy_path.name} "
+            f"into the {PLUGIN_ID} plugin config"
+        )
+        return True
+
+    def _persist_config(self) -> bool:
+        """Write the in-memory plugin config back to the plugin config file.
+
+        ``self.plugin_cfg`` is the same dict the plugin registry keeps in memory,
+        so the WebUI reads the migrated state without a reload.
+        """
+        config_path = get_config_path() / "plugins" / f"{PLUGIN_ID}.json"
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with config_path.open("w", encoding="utf-8") as f:
+                json.dump(self.plugin_cfg, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to persist migrated {PLUGIN_ID} plugin config: {e}")
+            return False
+        return True
 
     def _get_positive_int_config(self, key: str, default: int) -> int:
         value = self.plugin_cfg.get(key, default)
