@@ -48,14 +48,33 @@ class FakeBackgroundProcess:
 
 
 class ResistantProcess:
+    """Fake process that stays alive until it is explicitly killed or exits.
+
+    Unlike ``FakeBackgroundProcess``, ``kill()`` is distinguishable from a
+    spontaneous exit, so a test can tell whether the code had to force it.
+    """
+
     def __init__(self):
         self.pid = 12345
         self.returncode = None
         self._finished = asyncio.Event()
+        self.killed = False
+        self.wait_count = 0
 
     async def wait(self):
+        self.wait_count += 1
         await self._finished.wait()
         return self.returncode
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+        self._finished.set()
+
+    def exit(self, returncode: int = 0):
+        """Simulate the process exiting on its own, e.g. after a working taskkill."""
+        self.returncode = returncode
+        self._finished.set()
 
 
 class FakeKillerProcess:
@@ -488,14 +507,48 @@ async def test_terminate_background_process_force_kills_posix_process_group(monk
 
 
 @pytest.mark.anyio
-async def test_terminate_background_process_checks_taskkill_failure():
-    process = FakeBackgroundProcess(delay=1)
+async def test_terminate_background_process_kills_when_taskkill_fails():
+    process = ResistantProcess()
     killer = FakeKillerProcess(returncode=1)
+    exec_mock = AsyncMock(return_value=killer)
 
     with patch("core.plugin.builtin_plugins.agent.main.os.name", "nt"), patch(
         "core.plugin.builtin_plugins.agent.main.asyncio.create_subprocess_exec",
-        new=AsyncMock(return_value=killer),
+        new=exec_mock,
     ):
         await AgentPlugin._terminate_background_process(process)
 
-    assert process.returncode == -15
+    exec_mock.assert_awaited_once()
+    assert exec_mock.await_args.args == (
+        "taskkill", "/PID", str(process.pid), "/T", "/F",
+    )
+    # taskkill reported failure, so the shell process itself had to be killed
+    assert process.killed is True
+    assert process.returncode == -9
+    # Killed as soon as taskkill failed: the process must not be waited on until
+    # the grace period expires, which would be a second wait() call
+    assert process.wait_count == 1
+
+
+@pytest.mark.anyio
+async def test_terminate_background_process_accepts_taskkill_success():
+    process = ResistantProcess()
+    killer = FakeKillerProcess(returncode=0)
+
+    async def run_taskkill(*_, **__):
+        # A successful taskkill takes the process down with it
+        process.exit(returncode=0)
+        return killer
+
+    exec_mock = AsyncMock(side_effect=run_taskkill)
+
+    with patch("core.plugin.builtin_plugins.agent.main.os.name", "nt"), patch(
+        "core.plugin.builtin_plugins.agent.main.asyncio.create_subprocess_exec",
+        new=exec_mock,
+    ):
+        await AgentPlugin._terminate_background_process(process)
+
+    assert exec_mock.await_count == 1
+    assert process.killed is False
+    assert process.returncode == 0
+    assert process.wait_count == 1
