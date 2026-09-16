@@ -69,8 +69,11 @@ class FakeKillerProcess:
 @pytest.fixture
 def agent_plugin():
     plugin = AgentPlugin.__new__(AgentPlugin)
-    plugin.allowed_exec_sessions = ["test:dm:1"]
-    plugin.exec_deny_list = []
+    plugin.file_permission_mode = "allow_list"
+    plugin.file_sessions = ["test:dm:1"]
+    plugin.exec_permission_mode = "allow_list"
+    plugin.exec_sessions = ["test:dm:1"]
+    plugin.exec_command_deny_list = []
     plugin._exec_timeout = 30
     plugin._background_exec_timeout = 30
     plugin._background_exec_wait_seconds = 2
@@ -84,9 +87,11 @@ async def test_initialize_loads_exec_timeouts():
     plugin = AgentPlugin(
         None,
         {
-            "exec_timeout": 10,
-            "background_exec_timeout": 60,
-            "background_exec_wait_seconds": 3,
+            "exec_access": {
+                "timeout": 10,
+                "background_timeout": 60,
+                "background_wait_seconds": 3,
+            },
         },
     )
 
@@ -98,8 +103,139 @@ async def test_initialize_loads_exec_timeouts():
 
 
 @pytest.mark.anyio
+async def test_initialize_loads_sectioned_permissions_and_paths():
+    plugin = AgentPlugin(
+        None,
+        {
+            "file_access": {
+                "permission_mode": "deny_list",
+                "session_list": ["dc:dm:1"],
+                "extra_read_paths": ["E:/read"],
+                "extra_write_paths": ["E:/write"],
+            },
+            "exec_access": {
+                "permission_mode": "DENY_LIST",
+                "session_list": ["tg:dm:2"],
+                "command_deny_list": ["rm -rf"],
+            },
+        },
+    )
+
+    await plugin.initialize()
+
+    assert plugin.file_permission_mode == "deny_list"
+    assert plugin.file_sessions == ["dc:dm:1"]
+    assert plugin.exec_permission_mode == "deny_list"
+    assert plugin.exec_sessions == ["tg:dm:2"]
+    assert plugin.exec_command_deny_list == ["rm -rf"]
+    assert "E:/read" in plugin.allowed_read_paths
+    assert "E:/write" in plugin.allowed_write_paths
+    assert "E:/write" not in plugin.allowed_read_paths
+    assert "data/files" in plugin.allowed_read_paths
+
+
+@pytest.mark.anyio
+async def test_initialize_falls_back_to_allow_list_for_an_unknown_mode():
+    plugin = AgentPlugin(None, {"file_access": {"permission_mode": "nonsense"}})
+
+    await plugin.initialize()
+
+    assert plugin.file_permission_mode == "allow_list"
+
+
+@pytest.mark.anyio
+async def test_initialize_ignores_malformed_sections_and_session_entries():
+    plugin = AgentPlugin(
+        None,
+        {
+            "file_access": ["not", "a", "section"],
+            "exec_access": {
+                "session_list": ["dc:dm:1", 42, None, "  ", True],
+            },
+        },
+    )
+
+    await plugin.initialize()
+
+    assert plugin.file_sessions == []
+    assert plugin.file_permission_mode == "allow_list"
+    assert plugin.exec_sessions == ["dc:dm:1", "42"]
+    assert plugin._exec_timeout == 30
+
+
+def test_session_permission_allow_list_grants_only_listed_sessions(agent_plugin):
+    agent_plugin.file_permission_mode = "allow_list"
+    agent_plugin.file_sessions = ["dc:dm:1"]
+
+    assert agent_plugin._is_file_session_allowed("dc:dm:1") is True
+    assert agent_plugin._is_file_session_allowed("dc:dm:2") is False
+
+
+def test_session_permission_allow_list_grants_nobody_without_sessions(agent_plugin):
+    agent_plugin.exec_permission_mode = "allow_list"
+    agent_plugin.exec_sessions = []
+
+    assert agent_plugin._is_exec_session_allowed("dc:dm:1") is False
+
+
+def test_session_permission_deny_list_grants_every_other_session(agent_plugin):
+    agent_plugin.file_permission_mode = "deny_list"
+    agent_plugin.file_sessions = ["dc:dm:1"]
+
+    assert agent_plugin._is_file_session_allowed("dc:dm:1") is False
+    assert agent_plugin._is_file_session_allowed("dc:dm:2") is True
+
+
+def test_session_permission_deny_list_grants_everybody_without_sessions(agent_plugin):
+    agent_plugin.exec_permission_mode = "deny_list"
+    agent_plugin.exec_sessions = []
+
+    assert agent_plugin._is_exec_session_allowed("dc:dm:1") is True
+
+
+def test_file_and_exec_permissions_are_independent(agent_plugin):
+    agent_plugin.file_permission_mode = "allow_list"
+    agent_plugin.file_sessions = ["dc:dm:1"]
+    agent_plugin.exec_permission_mode = "allow_list"
+    agent_plugin.exec_sessions = ["tg:dm:2"]
+
+    assert agent_plugin._is_file_session_allowed("dc:dm:1") is True
+    assert agent_plugin._is_exec_session_allowed("dc:dm:1") is False
+    assert agent_plugin._is_file_session_allowed("tg:dm:2") is False
+    assert agent_plugin._is_exec_session_allowed("tg:dm:2") is True
+
+
+@pytest.mark.anyio
+async def test_read_file_is_denied_for_a_listed_session_in_deny_list_mode(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.file_permission_mode = "deny_list"
+    agent_plugin.file_sessions = ["test:dm:1"]
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    target = tmp_path / "note.txt"
+    target.write_text("hello", encoding="utf-8")
+
+    denied = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+    allowed = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:9"), str(target))
+
+    assert denied == "Permission denied: current session not allowed to access local files"
+    assert allowed == "hello"
+
+
+@pytest.mark.anyio
+async def test_exec_is_denied_by_deny_list_session_permission(agent_plugin):
+    agent_plugin.exec_permission_mode = "deny_list"
+    agent_plugin.exec_sessions = ["test:dm:1"]
+
+    result = await agent_plugin.exec(SimpleNamespace(sid="test:dm:1"), "echo test")
+
+    assert result == "Permission denied: current session not allowed to execute shell commands"
+
+
+@pytest.mark.anyio
 async def test_filter_tools_enables_background_manager_with_exec(agent_plugin):
-    agent_plugin.plugin_cfg = {"enabled_tools": ["exec"]}
+    agent_plugin.plugin_cfg = {"tools": {"enabled_tools": ["exec"]}}
     tool_set = SimpleNamespace(remove=Mock())
     request = SimpleNamespace(tool_set=tool_set)
 
@@ -112,7 +248,7 @@ async def test_filter_tools_enables_background_manager_with_exec(agent_plugin):
 
 @pytest.mark.anyio
 async def test_filter_tools_disables_background_manager_without_exec(agent_plugin):
-    agent_plugin.plugin_cfg = {"enabled_tools": ["read_file"]}
+    agent_plugin.plugin_cfg = {"tools": {"enabled_tools": ["read_file"]}}
     tool_set = SimpleNamespace(remove=Mock())
     request = SimpleNamespace(tool_set=tool_set)
 

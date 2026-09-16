@@ -23,6 +23,24 @@ PLUGIN_ID = "agent"
 # Plugin id used before this plugin was renamed from "file" to "agent"
 LEGACY_PLUGIN_ID = "file"
 
+# Session permission modes, mirroring the chat adapters
+ALLOW_LIST = "allow_list"
+DENY_LIST = "deny_list"
+
+# Flat pre-section config keys mapped to their (section, key) location. Only keys
+# the plugin ever read are listed; "extra_paths" held a nested object instead, so
+# it is reshaped separately.
+LEGACY_KEY_LOCATIONS = {
+    "enabled_tools": ("tools", "enabled_tools"),
+    "allowed_sessions": ("file_access", "session_list"),
+    "allowed_exec_sessions": ("exec_access", "session_list"),
+    "exec_deny_list": ("exec_access", "command_deny_list"),
+    "exec_timeout": ("exec_access", "timeout"),
+    "background_exec_timeout": ("exec_access", "background_timeout"),
+    "background_exec_wait_seconds": ("exec_access", "background_wait_seconds"),
+}
+LEGACY_EXTRA_PATH_KEYS = ("extra_read_paths", "extra_write_paths")
+
 restricted_paths = ['~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/', '.pem',
                     '.p12', 'key', 'secret', 'password', 'token', 'credential']
 
@@ -65,9 +83,11 @@ class AgentPlugin(BasePlugin):
     
     def __init__(self, ctx, cfg: dict):
         super().__init__(ctx, cfg)
-        self.allowed_sessions = list()
-        self.allowed_exec_sessions = list()
-        self.exec_deny_list = list()
+        self.file_permission_mode = ALLOW_LIST
+        self.file_sessions = list()
+        self.exec_permission_mode = ALLOW_LIST
+        self.exec_sessions = list()
+        self.exec_command_deny_list = list()
         self.allowed_read_paths = tuple()
         self.allowed_write_paths = tuple()
 
@@ -79,69 +99,195 @@ class AgentPlugin(BasePlugin):
 
     async def initialize(self):
         self._migrate_legacy_config()
-        self.allowed_sessions = self.plugin_cfg.get("allowed_sessions", [])
-        self.allowed_exec_sessions = self.plugin_cfg.get("allowed_exec_sessions", [])
-        self.exec_deny_list = self.plugin_cfg.get("exec_deny_list", [])
-        self._exec_timeout = self._get_positive_int_config("exec_timeout", 30)
+
+        file_access = self._config_section("file_access")
+        exec_access = self._config_section("exec_access")
+
+        self.file_permission_mode = self._permission_mode(file_access, "file_access")
+        self.file_sessions = self._session_list(file_access)
+        self.exec_permission_mode = self._permission_mode(exec_access, "exec_access")
+        self.exec_sessions = self._session_list(exec_access)
+        self.exec_command_deny_list = list(exec_access.get("command_deny_list") or [])
+
+        self._exec_timeout = self._get_positive_int_config("exec_access.timeout", 30)
         self._background_exec_timeout = self._get_positive_int_config(
-            "background_exec_timeout", 300
+            "exec_access.background_timeout", 300
         )
         self._background_exec_wait_seconds = self._get_positive_int_config(
-            "background_exec_wait_seconds", 2
+            "exec_access.background_wait_seconds", 2
         )
         base_read = ["data/files", "data/temp", "data/skills"]
         base_write = ["data/files", "data/temp"]
-        extra_paths_cfg = self.plugin_cfg.get("extra_paths", {})
-        extra_read = extra_paths_cfg.get("extra_read_paths", [])
-        extra_write = extra_paths_cfg.get("extra_write_paths", [])
-        self.allowed_read_paths = tuple(base_read + extra_read)
-        self.allowed_write_paths = tuple(base_write + extra_write)
+        extra_read = file_access.get("extra_read_paths") or []
+        extra_write = file_access.get("extra_write_paths") or []
+        self.allowed_read_paths = tuple(base_read + list(extra_read))
+        self.allowed_write_paths = tuple(base_write + list(extra_write))
+
+    def _config_section(self, key: str) -> dict:
+        """Return a config section, empty when it is missing or malformed."""
+        section = self.plugin_cfg.get(key)
+        if section is None:
+            return {}
+        if not isinstance(section, dict):
+            logger.warning(f"Invalid {key} section in plugin config; using defaults")
+            return {}
+        return section
+
+    def _config_section_for_write(self, key: str) -> dict:
+        """Return a config section to write into, creating it when needed."""
+        section = self.plugin_cfg.get(key)
+        if not isinstance(section, dict):
+            section = {}
+            self.plugin_cfg[key] = section
+        return section
+
+    def _permission_mode(self, section: dict, label: str) -> str:
+        """Read the session permission mode of a config section.
+
+        Only an explicit ``deny_list`` switches a section to deny semantics;
+        anything else falls back to ``allow_list`` so that an unreadable value
+        can never open a capability up.
+        """
+        value = str(section.get("permission_mode", ALLOW_LIST)).strip().lower()
+        if value == DENY_LIST:
+            return DENY_LIST
+        if value != ALLOW_LIST:
+            logger.warning(
+                f"Invalid {label}.permission_mode in plugin config; using {ALLOW_LIST}"
+            )
+        return ALLOW_LIST
+
+    @staticmethod
+    def _session_list(section: dict) -> list[str]:
+        """Read a session list from a config section, dropping malformed entries.
+
+        Session ids are compared as strings, so numeric ids coming from the WebUI
+        are normalized here.
+        """
+        value = section.get("session_list")
+        if not isinstance(value, list):
+            return []
+        sessions = []
+        for entry in value:
+            if isinstance(entry, bool) or not isinstance(entry, (str, int)):
+                continue
+            text = str(entry).strip()
+            if text:
+                sessions.append(text)
+        return sessions
+
+    @staticmethod
+    def _session_allowed(session_id: str, mode: str, sessions: list) -> bool:
+        """Apply the allow_list / deny_list semantics of a session permission.
+
+        Mirrors the chat adapters: ``allow_list`` grants only the listed
+        sessions, ``deny_list`` grants every session except the listed ones.
+        """
+        listed = str(session_id) in sessions
+        return listed if mode == ALLOW_LIST else not listed
+
+    def _is_file_session_allowed(self, session_id: str) -> bool:
+        return self._session_allowed(
+            session_id, self.file_permission_mode, self.file_sessions
+        )
+
+    def _is_exec_session_allowed(self, session_id: str) -> bool:
+        return self._session_allowed(
+            session_id, self.exec_permission_mode, self.exec_sessions
+        )
 
     def _migrate_legacy_config(self) -> bool:
-        """Inherit settings from the config file written before the rename.
+        """Inherit and reshape plugin config that was written in an older layout.
 
-        This plugin used to be called ``file``, so existing installations already
-        configured sessions, extra paths and timeouts in ``file.json``. The newly
-        generated ``agent.json`` only holds schema defaults, so the legacy values
-        win. The legacy file is deleted once, and only once, the migrated config
-        is safely on disk, which makes this a run-once migration and keeps any
-        later WebUI edits authoritative.
+        Two older layouts can be on disk. ``file.json`` was written while this
+        plugin was still called ``file``, and it holds flat keys. An intermediate
+        build of the rename could also have written those flat keys into
+        ``agent.json``. Both are folded into the current sectioned layout: the
+        legacy file's values win over the freshly generated schema defaults, the
+        legacy file is deleted once, and only once, the migrated config is safely
+        on disk, which keeps later WebUI edits authoritative.
         """
+        changed = False
         legacy_path = get_config_path() / "plugins" / f"{LEGACY_PLUGIN_ID}.json"
-        if not legacy_path.exists():
+        legacy_cfg = self._read_legacy_config(legacy_path)
+        if legacy_cfg is not None:
+            self.plugin_cfg.update(legacy_cfg)
+            changed = True
+
+        if self._reshape_flat_config():
+            changed = True
+
+        if not changed:
             return False
+
+        if not self._persist_config():
+            # Keep the legacy file so the settings are never lost on a failed write
+            if legacy_cfg is not None:
+                logger.error(
+                    f"Kept {legacy_path.name}: migrated settings could not be persisted "
+                    f"to the {PLUGIN_ID} plugin config"
+                )
+            else:
+                logger.error(f"Failed to write the reshaped {PLUGIN_ID} plugin config")
+            return False
+
+        if legacy_cfg is not None:
+            try:
+                legacy_path.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to remove migrated legacy config {legacy_path}: {e}")
+            logger.info(
+                f"Migrated {len(legacy_cfg)} setting(s) from {legacy_path.name} "
+                f"into the {PLUGIN_ID} plugin config"
+            )
+        return True
+
+    @staticmethod
+    def _read_legacy_config(legacy_path: Path) -> dict | None:
+        """Read a legacy config file, or return None when there is nothing usable."""
+        if not legacy_path.exists():
+            return None
 
         try:
             with legacy_path.open("r", encoding="utf-8") as f:
                 legacy_cfg = json.load(f)
         except Exception as e:
             logger.error(f"Failed to read legacy plugin config {legacy_path}: {e}")
-            return False
+            return None
 
         if not isinstance(legacy_cfg, dict):
             logger.warning(f"Ignoring legacy plugin config {legacy_path}: not a JSON object")
-            return False
+            return None
 
-        for key, value in legacy_cfg.items():
-            self.plugin_cfg[key] = value
+        return legacy_cfg
 
-        if not self._persist_config():
-            # Keep the legacy file so the settings are never lost on a failed write
-            logger.error(
-                f"Kept {legacy_path.name}: migrated settings could not be persisted "
-                f"to the {PLUGIN_ID} plugin config"
-            )
-            return False
+    def _reshape_flat_config(self) -> bool:
+        """Move flat pre-section keys into their config section, in place.
 
-        try:
-            legacy_path.unlink()
-        except OSError as e:
-            logger.warning(f"Failed to remove migrated legacy config {legacy_path}: {e}")
-        logger.info(
-            f"Migrated {len(legacy_cfg)} setting(s) from {legacy_path.name} "
-            f"into the {PLUGIN_ID} plugin config"
-        )
-        return True
+        Returns True when something moved. The flat keys are dropped from the top
+        level and the result is persisted right away, so the reshape happens once
+        and a stale flat key can never shadow a later WebUI edit.
+        """
+        moved = False
+        for legacy_key, (section_key, field_key) in LEGACY_KEY_LOCATIONS.items():
+            if legacy_key not in self.plugin_cfg:
+                continue
+            value = self.plugin_cfg.pop(legacy_key)
+            self._config_section_for_write(section_key)[field_key] = value
+            moved = True
+
+        extra_paths = self.plugin_cfg.get("extra_paths")
+        if isinstance(extra_paths, dict):
+            target = self._config_section_for_write("file_access")
+            for key in LEGACY_EXTRA_PATH_KEYS:
+                if key in extra_paths:
+                    target[key] = extra_paths[key]
+            del self.plugin_cfg["extra_paths"]
+            moved = True
+        elif extra_paths is not None:
+            logger.warning("Ignoring extra_paths in plugin config: not a JSON object")
+
+        return moved
 
     def _persist_config(self) -> bool:
         """Write the in-memory plugin config back to the plugin config file.
@@ -160,7 +306,13 @@ class AgentPlugin(BasePlugin):
         return True
 
     def _get_positive_int_config(self, key: str, default: int) -> int:
-        value = self.plugin_cfg.get(key, default)
+        """Read a positive int from the plugin config.
+
+        ``key`` is dotted (``"exec_access.timeout"``) because int settings live
+        inside a config section.
+        """
+        section_key, _, field_key = key.partition(".")
+        value = self._config_section(section_key).get(field_key)
         if isinstance(value, bool):
             value = None
         else:
@@ -177,7 +329,8 @@ class AgentPlugin(BasePlugin):
 
     @on.llm_request(priority=Priority.LOW)
     async def filter_tools(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
-        enabled = self.plugin_cfg.get("enabled_tools")
+        tools_cfg = self.plugin_cfg.get("tools")
+        enabled = tools_cfg.get("enabled_tools") if isinstance(tools_cfg, dict) else None
         if enabled is None:
             enabled = ALL_TOOL_NAMES
         enabled = set(enabled)
@@ -462,7 +615,7 @@ class AgentPlugin(BasePlugin):
         }
     )
     async def read_file(self, event: KiraMessageBatchEvent, path: str, offset: int = 1, limit: int = 200) -> str:
-        if event.sid not in self.allowed_sessions:
+        if not self._is_file_session_allowed(event.sid):
             return "Permission denied: current session not allowed to access local files"
 
         path = self._normalize_path(path)
@@ -513,7 +666,7 @@ class AgentPlugin(BasePlugin):
         }
     )
     async def write_file(self, event: KiraMessageBatchEvent, path: str, content: str) -> str:
-        if event.sid not in self.allowed_sessions:
+        if not self._is_file_session_allowed(event.sid):
             return "Permission denied: current session not allowed to access local files"
 
         path = self._normalize_path(path)
@@ -553,7 +706,7 @@ class AgentPlugin(BasePlugin):
         }
     )
     async def edit_file(self, event: KiraMessageBatchEvent, path: str, old_text: str, new_text: str) -> str:
-        if event.sid not in self.allowed_sessions:
+        if not self._is_file_session_allowed(event.sid):
             return "Permission denied: current session not allowed to access local files"
 
         path = self._normalize_path(path)
@@ -604,7 +757,7 @@ class AgentPlugin(BasePlugin):
         }
     )
     async def list_files(self, event: KiraMessageBatchEvent, path: str, offset: int = 1, limit: int = 20) -> str:
-        if event.sid not in self.allowed_sessions:
+        if not self._is_file_session_allowed(event.sid):
             return "Permission denied: current session not allowed to access local files"
 
         path = self._normalize_path(path)
@@ -652,7 +805,7 @@ class AgentPlugin(BasePlugin):
 
         Returns (normalized_path, None) on success or (None, error_message) on failure.
         """
-        if event.sid not in self.allowed_sessions:
+        if not self._is_file_session_allowed(event.sid):
             return None, "Permission denied: current session not allowed to access local files"
 
         normalized = self._normalize_path(path)
@@ -963,7 +1116,7 @@ class AgentPlugin(BasePlugin):
         }
     )
     async def search_files(self, event: KiraMessageBatchEvent, pattern: str, path: str = None, limit: int = 100) -> str:
-        if event.sid not in self.allowed_sessions:
+        if not self._is_file_session_allowed(event.sid):
             return "Permission denied: current session not allowed to access local files"
 
         if ".." in pattern:
@@ -1037,7 +1190,7 @@ class AgentPlugin(BasePlugin):
         }
     )
     async def exec(self, event: KiraMessageBatchEvent, cmd: str, work_dir: str | None = None, background: bool = False) -> str:
-        if event.sid not in self.allowed_exec_sessions:
+        if not self._is_exec_session_allowed(event.sid):
             return "Permission denied: current session not allowed to execute shell commands"
 
         shell_command = cmd.strip()
@@ -1058,9 +1211,9 @@ class AgentPlugin(BasePlugin):
                 return f"Working directory is not a directory: {work_dir}"
 
         # Check deny list
-        if self.exec_deny_list:
+        if self.exec_command_deny_list:
             cmd_lower = shell_command.lower()
-            for blocked in self.exec_deny_list:
+            for blocked in self.exec_command_deny_list:
                 blocked_lower = blocked.lower()
                 if cmd_lower == blocked_lower or cmd_lower.startswith(blocked_lower + ' ') or cmd_lower.startswith(blocked_lower + '\t'):
                     logger.warning(f'Shell command blocked by deny list "{blocked}": {shell_command}')
@@ -1156,7 +1309,7 @@ class AgentPlugin(BasePlugin):
         action: str,
         task_id: str | None = None,
     ) -> str:
-        if event.sid not in self.allowed_exec_sessions:
+        if not self._is_exec_session_allowed(event.sid):
             return "Permission denied: current session not allowed to manage shell commands"
 
         if action == "list":

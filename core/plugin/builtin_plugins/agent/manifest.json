@@ -2,7 +2,7 @@
     "display_name": "Agent",
     "plugin_id": "agent",
     "uninstallable": true,
-    "version": "2.0.0",
+    "version": "2.1.0",
     "author": "KiraAI",
     "description": "Let your AI act as an agent on the local environment: file operations and shell command execution, with permission control",
     "repo": null,
