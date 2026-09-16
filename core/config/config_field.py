@@ -196,18 +196,21 @@ class ModelSelectField(BaseConfigField):
 class MultiSelectField(BaseConfigField):
     type = ConfigType.MultiSelect
 
-    def __init__(self, key: str, name: str, hint: str, options=None, default=None, source: str = None, model_type: str = None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, options=None, default=None, source: str = None, model_type: str = None, allow_custom: bool = False, locales: dict = None):
         """
         Multi-select field with static options or dynamic ones.
 
         :param source: Optional dynamic option source: "model", "persona" or "session".
             When set, options are loaded at runtime and ``options`` may be empty.
         :param model_type: Model category used when source is "model" (e.g. "llm", "tts").
+        :param allow_custom: When True, the WebUI also accepts values typed by the user
+            that are not present in the option list.
         """
         super().__init__(key, name, hint, default if isinstance(default, list) else [], locales)
         self.options = list(options) if options else []
         self.source = source
         self.model_type = model_type
+        self.allow_custom = bool(allow_custom)
 
     def to_dict(self) -> dict:
         data = super().to_dict()
@@ -217,6 +220,8 @@ class MultiSelectField(BaseConfigField):
             data["source"] = self.source
             if self.source == "model" and self.model_type:
                 data["model_type"] = self.model_type
+        if self.allow_custom:
+            data["allow_custom"] = True
         return data
 
 
@@ -316,7 +321,8 @@ def create_field_from_schema(key: str, schema: dict) -> BaseConfigField:
     if field_type == "multi_select":
         source = schema.get("source")
         model_type = schema.get("model_type", "llm") if source == "model" else None
-        return MultiSelectField(key=key, name=name, hint=hint, options=options, default=default, source=source, model_type=model_type, locales=locales)
+        allow_custom = schema.get("allow_custom", False)
+        return MultiSelectField(key=key, name=name, hint=hint, options=options, default=default, source=source, model_type=model_type, allow_custom=allow_custom, locales=locales)
 
     if field_type == "persona_select":
         return PersonaSelectField(key=key, name=name, hint=hint, default=default, locales=locales)
