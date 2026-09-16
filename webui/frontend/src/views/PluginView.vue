@@ -2037,14 +2037,22 @@ const storeSortOptions = computed(() => [
 
 const filteredPlugins = computed(() => {
   const q = pluginsSearchTerm.value.trim().toLowerCase()
-  if (!q) return plugins.value
-  return plugins.value.filter(p => {
-    const name = (localize(p, 'display_name', p.name) || '').toLowerCase()
-    const desc = (localize(p, 'description', p.description) || '').toLowerCase()
-    const author = (p.author || '').toLowerCase()
-    const id = p.id.toLowerCase()
-    const tags = (p.tags || []).join(' ').toLowerCase()
-    return name.includes(q) || desc.includes(q) || author.includes(q) || id.includes(q) || tags.includes(q)
+  const filtered = !q
+    ? [...plugins.value]
+    : plugins.value.filter(p => {
+        const name = (localize(p, 'display_name', p.name) || '').toLowerCase()
+        const desc = (localize(p, 'description', p.description) || '').toLowerCase()
+        const author = (p.author || '').toLowerCase()
+        const id = p.id.toLowerCase()
+        const tags = (p.tags || []).join(' ').toLowerCase()
+        return name.includes(q) || desc.includes(q) || author.includes(q) || id.includes(q) || tags.includes(q)
+      })
+
+  // Built-in plugins stay grouped ahead of user plugins; each group is ordered by name.
+  return filtered.sort((a, b) => {
+    const builtinDiff = Number(Boolean(b.builtin)) - Number(Boolean(a.builtin))
+    if (builtinDiff !== 0) return builtinDiff
+    return storePluginName(a).localeCompare(storePluginName(b)) || a.id.localeCompare(b.id)
   })
 })
 
