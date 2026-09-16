@@ -118,6 +118,18 @@ def test_multi_select_field_omits_empty_options():
     assert "options" not in f.to_dict()
 
 
+def test_multi_select_field_allow_custom_defaults_to_false():
+    f = MultiSelectField("k", "Name", "hint", options=["a"])
+    assert f.allow_custom is False
+    assert "allow_custom" not in f.to_dict()
+
+
+def test_multi_select_field_allow_custom():
+    f = MultiSelectField("k", "Name", "hint", options=["a"], allow_custom=True)
+    assert f.allow_custom is True
+    assert f.to_dict()["allow_custom"] is True
+
+
 def test_section_field():
     child = StringField("child_k", "Child", "hint", default="v")
     f = SectionField("sec", "Section", "hint", fields=[child], collapsed=True)
@@ -303,6 +315,25 @@ def test_create_field_multi_select_persona_source():
 def test_create_field_multi_select_without_source_has_no_source_key():
     f = create_field_from_schema("k", {"type": "multi_select", "options": ["a"]})
     assert "source" not in f.to_dict()
+
+
+def test_create_field_multi_select_allow_custom():
+    f = create_field_from_schema("k", {"type": "multi_select", "options": ["a"], "allow_custom": True})
+    assert isinstance(f, MultiSelectField)
+    assert f.allow_custom is True
+    assert f.to_dict()["allow_custom"] is True
+
+
+def test_create_field_multi_select_omits_allow_custom_when_disabled():
+    f = create_field_from_schema("k", {"type": "multi_select", "options": ["a"], "allow_custom": False})
+    assert f.allow_custom is False
+    assert "allow_custom" not in f.to_dict()
+
+
+def test_create_field_multi_select_allow_custom_with_source():
+    f = create_field_from_schema("k", {"type": "multi_select", "source": "model", "allow_custom": True})
+    assert f.allow_custom is True
+    assert f.to_dict()["allow_custom"] is True
 
 
 def test_create_field_session_select():
