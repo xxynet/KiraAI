@@ -9,7 +9,7 @@
     "tags": ["agent", "file", "tools"],
     "locales": {
         "zh": {
-            "display_name": "智能体",
+            "display_name": "Agent",
             "description": "让 AI 具有 Agent 能力，操作本地环境：文件读写与命令执行，支持权限控制"
         }
     }
