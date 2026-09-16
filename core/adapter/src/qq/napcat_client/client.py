@@ -1,11 +1,9 @@
 import asyncio
 import json
 import uuid
-import traceback
 import websockets
-from datetime import datetime
 from core.logging_manager import get_logger
-from typing import Union, Optional, Literal, Callable
+from typing import Any, Union, Optional, Literal, Callable
 from .utils import QQMessageChain
 
 
@@ -43,7 +41,7 @@ except ImportError:
 
 
 class NapCatWebSocketClient:
-    def __init__(self, ws_url: str = "ws://localhost:3001", access_token: Optional[str] = None):
+    def __init__(self, ws_url: str = "ws://localhost:3001", access_token: Optional[str] = None) -> None:
         self.ws_url = ws_url
         self.access_token = access_token
         self.self_id = None
@@ -53,6 +51,9 @@ class NapCatWebSocketClient:
         self.last_heartbeat: Optional[int] = None
         self.login_success_event: asyncio.Event = asyncio.Event()
         self._listening_task: Optional[asyncio.Task] = None
+        # 重连耗尽回调：宿主注册后可在连接永久失败时感知（发布事件/
+        # 状态标记），原实现只 log、宿主与用户均无从得知
+        self.on_permanent_disconnect: Optional[Callable[[], None]] = None
         self.event_callbacks: dict[str, list[Callable]] = {
             "group": [],
             "private": [],
@@ -67,50 +68,44 @@ class NapCatWebSocketClient:
         self.access_token = ws_token
 
         @self.meta_event()
-        async def on_meta_message(msg: dict):
+        async def on_meta_message(msg: dict) -> None:
             if msg.get("meta_event_type") == "lifecycle":
                 self.login_success_event.set()
 
         @self.napcat_event()
-        async def on_napcat_message(msg: dict):
+        async def on_napcat_message(msg: dict) -> None:
             if msg.get("status", "") == "failed":
                 if msg.get("retcode") == 1403:
                     logger.error("WebSocket 服务器 Token 无效")
                     await self.close()
 
         con_resp = await self.connect()
-        if con_resp.get("status") == "ok":
-            self._listening_task = asyncio.create_task(self.listen_messages())
-
-            login_info = await self.get_login_info()
-            login_id = login_info.get("data", {}).get("user_id")
-            if str(login_id) != str(bt_uin):
-                logger.error("配置的账号与 NapCat 登录账号不一致")
-                await self.close()
+        if con_resp.get("status") != "ok":
+            logger.warning(f"初次连接失败：{con_resp.get('message')}，进入重连")
+            if not await self._reconnect():      # 耗尽时内部已上报
                 return
+            
+        self._listening_task = asyncio.create_task(self.listen_messages())
 
-            logger.info(f"等待账号 {bt_uin} 的登录成功事件")
-            try:
-                await asyncio.wait_for(self.login_success_event.wait(), timeout=5)
-                logger.info(f"账号 {bt_uin} 登录成功")
-            except asyncio.TimeoutError:
-                logger.error(f"账号 {bt_uin} 登录超时")
-                if self._listening_task and not self._listening_task.done():
-                    self._listening_task.cancel()
-                    try:
-                        await self._listening_task  # 等待任务被取消
-                    except asyncio.CancelledError:
-                        logger.info("监听消息任务已取消")
-                    except Exception as e:
-                        logger.error(f"取消任务时发生错误: {e}")
-                return
-
-            await self._listening_task
-        elif con_resp.get("status") == "failed":
-            logger.error(f"连接失败：{con_resp.get('message')}")
+        login_info = await self.get_login_info()
+        login_id = login_info.get("data", {}).get("user_id")
+        if str(login_id) != str(bt_uin):
+            logger.error("配置的账号与 NapCat 登录账号不一致")
+            await self.close()
             return
 
-    async def connect(self):
+        logger.info(f"等待账号 {bt_uin} 的登录成功事件")
+        try:
+            await asyncio.wait_for(self.login_success_event.wait(), timeout=5)
+            logger.info(f"账号 {bt_uin} 登录成功")
+        except asyncio.TimeoutError:
+            logger.error(f"账号 {bt_uin} 登录超时")
+            await self.close()
+            return
+
+        return self._listening_task
+
+    async def connect(self) -> dict[str, str]:
         headers = {}
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
@@ -122,11 +117,17 @@ class NapCatWebSocketClient:
         except Exception as e:
             return {"status": "failed", "message": str(e)}
 
-    async def _reconnect(self):
+    async def _reconnect(self) -> bool:
         attempt = 0
         while not self.shutdown_event.is_set() and attempt < 20:
             attempt += 1
             logger.warning(f"🔄 WebSocket 连接断开，正在尝试第 {attempt} 次重连")
+            ws, self.websocket = self.websocket, None
+            if ws is not None:
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
             resp = await self.connect()
             if resp.get("status") == "ok":
                 logger.info("✅ WebSocket 重连成功")
@@ -135,43 +136,57 @@ class NapCatWebSocketClient:
             elif resp.get("status") == "failed":
                 logger.warning(f"WebSocket 重连失败: {resp.get('message')}")
             await asyncio.sleep(min(2 ** attempt, 60))
+        if attempt >= 20 and not self.shutdown_event.is_set():
+            self._notify_permanent_disconnect()
         return False
 
-    def group_event(self):
+    def _notify_permanent_disconnect(self) -> None:
+        """重连耗尽上报"""
+        logger.error("❌ WebSocket 重连次数达到上限，连接永久失败！")
+        if self.on_permanent_disconnect:
+            try:
+                self.on_permanent_disconnect()
+            except Exception as e:
+                logger.error(f"重连耗尽回调异常: {e}")
+
+    def group_event(self) -> Callable[..., Any]:
         def wrapper(func):
             self.event_callbacks["group"].append(func)
             return func
         return wrapper
 
-    def private_event(self):
+    def private_event(self) -> Callable[..., Any]:
         def wrapper(func):
             self.event_callbacks["private"].append(func)
             return func
         return wrapper
 
-    def notice_event(self):
+    def notice_event(self) -> Callable[..., Any]:
         def wrapper(func):
             self.event_callbacks["notice"].append(func)
             return func
         return wrapper
 
-    def napcat_event(self):
+    def napcat_event(self) -> Callable[..., Any]:
         def wrapper(func):
             self.event_callbacks["napcat"].append(func)
             return func
         return wrapper
 
-    def meta_event(self):
+    def meta_event(self) -> Callable[..., Any]:
         def wrapper(func):
             self.event_callbacks["meta"].append(func)
             return func
         return wrapper
 
-    async def listen_messages(self):
+    async def listen_messages(self) -> None:
         """唯一的消息接收入口"""
         logger.info(f"🎧 开始监听账号 {self.self_id} 的消息...")
         while not self.shutdown_event.is_set():
             try:
+                if self.websocket is None:
+                    logger.error("监听循环内 websocket 为空，退出监听")
+                    break
                 async for message in self.websocket:
                     try:
                         data = json.loads(message)
@@ -181,16 +196,21 @@ class NapCatWebSocketClient:
             except websockets.exceptions.ConnectionClosed:
                 logger.warning("🔌 WebSocket 连接已关闭")
                 success = await self._reconnect()
-                if not success:
+                if not success and not self.shutdown_event.is_set():
                     logger.error("❌ 重连次数达到上限，WebSocket 重连失败！")
                     await self.close()
                     break
                 continue
             except Exception as e:
-                logger.error(f"❌ 监听错误: {e}")
-                break
+                # 非连接类异常也重连：仅连接关闭应走 ConnectionClosed
+                # 分支，其余异常（瞬时解码/内部错误冒泡）不该终结监听
+                logger.error(f"❌ 监听错误: {e}，尝试重连")
+                if not await self._reconnect():
+                    await self.close()
+                    break
+                continue
 
-    async def handle_message(self, data: dict):
+    async def handle_message(self, data: dict) -> None:
         """处理收到的消息"""
 
         # Check if this is an API response - must be handled synchronously
@@ -274,7 +294,7 @@ class NapCatWebSocketClient:
         }
         return await self.send_action("send_private_msg", message_dict)
 
-    async def send_poke(self, user_id: Union[str, int], group_id: Union[str, int] = None):
+    async def send_poke(self, user_id: Union[str, int], group_id: Union[str, int, None] = None):
         if group_id:
             message_dict = {
                 "user_id": user_id,
@@ -387,6 +407,8 @@ class NapCatWebSocketClient:
         }
 
         try:
+            if self.websocket is None:
+                raise ConnectionError(f"NapCat WebSocket 未连接，无法执行 {action}")
             await self.websocket.send(json.dumps(message))
             # print(f"📤 发送请求: {action} (echo: {echo})")
 
@@ -408,11 +430,18 @@ class NapCatWebSocketClient:
         response = await self.send_action("get_login_info", {})
         return response
 
-    async def close(self):
+    async def close(self) -> None:
         self.shutdown_event.set()
         self.login_success_event.clear()
+        # fail 挂起请求：等待响应的调用方立即收到明确异常，
+        # 而非各自耗尽 wait_for 超时
+        for future in self.response_futures.values():
+            if not future.done():
+                future.set_exception(ConnectionError("NapCat 连接已关闭"))
+        self.response_futures.clear()
         if self.websocket:
             await self.websocket.close()
+            self.websocket = None
         if self._listening_task and not self._listening_task.done():
             self._listening_task.cancel()
             try:
