@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import uuid
 import websockets
@@ -10,34 +11,32 @@ from .utils import QQMessageChain
 logger = get_logger("napcat", "blue")
 
 
+def _detect_headers_kwarg() -> str:
+    """Detect which keyword name ``websockets.connect`` accepts for request headers.
+
+    The new asyncio implementation renamed ``extra_headers`` to
+    ``additional_headers``. Inspecting the signature is more robust than
+    comparing implementations: it also works when the installed version is a
+    deprecated wrapper or a future re-export.
+    """
+    try:
+        params = inspect.signature(websockets.connect).parameters
+    except (TypeError, ValueError):  # non-introspectable signature; assume the legacy name
+        return "extra_headers"
+    return "additional_headers" if "additional_headers" in params else "extra_headers"
+
+
+_HEADERS_KWARG = _detect_headers_kwarg()
+
+
 def ws_compatible_connect(uri, *, extra_headers, **kwargs):
+    """Connect while staying compatible with both old and new websockets versions.
+
+    Callers always pass headers as ``extra_headers``; it is forwarded under the
+    parameter name that the installed websockets version actually accepts.
     """
-    使用自定义的 connect 函数来同时兼容新版和旧版 websockets
-
-    默认使用旧版参数名 ``extra_headers``
-    """
-    return websockets.connect(
-        uri,
-        extra_headers=extra_headers,
-        **kwargs
-    )
-
-
-try:
-    import websockets.asyncio.client
-
-    if websockets.connect == websockets.asyncio.client.connect:
-        def ws_compatible_connect(uri, *, extra_headers, **kwargs):
-            """
-            如果 ``websockets.connect`` 对应新版 ``asyncio`` 实现，需要把参数名 ``extra_headers`` 改为 ``additional_headers``
-            """
-            return websockets.connect(
-                uri,
-                additional_headers=extra_headers,
-                **kwargs
-            )
-except ImportError:
-    pass
+    kwargs[_HEADERS_KWARG] = extra_headers
+    return websockets.connect(uri, **kwargs)
 
 
 class NapCatWebSocketClient:
