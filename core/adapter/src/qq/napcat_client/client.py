@@ -388,11 +388,27 @@ class NapCatWebSocketClient:
 
     async def send_action(self, action: str, params: dict, timeout: float = 10.0) -> dict:
         """发送API请求并等待响应"""
+        # Wait for shutdown_event as well: close() only clears login_success_event,
+        # which does not wake a caller already blocked in wait(). No response_futures
+        # entry exists yet on this path either, so close() cannot fail the call, and
+        # waiting for the login event alone burns the full 10s before raising
+        # TimeoutError.
+        login_wait = asyncio.create_task(self.login_success_event.wait())
+        shutdown_wait = asyncio.create_task(self.shutdown_event.wait())
         try:
-            await asyncio.wait_for(self.login_success_event.wait(), timeout=10)
-        except asyncio.TimeoutError:
+            done, _ = await asyncio.wait(
+                {login_wait, shutdown_wait},
+                timeout=10,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            login_wait.cancel()
+            shutdown_wait.cancel()
+        if shutdown_wait in done:
+            raise ConnectionError("NapCat 连接已关闭")
+        if not done:
             logger.error("send_action 失败： 登录成功事件未触发")
-            raise
+            raise asyncio.TimeoutError("等待登录成功事件超时")
 
         echo = str(uuid.uuid4())
 
@@ -442,7 +458,15 @@ class NapCatWebSocketClient:
         if self.websocket:
             await self.websocket.close()
             self.websocket = None
-        if self._listening_task and not self._listening_task.done():
+        # On a reconnect failure, listen_messages calls close() from within
+        # _listening_task itself: a task must not cancel and then await itself,
+        # and it must not swallow its own cancellation signal either.
+        current = asyncio.current_task()
+        if (
+            self._listening_task is not None
+            and self._listening_task is not current
+            and not self._listening_task.done()
+        ):
             self._listening_task.cancel()
             try:
                 await self._listening_task  # 等待任务被取消
