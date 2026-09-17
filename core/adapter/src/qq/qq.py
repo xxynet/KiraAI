@@ -71,6 +71,8 @@ class QQAdapter(IMAdapter):
         self.logger = get_logger(info.name, "blue")
         self.debug_mode = self.config.get("debug_mode", False)
         self.debug_mode_list = self.config.get("debug_mode_list", [])
+        # Set once NapCat reconnect attempts are exhausted (host / diagnostics).
+        self.permanently_disconnected = False
 
     @staticmethod
     def _load_dict(path: str) -> Dict[str, Any]:
@@ -108,6 +110,12 @@ class QQAdapter(IMAdapter):
         return str(motion_text), str(object_text)
 
     async def start_blocking(self):
+        # The client calls this back when the connection is permanently lost
+        # (reconnect exhausted); with client-side logging only, the host and the
+        # user never learn about it.
+        self.permanently_disconnected = False
+        self.bot.on_permanent_disconnect = self._on_permanent_disconnect
+
         @self.bot.group_event()
         async def on_group_message(msg: Dict):
             await self._on_group_message(msg)
@@ -131,6 +139,13 @@ class QQAdapter(IMAdapter):
             pass
 
         await self.bot.run(bt_uin=self.config["bot_pid"], ws_uri=self.config["ws_uri"], ws_token=self.config["ws_token"])
+
+    def _on_permanent_disconnect(self) -> None:
+        self.permanently_disconnected = True
+        self.logger.error(
+            f"NapCat 连接永久失败（重连次数已达上限），适配器 {self.info.name} 已停止接收消息，"
+            "请检查 NapCat 是否在运行、ws_uri / token 配置是否正确"
+        )
 
     async def start(self):
         task = asyncio.create_task(self.start_blocking())
