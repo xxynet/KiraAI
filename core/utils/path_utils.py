@@ -71,12 +71,20 @@ _ICON_EXTENSIONS = frozenset({
 })
 
 
-def resolve_manifest_icon_path(manifest_dir: Path, icon: object) -> Optional[Path]:
+def resolve_manifest_icon_path(manifest_dir: Path, icon: object,
+                               extensions: Optional[frozenset] = None) -> Optional[Path]:
     """Return a safe local icon file referenced by a manifest.
 
     Manifest icons are intentionally relative to the directory containing the
     manifest.  This prevents a provider, adapter, or plugin manifest from
     exposing files outside of its own package through the WebUI.
+
+    Args:
+        manifest_dir: Directory the icon path is relative to.
+        icon: Raw icon value from the manifest (or a decorator).
+        extensions: Allowed file extensions as a lowercase frozenset
+            (e.g. ``frozenset({".svg"})``).  Defaults to all known image
+            extensions.
     """
     if not isinstance(icon, str) or not icon.strip() or "\x00" in icon:
         return None
@@ -89,7 +97,8 @@ def resolve_manifest_icon_path(manifest_dir: Path, icon: object) -> Optional[Pat
     target = (root / configured_path).resolve()
     if not is_within_directory(root, target):
         return None
-    if not target.is_file() or target.suffix.lower() not in _ICON_EXTENSIONS:
+    allowed_extensions = extensions if extensions is not None else _ICON_EXTENSIONS
+    if not target.is_file() or target.suffix.lower() not in allowed_extensions:
         return None
     return target
 

@@ -21,7 +21,16 @@
         :class="{ active: isActive(item.route) }"
       >
         <div class="flex items-center gap-3">
-          <component :is="item.icon" class="w-5 h-5" />
+          <!--
+            Plugin icons referenced by URL are rendered inline (sanitized) so
+            stroke="currentColor" follows the nav text color across themes.
+          -->
+          <InlineSvgIcon v-if="item.iconUrl" :src="item.iconUrl" class="w-5 h-5">
+            <template #fallback>
+              <component :is="item.icon" class="w-5 h-5" />
+            </template>
+          </InlineSvgIcon>
+          <component :is="item.icon" v-else class="w-5 h-5" />
           <span>{{ item.isPlugin ? item.label : $t(item.label) }}</span>
         </div>
         <span class="nav-dot"></span>
@@ -48,6 +57,7 @@ import { useAppStore } from '@/stores/app'
 import { usePluginMenuStore } from '@/stores/pluginMenu'
 import { getVersion } from '@/api/overview'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import InlineSvgIcon from '@/components/common/InlineSvgIcon.vue'
 import {
   DataAnalysis, Connection, Link, User, SetUp, Picture,
   Setting, ChatDotRound, Document, Tools, Box,
@@ -87,26 +97,38 @@ const languageOptions = [
   { value: 'zh', label: '中文' },
 ]
 
-const staticNavItems: { route: string; label: string; icon: any; isPlugin: boolean }[] = [
-  { route: '/overview', label: 'nav.overview', icon: DataAnalysis, isPlugin: false },
-  { route: '/provider', label: 'nav.provider', icon: Connection, isPlugin: false },
-  { route: '/adapter', label: 'nav.adapter', icon: Link, isPlugin: false },
-  { route: '/persona', label: 'nav.persona', icon: User, isPlugin: false },
-  { route: '/sticker', label: 'nav.sticker', icon: Picture, isPlugin: false },
-  { route: '/configuration', label: 'nav.configuration', icon: Tools, isPlugin: false },
-  { route: '/plugin', label: 'nav.plugin', icon: SetUp, isPlugin: false },
-  { route: '/sessions', label: 'nav.sessions', icon: ChatDotRound, isPlugin: false },
-  { route: '/logs', label: 'nav.logs', icon: Document, isPlugin: false },
-  { route: '/settings', label: 'nav.settings', icon: Setting, isPlugin: false },
+interface NavItem {
+  route: string
+  label: string
+  icon: any
+  iconUrl: string | null
+  isPlugin: boolean
+}
+
+const staticNavItems: NavItem[] = [
+  { route: '/overview', label: 'nav.overview', icon: DataAnalysis, iconUrl: null, isPlugin: false },
+  { route: '/provider', label: 'nav.provider', icon: Connection, iconUrl: null, isPlugin: false },
+  { route: '/adapter', label: 'nav.adapter', icon: Link, iconUrl: null, isPlugin: false },
+  { route: '/persona', label: 'nav.persona', icon: User, iconUrl: null, isPlugin: false },
+  { route: '/sticker', label: 'nav.sticker', icon: Picture, iconUrl: null, isPlugin: false },
+  { route: '/configuration', label: 'nav.configuration', icon: Tools, iconUrl: null, isPlugin: false },
+  { route: '/plugin', label: 'nav.plugin', icon: SetUp, iconUrl: null, isPlugin: false },
+  { route: '/sessions', label: 'nav.sessions', icon: ChatDotRound, iconUrl: null, isPlugin: false },
+  { route: '/logs', label: 'nav.logs', icon: Document, iconUrl: null, isPlugin: false },
+  { route: '/settings', label: 'nav.settings', icon: Setting, iconUrl: null, isPlugin: false },
 ]
 
-const navItems = computed(() => {
+const navItems = computed<NavItem[]>(() => {
   const items = [...staticNavItems]
   for (const menu of pluginMenuStore.menus) {
+    const icon = menu.icon || ''
     items.push({
       route: menu.route,
       label: menu.label,
-      icon: iconMap[menu.icon || ''] || Box,
+      // Plugin menu icons are either an Element Plus icon name or an
+      // API URL to a custom image (e.g. an SVG file from the plugin).
+      icon: iconMap[icon] || Box,
+      iconUrl: icon.startsWith('/') ? icon : null,
       isPlugin: true,
     })
   }

@@ -71,7 +71,9 @@ class PageMenu:
     Args:
         label: Display text — a plain string or a dict of locale→translation
                (e.g. ``{"zh": "仪表盘", "en": "Dashboard"}``).
-        icon:  Element Plus icon component name (e.g. ``"Monitor"``).
+        icon:  Element Plus icon component name (e.g. ``"Monitor"``), or a
+               path to an SVG file (``.svg``) relative to the plugin root
+               (e.g. ``"assets/icon.svg"``) for a custom icon.
         order: Sort order in the sidebar (lower = higher, default 100).
     """
 
@@ -782,6 +784,32 @@ class PluginManager:
 
     def get_plugin_components(self) -> Dict[str, PluginComponents]:
         return dict(_plugin_components)
+
+    def get_page_menu_icon_path(self, plugin_id: str, page_route: str) -> Optional[Path]:
+        """Resolve a page menu icon that references an SVG file in the plugin.
+
+        ``PageMenu.icon`` accepts either an Element Plus icon name or a path
+        to an ``.svg`` file relative to the plugin root (e.g.
+        ``"assets/icon.svg"``).  Returns the resolved file path for SVG file
+        references, or ``None`` when the icon is an icon name, missing, not
+        an SVG, or escapes the plugin root.
+        """
+        comp = _plugin_components.get(plugin_id)
+        if not comp:
+            return None
+        wanted = "/" + str(page_route).lstrip("/")
+        menu = next(
+            (page.get("menu") for page in comp.pages
+             if page.get("route") == wanted and page.get("menu")),
+            None,
+        )
+        if menu is None or not isinstance(menu.icon, str) or not menu.icon.strip():
+            return None
+        plugin_root = _plugin_module_paths.get(plugin_id)
+        if plugin_root is None:
+            return None
+        return resolve_manifest_icon_path(plugin_root, menu.icon,
+                                          extensions=frozenset({".svg"}))
 
     def _resolve_plugin_component_dir(self, plugin_id: str, relative_path: str) -> Path:
         plugin_root = _plugin_module_paths.get(plugin_id)
