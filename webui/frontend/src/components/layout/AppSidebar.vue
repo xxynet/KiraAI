@@ -127,8 +127,11 @@ const navItems = computed<NavItem[]>(() => {
       label: menu.label,
       // Plugin menu icons are either an Element Plus icon name or an
       // API URL to a custom image (e.g. an SVG file from the plugin).
+      // Only backend-issued /api/ URLs count as URLs: a raw path that the
+      // backend left unresolved (e.g. a typo) would otherwise trigger a
+      // guaranteed 404 fetch before falling back to the icon component.
       icon: iconMap[icon] || Box,
-      iconUrl: icon.startsWith('/') ? icon : null,
+      iconUrl: icon.startsWith('/api/') ? icon : null,
       isPlugin: true,
     })
   }

@@ -1,7 +1,12 @@
 <template>
-  <span v-if="sanitized" class="inline-svg-icon" aria-hidden="true" v-html="sanitized" />
-  <!-- Render nothing while loading; fall back only on failure -->
-  <slot v-else-if="failed" name="fallback" />
+  <!-- Single root element so fallthrough attrs (e.g. size classes from the
+       caller) always apply, including on the fallback branch; the wrapper
+       also reserves layout space while the SVG is loading. -->
+  <span class="inline-svg-icon" aria-hidden="true">
+    <span v-if="sanitized" class="inline-svg-icon__svg" v-html="sanitized" />
+    <!-- Render nothing while loading; fall back only on failure -->
+    <slot v-else-if="failed" name="fallback" />
+  </span>
 </template>
 
 <script lang="ts">
@@ -66,6 +71,14 @@ watch(() => props.src, load, { immediate: true })
 .inline-svg-icon {
   display: inline-flex;
   overflow: hidden;
+}
+
+/* The v-html host: sized against the wrapper so the percentage-sized SVG
+   inside it has a definite box to resolve against. */
+.inline-svg-icon__svg {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
 }
 
 .inline-svg-icon :deep(svg) {

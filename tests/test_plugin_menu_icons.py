@@ -37,6 +37,16 @@ def test_page_menu_icon_resolves_nested_page_routes(monkeypatch, tmp_path):
     assert manager.get_page_menu_icon_path("test-plugin", "sub/page") == icon.resolve()
 
 
+def test_page_menu_icon_tolerates_leading_slash(monkeypatch, tmp_path):
+    icon = tmp_path / "assets" / "menu.svg"
+    icon.parent.mkdir()
+    icon.write_text("<svg></svg>", encoding="utf-8")
+    _register_page(monkeypatch, tmp_path, "/assets/menu.svg")
+    manager = PluginManager()
+
+    assert manager.get_page_menu_icon_path("test-plugin", "dashboard") == icon.resolve()
+
+
 def test_page_menu_icon_keeps_element_plus_names_unresolved(monkeypatch, tmp_path):
     _register_page(monkeypatch, tmp_path, "Monitor")
     manager = PluginManager()

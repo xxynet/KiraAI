@@ -790,9 +790,10 @@ class PluginManager:
 
         ``PageMenu.icon`` accepts either an Element Plus icon name or a path
         to an ``.svg`` file relative to the plugin root (e.g.
-        ``"assets/icon.svg"``).  Returns the resolved file path for SVG file
-        references, or ``None`` when the icon is an icon name, missing, not
-        an SVG, or escapes the plugin root.
+        ``"assets/icon.svg"``; a leading slash is tolerated).  Returns the
+        resolved file path for SVG file references, or ``None`` when the
+        icon is an icon name, missing, not an SVG, or escapes the plugin
+        root.
         """
         comp = _plugin_components.get(plugin_id)
         if not comp:
@@ -808,7 +809,10 @@ class PluginManager:
         plugin_root = _plugin_module_paths.get(plugin_id)
         if plugin_root is None:
             return None
-        return resolve_manifest_icon_path(plugin_root, menu.icon,
+        # Tolerate a leading slash: authors may mirror the leading-slash
+        # route convention, and resolve_manifest_icon_path rejects
+        # absolute paths outright.
+        return resolve_manifest_icon_path(plugin_root, menu.icon.strip().lstrip("/"),
                                           extensions=frozenset({".svg"}))
 
     def _resolve_plugin_component_dir(self, plugin_id: str, relative_path: str) -> Path:
