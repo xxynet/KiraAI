@@ -39,8 +39,14 @@ async function load(src: string): Promise<void> {
     const { data } = await apiClient.get<string>(path, { responseType: 'text' })
     // Restrict to the SVG profile: drops <script>, event handler
     // attributes, and foreign content while keeping SVG markup intact.
+    // <style>/style must be banned explicitly: DOMPurify keeps them under
+    // the SVG profile without sanitizing CSS, and inline SVG styles are
+    // document-scoped, so a crafted icon could restyle the WebUI or fire
+    // requests via CSS url()/@import.
     const clean = DOMPurify.sanitize(data, {
       USE_PROFILES: { svg: true, svgFilters: true },
+      FORBID_TAGS: ['style'],
+      FORBID_ATTR: ['style'],
     })
     if (clean) {
       svgCache.set(src, clean)
