@@ -41,6 +41,10 @@ except ImportError:
 
 
 class NapCatWebSocketClient:
+    # Reconnect policy: maximum attempts and per-attempt backoff cap (seconds)
+    MAX_RECONNECT_ATTEMPTS = 20
+    MAX_RECONNECT_BACKOFF = 60
+
     def __init__(self, ws_url: str = "ws://localhost:3001", access_token: Optional[str] = None) -> None:
         self.ws_url = ws_url
         self.access_token = access_token
@@ -62,7 +66,7 @@ class NapCatWebSocketClient:
             "meta": []
         }
 
-    async def run(self, bt_uin: str, ws_uri: str, ws_token: Optional[str] = None, ws_listen_ip: str = "0.0.0.0"):
+    async def run(self, bt_uin: str, ws_uri: str, ws_token: Optional[str] = None, ws_listen_ip: str = "0.0.0.0") -> None:
         self.self_id = bt_uin
         self.ws_url = ws_uri
         self.access_token = ws_token
@@ -81,10 +85,17 @@ class NapCatWebSocketClient:
 
         con_resp = await self.connect()
         if con_resp.get("status") != "ok":
-            logger.warning(f"初次连接失败：{con_resp.get('message')}，进入重连")
+            # Entering reconnect on the first connect failure is intentional, but that
+            # retry loop runs inline: run() does not return until it is over, so the
+            # log has to make that explicit instead of looking like a stuck startup.
+            logger.warning(
+                f"初次连接失败：{con_resp.get('message')}，进入重连"
+                f"（最多 {self.MAX_RECONNECT_ATTEMPTS} 次退避重试，"
+                f"期间 run() 不会返回）"
+            )
             if not await self._reconnect():      # 耗尽时内部已上报
                 return
-            
+
         self._listening_task = asyncio.create_task(self.listen_messages())
 
         login_info = await self.get_login_info()
@@ -103,7 +114,17 @@ class NapCatWebSocketClient:
             await self.close()
             return
 
-        return self._listening_task
+        # run() must stay alive until the listening task ends: returning the task
+        # object instead leaves it un-awaited, so its exceptions only surface as
+        # "Task exception was never retrieved" during GC, invisible to the host.
+        # asyncio.wait instead of a bare await: an external close() cancels the
+        # listening task, and awaiting it directly would raise CancelledError into
+        # whoever awaited run().
+        await asyncio.wait({self._listening_task})
+        if self._listening_task.done() and not self._listening_task.cancelled():
+            exc = self._listening_task.exception()
+            if exc is not None:
+                logger.error(f"监听任务异常结束: {exc}")
 
     async def connect(self) -> dict[str, str]:
         headers = {}
@@ -119,9 +140,11 @@ class NapCatWebSocketClient:
 
     async def _reconnect(self) -> bool:
         attempt = 0
-        while not self.shutdown_event.is_set() and attempt < 20:
+        while not self.shutdown_event.is_set() and attempt < self.MAX_RECONNECT_ATTEMPTS:
             attempt += 1
-            logger.warning(f"🔄 WebSocket 连接断开，正在尝试第 {attempt} 次重连")
+            logger.warning(
+                f"🔄 WebSocket 连接断开，正在尝试第 {attempt}/{self.MAX_RECONNECT_ATTEMPTS} 次重连"
+            )
             ws, self.websocket = self.websocket, None
             if ws is not None:
                 try:
@@ -135,8 +158,11 @@ class NapCatWebSocketClient:
                 return True
             elif resp.get("status") == "failed":
                 logger.warning(f"WebSocket 重连失败: {resp.get('message')}")
-            await asyncio.sleep(min(2 ** attempt, 60))
-        if attempt >= 20 and not self.shutdown_event.is_set():
+            # No backoff after the final attempt, otherwise reporting a permanent
+            # failure would still wait out one more full backoff period.
+            if attempt < self.MAX_RECONNECT_ATTEMPTS:
+                await asyncio.sleep(min(2 ** attempt, self.MAX_RECONNECT_BACKOFF))
+        if attempt >= self.MAX_RECONNECT_ATTEMPTS and not self.shutdown_event.is_set():
             self._notify_permanent_disconnect()
         return False
 
