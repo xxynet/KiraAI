@@ -152,6 +152,17 @@ class NapCatWebSocketClient:
                     pass
             resp = await self.connect()
             if resp.get("status") == "ok":
+                if self.shutdown_event.is_set():
+                    # close() raced with this reconnect: discard the fresh socket
+                    # instead of leaving a half-alive connection that nobody
+                    # reads from, and do not fake a successful login.
+                    ws, self.websocket = self.websocket, None
+                    if ws is not None:
+                        try:
+                            await ws.close()
+                        except Exception:
+                            pass
+                    return False
                 logger.info("✅ WebSocket 重连成功")
                 self.login_success_event.set()
                 return True
