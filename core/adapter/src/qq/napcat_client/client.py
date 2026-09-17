@@ -216,9 +216,19 @@ class NapCatWebSocketClient:
                 async for message in self.websocket:
                     try:
                         data = json.loads(message)
+                        if not isinstance(data, dict):
+                            # `null` / arrays / bare scalars are valid JSON but carry no
+                            # OneBot payload, and handle_message() assumes a mapping
+                            logger.error(f"❌ 忽略非对象消息: {message}")
+                            continue
                         await self.handle_message(data)
                     except json.JSONDecodeError:
                         logger.error(f"❌ 无法解析消息: {message}")
+                    except Exception as e:
+                        # A malformed payload must not tear down a healthy connection:
+                        # log it, drop that message, keep listening. Only iterator and
+                        # connection failures below are worth a reconnect.
+                        logger.error(f"❌ 处理消息失败，已跳过该消息: {e}")
             except websockets.exceptions.ConnectionClosed:
                 logger.warning("🔌 WebSocket 连接已关闭")
                 success = await self._reconnect()
@@ -228,8 +238,8 @@ class NapCatWebSocketClient:
                     break
                 continue
             except Exception as e:
-                # 非连接类异常也重连：仅连接关闭应走 ConnectionClosed
-                # 分支，其余异常（瞬时解码/内部错误冒泡）不该终结监听
+                # Iterator / connection-level failure (individual messages are handled
+                # inside the loop above), so a reconnect is the right response.
                 logger.error(f"❌ 监听错误: {e}，尝试重连")
                 if not await self._reconnect():
                     await self.close()
@@ -414,6 +424,12 @@ class NapCatWebSocketClient:
 
     async def send_action(self, action: str, params: dict, timeout: float = 10.0) -> dict:
         """发送API请求并等待响应"""
+        # Fail before the wait, not after it: an exhausted reconnect leaves
+        # self.websocket as None with neither event set, and the socket check further
+        # down would only be reached after burning the full 10s wait.
+        if self.websocket is None:
+            raise ConnectionError(f"NapCat WebSocket 未连接，无法执行 {action}")
+
         # Wait for shutdown_event as well: close() only clears login_success_event,
         # which does not wake a caller already blocked in wait(). No response_futures
         # entry exists yet on this path either, so close() cannot fail the call, and
