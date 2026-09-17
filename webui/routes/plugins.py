@@ -58,6 +58,13 @@ class PluginsRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
+                path="/api/plugins/{plugin_id}/menu-icon/{page_route:path}",
+                methods=["GET"],
+                endpoint=self.get_plugin_menu_icon,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/plugins/{plugin_id}/config",
                 methods=["GET"],
                 endpoint=self.get_plugin_config,
@@ -222,10 +229,18 @@ class PluginsRoutes(Routes):
                         menu_cfg = page.get("menu")
                         if not menu_cfg:
                             continue
+                        # A menu icon may reference an SVG file inside the
+                        # plugin root; expose it through the menu-icon endpoint.
+                        icon_value = menu_cfg.icon
+                        if plugin_manager.get_page_menu_icon_path(pid, page["route"]):
+                            icon_value = (
+                                f"/api/plugins/{quote(pid, safe='')}"
+                                f"/menu-icon/{page['route'].lstrip('/')}"
+                            )
                         menus.append(PageMenu(
                             route=f"/page/plugin/{pid}/{page['route'].lstrip('/')}",
                             label=menu_cfg.label,
-                            icon=menu_cfg.icon,
+                            icon=icon_value,
                             order=menu_cfg.order,
                         ))
                     menus.sort(key=lambda m: m.order)
@@ -271,6 +286,24 @@ class PluginsRoutes(Routes):
         if not icon_path:
             raise HTTPException(status_code=404, detail="Plugin icon not found")
         return FileResponse(icon_path, headers={"Cache-Control": "no-cache"})
+
+    async def get_plugin_menu_icon(self, plugin_id: str, page_route: str):
+        """Serve the sidebar menu icon file of a plugin page.
+
+        Only SVG files can resolve as menu icons.  The file path is looked up
+        from the page's registered menu config, so the URL itself never
+        carries a filesystem path.
+        """
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=404, detail="Plugin manager not available")
+        plugin_manager = self.lifecycle.plugin_manager
+        icon_path = plugin_manager.get_page_menu_icon_path(plugin_id, page_route)
+        if not icon_path:
+            raise HTTPException(status_code=404, detail="Plugin menu icon not found")
+        # Pin the media type: guessing from the file suffix can pick up a
+        # wrong .svg mapping from the Windows registry.
+        return FileResponse(icon_path, media_type="image/svg+xml",
+                            headers={"Cache-Control": "no-cache"})
 
     async def get_plugin_config(self, plugin_id: str):
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
