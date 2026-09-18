@@ -255,6 +255,12 @@ class BaseMediaElement(BaseMessageElement, ABC):
             return file_path
         if self.file_type == "url" and self.file:
             resp = await download_file(self.file, file_path)
+            # Record the server-declared Content-Type before any rename so the
+            # stored file name can be built with the correct extension.
+            if not self.mime:
+                content_type = resp.headers.get("Content-Type") or resp.headers.get("content-type")
+                if content_type:
+                    self.mime = content_type.split(";", 1)[0].strip()
             if self.name is None:
                 filename = None
                 content_disposition = resp.headers.get("Content-Disposition") or resp.headers.get("content-disposition")
@@ -287,10 +293,19 @@ class BaseMediaElement(BaseMessageElement, ABC):
                         except Exception:
                             pass
                     self.name = filename
-            if not self.mime:
-                content_type = resp.headers.get("Content-Type") or resp.headers.get("content-type")
-                if content_type:
-                    self.mime = content_type.split(";", 1)[0].strip()
+            if self.mime and not os.path.splitext(file_path)[1]:
+                # Give the downloaded temp file a type-correct extension.
+                ext = mimetypes.guess_extension(self.mime)
+                if ext:
+                    try:
+                        desired_path = file_path + ext
+                        os.replace(file_path, desired_path)
+                        file_path = desired_path
+                        self._temp_path = desired_path
+                        if self.name and not os.path.splitext(self.name)[1]:
+                            self.name = self.name + ext
+                    except Exception:
+                        pass
             return file_path
         return file_path
 
@@ -298,6 +313,13 @@ class BaseMediaElement(BaseMessageElement, ABC):
         """Better use to_path for large File or Video objects"""
 
         if self.file_type == "base64" and self.file is not None:
+            if not self.mime:
+                try:
+                    detected = _infer_mime_from_bytes(base64.b64decode(self.file[:32]))
+                    if detected:
+                        self.mime = detected
+                except (binascii.Error, ValueError, TypeError) as e:
+                    logger.debug(f"MIME inference from base64 failed (sample len={len(self.file[:32])}): {e}")
             return self.file
         if self.file_type == "data_url" and self.file is not None:
             try:
@@ -386,7 +408,9 @@ class Image(BaseMediaElement):
         self.caption: Optional[str] = caption
         self.md5: Optional[str] = None
         self.image_type: Literal["url", "path", "base64", "data_url", "unknown"] = self.file_type
-        self.mime = self.mime or "image/jpeg"
+        # mime is left unresolved when unknown so that to_path() can record the
+        # server Content-Type and to_base64()/to_data_url() can sniff magic bytes;
+        # to_data_url() falls back to image/jpeg for images at the point of use.
 
     async def hash_image(self):
         if self.md5:

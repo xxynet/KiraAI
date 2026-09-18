@@ -47,7 +47,6 @@ async def store_session_media(
     detail: str = "high",
 ) -> dict:
     """Persist one incoming image and return its JSON-safe internal reference."""
-    mime_type = media.mime
     if media.file_type == "path":
         raw_data = await asyncio.to_thread(Path(media.file).read_bytes)
     elif media.file_type == "url":
@@ -60,6 +59,9 @@ async def store_session_media(
         except (binascii.Error, ValueError) as exc:
             raise ValueError("Incoming media contains invalid base64") from exc
 
+    # Read the mime after materializing the data so that the Content-Type
+    # recorded by to_path() or the magic bytes sniffed by to_base64() apply.
+    mime_type = media.mime or "image/jpeg"
     content_hash = hashlib.sha256(raw_data).hexdigest()
     target = _message_directory(session_id, message_id) / (
         content_hash + _extension_for_mime(mime_type)
@@ -91,7 +93,7 @@ async def store_session_media(
     return {
         "type": MEDIA_REF_TYPE,
         "path": target.relative_to(get_data_path()).as_posix(),
-        "mime_type": mime_type or "image/jpeg",
+        "mime_type": mime_type,
         "detail": detail,
     }
 

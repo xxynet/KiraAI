@@ -199,10 +199,10 @@ def test_guess_mime_from_url_extension():
     assert img.mime == "image/jpeg"
 
 
-def test_guess_mime_fallback_jpeg():
+def test_base64_mime_left_unknown_until_use():
     b64 = base64.b64encode(b"random").decode()
     img = Image(f"base64://{b64}")
-    assert img.mime == "image/jpeg"
+    assert img.mime is None
 
 
 # ── BaseMediaElement.guess_name ─────────────────────────────────────
@@ -224,10 +224,54 @@ def test_image_repr():
     assert img.repr == "[Image]"
 
 
-def test_image_default_mime():
+@pytest.mark.asyncio
+async def test_image_data_url_falls_back_to_jpeg():
     b64 = base64.b64encode(b"random").decode()
     img = Image(f"base64://{b64}")
-    assert img.mime == "image/jpeg"
+    data_url = await img.to_data_url()
+    assert data_url.startswith("data:image/jpeg;base64,")
+
+
+@pytest.mark.asyncio
+async def test_to_data_url_sniffs_real_format_from_base64():
+    png_b64 = base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'\x00' * 16).decode()
+    img = Image(f"base64://{png_b64}")
+    data_url = await img.to_data_url()
+    assert data_url.startswith("data:image/png;base64,")
+    assert img.mime == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_to_base64_sniffs_real_format_from_base64():
+    gif_b64 = base64.b64encode(b'GIF89a' + b'\x00' * 16).decode()
+    img = Image(f"base64://{gif_b64}")
+    assert await img.to_base64() == gif_b64
+    assert img.mime == "image/gif"
+
+
+@pytest.mark.asyncio
+async def test_to_path_records_content_type_for_extensionless_url(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.chat.message_elements.get_data_path", lambda: tmp_path)
+    png_bytes = b'\x89PNG\r\n\x1a\n' + b'\x00' * 16
+
+    class FakeResponse:
+        headers = {"Content-Type": "image/png"}
+
+    async def fake_download_file(url, path, *args, **kwargs):
+        with open(path, "wb") as f:
+            f.write(png_bytes)
+        return FakeResponse()
+
+    monkeypatch.setattr("core.chat.message_elements.download_file", fake_download_file)
+    img = Image("https://multimedia.example.com/download?fid=abc&rkey=xyz")
+    assert img.mime is None
+
+    file_path = await img.to_path()
+
+    assert img.mime == "image/png"
+    assert file_path.endswith(".png")
+    with open(file_path, "rb") as f:
+        assert f.read() == png_bytes
 
 
 # ── Sticker element ─────────────────────────────────────────────────
