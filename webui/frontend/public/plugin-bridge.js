@@ -167,19 +167,28 @@
   /**
    * Download a file from a plugin API endpoint.
    *
-   * Triggers the browser's native download manager via a hidden anchor
-   * navigation to the endpoint URL, so the transfer streams to disk with
-   * the browser's download progress UI (same mechanism as the WebUI
-   * backup download). Authentication relies on the same-origin session
-   * cookie, which the navigation carries automatically. The saved
-   * filename comes from the server's Content-Disposition header, or from
-   * ``filename`` when provided. Note that error responses (non-2xx) are
-   * downloaded as-is, mirroring plain navigation semantics.
+   * Issues a GET request by navigating a hidden anchor to the endpoint
+   * URL, handing the transfer to the browser's native download manager so
+   * it streams to disk with the regular download progress UI (same
+   * mechanism as the WebUI backup download). Only GET endpoints can be
+   * downloaded this way — routes registered with another method (e.g.
+   * POST) are not invoked; use a fetch-based flow for those. Error
+   * responses (non-2xx) are downloaded as-is, mirroring plain navigation
+   * semantics.
    *
-   * @param {string} endpoint — bare route path registered via @register.api(path),
-   *   e.g. ``"files/export"``.  Leading slash is optional.
-   * @param {string} [filename] — optional filename override.  When omitted,
-   *   the server-provided Content-Disposition filename is used.
+   * Authentication relies on the same-origin session cookie, which the
+   * navigation carries automatically.
+   *
+   * Filename resolution follows the browser's download rules: a
+   * ``Content-Disposition: attachment; filename=`` response header takes
+   * precedence, so the ``filename`` argument is only a best-effort hint
+   * used when the server does not name the attachment.
+   *
+   * @param {string} endpoint — bare route path of a GET endpoint registered
+   *   via @register.api("GET", path), e.g. ``"files/export"``.  Leading
+   *   slash is optional.
+   * @param {string} [filename] — best-effort filename hint, used only when
+   *   the response carries no Content-Disposition filename.
    *
    * Usage inside a plugin page:
    *
