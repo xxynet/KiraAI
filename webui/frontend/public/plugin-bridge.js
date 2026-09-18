@@ -164,6 +164,36 @@
     })
   }
 
+  /**
+   * Download a file from a plugin API endpoint.
+   *
+   * Triggers the browser's native download manager via a hidden anchor
+   * navigation to the endpoint URL, so the transfer streams to disk with
+   * the browser's download progress UI (same mechanism as the WebUI
+   * backup download). Authentication relies on the same-origin session
+   * cookie, which the navigation carries automatically. The saved
+   * filename comes from the server's Content-Disposition header, or from
+   * ``filename`` when provided. Note that error responses (non-2xx) are
+   * downloaded as-is, mirroring plain navigation semantics.
+   *
+   * @param {string} endpoint — bare route path registered via @register.api(path),
+   *   e.g. ``"files/export"``.  Leading slash is optional.
+   * @param {string} [filename] — optional filename override.  When omitted,
+   *   the server-provided Content-Disposition filename is used.
+   *
+   * Usage inside a plugin page:
+   *
+   *   window.PluginPageContext.api.download('files/export', 'report.zip');
+   */
+  function apiDownload(endpoint, filename) {
+    var link = document.createElement('a')
+    link.href = buildPluginApiUrl(endpoint)
+    if (filename) link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
   // ── Token helper ──────────────────────────────────────────────────────────
 
   /**
@@ -240,6 +270,7 @@
       post: apiPost,
       upload: apiUpload,
       delete: apiDelete,
+      download: apiDownload,
     },
   }
 
