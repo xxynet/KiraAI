@@ -5,7 +5,7 @@
       ref="iframeRef"
       :src="pageUrl"
       class="plugin-page-iframe"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
     />
     <div v-else class="flex items-center justify-center h-64 text-theme-subtle">
       <p>{{ $t('pluginPage.invalid_config') }}</p>

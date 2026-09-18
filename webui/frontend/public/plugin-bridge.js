@@ -164,6 +164,45 @@
     })
   }
 
+  /**
+   * Download a file from a plugin API endpoint.
+   *
+   * Issues a GET request by navigating a hidden anchor to the endpoint
+   * URL, handing the transfer to the browser's native download manager so
+   * it streams to disk with the regular download progress UI (same
+   * mechanism as the WebUI backup download). Only GET endpoints can be
+   * downloaded this way — routes registered with another method (e.g.
+   * POST) are not invoked; use a fetch-based flow for those. Error
+   * responses (non-2xx) are downloaded as-is, mirroring plain navigation
+   * semantics.
+   *
+   * Authentication relies on the same-origin session cookie, which the
+   * navigation carries automatically.
+   *
+   * Filename resolution follows the browser's download rules: a
+   * ``Content-Disposition: attachment; filename=`` response header takes
+   * precedence, so the ``filename`` argument is only a best-effort hint
+   * used when the server does not name the attachment.
+   *
+   * @param {string} endpoint — bare route path of a GET endpoint registered
+   *   via @register.api("GET", path), e.g. ``"files/export"``.  Leading
+   *   slash is optional.
+   * @param {string} [filename] — best-effort filename hint, used only when
+   *   the response carries no Content-Disposition filename.
+   *
+   * Usage inside a plugin page:
+   *
+   *   window.PluginPageContext.api.download('files/export', 'report.zip');
+   */
+  function apiDownload(endpoint, filename) {
+    var link = document.createElement('a')
+    link.href = buildPluginApiUrl(endpoint)
+    if (filename) link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
   // ── Token helper ──────────────────────────────────────────────────────────
 
   /**
@@ -240,6 +279,7 @@
       post: apiPost,
       upload: apiUpload,
       delete: apiDelete,
+      download: apiDownload,
     },
   }
 
