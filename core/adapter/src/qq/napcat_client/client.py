@@ -43,6 +43,11 @@ class NapCatWebSocketClient:
     # Reconnect policy: maximum attempts and per-attempt backoff cap (seconds)
     MAX_RECONNECT_ATTEMPTS = 20
     MAX_RECONNECT_BACKOFF = 60
+    # 两次重连之间的最小间隔（秒）。_reconnect() 只要 connect() 成功就立刻
+    # 返回 True，若对端“连上就断”，listen_messages 会马上再次调用本方法——
+    # 没有这道闸就是无节流的连接洪水（实测 1.2s 内 1.2 万次），而且
+    # MAX_RECONNECT_ATTEMPTS 因为每轮都在第 1 次就成功而永不生效。
+    MIN_RECONNECT_INTERVAL = 1.0
 
     def __init__(self, ws_url: str = "ws://localhost:3001", access_token: Optional[str] = None) -> None:
         self.ws_url = ws_url
@@ -97,7 +102,16 @@ class NapCatWebSocketClient:
 
         self._listening_task = asyncio.create_task(self.listen_messages())
 
-        login_info = await self.get_login_info()
+        try:
+            login_info = await self.get_login_info()
+        except Exception as e:
+            # 闸门超时（login_success_event 10s 未触发）会从这里抛出。不收尾就
+            # 往外抛会留下半开状态：连接还开着、监听还在收消息，宿主却已经记了
+            # 「启动失败」。与下面两个失败分支保持一致：收尾后返回 None。
+            logger.error(f"获取登录信息失败：{e}")
+            await self.close()
+            return
+
         login_id = login_info.get("data", {}).get("user_id")
         if str(login_id) != str(bt_uin):
             logger.error("配置的账号与 NapCat 登录账号不一致")
@@ -139,6 +153,10 @@ class NapCatWebSocketClient:
 
     async def _reconnect(self) -> bool:
         attempt = 0
+        # 进入重连前先过一个最小间隔（见 MIN_RECONNECT_INTERVAL 注释）。
+        # 关闭时直接跳过，避免拖慢收尾。
+        if not self.shutdown_event.is_set():
+            await asyncio.sleep(self.MIN_RECONNECT_INTERVAL)
         while not self.shutdown_event.is_set() and attempt < self.MAX_RECONNECT_ATTEMPTS:
             attempt += 1
             logger.warning(
@@ -239,6 +257,16 @@ class NapCatWebSocketClient:
                         # log it, drop that message, keep listening. Only iterator and
                         # connection failures below are worth a reconnect.
                         logger.error(f"❌ 处理消息失败，已跳过该消息: {e}")
+                # 走到这里 = 迭代器“正常结束”。websockets 的 __aiter__ 在收到
+                # close code 1000/1001 时是 return，而不是抛异常，所以上面两个
+                # except 都不会触发。不在这里显式按断线处理，外层 while 就会对着
+                # 已关闭的连接反复空转：实测 1.6s 内 6 万次 recv、烧满一核 CPU，
+                # 且永不重连、不产生任何日志。
+                logger.warning("🔌 WebSocket 连接已被对端正常关闭")
+                if not await self._reconnect():
+                    await self.close()
+                    break
+                continue
             except websockets.exceptions.ConnectionClosed:
                 logger.warning("🔌 WebSocket 连接已关闭")
                 success = await self._reconnect()
@@ -262,9 +290,12 @@ class NapCatWebSocketClient:
         # Check if this is an API response - must be handled synchronously
         # to ensure response futures are set before event callbacks execute
         echo = data.get("echo")
-        if echo and echo in self.response_futures:
-            future = self.response_futures.pop(echo)
-            if not future.cancelled():
+        if echo:
+            # 带 echo 的一律是 API 响应：即使该请求已超时被清理，也不能再往下
+            # 当事件派发——否则迟到的失败响应会落到 napcat 回调，被 retcode
+            # 1403 判成「Token 无效」从而 close() 掉整个客户端。
+            future = self.response_futures.pop(echo, None)
+            if future is not None and not future.cancelled():
                 future.set_result(data)
             return
 
@@ -488,8 +519,10 @@ class NapCatWebSocketClient:
             # here would raise CancelledError and mask the intended TimeoutError).
             self.response_futures.pop(echo, None)
             raise TimeoutError(f"请求 {action} 超时")
-        except Exception:
+        except BaseException:
             # Same as above: just drop the entry without awaiting it.
+            # 用 BaseException 而非 Exception：调用方被取消时抛的是
+            # CancelledError，它不属于 Exception，会绕过清理把条目留在字典里。
             self.response_futures.pop(echo, None)
             raise
 
@@ -507,9 +540,15 @@ class NapCatWebSocketClient:
             if not future.done():
                 future.set_exception(ConnectionError("NapCat 连接已关闭"))
         self.response_futures.clear()
-        if self.websocket:
-            await self.websocket.close()
-            self.websocket = None
+        # 与 _reconnect 的写法对齐：先把引用摘掉再关。否则 ws.close() 一旦抛错，
+        # websocket 会留着指向已关闭的连接（前置守卫失效），而且下面的监听任务
+        # 取消根本执行不到，收尾半途而废。
+        ws, self.websocket = self.websocket, None
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception as e:
+                logger.warning(f"关闭 WebSocket 时出错（已忽略）: {e}")
         # On a reconnect failure, listen_messages calls close() from within
         # _listening_task itself: a task must not cancel and then await itself,
         # and it must not swallow its own cancellation signal either.
@@ -524,6 +563,8 @@ class NapCatWebSocketClient:
                 await self._listening_task  # 等待任务被取消
             except asyncio.CancelledError:
                 logger.info(f"已停止监听账号 {self.self_id} 的消息")
+                if not self._listening_task.cancelled():
+                    raise        # 是自己的取消：不能吞掉调用方的取消信号
                 return
             except Exception as e:
                 logger.error(f"取消监听消息任务时发生错误: {e}")
