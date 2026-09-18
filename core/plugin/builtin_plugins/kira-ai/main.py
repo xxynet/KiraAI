@@ -87,7 +87,7 @@ class DefaultPlugin(BasePlugin):
             if caps.get("enabled", True):
                 tag_set.register(SelfieTag(ctx=self.ctx))
         if "file" in message_types:
-            tag_set.register(build_file_tag())
+            tag_set.register(build_file_tag(sid=event.sid))
         if "video" in message_types:
             caps = capabilities.get("video_generation", {})
             if caps.get("enabled", False):
