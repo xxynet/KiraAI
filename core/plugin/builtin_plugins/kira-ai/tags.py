@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 from typing import Optional, Type
@@ -242,14 +243,14 @@ def build_file_tag(sid: str = ""):
             super().__init__()
             self.sid = sid
 
-        def _resolve_local_file(self, value: str) -> tuple[Optional[str], Optional[str]]:
+        async def _resolve_local_file(self, value: str) -> tuple[Optional[str], Optional[str]]:
             """Resolve a local path through the send policy (see file_send_policy).
 
             Returns ``(file_string, name)``, or ``(None, None)`` when the path
-            is not sendable or the file does not exist.
+            is not sendable or does not point to an existing regular file.
             """
-            abs_path = resolve_local_send_path(value, sid=self.sid)
-            if abs_path is None or not os.path.exists(abs_path):
+            abs_path = await asyncio.to_thread(resolve_local_send_path, value, self.sid)
+            if abs_path is None or not await asyncio.to_thread(os.path.isfile, abs_path):
                 return None, None
             return abs_path, Path(abs_path).name
 
@@ -265,7 +266,7 @@ def build_file_tag(sid: str = ""):
                 file_string = value
                 name = None
             else:
-                file_string, name = self._resolve_local_file(value)
+                file_string, name = await self._resolve_local_file(value)
                 if file_string is None:
                     return []
 

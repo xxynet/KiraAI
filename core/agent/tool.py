@@ -1,12 +1,38 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, Union, Type
+import asyncio
 import os
+import shutil
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional, Union, Type
 
 from core.utils.tool_utils import BaseTool
 from core.utils.path_utils import get_data_path
 from core.chat.message_elements import Image, Record, File
+
+
+def _stage_file_to_temp(abs_path: str) -> Optional[str]:
+    """Copy an attachment living outside the data root into data/temp.
+
+    The <file> tag send policy only delivers files under data/files,
+    data/temp or the configured extra read paths, so a foreign path (e.g. an
+    MCP ``file:///`` resource) is staged under data/temp and the staged
+    relative path is advertised to the LLM instead of the original. Returns
+    the ``data/temp/...`` path of the copy, or None when the source is
+    missing or cannot be copied.
+    """
+    try:
+        if not os.path.isfile(abs_path):
+            return None
+        temp_dir = get_data_path() / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        staged_name = f"{uuid.uuid4().hex[:8]}-{Path(abs_path).name}"
+        shutil.copyfile(abs_path, temp_dir / staged_name)
+        return f"data/temp/{staged_name}"
+    except OSError:
+        return None
 
 
 @dataclass
@@ -81,7 +107,10 @@ class ToolResult:
                     rel_to_data = os.path.relpath(abs_path, start=data_root)
                     file_string = os.path.join("data", rel_to_data).replace("\\", "/")
                 else:
-                    file_string = abs_path.replace("\\", "/")
+                    staged = await asyncio.to_thread(_stage_file_to_temp, abs_path)
+                    if not staged:
+                        continue
+                    file_string = staged
                 normalized_paths.append(file_string)
 
             if normalized_paths:

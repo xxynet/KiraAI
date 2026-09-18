@@ -1,5 +1,6 @@
 import importlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -65,11 +66,28 @@ async def test_absolute_under_data_files_allowed(sandbox):
 @pytest.mark.anyio
 async def test_path_traversal_rejected(sandbox):
     data_root, _ = sandbox
-    secret = tmp_secret = data_root.parent / "secret.txt"
-    secret.write_text("secret", encoding="utf-8")
+    outside = data_root.parent / "outside.txt"
+    outside.write_text("content", encoding="utf-8")
 
-    assert await build_tag().handle("data/../secret.txt") == []
-    assert await build_tag().handle("../secret.txt") == []
+    assert await build_tag().handle("../outside.txt") == []
+    assert await build_tag().handle("data/../outside.txt") == []
+
+
+@pytest.mark.anyio
+async def test_data_paths_outside_base_dirs_rejected(sandbox):
+    data_root, _ = sandbox
+    agent_json = data_root / "config" / "plugins" / "agent.json"
+    agent_json.parent.mkdir(parents=True)
+    agent_json.write_text("{}", encoding="utf-8")
+
+    # The agent plugin config itself must never be sendable...
+    assert await build_tag().handle("data/config/plugins/agent.json") == []
+    # ...including via ``..`` segments that normalize inside the data prefix.
+    assert await build_tag().handle("data/files/../config/plugins/agent.json") == []
+    # The bare data root is not a sendable file either.
+    assert await build_tag().handle("data") == []
+    # Directories are not sendable, only regular files.
+    assert await build_tag().handle("data/files") == []
 
 
 @pytest.mark.anyio
@@ -184,3 +202,34 @@ async def test_bare_relative_path_rejected(sandbox):
 @pytest.mark.anyio
 async def test_missing_file_returns_empty(sandbox):
     assert await build_tag().handle("data/temp/ghost.txt") == []
+
+
+@pytest.mark.anyio
+async def test_drive_relative_dotdot_not_aliased_into_data_root(sandbox):
+    data_root, _ = sandbox
+    (data_root / "files" / "a.txt").write_text("decoy", encoding="utf-8")
+    drive = os.path.splitdrive(str(data_root))[0]
+    if not drive:
+        pytest.skip("no drive letters on this platform")
+    value = f"{drive}:/../{data_root.name}/files/a.txt"
+
+    # ``D:/../data/files/a.txt`` must be judged as a D:/ path, not aliased
+    # into the sandboxed data root by posix normalization.
+    assert await build_tag().handle(value) == []
+
+
+@pytest.mark.anyio
+async def test_extra_data_entry_covers_whole_data_root(sandbox):
+    data_root, config_root = sandbox
+    target = data_root / "memory" / "note.txt"
+    target.parent.mkdir(parents=True)
+    target.write_text("note", encoding="utf-8")
+    write_agent_config(config_root, {
+        "permission_mode": "allow_list",
+        "session_list": ["test:dm:1"],
+        "extra_read_paths": ["data"],
+    })
+
+    # A bare ``data`` entry authorizes the whole data root for listed sessions.
+    assert len(await build_tag(sid="test:dm:1").handle(str(target))) == 1
+    assert await build_tag(sid="test:dm:2").handle(str(target)) == []

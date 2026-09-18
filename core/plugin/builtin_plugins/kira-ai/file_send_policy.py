@@ -9,8 +9,10 @@ plugin decoupled from the agent plugin instance.
 """
 
 import json
+import ntpath
 import os
 import posixpath
+import re
 from typing import Optional
 
 from core.logging_manager import get_logger
@@ -30,6 +32,10 @@ RESTRICTED_PATHS = ['~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/', '.pem',
 # Session permission modes, mirroring the agent plugin's file_access config.
 ALLOW_LIST = "allow_list"
 DENY_LIST = "deny_list"
+
+# Windows drive-letter and UNC forms, normalized with ntpath instead of
+# posixpath (see normalize_send_path).
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 
 def read_agent_file_access() -> dict:
@@ -55,9 +61,16 @@ def read_agent_file_access() -> dict:
 
 
 def normalize_send_path(path: str) -> Optional[str]:
-    """Normalize a send path and reject ``..`` traversal, mirroring read_file."""
-    normalized = path.replace("\\", "/")
-    normalized = posixpath.normpath(normalized)
+    """Normalize a send path and reject ``..`` traversal, mirroring read_file.
+
+    Windows drive/UNC forms are normalized with ntpath: posixpath would
+    collapse a leading ``..`` past the drive letter, so ``C:/../data/files``
+    would alias into the local data root instead of staying a ``C:/`` path.
+    """
+    if _WINDOWS_DRIVE_RE.match(path) or path.startswith("\\\\"):
+        normalized = ntpath.normpath(path).replace("\\", "/")
+    else:
+        normalized = posixpath.normpath(path.replace("\\", "/"))
     if normalized.startswith("../") or normalized == "..":
         return None
     return normalized
@@ -108,7 +121,12 @@ def collect_extra_send_prefixes(section: dict) -> list[str]:
         normalized = normalize_send_path(entry.strip())
         if normalized is None:
             continue
-        if normalized.startswith("data/"):
+        # A bare ``data`` entry authorizes the whole data root, matching how
+        # read_file's prefix check treats it; resolve it so absolute candidate
+        # paths are covered too.
+        if normalized == "data":
+            normalized = str(data_root)
+        elif normalized.startswith("data/"):
             normalized = str(data_root / normalized.removeprefix("data/"))
         prefixes.append(normalized)
     return prefixes
@@ -122,6 +140,11 @@ def resolve_local_send_path(value: str, sid: str = "") -> Optional[str]:
     agent plugin's ``extra_read_paths`` additionally require the session to
     pass its file_access allow/deny list. Existence of the file is not
     checked here; callers decide how to handle missing files.
+
+    The restricted keyword check also covers the base paths, mirroring
+    read_file: a file whose name matches (e.g. a user-uploaded
+    ``api_token.txt`` cached in data/temp) is intentionally not sendable,
+    even though the name alone says nothing about the content.
     """
     normalized = normalize_send_path(value)
     if normalized is None:
