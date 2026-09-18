@@ -1,0 +1,138 @@
+{
+  "tools": {
+    "type": "section",
+    "name": "Tools",
+    "hint": "Which agent capabilities are exposed to the AI",
+    "locales": {
+      "zh": { "name": "工具", "hint": "提供给 AI 的智能体能力" }
+    },
+    "fields": {
+      "enabled_tools": {
+        "name": "Enabled Tools",
+        "type": "multi_select",
+        "default": ["read_file", "write_file", "edit_file", "list_files", "grep", "search_files", "exec"],
+        "options": ["read_file", "write_file", "edit_file", "list_files", "grep", "search_files", "exec"],
+        "hint": "Select which tools to expose to the AI. Deselect to disable. manage_background_exec is enabled together with exec.",
+        "locales": {
+          "zh": { "name": "启用的工具", "hint": "选择要提供给 AI 的工具，取消选择即可禁用对应工具；manage_background_exec 随 exec 一同启用" }
+        }
+      }
+    }
+  },
+  "file_access": {
+    "type": "section",
+    "name": "File Access",
+    "hint": "Who may use the file tools, and which extra paths they may reach",
+    "locales": {
+      "zh": { "name": "文件访问", "hint": "谁可以使用文件工具，以及可以访问哪些额外路径" }
+    },
+    "fields": {
+      "permission_mode": {
+        "name": "Session Permission Mode",
+        "type": "string",
+        "options": ["allow_list", "deny_list"],
+        "default": "allow_list",
+        "hint": "allow_list: only the sessions in the list may use the file tools. deny_list: every session except the listed ones may.",
+        "locales": {
+          "zh": { "name": "会话权限模式", "hint": "allow_list：仅名单内的会话可以使用文件工具；deny_list：除名单内的会话外都可以使用" }
+        }
+      },
+      "session_list": {
+        "name": "Sessions",
+        "type": "multi_select",
+        "source": "session",
+        "allow_custom": true,
+        "default": [],
+        "hint": "Pick sessions from the list, or type one as <adapter_name>:<gm/dm>:<session_id>. The permission mode decides whether this list allows or denies.",
+        "locales": {
+          "zh": { "name": "会话名单", "hint": "从列表中一键选择会话，或手动输入 `<adapter_name>:<gm/dm>:<session_id>`；该名单是白名单还是黑名单由会话权限模式决定" }
+        }
+      },
+      "extra_read_paths": {
+        "name": "Extra Read Paths",
+        "type": "list",
+        "default": [],
+        "hint": "Additional allowed path prefixes for read_file, list_files, grep and search_files",
+        "locales": {
+          "zh": { "name": "额外允许读取的路径", "hint": "read_file、list_files、grep 和 search_files 额外允许的路径前缀" }
+        }
+      },
+      "extra_write_paths": {
+        "name": "Extra Write Paths",
+        "type": "list",
+        "default": [],
+        "hint": "Additional allowed path prefixes for write_file and edit_file",
+        "locales": {
+          "zh": { "name": "额外允许写入的路径", "hint": "write_file 和 edit_file 额外允许的路径前缀" }
+        }
+      }
+    }
+  },
+  "exec_access": {
+    "type": "section",
+    "name": "Command Execution",
+    "hint": "Who may run shell commands, and under which limits",
+    "locales": {
+      "zh": { "name": "命令执行", "hint": "谁可以执行命令，以及执行限制" }
+    },
+    "fields": {
+      "permission_mode": {
+        "name": "Session Permission Mode",
+        "type": "string",
+        "options": ["allow_list", "deny_list"],
+        "default": "allow_list",
+        "hint": "allow_list: only the sessions in the list may run shell commands. deny_list: every session except the listed ones may.",
+        "locales": {
+          "zh": { "name": "会话权限模式", "hint": "allow_list：仅名单内的会话可以执行命令；deny_list：除名单内的会话外都可以执行" }
+        }
+      },
+      "session_list": {
+        "name": "Sessions",
+        "type": "multi_select",
+        "source": "session",
+        "allow_custom": true,
+        "default": [],
+        "hint": "Pick sessions from the list, or type one as <adapter_name>:<gm/dm>:<session_id>. The permission mode decides whether this list allows or denies.",
+        "locales": {
+          "zh": { "name": "会话名单", "hint": "从列表中一键选择会话，或手动输入 `<adapter_name>:<gm/dm>:<session_id>`；该名单是白名单还是黑名单由会话权限模式决定" }
+        }
+      },
+      "command_deny_list": {
+        "name": "Command Deny List",
+        "type": "list",
+        "default": ["shutdown", "poweroff", "sudo"],
+        "hint": "Commands that may never run, regardless of the session permission",
+        "locales": {
+          "zh": { "name": "命令黑名单", "hint": "无论会话权限如何都禁止执行的命令" }
+        }
+      },
+      "timeout": {
+        "name": "Exec Timeout",
+        "type": "integer",
+        "default": 30,
+        "hint": "Maximum runtime in seconds for commands without background mode.",
+        "locales": {
+          "zh": { "name": "前台命令超时", "hint": "未启用后台模式的命令最大运行时间，单位为秒。" }
+        }
+      },
+      "background_timeout": {
+        "name": "Background Exec Timeout",
+        "type": "integer",
+        "default": 300,
+        "hint": "Maximum total runtime in seconds for commands in background mode.",
+        "locales": {
+          "zh": { "name": "后台命令超时", "hint": "启用后台模式的命令最大总运行时间，单位为秒。" }
+        }
+      },
+      "background_wait_seconds": {
+        "name": "Background Exec Wait Time",
+        "type": "integer",
+        "default": 2,
+        "hint": "How long to wait in seconds for a background command to finish before returning a task ID.",
+        "locales": {
+          "zh": { "name": "后台命令等待时长", "hint": "后台命令开始后等待结果的时长；超过该时长将返回任务 ID，单位为秒。" }
+        }
+      }
+    }
+  }
+}

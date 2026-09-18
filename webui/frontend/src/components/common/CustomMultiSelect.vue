@@ -52,6 +52,31 @@
         @keydown.space.prevent="handleSpaceKey"
         @keydown.esc="closeDropdown"
       >
+        <!-- Free-form entry: lets the user add a value that is not listed below.
+             click.stop keeps the teleported dropdown from being treated as an
+             outside click by the document listener. -->
+        <div v-if="allowCustom" class="custom-select-custom" @click.stop>
+          <input
+            ref="customInputRef"
+            v-model="customDraft"
+            type="text"
+            class="custom-select-custom-input"
+            :placeholder="customPlaceholder || ''"
+            @click.stop
+            @keydown.enter.prevent.stop="commitCustomValue"
+            @keydown.space.stop
+          >
+          <button
+            type="button"
+            class="custom-select-custom-add"
+            :disabled="!customDraft.trim()"
+            :title="customPlaceholder || ''"
+            @click.stop="commitCustomValue"
+          >
+            <IconPlus width="16" height="16" />
+          </button>
+        </div>
+        <div v-if="allowCustom && options.length > 0" class="custom-select-divider" />
         <div
           v-for="(option, idx) in options"
           :key="option.value"
@@ -74,7 +99,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
-import { IconCheck, IconX, IconChevronDown } from '@/components/icons'
+import { IconCheck, IconPlus, IconX, IconChevronDown } from '@/components/icons'
 
 interface Option {
   value: string
@@ -86,6 +111,10 @@ const props = defineProps<{
   options: Option[]
   placeholder?: string
   disabled?: boolean
+  /** Allow values typed by the user that are not part of `options` */
+  allowCustom?: boolean
+  /** Placeholder for the free-form entry input (only used with allowCustom) */
+  customPlaceholder?: string
 }>()
 
 const emit = defineEmits<{
@@ -95,6 +124,8 @@ const emit = defineEmits<{
 const isOpen = ref(false)
 const containerRef = ref<HTMLElement>()
 const optionsRef = ref<HTMLElement>()
+const customInputRef = ref<HTMLInputElement>()
+const customDraft = ref('')
 const dropdownStyle = ref<Record<string, string>>({})
 const activeIndex = ref(-1)
 const selectId = `cms-${Math.random().toString(36).slice(2, 9)}`
@@ -115,8 +146,18 @@ function findScrollAncestor(el: HTMLElement | null): HTMLElement | null {
 
 const hasValue = computed(() => props.modelValue.length > 0)
 
+/**
+ * Selected entries as {value, label} pairs: known options keep their label and
+ * the option-list order, while values absent from `options` (typed by the user
+ * when allowCustom is set) are appended and labelled by their raw value.
+ */
 const selectedOptions = computed(() => {
-  return props.options.filter(opt => props.modelValue.includes(opt.value))
+  const knownOptions = props.options.filter(opt => props.modelValue.includes(opt.value))
+  const knownValues = new Set(props.options.map(opt => opt.value))
+  const customOptions = props.modelValue
+    .filter(value => !knownValues.has(value))
+    .map(value => ({ value, label: value }))
+  return [...knownOptions, ...customOptions]
 })
 
 function isSelected(value: string): boolean {
@@ -173,6 +214,10 @@ function openDropdown() {
     openTimerId = null
     if (!isOpen.value) return
     adjustPosition()
+    // Free-form entry is the primary action for custom values, so focus it on open.
+    if (props.allowCustom) {
+      customInputRef.value?.focus({ preventScroll: true })
+    }
     scrollAncestor = containerRef.value ? findScrollAncestor(containerRef.value) : null
     if (scrollAncestor) {
       scrollAncestor.addEventListener('scroll', closeDropdown, { passive: true })
@@ -188,6 +233,7 @@ function closeDropdown() {
 
   isOpen.value = false
   activeIndex.value = -1
+  customDraft.value = ''
 
   if (openTimerId !== null) {
     clearTimeout(openTimerId)
@@ -261,6 +307,15 @@ function removeOption(value: string) {
     current.splice(index, 1)
     emit('update:modelValue', current)
   }
+}
+
+/** Add the free-form entry as a new value (no-op when empty or already selected). */
+function commitCustomValue() {
+  const value = customDraft.value.trim()
+  if (!value) return
+  customDraft.value = ''
+  if (props.modelValue.includes(value)) return
+  emit('update:modelValue', [...props.modelValue, value])
 }
 
 function handleClickOutside(event: MouseEvent) {
@@ -364,5 +419,65 @@ onUnmounted(() => {
 
 .custom-select-option.highlighted {
   background-color: var(--color-accent-subtle);
+}
+
+/* Free-form entry row (allowCustom) */
+.custom-select-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  /* Keep the entry visible while the option list scrolls underneath it */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--color-surface-overlay);
+}
+
+.custom-select-custom-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.custom-select-custom-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
+}
+
+.custom-select-custom-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.custom-select-custom-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--color-text-accent);
+  background-color: var(--color-accent-subtle);
+  cursor: pointer;
+  transition: opacity 0.15s ease-in-out;
+}
+
+.custom-select-custom-add:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.custom-select-divider {
+  height: 1px;
+  margin: 2px 6px 6px;
+  background-color: var(--color-border-strong);
 }
 </style>

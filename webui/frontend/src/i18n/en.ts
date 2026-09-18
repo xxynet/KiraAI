@@ -967,6 +967,7 @@ export default {
     select_model: '— Select model —',
     select_persona: 'Select Persona',
     select_session: 'Select Session',
+    multi_select_custom_placeholder: 'Type a value and press Enter to add',
     json_invalid: 'Invalid JSON in field "{field}": {error}',
   },
   login: {

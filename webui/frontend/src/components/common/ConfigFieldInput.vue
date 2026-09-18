@@ -8,6 +8,8 @@
       v-if="isMultiSelectLike(field.type)"
       :modelValue="(value as string[]) ?? []"
       :options="multiOptions"
+      :allow-custom="!!field.allow_custom"
+      :custom-placeholder="t('config.multi_select_custom_placeholder')"
       :placeholder="hint || 'Select...'"
       @update:modelValue="update($event)"
     />

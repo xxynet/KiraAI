@@ -3,13 +3,13 @@
     "plugin_id": "kira_session_plugin",
     "version": "1.0.0",
     "author": "KiraAI",
-    "description": "Session tools that enable LLM to interact across sessions",
+    "description": "Cross-session messaging tool (session_send) that lets the LLM send messages to other private or group sessions",
     "repo": null,
     "tags": ["session", "tools"],
     "locales": {
         "zh": {
             "display_name": "会话工具",
-            "description": "跨会话交互的 LLM 工具"
+            "description": "跨会话消息发送工具（session_send），让 LLM 向其他私聊或群聊会话发送消息"
         }
     }
 }
