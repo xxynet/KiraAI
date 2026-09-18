@@ -294,18 +294,33 @@ class BaseMediaElement(BaseMessageElement, ABC):
                             pass
                     self.name = filename
             if self.mime and not os.path.splitext(file_path)[1]:
-                # Give the downloaded temp file a type-correct extension.
+                # Give the downloaded temp file a type-correct extension
+                # without clobbering a typed path another element may already
+                # reference: os.link creates the destination atomically and
+                # fails with FileExistsError instead of overwriting.
                 ext = mimetypes.guess_extension(self.mime)
                 if ext:
-                    try:
-                        desired_path = file_path + ext
-                        os.replace(file_path, desired_path)
-                        file_path = desired_path
-                        self._temp_path = desired_path
-                        if self.name and not os.path.splitext(self.name)[1]:
-                            self.name = self.name + ext
-                    except Exception:
-                        pass
+                    candidate = file_path + ext
+                    counter = 1
+                    while True:
+                        try:
+                            os.link(file_path, candidate)
+                            break
+                        except FileExistsError:
+                            candidate = f"{file_path}_{counter}{ext}"
+                            counter += 1
+                        except OSError:
+                            candidate = None  # hard links unsupported; keep as-is
+                            break
+                    if candidate:
+                        try:
+                            os.unlink(file_path)
+                            file_path = candidate
+                            self._temp_path = candidate
+                            if self.name and not os.path.splitext(self.name)[1]:
+                                self.name = self.name + ext
+                        except OSError:
+                            pass
             return file_path
         return file_path
 

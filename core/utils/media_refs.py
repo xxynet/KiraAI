@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Iterable
 
-from core.chat.message_elements import BaseMediaElement
+from core.chat.message_elements import BaseMediaElement, _infer_mime_from_bytes
 from core.utils.path_utils import get_data_path, is_within_directory
 
 
@@ -60,8 +60,9 @@ async def store_session_media(
             raise ValueError("Incoming media contains invalid base64") from exc
 
     # Read the mime after materializing the data so that the Content-Type
-    # recorded by to_path() or the magic bytes sniffed by to_base64() apply.
-    mime_type = media.mime or "image/jpeg"
+    # recorded by to_path() or the magic bytes sniffed by to_base64() apply;
+    # sniff the raw bytes as well before falling back to image/jpeg.
+    mime_type = media.mime or _infer_mime_from_bytes(raw_data[:16]) or "image/jpeg"
     content_hash = hashlib.sha256(raw_data).hexdigest()
     target = _message_directory(session_id, message_id) / (
         content_hash + _extension_for_mime(mime_type)

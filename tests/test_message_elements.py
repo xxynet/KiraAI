@@ -274,6 +274,37 @@ async def test_to_path_records_content_type_for_extensionless_url(tmp_path, monk
         assert f.read() == png_bytes
 
 
+@pytest.mark.asyncio
+async def test_to_path_extension_rename_does_not_clobber_cached_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.chat.message_elements.get_data_path", lambda: tmp_path)
+    payloads = [b'\x89PNG\r\n\x1a\n' + b'A' * 8, b'\x89PNG\r\n\x1a\n' + b'B' * 8]
+    downloads = {"count": 0}
+
+    class FakeResponse:
+        headers = {"Content-Type": "image/png"}
+
+    async def fake_download_file(url, path, *args, **kwargs):
+        with open(path, "wb") as f:
+            f.write(payloads[downloads["count"]])
+        downloads["count"] += 1
+        return FakeResponse()
+
+    monkeypatch.setattr("core.chat.message_elements.download_file", fake_download_file)
+    first = Image("https://multimedia.example.com/download?fid=1")
+    second = Image("https://multimedia.example.com/download?fid=2")
+
+    first_path = await first.to_path()
+    second_path = await second.to_path()
+
+    assert first_path != second_path
+    assert first_path.endswith(".png")
+    assert second_path.endswith(".png")
+    with open(first_path, "rb") as f:
+        assert f.read() == payloads[0]
+    with open(second_path, "rb") as f:
+        assert f.read() == payloads[1]
+
+
 # ── Sticker element ─────────────────────────────────────────────────
 
 def test_sticker_repr_with_id():

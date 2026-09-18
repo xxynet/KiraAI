@@ -50,6 +50,24 @@ async def test_session_media_reference_is_resolved_only_for_provider_request(
 
 
 @pytest.mark.asyncio
+async def test_store_session_media_sniffs_mime_from_raw_bytes(tmp_path, monkeypatch):
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+    source = tmp_path / "extensionless_image"
+    source.write_bytes(png_bytes)
+    image = Image(str(source))
+    assert image.mime is None
+
+    reference = await media_refs.store_session_media(
+        image, "adapter:dm:user", "message-1"
+    )
+
+    assert reference["mime_type"] == "image/png"
+    assert reference["path"].endswith(".png")
+    assert (tmp_path / reference["path"]).read_bytes() == png_bytes
+
+
+@pytest.mark.asyncio
 async def test_cleanup_session_media_removes_unreferenced_files(tmp_path, monkeypatch):
     monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
     image = Image("data:image/png;base64,aGVsbG8=")
