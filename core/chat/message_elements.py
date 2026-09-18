@@ -62,6 +62,36 @@ def _build_temp_file_path(name: Optional[str], mime: Optional[str]) -> str:
         counter += 1
 
 
+def _move_no_clobber(source: str, candidate: str) -> Optional[str]:
+    """Move source to candidate without ever overwriting an existing file.
+
+    The publish step is an exclusive hard link, so a path already referenced
+    by another element is never replaced; a taken name falls back to a unique
+    numbered candidate. Returns the final path, or None when the move was not
+    possible (e.g. filesystems without hard link support).
+    """
+    counter = 1
+    while True:
+        try:
+            os.link(source, candidate)
+            break
+        except FileExistsError:
+            root, ext = os.path.splitext(candidate)
+            candidate = f"{root}_{counter}{ext}"
+            counter += 1
+        except OSError:
+            return None
+    try:
+        os.unlink(source)
+    except OSError:
+        try:
+            os.unlink(candidate)
+        except OSError:
+            pass
+        return None
+    return candidate
+
+
 class ElementType(Enum):
     Text = "text"
     Image = "image"
@@ -176,6 +206,10 @@ class BaseMediaElement(BaseMessageElement, ABC):
         self._temp_path: Optional[str] = None
         self.file_type: Literal["url", "path", "base64", "data_url"] = self.check_file_type()
         self.mime: Optional[str] = mime or self._guess_mime()
+        # Track whether the caller supplied the MIME explicitly: values merely
+        # guessed from a URL or filename may be replaced by stronger evidence
+        # (response Content-Type, magic bytes) at the point of use.
+        self._mime_from_caller = bool(mime)
 
     def check_file_type(self) -> Literal["url", "path", "base64", "data_url"]:
         # 1 http(s) URL
@@ -248,16 +282,34 @@ class BaseMediaElement(BaseMessageElement, ABC):
         file_path = _build_temp_file_path(self.name, self.mime)
         self._temp_path = file_path
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        # Reserve the path right away: the allocator only avoids existing
+        # names, so without this placeholder a concurrent element could pick
+        # the same path while this download is still awaiting the network.
+        try:
+            os.close(os.open(file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        except FileExistsError:
+            pass
         if self.file_type in ("base64", "data_url"):
             b64 = await self.to_base64()
             with open(file_path, "wb") as f:
                 f.write(base64.b64decode(b64))
             return file_path
         if self.file_type == "url" and self.file:
-            resp = await download_file(self.file, file_path)
+            try:
+                resp = await download_file(self.file, file_path)
+            except Exception:
+                # Drop the reserved placeholder so a retry can start fresh.
+                try:
+                    os.unlink(file_path)
+                except OSError:
+                    pass
+                self._temp_path = None
+                raise
             # Record the server-declared Content-Type before any rename so the
-            # stored file name can be built with the correct extension.
-            if not self.mime:
+            # stored file name can be built with the correct extension. A MIME
+            # merely guessed from the URL or filename may be replaced here; an
+            # explicitly supplied one is kept.
+            if not self._mime_from_caller:
                 content_type = resp.headers.get("Content-Type") or resp.headers.get("content-type")
                 if content_type:
                     self.mime = content_type.split(";", 1)[0].strip()
@@ -283,44 +335,24 @@ class BaseMediaElement(BaseMessageElement, ABC):
                     if value:
                         parsed = urlparse(value)
                         filename = os.path.basename(parsed.path)
-                if filename:
+                if filename and filename != os.path.basename(file_path):
                     desired_path = _build_temp_file_path(filename, self.mime)
-                    if desired_path != file_path:
-                        try:
-                            os.replace(file_path, desired_path)
-                            file_path = desired_path
-                            self._temp_path = desired_path
-                        except Exception:
-                            pass
+                    moved = _move_no_clobber(file_path, desired_path)
+                    if moved:
+                        file_path = moved
+                        self._temp_path = moved
                     self.name = filename
             if self.mime and not os.path.splitext(file_path)[1]:
                 # Give the downloaded temp file a type-correct extension
-                # without clobbering a typed path another element may already
-                # reference: os.link creates the destination atomically and
-                # fails with FileExistsError instead of overwriting.
+                # without clobbering a typed path another element may use.
                 ext = mimetypes.guess_extension(self.mime)
                 if ext:
-                    candidate = file_path + ext
-                    counter = 1
-                    while True:
-                        try:
-                            os.link(file_path, candidate)
-                            break
-                        except FileExistsError:
-                            candidate = f"{file_path}_{counter}{ext}"
-                            counter += 1
-                        except OSError:
-                            candidate = None  # hard links unsupported; keep as-is
-                            break
-                    if candidate:
-                        try:
-                            os.unlink(file_path)
-                            file_path = candidate
-                            self._temp_path = candidate
-                            if self.name and not os.path.splitext(self.name)[1]:
-                                self.name = self.name + ext
-                        except OSError:
-                            pass
+                    moved = _move_no_clobber(file_path, file_path + ext)
+                    if moved:
+                        file_path = moved
+                        self._temp_path = moved
+                        if self.name and not os.path.splitext(self.name)[1]:
+                            self.name = self.name + ext
             return file_path
         return file_path
 
@@ -328,7 +360,7 @@ class BaseMediaElement(BaseMessageElement, ABC):
         """Better use to_path for large File or Video objects"""
 
         if self.file_type == "base64" and self.file is not None:
-            if not self.mime:
+            if not self._mime_from_caller:
                 try:
                     detected = _infer_mime_from_bytes(base64.b64decode(self.file[:32]))
                     if detected:
@@ -346,7 +378,7 @@ class BaseMediaElement(BaseMessageElement, ABC):
                 return base64.b64encode(f.read()).decode()
         if self.file_type == "url" and self.file is not None:
             data = await get_file_content(self.file)
-            if not self.mime:
+            if not self._mime_from_caller:
                 detected = _infer_mime_from_bytes(data[:16])
                 if detected:
                     self.mime = detected
@@ -375,13 +407,17 @@ class BaseMediaElement(BaseMessageElement, ABC):
         if not base64_str:
             raise ValueError("Failed to fetch base64 data")
 
-        # Get MIME type
+        # Get MIME type: magic bytes outrank a value merely guessed from a URL
+        # or filename extension; an explicitly supplied MIME is kept as-is.
         mime = self.mime
-        if not mime:
+        if not self._mime_from_caller:
             # Try to detect from actual content via magic bytes
             try:
                 sample = base64.b64decode(base64_str[:32])
-                mime = _infer_mime_from_bytes(sample)
+                detected = _infer_mime_from_bytes(sample)
+                if detected:
+                    mime = detected
+                    self.mime = detected
             except (binascii.Error, ValueError, TypeError) as e:
                 logger.debug(f"MIME inference from bytes failed (sample len={len(base64_str[:32])}): {e}")
         if not mime:

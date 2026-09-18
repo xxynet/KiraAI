@@ -5,6 +5,7 @@ import tempfile
 import pytest
 
 from core.chat.message_elements import (
+    _build_temp_file_path,
     _infer_mime_from_bytes,
     check_base64,
     ElementType,
@@ -299,6 +300,119 @@ async def test_to_path_extension_rename_does_not_clobber_cached_file(tmp_path, m
     assert first_path != second_path
     assert first_path.endswith(".png")
     assert second_path.endswith(".png")
+    with open(first_path, "rb") as f:
+        assert f.read() == payloads[0]
+    with open(second_path, "rb") as f:
+        assert f.read() == payloads[1]
+
+
+@pytest.mark.asyncio
+async def test_to_path_content_type_overrides_url_extension_guess(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.chat.message_elements.get_data_path", lambda: tmp_path)
+    png_bytes = b'\x89PNG\r\n\x1a\n' + b'\x00' * 16
+
+    class FakeResponse:
+        headers = {"Content-Type": "image/png"}
+
+    async def fake_download_file(url, path, *args, **kwargs):
+        with open(path, "wb") as f:
+            f.write(png_bytes)
+        return FakeResponse()
+
+    monkeypatch.setattr("core.chat.message_elements.download_file", fake_download_file)
+    img = Image("https://example.com/photo.jpg")
+    assert img.mime == "image/jpeg"  # guessed from the URL extension
+
+    file_path = await img.to_path()
+
+    assert img.mime == "image/png"
+    assert file_path.endswith(".jpg")
+
+
+@pytest.mark.asyncio
+async def test_to_path_preserves_explicit_caller_mime(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.chat.message_elements.get_data_path", lambda: tmp_path)
+    png_bytes = b'\x89PNG\r\n\x1a\n' + b'\x00' * 16
+
+    class FakeResponse:
+        headers = {"Content-Type": "image/png"}
+
+    async def fake_download_file(url, path, *args, **kwargs):
+        with open(path, "wb") as f:
+            f.write(png_bytes)
+        return FakeResponse()
+
+    monkeypatch.setattr("core.chat.message_elements.download_file", fake_download_file)
+    img = Image("https://example.com/photo.jpg", mime="image/gif")
+
+    await img.to_path()
+
+    assert img.mime == "image/gif"
+
+
+@pytest.mark.asyncio
+async def test_to_data_url_sniff_overrides_url_extension_guess(monkeypatch):
+    png_bytes = b'\x89PNG\r\n\x1a\n' + b'\x00' * 16
+
+    async def fake_get_file_content(url, *args, **kwargs):
+        return png_bytes
+
+    monkeypatch.setattr("core.chat.message_elements.get_file_content", fake_get_file_content)
+    img = Image("https://example.com/photo.jpg")
+    assert img.mime == "image/jpeg"
+
+    data_url = await img.to_data_url()
+
+    assert data_url.startswith("data:image/png;base64,")
+    assert img.mime == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_to_data_url_sniff_overrides_path_extension_guess(tmp_path):
+    png_bytes = b'\x89PNG\r\n\x1a\n' + b'\x00' * 16
+    source = tmp_path / "photo.jpg"
+    source.write_bytes(png_bytes)
+    img = Image(str(source))
+    assert img.mime == "image/jpeg"
+
+    data_url = await img.to_data_url()
+
+    assert data_url.startswith("data:image/png;base64,")
+    assert img.mime == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_to_path_content_disposition_rename_does_not_clobber(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.chat.message_elements.get_data_path", lambda: tmp_path)
+    payloads = [b'A' * 8, b'B' * 8]
+    downloads = {"count": 0}
+
+    class FakeResponse:
+        headers = {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": 'attachment; filename="photo.png"',
+        }
+
+    async def fake_download_file(url, path, *args, **kwargs):
+        # The path must already be reserved exclusively while awaiting the
+        # network, so a concurrent allocator cannot pick the same name.
+        assert os.path.exists(path), "download path not reserved before download"
+        assert _build_temp_file_path("download", None) != path, "reserved path not exclusive"
+        with open(path, "wb") as f:
+            f.write(payloads[downloads["count"]])
+        downloads["count"] += 1
+        return FakeResponse()
+
+    monkeypatch.setattr("core.chat.message_elements.download_file", fake_download_file)
+    first = Image("https://example.com/?fid=1")
+    second = Image("https://example.com/?fid=2")
+
+    first_path = await first.to_path()
+    second_path = await second.to_path()
+
+    assert first_path != second_path
+    assert first_path.endswith("photo.png")
+    assert second_path.endswith("photo_1.png")
     with open(first_path, "rb") as f:
         assert f.read() == payloads[0]
     with open(second_path, "rb") as f:
