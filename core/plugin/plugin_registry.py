@@ -1257,8 +1257,14 @@ class PluginManager:
 
                     class PluginPageStaticFiles(StaticFiles):
                         """StaticFiles with plugin-enabled + optional auth gating."""
-                        def __init__(self, directory: str, html: bool = True):
+                        def __init__(self, directory: str, html: bool = True,
+                                     need_auth: bool = False):
                             super().__init__(directory=directory, html=html)
+                            # Bind per-page flags on the instance: this class is
+                            # defined inside the page-registration loop, so a
+                            # bare `need_auth` free variable would late-bind to
+                            # the LAST page's auth value at request time.
+                            self._need_auth = need_auth
 
                         async def __call__(self, scope, receive, send):
                             # Serve plugin pages with no-store so plugin updates
@@ -1289,7 +1295,7 @@ class PluginManager:
                                     await response(scope, receive, send)
                                     return
                                 # Auth check
-                                if need_auth:
+                                if self._need_auth:
                                     token = None
                                     auth_header = request.headers.get("authorization", "")
                                     if auth_header.startswith("Bearer "):
@@ -1321,6 +1327,7 @@ class PluginManager:
                             PluginPageStaticFiles(
                                 directory=str(folder_path),
                                 html=True,
+                                need_auth=need_auth,
                             ),
                             name=f"plugin:{plugin_id}:page:{route_path}",
                         )
@@ -1424,8 +1431,14 @@ class PluginManager:
                     from fastapi.staticfiles import StaticFiles
 
                     class DeferredPluginPageStaticFiles(StaticFiles):
-                        def __init__(self, directory: str, html: bool = True):
+                        def __init__(self, directory: str, html: bool = True,
+                                     need_auth: bool = False):
                             super().__init__(directory=directory, html=html)
+                            # Bind per-page flags on the instance: this class is
+                            # defined inside the page-registration loop, so a
+                            # bare `need_auth` free variable would late-bind to
+                            # the LAST page's auth value at request time.
+                            self._need_auth = need_auth
 
                         async def __call__(self, scope, receive, send):
                             # Serve plugin pages with no-store so plugin updates
@@ -1454,7 +1467,7 @@ class PluginManager:
                                     )
                                     await response(scope, receive, send)
                                     return
-                                if need_auth:
+                                if self._need_auth:
                                     token = None
                                     auth_header = request.headers.get("authorization", "")
                                     if auth_header.startswith("Bearer "):
@@ -1485,6 +1498,7 @@ class PluginManager:
                             DeferredPluginPageStaticFiles(
                                 directory=str(folder_path),
                                 html=True,
+                                need_auth=need_auth,
                             ),
                             name=f"plugin:{plugin_id}:page:{route_path}",
                         )
