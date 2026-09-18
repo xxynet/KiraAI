@@ -1261,6 +1261,18 @@ class PluginManager:
                             super().__init__(directory=directory, html=html)
 
                         async def __call__(self, scope, receive, send):
+                            # Serve plugin pages with no-store so plugin updates
+                            # take effect without requiring a browser cache clear
+                            # (same policy as PluginBridgeInjectionMiddleware).
+                            from starlette.datastructures import MutableHeaders
+
+                            async def send_with_no_store(message):
+                                if message["type"] == "http.response.start":
+                                    headers = MutableHeaders(scope=message)
+                                    headers["cache-control"] = "no-store"
+                                await send(message)
+
+                            send = send_with_no_store
                             if scope["type"] == "http":
                                 from starlette.requests import Request as StarletteRequest
                                 from webui.utils import verify_session_token
@@ -1414,6 +1426,18 @@ class PluginManager:
                             super().__init__(directory=directory, html=html)
 
                         async def __call__(self, scope, receive, send):
+                            # Serve plugin pages with no-store so plugin updates
+                            # take effect without requiring a browser cache clear
+                            # (same policy as PluginBridgeInjectionMiddleware).
+                            from starlette.datastructures import MutableHeaders
+
+                            async def send_with_no_store(message):
+                                if message["type"] == "http.response.start":
+                                    headers = MutableHeaders(scope=message)
+                                    headers["cache-control"] = "no-store"
+                                await send(message)
+
+                            send = send_with_no_store
                             if scope["type"] == "http":
                                 from starlette.requests import Request as StarletteRequest
                                 from webui.utils import verify_session_token
