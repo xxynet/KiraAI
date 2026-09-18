@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Type
+from typing import Optional, Type
 
 from core.tag import BaseTag
 from core.chat.message_elements import (
@@ -20,6 +20,8 @@ from core.chat.message_elements import (
 from core.utils.path_utils import get_data_path
 from core.utils.common_utils import image_to_base64, text_to_speech, generate_image, image_to_image
 from core.logging_manager import get_logger
+
+from .file_send_policy import resolve_local_send_path
 
 message_logger = get_logger("message", "cyan")
 provider_logger = get_logger("provider", "purple")
@@ -221,22 +223,35 @@ class SelfieTag(BaseTag):
         return []
 
 
-def build_file_tag():
+def build_file_tag(sid: str = ""):
     class FileTag(BaseTag):
         name = "file"
         description = (
             '<file type="image/record/video/file">file_string</file> # send a file '
             "(do not put any other tags in the msg tag which the file tag is in), "
-            "file_string could be a file url, absolute file path or relative file path. "
+            "file_string could be a file url, or a local file path. Local files under "
+            "`data/files/` or `data/temp/` can always be sent, e.g. `data/files/<file name>` "
+            "(list that directory when you need to know what it holds); other local paths "
+            "are only sendable in sessions granted extra file access. "
             "Use `type=` to specify the file type for platforms to parse, e.g. for audios, "
             "set `type` as `record` to send as voice message, `file` to send as audio file. "
-            "defaults to `file`. A file under `data/files/` is sent with its "
-            "`data/files/<file name>` relative path; list that directory when you need "
-            "to know what it holds."
+            "defaults to `file`."
         )
 
         def __init__(self):
             super().__init__()
+            self.sid = sid
+
+        def _resolve_local_file(self, value: str) -> tuple[Optional[str], Optional[str]]:
+            """Resolve a local path through the send policy (see file_send_policy).
+
+            Returns ``(file_string, name)``, or ``(None, None)`` when the path
+            is not sendable or the file does not exist.
+            """
+            abs_path = resolve_local_send_path(value, sid=self.sid)
+            if abs_path is None or not os.path.exists(abs_path):
+                return None, None
+            return abs_path, Path(abs_path).name
 
         async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
             file_type = kwargs.get("type")  # image, record, file, video
@@ -245,22 +260,14 @@ def build_file_tag():
 
             value = value.replace("\\", "/")
 
-            # Absolute path
-            if os.path.exists(value):
-                file_string = value
-                name = Path(value).name
-            elif value.startswith("data/"):
-                abs_path = str(get_data_path() / value.removeprefix("data/"))
-                if not os.path.exists(abs_path):
-                    return []
-                file_string = abs_path
-                name = Path(abs_path).name
             # File URL
-            elif value.startswith(("http://", "https://")):
+            if value.startswith(("http://", "https://")):
                 file_string = value
                 name = None
             else:
-                return []
+                file_string, name = self._resolve_local_file(value)
+                if file_string is None:
+                    return []
 
             if file_type == "file":
                 return [File(file=file_string, name=name)]
