@@ -1266,11 +1266,13 @@ class PluginManager:
                             # (same policy as PluginBridgeInjectionMiddleware).
                             from starlette.datastructures import MutableHeaders
 
+                            original_send = send
+
                             async def send_with_no_store(message):
                                 if message["type"] == "http.response.start":
                                     headers = MutableHeaders(scope=message)
                                     headers["cache-control"] = "no-store"
-                                await send(message)
+                                await original_send(message)
 
                             send = send_with_no_store
                             if scope["type"] == "http":
@@ -1431,11 +1433,13 @@ class PluginManager:
                             # (same policy as PluginBridgeInjectionMiddleware).
                             from starlette.datastructures import MutableHeaders
 
+                            original_send = send
+
                             async def send_with_no_store(message):
                                 if message["type"] == "http.response.start":
                                     headers = MutableHeaders(scope=message)
                                     headers["cache-control"] = "no-store"
-                                await send(message)
+                                await original_send(message)
 
                             send = send_with_no_store
                             if scope["type"] == "http":
