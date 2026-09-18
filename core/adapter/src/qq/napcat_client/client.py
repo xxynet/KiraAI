@@ -105,12 +105,12 @@ class NapCatWebSocketClient:
         try:
             login_info = await self.get_login_info()
         except Exception as e:
-            # 闸门超时（login_success_event 10s 未触发）会从这里抛出。不收尾就
-            # 往外抛会留下半开状态：连接还开着、监听还在收消息，宿主却已经记了
-            # 「启动失败」。与下面两个失败分支保持一致：收尾后返回 None。
+            # 闸门超时 / 被 close() 打断（如 Token 失效）都会从这里抛出。
+            # 收尾不能省：不关连接、不停监听，就会留下「连接还开着、监听还在跑，
+            # 宿主却已经记了启动失败」的半开状态。
             logger.error(f"获取登录信息失败：{e}")
             await self.close()
-            return
+            raise
 
         login_id = login_info.get("data", {}).get("user_id")
         if str(login_id) != str(bt_uin):
@@ -559,14 +559,15 @@ class NapCatWebSocketClient:
             and not self._listening_task.done()
         ):
             self._listening_task.cancel()
-            try:
-                await self._listening_task  # 等待任务被取消
-            except asyncio.CancelledError:
-                logger.info(f"已停止监听账号 {self.self_id} 的消息")
-                if not self._listening_task.cancelled():
-                    raise        # 是自己的取消：不能吞掉调用方的取消信号
-                return
-            except Exception as e:
-                logger.error(f"取消监听消息任务时发生错误: {e}")
-                return
+            # 用 asyncio.wait 而不是 await 任务本身：await 会把监听任务抛出的
+            # CancelledError 直接传进来，与「close() 自己也被取消」无法区分 ——
+            # 一旦混同，close() 的取消就会被吞掉。而要区分得用 Task.cancelling()，
+            # 那是 3.11+ 才有的 API，CI 还要跑 3.10。asyncio.wait 不转发任务异常；
+            # close() 自己被取消时，CancelledError 会照常向外传播。
+            await asyncio.wait({self._listening_task})
+            if self._listening_task.done() and not self._listening_task.cancelled():
+                exc = self._listening_task.exception()
+                if exc is not None:
+                    logger.error(f"取消监听消息任务时发生错误: {exc}")
+                    return
         logger.info(f"已停止监听账号 {self.self_id} 的消息")
