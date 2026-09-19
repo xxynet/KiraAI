@@ -19,6 +19,7 @@ PLUGIN_ID = "auth_binding_test_plugin"
 
 
 def _reset_plugin_state(monkeypatch):
+    """Clear module-level plugin registries so each test loads in isolation."""
     for attr in (
         "_plugin_classes", "_plugin_components", "_plugin_load_errors",
         "_plugin_manifests", "_plugin_module_dirs", "_plugin_module_paths",
@@ -66,11 +67,13 @@ def _write_plugin(plugin_root, page_specs):
 
 
 def _load_client(tmp_path, monkeypatch, page_specs):
+    """Load the test plugin with the given folder pages; return its TestClient."""
     _reset_plugin_state(monkeypatch)
     plugin_root = tmp_path / PLUGIN_ID
     _write_plugin(plugin_root, page_specs)
 
     async def setup():
+        """Load the plugin and mount its page routes on a fresh app."""
         manager = plugin_registry.PluginManager()
         manager.plugin_dir = tmp_path
         loaded = await manager.load_plugin_from_dir(plugin_root)
@@ -84,8 +87,8 @@ def _load_client(tmp_path, monkeypatch, page_specs):
 
 
 def test_object_folder_pages_bind_auth_per_page(monkeypatch, tmp_path):
-    # secure first, open last: the secure page must keep auth=True even
-    # though the LAST registered page is open (late-binding bug -> 200).
+    """Secure first, open last: the secure page must keep auth=True even
+    though the LAST registered page is open (late-binding bug -> 200)."""
     client = _load_client(tmp_path, monkeypatch,
                           [("/secure", True), ("/open", False)])
 
@@ -95,10 +98,11 @@ def test_object_folder_pages_bind_auth_per_page(monkeypatch, tmp_path):
     r = client.get(f"/page/plugin/{PLUGIN_ID}/open/")
     assert r.status_code == 200
     assert r.text == "<html>ok</html>"
+    assert r.headers["cache-control"] == "no-store"
 
 
 def test_deferred_folder_pages_bind_auth_per_page(monkeypatch, tmp_path):
-    # Same order dependence for pages returned by plugin methods.
+    """Same order dependence for pages returned by plugin methods."""
     _reset_plugin_state(monkeypatch)
     plugin_root = tmp_path / PLUGIN_ID
     plugin_root.mkdir(parents=True)
@@ -132,6 +136,7 @@ class AuthBindingPlugin(BasePlugin):
 ''', encoding="utf-8")
 
     async def setup():
+        """Load the plugin and mount its page routes on a fresh app."""
         manager = plugin_registry.PluginManager()
         manager.plugin_dir = tmp_path
         loaded = await manager.load_plugin_from_dir(plugin_root)
@@ -148,17 +153,19 @@ class AuthBindingPlugin(BasePlugin):
     r = client.get(f"/page/plugin/{PLUGIN_ID}/open/")
     assert r.status_code == 200
     assert r.text == "<html>ok</html>"
+    assert r.headers["cache-control"] == "no-store"
 
 
 def test_open_first_keeps_open_page_public(monkeypatch, tmp_path):
-    # Mirror direction: open first, secure last. The open page must stay
-    # publicly reachable (late-binding bug -> 401 from the last page's flag).
+    """Mirror direction: open first, secure last. The open page must stay
+    publicly reachable (late-binding bug -> 401 from the last page's flag)."""
     client = _load_client(tmp_path, monkeypatch,
                           [("/open", False), ("/secure", True)])
 
     r = client.get(f"/page/plugin/{PLUGIN_ID}/open/")
     assert r.status_code == 200
     assert r.text == "<html>ok</html>"
+    assert r.headers["cache-control"] == "no-store"
 
     r = client.get(f"/page/plugin/{PLUGIN_ID}/secure")
     assert r.status_code == 401

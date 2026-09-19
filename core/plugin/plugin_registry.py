@@ -1259,6 +1259,7 @@ class PluginManager:
                         """StaticFiles with plugin-enabled + optional auth gating."""
                         def __init__(self, directory: str, html: bool = True,
                                      need_auth: bool = False):
+                            """Bind the page's auth flag on this instance."""
                             super().__init__(directory=directory, html=html)
                             # Bind per-page flags on the instance: this class is
                             # defined inside the page-registration loop, so a
@@ -1267,6 +1268,7 @@ class PluginManager:
                             self._need_auth = need_auth
 
                         async def __call__(self, scope, receive, send):
+                            """Enforce plugin/auth gates, then serve no-store."""
                             # Serve plugin pages with no-store so plugin updates
                             # take effect without requiring a browser cache clear
                             # (same policy as PluginBridgeInjectionMiddleware).
@@ -1433,6 +1435,7 @@ class PluginManager:
                     class DeferredPluginPageStaticFiles(StaticFiles):
                         def __init__(self, directory: str, html: bool = True,
                                      need_auth: bool = False):
+                            """Bind the page's auth flag on this instance."""
                             super().__init__(directory=directory, html=html)
                             # Bind per-page flags on the instance: this class is
                             # defined inside the page-registration loop, so a
@@ -1441,6 +1444,7 @@ class PluginManager:
                             self._need_auth = need_auth
 
                         async def __call__(self, scope, receive, send):
+                            """Enforce plugin/auth gates, then serve no-store."""
                             # Serve plugin pages with no-store so plugin updates
                             # take effect without requiring a browser cache clear
                             # (same policy as PluginBridgeInjectionMiddleware).
