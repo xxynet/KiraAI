@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import time
+import math
 from pathlib import Path
 
 
@@ -28,10 +29,24 @@ FORCE_KILL_WAIT_SECONDS = 5.0  # how long to wait for the child to die after a k
 
 
 def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ[name])
-    except (KeyError, ValueError):
+    """Read a positive float from the environment, else fall back to default.
+
+    A bad value must not take the supervisor down (it is the container's PID 1,
+    so raising here would crash-loop the container), but it must not silently
+    change stop behaviour either: 0 or a negative value removes the grace period
+    (the child is killed immediately) and NaN/inf make it never expire.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
         return default
+    try:
+        value = float(raw)
+    except ValueError:
+        value = float("nan")
+    if not math.isfinite(value) or value <= 0:
+        print(f"[supervisor] {name}={raw!r} is not a positive number, using {default}")
+        return default
+    return value
 
 
 # How long the child gets to finish its own shutdown before it is killed. Keep
