@@ -1257,10 +1257,32 @@ class PluginManager:
 
                     class PluginPageStaticFiles(StaticFiles):
                         """StaticFiles with plugin-enabled + optional auth gating."""
-                        def __init__(self, directory: str, html: bool = True):
+                        def __init__(self, directory: str, html: bool = True,
+                                     need_auth: bool = False):
+                            """Bind the page's auth flag on this instance."""
                             super().__init__(directory=directory, html=html)
+                            # Bind per-page flags on the instance: this class is
+                            # defined inside the page-registration loop, so a
+                            # bare `need_auth` free variable would late-bind to
+                            # the LAST page's auth value at request time.
+                            self._need_auth = need_auth
 
                         async def __call__(self, scope, receive, send):
+                            """Enforce plugin/auth gates, then serve no-store."""
+                            # Serve plugin pages with no-store so plugin updates
+                            # take effect without requiring a browser cache clear
+                            # (same policy as PluginBridgeInjectionMiddleware).
+                            from starlette.datastructures import MutableHeaders
+
+                            original_send = send
+
+                            async def send_with_no_store(message):
+                                if message["type"] == "http.response.start":
+                                    headers = MutableHeaders(scope=message)
+                                    headers["cache-control"] = "no-store"
+                                await original_send(message)
+
+                            send = send_with_no_store
                             if scope["type"] == "http":
                                 from starlette.requests import Request as StarletteRequest
                                 from webui.utils import verify_session_token
@@ -1275,7 +1297,7 @@ class PluginManager:
                                     await response(scope, receive, send)
                                     return
                                 # Auth check
-                                if need_auth:
+                                if self._need_auth:
                                     token = None
                                     auth_header = request.headers.get("authorization", "")
                                     if auth_header.startswith("Bearer "):
@@ -1307,6 +1329,7 @@ class PluginManager:
                             PluginPageStaticFiles(
                                 directory=str(folder_path),
                                 html=True,
+                                need_auth=need_auth,
                             ),
                             name=f"plugin:{plugin_id}:page:{route_path}",
                         )
@@ -1410,10 +1433,32 @@ class PluginManager:
                     from fastapi.staticfiles import StaticFiles
 
                     class DeferredPluginPageStaticFiles(StaticFiles):
-                        def __init__(self, directory: str, html: bool = True):
+                        def __init__(self, directory: str, html: bool = True,
+                                     need_auth: bool = False):
+                            """Bind the page's auth flag on this instance."""
                             super().__init__(directory=directory, html=html)
+                            # Bind per-page flags on the instance: this class is
+                            # defined inside the page-registration loop, so a
+                            # bare `need_auth` free variable would late-bind to
+                            # the LAST page's auth value at request time.
+                            self._need_auth = need_auth
 
                         async def __call__(self, scope, receive, send):
+                            """Enforce plugin/auth gates, then serve no-store."""
+                            # Serve plugin pages with no-store so plugin updates
+                            # take effect without requiring a browser cache clear
+                            # (same policy as PluginBridgeInjectionMiddleware).
+                            from starlette.datastructures import MutableHeaders
+
+                            original_send = send
+
+                            async def send_with_no_store(message):
+                                if message["type"] == "http.response.start":
+                                    headers = MutableHeaders(scope=message)
+                                    headers["cache-control"] = "no-store"
+                                await original_send(message)
+
+                            send = send_with_no_store
                             if scope["type"] == "http":
                                 from starlette.requests import Request as StarletteRequest
                                 from webui.utils import verify_session_token
@@ -1426,7 +1471,7 @@ class PluginManager:
                                     )
                                     await response(scope, receive, send)
                                     return
-                                if need_auth:
+                                if self._need_auth:
                                     token = None
                                     auth_header = request.headers.get("authorization", "")
                                     if auth_header.startswith("Bearer "):
@@ -1457,6 +1502,7 @@ class PluginManager:
                             DeferredPluginPageStaticFiles(
                                 directory=str(folder_path),
                                 html=True,
+                                need_auth=need_auth,
                             ),
                             name=f"plugin:{plugin_id}:page:{route_path}",
                         )
