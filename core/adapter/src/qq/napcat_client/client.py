@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import traceback
 import uuid
 import websockets
 from core.logging_manager import get_logger
@@ -284,6 +285,23 @@ class NapCatWebSocketClient:
                     break
                 continue
 
+    def _dispatch_event(self, callback: Callable, data: dict) -> None:
+        """Dispatch one event callback as a background task.
+
+        An exception escaping the callback would otherwise surface only as an
+        unretrieved-task traceback at garbage collection; catch it here so a
+        failing handler degrades to one readable error log while the
+        connection and the receive loop keep running.
+        """
+
+        async def runner():
+            try:
+                await callback(data)
+            except Exception:
+                logger.error(f"事件回调处理失败，已跳过该事件:\n{traceback.format_exc()}")
+
+        asyncio.create_task(runner())
+
     async def handle_message(self, data: dict) -> None:
         """处理收到的消息"""
 
@@ -310,19 +328,19 @@ class NapCatWebSocketClient:
                         # Create task to run event callback non-blockingly
                         # This ensures listen_messages can continue receiving messages
                         for func in self.event_callbacks["group"]:
-                            asyncio.create_task(func(data))
+                            self._dispatch_event(func, data)
                 elif message_type == "private":
                     if self.event_callbacks["private"]:
                         for func in self.event_callbacks["private"]:
-                            asyncio.create_task(func(data))
+                            self._dispatch_event(func, data)
             elif post_type == "notice":
                 if self.event_callbacks["notice"]:
                     for func in self.event_callbacks["notice"]:
-                        asyncio.create_task(func(data))
+                        self._dispatch_event(func, data)
             elif post_type == "meta_event":
                 if self.event_callbacks["meta"]:
                     for func in self.event_callbacks["meta"]:
-                        asyncio.create_task(func(data))
+                        self._dispatch_event(func, data)
                 # if data.get("meta_event_type") == "heartbeat":
                 #     if not self.last_heartbeat:
                 #         self.last_heartbeat = data.get('time')
@@ -347,7 +365,7 @@ class NapCatWebSocketClient:
 
         if self.event_callbacks["napcat"]:
             for func in self.event_callbacks["napcat"]:
-                asyncio.create_task(func(data))
+                self._dispatch_event(func, data)
 
     async def send_group_message(self, group_id: str, msg: QQMessageChain):
         return await self.send_group_segments(group_id=group_id, message=msg.to_list())

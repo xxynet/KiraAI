@@ -369,9 +369,13 @@ class QQAdapter(IMAdapter):
                 sub_type = ele.get("data", {}).get("sub_type", 0)
 
                 if sub_type == 1 or summary == "[动画表情]":
-                    from core.utils.common_utils import image_to_base64
-                    sticker_bs64 = await image_to_base64(img_url)
-                    message_content.append(Sticker(sticker=sticker_bs64))
+                    try:
+                        from core.utils.common_utils import image_to_base64
+                        sticker_bs64 = await image_to_base64(img_url)
+                        message_content.append(Sticker(sticker=sticker_bs64))
+                    except Exception as e:
+                        import traceback
+                        self.logger.error(traceback.format_exc())
                 else:
                     message_content.append(Image(image=img_url))
             elif ele.get("type") == "video":
@@ -561,7 +565,13 @@ class QQAdapter(IMAdapter):
                 is_mentioned = True
                 break
             elif m.get("type") == "reply":
-                reply_msg_info = await self.bot.get_msg((m.get("data", {}) or {}).get("id", ""))
+                try:
+                    reply_msg_info = await self.bot.get_msg((m.get("data", {}) or {}).get("id", ""))
+                except Exception as e:
+                    # The quoted message may be absent from the protocol side's
+                    # store, never a reason to drop the whole incoming message.
+                    self.logger.warning(f"获取引用消息失败，跳过引用判定: {e}")
+                    continue
                 if (reply_msg_info.get("data", {}) or {}).get("user_id") == msg.get("self_id"):  # int int
                     is_mentioned = True
                     break

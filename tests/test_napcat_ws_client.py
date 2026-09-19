@@ -686,3 +686,38 @@ async def test_run_shuts_down_on_invalid_token_event(monkeypatch: pytest.MonkeyP
     with pytest.raises(ConnectionError):
         await asyncio.wait_for(runner, timeout=2)
     assert client.shutdown_event.is_set()
+
+
+async def test_dispatch_event_logs_callback_exception_without_killing_dispatch(monkeypatch: pytest.MonkeyPatch):
+    """A raising handler degrades to a logged error: sibling callbacks still
+    see the event and no exception escapes as an unretrieved task."""
+
+    class RecordLogger:
+        def __init__(self) -> None:
+            self.errors: List[str] = []
+
+        def error(self, message: str) -> None:
+            self.errors.append(str(message))
+
+    client = make_client()
+    record_logger = RecordLogger()
+    monkeypatch.setattr(napcat_client, "logger", record_logger)
+
+    seen: List[dict] = []
+    good_event = asyncio.Event()
+
+    @client.group_event()
+    async def raising_handler(msg: dict) -> None:
+        raise RuntimeError("boom")
+
+    @client.group_event()
+    async def working_handler(msg: dict) -> None:
+        seen.append(msg)
+        good_event.set()
+
+    await client.handle_message({"post_type": "message", "message_type": "group"})
+    await asyncio.wait_for(good_event.wait(), timeout=2)
+    await wait_until(lambda: bool(record_logger.errors))
+
+    assert len(seen) == 1
+    assert any("boom" in err for err in record_logger.errors)
