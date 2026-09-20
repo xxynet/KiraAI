@@ -60,9 +60,11 @@ class ToolResult:
 
     attachments: list[Union[Image, Record, File]] = field(default_factory=list)
 
-    # Provider-independent image references (``kira_image_ref`` parts) embedded
-    # into the tool message content, resolved to image parts per LLM request and
-    # kept as compact paths in persisted history.
+    # Provider-independent image references (``kira_image_ref`` parts) attached
+    # to the tool result. The agent executor relocates them into a user message
+    # following the tool results (some providers reject image parts in
+    # tool-role messages); refs stay compact paths in persisted history and are
+    # resolved to image parts per LLM request.
     media_refs: list[dict] = field(default_factory=list)
 
     result_str: str = field(default="", init=False, repr=False)
@@ -108,10 +110,11 @@ class ToolResult:
         return self.result_str
 
     def build_content(self, text: str) -> Union[str, list]:
-        """Return the tool message content, embedding media refs when present.
+        """Return the tool result content, embedding media refs when present.
 
         Without media refs the content stays a plain string; with them it becomes
-        a multimodal content part list the provider layer understands.
+        a content part list the agent executor splits into the tool message text
+        and a following user message carrying the media.
         """
         if not self.media_refs:
             return text

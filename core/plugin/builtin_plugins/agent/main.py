@@ -705,7 +705,7 @@ class AgentPlugin(BasePlugin):
                 Image(image=str(image_path), mime=mime), event.sid, message_id
             )
             return ToolResult(
-                text=f"Image file: {path} ({mime}). The raw image data is attached as an image content part.",
+                text=f"Image file: {path} ({mime}). The raw image data is attached in the message below.",
                 media_refs=[media_ref],
             )
 

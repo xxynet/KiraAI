@@ -14,6 +14,7 @@ from core.agent.message import OpenAIMessage
 from core.chat.message_utils import KiraExceptionEvent
 from core.plugin.plugin_handlers import event_handler_reg, EventType
 from core.prompt_manager import Prompt
+from core.utils.media_refs import MEDIA_REF_TYPE
 
 if TYPE_CHECKING:
     from core.chat.message_utils import KiraMessageBatchEvent
@@ -47,6 +48,62 @@ class AgentExecutor:
     def __init__(self, tool_manager: FuncToolManager, tool_set: Optional[ToolSet] = None):
         self.tool_manager = tool_manager
         self.tool_set = tool_set
+
+    @staticmethod
+    def _build_tool_messages(tool_results: list[dict]) -> list[OpenAIMessage]:
+        """Build the tool messages of one agent step from raw tool results.
+
+        Media references embedded by tools (``kira_image_ref`` parts) are
+        relocated into a single user message appended after the tool results:
+        some providers reject image parts inside tool-role messages, while a
+        user message carrying images is supported by every vision-capable
+        provider. Both the request and the persisted history receive the same
+        relocated shape, so replays stay consistent with what the model saw.
+        """
+        messages: list[OpenAIMessage] = []
+        media_parts: list[dict] = []
+        media_tool_names: list[str] = []
+        for result in tool_results:
+            content = result.get("content")
+            if isinstance(content, list):
+                text_parts = [
+                    part for part in content
+                    if not (isinstance(part, dict) and part.get("type") == MEDIA_REF_TYPE)
+                ]
+                refs = [
+                    part for part in content
+                    if isinstance(part, dict) and part.get("type") == MEDIA_REF_TYPE
+                ]
+                if refs:
+                    media_parts.extend(refs)
+                    tool_name = result.get("name") or "unknown_tool"
+                    if tool_name not in media_tool_names:
+                        media_tool_names.append(tool_name)
+                    # Refs were the only non-text parts, so joining the rest
+                    # always restores the original plain-text tool output.
+                    tool_content = "".join(
+                        part.get("text", "") if isinstance(part, dict) else str(part)
+                        for part in text_parts
+                    )
+                    messages.append(OpenAIMessage(
+                        role="tool",
+                        tool_call_id=result.get("tool_call_id"),
+                        name=result.get("name"),
+                        content=tool_content,
+                    ))
+                    continue
+            messages.append(OpenAIMessage(**result))
+
+        if media_parts:
+            joined_names = ", ".join(media_tool_names)
+            messages.append(OpenAIMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": f"Media returned by tool call(s): {joined_names}"},
+                    *media_parts,
+                ],
+            ))
+        return messages
 
     async def run(
         self,
@@ -225,7 +282,7 @@ class AgentExecutor:
             )
             request.messages.append(msg)
             ctx.new_messages.append(msg)
-            tool_msgs = [OpenAIMessage(**r) for r in llm_resp.tool_results]
+            tool_msgs = self._build_tool_messages(llm_resp.tool_results)
             request.messages.extend(tool_msgs)
             ctx.new_messages.extend(tool_msgs)
 
