@@ -74,3 +74,38 @@ async def test_compression_skips_images_over_pixel_limit(tmp_path, monkeypatch):
 
     assert changed is False
     assert image.file == str(source_path)
+
+
+@pytest.mark.asyncio
+async def test_compress_image_file_scales_oversized_image(tmp_path, monkeypatch):
+    monkeypatch.setattr(image_compression, "get_data_path", lambda: tmp_path)
+    source_path = tmp_path / "big.jpg"
+    PILImage.new("RGB", (2000, 1000), "red").save(source_path)
+
+    path, mime = await image_compression.compress_image_file(
+        source_path,
+        {"enabled": True, "max_size": 500, "quality": 80, "min_file_size_mb": 0},
+    )
+
+    assert mime == "image/jpeg"
+    assert path != source_path
+    with PILImage.open(path) as compressed:
+        assert max(compressed.size) == 500
+
+
+@pytest.mark.asyncio
+async def test_compress_image_file_keeps_original_when_disabled_or_within_limits(tmp_path):
+    source_path = tmp_path / "small.png"
+    PILImage.new("RGB", (10, 10), "red").save(source_path)
+
+    disabled_path, disabled_mime = await image_compression.compress_image_file(
+        source_path,
+        {"enabled": False},
+    )
+    assert (disabled_path, disabled_mime) == (source_path, "image/png")
+
+    within_limits_path, within_limits_mime = await image_compression.compress_image_file(
+        source_path,
+        {"enabled": True, "max_size": 1280, "quality": 95, "min_file_size_mb": 1},
+    )
+    assert (within_limits_path, within_limits_mime) == (source_path, "image/png")

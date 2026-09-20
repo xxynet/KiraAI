@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import uuid
 from pathlib import Path
 
@@ -95,6 +96,36 @@ def _compress_image_sync(
     except Exception as exc:
         logger.warning(f"Failed to compress image {source_path.name}: {exc}")
         return None
+
+
+async def compress_image_file(
+    source_path: Path,
+    config: dict | None,
+) -> tuple[Path, str]:
+    """Compress an image file on disk according to the compression settings.
+
+    Returns ``(path, mime)`` where the path is a bounded temporary copy when the
+    settings require one, or the original path when compression is disabled or
+    unnecessary. Works on plain paths so tools that read images directly from
+    disk can share the settings with the chat message flow.
+    """
+    def guess_mime() -> str:
+        return mimetypes.guess_type(source_path.name)[0] or "image/jpeg"
+
+    enabled, max_size, quality, min_file_size_bytes = _compression_options(config)
+    if not enabled:
+        return source_path, guess_mime()
+
+    compressed = await asyncio.to_thread(
+        _compress_image_sync,
+        source_path,
+        max_size,
+        quality,
+        min_file_size_bytes,
+    )
+    if compressed is None:
+        return source_path, guess_mime()
+    return compressed
 
 
 async def compress_image_element(

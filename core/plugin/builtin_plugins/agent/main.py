@@ -14,9 +14,13 @@ from pathlib import Path
 
 from core.plugin import BasePlugin, logger, on, Priority, register
 from core.chat import KiraMessageBatchEvent, MessageChain
-from core.chat.message_elements import Text
+from core.chat.message_elements import Image, Text
 from core.provider import LLMRequest
+from core.agent.tool import ToolResult
 
+from core.utils.common_utils import desc_img
+from core.utils.image_compression import compress_image_file
+from core.utils.media_refs import store_session_media
 from core.utils.path_utils import get_config_path, get_data_path, get_root_path
 
 PLUGIN_ID = "agent"
@@ -50,6 +54,11 @@ blocked_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg',
                       '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.exe', '.bin',
                       '.dll', '.so', '.dylib', '.pdf', '.doc', '.docx', '.xls', '.xlsx',
                       '.ppt', '.pptx', '.iso', '.img', '.dmg'}
+
+# Raster image formats read_file can serve to the LLM (compression and VLM
+# both handle these). SVG stays blocked: it is text-based and neither the
+# image compressor nor vision models treat it as a raster image.
+readable_image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
 
 ALL_TOOL_NAMES = [
     "read_file", "write_file", "edit_file", "list_files", "grep", "search_files",
@@ -603,18 +612,18 @@ class AgentPlugin(BasePlugin):
 
     @register.tool(
         "read_file",
-        "Read a plain text file (txt, html, py, etc..) in allowed read paths",
+        "Read a plain text file (txt, html, py, etc..) or an image file (jpg, png, gif, etc..) in allowed read paths. Images follow the configured image processing mode: returned as raw image data attached to this result in native multimodal mode, or as a text description in VLM description mode.",
         {
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
-                "offset": {"type": "integer", "description": "Which line to start reading, defaults to 1"},
-                "limit": {"type": "integer", "description": "Maximum lines to read, defaults to 200"},
+                "offset": {"type": "integer", "description": "Which line to start reading, defaults to 1. Ignored for image files."},
+                "limit": {"type": "integer", "description": "Maximum lines to read, defaults to 200. Ignored for image files."},
             },
             "required": ["path"]
         }
     )
-    async def read_file(self, event: KiraMessageBatchEvent, path: str, offset: int = 1, limit: int = 200) -> str:
+    async def read_file(self, event: KiraMessageBatchEvent, path: str, offset: int = 1, limit: int = 200) -> str | ToolResult:
         if not self._is_file_session_allowed(event.sid):
             return "Permission denied: current session not allowed to access local files"
 
@@ -631,7 +640,9 @@ class AgentPlugin(BasePlugin):
 
         ext = Path(path).suffix.lower()
         if ext in blocked_extensions:
-            return "Multimedia and binary files are not allowed"
+            if ext not in readable_image_extensions:
+                return "Multimedia and binary files are not allowed"
+            return await self._read_image_file(event, path)
 
         try:
             abs_path = self._resolve_path(path)
@@ -652,6 +663,86 @@ class AgentPlugin(BasePlugin):
             return read_result
         except Exception as e:
             return f"[Failed to read file: {e}]"
+
+    async def _read_image_file(self, event: KiraMessageBatchEvent, path: str) -> str | ToolResult:
+        """Read an image file according to the image processing mode.
+
+        Native multimodal mode attaches the (possibly compressed) image data as
+        a media reference so the main LLM sees it directly; VLM description mode
+        returns the transcribed description instead. Both paths honor the global
+        image compression settings, mirroring how incoming chat images are
+        bounded before reaching a model.
+        """
+        abs_path = self._resolve_path(path)
+        if not abs_path.is_file():
+            return f"[Failed to read file: file not found: {path}]"
+
+        capabilities = self.ctx.get_session_capabilities(event.sid) if self.ctx else {}
+        image_recognition = capabilities.get("image_recognition") if isinstance(capabilities, dict) else None
+        if not isinstance(image_recognition, dict):
+            image_recognition = {}
+        mode = image_recognition.get("mode", "vlm_description")
+
+        compression_config = (
+            self.ctx.config.get_config("bot_config.image_compression", {}) if self.ctx else {}
+        )
+        try:
+            image_path, mime = await compress_image_file(abs_path, compression_config)
+        except Exception as e:
+            return f"[Failed to read file: {e}]"
+
+        if mode == "native":
+            message_id = event.messages[-1].message_id if event.messages else "read_file"
+            media_ref = await store_session_media(
+                Image(image=str(image_path), mime=mime), event.sid, message_id
+            )
+            return ToolResult(
+                text=f"Image file: {path} ({mime}). The raw image data is attached as an image content part.",
+                media_refs=[media_ref],
+            )
+
+        desc = await self._describe_image_file(image_path, mime, image_recognition)
+        if not desc:
+            return f"[Image description unavailable, file_path: {path}]"
+        return f"[Image {desc}, file_path: {path}]"
+
+    async def _describe_image_file(self, image_path: Path, mime: str, image_recognition: dict) -> str:
+        """Transcribe an image file with the default VLM, reusing the shared description cache."""
+        if not image_recognition.get("enabled", True):
+            return ""
+
+        desc_cache = None
+        md5 = None
+        try:
+            from core.message_manager import ImageDescCache
+
+            desc_cache = ImageDescCache(self.ctx.db)
+            md5 = await Image(image=str(image_path), mime=mime).hash_image()
+            cached_desc = await desc_cache.get(md5)
+            if cached_desc:
+                return cached_desc
+        except Exception as e:
+            logger.warning(f"Failed to read image desc cache for read_file: {e}")
+            desc_cache = None
+
+        desc = ""
+        try:
+            vlm_client = self.ctx.provider_mgr.get_default_vlm()
+            desc = await desc_img(
+                client=vlm_client,
+                image=Image(image=str(image_path), mime=mime),
+                prompt=str(image_recognition.get("desc_prompt", "") or "").strip() or None,
+                lang=self.ctx.get_lang(),
+            )
+        except Exception as e:
+            logger.error(f"Failed to describe image file for read_file: {e}")
+
+        if desc and desc_cache and md5:
+            try:
+                await desc_cache.set(md5, desc)
+            except Exception as e:
+                logger.warning(f"Failed to cache read_file image desc: {e}")
+        return desc
 
     @register.tool(
         "write_file",

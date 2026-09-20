@@ -137,6 +137,7 @@ class FuncToolManager:
 
             # Save tool results
             content = await tool_result_obj.assemble_result()
+            content = tool_result_obj.build_content(content)
             tool_logger.info(f"tool_result: {content}")
             resp.tool_results.append({
                 "role": "tool",
