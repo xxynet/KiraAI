@@ -566,13 +566,27 @@ class AgentPlugin(BasePlugin):
         notice_task.add_done_callback(self._background_notice_tasks.discard)
 
     def _is_path_allowed(self, path: str, allowed_prefixes: tuple) -> bool:
-        """Check if path starts with an allowed prefix directory."""
+        """Check a normalized path against the allowed roots with symlinks resolved.
+
+        Both the candidate and each allowed root are resolved to their real
+        location before the containment check, so a symlink planted inside an
+        allowed directory cannot alias a read or write out of the configured
+        roots. Not-yet-existing write targets resolve as far as their existing
+        ancestors, which is sufficient here.
+        """
+        try:
+            candidate = self._resolve_path(path).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return False
         for prefix in allowed_prefixes:
-            prefix = self._normalize_path(prefix)
-            if prefix is None:
+            normalized = self._normalize_path(prefix)
+            if normalized is None:
                 continue
-            prefix = prefix.rstrip('/')
-            if path == prefix or path.startswith(prefix + '/'):
+            try:
+                root = self._resolve_path(normalized).resolve()
+            except (OSError, RuntimeError, ValueError):
+                continue
+            if candidate == root or root in candidate.parents:
                 return True
         return False
 
@@ -699,20 +713,30 @@ class AgentPlugin(BasePlugin):
         except Exception as e:
             return f"[Failed to read file: {e}]"
 
-        if mode == "native":
-            message_id = event.messages[-1].message_id if event.messages else "read_file"
-            media_ref = await store_session_media(
-                Image(image=str(image_path), mime=mime), event.sid, message_id
-            )
-            return ToolResult(
-                text=f"Image file: {path} ({mime}). The raw image data is attached in the message below.",
-                media_refs=[media_ref],
-            )
+        try:
+            if mode == "native":
+                message_id = event.messages[-1].message_id if event.messages else "read_file"
+                media_ref = await store_session_media(
+                    Image(image=str(image_path), mime=mime), event.sid, message_id
+                )
+                return ToolResult(
+                    text=f"Image file: {path} ({mime}). The raw image data is attached in the message below.",
+                    media_refs=[media_ref],
+                )
 
-        desc = await self._describe_image_file(image_path, mime, image_recognition)
-        if not desc:
-            return f"[Image description unavailable, file_path: {path}]"
-        return f"[Image {desc}, file_path: {path}]"
+            desc = await self._describe_image_file(image_path, mime, image_recognition)
+            if not desc:
+                return f"[Image description unavailable, file_path: {path}]"
+            return f"[Image {desc}, file_path: {path}]"
+        finally:
+            if image_path != abs_path:
+                # The compressed copy in data/temp is only ever consumed inside
+                # this call (the native branch copies it into session media, the
+                # VLM branch turns it into a description), so it can go now.
+                try:
+                    await asyncio.to_thread(image_path.unlink, missing_ok=True)
+                except OSError as e:
+                    logger.warning(f"Failed to remove compressed temp image {image_path.name}: {e}")
 
     async def _describe_image_file(self, image_path: Path, mime: str, image_recognition: dict) -> str:
         """Transcribe an image file with the default VLM, reusing the shared description cache."""

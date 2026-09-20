@@ -704,6 +704,38 @@ async def test_read_file_compresses_image_in_native_mode_per_settings(
     stored = tmp_path / result.media_refs[0]["path"]
     with PILImage.open(stored) as compressed:
         assert max(compressed.size) == 100
+    _assert_no_temp_leftovers(tmp_path)
+
+
+@pytest.mark.anyio
+async def test_read_file_cleans_compressed_temp_in_vlm_mode(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    monkeypatch.setattr(image_compression, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx(
+        mode="vlm_description",
+        db=SimpleNamespace(
+            get_image_desc_cache=AsyncMock(return_value=None),
+            add_image_desc_cache=AsyncMock(),
+            update_image_desc_cache=AsyncMock(),
+        ),
+        compression={"enabled": True, "max_size": 100, "quality": 80, "min_file_size_mb": 0},
+    )
+    target = _png_file(tmp_path, name="big.png", size=(2000, 1000))
+
+    with patch.object(agent_main, "desc_img", AsyncMock(return_value="a big red image")):
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    assert result == f"[Image a big red image, file_path: {str(target).replace(chr(92), '/')}]"
+    _assert_no_temp_leftovers(tmp_path)
+
+
+def _assert_no_temp_leftovers(tmp_path):
+    temp_dir = tmp_path / "temp"
+    assert not temp_dir.exists() or not [p for p in temp_dir.iterdir() if p.is_file()]
 
 
 @pytest.mark.anyio
@@ -717,6 +749,33 @@ async def test_read_file_reports_missing_image_file(agent_plugin, tmp_path, monk
 
     normalized = str(missing).replace("\\", "/")
     assert result == f"[Failed to read file: file not found: {normalized}]"
+
+
+@pytest.mark.anyio
+async def test_read_file_rejects_symlink_escaping_allowed_roots(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    allowed = tmp_path / "files"
+    allowed.mkdir()
+    secret_dir = tmp_path / "secret"
+    secret_dir.mkdir()
+    secret = secret_dir / "note.txt"
+    secret.write_text("top secret", encoding="utf-8")
+    link = allowed / "link.txt"
+    try:
+        link.symlink_to(secret)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation requires privileges on this platform")
+    agent_plugin.allowed_read_paths = (str(allowed),)
+
+    inside = allowed / "real.txt"
+    inside.write_text("hello", encoding="utf-8")
+    denied = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(link))
+    allowed_result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(inside))
+
+    assert denied == f"Permission denied: Path must start with one of: {', '.join(agent_plugin.allowed_read_paths)}"
+    assert allowed_result == "hello"
 
 
 @pytest.mark.anyio
