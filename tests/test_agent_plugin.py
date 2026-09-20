@@ -640,7 +640,7 @@ async def test_read_file_reuses_cached_image_description(agent_plugin, tmp_path,
 
 
 @pytest.mark.anyio
-async def test_read_file_reports_unavailable_description_when_recognition_disabled(
+async def test_read_file_reports_recognition_disabled_for_images(
     agent_plugin, tmp_path, monkeypatch
 ):
     monkeypatch.setattr(agent_main, "restricted_paths", [])
@@ -652,7 +652,27 @@ async def test_read_file_reports_unavailable_description_when_recognition_disabl
         result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
 
     normalized = str(target).replace("\\", "/")
-    assert result == f"[Image description unavailable, file_path: {normalized}]"
+    assert result == f"[Image (recognition disabled), file_path: {normalized}]"
+    desc_img.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_read_file_reports_unavailable_description_when_vlm_fails(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx(mode="vlm_description")
+    agent_plugin.ctx.provider_mgr.get_default_vlm = Mock(
+        side_effect=RuntimeError("no vlm model")
+    )
+    target = _png_file(tmp_path)
+
+    with patch.object(agent_main, "desc_img", AsyncMock()) as desc_img:
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    normalized = str(target).replace("\\", "/")
+    assert result == f"[Image (description unavailable), file_path: {normalized}]"
     desc_img.assert_not_awaited()
 
 

@@ -724,9 +724,12 @@ class AgentPlugin(BasePlugin):
                     media_refs=[media_ref],
                 )
 
+            if not image_recognition.get("enabled", True):
+                return f"[Image (recognition disabled), file_path: {path}]"
+
             desc = await self._describe_image_file(image_path, mime, image_recognition)
             if not desc:
-                return f"[Image description unavailable, file_path: {path}]"
+                return f"[Image (description unavailable), file_path: {path}]"
             return f"[Image {desc}, file_path: {path}]"
         finally:
             if image_path != abs_path:
@@ -739,10 +742,11 @@ class AgentPlugin(BasePlugin):
                     logger.warning(f"Failed to remove compressed temp image {image_path.name}: {e}")
 
     async def _describe_image_file(self, image_path: Path, mime: str, image_recognition: dict) -> str:
-        """Transcribe an image file with the default VLM, reusing the shared description cache."""
-        if not image_recognition.get("enabled", True):
-            return ""
+        """Transcribe an image file with the default VLM, reusing the shared description cache.
 
+        An empty return means the VLM produced no description; the caller tells
+        recognition-disabled and VLM-failure apart on its own.
+        """
         desc_cache = None
         md5 = None
         try:
