@@ -60,6 +60,13 @@ class ToolResult:
 
     attachments: list[Union[Image, Record, File]] = field(default_factory=list)
 
+    # Provider-independent image references (``kira_image_ref`` parts) attached
+    # to the tool result. The agent executor relocates them into a user message
+    # following the tool results (some providers reject image parts in
+    # tool-role messages); refs stay compact paths in persisted history and are
+    # resolved to image parts per LLM request.
+    media_refs: list[dict] = field(default_factory=list)
+
     result_str: str = field(default="", init=False, repr=False)
 
     async def assemble_result(self):
@@ -101,3 +108,14 @@ class ToolResult:
         )
         self.result_str = "".join(res_text)
         return self.result_str
+
+    def build_content(self, text: str) -> Union[str, list]:
+        """Return the tool result content, embedding media refs when present.
+
+        Without media refs the content stays a plain string; with them it becomes
+        a content part list the agent executor splits into the tool message text
+        and a following user message carrying the media.
+        """
+        if not self.media_refs:
+            return text
+        return [{"type": "text", "text": text}, *self.media_refs]

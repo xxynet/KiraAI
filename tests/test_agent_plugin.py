@@ -3,9 +3,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from PIL import Image as PILImage
 
+from core.agent.tool import ToolResult
 from core.plugin.builtin_plugins.agent import main as agent_main
 from core.plugin.builtin_plugins.agent.main import BackgroundExecTask, AgentPlugin
+from core.utils import image_compression, media_refs
 
 
 @pytest.fixture(autouse=True)
@@ -99,6 +102,39 @@ def agent_plugin():
     plugin._background_exec_tasks = {}
     plugin._background_notice_tasks = set()
     return plugin
+
+
+def make_media_ctx(mode="vlm_description", enabled=True, stt_enabled=True, compression=None, db=None):
+    """Build a minimal plugin ctx for image/audio read tests.
+
+    Compression defaults to disabled so tests opt in explicitly; the db mock
+    backs the shared VLM description cache used by read_file.
+    """
+    config_values = {
+        "bot_config.image_compression": compression or {"enabled": False},
+    }
+    return SimpleNamespace(
+        get_session_capabilities=Mock(
+            return_value={
+                "image_recognition": {"mode": mode, "enabled": enabled},
+                "stt": {"enabled": stt_enabled},
+            }
+        ),
+        config=SimpleNamespace(
+            get_config=lambda key, default=None: config_values.get(key, default)
+        ),
+        provider_mgr=SimpleNamespace(
+            get_default_vlm=Mock(return_value=object()),
+            get_default_stt=Mock(return_value=object()),
+        ),
+        get_lang=Mock(return_value="en"),
+        db=db
+        or SimpleNamespace(
+            get_image_desc_cache=AsyncMock(return_value=None),
+            add_image_desc_cache=AsyncMock(),
+            update_image_desc_cache=AsyncMock(),
+        ),
+    )
 
 
 @pytest.mark.anyio
@@ -552,3 +588,326 @@ async def test_terminate_background_process_accepts_taskkill_success():
     assert process.killed is False
     assert process.returncode == 0
     assert process.wait_count == 1
+
+
+def _png_file(tmp_path, name="photo.png", size=(4, 4)):
+    target = tmp_path / name
+    PILImage.new("RGB", size, "red").save(target)
+    return target
+
+
+@pytest.mark.anyio
+async def test_read_file_returns_vlm_description_for_images(agent_plugin, tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    db = SimpleNamespace(
+        get_image_desc_cache=AsyncMock(return_value=None),
+        add_image_desc_cache=AsyncMock(),
+        update_image_desc_cache=AsyncMock(),
+    )
+    agent_plugin.ctx = make_media_ctx(mode="vlm_description", db=db)
+    target = _png_file(tmp_path)
+
+    with patch.object(agent_main, "desc_img", AsyncMock(return_value="a red square")) as desc_img:
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    normalized = str(target).replace("\\", "/")
+    assert result == f"[Image a red square, file_path: {normalized}]"
+    desc_img.assert_awaited_once()
+    db.add_image_desc_cache.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_read_file_reuses_cached_image_description(agent_plugin, tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    db = SimpleNamespace(
+        get_image_desc_cache=AsyncMock(
+            return_value={"description": "cached desc", "count": 1}
+        ),
+        add_image_desc_cache=AsyncMock(),
+        update_image_desc_cache=AsyncMock(),
+    )
+    agent_plugin.ctx = make_media_ctx(mode="vlm_description", db=db)
+    target = _png_file(tmp_path)
+
+    with patch.object(agent_main, "desc_img", AsyncMock()) as desc_img:
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    assert "cached desc" in result
+    desc_img.assert_not_awaited()
+    db.add_image_desc_cache.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_read_file_reports_recognition_disabled_for_images(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx(mode="vlm_description", enabled=False)
+    target = _png_file(tmp_path)
+
+    with patch.object(agent_main, "desc_img", AsyncMock()) as desc_img:
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    normalized = str(target).replace("\\", "/")
+    assert result == f"[Image (recognition disabled), file_path: {normalized}]"
+    desc_img.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_read_file_reports_unavailable_description_when_vlm_fails(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx(mode="vlm_description")
+    agent_plugin.ctx.provider_mgr.get_default_vlm = Mock(
+        side_effect=RuntimeError("no vlm model")
+    )
+    target = _png_file(tmp_path)
+
+    with patch.object(agent_main, "desc_img", AsyncMock()) as desc_img:
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    normalized = str(target).replace("\\", "/")
+    assert result == f"[Image (description unavailable), file_path: {normalized}]"
+    desc_img.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_read_file_attaches_raw_image_in_native_mode(agent_plugin, tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx(mode="native")
+    target = _png_file(tmp_path)
+    event = SimpleNamespace(
+        sid="test:dm:1", messages=[SimpleNamespace(message_id="msg-1")]
+    )
+
+    with patch.object(agent_main, "desc_img", AsyncMock()) as desc_img:
+        result = await agent_plugin.read_file(event, str(target))
+
+    assert isinstance(result, ToolResult)
+    assert "Image file:" in result.text
+    assert len(result.media_refs) == 1
+    ref = result.media_refs[0]
+    assert ref["type"] == media_refs.MEDIA_REF_TYPE
+    assert ref["mime_type"] == "image/png"
+    stored = tmp_path / ref["path"]
+    assert stored.read_bytes() == target.read_bytes()
+    desc_img.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_read_file_compresses_image_in_native_mode_per_settings(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    monkeypatch.setattr(image_compression, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx(
+        mode="native",
+        compression={"enabled": True, "max_size": 100, "quality": 80, "min_file_size_mb": 0},
+    )
+    target = _png_file(tmp_path, name="big.png", size=(2000, 1000))
+    event = SimpleNamespace(
+        sid="test:dm:1", messages=[SimpleNamespace(message_id="msg-1")]
+    )
+
+    result = await agent_plugin.read_file(event, str(target))
+
+    assert isinstance(result, ToolResult)
+    stored = tmp_path / result.media_refs[0]["path"]
+    with PILImage.open(stored) as compressed:
+        assert max(compressed.size) == 100
+    _assert_no_temp_leftovers(tmp_path)
+
+
+@pytest.mark.anyio
+async def test_read_file_cleans_compressed_temp_in_vlm_mode(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    monkeypatch.setattr(image_compression, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx(
+        mode="vlm_description",
+        db=SimpleNamespace(
+            get_image_desc_cache=AsyncMock(return_value=None),
+            add_image_desc_cache=AsyncMock(),
+            update_image_desc_cache=AsyncMock(),
+        ),
+        compression={"enabled": True, "max_size": 100, "quality": 80, "min_file_size_mb": 0},
+    )
+    target = _png_file(tmp_path, name="big.png", size=(2000, 1000))
+
+    with patch.object(agent_main, "desc_img", AsyncMock(return_value="a big red image")):
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    assert result == f"[Image a big red image, file_path: {str(target).replace(chr(92), '/')}]"
+    _assert_no_temp_leftovers(tmp_path)
+
+
+def _assert_no_temp_leftovers(tmp_path):
+    temp_dir = tmp_path / "temp"
+    assert not temp_dir.exists() or not [p for p in temp_dir.iterdir() if p.is_file()]
+
+
+@pytest.mark.anyio
+async def test_read_file_reports_missing_image_file(agent_plugin, tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx()
+    missing = tmp_path / "missing.png"
+
+    result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(missing))
+
+    normalized = str(missing).replace("\\", "/")
+    assert result == f"[Failed to read file: file not found: {normalized}]"
+
+
+@pytest.mark.anyio
+async def test_read_file_rejects_symlink_escaping_allowed_roots(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    allowed = tmp_path / "files"
+    allowed.mkdir()
+    secret_dir = tmp_path / "secret"
+    secret_dir.mkdir()
+    secret = secret_dir / "note.txt"
+    secret.write_text("top secret", encoding="utf-8")
+    link = allowed / "link.txt"
+    try:
+        link.symlink_to(secret)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation requires privileges on this platform")
+    agent_plugin.allowed_read_paths = (str(allowed),)
+
+    inside = allowed / "real.txt"
+    inside.write_text("hello", encoding="utf-8")
+    denied = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(link))
+    allowed_result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(inside))
+
+    assert denied == f"Permission denied: Path must start with one of: {', '.join(agent_plugin.allowed_read_paths)}"
+    assert allowed_result == "hello"
+
+
+@pytest.mark.anyio
+async def test_read_file_still_blocks_svg_and_non_media_files(agent_plugin, tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx()
+
+    svg = tmp_path / "icon.svg"
+    svg.write_text("<svg></svg>", encoding="utf-8")
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"\x00" * 8)
+    archive = tmp_path / "bundle.zip"
+    archive.write_bytes(b"\x00" * 8)
+
+    svg_result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(svg))
+    video_result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(video))
+    archive_result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(archive))
+
+    assert svg_result == "Multimedia and binary files are not allowed"
+    assert video_result == "Multimedia and binary files are not allowed"
+    assert archive_result == "Multimedia and binary files are not allowed"
+
+
+@pytest.mark.anyio
+async def test_read_file_transcribes_audio_files(agent_plugin, tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx()
+    target = tmp_path / "voice.mp3"
+    target.write_bytes(b"ID3 fake mp3 payload")
+
+    with patch.object(
+        agent_main, "speech_to_text", AsyncMock(return_value="hello world")
+    ) as speech_to_text_mock:
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    normalized = str(target).replace("\\", "/")
+    assert result == f"[Record hello world, file_path: {normalized}]"
+    speech_to_text_mock.assert_awaited_once()
+    record = speech_to_text_mock.await_args.kwargs["record"]
+    assert record.file_type == "path"
+
+
+@pytest.mark.anyio
+async def test_read_file_transcribes_m4a_files_outside_blocked_list(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx()
+    target = tmp_path / "voice.m4a"
+    target.write_bytes(b"\x00" * 8)
+
+    with patch.object(
+        agent_main, "speech_to_text", AsyncMock(return_value="m4a transcript")
+    ):
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    normalized = str(target).replace("\\", "/")
+    assert result == f"[Record m4a transcript, file_path: {normalized}]"
+
+
+@pytest.mark.anyio
+async def test_read_file_reports_disabled_speech_recognition(agent_plugin, tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx(stt_enabled=False)
+    target = tmp_path / "voice.mp3"
+    target.write_bytes(b"ID3 fake mp3 payload")
+
+    with patch.object(agent_main, "speech_to_text", AsyncMock()) as speech_to_text_mock:
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    normalized = str(target).replace("\\", "/")
+    assert result == f"[Record (speech recognition disabled), file_path: {normalized}]"
+    speech_to_text_mock.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_read_file_reports_unavailable_transcription_on_stt_failure(
+    agent_plugin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(agent_main, "restricted_paths", [])
+    agent_plugin.allowed_read_paths = (str(tmp_path),)
+    agent_plugin.ctx = make_media_ctx()
+    agent_plugin.ctx.provider_mgr.get_default_stt = Mock(
+        side_effect=RuntimeError("no stt model")
+    )
+    target = tmp_path / "voice.mp3"
+    target.write_bytes(b"ID3 fake mp3 payload")
+
+    with patch.object(agent_main, "speech_to_text", AsyncMock()) as speech_to_text_mock:
+        result = await agent_plugin.read_file(SimpleNamespace(sid="test:dm:1"), str(target))
+
+    normalized = str(target).replace("\\", "/")
+    assert result == f"[Record (speech recognition unavailable), file_path: {normalized}]"
+    speech_to_text_mock.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_tool_result_build_content_embeds_media_refs():
+    ref = {
+        "type": "kira_image_ref",
+        "path": "session_media/a/b.png",
+        "mime_type": "image/png",
+    }
+    plain = ToolResult(text="plain result")
+    media = ToolResult(text="image result", media_refs=[ref])
+
+    assert plain.build_content(await plain.assemble_result()) == "plain result"
+    assert media.build_content(await media.assemble_result()) == [
+        {"type": "text", "text": "image result"},
+        ref,
+    ]
