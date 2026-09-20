@@ -28,32 +28,14 @@ WAIT_SLICE_SECONDS = 0.25  # wait granularity; caps how late a stop signal is no
 FORCE_KILL_WAIT_SECONDS = 5.0  # how long to wait for the child to die after a kill
 
 
-def _env_float(name: str, default: float) -> float:
-    """Read a positive float from the environment, else fall back to default.
-
-    A bad value must not take the supervisor down (it is the container's PID 1,
-    so raising here would crash-loop the container), but it must not silently
-    change stop behaviour either: 0 or a negative value removes the grace period
-    (the child is killed immediately) and NaN/inf make it never expire.
-    """
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        value = float(raw)
-    except ValueError:
-        value = float("nan")
-    if not math.isfinite(value) or value <= 0:
-        print(f"[supervisor] {name}={raw!r} is not a positive number, using {default}")
-        return default
-    return value
-
-
-# How long the child gets to finish its own shutdown before it is killed. Keep
-# this below the stop timeout of whatever supervises us (docker stop -t defaults
-# to 10s, systemd TimeoutStopSec to 90s), otherwise the runtime SIGKILLs us
-# before the grace period has been used.
-STOP_GRACE_SECONDS = _env_float("KIRA_STOP_GRACE", 8.0)
+# How long the child gets to finish its own shutdown before it is killed.
+STOP_GRACE_SECONDS = 8.0
+try:
+    grace = float(os.environ.get("KIRA_STOP_GRACE", ""))
+    if math.isfinite(grace) and grace > 0:
+        STOP_GRACE_SECONDS = grace
+except ValueError:
+    pass
 
 # Windows only: give the child its own process group so a stop can be forwarded
 # with CTRL_BREAK_EVENT. Off by default because the console already delivers
