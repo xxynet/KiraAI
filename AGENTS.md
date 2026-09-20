@@ -49,7 +49,7 @@ docker-compose up
 
 ### Entry Point and Supervisor Pattern
 
-`main.py` is a supervisor that spawns a child process (`--_child`). If the child exits with code 42, the supervisor restarts it with exponential backoff (up to 10 restarts). This enables self-restart after updates.
+`main.py` is the entry point and supervisor; it spawns a child process (`--_child`). The supervisor loop lives in `core/supervisor.py`, and the child bootstrap (signal handling, data dirs, launcher startup) in `core/child.py`. If the child exits with code 42, the supervisor restarts it with exponential backoff (up to 10 restarts). This enables self-restart after updates.
 
 ### Configuration
 
