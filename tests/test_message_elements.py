@@ -7,6 +7,7 @@ import pytest
 from core.chat.message_elements import (
     _build_temp_file_path,
     _infer_mime_from_bytes,
+    _move_no_clobber,
     check_base64,
     ElementType,
     Text,
@@ -23,6 +24,24 @@ from core.chat.message_elements import (
     Video,
     BaseMediaElement,
 )
+
+
+# ── _move_no_clobber ─────────────────────────────────────────────
+
+def test_move_no_clobber_increments_from_original_candidate(tmp_path):
+    source = tmp_path / "source"
+    source.write_bytes(b"new")
+    candidate = tmp_path / "download.png"
+    candidate.write_bytes(b"original")
+    (tmp_path / "download_1.png").write_bytes(b"first duplicate")
+
+    result = _move_no_clobber(str(source), str(candidate))
+
+    assert result == str(tmp_path / "download_2.png")
+    assert not source.exists()
+    assert candidate.read_bytes() == b"original"
+    assert (tmp_path / "download_1.png").read_bytes() == b"first duplicate"
+    assert (tmp_path / "download_2.png").read_bytes() == b"new"
 
 
 # ── _infer_mime_from_bytes ──────────────────────────────────────────
