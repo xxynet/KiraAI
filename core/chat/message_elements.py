@@ -70,13 +70,13 @@ def _move_no_clobber(source: str, candidate: str) -> Optional[str]:
     numbered candidate. Returns the final path, or None when the move was not
     possible (e.g. filesystems without hard link support).
     """
+    root, ext = os.path.splitext(candidate)
     counter = 1
     while True:
         try:
             os.link(source, candidate)
             break
         except FileExistsError:
-            root, ext = os.path.splitext(candidate)
             candidate = f"{root}_{counter}{ext}"
             counter += 1
         except OSError:
