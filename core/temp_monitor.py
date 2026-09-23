@@ -1,9 +1,10 @@
 import asyncio
 import heapq
+import stat
 import time
 from pathlib import Path
 from watchfiles import awatch
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
 from typing import TYPE_CHECKING
 
@@ -186,25 +187,56 @@ class AsyncTempMonitor:
             return []
         return heapq.nsmallest(min(excess_count, len(eligible_files)), eligible_files, key=lambda x: x[3])
 
-    async def _delete_file(self, path_str: str) -> Optional[int]:
-        """Delete a single file asynchronously"""
-        loop = asyncio.get_event_loop()
+    async def _delete_file(self, path_str: str) -> Tuple[Literal["deleted", "missing", "failed"], int, Optional[str]]:
+        """Delete a single file, retrying once after clearing read-only mode."""
+        loop = asyncio.get_running_loop()
 
         def delete():
+            file_path = Path(path_str)
             try:
-                file_path = Path(path_str)
-                if file_path.exists() and file_path.is_file():
-                    size = file_path.stat().st_size
+                if not file_path.exists() or not file_path.is_file():
+                    return "missing", 0, None
+
+                size = file_path.stat().st_size
+                try:
                     file_path.unlink()
-                    return size
-            except Exception as e:
-                logger.error(f"Failed to delete {path_str}: {e}")
-            return None
+                except PermissionError:
+                    # Git objects are commonly read-only on Windows. Make the
+                    # file owner-writable, then retry exactly once.
+                    mode = file_path.stat().st_mode
+                    file_path.chmod(mode | stat.S_IWRITE)
+                    file_path.unlink()
+                return "deleted", size, None
+            except FileNotFoundError:
+                return "missing", 0, None
+            except OSError as e:
+                return "failed", 0, f"{type(e).__name__}: {e}"
 
         return await loop.run_in_executor(None, delete)
 
+    async def _cleanup_empty_dirs(self):
+        """Remove empty subdirectories from deepest to shallowest."""
+        loop = asyncio.get_running_loop()
+
+        def cleanup_empty_dirs():
+            if not self.folder_path.exists():
+                return
+
+            directories = (
+                path for path in self.folder_path.rglob('*') if path.is_dir()
+            )
+            for directory in sorted(
+                directories, key=lambda path: len(path.parts), reverse=True
+            ):
+                try:
+                    directory.rmdir()
+                except OSError:
+                    continue
+
+        await loop.run_in_executor(None, cleanup_empty_dirs)
+
     async def cleanup(self):
-        """Execute cleanup asynchronously"""
+        """Execute cleanup asynchronously."""
         # Use lock to prevent concurrent cleanup
         async with self._cleanup_lock:
             current_time = time.time()
@@ -235,6 +267,31 @@ class AsyncTempMonitor:
 
             deleted_count = 0
             freed_space = 0
+            attempted_paths = set()
+            failed_deletions: Dict[str, str] = {}
+
+            async def delete_candidate(path_str: str):
+                nonlocal deleted_count, freed_space
+
+                # A file can qualify as expired, excessive, and oversized in
+                # the same cleanup. Never retry a failure within one cycle.
+                if path_str in attempted_paths:
+                    return None
+                attempted_paths.add(path_str)
+
+                status, deleted_size, error = await self._delete_file(path_str)
+                if status == "failed":
+                    failed_deletions[path_str] = error or "unknown error"
+                    return status
+
+                cached = self.file_cache.pop(path_str, None)
+                if cached is not None:
+                    self.total_size = max(0, self.total_size - cached[0])
+
+                if status == "deleted":
+                    deleted_count += 1
+                    freed_space += deleted_size
+                return status
 
             # Phase 1: Delete expired files (by max_age_hours)
             if expired_files:
@@ -250,15 +307,10 @@ class AsyncTempMonitor:
                                        f"{Path(path_str).name} (age: {file_age:.1f}s < "
                                        f"protection: {min_expired_protection}s)")
                         continue
-                    deleted_size = await self._delete_file(path_str)
-                    if deleted_size is not None:
-                        self.total_size -= deleted_size
-                        if path_str in self.file_cache:
-                            del self.file_cache[path_str]
-                        deleted_count += 1
-                        freed_space += deleted_size
+                    status = await delete_candidate(path_str)
+                    if status == "deleted":
                         file_age_hours = (current_time - creation_time) / 3600
-                        logger.debug(f"DELETED expired: {Path(path_str).name} (age: {file_age_hours:.1f}h, size: {deleted_size / 1024:.2f}KB)")
+                        logger.debug(f"DELETED expired: {Path(path_str).name} (age: {file_age_hours:.1f}h, size: {size / 1024:.2f}KB)")
 
             # Phase 2: Delete files exceeding max_files limit
             # Protection period already filtered inside _get_files_exceeding_limit
@@ -266,14 +318,9 @@ class AsyncTempMonitor:
             if excess_files:
                 logger.debug(f"Found {len(excess_files)} excess files (limit: {self.max_files})")
                 for path_str, size, mtime, creation_time in excess_files:
-                    deleted_size = await self._delete_file(path_str)
-                    if deleted_size is not None:
-                        self.total_size -= deleted_size
-                        if path_str in self.file_cache:
-                            del self.file_cache[path_str]
-                        deleted_count += 1
-                        freed_space += deleted_size
-                        logger.debug(f"DELETED excess: {Path(path_str).name} (size: {deleted_size / 1024:.2f}KB)")
+                    status = await delete_candidate(path_str)
+                    if status == "deleted":
+                        logger.debug(f"DELETED excess: {Path(path_str).name} (size: {size / 1024:.2f}KB)")
 
             # Phase 3: Delete oldest files if still over size limit
             if self.total_size > self.max_size_bytes:
@@ -288,20 +335,30 @@ class AsyncTempMonitor:
                         logger.error(f"ATTEMPTED TO DELETE PROTECTED FILE (age: {file_age:.2f}s): {Path(path_str).name} - SKIPPING")
                         continue
 
-                    deleted_size = await self._delete_file(path_str)
-                    if deleted_size is not None:
-                        self.total_size -= deleted_size
-                        if path_str in self.file_cache:
-                            del self.file_cache[path_str]
-                        deleted_count += 1
-                        freed_space += deleted_size
-                        logger.debug(f"DELETED: {Path(path_str).name} (age: {file_age:.2f}s, size: {deleted_size / 1024:.2f}KB)")
+                    status = await delete_candidate(path_str)
+                    if status == "deleted":
+                        logger.debug(f"DELETED: {Path(path_str).name} (age: {file_age:.2f}s, size: {size / 1024:.2f}KB)")
+
+            await self._cleanup_empty_dirs()
 
             if deleted_count > 0:
                 logger.info(f"Cleanup completed: deleted {deleted_count} files, "
                             f"freed {freed_space / 1024 / 1024:.2f}MB, "
                             f"remaining: {len(self.file_cache)} files, "
                             f"{self.total_size / 1024 / 1024:.2f}MB")
+
+            if failed_deletions:
+                failure_items = list(failed_deletions.items())
+                details = "; ".join(
+                    f"{path}: {error}" for path, error in failure_items[:3]
+                )
+                omitted = len(failure_items) - 3
+                if omitted > 0:
+                    details += f"; and {omitted} more"
+                logger.warning(
+                    f"Cleanup completed with {len(failed_deletions)} deletion failure(s); "
+                    f"will retry on the next cleanup cycle. {details}"
+                )
 
     async def _process_changes(self, changes):
         """Process file change events"""
@@ -323,7 +380,6 @@ class AsyncTempMonitor:
                 await asyncio.sleep(self.check_interval)
                 if self._stop_event.is_set():
                     break
-                self.last_check_time = 0  # Reset to allow cleanup
                 await self.cleanup()
             except asyncio.CancelledError:
                 break
