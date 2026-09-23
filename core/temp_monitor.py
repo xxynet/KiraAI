@@ -32,6 +32,7 @@ class AsyncTempMonitor:
         """
         self.folder_path = Path(folder_path)
         self.kira_config = kira_config
+        self._default_check_interval = check_interval
         self.check_interval = check_interval
         self.batch_size = batch_size
         self.file_protection_seconds = file_protection_seconds
@@ -47,15 +48,31 @@ class AsyncTempMonitor:
         self.last_check_time = 0
         self._cleanup_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
+        self._config_changed_event = asyncio.Event()
 
     def _refresh_config(self):
-        """Read latest config values from KiraConfig to support runtime changes"""
+        """Read latest config values from KiraConfig to support runtime changes."""
         cache_config = self.kira_config.get_config("bot_config.cache", {}) or {}
         max_size_mb = cache_config.get("max_size_mb", 50)
         self.max_size_bytes = max_size_mb * 1024 * 1024
         self.max_files = cache_config.get("max_files", 50)
         max_age_hours = cache_config.get("max_age_hours", 24)
         self.max_age_seconds = max_age_hours * 3600
+
+        interval_minutes = cache_config.get("check_interval_minutes")
+        if (
+            isinstance(interval_minutes, (int, float))
+            and not isinstance(interval_minutes, bool)
+            and interval_minutes > 0
+        ):
+            self.check_interval = int(interval_minutes * 60)
+        else:
+            self.check_interval = self._default_check_interval
+
+    def notify_config_changed(self):
+        """Apply runtime config changes and wake the periodic scheduler."""
+        self._refresh_config()
+        self._config_changed_event.set()
 
     async def _build_cache(self):
         """Build file cache asynchronously"""
@@ -239,6 +256,7 @@ class AsyncTempMonitor:
         """Execute cleanup asynchronously."""
         # Use lock to prevent concurrent cleanup
         async with self._cleanup_lock:
+            self._refresh_config()
             current_time = time.time()
 
             # Control check frequency (inside lock to avoid TOCTOU race)
@@ -246,9 +264,6 @@ class AsyncTempMonitor:
                 return
 
             self.last_check_time = current_time
-
-            # Refresh config to pick up runtime changes
-            self._refresh_config()
 
             # Check for expired files first
             expired_files = await self._get_expired_files()
@@ -374,10 +389,19 @@ class AsyncTempMonitor:
             await self.cleanup()
 
     async def _periodic_cleanup_loop(self):
-        """Periodically check for expired files even without file changes"""
+        """Periodically check for expired files even without file changes."""
         while not self._stop_event.is_set():
             try:
-                await asyncio.sleep(self.check_interval)
+                try:
+                    await asyncio.wait_for(
+                        self._config_changed_event.wait(),
+                        timeout=self.check_interval,
+                    )
+                    self._config_changed_event.clear()
+                    continue
+                except asyncio.TimeoutError:
+                    pass
+
                 if self._stop_event.is_set():
                     break
                 await self.cleanup()

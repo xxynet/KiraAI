@@ -124,3 +124,24 @@ async def test_cleanup_removes_empty_directories(tmp_path):
     assert not target.exists()
     assert not (tmp_path / "job").exists()
     assert tmp_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_configured_check_interval_updates_at_runtime(tmp_path):
+    config = FakeConfig(
+        {
+            "max_size_mb": 50,
+            "max_files": 50,
+            "max_age_hours": 24,
+            "check_interval_minutes": 5,
+        }
+    )
+    monitor = AsyncTempMonitor(str(tmp_path), config, check_interval=60)
+
+    assert monitor.check_interval == 5 * 60
+
+    config.cache_config["check_interval_minutes"] = 2
+    monitor.notify_config_changed()
+
+    assert monitor.check_interval == 2 * 60
+    assert monitor._config_changed_event.is_set()
