@@ -61,11 +61,14 @@ async def test_delete_file_retries_once_after_permission_error(tmp_path, monkeyp
     monkeypatch.setattr(Path, "chmod", record_chmod)
 
     monitor = make_monitor(tmp_path)
-    status, deleted_size, error = await monitor._delete_file(str(target))
+    status, deleted_size, error, remaining_version = await monitor._delete_file(
+        str(target)
+    )
 
     assert status == "deleted"
     assert deleted_size == len(b"content")
     assert error is None
+    assert remaining_version is None
     assert unlink_calls == 2
     assert len(chmod_modes) == 1
     assert chmod_modes[0] & stat.S_IWRITE
@@ -73,7 +76,35 @@ async def test_delete_file_retries_once_after_permission_error(tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_cleanup_retries_failed_file_after_size_returns_below_limit(
+async def test_delete_file_does_not_retry_replacement_seen_after_failure(
+    tmp_path, monkeypatch
+):
+    target = tmp_path / "changing.bin"
+    target.write_bytes(b"old")
+    monitor = make_monitor(tmp_path)
+    expected_version = monitor._file_version(target.stat())
+
+    def replace_then_fail(path, *args, **kwargs):
+        if path == target:
+            target.write_bytes(b"replacement")
+            raise OSError("locked")
+        return Path.unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", replace_then_fail)
+
+    status, deleted_size, error, remaining_version = await monitor._delete_file(
+        str(target), expected_version
+    )
+
+    assert status == "changed"
+    assert deleted_size == 0
+    assert error is None
+    assert remaining_version is None
+    assert target.read_bytes() == b"replacement"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_retries_unchanged_file_after_size_returns_below_limit(
     tmp_path, monkeypatch
 ):
     locked = tmp_path / "locked.bin"
@@ -90,10 +121,8 @@ async def test_cleanup_retries_failed_file_after_size_returns_below_limit(
 
     async def fail_locked(path_str, expected_version=None):
         delete_calls.append(path_str)
-        if path_str == str(locked):
-            if delete_calls.count(path_str) == 1:
-                os.utime(locked, None)
-            return "failed", 0, "PermissionError: locked"
+        if path_str == str(locked) and delete_calls.count(path_str) == 1:
+            return "failed", 0, "PermissionError: locked", expected_version
         return await original_delete(path_str, expected_version)
 
     warnings = []
@@ -111,8 +140,72 @@ async def test_cleanup_retries_failed_file_after_size_returns_below_limit(
     await monitor.cleanup()
 
     assert delete_calls.count(str(locked)) == 2
-    assert len(warnings) == 2
-    assert "next cleanup cycle" in warnings[-1]
+    assert not locked.exists()
+    assert str(locked) not in monitor._pending_retries
+    assert len(warnings) == 1
+
+
+@pytest.mark.asyncio
+async def test_cleanup_drops_pending_retry_when_failed_file_changes(
+    tmp_path, monkeypatch
+):
+    locked = tmp_path / "locked.bin"
+    removable = tmp_path / "removable.bin"
+    locked.write_bytes(b"a" * 600)
+    removable.write_bytes(b"b" * 600)
+    old_time = time.time() - 3600
+    os.utime(locked, (old_time, old_time))
+    os.utime(removable, (old_time + 10, old_time + 10))
+
+    monitor = make_monitor(tmp_path, max_size_mb=0.001)
+    original_delete = monitor._delete_file
+    delete_calls = []
+
+    async def fail_locked(path_str, expected_version=None):
+        delete_calls.append(path_str)
+        if path_str == str(locked) and delete_calls.count(path_str) == 1:
+            return "failed", 0, "PermissionError: locked", expected_version
+        return await original_delete(path_str, expected_version)
+
+    monkeypatch.setattr(monitor, "_delete_file", fail_locked)
+
+    await monitor.cleanup()
+    locked.write_bytes(b"replacement")
+    await monitor.cleanup()
+
+    assert locked.read_bytes() == b"replacement"
+    assert delete_calls.count(str(locked)) == 1
+    assert str(locked) not in monitor._pending_retries
+
+
+@pytest.mark.asyncio
+async def test_count_cleanup_continues_after_oldest_file_fails(
+    tmp_path, monkeypatch
+):
+    locked = tmp_path / "locked.bin"
+    removable = tmp_path / "removable.bin"
+    locked.write_bytes(b"locked")
+    removable.write_bytes(b"removable")
+    old_time = time.time() - 3600
+    os.utime(locked, (old_time, old_time))
+    os.utime(removable, (old_time + 10, old_time + 10))
+
+    monitor = make_monitor(tmp_path, max_files=1)
+    original_delete = monitor._delete_file
+
+    async def fail_locked(path_str, expected_version=None):
+        if path_str == str(locked):
+            return "failed", 0, "PermissionError: locked", expected_version
+        return await original_delete(path_str, expected_version)
+
+    monkeypatch.setattr(monitor, "_delete_file", fail_locked)
+
+    await monitor.cleanup()
+
+    assert locked.exists()
+    assert not removable.exists()
+    assert len(monitor.file_cache) == monitor.max_files
+    assert str(locked) in monitor._pending_retries
 
 
 @pytest.mark.asyncio

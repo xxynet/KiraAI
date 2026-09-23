@@ -19,6 +19,7 @@ FileCacheEntry = Tuple[int, float, float]
 FileCandidate = Tuple[str, int, float, float]
 DirectoryCandidate = Tuple[Path, FileKey]
 DeleteStatus = Literal["deleted", "missing", "changed", "failed"]
+DeleteResult = Tuple[DeleteStatus, int, Optional[str], Optional[FileVersion]]
 
 
 class AsyncTempMonitor:
@@ -46,7 +47,7 @@ class AsyncTempMonitor:
         self.total_size = 0
         self._file_versions: Dict[str, FileVersion] = {}
         self._first_seen: Dict[str, Tuple[FileKey, float]] = {}
-        self._pending_retries: Dict[str, FileKey] = {}
+        self._pending_retries: Dict[str, FileVersion] = {}
         self._has_scanned = False
         self._cleanup_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
@@ -187,13 +188,12 @@ class AsyncTempMonitor:
         ) = await loop.run_in_executor(None, scan_folder)
         self._has_scanned = True
 
-        # A replaced or removed path is not the same failed deletion and must
-        # not inherit its pending retry state.
+        # A removed, replaced, or modified path is not the same failed
+        # deletion and must not inherit its pending retry state.
         self._pending_retries = {
-            path_str: file_key
-            for path_str, file_key in self._pending_retries.items()
-            if path_str in self._file_versions
-            and self._file_versions[path_str][:2] == file_key
+            path_str: pending_version
+            for path_str, pending_version in self._pending_retries.items()
+            if self._file_versions.get(path_str) == pending_version
         }
 
         logger.debug(
@@ -231,7 +231,7 @@ class AsyncTempMonitor:
         return expired_files
 
     async def _get_files_exceeding_limit(self) -> List[FileCandidate]:
-        """Get oldest eligible files exceeding the configured count limit."""
+        """Get count-limit candidates ordered from oldest to newest."""
         if len(self.file_cache) <= self.max_files:
             return []
 
@@ -242,21 +242,15 @@ class AsyncTempMonitor:
                 continue
             eligible_files.append((path_str, size, mtime, first_seen))
 
-        excess_count = len(self.file_cache) - self.max_files
-        if excess_count <= 0 or not eligible_files:
-            return []
-        return heapq.nsmallest(
-            min(excess_count, len(eligible_files)),
-            eligible_files,
-            key=lambda item: item[3],
-        )
+        eligible_files.sort(key=lambda item: item[3])
+        return eligible_files
 
     async def _delete_file(
         self,
         path_str: str,
         expected_version: Optional[FileVersion] = None,
-    ) -> Tuple[DeleteStatus, int, Optional[str]]:
-        """Delete one unchanged file, retrying read-only failures once."""
+    ) -> DeleteResult:
+        """Delete one unchanged file and return its remaining version on failure."""
         loop = asyncio.get_running_loop()
 
         def delete():
@@ -264,12 +258,12 @@ class AsyncTempMonitor:
             try:
                 file_stat = file_path.stat()
                 if not stat.S_ISREG(file_stat.st_mode):
-                    return "changed", 0, None
+                    return "changed", 0, None, None
                 if (
                     expected_version is not None
                     and self._file_version(file_stat) != expected_version
                 ):
-                    return "changed", 0, None
+                    return "changed", 0, None, None
 
                 size = file_stat.st_size
                 try:
@@ -279,11 +273,27 @@ class AsyncTempMonitor:
                     # file owner-writable, then retry exactly once.
                     file_path.chmod(file_stat.st_mode | stat.S_IWRITE)
                     file_path.unlink()
-                return "deleted", size, None
+                return "deleted", size, None, None
             except FileNotFoundError:
-                return "missing", 0, None
+                return "missing", 0, None, None
             except OSError as e:
-                return "failed", 0, f"{type(e).__name__}: {e}"
+                error = f"{type(e).__name__}: {e}"
+                try:
+                    remaining_stat = file_path.stat()
+                    remaining_version = (
+                        self._file_version(remaining_stat)
+                        if stat.S_ISREG(remaining_stat.st_mode)
+                        else None
+                    )
+                    if (
+                        expected_version is not None
+                        and remaining_version is not None
+                        and remaining_version[:4] != expected_version[:4]
+                    ):
+                        return "changed", 0, None, None
+                except OSError:
+                    remaining_version = None
+                return "failed", 0, error, remaining_version
 
         return await loop.run_in_executor(None, delete)
 
@@ -354,14 +364,15 @@ class AsyncTempMonitor:
                 attempted_paths.add(path_str)
 
                 expected_version = self._file_versions.get(path_str)
-                status, deleted_size, error = await self._delete_file(
-                    path_str,
-                    expected_version,
+                status, deleted_size, error, remaining_version = (
+                    await self._delete_file(path_str, expected_version)
                 )
                 if status == "failed":
                     failed_deletions[path_str] = error or "unknown error"
-                    if expected_version is not None:
-                        self._pending_retries[path_str] = expected_version[:2]
+                    if remaining_version is not None:
+                        self._pending_retries[path_str] = remaining_version
+                    else:
+                        self._pending_retries.pop(path_str, None)
                     return status
 
                 if status == "changed":
@@ -418,9 +429,12 @@ class AsyncTempMonitor:
             excess_files = await self._get_files_exceeding_limit()
             if excess_files:
                 logger.debug(
-                    f"Found {len(excess_files)} excess files (limit: {self.max_files})"
+                    f"Found {len(excess_files)} count-limit candidates "
+                    f"(limit: {self.max_files})"
                 )
                 for path_str, size, mtime, first_seen in excess_files:
+                    if len(self.file_cache) <= self.max_files:
+                        break
                     status = await delete_candidate(path_str)
                     if status == "deleted":
                         logger.debug(
