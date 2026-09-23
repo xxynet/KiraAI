@@ -401,13 +401,8 @@ class AsyncTempMonitor:
                 return status
 
             # Retry files that failed during an earlier cleanup cycle first.
-            for path_str, size, _mtime, first_seen in pending_files:
-                status = await delete_candidate(path_str)
-                if status == "deleted":
-                    logger.debug(
-                        f"DELETED pending retry: {Path(path_str).name} "
-                        f"(size: {size / 1024:.2f}KB)"
-                    )
+            for path_str, _size, _mtime, _first_seen in pending_files:
+                await delete_candidate(path_str)
 
             if expired_files:
                 logger.debug(
@@ -415,7 +410,7 @@ class AsyncTempMonitor:
                     f"(older than {self.max_age_seconds / 3600:.1f}h)"
                 )
                 min_expired_protection = self.file_protection_seconds // 4
-                for path_str, size, _mtime, first_seen in expired_files:
+                for path_str, _size, _mtime, first_seen in expired_files:
                     file_age = current_time - first_seen
                     if file_age < min_expired_protection:
                         logger.warning(
@@ -424,13 +419,7 @@ class AsyncTempMonitor:
                             f"protection: {min_expired_protection}s)"
                         )
                         continue
-                    status = await delete_candidate(path_str)
-                    if status == "deleted":
-                        logger.debug(
-                            f"DELETED expired: {Path(path_str).name} "
-                            f"(age: {file_age / 3600:.1f}h, "
-                            f"size: {size / 1024:.2f}KB)"
-                        )
+                    await delete_candidate(path_str)
 
             excess_files = await self._get_files_exceeding_limit()
             if excess_files:
@@ -438,22 +427,17 @@ class AsyncTempMonitor:
                     f"Found {len(excess_files)} count-limit candidates "
                     f"(limit: {self.max_files})"
                 )
-                for path_str, size, _mtime, first_seen in excess_files:
+                for path_str, _size, _mtime, _first_seen in excess_files:
                     if len(self.file_cache) <= self.max_files:
                         break
-                    status = await delete_candidate(path_str)
-                    if status == "deleted":
-                        logger.debug(
-                            f"DELETED excess: {Path(path_str).name} "
-                            f"(size: {size / 1024:.2f}KB)"
-                        )
+                    await delete_candidate(path_str)
 
             if self.total_size > self.max_size_bytes:
                 oldest_files = await self._get_oldest_files(
                     limit=self.batch_size,
                     exclude=attempted_paths,
                 )
-                for path_str, size, _mtime, first_seen in oldest_files:
+                for path_str, _size, _mtime, first_seen in oldest_files:
                     if self.total_size <= self.max_size_bytes:
                         break
 
@@ -466,13 +450,7 @@ class AsyncTempMonitor:
                         )
                         continue
 
-                    status = await delete_candidate(path_str)
-                    if status == "deleted":
-                        logger.debug(
-                            f"DELETED: {Path(path_str).name} "
-                            f"(age: {file_age:.2f}s, "
-                            f"size: {size / 1024:.2f}KB)"
-                        )
+                    await delete_candidate(path_str)
 
             await self._cleanup_empty_dirs(directory_candidates)
 
