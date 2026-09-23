@@ -1,7 +1,10 @@
-from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
+import base64
+import mimetypes
 import re
 import time
 from typing import Optional, Union
+
+from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 
 from core.provider import ModelInfo
 from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
@@ -15,8 +18,9 @@ logger = get_logger("provider", "purple")
 class OpenAIImageClient(ImageModelClient):
     """Image generation client with two on-the-wire shapes.
 
-    Original ``/v1/images/generations`` is the OpenAI standard image
-    endpoint. ``/v1/chat/completions`` mode handles the increasingly
+    The OpenAI image mode uses ``/v1/images/generations`` for text-to-image
+    and ``/v1/images/edits`` for image-to-image. ``/v1/chat/completions``
+    mode handles the increasingly
     common pattern where multimodal chat models (e.g. some Tongyi /
     Doubao / 3rd-party-compatible APIs) return images embedded in
     chat content — either as Markdown ``![alt](url)``, data URIs, or
@@ -242,30 +246,44 @@ class OpenAIImageClient(ImageModelClient):
         endpoint = self.model.model_config.get("endpoint", "v1/image")
         if endpoint == "v1/chat":
             return await self._image_to_image_via_chat(prompt, image)
-        return await self._image_to_image_via_generations(prompt, image)
+        return await self._image_to_image_via_edits(prompt, image)
 
-    # ──────── image-to-image Mode A: /v1/images/generations ────────
+    # ──────── image-to-image Mode A: /v1/images/edits ────────
 
-    async def _image_to_image_via_generations(self, prompt: str, images: list[Image]) -> Image:
+    async def _image_to_image_via_edits(self, prompt: str, images: list[Image]) -> Image:
         client = self._build_client()
         image_size = self.model.model_config.get("size", None)
         image_data_urls = [await img.to_data_url() for img in images]
+        image_files = []
+        for index, data_url in enumerate(image_data_urls):
+            header, encoded_data = data_url.split(",", 1)
+            mime_type = header.removeprefix("data:").split(";", 1)[0]
+            extension = mimetypes.guess_extension(mime_type) or ".png"
+            image_files.append(
+                (
+                    f"image_{index}{extension}",
+                    base64.b64decode(encoded_data),
+                    mime_type,
+                )
+            )
+        image_input = image_files[0] if len(image_files) == 1 else image_files
         try:
-            images_response = await client.images.generate(
+            images_response = await client.images.edit(
                 model=self.model.model_id,
                 prompt=prompt,
+                image=image_input,
                 size=image_size if image_size else None,
                 response_format="url",
-                extra_body={"watermark": False, "image": image_data_urls},
+                extra_body={"watermark": False},
             )
             if not images_response.data:
-                raise ValueError("Image-to-image generation API returned empty data")
+                raise ValueError("Image edit API returned empty data")
             return Image(image=images_response.data[0].url)
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Image-to-image generation API error: {e}")
+            logger.error(f"Image edit API error: {e}")
             raise
         except Exception as e:
-            logger.error(f"Image-to-image generation error: {e}")
+            logger.error(f"Image edit error: {e}")
             raise
 
     # ──────── image-to-image Mode B: /v1/chat/completions ────────
