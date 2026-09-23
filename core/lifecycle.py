@@ -246,7 +246,7 @@ class KiraLifecycle:
         self.temp_monitor = AsyncTempMonitor(
             folder_path=str(temp_folder),
             kira_config=self.kira_config,
-            check_interval=10,
+            check_interval=5 * 60,
             batch_size=20,
         )
 

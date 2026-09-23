@@ -23,7 +23,8 @@ DEFAULT_CONFIG = {
         "cache": {
             "max_size_mb": 50,
             "max_files": 50,
-            "max_age_hours": 24
+            "max_age_hours": 24,
+            "check_interval_minutes": 5
         },
         "image_compression": {
             "enabled": False,

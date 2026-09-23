@@ -93,6 +93,10 @@ class ConfigRoutes(Routes):
         updated = False
         if "bot_config" in payload:
             config["bot_config"] = bot_config
+            temp_monitor = getattr(self.lifecycle, "temp_monitor", None)
+            notify_config_changed = getattr(temp_monitor, "notify_config_changed", None)
+            if callable(notify_config_changed):
+                notify_config_changed()
             updated = True
         if "models" in payload:
             config["models"] = models

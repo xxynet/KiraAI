@@ -543,6 +543,7 @@ const allGroups: ConfigGroup[] = [
       { key: 'bot_config.cache.max_size_mb', labelKey: 'configuration.message.max_size_mb', labelFallback: 'Max Storage (MB)', hintKey: 'configuration.hints.max_size_mb', hintFallback: 'Maximum disk space allowed for the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 10240, required: true } },
       { key: 'bot_config.cache.max_files', labelKey: 'configuration.message.max_files', labelFallback: 'Max Files', hintKey: 'configuration.hints.max_files', hintFallback: 'Maximum number of files allowed in the cache folder', type: 'integer', default: 50, validation: { min: 1, max: 100000, required: true } },
       { key: 'bot_config.cache.max_age_hours', labelKey: 'configuration.message.max_age_hours', labelFallback: 'Max Cache Age (hours)', hintKey: 'configuration.hints.max_age_hours', hintFallback: 'Cache files older than this will be automatically cleaned up', type: 'integer', default: 24, validation: { min: 1, max: 8760, required: true } },
+      { key: 'bot_config.cache.check_interval_minutes', labelKey: 'configuration.message.check_interval_minutes', labelFallback: 'Cleanup Check Interval (minutes)', hintKey: 'configuration.hints.check_interval_minutes', hintFallback: 'How often the temporary cache is checked for files to clean up', type: 'integer', default: 5, validation: { min: 1, max: 1440, required: true } },
     ],
   },
   {
