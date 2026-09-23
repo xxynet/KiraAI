@@ -1,5 +1,5 @@
 import base64
-import mimetypes
+import binascii
 import re
 import time
 from typing import Optional, Union
@@ -42,6 +42,12 @@ class OpenAIImageClient(ImageModelClient):
         re.DOTALL,
     )
 
+    _IMAGE_EXTENSIONS = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+    }
+
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
@@ -62,6 +68,50 @@ class OpenAIImageClient(ImageModelClient):
             timeout=timeout,
         )
 
+    @staticmethod
+    def _image_from_response(images_response, operation: str) -> Image:
+        """Return the first image from either URL or Base64 API output."""
+        if not images_response.data:
+            raise ValueError(f"{operation} API returned empty data")
+
+        result = images_response.data[0]
+        url = getattr(result, "url", None)
+        if url:
+            return Image(image=url)
+
+        b64_json = getattr(result, "b64_json", None)
+        if b64_json:
+            return Image(image=b64_json)
+
+        raise ValueError(f"{operation} API returned neither url nor b64_json")
+
+    @classmethod
+    def _image_file_from_data_url(
+        cls, data_url: str, index: int
+    ) -> tuple[str, bytes, str]:
+        """Convert a Base64 image Data URL to an OpenAI upload tuple."""
+        header, separator, encoded_data = data_url.partition(",")
+        if not separator or not header.startswith("data:image/"):
+            raise ValueError("Image input must be an image Data URL")
+
+        mime_type, *parameters = header.removeprefix("data:").split(";")
+        mime_type = mime_type.lower()
+        if "base64" not in {parameter.lower() for parameter in parameters}:
+            raise ValueError("Image Data URL must contain Base64 data")
+
+        extension = cls._IMAGE_EXTENSIONS.get(mime_type)
+        if extension is None:
+            raise ValueError(f"Unsupported image MIME type: {mime_type}")
+
+        try:
+            image_bytes = base64.b64decode(encoded_data, validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise ValueError("Image Data URL contains invalid Base64 data") from e
+        if not image_bytes:
+            raise ValueError("Image Data URL contains empty image data")
+
+        return f"image_{index}{extension}", image_bytes, mime_type
+
     async def text_to_image(self, prompt) -> Image:
         endpoint = self.model.model_config.get("endpoint", "v1/image")
         if endpoint == "v1/chat":
@@ -78,12 +128,8 @@ class OpenAIImageClient(ImageModelClient):
                 model=self.model.model_id,
                 prompt=prompt,
                 size=image_size if image_size else None,
-                response_format="url",
-                extra_body={"watermark": False},
             )
-            if not images_response.data:
-                raise ValueError("Image generation API returned empty data")
-            return Image(image=images_response.data[0].url)
+            return self._image_from_response(images_response, "Image generation")
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Image generation API error: {e}")
             raise
@@ -253,32 +299,22 @@ class OpenAIImageClient(ImageModelClient):
     async def _image_to_image_via_edits(self, prompt: str, images: list[Image]) -> Image:
         client = self._build_client()
         image_size = self.model.model_config.get("size", None)
-        image_data_urls = [await img.to_data_url() for img in images]
-        image_files = []
-        for index, data_url in enumerate(image_data_urls):
-            header, encoded_data = data_url.split(",", 1)
-            mime_type = header.removeprefix("data:").split(";", 1)[0]
-            extension = mimetypes.guess_extension(mime_type) or ".png"
-            image_files.append(
-                (
-                    f"image_{index}{extension}",
-                    base64.b64decode(encoded_data),
-                    mime_type,
-                )
-            )
-        image_input = image_files[0] if len(image_files) == 1 else image_files
         try:
+            image_files = [
+                self._image_file_from_data_url(await image.to_data_url(), index)
+                for index, image in enumerate(images)
+            ]
+            if not image_files:
+                raise ValueError("Image edit requires at least one input image")
+            image_input = image_files[0] if len(image_files) == 1 else image_files
+
             images_response = await client.images.edit(
                 model=self.model.model_id,
                 prompt=prompt,
                 image=image_input,
                 size=image_size if image_size else None,
-                response_format="url",
-                extra_body={"watermark": False},
             )
-            if not images_response.data:
-                raise ValueError("Image edit API returned empty data")
-            return Image(image=images_response.data[0].url)
+            return self._image_from_response(images_response, "Image edit")
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Image edit API error: {e}")
             raise
