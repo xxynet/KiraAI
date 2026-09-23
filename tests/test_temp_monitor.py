@@ -179,6 +179,38 @@ async def test_cleanup_drops_pending_retry_when_failed_file_changes(
 
 
 @pytest.mark.asyncio
+async def test_size_cleanup_excludes_already_attempted_pending_files(
+    tmp_path, monkeypatch
+):
+    locked = tmp_path / "locked.bin"
+    removable = tmp_path / "removable.bin"
+    locked.write_bytes(b"a" * 600)
+    removable.write_bytes(b"b" * 600)
+    old_time = time.time() - 3600
+    os.utime(locked, (old_time, old_time))
+    os.utime(removable, (old_time + 10, old_time + 10))
+
+    monitor = make_monitor(tmp_path, max_size_mb=0.001)
+    monitor.batch_size = 1
+    monitor._pending_retries[str(locked)] = monitor._file_version(locked.stat())
+    original_delete = monitor._delete_file
+
+    async def fail_locked(path_str, expected_version=None):
+        if path_str == str(locked):
+            return "failed", 0, "PermissionError: locked", expected_version
+        return await original_delete(path_str, expected_version)
+
+    monkeypatch.setattr(monitor, "_delete_file", fail_locked)
+
+    await monitor.cleanup()
+
+    assert locked.exists()
+    assert not removable.exists()
+    assert monitor.total_size < monitor.max_size_bytes
+    assert str(locked) in monitor._pending_retries
+
+
+@pytest.mark.asyncio
 async def test_count_cleanup_continues_after_oldest_file_fails(
     tmp_path, monkeypatch
 ):

@@ -202,12 +202,18 @@ class AsyncTempMonitor:
         )
         return eligible_directories
 
-    async def _get_oldest_files(self, limit: int = 10) -> List[FileCandidate]:
-        """Get oldest files while skipping files inside the protection period."""
+    async def _get_oldest_files(
+        self,
+        limit: int = 10,
+        exclude: Optional[set] = None,
+    ) -> List[FileCandidate]:
+        """Get oldest unattempted files outside the protection period."""
         current_time = time.time()
         eligible_files = []
 
         for path_str, (size, mtime, first_seen) in self.file_cache.items():
+            if exclude and path_str in exclude:
+                continue
             if current_time - first_seen < self.file_protection_seconds:
                 continue
             eligible_files.append((path_str, size, mtime, first_seen))
@@ -395,7 +401,7 @@ class AsyncTempMonitor:
                 return status
 
             # Retry files that failed during an earlier cleanup cycle first.
-            for path_str, size, mtime, first_seen in pending_files:
+            for path_str, size, _mtime, first_seen in pending_files:
                 status = await delete_candidate(path_str)
                 if status == "deleted":
                     logger.debug(
@@ -409,7 +415,7 @@ class AsyncTempMonitor:
                     f"(older than {self.max_age_seconds / 3600:.1f}h)"
                 )
                 min_expired_protection = self.file_protection_seconds // 4
-                for path_str, size, mtime, first_seen in expired_files:
+                for path_str, size, _mtime, first_seen in expired_files:
                     file_age = current_time - first_seen
                     if file_age < min_expired_protection:
                         logger.warning(
@@ -432,7 +438,7 @@ class AsyncTempMonitor:
                     f"Found {len(excess_files)} count-limit candidates "
                     f"(limit: {self.max_files})"
                 )
-                for path_str, size, mtime, first_seen in excess_files:
+                for path_str, size, _mtime, first_seen in excess_files:
                     if len(self.file_cache) <= self.max_files:
                         break
                     status = await delete_candidate(path_str)
@@ -443,8 +449,11 @@ class AsyncTempMonitor:
                         )
 
             if self.total_size > self.max_size_bytes:
-                oldest_files = await self._get_oldest_files(limit=self.batch_size)
-                for path_str, size, mtime, first_seen in oldest_files:
+                oldest_files = await self._get_oldest_files(
+                    limit=self.batch_size,
+                    exclude=attempted_paths,
+                )
+                for path_str, size, _mtime, first_seen in oldest_files:
                     if self.total_size <= self.max_size_bytes:
                         break
 
