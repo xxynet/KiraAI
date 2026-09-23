@@ -65,7 +65,7 @@ class AsyncTempMonitor:
             and not isinstance(interval_minutes, bool)
             and interval_minutes > 0
         ):
-            self.check_interval = int(interval_minutes * 60)
+            self.check_interval = max(1, int(interval_minutes * 60))
         else:
             self.check_interval = self._default_check_interval
 
@@ -239,6 +239,7 @@ class AsyncTempMonitor:
             if not self.folder_path.exists():
                 return
 
+            now = time.time()
             directories = (
                 path for path in self.folder_path.rglob('*') if path.is_dir()
             )
@@ -246,6 +247,11 @@ class AsyncTempMonitor:
                 directories, key=lambda path: len(path.parts), reverse=True
             ):
                 try:
+                    if (
+                        self.file_protection_seconds > 0
+                        and now - directory.stat().st_mtime < self.file_protection_seconds
+                    ):
+                        continue
                     directory.rmdir()
                 except OSError:
                     continue
@@ -275,6 +281,7 @@ class AsyncTempMonitor:
             )
 
             if not needs_cleanup:
+                await self._cleanup_empty_dirs()
                 return
 
             logger.info(f"CLEANUP TRIGGERED - Files: {len(self.file_cache)}/{self.max_files}, "

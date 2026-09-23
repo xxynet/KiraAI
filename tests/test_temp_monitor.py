@@ -145,3 +145,28 @@ async def test_configured_check_interval_updates_at_runtime(tmp_path):
 
     assert monitor.check_interval == 2 * 60
     assert monitor._config_changed_event.is_set()
+
+    config.cache_config["check_interval_minutes"] = 0.01
+    monitor.notify_config_changed()
+
+    assert monitor.check_interval == 1
+
+
+@pytest.mark.asyncio
+async def test_cleanup_empty_dirs_preserves_recent_directories(tmp_path):
+    recent_dir = tmp_path / "recent"
+    old_dir = tmp_path / "old"
+    recent_dir.mkdir()
+    old_dir.mkdir()
+    old_time = time.time() - 120
+    os.utime(old_dir, (old_time, old_time))
+
+    monitor = AsyncTempMonitor(
+        str(tmp_path),
+        FakeConfig({}),
+        file_protection_seconds=60,
+    )
+    await monitor.cleanup()
+
+    assert recent_dir.exists()
+    assert not old_dir.exists()
