@@ -218,7 +218,7 @@ class AsyncTempMonitor:
                 continue
             eligible_files.append((path_str, size, mtime, first_seen))
 
-        if not eligible_files:
+        if not eligible_files and not exclude:
             logger.warning("No eligible files for deletion (all files are protected)")
             return []
 
