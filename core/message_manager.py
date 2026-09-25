@@ -3,7 +3,7 @@ import json
 import time
 from asyncio import Lock
 import xml.etree.ElementTree as ET
-from typing import Union, Any, List, Optional, TYPE_CHECKING
+from typing import Union, Any, Callable, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.event_bus import EventBus
@@ -76,13 +76,30 @@ class SessionBuffer:
         del self.buffer[:count]
         return popped
 
-    def flush(self, count: int = None):
-        if count and count <= len(self.buffer):
-            pending_messages = self.buffer[:count]
-            del self.buffer[:count]
-        else:
-            pending_messages = self.buffer[:]
-            self.buffer.clear()
+    def flush(
+        self,
+        count: int = None,
+        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+    ):
+        if filter_fn is None:
+            if count and count <= len(self.buffer):
+                pending_messages = self.buffer[:count]
+                del self.buffer[:count]
+            else:
+                pending_messages = self.buffer[:]
+                self.buffer.clear()
+            return pending_messages
+
+        matched_indices = [
+            index for index, message in enumerate(self.buffer) if filter_fn(message)
+        ]
+        matched_index_set = set(matched_indices)
+        pending_messages = [self.buffer[index] for index in matched_indices]
+        self.buffer[:] = [
+            message
+            for index, message in enumerate(self.buffer)
+            if index not in matched_index_set
+        ]
         return pending_messages
 
     def get_length(self):
