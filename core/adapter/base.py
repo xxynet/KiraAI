@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, TypeAlias, Union
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias, Union
 
 from .context import AdapterContext
 
@@ -13,6 +15,85 @@ if TYPE_CHECKING:
 
 AdapterTargetId: TypeAlias = Union[int, str]
 
+PermissionMode: TypeAlias = Literal["allow_list", "deny_list"]
+
+
+class AccessPolicy(Protocol):
+    """Determine whether a target may perform a specific adapter operation."""
+
+    def allows(self, target_id: AdapterTargetId | None) -> bool: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ListAccessPolicy:
+    """Allow or deny targets according to a normalized identifier set."""
+
+    mode: PermissionMode
+    entries: frozenset[str]
+
+    @classmethod
+    def from_lists(
+        cls,
+        mode: str,
+        *,
+        allow_list: Iterable[AdapterTargetId] | None = None,
+        deny_list: Iterable[AdapterTargetId] | None = None,
+    ) -> ListAccessPolicy:
+        normalized_mode: PermissionMode = (
+            "deny_list" if str(mode).strip().lower() == "deny_list"
+            else "allow_list"
+        )
+        source = deny_list if normalized_mode == "deny_list" else allow_list
+        entries = frozenset(
+            str(entry)
+            for entry in source or ()
+            if entry is not None
+        )
+        return cls(mode=normalized_mode, entries=entries)
+
+    def allows(self, target_id: AdapterTargetId | None) -> bool:
+        if target_id is None:
+            return False
+
+        listed = str(target_id) in self.entries
+        return listed if self.mode == "allow_list" else not listed
+
+
+class AccessController:
+    """Resolve access policies by adapter domain and permission name."""
+
+    def __init__(self):
+        self._policies: dict[tuple[str, str], AccessPolicy] = {}
+
+    def set_policy(
+        self,
+        *,
+        domain: str,
+        permission: str,
+        policy: AccessPolicy,
+    ) -> None:
+        self._policies[self._key(domain, permission)] = policy
+
+    def is_allowed(
+        self,
+        target_id: AdapterTargetId | None,
+        *,
+        domain: str,
+        permission: str,
+    ) -> bool:
+        policy = self._policies.get(self._key(domain, permission))
+        return policy.allows(target_id) if policy is not None else False
+
+    @staticmethod
+    def _key(domain: str, permission: str) -> tuple[str, str]:
+        normalized_domain = domain.strip()
+        normalized_permission = permission.strip()
+        if not normalized_domain:
+            raise ValueError("domain must not be empty")
+        if not normalized_permission:
+            raise ValueError("permission must not be empty")
+        return normalized_domain, normalized_permission
+
 
 class BaseAdapter(ABC):
     """Common identity, configuration, event publishing, and lifecycle contract."""
@@ -22,6 +103,7 @@ class BaseAdapter(ABC):
         self.info = ctx.info
         self.config = ctx.info.config
         self._event_queue = ctx.event_queue
+        self.access = AccessController()
 
     @classmethod
     def create_qrcode_login_handler(
@@ -30,6 +112,20 @@ class BaseAdapter(ABC):
     ) -> QRCodeLoginHandler | None:
         """Create a QR-code login handler when the adapter supports it."""
         return None
+
+    def is_allowed(
+        self,
+        target_id: AdapterTargetId | None,
+        *,
+        domain: str,
+        permission: str,
+    ) -> bool:
+        """Return whether a target may use a domain-specific permission."""
+        return self.access.is_allowed(
+            target_id,
+            domain=domain,
+            permission=permission,
+        )
 
     def publish(self, event: object) -> None:
         """Publish an adapter event without coupling the base to event subtypes."""
@@ -144,10 +240,14 @@ class VoiceChannelMixin(ABC):
 
 
 __all__ = [
+    "AccessController",
+    "AccessPolicy",
     "AdapterTargetId",
     "BaseAdapter",
     "FeedMixin",
     "IMMixin",
+    "ListAccessPolicy",
     "LiveEventMixin",
+    "PermissionMode",
     "VoiceChannelMixin",
 ]
