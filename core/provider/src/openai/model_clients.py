@@ -96,6 +96,8 @@ class OpenAIImageClient(ImageModelClient):
 
         mime_type, *parameters = header.removeprefix("data:").split(";")
         mime_type = mime_type.lower()
+        if mime_type == "image/jpg":
+            mime_type = "image/jpeg"
         if "base64" not in {parameter.lower() for parameter in parameters}:
             raise ValueError("Image Data URL must contain Base64 data")
 
