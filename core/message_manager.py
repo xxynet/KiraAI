@@ -40,6 +40,8 @@ from core.agent.func_tool_manager import FuncToolManager
 from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager
+from .adapter.base import BaseAdapter
+from .adapter.capabilities import FeedCapability, IMCapability
 from .agent.skills_mgr import SkillsManager
 from .agent.mcp_mgr import MCPManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
@@ -893,7 +895,12 @@ class MessageProcessor:
         logger.info(f"LLM: {response}")
 
         if response:
-            await self.adapter_mgr.get_adapter(msg.adapter_name).send_comment(
+            adapter = self.adapter_mgr.get_adapter(msg.adapter_name)
+            target = (
+                adapter.get_capability(FeedCapability)
+                if isinstance(adapter, BaseAdapter) else adapter
+            )
+            await target.send_comment(
                 text=response,
                 root=msg.cmt_id,
                 sub=msg.sub_cmt_id
@@ -967,13 +974,18 @@ class MessageProcessor:
 
         adapter_name, chat_type, pid = parts
         adapter = self.adapter_mgr.get_adapter(adapter_name)
+        if adapter is None:
+            raise ValueError(f"Adapter '{adapter_name}' is not available")
+        if chat_type not in {"dm", "gm"}:
+            raise ValueError("chat_type must be 'dm' or 'gm'")
+        target = adapter
+        if isinstance(adapter, BaseAdapter):
+            target = adapter.get_capability(IMCapability)
 
         if chat_type == "dm":
-            result = await adapter.send_direct_message(pid, chain)
-        elif chat_type == "gm":
-            result = await adapter.send_group_message(pid, chain)
+            result = await target.send_direct_message(pid, chain)
         else:
-            raise ValueError("chat_type must be 'dm' or 'gm'")
+            result = await target.send_group_message(pid, chain)
 
         if not result:
             return KiraIMSentResult(ok=False)

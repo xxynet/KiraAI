@@ -18,7 +18,7 @@ CapabilityT = TypeVar("CapabilityT", bound="BaseCapability[Any]")
 
 
 class BaseAdapter(ABC):
-    """Own named capability objects and their shared configuration and lifecycle.
+    """Own one object per capability kind and their shared lifecycle.
 
     Subclasses decide which objects to register from their own configuration.
     Resources used by capabilities are started and stopped by the adapter.
@@ -28,6 +28,8 @@ class BaseAdapter(ABC):
         self.ctx = ctx
         self.info = ctx.info
         self.config = ctx.info.config
+        self.message_types: list[str] = []
+        self.emoji_dict: dict | None = None
         self._event_queue = ctx.event_queue
         self.access = AccessController()
         self._capabilities: dict[str, BaseCapability[Any]] = {}
@@ -48,31 +50,26 @@ class BaseAdapter(ABC):
             raise ValueError(f"Capability '{name}' is already registered")
         if capability._name is not None:
             raise ValueError("capability instance is already registered")
+        kinds = self._capability_kinds(capability)
+        for registered in self._capabilities.values():
+            if kinds & self._capability_kinds(registered):
+                raise ValueError("a capability of this kind is already registered")
         capability._name = name
         self._capabilities[name] = capability
         return capability
 
-    @overload
-    def get_capability(self, name: str) -> BaseCapability[Any]: ...
-
-    @overload
     def get_capability(
-        self, name: str, capability_type: type[CapabilityT],
-    ) -> CapabilityT: ...
-
-    def get_capability(
-        self,
-        name: str,
-        capability_type: type[CapabilityT] | None = None,
-    ) -> BaseCapability[Any]:
-        """Look up a name, optionally checking and narrowing its capability type.
-
-        Raise KeyError for an unregistered name and TypeError for a type mismatch.
-        """
-        capability = self._capabilities[self._capability_name(name)]
-        if capability_type is not None and not isinstance(capability, capability_type):
-            raise TypeError(f"Capability '{name}' is not a {capability_type.__name__}")
-        return capability
+        self, capability_type: type[CapabilityT],
+    ) -> CapabilityT:
+        """Return the unique matching capability, or raise ValueError."""
+        if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
+            raise TypeError("capability_type must be a BaseCapability subclass")
+        matches = self.get_capabilities(capability_type)
+        if len(matches) != 1:
+            raise ValueError(
+                f"Expected one {capability_type.__name__}, found {len(matches)}"
+            )
+        return next(iter(matches.values()))
 
     @overload
     def get_capabilities(
@@ -101,6 +98,14 @@ class BaseAdapter(ABC):
         }
 
     @staticmethod
+    def _capability_kinds(capability: BaseCapability[Any]) -> set[type]:
+        """Direct BaseCapability subclasses define kinds, including custom kinds."""
+        return {
+            cls for cls in type(capability).__mro__
+            if BaseCapability in cls.__bases__
+        } or {BaseCapability}
+
+    @staticmethod
     def _capability_name(name: str) -> str:
         if not isinstance(name, str) or not name.strip():
             raise ValueError("capability name must be a non-empty string")
@@ -122,6 +127,7 @@ class BaseAdapter(ABC):
         return self.access.is_allowed(target_id, domain=domain, permission=permission)
 
     def publish(self, event: object) -> None:
+        """Queue an event without interpreting capability-specific data."""
         self._event_queue.put_nowait(event)
 
     @abstractmethod
@@ -162,6 +168,10 @@ class BaseCapability(Generic[AdapterT], ABC):
         return self.adapter.is_allowed(
             target_id, domain=self.name, permission=permission,
         )
+
+    def publish(self, event: object) -> None:
+        """Forward an event through the owning adapter."""
+        self.adapter.publish(event)
 
 
 __all__ = ["AdapterTargetId", "BaseAdapter", "BaseCapability"]

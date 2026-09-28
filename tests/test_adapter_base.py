@@ -38,11 +38,11 @@ class ExampleFeed(FeedCapability["ExampleAdapter"]):
 class ExampleAdapter(BaseAdapter):
     def __init__(self, ctx):
         super().__init__(ctx)
+        self.message_types = ["text"]
         self.sent = []
         self.posts = ["first post", "second post"]
-        self.im = self.register_capability("im", ExampleIM(self))
-        if self.config.get("enable_channel"):
-            self.register_capability("qq-channel", ExampleIM(self))
+        if self.config.get("enable_im", True):
+            self.im = self.register_capability(self.config.get("im_name", "im"), ExampleIM(self))
         if self.config.get("enable_qzone"):
             self.register_capability("qzone", ExampleFeed(self))
 
@@ -68,32 +68,32 @@ def make_adapter(**config):
 
 def test_adapter_config_decides_which_objects_are_registered():
     disabled = make_adapter()
-    enabled = make_adapter(enable_channel=True, enable_qzone=True)
+    enabled = make_adapter(enable_qzone=True)
 
     assert set(disabled.capabilities) == {"im"}
-    assert set(enabled.capabilities) == {"im", "qq-channel", "qzone"}
-    with pytest.raises(KeyError):
-        disabled.get_capability("qzone")
+    assert set(enabled.capabilities) == {"im", "qzone"}
+    with pytest.raises(ValueError, match="Expected one FeedCapability, found 0"):
+        disabled.get_capability(FeedCapability)
 
 
 @pytest.mark.asyncio
-async def test_two_im_objects_route_to_their_own_names_and_share_adapter():
-    adapter = make_adapter(enable_channel=True)
-    im = adapter.get_capability("im", IMCapability)
-    channel = adapter.get_capability("qq-channel", ExampleIM)
+async def test_im_lookup_by_type_does_not_require_a_registration_name():
+    adapter = make_adapter(im_name="qq-channel")
+    im = adapter.get_capability(IMCapability)
+    channel = adapter.get_capability(ExampleIM)
 
     assert im is adapter.im
-    assert im is not channel
+    assert im is channel
     assert im.adapter is channel.adapter is adapter
     await im.send_direct_message("user", [])
     await channel.send_group_message("channel", [])
-    assert adapter.sent == [("im", "user", []), ("qq-channel", "channel", [])]
+    assert adapter.sent == [("qq-channel", "user", []), ("qq-channel", "channel", [])]
 
 
 @pytest.mark.asyncio
 async def test_feed_object_includes_comments_and_uses_adapter_members():
     adapter = make_adapter(enable_qzone=True)
-    feed = adapter.get_capability("qzone", FeedCapability)
+    feed = adapter.get_capability(FeedCapability)
 
     assert await feed.get_feed(1) == ["first post"]
     assert await feed.search_feed("second", 1) == ["second post"]
@@ -101,10 +101,28 @@ async def test_feed_object_includes_comments_and_uses_adapter_members():
     assert adapter.sent == [("qzone", "post", ("reply", "comment"))]
 
 
-def test_lookup_checks_expected_capability_type():
+def test_lookup_returns_the_matching_capability_type():
+    adapter = make_adapter(enable_qzone=True)
+    assert adapter.get_capability(IMCapability) is adapter.im
+    assert adapter.get_capability(capability_type=ExampleIM) is adapter.im
+    assert isinstance(adapter.get_capability(FeedCapability), ExampleFeed)
+
+
+def test_lookup_rejects_missing_capability_types():
     adapter = make_adapter()
-    with pytest.raises(TypeError, match="not a FeedCapability"):
-        adapter.get_capability("im", FeedCapability)
+    with pytest.raises(ValueError, match="Expected one FeedCapability, found 0"):
+        adapter.get_capability(FeedCapability)
+
+
+@pytest.mark.parametrize("invalid_type", [None, "im", str, (IMCapability,)])
+def test_lookup_requires_a_capability_class(invalid_type):
+    with pytest.raises(TypeError, match="BaseCapability subclass"):
+        make_adapter().get_capability(invalid_type)
+
+
+def test_lookup_rejects_an_ambiguous_base_type():
+    with pytest.raises(ValueError, match="Expected one BaseCapability, found 2"):
+        make_adapter(enable_qzone=True).get_capability(BaseCapability)
 
 
 def test_duplicate_registration_cannot_replace_existing_object():
@@ -112,9 +130,82 @@ def test_duplicate_registration_cannot_replace_existing_object():
     replacement = ExampleIM(adapter)
     with pytest.raises(ValueError, match="already registered"):
         adapter.register_capability("im", replacement)
-    assert adapter.get_capability("im") is adapter.im
+    assert adapter.get_capability(IMCapability) is adapter.im
     with pytest.raises(RuntimeError, match="not been registered"):
         _ = replacement.name
+
+
+@pytest.mark.parametrize("implementation", [ExampleIM, type("OtherIM", (ExampleIM,), {})])
+def test_duplicate_kind_is_rejected_even_with_a_different_name(implementation):
+    adapter = make_adapter()
+    replacement = implementation(adapter)
+    with pytest.raises(ValueError, match="kind is already registered"):
+        adapter.register_capability("qq-channel", replacement)
+    assert adapter.get_capabilities() == {"im": adapter.im}
+    with pytest.raises(RuntimeError, match="not been registered"):
+        _ = replacement.name
+
+
+@pytest.mark.parametrize(
+    "capability_type", [IMCapability, FeedCapability, LiveEventCapability, VoiceChannelCapability],
+)
+def test_sibling_implementations_share_the_same_capability_kind(capability_type):
+    implementations = [
+        type(name, (capability_type,), {
+            method: (lambda *args, **kwargs: None)
+            for method in capability_type.__abstractmethods__
+        })
+        for name in ("FirstImplementation", "SecondImplementation")
+    ]
+    adapter = make_adapter(enable_im=False)
+    first = adapter.register_capability("first", implementations[0](adapter))
+    with pytest.raises(ValueError, match="kind is already registered"):
+        adapter.register_capability("second", implementations[1](adapter))
+    assert adapter.get_capability(capability_type) is first
+
+
+def test_custom_capability_kinds_are_independent_and_unique():
+    class CustomCapability(BaseCapability):
+        pass
+
+    class CustomImplementation(CustomCapability):
+        pass
+
+    class OtherCapability(BaseCapability):
+        pass
+
+    adapter = make_adapter()
+    custom = adapter.register_capability("custom", CustomCapability(adapter))
+    adapter.register_capability("other", OtherCapability(adapter))
+    with pytest.raises(ValueError, match="kind is already registered"):
+        adapter.register_capability("duplicate", CustomImplementation(adapter))
+    assert adapter.get_capability(CustomCapability) is custom
+
+
+@pytest.mark.parametrize("combined_first", [False, True])
+def test_combined_implementation_cannot_bypass_kind_uniqueness(combined_first):
+    class CombinedCapability(ExampleIM, ExampleFeed):
+        pass
+
+    adapter = make_adapter(enable_im=False)
+    first_type, second_type = (
+        (CombinedCapability, ExampleFeed) if combined_first
+        else (ExampleIM, CombinedCapability)
+    )
+    first = adapter.register_capability("first", first_type(adapter))
+    with pytest.raises(ValueError, match="kind is already registered"):
+        adapter.register_capability("second", second_type(adapter))
+    assert adapter.get_capabilities() == {"first": first}
+
+
+def test_capability_discovery_filters_types_and_returns_a_snapshot():
+    adapter = make_adapter(enable_qzone=True)
+    capabilities = adapter.get_capabilities()
+    assert set(capabilities) == {"im", "qzone"}
+    assert adapter.get_capabilities(IMCapability) == {"im": adapter.im}
+    assert adapter.get_capabilities(VoiceChannelCapability) == {}
+    capabilities.clear()
+    assert set(adapter.capabilities) == {"im", "qzone"}
 
 
 def test_capability_cannot_be_shared_between_accounts_or_names():
@@ -144,15 +235,15 @@ def test_registration_requires_an_instance_and_registry_is_read_only():
         adapter.capabilities["injected"] = ExampleIM(adapter)
 
 
-def test_registration_and_lookup_normalize_names_consistently():
+def test_registration_normalizes_names():
     adapter = make_adapter()
     capability = adapter.register_capability(" custom ", BaseCapability(adapter))
     assert capability.name == "custom"
-    assert adapter.get_capability(" custom ") is capability
+    assert adapter.capabilities["custom"] is capability
 
 
 def test_capability_permissions_use_registration_name_and_are_account_local():
-    adapter = make_adapter(enable_channel=True)
+    adapter = make_adapter(enable_qzone=True)
     other = make_adapter()
     adapter.access.set_policy(
         domain="im",
@@ -162,7 +253,7 @@ def test_capability_permissions_use_registration_name_and_are_account_local():
     assert adapter.im.is_allowed("123", permission="im.direct.receive")
     assert not adapter.im.is_allowed("456", permission="im.direct.receive")
     assert not adapter.im.is_allowed("123", permission="im.direct.send")
-    assert not adapter.get_capability("qq-channel").is_allowed(
+    assert not adapter.get_capability(FeedCapability).is_allowed(
         "123", permission="im.direct.receive",
     )
     assert not other.im.is_allowed("123", permission="im.direct.receive")
