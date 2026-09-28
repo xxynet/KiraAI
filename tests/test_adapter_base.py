@@ -5,12 +5,11 @@ import asyncio
 import pytest
 
 from core.adapter.adapter_info import AdapterInfo
-from core.adapter.base import (
-    BaseAdapter,
-    BaseCapability,
+from core.adapter.access import ListAccessPolicy
+from core.adapter.base import BaseAdapter, BaseCapability
+from core.adapter.capabilities import (
     FeedCapability,
     IMCapability,
-    ListAccessPolicy,
     LiveEventCapability,
     VoiceChannelCapability,
 )
