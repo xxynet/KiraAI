@@ -81,9 +81,8 @@ class ImgTag(BaseTag):
                 if not ref_file.is_file():
                     message_logger.warning(f"Image reference not found: {ref_file}, skipped")
                     continue
-                img_extension = ref_file.suffix.lstrip(".")
                 bs64 = await image_to_base64(str(ref_file))
-                ref_images.append(Image(image=bs64, name=p, mime=f"image/{img_extension}"))
+                ref_images.append(Image(image=bs64, name=p))
             try:
                 image_client = self.ctx.provider_mgr.get_default_image()
             except ValueError as exc:
@@ -207,13 +206,12 @@ class SelfieTag(BaseTag):
             else:
                 ref_file = get_data_path() / ref_img_path
             if ref_file.is_file():
-                img_extension = ref_file.suffix.lstrip(".")
                 bs64 = await image_to_base64(str(ref_file))
                 image_client = self.ctx.provider_mgr.get_default_image()
                 if not image_client:
                     message_logger.error("Failed to get image client, please set default image model in Configuration")
                     return []
-                img_res = await image_to_image(image_client, value, image=Image(image=bs64, name=ref_img_path, mime=f"image/{img_extension}"))
+                img_res = await image_to_image(image_client, value, image=Image(image=bs64, name=ref_img_path))
                 if img_res:
                     return [img_res]
                 message_logger.warning("Invalid selfie image result")
