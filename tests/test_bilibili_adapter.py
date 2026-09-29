@@ -24,8 +24,8 @@ def make_adapter(**config):
     ))
 
 
-def test_adapter_registers_only_feed_and_keeps_credentials_account_local():
-    first = make_adapter(sessdata="first-session", dedeuserid="123")
+def test_adapter_can_disable_im_and_keeps_credentials_account_local():
+    first = make_adapter(enable_im=False, sessdata="first-session", dedeuserid="123")
     second = make_adapter(sessdata="second-session", bot_uid="456")
     assert isinstance(first, BaseAdapter)
     assert set(first.capabilities) == {FeedCapability}
@@ -82,7 +82,7 @@ async def test_search_maps_to_search_feed_and_respects_count(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_comment_reply_maps_root_parent_and_credentials(monkeypatch):
-    adapter = make_adapter(listening_bvid="BV17x411w7KC")
+    adapter = make_adapter(enable_im=False, listening_bvid="BV17x411w7KC")
     adapter.logger = Mock()
     send = AsyncMock(return_value={"rpid": 345})
     monkeypatch.setattr(feed_module.comment, "send_comment", send)
@@ -161,7 +161,7 @@ def sdk_client(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_start_without_listener_verifies_account_and_keeps_sdk_client_shared(monkeypatch, sdk_client):
-    adapter = make_adapter(sessdata="test-session", bot_uid="old")
+    adapter = make_adapter(enable_im=False, sessdata="test-session", bot_uid="old")
     account = AsyncMock(return_value={"mid": 123, "name": "test-name"})
     monkeypatch.setattr(adapter_module.user, "get_self_info", account)
     adapter.logger = Mock()
@@ -187,7 +187,7 @@ async def test_start_without_listener_verifies_account_and_keeps_sdk_client_shar
 
 @pytest.mark.asyncio
 async def test_stop_cancels_listener_and_allows_restart(sdk_client):
-    adapter = make_adapter(listening_bvid="BV17x411w7KC")
+    adapter = make_adapter(enable_im=False, listening_bvid="BV17x411w7KC")
     entered = asyncio.Event()
 
     async def poll():
@@ -210,7 +210,7 @@ async def test_stop_cancels_listener_and_allows_restart(sdk_client):
 
 @pytest.mark.asyncio
 async def test_polling_logs_error_details_and_retries_after_failure(monkeypatch, sdk_client):
-    adapter = make_adapter(listening_bvid="BV17x411w7KC", listening_interval=1)
+    adapter = make_adapter(enable_im=False, listening_bvid="BV17x411w7KC", listening_interval=1)
     adapter.logger = Mock()
     received = asyncio.Event()
     count = 0
