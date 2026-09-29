@@ -32,30 +32,38 @@ class BaseAdapter(ABC):
         self.emoji_dict: dict | None = None
         self._event_queue = ctx.event_queue
         self.access = AccessController()
-        self._capabilities: dict[str, BaseCapability[Any]] = {}
+        self._capabilities: dict[type[BaseCapability[Any]], BaseCapability[Any]] = {}
 
     @property
-    def capabilities(self) -> Mapping[str, BaseCapability[Any]]:
+    def capabilities(self) -> Mapping[type[BaseCapability[Any]], BaseCapability[Any]]:
         """Expose registered objects without allowing registry mutation."""
         return MappingProxyType(self._capabilities)
 
-    def register_capability(self, name: str, capability: CapabilityT) -> CapabilityT:
-        """Register an instance owned by this adapter and return that instance."""
-        name = self._capability_name(name)
+    def register_capability(
+        self, capability_type: type[CapabilityT], capability: CapabilityT,
+    ) -> CapabilityT:
+        """Register an owned instance under its type and return that instance.
+
+        The registered type also scopes this object's access policies.
+        """
+        if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
+            raise TypeError("capability_type must be a BaseCapability subclass")
         if not isinstance(capability, BaseCapability):
             raise TypeError("capability must be a BaseCapability instance")
+        if not isinstance(capability, capability_type):
+            raise TypeError("capability must be an instance of capability_type")
         if capability.adapter is not self:
             raise ValueError("capability belongs to another adapter")
-        if name in self._capabilities:
-            raise ValueError(f"Capability '{name}' is already registered")
-        if capability._name is not None:
+        if capability._capability_type is not None:
             raise ValueError("capability instance is already registered")
+        if capability_type in self._capabilities:
+            raise ValueError("a capability of this kind is already registered")
         kinds = self._capability_kinds(capability)
         for registered in self._capabilities.values():
             if kinds & self._capability_kinds(registered):
                 raise ValueError("a capability of this kind is already registered")
-        capability._name = name
-        self._capabilities[name] = capability
+        capability._capability_type = capability_type
+        self._capabilities[capability_type] = capability
         return capability
 
     def get_capability(
@@ -74,17 +82,17 @@ class BaseAdapter(ABC):
     @overload
     def get_capabilities(
         self, capability_type: None = None,
-    ) -> dict[str, BaseCapability[Any]]: ...
+    ) -> dict[type[BaseCapability[Any]], BaseCapability[Any]]: ...
 
     @overload
     def get_capabilities(
         self, capability_type: type[CapabilityT],
-    ) -> dict[str, CapabilityT]: ...
+    ) -> dict[type[BaseCapability[Any]], CapabilityT]: ...
 
     def get_capabilities(
         self, capability_type: type[CapabilityT] | None = None,
-    ) -> dict[str, BaseCapability[Any]] | dict[str, CapabilityT]:
-        """Return a name-to-instance snapshot, optionally filtered by type.
+    ) -> dict[type[BaseCapability[Any]], BaseCapability[Any]] | dict[type[BaseCapability[Any]], CapabilityT]:
+        """Return a type-to-instance snapshot, optionally filtered by type.
 
         Include subclass instances and return an empty dict if nothing matches.
         Changing the returned dict does not modify the registry; objects are shared.
@@ -92,8 +100,8 @@ class BaseAdapter(ABC):
         if capability_type is None:
             return self._capabilities.copy()
         return {
-            name: capability
-            for name, capability in self._capabilities.items()
+            registered_type: capability
+            for registered_type, capability in self._capabilities.items()
             if isinstance(capability, capability_type)
         }
 
@@ -105,12 +113,6 @@ class BaseAdapter(ABC):
             if BaseCapability in cls.__bases__
         } or {BaseCapability}
 
-    @staticmethod
-    def _capability_name(name: str) -> str:
-        if not isinstance(name, str) or not name.strip():
-            raise ValueError("capability name must be a non-empty string")
-        return name.strip()
-
     @classmethod
     def create_qrcode_login_handler(
         cls, config: dict[str, Any],
@@ -121,10 +123,10 @@ class BaseAdapter(ABC):
         self,
         target_id: AdapterTargetId | None,
         *,
-        domain: str,
+        capability_type: type[BaseCapability[Any]],
         permission: str,
     ) -> bool:
-        return self.access.is_allowed(target_id, domain=domain, permission=permission)
+        return self.access.is_allowed(target_id, capability_type=capability_type, permission=permission)
 
     def publish(self, event: object) -> None:
         """Queue an event without interpreting capability-specific data."""
@@ -141,7 +143,7 @@ class BaseAdapter(ABC):
 
 
 class BaseCapability(Generic[AdapterT], ABC):
-    """An operation provider owned by one adapter and registered under one name.
+    """An operation provider owned by one adapter and registered under a capability type.
 
     Specialize the adapter type to expose platform-specific members in editors,
     for example IMCapability[MyAdapter].
@@ -149,24 +151,24 @@ class BaseCapability(Generic[AdapterT], ABC):
 
     def __init__(self, adapter: AdapterT):
         self._adapter = adapter
-        self._name: str | None = None
+        self._capability_type: type[BaseCapability[Any]] | None = None
 
     @property
     def adapter(self) -> AdapterT:
         return self._adapter
 
     @property
-    def name(self) -> str:
-        if self._name is None:
+    def capability_type(self) -> type[BaseCapability[Any]]:
+        if self._capability_type is None:
             raise RuntimeError("capability has not been registered")
-        return self._name
+        return self._capability_type
 
     def is_allowed(
         self, target_id: AdapterTargetId | None, *, permission: str,
     ) -> bool:
-        """Check access using this object's registration name as the domain."""
+        """Check access using this object's registered capability type."""
         return self.adapter.is_allowed(
-            target_id, domain=self.name, permission=permission,
+            target_id, capability_type=self.capability_type, permission=permission,
         )
 
     def publish(self, event: object) -> None:

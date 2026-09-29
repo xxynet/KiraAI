@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
+
+if TYPE_CHECKING:
+    from .base import BaseCapability
 
 
 PermissionMode: TypeAlias = Literal["allow_list", "deny_list"]
@@ -46,39 +49,42 @@ class ListAccessPolicy:
 
 
 class AccessController:
-    """Resolve access policies by capability registration name and permission."""
+    """Resolve access policies by registered capability type and permission."""
 
     def __init__(self):
-        self._policies: dict[tuple[str, str], AccessPolicy] = {}
+        self._policies: dict[tuple[type[BaseCapability[Any]], str], AccessPolicy] = {}
 
     def set_policy(
         self,
         *,
-        domain: str,
+        capability_type: type[BaseCapability[Any]],
         permission: str,
         policy: AccessPolicy,
     ) -> None:
-        self._policies[self._key(domain, permission)] = policy
+        self._policies[self._key(capability_type, permission)] = policy
 
     def is_allowed(
         self,
         target_id: int | str | None,
         *,
-        domain: str,
+        capability_type: type[BaseCapability[Any]],
         permission: str,
     ) -> bool:
-        policy = self._policies.get(self._key(domain, permission))
+        policy = self._policies.get(self._key(capability_type, permission))
         return policy.allows(target_id) if policy is not None else False
 
     @staticmethod
-    def _key(domain: str, permission: str) -> tuple[str, str]:
-        normalized_domain = domain.strip()
+    def _key(
+        capability_type: type[BaseCapability[Any]], permission: str,
+    ) -> tuple[type[BaseCapability[Any]], str]:
+        from .base import BaseCapability
+
+        if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
+            raise TypeError("capability_type must be a BaseCapability subclass")
         normalized_permission = permission.strip()
-        if not normalized_domain:
-            raise ValueError("domain must not be empty")
         if not normalized_permission:
             raise ValueError("permission must not be empty")
-        return normalized_domain, normalized_permission
+        return capability_type, normalized_permission
 
 
 __all__ = ["AccessController", "AccessPolicy", "ListAccessPolicy", "PermissionMode"]

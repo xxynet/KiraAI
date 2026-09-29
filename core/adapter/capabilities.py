@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class IMCapability(BaseCapability[AdapterT]):
-    """Instant messaging for a named part of an adapter."""
+    """Instant messaging operations for an adapter."""
 
     @abstractmethod
     async def send_group_message(

@@ -22,7 +22,7 @@ from tests.test_adapter_base import ExampleAdapter, make_adapter
 
 
 def routed_adapter():
-    return make_adapter(im_name="qq-channel", enable_qzone=True)
+    return make_adapter(enable_qzone=True)
 
 
 def message_event(adapter, group=False, target_id="123"):
@@ -100,8 +100,8 @@ async def test_im_event_and_proactive_send_preserve_adapter_target_ids(group):
     assert processor.session_buffer.get_buffer(regular.session.sid) is not processor.session_buffer.get_buffer(channel.session.sid)
     await processor.send_message_chain(regular.session.sid, regular.message.chain)
     await processor.send_message_chain(channel.session.sid, channel.message.chain)
-    assert [(name, target) for name, target, _ in adapter.sent] == [
-        ("qq-channel", "123"), ("qq-channel", "channel/123"),
+    assert [(capability_type, target) for capability_type, target, _ in adapter.sent] == [
+        (IMCapability, "123"), (IMCapability, "channel/123"),
     ]
 
 
@@ -116,11 +116,11 @@ async def test_sending_rejects_missing_im_capability_before_sending():
 
 
 @pytest.mark.asyncio
-async def test_single_im_send_uses_the_only_capability_when_name_is_omitted():
+async def test_single_im_send_uses_the_capability_registered_by_type():
     adapter = make_adapter(enable_qzone=True)
     chain = MessageChain([Text("reply")])
     await processor_for(adapter).send_message_chain("example:dm:123", chain)
-    assert adapter.sent == [("im", "123", chain)]
+    assert adapter.sent == [(IMCapability, "123", chain)]
 
 
 def test_publishing_preserves_explicit_session_id_without_decoding():
@@ -200,7 +200,7 @@ async def test_comment_reply_uses_the_only_feed():
     client = SimpleNamespace(chat=AsyncMock(return_value=SimpleNamespace(text_response="reply")))
     processor.provider_mgr = SimpleNamespace(get_default_llm=lambda: client)
     await processor.handle_cmt_message(event)
-    assert adapter.sent == [("qzone", "post", ("reply", None))]
+    assert adapter.sent == [(FeedCapability, "post", ("reply", None))]
 
 
 @pytest.mark.asyncio
@@ -276,7 +276,7 @@ async def test_cross_session_permission_uses_opaque_id_without_capability_name()
 
     adapter = routed_adapter()
     adapter.access.set_policy(
-        domain="qq-channel", permission="im.direct.receive",
+        capability_type=IMCapability, permission="im.direct.receive",
         policy=ListAccessPolicy.from_lists("allow_list", allow_list=["channel/123"]),
     )
     ctx = SimpleNamespace(
