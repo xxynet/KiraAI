@@ -18,6 +18,8 @@ from core.config.config_field import BaseConfigField, build_fields
 from core.utils.path_utils import resolve_manifest_icon_path
 from .adapter_info import AdapterInfo
 from .adapter_utils import IMAdapter, SocialMediaAdapter
+from .base import BaseAdapter
+from .context import AdapterContext
 
 
 logger = get_logger("adapter", "blue")
@@ -26,14 +28,14 @@ ADAPTER_STOP_TIMEOUT = 15.0
 
 
 class AdapterManager:
-    _registry: Dict[str, Type[Union[IMAdapter, SocialMediaAdapter]]] = {}
+    _registry: Dict[str, Type[Union[BaseAdapter, IMAdapter, SocialMediaAdapter]]] = {}
     _manifests: Dict[str, dict] = {}
     _manifest_dirs: Dict[str, Path] = {}
     _schemas: Dict[str, list[BaseConfigField]] = {}
 
     def __init__(self, kira_config: KiraConfig, event_queue: asyncio.Queue):
         self.kira_config = kira_config
-        self._adapters: dict[str, Union[IMAdapter, SocialMediaAdapter]] = {}
+        self._adapters: dict[str, Union[BaseAdapter, IMAdapter, SocialMediaAdapter]] = {}
         self._adapter_tasks: dict[str, asyncio.Task] = {}
         self.adas_config: dict = kira_config.get("adapters", {}) or {}
         self.event_queue = event_queue
@@ -42,7 +44,7 @@ class AdapterManager:
         self.scan_adapters(src_dir)
 
     @classmethod
-    def get_adapter_class(cls, platform: str) -> Optional[Type[Union[IMAdapter, SocialMediaAdapter]]]:
+    def get_adapter_class(cls, platform: str) -> Optional[Type[Union[BaseAdapter, IMAdapter, SocialMediaAdapter]]]:
         return cls._registry.get(platform)
 
     @classmethod
@@ -68,12 +70,12 @@ class AdapterManager:
         )
 
     @classmethod
-    def register_adapter_type(cls, platform: str, adapter_cls: Type[Union[IMAdapter, SocialMediaAdapter]], manifest: dict, manifest_dir: Path, schema: Optional[list[BaseConfigField]] = None) -> None:
+    def register_adapter_type(cls, platform: str, adapter_cls: Type[Union[BaseAdapter, IMAdapter, SocialMediaAdapter]], manifest: dict, manifest_dir: Path, schema: Optional[list[BaseConfigField]] = None) -> None:
         """Register an Adapter type supplied by a plugin."""
         if not isinstance(platform, str) or not platform.strip():
             raise ValueError("Adapter platform must be a non-empty string")
-        if not inspect.isclass(adapter_cls) or not issubclass(adapter_cls, (IMAdapter, SocialMediaAdapter)):
-            raise TypeError("Adapter class must inherit from IMAdapter or SocialMediaAdapter")
+        if not inspect.isclass(adapter_cls) or not issubclass(adapter_cls, (BaseAdapter, IMAdapter, SocialMediaAdapter)):
+            raise TypeError("Adapter class must inherit from BaseAdapter, IMAdapter or SocialMediaAdapter")
         if not isinstance(manifest, dict) or (schema is not None and not isinstance(schema, list)):
             raise TypeError("Adapter manifest must be a dict and schema must be a list")
         platform = platform.strip()
@@ -86,7 +88,7 @@ class AdapterManager:
         cls._schemas[platform] = copy.deepcopy(schema) if schema else []
 
     @classmethod
-    def unregister_adapter_type(cls, platform: str, adapter_cls: Type[Union[IMAdapter, SocialMediaAdapter]]) -> bool:
+    def unregister_adapter_type(cls, platform: str, adapter_cls: Type[Union[BaseAdapter, IMAdapter, SocialMediaAdapter]]) -> bool:
         """Remove a plugin Adapter type without affecting another owner."""
         if cls._registry.get(platform) is not adapter_cls:
             return False
@@ -239,7 +241,7 @@ class AdapterManager:
 
             found = False
             for attr_name, attr_value in inspect.getmembers(module):
-                if inspect.isclass(attr_value) and issubclass(attr_value, (IMAdapter, SocialMediaAdapter)) and attr_value not in (IMAdapter, SocialMediaAdapter):
+                if inspect.isclass(attr_value) and issubclass(attr_value, (BaseAdapter, IMAdapter, SocialMediaAdapter)) and attr_value not in (BaseAdapter, IMAdapter, SocialMediaAdapter):
                     cls._registry[platform_name] = attr_value
                     cls._manifests[platform_name] = manifest
                     cls._manifest_dirs[platform_name] = Path(adapter_dir)
@@ -479,7 +481,7 @@ class AdapterManager:
     def _handle_adapter_start_failure(
         self,
         name: str,
-        adapter: Union[IMAdapter, SocialMediaAdapter],
+        adapter: Union[BaseAdapter, IMAdapter, SocialMediaAdapter],
         error: BaseException,
     ) -> None:
         """Remove a failed adapter and persist it as disabled when possible."""
@@ -506,7 +508,7 @@ class AdapterManager:
     def _handle_adapter_start_task_completion(
         self,
         name: str,
-        adapter: Union[IMAdapter, SocialMediaAdapter],
+        adapter: Union[BaseAdapter, IMAdapter, SocialMediaAdapter],
         task: asyncio.Task,
     ) -> None:
         """Release a completed startup task and record asynchronous failures."""
@@ -535,7 +537,9 @@ class AdapterManager:
             return
 
         try:
-            if issubclass(adapter_cls, IMAdapter):
+            if issubclass(adapter_cls, BaseAdapter):
+                instance = adapter_cls(AdapterContext(info=info, event_queue=self.event_queue))
+            elif issubclass(adapter_cls, IMAdapter):
                 instance = adapter_cls(info, self.event_queue)
             elif issubclass(adapter_cls, SocialMediaAdapter):
                 instance = adapter_cls(info, self.event_queue)
@@ -634,10 +638,10 @@ class AdapterManager:
         for name in list(self._adapters):
             await self.stop_adapter(name)
 
-    def get_adapters(self) -> dict[str, Union[IMAdapter, SocialMediaAdapter]]:
+    def get_adapters(self) -> dict[str, Union[BaseAdapter, IMAdapter, SocialMediaAdapter]]:
         """return the entire dict where adapters are registered"""
         return self._adapters
 
-    def get_adapter(self, name: str) -> Union[IMAdapter, SocialMediaAdapter]:
+    def get_adapter(self, name: str) -> Union[BaseAdapter, IMAdapter, SocialMediaAdapter]:
         """get an adapter instance by specified adapter name"""
         return self._adapters.get(name)

@@ -12,9 +12,46 @@
     "name": "Bot UID",
     "type": "string",
     "default": "",
-    "hint": "Bot's Bilibili UID",
+    "hint": "Filled automatically by QR login, or enter the account UID manually",
     "locales": {
-      "zh": { "name": "机器人 UID", "hint": "Bot 的 B 站 UID" }
+      "zh": { "name": "机器人 UID", "hint": "扫码登录后自动填写，也可手动输入账号 UID" }
+    }
+  },
+  "enable_im": {
+    "name": "Enable Private Messages",
+    "type": "switch",
+    "default": true,
+    "hint": "whether to listen for private messages on this account",
+    "locales": {
+      "zh": { "name": "启用私信", "hint": "是否监听此账号的私信" }
+    }
+  },
+  "permission_mode": {
+    "name": "Private Message Permission Mode",
+    "type": "string",
+    "options": ["allow_list", "deny_list"],
+    "default": "allow_list",
+    "hint": "Access rules for incoming private messages and cross-session notifications",
+    "locales": {
+      "zh": { "name": "私信权限模式", "hint": "控制私信接收及跨会话通知的黑白名单规则" }
+    }
+  },
+  "user_allow_list": {
+    "name": "Private Message Allow List",
+    "type": "list",
+    "default": [],
+    "hint": "User UIDs allowed in allow-list mode",
+    "locales": {
+      "zh": { "name": "私信白名单", "hint": "白名单模式下允许接收私信的用户 UID" }
+    }
+  },
+  "user_deny_list": {
+    "name": "Private Message Deny List",
+    "type": "list",
+    "default": [],
+    "hint": "User UIDs blocked in deny-list mode",
+    "locales": {
+      "zh": { "name": "私信黑名单", "hint": "黑名单模式下拒绝接收私信的用户 UID" }
     }
   },
   "listening_bvid": {
@@ -66,9 +103,9 @@
     "name": "buvid3",
     "type": "string",
     "default": "",
-    "hint": "buvid3（From Cookie）",
+    "hint": "Device identifier filled automatically by QR login; bilibili-api generates it when omitted",
     "locales": {
-      "zh": { "name": "buvid3", "hint": "buvid3（从 Cookie 获取）" }
+      "zh": { "name": "buvid3", "hint": "扫码登录时自动填写的设备标识；留空时由 bilibili-api 自动生成" }
     }
   },
   "dedeuserid": {

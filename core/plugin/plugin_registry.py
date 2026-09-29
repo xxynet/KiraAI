@@ -18,6 +18,7 @@ from core.config.config_field import BaseConfigField, SectionField, build_fields
 from core.provider import BaseProvider, ProviderManager
 from core.adapter import AdapterManager
 from core.adapter.adapter_utils import IMAdapter, SocialMediaAdapter
+from core.adapter.base import BaseAdapter
 from core.config import VERSION
 from .plugin import BasePlugin
 from .plugin_context import PluginContext
@@ -946,7 +947,7 @@ class PluginManager:
                 return platform
             raise ValueError(f"Plugin already registered Adapter platform '{platform}'")
         module = self._load_plugin_component_module(plugin_id, component_dir, "adapter")
-        adapter_cls = self._find_component_class(module, (IMAdapter, SocialMediaAdapter), "Adapter")
+        adapter_cls = self._find_component_class(module, (BaseAdapter, IMAdapter, SocialMediaAdapter), "Adapter")
         raw_schema = {}
         schema_path = component_dir / "schema.json"
         if schema_path.exists():

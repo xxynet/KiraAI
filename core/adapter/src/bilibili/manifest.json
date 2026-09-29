@@ -6,6 +6,7 @@
     "description": "BiliBili Adapter",
     "repo": null,
     "icon": "icon.svg",
+    "login_method": "qrcode",
     "locales": {
         "zh": {
             "display_name": "BiliBili",

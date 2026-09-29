@@ -221,7 +221,7 @@ class PluginContext:
             group = Group(group_id=sid)
         message_obj = KiraMessageEvent(
             adapter=ada.info,
-            message_types=ada.message_types,
+            message_types=list(ada.message_types),
             message=KiraIMMessage(
                 timestamp=cur_time,
                 sender=User(

@@ -1,4 +1,6 @@
 import asyncio
+from core.adapter.base import BaseAdapter
+from core.adapter.capabilities import IMCapability
 
 from core.plugin import BasePlugin, logger, on, Priority, register
 from core.chat.message_utils import KiraMessageBatchEvent
@@ -95,13 +97,22 @@ class SessionPlugin(BasePlugin):
         if not adapter:
             return f"Permission denied: adapter not found: {adapter_name}"
 
-        target_list = adapter.user_list if session_type == "dm" else adapter.group_list
-        target_is_listed = session_id in {str(item) for item in target_list}
-        is_allowed = (
-            adapter.permission_mode == "allow_list" and target_is_listed
-        ) or (
-            adapter.permission_mode == "deny_list" and not target_is_listed
-        )
+        if isinstance(adapter, BaseAdapter):
+            try:
+                capability = adapter.get_capability(IMCapability)
+            except ValueError:
+                is_allowed = False
+            else:
+                permission = "im.direct.receive" if session_type == "dm" else "im.group.receive"
+                is_allowed = capability.is_allowed(session_id, permission=permission)
+        else:
+            target_list = adapter.user_list if session_type == "dm" else adapter.group_list
+            target_is_listed = session_id in {str(item) for item in target_list}
+            is_allowed = (
+                adapter.permission_mode == "allow_list" and target_is_listed
+            ) or (
+                adapter.permission_mode == "deny_list" and not target_is_listed
+            )
         if not is_allowed:
             return f"Permission denied: target session is not allowed by adapter {adapter_name}"
 

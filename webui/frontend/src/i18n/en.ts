@@ -265,6 +265,8 @@ export default {
     qrcode_expired: 'The QR code has expired',
     qrcode_denied: 'QR-code login was cancelled',
     qrcode_failed: 'QR-code login failed',
+    qrcode_invalid_response: 'The login service returned an invalid response. Please get a new QR code and try again.',
+    qrcode_incomplete_credentials: 'Login succeeded but the credentials are incomplete. Please get a new QR code and try again.',
   },
   persona: {
     title: 'Personas',
