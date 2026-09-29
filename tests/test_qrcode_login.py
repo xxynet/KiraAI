@@ -190,7 +190,7 @@ async def test_adapter_routes_manage_qrcode_login_session():
     assert handler.closed
 
 
-@pytest.mark.parametrize("platform", ["qq_official", "weixin_oc"])
+@pytest.mark.parametrize("platform", ["qq_official", "weixin_oc", "bilibili"])
 def test_qrcode_login_manifest_matches_adapter_factory(platform):
     adapter_root = Path(__file__).parents[1] / "core" / "adapter" / "src" / platform
     manifest = json.loads((adapter_root / "manifest.json").read_text(encoding="utf-8"))

@@ -172,7 +172,7 @@
               </div>
 
               <p v-if="qrLoginMessage && qrLoginStatus !== 'confirmed'" class="mt-2 text-xs text-red-600 dark:text-red-400">
-                {{ qrLoginMessage }}
+                {{ te(qrLoginMessage) ? t(qrLoginMessage) : qrLoginMessage }}
               </p>
             </div>
             <h4 class="text-sm font-semibold text-theme-body mb-2">{{ $t('adapter.config') }}</h4>
@@ -229,7 +229,7 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { IconPlus, IconTerminal, IconClose } from '@/components/icons'
 import type { AdapterPlatform, AdapterResponse, QRCodeLoginStatus } from '@/types'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { localize } = useLocalized()
 const { isDark } = useTheme()
 

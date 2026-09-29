@@ -265,6 +265,8 @@ export default {
     qrcode_expired: '二维码已过期',
     qrcode_denied: '已取消扫码登录',
     qrcode_failed: '扫码登录失败',
+    qrcode_invalid_response: '登录服务返回了无效响应，请重新获取二维码后重试。',
+    qrcode_incomplete_credentials: '扫码成功，但返回的登录凭据不完整，请重新获取二维码后重试。',
   },
   persona: {
     title: '人设',
