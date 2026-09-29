@@ -9,8 +9,6 @@ from typing import Optional, TYPE_CHECKING, Literal
 from ..provider import ProviderManager, LLMModelClient, EmbeddingModelClient
 from core.chat.session_manager import SessionManager
 from ..adapter import AdapterManager
-from core.adapter.base import BaseAdapter
-from core.adapter.capabilities import IMCapability
 from core.event_bus import EventBus
 from core.agent.func_tool_manager import FuncToolManager
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group, KiraIMSentResult
@@ -218,8 +216,6 @@ class PluginContext:
         ada = self.adapter_mgr.get_adapter(ada_name)
         if not ada:
             raise ValueError(f"Failed to get adapter: {ada_name}")
-        if isinstance(ada, BaseAdapter):
-            ada.get_capability(IMCapability)
         group = None
         if st == "gm":
             group = Group(group_id=sid)

@@ -314,3 +314,52 @@ async def test_builtin_emoji_tag_uses_adapter_dictionary():
     event.sid = event.session.sid
     await main.DefaultPlugin(ctx, {}).inject_builtin_tags(event, None, tags)
     assert "adapter-emoji" in tags.get("emoji").description
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("session_type", ["dm", "gm"])
+@pytest.mark.parametrize("has_feed", [False, True])
+async def test_cross_session_without_im_returns_denial_without_publishing(session_type, has_feed):
+    from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
+
+    adapter = make_adapter(enable_im=False, enable_qzone=has_feed)
+    ctx = SimpleNamespace(
+        adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
+        publish_notice=AsyncMock(),
+        config={"bot_config": {"bot": {}}},
+    )
+    plugin = SessionPlugin(ctx, {})
+    result = await plugin.session_send(
+        SimpleNamespace(sid="source:dm:1"), f"example:{session_type}:123", "hello",
+    )
+    assert result == "Permission denied: target session is not allowed by adapter example"
+    ctx.publish_notice.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("session_type", ["dm", "gm"])
+async def test_notice_without_im_can_enter_message_processing(monkeypatch, session_type):
+    from tests.test_bilibili_adapter import make_adapter as make_bilibili
+
+    monkeypatch.setattr("core.message_manager.event_handler_reg.get_handlers", lambda **kw: [])
+    adapter = make_bilibili(enable_im=False)
+    ctx = object.__new__(PluginContext)
+    ctx.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
+    ctx.event_bus = SimpleNamespace(publish=AsyncMock())
+    target = f"bili-test:{session_type}:opaque:123"
+    chain = MessageChain([Text("background result")])
+    await ctx.publish_notice(target, chain, is_mentioned=False)
+    event = ctx.event_bus.publish.await_args.args[0]
+    assert event.session.sid == target
+    assert event.message.chain is chain
+    assert event.is_notice
+    assert not event.is_mentioned
+    assert event.is_group_message() is (session_type == "gm")
+    assert event.message_types == []
+    assert event.message_types is not adapter.message_types
+    event.buffer()
+    processor = processor_for(adapter)
+    await processor.handle_im_message(event)
+    assert await processor.flush_session_messages(target)
+    batch = processor.event_bus.publish.await_args.args[0]
+    assert batch.sid == target
+    assert batch.messages == [event.message]

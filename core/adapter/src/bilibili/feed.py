@@ -128,8 +128,10 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
 
     async def _handle_new_comments(self, comments: list[dict[str, Any]]) -> None:
         interval = max(0.0, float(self.adapter.config.get("message_process_interval", 5.0) or 0))
+        poll_start_ts = self.last_process_ts
+        newest_process_ts = poll_start_ts
         for cmt in comments:
-            if cmt["ctime"] > self.last_process_ts and str(cmt["uid"]) != str(self.adapter.bot_uid):
+            if cmt["ctime"] > poll_start_ts and str(cmt["uid"]) != str(self.adapter.bot_uid):
                 self.publish(KiraCommentEvent(
                     platform=self.adapter.info.platform,
                     adapter_name=self.adapter.info.name,
@@ -140,11 +142,11 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
                     cmt_content=[Text(cmt["message"])],
                     timestamp=int(time.time()),
                 ))
-                self.last_process_ts = cmt["ctime"]
+                newest_process_ts = max(newest_process_ts, cmt["ctime"])
                 await asyncio.sleep(interval)
             if str(cmt["uid"]) == str(self.adapter.bot_uid):
                 for sub in cmt["sub_replies"]:
-                    if sub["ctime"] > self.last_process_ts and str(sub["uid"]) != str(self.adapter.bot_uid):
+                    if sub["ctime"] > poll_start_ts and str(sub["uid"]) != str(self.adapter.bot_uid):
                         self.publish(KiraCommentEvent(
                             platform=self.adapter.info.platform,
                             adapter_name=self.adapter.info.name,
@@ -157,5 +159,6 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
                             self_id=self.adapter.bot_uid,
                             timestamp=int(time.time()),
                         ))
-                        self.last_process_ts = sub["ctime"]
+                        newest_process_ts = max(newest_process_ts, sub["ctime"])
                         await asyncio.sleep(interval)
+        self.last_process_ts = newest_process_ts

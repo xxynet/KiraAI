@@ -251,3 +251,30 @@ async def test_manager_constructs_bilibili_through_adapter_context(monkeypatch, 
     assert instance.get_capability(FeedCapability) is instance.feed
     await manager.stop_adapter(info.name)
     assert manager.get_adapter(info.name) is None
+
+@pytest.mark.asyncio
+async def test_comment_poll_keeps_all_new_roots_and_replies_against_start_cursor(monkeypatch):
+    adapter = make_adapter(bot_uid="123", listening_bvid="BV17x411w7KC", message_process_interval=0)
+    adapter.feed.last_process_ts = 10
+    fetch = AsyncMock(return_value={"replies": [
+        reply(7, "123", 25, "second bot root", [reply(8, "456", 26, "later root reply")]),
+        reply(5, "456", 20, "root with shared timestamp"),
+        reply(6, "789", 20, "another root with shared timestamp"),
+        reply(1, "123", 5, "old bot root", [
+            reply(2, "456", 30, "newest reply"),
+            reply(3, "789", 20, "earlier reply"),
+            reply(4, "123", 99, "self reply"),
+        ]),
+        reply(9, "456", 9, "old user root", [reply(10, "789", 40, "ignored nested reply")]),
+        reply(11, "456", 10, "already processed"),
+    ]})
+    monkeypatch.setattr(feed_module.comment, "get_comments_lazy", fetch)
+    await adapter.feed.check_new_comments()
+    events = []
+    while not adapter.ctx.event_queue.empty():
+        event = adapter.ctx.event_queue.get_nowait()
+        events.append((event.cmt_id, event.sub_cmt_id))
+    assert events == [(1, 3), (1, 2), (5, None), (6, None), (7, 8)]
+    assert adapter.feed.last_process_ts == 30
+    await adapter.feed.check_new_comments()
+    assert adapter.ctx.event_queue.empty()

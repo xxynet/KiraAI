@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar, Union
 
 from .access import AccessController
 from .context import AdapterContext
@@ -72,38 +72,22 @@ class BaseAdapter(ABC):
         """Return the unique matching capability, or raise ValueError."""
         if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
             raise TypeError("capability_type must be a BaseCapability subclass")
-        matches = self.get_capabilities(capability_type)
+        matches = [
+            capability for capability in self._capabilities.values()
+            if isinstance(capability, capability_type)
+        ]
         if len(matches) != 1:
             raise ValueError(
                 f"Expected one {capability_type.__name__}, found {len(matches)}"
             )
-        return next(iter(matches.values()))
+        return matches[0]
 
-    @overload
-    def get_capabilities(
-        self, capability_type: None = None,
-    ) -> dict[type[BaseCapability[Any]], BaseCapability[Any]]: ...
+    def get_capabilities(self) -> dict[type[BaseCapability[Any]], BaseCapability[Any]]:
+        """Return a snapshot of all registered capability types and instances.
 
-    @overload
-    def get_capabilities(
-        self, capability_type: type[CapabilityT],
-    ) -> dict[type[BaseCapability[Any]], CapabilityT]: ...
-
-    def get_capabilities(
-        self, capability_type: type[CapabilityT] | None = None,
-    ) -> dict[type[BaseCapability[Any]], BaseCapability[Any]] | dict[type[BaseCapability[Any]], CapabilityT]:
-        """Return a type-to-instance snapshot, optionally filtered by type.
-
-        Include subclass instances and return an empty dict if nothing matches.
         Changing the returned dict does not modify the registry; objects are shared.
         """
-        if capability_type is None:
-            return self._capabilities.copy()
-        return {
-            registered_type: capability
-            for registered_type, capability in self._capabilities.items()
-            if isinstance(capability, capability_type)
-        }
+        return self._capabilities.copy()
 
     @staticmethod
     def _capability_kinds(capability: BaseCapability[Any]) -> set[type]:

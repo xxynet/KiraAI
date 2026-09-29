@@ -40,6 +40,7 @@ class BiliBiliAdapter(BaseAdapter):
         self._dm_session: Session | None = None
         self._dm_task: asyncio.Task | None = None
         self._user_info_cache: dict[int, dict] = {}
+        self.im: BiliBiliIMCapability | None = None
         if self.config.get("enable_im", True):
             self.message_types = ["text", "img", "at", "reply", "emoji", "share_video"]
 
@@ -70,7 +71,7 @@ class BiliBiliAdapter(BaseAdapter):
             self.emoji_dict = json.loads(contents)
 
     async def start(self) -> None:
-        if self.get_capabilities(IMCapability):
+        if self.im is not None:
             await self._load_emoji_dict()
         self._client = get_bilibili_client()
         await self._log_login_status()
@@ -78,7 +79,7 @@ class BiliBiliAdapter(BaseAdapter):
         if self.config.get("listening_bvid"):
             self.listening_task = asyncio.create_task(self._start_listening())
             tasks.append(self.listening_task)
-        if self.get_capabilities(IMCapability):
+        if self.im is not None:
             self._dm_task = asyncio.create_task(self._start_im())
             tasks.append(self._dm_task)
         if tasks:

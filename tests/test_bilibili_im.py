@@ -38,7 +38,7 @@ async def test_im_enabled_by_default_and_correct_credential_field():
     assert adapter.message_types == ["text", "img", "at", "reply", "emoji", "share_video"]
     await adapter._load_emoji_dict()
     assert adapter.emoji_dict["510"] == "[打call]"
-    assert not make_adapter(enable_im=False).get_capabilities(IMCapability)
+    assert make_adapter(enable_im=False).im is None
     assert make_im_adapter(sessdata="", sesdata="misspelled-session").credential.sessdata is None
 
 

@@ -911,3 +911,24 @@ async def test_tool_result_build_content_embeds_media_refs():
         {"type": "text", "text": "image result"},
         ref,
     ]
+
+@pytest.mark.asyncio
+async def test_background_result_reaches_real_notice_api_without_im(agent_plugin):
+    from core.plugin.plugin_context import PluginContext
+    from tests.test_bilibili_adapter import make_adapter
+
+    adapter = make_adapter(enable_im=False)
+    ctx = object.__new__(PluginContext)
+    ctx.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
+    ctx.event_bus = SimpleNamespace(publish=AsyncMock())
+    agent_plugin.ctx = ctx
+    completed = asyncio.get_running_loop().create_future()
+    completed.set_result("finished")
+    await agent_plugin._publish_background_exec_result(
+        "test-task", "bili-test:dm:123", "completed", completed,
+    )
+    ctx.event_bus.publish.assert_awaited_once()
+    event = ctx.event_bus.publish.await_args.args[0]
+    assert event.session.sid == "bili-test:dm:123"
+    assert event.is_notice and event.is_mentioned
+    assert event.message.chain[0].text == "Background shell command completed (task_id: test-task):\nfinished"

@@ -98,9 +98,13 @@ class SessionPlugin(BasePlugin):
             return f"Permission denied: adapter not found: {adapter_name}"
 
         if isinstance(adapter, BaseAdapter):
-            capability = adapter.get_capability(IMCapability)
-            permission = "im.direct.receive" if session_type == "dm" else "im.group.receive"
-            is_allowed = capability.is_allowed(session_id, permission=permission)
+            try:
+                capability = adapter.get_capability(IMCapability)
+            except ValueError:
+                is_allowed = False
+            else:
+                permission = "im.direct.receive" if session_type == "dm" else "im.group.receive"
+                is_allowed = capability.is_allowed(session_id, permission=permission)
         else:
             target_list = adapter.user_list if session_type == "dm" else adapter.group_list
             target_is_listed = session_id in {str(item) for item in target_list}

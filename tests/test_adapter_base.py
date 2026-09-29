@@ -198,12 +198,12 @@ def test_combined_implementation_cannot_bypass_kind_uniqueness(combined_first):
     assert adapter.get_capabilities() == {first_type: first}
 
 
-def test_capability_discovery_filters_types_and_returns_a_snapshot():
+def test_capability_discovery_returns_all_types_in_a_snapshot():
     adapter = make_adapter(enable_qzone=True)
     capabilities = adapter.get_capabilities()
     assert set(capabilities) == {IMCapability, FeedCapability}
-    assert adapter.get_capabilities(IMCapability) == {IMCapability: adapter.im}
-    assert adapter.get_capabilities(VoiceChannelCapability) == {}
+    assert capabilities[IMCapability] is adapter.im
+    assert capabilities[FeedCapability] is adapter.get_capability(FeedCapability)
     capabilities.clear()
     assert set(adapter.capabilities) == {IMCapability, FeedCapability}
 
@@ -349,3 +349,11 @@ def test_custom_capability_permissions_use_type_identity():
     )
     assert first.is_allowed(123, permission="receive")
     assert not second.is_allowed(123, permission="receive")
+
+def test_capability_discovery_rejects_type_filter_arguments():
+    adapter = make_adapter()
+    with pytest.raises(TypeError):
+        adapter.get_capabilities(IMCapability)
+    with pytest.raises(TypeError):
+        adapter.get_capabilities(capability_type=IMCapability)
+    assert make_adapter(enable_im=False).get_capabilities() == {}
