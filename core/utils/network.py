@@ -1,10 +1,18 @@
 import time
 import httpx
-from typing import Optional
+from typing import Any, Optional
 
 from core.logging_manager import get_logger
 
 logger = get_logger("network", "cyan")
+
+
+async def get_json(url: str, timeout: float = 60.0) -> Any:
+    """Fetch and decode a JSON response, propagating HTTP and decoding errors."""
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.json()
 
 
 async def download_file(

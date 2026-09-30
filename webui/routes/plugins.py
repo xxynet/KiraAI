@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 
-from core.plugin.manager import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
+from core.plugin.manager import PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import (
     MAX_PLUGIN_ARCHIVE_BYTES,
@@ -19,6 +19,7 @@ from core.plugin.plugin_installer import (
     install_from_zip,
     install_requirements,
 )
+from core.utils.network import get_json
 from core.utils.path_utils import get_data_path
 from webui.models import (
     PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginInstallTask, PluginItem,
@@ -711,7 +712,7 @@ class PluginsRoutes(Routes):
 
                     # Fetch fresh if cache miss or stale
                     if raw_data is None:
-                        raw_data = await PluginManager.fetch_plugin_store_data(current["url"])
+                        raw_data = await get_json(current["url"], timeout=15.0)
                         # Update cache on disk
                         plugin_src_dir = get_data_path() / "plugin_src"
                         plugin_src_dir.mkdir(parents=True, exist_ok=True)
@@ -857,7 +858,7 @@ class PluginsRoutes(Routes):
             cache_fallback_status: Optional[int] = None
             if raw_data is None:
                 try:
-                    raw_data = await PluginManager.fetch_plugin_store_data(url)
+                    raw_data = await get_json(url, timeout=15.0)
                 except Exception as fetch_error:
                     # An expired cache remains useful when the store is temporarily
                     # unavailable. Let the client know so it can warn the user.
@@ -1164,7 +1165,7 @@ class PluginsRoutes(Routes):
         orphaned cache files are left behind.
         """
         try:
-            raw_data = await PluginManager.fetch_plugin_store_data(url)
+            raw_data = await get_json(url, timeout=15.0)
             plugin_src_dir = get_data_path() / "plugin_src"
             plugin_src_dir.mkdir(parents=True, exist_ok=True)
             # Reuse the existing file when it is already on disk

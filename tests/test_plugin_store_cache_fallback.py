@@ -4,7 +4,6 @@ import pytest
 from fastapi import FastAPI, Response
 
 import webui.routes.plugins as plugin_routes
-from core.plugin.manager import PluginManager
 from webui.models import PluginStoreFetchRequest
 from webui.routes.plugins import PluginsRoutes
 
@@ -39,11 +38,11 @@ async def test_fetch_plugin_store_uses_cache_when_refresh_fails(tmp_path, monkey
         "updated_at": 0,
     }
 
-    async def fail_fetch(url):
+    async def fail_fetch(url, timeout):
         raise ConnectionError("store is unavailable")
 
     monkeypatch.setattr(plugin_routes, "get_data_path", lambda: tmp_path)
-    monkeypatch.setattr(PluginManager, "fetch_plugin_store_data", fail_fetch)
+    monkeypatch.setattr(plugin_routes, "get_json", fail_fetch)
     routes = PluginsRoutes(FastAPI(), SimpleNamespace(db_service=FakeDatabaseService(source)))
     response = Response()
 
@@ -147,7 +146,7 @@ async def test_update_check_falls_back_to_head_for_invalid_catalog_commit_sha(tm
         "is_current": True,
     }
 
-    async def fetch_store(url):
+    async def fetch_store(url, timeout):
         return {
             "plugins": {
                 "example": {
@@ -168,7 +167,7 @@ async def test_update_check_falls_back_to_head_for_invalid_catalog_commit_sha(tm
         )],
     )
     monkeypatch.setattr(plugin_routes, "get_data_path", lambda: tmp_path)
-    monkeypatch.setattr(PluginManager, "fetch_plugin_store_data", fetch_store)
+    monkeypatch.setattr(plugin_routes, "get_json", fetch_store)
     routes = PluginsRoutes(
         FastAPI(),
         SimpleNamespace(plugin_manager=plugin_manager, db_service=FakeDatabaseService(source)),
