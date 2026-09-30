@@ -17,7 +17,7 @@ from core.chat.message_utils import (
 from core.chat.session import Group, User
 from core.message_manager import MessageProcessor, SessionBufferManager
 from core.plugin.plugin_context import PluginContext
-from core.plugin import plugin_registry
+from core.plugin import manager as manager_module
 from tests.test_adapter_base import ExampleAdapter, make_adapter
 
 
@@ -239,12 +239,12 @@ async def test_manager_constructs_new_adapter_with_context_and_stops_it(manager,
 
 @pytest.mark.asyncio
 async def test_plugin_registration_accepts_new_base(manager, monkeypatch, tmp_path):
-    monkeypatch.setattr(plugin_registry, "_plugin_components", {})
+    monkeypatch.setattr(manager_module, "_plugin_components", {})
     (tmp_path / "manifest.json").write_text(json.dumps({"name": "new-platform"}), encoding="utf-8")
     module = ModuleType("plugin_adapter_example")
     module.BaseAdapter = BaseAdapter
     module.PluginAdapter = type("PluginAdapter", (ExampleAdapter,), {"__module__": module.__name__})
-    plugins = object.__new__(plugin_registry.PluginManager)
+    plugins = object.__new__(manager_module.PluginManager)
     plugins.ctx = SimpleNamespace(adapter_mgr=manager, config={})
     monkeypatch.setattr(plugins, "_resolve_plugin_component_dir", lambda *args: tmp_path)
     monkeypatch.setattr(plugins, "_load_plugin_component_module", lambda *args: module)

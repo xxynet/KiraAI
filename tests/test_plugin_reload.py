@@ -2,7 +2,7 @@ import asyncio
 import json
 
 from core.plugin.plugin_handlers import EventType, event_handler_reg
-from core.plugin import plugin_registry
+from core.plugin import manager as manager_module
 
 
 PLUGIN_ID = "multi_file_reload_plugin"
@@ -18,21 +18,21 @@ def _write_plugin(plugin_root, helper_source: str, main_source: str) -> None:
 
 
 def test_loading_updated_multifile_plugin_evicts_helpers_and_old_hooks(tmp_path, monkeypatch):
-    monkeypatch.setattr(plugin_registry, "_plugin_classes", {})
-    monkeypatch.setattr(plugin_registry, "_plugin_components", {})
-    monkeypatch.setattr(plugin_registry, "_plugin_load_errors", {})
-    monkeypatch.setattr(plugin_registry, "_plugin_manifests", {})
-    monkeypatch.setattr(plugin_registry, "_plugin_module_dirs", {})
-    monkeypatch.setattr(plugin_registry, "_plugin_module_paths", {})
-    monkeypatch.setattr(plugin_registry, "_plugin_schemas", {})
-    monkeypatch.setattr(plugin_registry, "_plugin_infos", {})
-    monkeypatch.setattr(plugin_registry, "_module_to_plugin", {})
+    monkeypatch.setattr(manager_module, "_plugin_classes", {})
+    monkeypatch.setattr(manager_module, "_plugin_components", {})
+    monkeypatch.setattr(manager_module, "_plugin_load_errors", {})
+    monkeypatch.setattr(manager_module, "_plugin_manifests", {})
+    monkeypatch.setattr(manager_module, "_plugin_module_dirs", {})
+    monkeypatch.setattr(manager_module, "_plugin_module_paths", {})
+    monkeypatch.setattr(manager_module, "_plugin_schemas", {})
+    monkeypatch.setattr(manager_module, "_plugin_infos", {})
+    monkeypatch.setattr(manager_module, "_module_to_plugin", {})
     monkeypatch.setattr(event_handler_reg, "_handlers", {})
 
     plugins_dir = tmp_path / "plugins"
     plugin_root = plugins_dir / PLUGIN_ID
     helper_v1 = '''
-from core.plugin.plugin_registry import on
+from core.plugin.manager import on
 
 
 class HookMixin:
@@ -41,7 +41,7 @@ class HookMixin:
         self.handled_version = "v1"
 '''
     main_v1 = '''
-from core.plugin.plugin import BasePlugin
+from core.plugin.base import BasePlugin
 from .hooks import HookMixin
 
 
@@ -57,12 +57,12 @@ class TestPlugin(HookMixin, BasePlugin):
     _write_plugin(plugin_root, helper_v1, main_v1)
 
     async def run_test():
-        manager = plugin_registry.PluginManager()
+        manager = manager_module.PluginManager()
         manager.plugin_dir = plugins_dir
         assert await manager.load_plugin_from_dir(plugin_root) == PLUGIN_ID
 
         helper_v2 = '''
-from core.plugin.plugin_registry import on
+from core.plugin.manager import on
 
 NEW_MARKER = "v2"
 
@@ -73,7 +73,7 @@ class HookMixin:
         self.handled_version = NEW_MARKER
 '''
         main_v2 = '''
-from core.plugin.plugin import BasePlugin
+from core.plugin.base import BasePlugin
 from .hooks import HookMixin, NEW_MARKER
 
 

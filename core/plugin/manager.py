@@ -21,7 +21,7 @@ from core.config import VERSION
 from .components import PluginComponents
 from .metadata import PluginInfo
 from .pages import PageMenu, PluginPageSource, PluginPage
-from .plugin import BasePlugin
+from .base import BasePlugin
 from .plugin_context import PluginContext
 from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
 from .plugin_installer import install_requirements
@@ -102,7 +102,7 @@ def get_obj_plugin_id(obj: Any):
             if caller_name in _module_to_plugin:
                 plugin_id = _module_to_plugin[caller_name]
                 break
-            if caller_module.__file__ and "plugin_registry" not in (caller_module.__file__ or ""):
+            if getattr(caller_module, "__file__", None) and caller_module is not sys.modules[__name__]:
                 caller_path = Path(caller_module.__file__).resolve()
                 caller_root = caller_path.parent
                 manifest_path = caller_root / "manifest.json"

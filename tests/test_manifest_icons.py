@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from core.plugin import plugin_registry
+from core.plugin import manager as manager_module
 from core.utils.path_utils import resolve_manifest_icon_path
 
 
@@ -47,9 +47,9 @@ def test_plugin_info_includes_resolved_manifest_icons(monkeypatch, tmp_path):
     dark_icon = tmp_path / "icon-dark.svg"
     icon.write_text("<svg></svg>", encoding="utf-8")
     dark_icon.write_text("<svg></svg>", encoding="utf-8")
-    monkeypatch.setitem(plugin_registry._plugin_module_paths, "test-plugin", tmp_path)
+    monkeypatch.setitem(manager_module._plugin_module_paths, "test-plugin", tmp_path)
 
-    info = plugin_registry.PluginManager._build_plugin_info(
+    info = manager_module.PluginManager._build_plugin_info(
         "test-plugin", {"icon": "icon.svg", "icon-dark": "icon-dark.svg"},
     )
 

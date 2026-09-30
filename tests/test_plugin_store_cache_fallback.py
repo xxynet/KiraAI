@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI, Response
 
 import webui.routes.plugins as plugin_routes
-from core.plugin.plugin_registry import PluginManager
+from core.plugin.manager import PluginManager
 from webui.models import PluginStoreFetchRequest
 from webui.routes.plugins import PluginsRoutes
 

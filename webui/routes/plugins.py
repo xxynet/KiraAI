@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 
-from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
+from core.plugin.manager import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import (
     MAX_PLUGIN_ARCHIVE_BYTES,

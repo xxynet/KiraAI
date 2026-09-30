@@ -16,7 +16,7 @@ from core.plugin.pages import PluginPage, PluginPageSource
 from core.utils.path_utils import is_within_directory
 
 if TYPE_CHECKING:
-    from core.plugin.plugin_registry import PluginManager
+    from core.plugin.manager import PluginManager
 
 
 logger = get_logger("plugin_manager", "cyan")

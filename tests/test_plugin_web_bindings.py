@@ -10,7 +10,7 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import core.plugin as public_api
-from core.plugin import plugin_registry
+from core.plugin import manager as manager_module
 from core.plugin.components import PluginComponents
 from core.plugin.metadata import PluginInfo
 from core.plugin.pages import PageMenu, PluginPage, PluginPageSource
@@ -24,8 +24,8 @@ from __future__ import annotations
 
 from core.plugin import PageMenu, logger, get_logger
 from core.plugin.pages import PluginPage
-from core.plugin.plugin import BasePlugin
-from core.plugin.plugin_registry import register, _plugin_components
+from core.plugin.base import BasePlugin
+from core.plugin.manager import register, _plugin_components
 
 OBJECT_FOLDER = register.page("/object-folder", auth=False)(PluginPage.from_folder("web"))
 OBJECT_HTML = register.page("/object-html", auth=False)(PluginPage.from_html("object html"))
@@ -116,11 +116,11 @@ def load_plugin(tmp_path, monkeypatch):
         "_plugin_manifests", "_plugin_module_dirs", "_plugin_module_paths",
         "_plugin_schemas", "_plugin_infos", "_module_to_plugin",
     ):
-        monkeypatch.setattr(plugin_registry, name, {})
-    monkeypatch.setattr(plugin_registry, "PLUGINS_DIR", tmp_path)
-    monkeypatch.setattr(plugin_registry, "PLUGIN_DATA_DIR", tmp_path / "plugin_data")
-    monkeypatch.setattr(plugin_registry, "PLUGIN_CONFIG_DIR", tmp_path / "config")
-    monkeypatch.setattr(plugin_registry, "PLUGIN_STATE_FILE", tmp_path / "state.json")
+        monkeypatch.setattr(manager_module, name, {})
+    monkeypatch.setattr(manager_module, "PLUGINS_DIR", tmp_path)
+    monkeypatch.setattr(manager_module, "PLUGIN_DATA_DIR", tmp_path / "plugin_data")
+    monkeypatch.setattr(manager_module, "PLUGIN_CONFIG_DIR", tmp_path / "config")
+    monkeypatch.setattr(manager_module, "PLUGIN_STATE_FILE", tmp_path / "state.json")
     monkeypatch.setattr(event_handler_reg, "_handlers", {})
     monkeypatch.setattr(tag_registry, "_tags", [])
     monkeypatch.setattr(tag_registry, "_root_tags", [])
@@ -135,7 +135,7 @@ def load_plugin(tmp_path, monkeypatch):
     outside.mkdir()
     (outside / "index.html").write_text("outside content", encoding="utf-8")
     context = SimpleNamespace(plugin_mgr=None)
-    manager = plugin_registry.PluginManager(context)
+    manager = manager_module.PluginManager(context)
     context.plugin_mgr = manager
 
     def load(app_first=False):
@@ -155,12 +155,12 @@ def load_plugin(tmp_path, monkeypatch):
 
 def test_old_and_new_model_imports_share_identity():
     for model in (PluginInfo, PageMenu, PluginPage, PluginPageSource, PluginComponents):
-        assert getattr(plugin_registry, model.__name__) is model
+        assert getattr(manager_module, model.__name__) is model
     for model in (PluginInfo, PageMenu, PluginPage):
         assert getattr(public_api, model.__name__) is model
-    assert public_api.register is plugin_registry.register
-    assert public_api.on is plugin_registry.on
-    assert public_api.register_tool is plugin_registry.register_tool
+    assert public_api.register is manager_module.register
+    assert public_api.on is manager_module.on
+    assert public_api.register_tool is manager_module.register_tool
     assert callable(public_api.get_logger)
 
 
@@ -168,7 +168,7 @@ def test_old_and_new_model_imports_share_identity():
 def test_plugin_imports_mutable_tags_and_all_web_bindings(load_plugin, app_first):
     manager, client = load_plugin(app_first)
     comp = manager.get_plugin_components()[PLUGIN_ID]
-    assert comp is plugin_registry._plugin_components[PLUGIN_ID]
+    assert comp is manager_module._plugin_components[PLUGIN_ID]
     assert tag_registry.get("migration_tag").description == "configured description"
     assert manager.get_all_widgets()[0].content == "ready"
     paths = client.app.openapi()["paths"]
