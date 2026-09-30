@@ -26,6 +26,7 @@ from webui.routes.personas import PersonasRoutes
 from webui.routes.mcp import McpRoutes
 from webui.routes.adapters import AdaptersRoutes
 from webui.routes.plugins import PluginsRoutes
+from webui.routes.plugin_store import PluginStoreRoutes
 from webui.routes.providers import ProvidersRoutes
 from webui.routes.sessions import SessionsRoutes
 from webui.routes.config import ConfigRoutes
@@ -181,6 +182,7 @@ class KiraWebUI:
         McpRoutes(self.app, self.lifecycle).register()
         AdaptersRoutes(self.app, self.lifecycle).register()
         PluginsRoutes(self.app, self.lifecycle).register()
+        PluginStoreRoutes(self.app, self.lifecycle).register()
         ProvidersRoutes(self.app, self.lifecycle).register()
         SessionsRoutes(self.app, self.lifecycle).register()
         ConfigRoutes(self.app, self.lifecycle).register()

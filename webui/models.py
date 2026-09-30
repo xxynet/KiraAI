@@ -6,6 +6,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator
 
+from core.plugin.store import PluginStoreItemResponse
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -320,27 +322,6 @@ class PluginInstallTask(BaseModel):
     plugin_id: Optional[str] = None
     error: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
-
-
-class PluginStoreItemResponse(BaseModel):
-    id: str
-    name: str
-    version: str = ""
-    author: str = ""
-    description: str = ""
-    category: Optional[str] = None
-    category_name: Optional[str] = None
-    category_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
-    repo: Optional[str] = None
-    commit_sha: Optional[str] = None
-    release_tag: Optional[str] = None
-    icon: Optional[str] = None
-    icon_dark: Optional[str] = None
-    locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
-    tags: List[str] = Field(default_factory=list)
-    core_version: Optional[str] = None
-    stars: int = 0
-    updated_at: Optional[Union[int, str]] = None
 
 
 class PluginUpdateCheckItem(BaseModel):
