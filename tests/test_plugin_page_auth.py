@@ -12,7 +12,8 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from core.plugin import manager as manager_module
-from core.plugin.plugin_handlers import event_handler_reg
+from core.plugin import registry
+from core.plugin.handlers import event_handler_reg
 
 PLUGIN_ID = "auth_binding_test_plugin"
 
@@ -24,7 +25,7 @@ def _reset_plugin_state(monkeypatch):
         "_plugin_manifests", "_plugin_module_dirs", "_plugin_module_paths",
         "_plugin_schemas", "_plugin_infos", "_module_to_plugin",
     ):
-        monkeypatch.setattr(manager_module, attr, {})
+        monkeypatch.setattr(registry, attr, {})
     monkeypatch.setattr(event_handler_reg, "_handlers", {})
 
 
@@ -41,7 +42,7 @@ def _write_plugin(plugin_root, page_specs):
     )
 
     main_lines = [
-        "from core.plugin.manager import PluginPage, register",
+        "from core.plugin import PluginPage, register",
         "from core.plugin.base import BasePlugin",
         "",
     ]
@@ -112,7 +113,7 @@ def test_deferred_folder_pages_bind_auth_per_page(monkeypatch, tmp_path):
         json.dumps({"plugin_id": PLUGIN_ID}), encoding="utf-8"
     )
     (plugin_root / "main.py").write_text('''
-from core.plugin.manager import PluginPage, register
+from core.plugin import PluginPage, register
 from core.plugin.base import BasePlugin
 
 

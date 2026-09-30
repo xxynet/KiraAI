@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Literal, Optional, Union
 
 from .pages import PageMenu, PluginPage
-from .plugin_handlers import EventHandler, EventType, Priority
+from .handlers import EventHandler, EventType, Priority
 
 
 @dataclass

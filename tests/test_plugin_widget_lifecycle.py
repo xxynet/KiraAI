@@ -2,6 +2,7 @@ import asyncio
 from types import ModuleType, SimpleNamespace
 
 from core.plugin import manager as manager_module
+from core.plugin import registry
 from core.provider import BaseProvider
 
 def test_cleanup_preserves_widget_declarations(monkeypatch):
@@ -21,7 +22,7 @@ def test_cleanup_preserves_widget_declarations(monkeypatch):
         size="small",
         func=status_widget,
     )
-    monkeypatch.setitem(manager_module._plugin_components, plugin_id, components)
+    monkeypatch.setitem(registry._plugin_components, plugin_id, components)
 
     manager = manager_module.PluginManager(ctx=None)
     manager._cleanup_plugin_registration(plugin_id)
@@ -47,7 +48,7 @@ def test_unregister_plugin_adapter_keeps_metadata_when_stop_fails(monkeypatch):
     components = manager_module.PluginComponents()
     adapter_cls = type("PluginAdapter", (), {})
     components.register_adapter(platform, {"class": adapter_cls})
-    monkeypatch.setitem(manager_module._plugin_components, plugin_id, components)
+    monkeypatch.setitem(registry._plugin_components, plugin_id, components)
 
     manager = manager_module.PluginManager(
         ctx=SimpleNamespace(adapter_mgr=_FailingStopAdapterManager())
@@ -62,7 +63,7 @@ def test_runtime_cleanup_continues_after_adapter_cleanup_failure(monkeypatch):
     components = manager_module.PluginComponents()
     components.register_adapter("failing-platform", {"class": object})
     components.register_provider("remaining-provider", {"class": object})
-    monkeypatch.setitem(manager_module._plugin_components, plugin_id, components)
+    monkeypatch.setitem(registry._plugin_components, plugin_id, components)
 
     manager = manager_module.PluginManager(ctx=SimpleNamespace())
     provider_cleanup_calls = []

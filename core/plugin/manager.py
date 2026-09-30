@@ -7,7 +7,7 @@ import sys
 import types
 import httpx
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable, Literal, Union
+from typing import Optional, Dict, Any, List, Callable
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from packaging.version import Version, InvalidVersion
 from core.utils.path_utils import get_data_path, get_config_path, resolve_manifest_icon_path
@@ -18,12 +18,12 @@ from core.adapter import AdapterManager
 from core.adapter.adapter_utils import IMAdapter, SocialMediaAdapter
 from core.adapter.base import BaseAdapter
 from core.config import VERSION
+from . import registry
 from .components import PluginComponents
 from .metadata import PluginInfo
-from .pages import PageMenu, PluginPageSource, PluginPage
 from .base import BasePlugin
 from .plugin_context import PluginContext
-from .plugin_handlers import Priority, event_handler_reg, EventHandler, EventType
+from .handlers import event_handler_reg, EventType
 from .plugin_installer import install_requirements
 
 from core.tag import tag_registry, BaseTag
@@ -36,318 +36,6 @@ PLUGIN_DATA_DIR = get_data_path() / "plugin_data"
 PLUGIN_CONFIG_DIR = get_config_path() / "plugins"
 PLUGIN_STATE_FILE = get_config_path() / "plugins.json"
 BUILTIN_PLUGINS_DIR = Path(__file__).parent / "builtin_plugins"
-
-_plugin_classes: Dict[str, type[BasePlugin]] = {}
-_plugin_manifests: Dict[str, Dict[str, Any]] = {}
-_plugin_module_dirs: Dict[str, str] = {}
-_plugin_module_paths: Dict[str, Path] = {}
-
-"""key: module name, value: plugin id"""
-_module_to_plugin: Dict[str, str] = {}
-_plugin_schemas: Dict[str, List[BaseConfigField]] = {}
-
-
-_plugin_components: Dict[str, PluginComponents] = {}
-
-
-def _ensure_components(plugin_id: str) -> PluginComponents:
-    return _plugin_components.setdefault(plugin_id, PluginComponents())
-
-"""Plugins that failed to load: {plugin_id: {"manifest": {...}, "error": "..."}}"""
-_plugin_load_errors: Dict[str, Dict[str, Any]] = {}
-
-"""Discovered plugin metadata: {plugin_id: PluginInfo}"""
-_plugin_infos: Dict[str, PluginInfo] = {}
-
-
-def get_obj_plugin_id(obj: Any):
-    # 1. Try the module where obj is defined (works for functions/classes)
-    module = inspect.getmodule(obj)
-    module_name = module.__name__ if module else ""
-    plugin_id = _module_to_plugin.get(module_name, "")
-
-    # 2. Try manifest.json next to the module file
-    if not plugin_id and module and getattr(module, "__file__", None):
-        module_path = Path(module.__file__).resolve()
-        plugin_root = module_path.parent
-        manifest_path = plugin_root / "manifest.json"
-        if manifest_path.exists():
-            try:
-                with manifest_path.open("r", encoding="utf-8") as f:
-                    manifest = json.load(f)
-                plugin_id = manifest.get("plugin_id") or plugin_root.name
-                _plugin_manifests.setdefault(plugin_id, manifest)
-                _plugin_module_dirs.setdefault(plugin_id, plugin_root.name)
-                _plugin_module_paths.setdefault(plugin_id, plugin_root)
-                _module_to_plugin[module_name] = plugin_id
-            except Exception:
-                plugin_id = plugin_root.name
-
-    # 3. Walk the call stack to find the caller's module.
-    #    Needed when obj is an instance of a framework class (e.g. PluginPage)
-    #    whose __module__ points to the framework, not the plugin.
-    if not plugin_id:
-        for depth in range(1, 10):
-            frame = inspect.currentframe()
-            for _ in range(depth):
-                if frame is None:
-                    break
-                frame = frame.f_back
-            if frame is None:
-                break
-            caller_module = inspect.getmodule(frame)
-            if caller_module is None:
-                continue
-            caller_name = caller_module.__name__
-            if caller_name in _module_to_plugin:
-                plugin_id = _module_to_plugin[caller_name]
-                break
-            if getattr(caller_module, "__file__", None) and caller_module is not sys.modules[__name__]:
-                caller_path = Path(caller_module.__file__).resolve()
-                caller_root = caller_path.parent
-                manifest_path = caller_root / "manifest.json"
-                if manifest_path.exists():
-                    try:
-                        with manifest_path.open("r", encoding="utf-8") as f:
-                            manifest = json.load(f)
-                        plugin_id = manifest.get("plugin_id") or caller_root.name
-                        _plugin_manifests.setdefault(plugin_id, manifest)
-                        _plugin_module_dirs.setdefault(plugin_id, caller_root.name)
-                        _plugin_module_paths.setdefault(plugin_id, caller_root)
-                        _module_to_plugin[caller_name] = plugin_id
-                        break
-                    except Exception:
-                        pass
-
-    return plugin_id
-
-
-class RegisterDeco:
-
-    @staticmethod
-    def tool(name: str, description: str, params: dict):
-        def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_tool(name, description, params, func)
-            return func
-        return decorator
-
-    @staticmethod
-    def tag(name: str, description: str, parent: Optional[str] = "msg"):
-        def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_tag(name, description, func, parent)
-            return func
-        return decorator
-
-    @staticmethod
-    def page(route: str, auth: bool = True, menu: Optional[Union[dict, "PageMenu"]] = None):
-        """Register a plugin page endpoint.
-
-        Accepts a ``PluginPage`` object or a function that returns one::
-
-            @register.page("/dashboard", menu=PageMenu(label={"zh": "仪表盘", "en": "Dashboard"}, icon="Monitor"))
-            def dashboard(self):
-                return PluginPage.from_folder("./web")
-
-        Args:
-            route: URL path relative to plugin prefix, e.g. ``"/dashboard"``.
-                   Final route: ``/page/plugin/{plugin_id}{route}``
-            auth:  Require JWT auth (default ``True``).
-            menu:  Optional sidebar menu config — a ``PageMenu`` object or a dict
-                   with keys ``label`` (str or locale dict), ``icon``, ``order``.
-        """
-        def decorator(obj):
-            plugin_id = get_obj_plugin_id(obj)
-            comp = _ensure_components(plugin_id)
-
-            if isinstance(obj, PluginPage):
-                comp.register_page(route, None, auth, menu, page_obj=obj)
-                return obj
-
-            # Function that returns PluginPage — defer call to init time
-            # where the plugin instance is available.
-            comp.register_page(route, obj, auth, menu, returns_plugin_page=True)
-            comp.page_funcs[obj.__name__] = obj
-            return obj
-        return decorator
-
-    @staticmethod
-    def static(path: str, directory: str, html: bool = False):
-        """Register a static file directory.
-
-        path:      URL path prefix relative to plugin, e.g., "/assets"
-                   Final URL: /static/plugin/{plugin_id}{path}
-        directory: Local directory path relative to plugin root
-        html:      Try to serve index.html for directory requests
-        """
-        def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_static(path, directory, html)
-            return func
-        return decorator
-
-    @staticmethod
-    def api(method: str, path: str, auth: bool = True, **kwargs):
-        """Register a plugin API endpoint.
-
-        method: HTTP method, e.g. "GET", "POST"
-        path:   Path relative to the plugin prefix, e.g. "/status"
-                Final route: /api/plugin/{plugin_id}{path}
-        auth:   Require JWT auth (default True)
-        kwargs: Forwarded to FastAPI add_api_route (response_model, summary, …)
-        """
-        def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_api(method, path, func, auth, **kwargs)
-            return func
-        return decorator
-
-    @staticmethod
-    def ws(path: str, auth: bool = True):
-        """Register a plugin WebSocket endpoint.
-
-        path: Path relative to the plugin prefix, e.g. "/stream"
-              Final route: /ws/plugin/{plugin_id}{path}
-        auth: Require JWT auth during the WS handshake (default True).
-              When enabled, ``ws.state.user`` is set before the endpoint runs.
-        """
-        def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            _ensure_components(plugin_id).register_ws(path, func, auth)
-            return func
-        return decorator
-
-    @staticmethod
-    def widget(label: Union[str, Dict[str, str]], icon: str = "Box",
-               color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue",
-               order: int = 100,
-               size: Literal["small", "wide"] = "small"):
-        """Register a widget on the Overview dashboard page.
-
-        The decorated function is called on each ``GET /api/overview`` request
-        and should return a plain string:
-        - For small widgets: the display value (e.g. ``"42"``)
-        - For wide widgets: HTML content (e.g. ``"<table>...</table>"``)
-
-        Args:
-            label: Widget title — plain string or locale dict
-                   (e.g. ``{"zh": "消息数", "en": "Messages"}``).
-            icon:  Element Plus icon name (e.g. ``"ChatDotRound"``).
-                   Ignored for wide widgets.
-            color: Theme color — one of blue/green/purple/yellow/red/gray.
-            order: Sort position in the widget grid (lower = higher).
-            size:  ``"small"`` (default, stat card) or ``"wide"`` (full-width).
-        """
-        def decorator(func: Callable):
-            plugin_id = get_obj_plugin_id(func)
-            widget_id = f"{plugin_id}:{func.__name__}"
-            _ensure_components(plugin_id).register_widget(
-                widget_id, label, icon, color, order, size, func)
-            return func
-        return decorator
-
-
-class OnEventDeco:
-
-    @staticmethod
-    def _register_hook(func: Callable, priority: Union[Priority, int], event_type: EventType):
-        plugin_id = get_obj_plugin_id(func)
-        _ensure_components(plugin_id).register_hook(func, priority, event_type)
-
-    def im_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_IM_MESSAGE)
-            return func
-        return decorator
-
-    def message_buffered(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_MESSAGE_BUFFERED)
-            return func
-        return decorator
-
-    def im_batch_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_IM_BATCH_MESSAGE)
-            return func
-        return decorator
-
-    def llm_request(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_LLM_REQUEST)
-            return func
-        return decorator
-
-    def llm_response(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_LLM_RESPONSE)
-            return func
-        return decorator
-
-    def tool_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_TOOL_RESULT)
-            return func
-        return decorator
-
-    def after_xml_parse(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.AFTER_XML_PARSE)
-            return func
-        return decorator
-
-    def message_sent(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_MESSAGE_SENT)
-            return func
-        return decorator
-
-    def step_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_STEP_RESULT)
-            return func
-        return decorator
-
-    def final_result(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_FINAL_RESULT)
-            return func
-        return decorator
-
-    def loaded(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        """Fired once after ALL plugins have been loaded (system-level lifecycle)."""
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_LOADED)
-            return func
-        return decorator
-
-    def shutdown(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        """Fired once before system shutdown begins (system-level lifecycle)."""
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_SHUTDOWN)
-            return func
-        return decorator
-
-    def exception(self, priority: Union[Priority, int] = Priority.MEDIUM):
-        def decorator(func: Callable):
-            self._register_hook(func, priority, EventType.ON_EXCEPTION)
-            return func
-        return decorator
-
-    def custom_event(self, priority: Union[Priority, int] = Priority.MEDIUM, event_name: Optional[str] = None):
-        def decorator(func: Callable):
-            if event_name is not None:
-                func._custom_event_name = event_name
-            self._register_hook(func, priority, EventType.ON_CUSTOM_EVENT)
-            return func
-        return decorator
-
-
-register = RegisterDeco()
-on = OnEventDeco()
-
-register_tool = register.tool
 
 
 def _build_tag_inst(tag_name: str, tag_description: str, func: Callable, tag_parent: Optional[str] = "msg"):
@@ -457,33 +145,33 @@ class PluginManager:
         if enabled and not previous:
             # Toggle: plugin code unchanged, just re-initialize from existing class
             await self.init_plugin(plugin_id)
-            if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].status = "ready"
+            if plugin_id in self.plugin_instances and plugin_id in registry._plugin_infos:
+                registry._plugin_infos[plugin_id].status = "ready"
         elif not enabled and previous:
-            if plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].status = "disabled"
+            if plugin_id in registry._plugin_infos:
+                registry._plugin_infos[plugin_id].status = "disabled"
             try:
                 await self.terminate(plugin_id)
             except Exception as e:
                 logger.error(f"Failed to terminate plugin {plugin_id} when disabling: {e}")
 
     def get_registered_plugins(self) -> Dict[str, type[BasePlugin]]:
-        return dict(_plugin_classes)
+        return dict(registry._plugin_classes)
 
     def has_plugin(self, plugin_id: str) -> bool:
-        return plugin_id in _plugin_infos
+        return plugin_id in registry._plugin_infos
 
     def list_plugins(self) -> List[PluginInfo]:
-        return list(_plugin_infos.values())
+        return list(registry._plugin_infos.values())
 
     def get_plugin_info(self, plugin_id: str) -> Optional[PluginInfo]:
-        return _plugin_infos.get(plugin_id)
+        return registry._plugin_infos.get(plugin_id)
 
     def get_plugin_manifest(self, name: str) -> Dict[str, Any]:
-        return _plugin_manifests.get(name, {})
+        return registry._plugin_manifests.get(name, {})
 
     def get_plugin_load_errors(self) -> Dict[str, Dict[str, Any]]:
-        return dict(_plugin_load_errors)
+        return dict(registry._plugin_load_errors)
 
     def _get_pypi_mirror(self) -> Optional[str]:
         if self.ctx and hasattr(self.ctx, "config"):
@@ -491,13 +179,13 @@ class PluginManager:
         return None
 
     def get_plugin_module_dir(self, name: str) -> str:
-        return _plugin_module_dirs.get(name, "")
+        return registry._plugin_module_dirs.get(name, "")
 
     def get_plugin_module_path(self, name: str) -> Optional[Path]:
-        return _plugin_module_paths.get(name)
+        return registry._plugin_module_paths.get(name)
 
     def is_builtin_plugin(self, plugin_id: str) -> bool:
-        path = _plugin_module_paths.get(plugin_id)
+        path = registry._plugin_module_paths.get(plugin_id)
         if path is None:
             return False
         return path.is_relative_to(BUILTIN_PLUGINS_DIR)
@@ -505,26 +193,26 @@ class PluginManager:
     def is_plugin_hidden(self, plugin_id: str) -> bool:
         if not self.is_builtin_plugin(plugin_id):
             return False
-        manifest = _plugin_manifests.get(plugin_id, {})
+        manifest = registry._plugin_manifests.get(plugin_id, {})
         return bool(manifest.get("hide", False))
 
     def is_plugin_uninstallable(self, plugin_id: str) -> bool:
         if not self.is_builtin_plugin(plugin_id):
             return True
-        manifest = _plugin_manifests.get(plugin_id, {})
+        manifest = registry._plugin_manifests.get(plugin_id, {})
         return bool(manifest.get("uninstallable", False))
 
     def get_plugin_id_for_module(self, module_name: str) -> Optional[str]:
-        return _module_to_plugin.get(module_name)
+        return registry._module_to_plugin.get(module_name)
 
     def get_plugin_schema(self, name: str) -> List[BaseConfigField]:
-        return _plugin_schemas.get(name, [])
+        return registry._plugin_schemas.get(name, [])
 
     def get_plugin_config(self, plugin_name: str) -> Dict[str, Any]:
         plugin_name = str(plugin_name)
         if plugin_name in self.plugin_configs:
             return dict(self.plugin_configs.get(plugin_name, {}))
-        schema_fields = _plugin_schemas.get(plugin_name, [])
+        schema_fields = registry._plugin_schemas.get(plugin_name, [])
         if schema_fields:
             self._ensure_plugin_config(plugin_name, schema_fields)
             return dict(self.plugin_configs.get(plugin_name, {}))
@@ -536,7 +224,7 @@ class PluginManager:
         plugin_name = str(plugin_name)
         if not isinstance(config, dict):
             config = {}
-        schema_fields = _plugin_schemas.get(plugin_name, [])
+        schema_fields = registry._plugin_schemas.get(plugin_name, [])
         if schema_fields:
             self._ensure_plugin_config(plugin_name, schema_fields)
         current_cfg = self.plugin_configs.get(plugin_name)
@@ -558,7 +246,7 @@ class PluginManager:
         return dict(current_cfg)
 
     def get_plugin_components(self) -> Dict[str, PluginComponents]:
-        return dict(_plugin_components)
+        return dict(registry._plugin_components)
 
     def get_page_menu_icon_path(self, plugin_id: str, page_route: str) -> Optional[Path]:
         """Resolve a page menu icon that references an SVG file in the plugin.
@@ -570,7 +258,7 @@ class PluginManager:
         icon is an icon name, missing, not an SVG, or escapes the plugin
         root.
         """
-        comp = _plugin_components.get(plugin_id)
+        comp = registry._plugin_components.get(plugin_id)
         if not comp:
             return None
         wanted = "/" + str(page_route).lstrip("/")
@@ -581,7 +269,7 @@ class PluginManager:
         )
         if menu is None or not isinstance(menu.icon, str) or not menu.icon.strip():
             return None
-        plugin_root = _plugin_module_paths.get(plugin_id)
+        plugin_root = registry._plugin_module_paths.get(plugin_id)
         if plugin_root is None:
             return None
         # Tolerate a leading slash: authors may mirror the leading-slash
@@ -591,7 +279,7 @@ class PluginManager:
                                           extensions=frozenset({".svg"}))
 
     def _resolve_plugin_component_dir(self, plugin_id: str, relative_path: str) -> Path:
-        plugin_root = _plugin_module_paths.get(plugin_id)
+        plugin_root = registry._plugin_module_paths.get(plugin_id)
         if plugin_root is None:
             raise ValueError(f"Plugin '{plugin_id}' has no registered root directory")
         candidate = Path(relative_path)
@@ -605,7 +293,7 @@ class PluginManager:
         return component_dir
 
     def _load_plugin_component_module(self, plugin_id: str, component_dir: Path, kind: str):
-        plugin_root = _plugin_module_paths[plugin_id].resolve()
+        plugin_root = registry._plugin_module_paths[plugin_id].resolve()
         package_name = f"plugins.{plugin_root.name}"
         package_dir = plugin_root
         for part in component_dir.relative_to(plugin_root).parts:
@@ -636,7 +324,7 @@ class PluginManager:
         except Exception:
             sys.modules.pop(module_name, None)
             raise
-        _module_to_plugin[module_name] = plugin_id
+        registry._module_to_plugin[module_name] = plugin_id
         return module
 
     @staticmethod
@@ -662,7 +350,7 @@ class PluginManager:
         provider_format = str(manifest.get("name") or "").strip()
         if not provider_format:
             raise ValueError("Provider manifest must define a name")
-        comp = _ensure_components(plugin_id)
+        comp = registry._ensure_components(plugin_id)
         existing = comp.providers.get(provider_format)
         if existing:
             if existing["path"] == component_dir:
@@ -695,7 +383,7 @@ class PluginManager:
     async def unregister_plugin_provider(self, plugin_id: str, provider_format: str) -> bool:
         if not self.ctx or not self.ctx.provider_mgr:
             raise RuntimeError("Provider manager is not available")
-        metadata = _ensure_components(plugin_id).unregister_provider(provider_format)
+        metadata = registry._ensure_components(plugin_id).unregister_provider(provider_format)
         if metadata is None:
             return False
         self.ctx.provider_mgr.remove_provider_instances_by_format(provider_format)
@@ -714,7 +402,7 @@ class PluginManager:
         platform = str(manifest.get("name") or "").strip()
         if not platform:
             raise ValueError("Adapter manifest must define a name")
-        comp = _ensure_components(plugin_id)
+        comp = registry._ensure_components(plugin_id)
         existing = comp.adapters.get(platform)
         if existing:
             if existing["path"] == component_dir:
@@ -746,7 +434,7 @@ class PluginManager:
         """Remove a plugin-owned Adapter after its runtime instances stop."""
         if not self.ctx or not self.ctx.adapter_mgr:
             raise RuntimeError("Adapter manager is not available")
-        comp = _ensure_components(plugin_id)
+        comp = registry._ensure_components(plugin_id)
         metadata = comp.adapters.get(platform)
         if metadata is None:
             return False
@@ -769,12 +457,12 @@ class PluginManager:
 
     def get_plugin_tools(self, plugin_name: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         if plugin_name is None:
-            return {pid: dict(comp.tools) for pid, comp in _plugin_components.items()}
-        comp = _plugin_components.get(plugin_name)
+            return {pid: dict(comp.tools) for pid, comp in registry._plugin_components.items()}
+        comp = registry._plugin_components.get(plugin_name)
         return dict(comp.tools) if comp else {}
 
     def _register_plugin_tools_for(self, plugin_id: str) -> None:
-        comp = _plugin_components.get(plugin_id)
+        comp = registry._plugin_components.get(plugin_id)
         if not comp:
             return
         plugin_instance = self.plugin_instances.get(plugin_id)
@@ -797,7 +485,7 @@ class PluginManager:
             logger.info(f"Registered {len(tool_names)} tools from {plugin_id}: {tool_names}")
 
     def _register_plugin_hooks_for(self, plugin_id: str):
-        comp = _plugin_components.get(plugin_id)
+        comp = registry._plugin_components.get(plugin_id)
         if not comp:
             return
         plugin_instance = self.plugin_instances.get(plugin_id)
@@ -815,7 +503,7 @@ class PluginManager:
             logger.info(f"Registered {len(comp.hooks)} hooks from {plugin_id}")
 
     def _register_plugin_tags_for(self, plugin_id: str):
-        comp = _plugin_components.get(plugin_id)
+        comp = registry._plugin_components.get(plugin_id)
         if not comp:
             return
         plugin_instance = self.plugin_instances.get(plugin_id)
@@ -855,12 +543,12 @@ class PluginManager:
             self._get_web_bindings().register_static(plugin_id)
 
     def register_plugin_tools(self) -> None:
-        for plugin_id in _plugin_components.keys():
+        for plugin_id in registry._plugin_components.keys():
             self._register_plugin_tools_for(plugin_id)
 
     def _register_plugin_widgets_for(self, plugin_id: str) -> None:
         """Log registered widgets for a plugin. Data is collected lazily."""
-        comp = _plugin_components.get(plugin_id)
+        comp = registry._plugin_components.get(plugin_id)
         if not comp or not comp.widgets:
             return
         widget_ids = [w["widget_id"] for w in comp.widgets]
@@ -874,7 +562,7 @@ class PluginManager:
             self._get_web_bindings().remove_routes(plugin_id)
 
     async def _cleanup_plugin_runtime_components(self, plugin_id: str) -> None:
-        comp = _plugin_components.get(plugin_id)
+        comp = registry._plugin_components.get(plugin_id)
         if not comp:
             return
         for platform in list(comp.adapters):
@@ -899,7 +587,7 @@ class PluginManager:
                 )
 
     def _cleanup_plugin_registration(self, plugin_id: str) -> None:
-        comp = _plugin_components.get(plugin_id)
+        comp = registry._plugin_components.get(plugin_id)
         if not comp:
             return
         # clean up tool registration
@@ -976,18 +664,18 @@ class PluginManager:
         await self._discover_builtin_plugins()
         await self._discover_user_plugins()
 
-        discovered = list(_plugin_classes.keys())
+        discovered = list(registry._plugin_classes.keys())
         logger.info(f"Discovered plugins: {discovered}")
 
         # Phase 1: Attempt to initialize all discovered plugins
-        for plugin_id in _plugin_classes.keys():
+        for plugin_id in registry._plugin_classes.keys():
             if plugin_id in self.plugin_instances:
-                if plugin_id in _plugin_infos:
-                    _plugin_infos[plugin_id].status = "ready"
+                if plugin_id in registry._plugin_infos:
+                    registry._plugin_infos[plugin_id].status = "ready"
                 continue
             await self.init_plugin(plugin_id)
-            if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].status = "ready"
+            if plugin_id in self.plugin_instances and plugin_id in registry._plugin_infos:
+                registry._plugin_infos[plugin_id].status = "ready"
 
         # Phase 2: Recover plugins that failed with import errors.
         # Detect missing-dependency failures reliably: accept any error_type that
@@ -998,57 +686,57 @@ class PluginManager:
             return isinstance(err_type, type) and issubclass(err_type, ImportError)
 
         import_failures = [
-            pid for pid, err_info in _plugin_load_errors.items()
-            if _is_missing_dep_failure(err_info) and pid in _plugin_module_paths
+            pid for pid, err_info in registry._plugin_load_errors.items()
+            if _is_missing_dep_failure(err_info) and pid in registry._plugin_module_paths
         ]
         if import_failures:
             logger.info(f"Plugins with import errors, will attempt dependency install: {import_failures}")
 
         for plugin_id in import_failures:
-            plugin_path = _plugin_module_paths.get(plugin_id)
+            plugin_path = registry._plugin_module_paths.get(plugin_id)
             if not plugin_path:
                 continue
 
-            if plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].status = "installing"
+            if plugin_id in registry._plugin_infos:
+                registry._plugin_infos[plugin_id].status = "installing"
 
             warnings = await install_requirements(plugin_path, pypi_mirror=self._get_pypi_mirror())
             for w in warnings:
                 logger.warning(f"Dependency install warning for {plugin_id}: {w}")
 
             # Clear old error and retry loading
-            _plugin_load_errors.pop(plugin_id, None)
-            if plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].error = None
-                _plugin_infos[plugin_id].status = "loading"
+            registry._plugin_load_errors.pop(plugin_id, None)
+            if plugin_id in registry._plugin_infos:
+                registry._plugin_infos[plugin_id].error = None
+                registry._plugin_infos[plugin_id].status = "loading"
 
             await self.load_plugin_from_dir(plugin_path, auto_install=False)
 
             if plugin_id in self.plugin_instances:
-                if plugin_id in _plugin_infos:
-                    _plugin_infos[plugin_id].status = "ready"
+                if plugin_id in registry._plugin_infos:
+                    registry._plugin_infos[plugin_id].status = "ready"
                 logger.info(f"Successfully recovered plugin {plugin_id} after dependency install")
             else:
-                if plugin_id in _plugin_infos:
-                    _plugin_infos[plugin_id].status = "error"
+                if plugin_id in registry._plugin_infos:
+                    registry._plugin_infos[plugin_id].status = "error"
                 logger.warning(f"Plugin {plugin_id} still failed after dependency install")
 
     async def init_plugin(self, plugin_id: Optional[str] = None):
         if plugin_id is None:
-            for pid in list(_plugin_classes.keys()):
+            for pid in list(registry._plugin_classes.keys()):
                 await self.init_plugin(pid)
             return
 
         plugin_id = str(plugin_id)
-        plugin_cls = _plugin_classes.get(plugin_id)
+        plugin_cls = registry._plugin_classes.get(plugin_id)
         if not plugin_cls:
             logger.warning(f"No plugin class found for {plugin_id}, cannot initialize")
             return
 
         if not self.is_plugin_enabled(plugin_id):
             logger.debug(f"Plugin {plugin_id} is disabled, skipping initialization")
-            if plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].status = "disabled"
+            if plugin_id in registry._plugin_infos:
+                registry._plugin_infos[plugin_id].status = "disabled"
             return
 
         existing = self.plugin_instances.get(plugin_id)
@@ -1058,7 +746,7 @@ class PluginManager:
             except Exception as e:
                 logger.error(f"Error terminating plugin {plugin_id} before reinitialization: {e}")
 
-        schema_fields = _plugin_schemas.get(plugin_id, [])
+        schema_fields = registry._plugin_schemas.get(plugin_id, [])
         if schema_fields:
             self._ensure_plugin_config(plugin_id, schema_fields)
             cfg = self.plugin_configs.get(plugin_id) or {}
@@ -1114,7 +802,7 @@ class PluginManager:
         # Clear registries
         self.plugin_instances.clear()
         self.plugin_configs.clear()
-        for name in list(_plugin_components.keys()):
+        for name in list(registry._plugin_components.keys()):
             await self._cleanup_plugin_runtime_components(name)
             self._cleanup_plugin_registration(name)
 
@@ -1124,16 +812,16 @@ class PluginManager:
         The caller is responsible for deleting the plugin directory afterwards.
         """
         # Allow uninstalling failed plugins that never fully loaded
-        if plugin_id in _plugin_load_errors:
-            _plugin_load_errors.pop(plugin_id, None)
-            _plugin_manifests.pop(plugin_id, None)
-            _plugin_infos.pop(plugin_id, None)
+        if plugin_id in registry._plugin_load_errors:
+            registry._plugin_load_errors.pop(plugin_id, None)
+            registry._plugin_manifests.pop(plugin_id, None)
+            registry._plugin_infos.pop(plugin_id, None)
             self.plugin_enabled.pop(plugin_id, None)
             self._save_plugin_state()
             logger.info(f"Failed plugin '{plugin_id}' removed from records")
             return
 
-        if plugin_id not in _plugin_classes:
+        if plugin_id not in registry._plugin_classes:
             raise ValueError(f"Plugin '{plugin_id}' is not registered")
 
         # Stop the running instance and unregister tools / hooks / tags
@@ -1143,14 +831,14 @@ class PluginManager:
         self._cleanup_plugin_modules(plugin_id)
 
         # Remove from global registries
-        _plugin_classes.pop(plugin_id, None)
-        _plugin_manifests.pop(plugin_id, None)
-        _plugin_module_dirs.pop(plugin_id, None)
-        _plugin_module_paths.pop(plugin_id, None)
-        _plugin_schemas.pop(plugin_id, None)
-        _plugin_components.pop(plugin_id, None)
-        _plugin_load_errors.pop(plugin_id, None)
-        _plugin_infos.pop(plugin_id, None)
+        registry._plugin_classes.pop(plugin_id, None)
+        registry._plugin_manifests.pop(plugin_id, None)
+        registry._plugin_module_dirs.pop(plugin_id, None)
+        registry._plugin_module_paths.pop(plugin_id, None)
+        registry._plugin_schemas.pop(plugin_id, None)
+        registry._plugin_components.pop(plugin_id, None)
+        registry._plugin_load_errors.pop(plugin_id, None)
+        registry._plugin_infos.pop(plugin_id, None)
 
         # Remove enabled state and persist
         self.plugin_enabled.pop(plugin_id, None)
@@ -1165,14 +853,14 @@ class PluginManager:
         to find all modules that belong to this plugin.  Third-party modules
         imported by the plugin are left untouched (they may be shared).
         """
-        plugin_dir = _plugin_module_paths.get(plugin_id)
+        plugin_dir = registry._plugin_module_paths.get(plugin_id)
         cleaned = 0
 
         for name, mod in list(sys.modules.items()):
             matched = False
 
             # 1) Direct mapping from _register_plugin_class
-            if _module_to_plugin.get(name) == plugin_id:
+            if registry._module_to_plugin.get(name) == plugin_id:
                 matched = True
 
             # 2) Path-based: module file lives inside the plugin directory
@@ -1186,7 +874,7 @@ class PluginManager:
 
             if matched:
                 sys.modules.pop(name, None)
-                _module_to_plugin.pop(name, None)
+                registry._module_to_plugin.pop(name, None)
                 cleaned += 1
 
         if cleaned:
@@ -1200,9 +888,9 @@ class PluginManager:
         await self.terminate(plugin_id)
         # 2. Remove class / schema / error registrations
 
-        _plugin_classes.pop(plugin_id, None)
-        _plugin_schemas.pop(plugin_id, None)
-        _plugin_load_errors.pop(plugin_id, None)
+        registry._plugin_classes.pop(plugin_id, None)
+        registry._plugin_schemas.pop(plugin_id, None)
+        registry._plugin_load_errors.pop(plugin_id, None)
         # 3. Purge the plugin's own modules from sys.modules
 
         self._cleanup_plugin_modules(plugin_id)
@@ -1218,7 +906,7 @@ class PluginManager:
 
             await self.prepare_plugin_reload(plugin_id)
             # 4. Re-import from disk
-            plugin_dir = _plugin_module_paths.get(plugin_id)
+            plugin_dir = registry._plugin_module_paths.get(plugin_id)
             if plugin_dir and plugin_dir.exists():
                 await self.load_plugin_from_dir(plugin_dir)
             else:
@@ -1257,7 +945,7 @@ class PluginManager:
     def _build_plugin_info(plugin_id: str, manifest: dict, error: Optional[str] = None, status: str = "pending") -> PluginInfo:
         if status == "pending" and error:
             status = "error"
-        path = _plugin_module_paths.get(plugin_id)
+        path = registry._plugin_module_paths.get(plugin_id)
         is_builtin = path is not None and path.is_relative_to(BUILTIN_PLUGINS_DIR)
         hidden = bool(manifest.get("hide", False)) if is_builtin else False
         if is_builtin:
@@ -1301,26 +989,26 @@ class PluginManager:
         plugin_id = manifest.get("plugin_id") or entry
 
         # Persist directory info early so failed plugins can be found for retry
-        _plugin_module_dirs[plugin_id] = plugin_root.name
-        _plugin_module_paths[plugin_id] = plugin_root
+        registry._plugin_module_dirs[plugin_id] = plugin_root.name
+        registry._plugin_module_paths[plugin_id] = plugin_root
 
         if manifest:
-            _plugin_manifests[plugin_id] = manifest
+            registry._plugin_manifests[plugin_id] = manifest
 
         # Build PluginInfo early — even if class loading later fails, we have metadata
-        _plugin_infos[plugin_id] = self._build_plugin_info(plugin_id, manifest)
+        registry._plugin_infos[plugin_id] = self._build_plugin_info(plugin_id, manifest)
 
         # Check core_version compatibility
         core_version_spec = manifest.get("core_version")
         if core_version_spec:
             error = self._check_core_version(str(core_version_spec))
             if error:
-                _plugin_load_errors[plugin_id] = {
+                registry._plugin_load_errors[plugin_id] = {
                     "manifest": manifest,
                     "error": error,
                 }
-                _plugin_infos[plugin_id].error = error
-                _plugin_infos[plugin_id].status = "error"
+                registry._plugin_infos[plugin_id].error = error
+                registry._plugin_infos[plugin_id].status = "error"
                 logger.warning(f"Plugin {plugin_id} skipped: {error}")
                 return None
 
@@ -1335,7 +1023,7 @@ class PluginManager:
                 logger.warning(f"Failed to load schema for plugin {plugin_id}: {e}")
 
         if schema_fields:
-            _plugin_schemas[plugin_id] = schema_fields
+            registry._plugin_schemas[plugin_id] = schema_fields
             self._ensure_plugin_config(plugin_id, schema_fields)
 
         return plugin_id
@@ -1344,7 +1032,7 @@ class PluginManager:
     def _register_plugin_class(plugin_id: str, module, fallback_path: Path):
         for _, attr_value in inspect.getmembers(module, inspect.isclass):
             if issubclass(attr_value, BasePlugin) and attr_value is not BasePlugin:
-                _plugin_classes[plugin_id] = attr_value
+                registry._plugin_classes[plugin_id] = attr_value
 
                 module_file = Path(
                     getattr(module, "__file__", fallback_path)
@@ -1352,9 +1040,9 @@ class PluginManager:
 
                 module_dir = module_file.parent
 
-                _plugin_module_dirs[plugin_id] = module_dir.name
-                _plugin_module_paths[plugin_id] = module_dir
-                _module_to_plugin[module.__name__] = plugin_id
+                registry._plugin_module_dirs[plugin_id] = module_dir.name
+                registry._plugin_module_paths[plugin_id] = module_dir
+                registry._module_to_plugin[module.__name__] = plugin_id
                 return True
 
         return False
@@ -1375,7 +1063,7 @@ class PluginManager:
                 continue
 
             # Clear any previous load error
-            _plugin_load_errors.pop(plugin_id, None)
+            registry._plugin_load_errors.pop(plugin_id, None)
 
             module = None
             candidate_modules = [
@@ -1396,13 +1084,13 @@ class PluginManager:
 
             if module is None:
                 logger.warning(f"No module found for builtin plugin {entry}")
-                _plugin_load_errors.setdefault(plugin_id, {
-                    "manifest": _plugin_manifests.get(plugin_id, {}),
+                registry._plugin_load_errors.setdefault(plugin_id, {
+                    "manifest": registry._plugin_manifests.get(plugin_id, {}),
                     "error": "No module found",
                 })
-                if plugin_id in _plugin_infos:
-                    _plugin_infos[plugin_id].error = "No module found"
-                    _plugin_infos[plugin_id].status = "error"
+                if plugin_id in registry._plugin_infos:
+                    registry._plugin_infos[plugin_id].error = "No module found"
+                    registry._plugin_infos[plugin_id].status = "error"
                 continue
 
             self._register_plugin_class(plugin_id, module, plugin_dir)
@@ -1427,7 +1115,7 @@ class PluginManager:
             return None
 
         # Clear any previous load error (e.g. plugin was fixed since last attempt)
-        _plugin_load_errors.pop(plugin_id, None)
+        registry._plugin_load_errors.pop(plugin_id, None)
 
         # Ensure the top-level "plugins" package is registered in sys.modules
         base_package = "plugins"
@@ -1459,18 +1147,18 @@ class PluginManager:
 
         if not script_path or not module_name:
             logger.warning(f"No entry script found in plugin directory: {plugin_root}")
-            _plugin_load_errors[plugin_id] = {
-                "manifest": _plugin_manifests.get(plugin_id, {}),
+            registry._plugin_load_errors[plugin_id] = {
+                "manifest": registry._plugin_manifests.get(plugin_id, {}),
                 "error": "No entry script found (main.py / plugin.py / __init__.py)",
             }
-            if plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].error = "No entry script found (main.py / plugin.py / __init__.py)"
-                _plugin_infos[plugin_id].status = "error"
+            if plugin_id in registry._plugin_infos:
+                registry._plugin_infos[plugin_id].error = "No entry script found (main.py / plugin.py / __init__.py)"
+                registry._plugin_infos[plugin_id].status = "error"
             return None
 
         # Clear decorator-registered components so re-import starts fresh
-        if plugin_id in _plugin_components:
-            _plugin_components[plugin_id] = PluginComponents()
+        if plugin_id in registry._plugin_components:
+            registry._plugin_components[plugin_id] = PluginComponents()
 
         # Remove stale module from cache so exec_module re-runs the file
         sys.modules.pop(module_name, None)
@@ -1478,17 +1166,17 @@ class PluginManager:
         spec = importlib.util.spec_from_file_location(module_name, script_path)
         if not spec or not spec.loader:
             logger.warning(f"Failed to create module spec for: {plugin_root}")
-            _plugin_load_errors[plugin_id] = {
-                "manifest": _plugin_manifests.get(plugin_id, {}),
+            registry._plugin_load_errors[plugin_id] = {
+                "manifest": registry._plugin_manifests.get(plugin_id, {}),
                 "error": "Failed to create module spec",
             }
-            if plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].error = "Failed to create module spec"
-                _plugin_infos[plugin_id].status = "error"
+            if plugin_id in registry._plugin_infos:
+                registry._plugin_infos[plugin_id].error = "Failed to create module spec"
+                registry._plugin_infos[plugin_id].status = "error"
             return None
 
-        if plugin_id in _plugin_infos:
-            _plugin_infos[plugin_id].status = "loading"
+        if plugin_id in registry._plugin_infos:
+            registry._plugin_infos[plugin_id].status = "loading"
 
         try:
             module = importlib.util.module_from_spec(spec)
@@ -1497,20 +1185,20 @@ class PluginManager:
         except Exception as e:
             if auto_install and isinstance(e, ModuleNotFoundError):
                 logger.info(f"ModuleNotFoundError in {plugin_root}, attempting dependency install: {e}")
-                if plugin_id in _plugin_infos:
-                    _plugin_infos[plugin_id].status = "installing"
-                    _plugin_infos[plugin_id].error = None
+                if plugin_id in registry._plugin_infos:
+                    registry._plugin_infos[plugin_id].status = "installing"
+                    registry._plugin_infos[plugin_id].error = None
 
                 warnings = await install_requirements(plugin_root, pypi_mirror=self._get_pypi_mirror())
                 for w in warnings:
                     logger.warning(f"Dependency install warning for {plugin_id}: {w}")
 
-                if plugin_id in _plugin_infos:
-                    _plugin_infos[plugin_id].status = "loading"
+                if plugin_id in registry._plugin_infos:
+                    registry._plugin_infos[plugin_id].status = "loading"
 
                 # Clean up and retry (once)
                 sys.modules.pop(module_name, None)
-                _plugin_load_errors.pop(plugin_id, None)
+                registry._plugin_load_errors.pop(plugin_id, None)
                 try:
                     module = importlib.util.module_from_spec(spec)
                     sys.modules[module_name] = module
@@ -1518,43 +1206,43 @@ class PluginManager:
                 except Exception as retry_e:
                     logger.error(f"Retry after dep install also failed for {plugin_root}: {retry_e}")
                     sys.modules.pop(module_name, None)
-                    _plugin_load_errors[plugin_id] = {
-                        "manifest": _plugin_manifests.get(plugin_id, {}),
+                    registry._plugin_load_errors[plugin_id] = {
+                        "manifest": registry._plugin_manifests.get(plugin_id, {}),
                         "error": f"Import error (after retry): {retry_e}",
                         "error_type": type(retry_e),
                     }
-                    if plugin_id in _plugin_infos:
-                        _plugin_infos[plugin_id].error = f"Import error (after retry): {retry_e}"
-                        _plugin_infos[plugin_id].status = "error"
+                    if plugin_id in registry._plugin_infos:
+                        registry._plugin_infos[plugin_id].error = f"Import error (after retry): {retry_e}"
+                        registry._plugin_infos[plugin_id].status = "error"
                     return None
             else:
                 logger.error(f"Error loading plugin from {plugin_root}: {e}")
                 sys.modules.pop(module_name, None)
-                _plugin_load_errors[plugin_id] = {
-                    "manifest": _plugin_manifests.get(plugin_id, {}),
+                registry._plugin_load_errors[plugin_id] = {
+                    "manifest": registry._plugin_manifests.get(plugin_id, {}),
                     "error": f"Import error: {e}",
                     "error_type": type(e),
                 }
-                if plugin_id in _plugin_infos:
-                    _plugin_infos[plugin_id].error = f"Import error: {e}"
-                    _plugin_infos[plugin_id].status = "error"
+                if plugin_id in registry._plugin_infos:
+                    registry._plugin_infos[plugin_id].error = f"Import error: {e}"
+                    registry._plugin_infos[plugin_id].status = "error"
                 return None
 
         registered = self._register_plugin_class(plugin_id, module, plugin_root)
         if not registered:
             logger.warning(f"No BasePlugin subclass found in {plugin_root}")
-            _plugin_load_errors[plugin_id] = {
-                "manifest": _plugin_manifests.get(plugin_id, {}),
+            registry._plugin_load_errors[plugin_id] = {
+                "manifest": registry._plugin_manifests.get(plugin_id, {}),
                 "error": "No BasePlugin subclass found",
             }
-            if plugin_id in _plugin_infos:
-                _plugin_infos[plugin_id].error = "No BasePlugin subclass found"
-                _plugin_infos[plugin_id].status = "error"
+            if plugin_id in registry._plugin_infos:
+                registry._plugin_infos[plugin_id].error = "No BasePlugin subclass found"
+                registry._plugin_infos[plugin_id].status = "error"
             return None
 
         await self.init_plugin(plugin_id)
-        if plugin_id in self.plugin_instances and plugin_id in _plugin_infos:
-            _plugin_infos[plugin_id].status = "ready"
+        if plugin_id in self.plugin_instances and plugin_id in registry._plugin_infos:
+            registry._plugin_infos[plugin_id].status = "ready"
         return plugin_id
 
     async def _discover_user_plugins(self):

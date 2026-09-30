@@ -11,10 +11,10 @@ from starlette.websockets import WebSocketDisconnect
 
 import core.plugin as public_api
 from core.plugin import manager as manager_module
-from core.plugin.components import PluginComponents
+from core.plugin import decorators, registry
 from core.plugin.metadata import PluginInfo
-from core.plugin.pages import PageMenu, PluginPage, PluginPageSource
-from core.plugin.plugin_handlers import event_handler_reg
+from core.plugin.pages import PageMenu, PluginPage
+from core.plugin.handlers import event_handler_reg
 from core.tag import tag_registry
 
 
@@ -25,7 +25,8 @@ from __future__ import annotations
 from core.plugin import PageMenu, logger, get_logger
 from core.plugin.pages import PluginPage
 from core.plugin.base import BasePlugin
-from core.plugin.manager import register, _plugin_components
+from core.plugin import register
+from core.plugin.registry import _plugin_components
 
 OBJECT_FOLDER = register.page("/object-folder", auth=False)(PluginPage.from_folder("web"))
 OBJECT_HTML = register.page("/object-html", auth=False)(PluginPage.from_html("object html"))
@@ -116,7 +117,7 @@ def load_plugin(tmp_path, monkeypatch):
         "_plugin_manifests", "_plugin_module_dirs", "_plugin_module_paths",
         "_plugin_schemas", "_plugin_infos", "_module_to_plugin",
     ):
-        monkeypatch.setattr(manager_module, name, {})
+        monkeypatch.setattr(registry, name, {})
     monkeypatch.setattr(manager_module, "PLUGINS_DIR", tmp_path)
     monkeypatch.setattr(manager_module, "PLUGIN_DATA_DIR", tmp_path / "plugin_data")
     monkeypatch.setattr(manager_module, "PLUGIN_CONFIG_DIR", tmp_path / "config")
@@ -153,14 +154,13 @@ def load_plugin(tmp_path, monkeypatch):
     manager._cleanup_plugin_modules(PLUGIN_ID)
 
 
-def test_old_and_new_model_imports_share_identity():
-    for model in (PluginInfo, PageMenu, PluginPage, PluginPageSource, PluginComponents):
-        assert getattr(manager_module, model.__name__) is model
+def test_public_plugin_exports_share_identity():
     for model in (PluginInfo, PageMenu, PluginPage):
         assert getattr(public_api, model.__name__) is model
-    assert public_api.register is manager_module.register
-    assert public_api.on is manager_module.on
-    assert public_api.register_tool is manager_module.register_tool
+    assert public_api.PluginManager is manager_module.PluginManager
+    assert public_api.register is decorators.register
+    assert public_api.on is decorators.on
+    assert public_api.register_tool is decorators.register_tool
     assert callable(public_api.get_logger)
 
 
@@ -168,7 +168,7 @@ def test_old_and_new_model_imports_share_identity():
 def test_plugin_imports_mutable_tags_and_all_web_bindings(load_plugin, app_first):
     manager, client = load_plugin(app_first)
     comp = manager.get_plugin_components()[PLUGIN_ID]
-    assert comp is manager_module._plugin_components[PLUGIN_ID]
+    assert comp is registry._plugin_components[PLUGIN_ID]
     assert tag_registry.get("migration_tag").description == "configured description"
     assert manager.get_all_widgets()[0].content == "ready"
     paths = client.app.openapi()["paths"]

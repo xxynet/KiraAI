@@ -12,7 +12,7 @@ from core.provider import LLMRequest, LLMResponse, LLMModelClient, ProviderAPIEr
 from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage
 from core.chat.message_utils import KiraExceptionEvent
-from core.plugin.plugin_handlers import event_handler_reg, EventType
+from core.plugin.handlers import event_handler_reg, EventType
 from core.prompt_manager import Prompt
 from core.utils.media_refs import MEDIA_REF_TYPE
 

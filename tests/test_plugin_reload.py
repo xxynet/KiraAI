@@ -1,8 +1,9 @@
 import asyncio
 import json
 
-from core.plugin.plugin_handlers import EventType, event_handler_reg
+from core.plugin.handlers import EventType, event_handler_reg
 from core.plugin import manager as manager_module
+from core.plugin import registry
 
 
 PLUGIN_ID = "multi_file_reload_plugin"
@@ -18,21 +19,21 @@ def _write_plugin(plugin_root, helper_source: str, main_source: str) -> None:
 
 
 def test_loading_updated_multifile_plugin_evicts_helpers_and_old_hooks(tmp_path, monkeypatch):
-    monkeypatch.setattr(manager_module, "_plugin_classes", {})
-    monkeypatch.setattr(manager_module, "_plugin_components", {})
-    monkeypatch.setattr(manager_module, "_plugin_load_errors", {})
-    monkeypatch.setattr(manager_module, "_plugin_manifests", {})
-    monkeypatch.setattr(manager_module, "_plugin_module_dirs", {})
-    monkeypatch.setattr(manager_module, "_plugin_module_paths", {})
-    monkeypatch.setattr(manager_module, "_plugin_schemas", {})
-    monkeypatch.setattr(manager_module, "_plugin_infos", {})
-    monkeypatch.setattr(manager_module, "_module_to_plugin", {})
+    monkeypatch.setattr(registry, "_plugin_classes", {})
+    monkeypatch.setattr(registry, "_plugin_components", {})
+    monkeypatch.setattr(registry, "_plugin_load_errors", {})
+    monkeypatch.setattr(registry, "_plugin_manifests", {})
+    monkeypatch.setattr(registry, "_plugin_module_dirs", {})
+    monkeypatch.setattr(registry, "_plugin_module_paths", {})
+    monkeypatch.setattr(registry, "_plugin_schemas", {})
+    monkeypatch.setattr(registry, "_plugin_infos", {})
+    monkeypatch.setattr(registry, "_module_to_plugin", {})
     monkeypatch.setattr(event_handler_reg, "_handlers", {})
 
     plugins_dir = tmp_path / "plugins"
     plugin_root = plugins_dir / PLUGIN_ID
     helper_v1 = '''
-from core.plugin.manager import on
+from core.plugin import on
 
 
 class HookMixin:
@@ -62,7 +63,7 @@ class TestPlugin(HookMixin, BasePlugin):
         assert await manager.load_plugin_from_dir(plugin_root) == PLUGIN_ID
 
         helper_v2 = '''
-from core.plugin.manager import on
+from core.plugin import on
 
 NEW_MARKER = "v2"
 

@@ -4,16 +4,17 @@ from types import SimpleNamespace
 
 from fastapi import FastAPI
 
-from core.plugin import manager as manager_module
-from core.plugin.manager import PageMenu, PluginComponents, PluginInfo, PluginManager
+from core.plugin import registry
+from core.plugin import PageMenu, PluginInfo, PluginManager
+from core.plugin.components import PluginComponents
 from webui.routes.plugins import PluginsRoutes
 
 
 def _register_page(monkeypatch, tmp_path, icon, route="/dashboard"):
     components = PluginComponents()
     components.register_page(route, None, menu=PageMenu(label="Dashboard", icon=icon))
-    monkeypatch.setattr(manager_module, "_plugin_components", {"test-plugin": components})
-    monkeypatch.setattr(manager_module, "_plugin_module_paths", {"test-plugin": tmp_path})
+    monkeypatch.setattr(registry, "_plugin_components", {"test-plugin": components})
+    monkeypatch.setattr(registry, "_plugin_module_paths", {"test-plugin": tmp_path})
 
 
 def test_page_menu_icon_resolves_svg_inside_plugin_root(monkeypatch, tmp_path):
@@ -129,7 +130,7 @@ async def test_list_plugins_rewrites_file_menu_icons_to_urls(monkeypatch, tmp_pa
     icon.write_text("<svg></svg>", encoding="utf-8")
     _register_page(monkeypatch, tmp_path, "assets/menu.svg")
     monkeypatch.setattr(
-        manager_module, "_plugin_infos",
+        registry, "_plugin_infos",
         {"test-plugin": PluginInfo(plugin_id="test-plugin", display_name="Test Plugin")},
     )
 
@@ -145,7 +146,7 @@ async def test_list_plugins_rewrites_file_menu_icons_to_urls(monkeypatch, tmp_pa
 async def test_list_plugins_keeps_icon_names_as_is(monkeypatch, tmp_path):
     _register_page(monkeypatch, tmp_path, "Monitor")
     monkeypatch.setattr(
-        manager_module, "_plugin_infos",
+        registry, "_plugin_infos",
         {"test-plugin": PluginInfo(plugin_id="test-plugin", display_name="Test Plugin")},
     )
 
