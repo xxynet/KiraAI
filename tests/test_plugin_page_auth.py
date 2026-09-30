@@ -1,9 +1,8 @@
 """Regression tests for per-page auth binding on plugin folder pages.
 
-``PluginPageStaticFiles`` / ``DeferredPluginPageStaticFiles`` are defined
-inside the page-registration loop; the auth flag must be bound per instance,
-not captured from the loop variable (which late-binds to the LAST page's
-value at request time).
+Object declarations and pages returned by plugin methods share the same
+static-file implementation. Each mount must retain its own auth flag,
+independently of the registration order.
 """
 import asyncio
 import json
