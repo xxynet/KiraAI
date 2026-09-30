@@ -1,16 +1,15 @@
 import asyncio
 import shutil
 import time
-import json
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
-from core.plugin.plugin_registry import PluginManager, PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
+from core.plugin.manager import PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
 from core.plugin.plugin_installer import (
     MAX_PLUGIN_ARCHIVE_BYTES,
@@ -19,11 +18,9 @@ from core.plugin.plugin_installer import (
     install_from_zip,
     install_requirements,
 )
-from core.utils.path_utils import get_data_path
+from core.plugin.store import PluginStore, StoreSource, extract_plugins
 from webui.models import (
     PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginInstallTask, PluginItem,
-    PluginStoreItemResponse, PluginStoreFetchRequest,
-    PluginStoreSourceItem, PluginStoreSourceCreateRequest, PluginStoreSourceUpdateRequest,
     PluginUpdateCheckItem, PluginUpdateRequest,
 )
 from webui.routes.auth import require_auth
@@ -152,44 +149,6 @@ class PluginsRoutes(Routes):
                 endpoint=self.cancel_install_task,
                 response_model=PluginInstallTask,
                 tags=["plugins"],
-                dependencies=[Depends(require_auth)],
-            ),
-            RouteDefinition(
-                path="/api/plugin-store/fetch",
-                methods=["POST"],
-                endpoint=self.fetch_plugin_store,
-                response_model=List[PluginStoreItemResponse],
-                tags=["plugin-store"],
-                dependencies=[Depends(require_auth)],
-            ),
-            RouteDefinition(
-                path="/api/plugin-store/sources",
-                methods=["GET"],
-                endpoint=self.list_plugin_sources,
-                response_model=List[PluginStoreSourceItem],
-                tags=["plugin-store"],
-                dependencies=[Depends(require_auth)],
-            ),
-            RouteDefinition(
-                path="/api/plugin-store/sources",
-                methods=["POST"],
-                endpoint=self.create_plugin_source,
-                response_model=PluginStoreSourceItem,
-                tags=["plugin-store"],
-                dependencies=[Depends(require_auth)],
-            ),
-            RouteDefinition(
-                path="/api/plugin-store/sources/{source_id}/current",
-                methods=["POST"],
-                endpoint=self.set_current_source,
-                tags=["plugin-store"],
-                dependencies=[Depends(require_auth)],
-            ),
-            RouteDefinition(
-                path="/api/plugin-store/sources/{source_id}",
-                methods=["DELETE"],
-                endpoint=self.delete_plugin_source,
-                tags=["plugin-store"],
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
@@ -698,41 +657,18 @@ class PluginsRoutes(Routes):
                 sources = await db_service.list_plugin_store_sources()
                 current = next((s for s in sources if s.get("is_current")), None)
                 if current and current.get("url"):
-                    now = int(time.time())
-                    updated_at = current.get("updated_at", 0)
-                    cache_file = current.get("cache_file")
-                    raw_data = None
-
-                    # Try reading from disk cache if fresh enough
-                    if cache_file and (now - updated_at) < 600:
-                        cache_path = get_data_path() / "plugin_src" / cache_file
-                        if cache_path.exists():
-                            raw_data = json.loads(cache_path.read_text(encoding="utf-8"))
-
-                    # Fetch fresh if cache miss or stale
-                    if raw_data is None:
-                        raw_data = await PluginManager.fetch_plugin_store_data(current["url"])
-                        # Update cache on disk
-                        plugin_src_dir = get_data_path() / "plugin_src"
-                        plugin_src_dir.mkdir(parents=True, exist_ok=True)
-                        if cache_file and (plugin_src_dir / cache_file).exists():
-                            filename = cache_file
-                        else:
-                            filename = f"plugins_{uuid4().hex}.json"
-                        cache_path = plugin_src_dir / filename
-                        cache_path.write_text(json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                    fetched = await PluginStore(StoreSource.from_record(current)).fetch(
+                        persist_cache=True,
+                        strict_cache=True,
+                    )
+                    if fetched.cache_file is not None:
                         await db_service.update_plugin_store_source(
-                            current["id"], cache_file=filename, updated_at=now,
+                            current["id"], cache_file=fetched.cache_file, updated_at=fetched.updated_at,
                         )
 
-                    for item in self._extract_plugins(raw_data):
-                        v = item.get("version")
-                        pid = item.get("plugin_id")
-                        if v and pid:
-                            commit_sha = item.get("commit_sha")
-                            store_versions[str(pid)] = (
-                                str(v), str(commit_sha) if isinstance(commit_sha, str) else None,
-                            )
+                    for item in extract_plugins(fetched.data):
+                        if item.version and item.id:
+                            store_versions[item.id] = (item.version, item.commit_sha)
             except Exception as e:
                 store_fetch_error = f"Failed to fetch store data: {e}"
                 logger.warning(store_fetch_error)
@@ -821,360 +757,3 @@ class PluginsRoutes(Routes):
             )
 
         return self._build_install_result(plugin_manager, new_plugin_id, warnings)
-
-    async def fetch_plugin_store(
-        self, payload: PluginStoreFetchRequest, response: Response,
-    ) -> List[PluginStoreItemResponse]:
-        url: Optional[str] = payload.url
-        source_id: Optional[str] = None
-        source: Optional[Dict[str, Any]] = None
-
-        # If source_id is provided, look up URL from DB
-        if payload.source_id and self.lifecycle and self.lifecycle.db_service:
-            source = await self.lifecycle.db_service.get_plugin_store_source(payload.source_id)
-            if not source:
-                raise HTTPException(status_code=404, detail="Plugin store source not found")
-            url = source["url"]
-            source_id = payload.source_id
-
-        if not url:
-            raise HTTPException(status_code=400, detail="Either url or source_id is required")
-
-        try:
-            raw_data = None
-            db_service = getattr(self.lifecycle, "db_service", None) if self.lifecycle else None
-
-            # Use the source cache for normal store browsing. A force refresh
-            # intentionally bypasses it so users can request the latest data.
-            if source_id and source and db_service and not payload.force_refresh:
-                now = int(time.time())
-                cache_file = source.get("cache_file")
-                updated_at = source.get("updated_at", 0)
-                if cache_file and (now - updated_at) < 600:
-                    raw_data = self._read_plugin_store_cache(cache_file)
-
-            used_cache_fallback = False
-            cache_fallback_status: Optional[int] = None
-            if raw_data is None:
-                try:
-                    raw_data = await PluginManager.fetch_plugin_store_data(url)
-                except Exception as fetch_error:
-                    # An expired cache remains useful when the store is temporarily
-                    # unavailable. Let the client know so it can warn the user.
-                    cache_file = source.get("cache_file") if source else None
-                    raw_data = self._read_plugin_store_cache(cache_file)
-                    if raw_data is None:
-                        raise fetch_error
-                    used_cache_fallback = True
-                    cache_fallback_status = self._plugin_store_error_status(fetch_error)
-                    logger.warning(
-                        "Failed to refresh plugin store %s; using local cache: %s",
-                        url,
-                        fetch_error,
-                    )
-
-                # Persist a newly fetched response for source-backed requests.
-                # This includes force refreshes and cache misses/expirations.
-                if source_id and source and db_service and not used_cache_fallback:
-                    plugin_src_dir = get_data_path() / "plugin_src"
-                    plugin_src_dir.mkdir(parents=True, exist_ok=True)
-                    cache_file = source.get("cache_file")
-                    if cache_file and (plugin_src_dir / cache_file).exists():
-                        filename = cache_file
-                    else:
-                        filename = f"plugins_{uuid4().hex}.json"
-                    cache_path = plugin_src_dir / filename
-                    cache_path.write_text(
-                        json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8"
-                    )
-                    await db_service.update_plugin_store_source(
-                        source_id, cache_file=filename, updated_at=int(time.time()),
-                    )
-
-            if used_cache_fallback:
-                response.headers["X-Plugin-Store-Cache-Fallback"] = "true"
-                response.headers["X-Plugin-Store-Cache-Fallback-Status"] = str(
-                    cache_fallback_status
-                )
-
-            items = self._extract_plugins(raw_data)
-            result: List[PluginStoreItemResponse] = []
-            for item in items:
-                tags = item.get("tags") or []
-                result.append(PluginStoreItemResponse(
-                    id=str(item.get("plugin_id", "")),
-                    name=str(item.get("display_name", "")),
-                    version=str(item.get("version") or ""),
-                    author=str(item.get("author", "")),
-                    description=str(item.get("description", "")),
-                    category=item.get("category"),
-                    category_name=item.get("category_name"),
-                    category_locales=item.get("category_locales") or {},
-                    repo=item.get("repo"),
-                    commit_sha=item.get("commit_sha"),
-                    release_tag=item.get("release_tag"),
-                    icon=item.get("icon"),
-                    icon_dark=item.get("icon_dark"),
-                    locales=item.get("locales") or {},
-                    tags=[str(t) for t in tags if t],
-                    core_version=item.get("core_version"),
-                    stars=item.get("stars", 0),
-                    updated_at=item.get("updated_at"),
-                ))
-            return result
-        except Exception as e:
-            raise HTTPException(status_code=422, detail=f"Failed to fetch plugin store data: {e}")
-
-    @staticmethod
-    def _read_plugin_store_cache(cache_file: Optional[str]) -> Optional[Any]:
-        """Load a plugin store cache file, returning None when it is unavailable."""
-        if not cache_file:
-            return None
-
-        cache_path = get_data_path() / "plugin_src" / cache_file
-        if not cache_path.exists():
-            return None
-
-        try:
-            return json.loads(cache_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"Failed to read plugin store cache {cache_path}: {e}")
-            return None
-
-    @staticmethod
-    def _plugin_store_error_status(error: Exception) -> int:
-        """Return an HTTP status from a store error, or the API's validation status."""
-        status_code = getattr(error, "status_code", None)
-        if isinstance(status_code, int):
-            return status_code
-
-        error_response = getattr(error, "response", None)
-        status_code = getattr(error_response, "status_code", None)
-        if isinstance(status_code, int):
-            return status_code
-
-        return 422
-
-    @staticmethod
-    def _extract_plugins(raw_data: Any) -> List[Dict[str, Any]]:
-        """Extract and normalize plugin entries from raw store JSON.
-
-        Supports the standard format ``{\"plugins\": {\"<id>\": {...}, ...}}``
-        as well as a plain array of plugin objects.
-
-        Standard schema fields prioritized:
-          plugin_id, display_name, version, author, description
-
-        Extra useful fields (if present): category, repo, stars, updated_at, name, id
-
-        GitHub metadata is limited to the public star count used for sorting.
-        """
-        raw_plugins: Any = None
-        category_catalog: Dict[str, Any] = {}
-        if isinstance(raw_data, dict):
-            raw_plugins = raw_data.get("plugins", [])
-            raw_categories = raw_data.get("categories")
-            if isinstance(raw_categories, dict):
-                category_catalog = raw_categories
-        elif isinstance(raw_data, list):
-            raw_plugins = raw_data
-
-        if not isinstance(raw_plugins, (dict, list)):
-            return []
-
-        if isinstance(raw_plugins, dict):
-            plugin_list = list(raw_plugins.values())
-        else:
-            plugin_list = list(raw_plugins)
-
-        result: List[Dict[str, Any]] = []
-        for raw in plugin_list:
-            if not isinstance(raw, dict):
-                continue
-
-            plugin_id = raw.get("plugin_id") or raw.get("id") or raw.get("name", "")
-            display_name = raw.get("display_name") or raw.get("name") or str(plugin_id)
-            version = raw.get("version")
-            author = raw.get("author", "")
-            description = raw.get("description", "")
-            category = raw.get("category")
-            category_info = category_catalog.get(category) if isinstance(category, str) else None
-            category_name = category_info.get("name") if isinstance(category_info, dict) else None
-            category_locales = category_info.get("locales") if isinstance(category_info, dict) else None
-            repo = raw.get("repo") or raw.get("repo_url")
-            raw_commit_sha = raw.get("commit_sha")
-            if raw_commit_sha is None:
-                commit_sha = None
-            elif isinstance(raw_commit_sha, str):
-                normalized_commit_sha = raw_commit_sha.strip().lower()
-                if len(normalized_commit_sha) == 40 and all(
-                    character in "0123456789abcdef" for character in normalized_commit_sha
-                ):
-                    commit_sha = normalized_commit_sha
-                else:
-                    commit_sha = None
-            else:
-                commit_sha = None
-            release_tag = raw.get("release_tag")
-            icon = raw.get("icon")
-            icon_dark = raw.get("icon_dark") or raw.get("icon-dark")
-            github_data = raw.get("github_data")
-            github_stars = github_data.get("stars", 0) if isinstance(github_data, dict) else 0
-            stars = raw.get("stars", raw.get("star_count", github_stars))
-            updated_at = raw.get("updated_at", raw.get("updatedAt"))
-
-            locales = raw.get("locales")
-            tags = raw.get("tags")
-            core_version = raw.get("core_version")
-
-            item: Dict[str, Any] = {
-                "plugin_id": str(plugin_id),
-                "display_name": str(display_name),
-                "version": str(version) if version else None,
-                "author": str(author),
-                "description": str(description),
-                "category": str(category) if category else None,
-                "category_name": str(category_name) if category_name else None,
-                "category_locales": category_locales if isinstance(category_locales, dict) else {},
-                "repo": str(repo) if repo else None,
-                "commit_sha": commit_sha,
-                "release_tag": str(release_tag) if isinstance(release_tag, str) else None,
-                "icon": str(icon) if isinstance(icon, str) else None,
-                "icon_dark": str(icon_dark) if isinstance(icon_dark, str) else None,
-                "locales": locales if isinstance(locales, dict) else {},
-                "tags": [str(tag) for tag in tags if tag] if isinstance(tags, list) else [],
-                "core_version": str(core_version) if core_version else None,
-                "stars": int(stars) if isinstance(stars, (int, float, str)) and str(stars).isdigit() else 0,
-                "updated_at": updated_at if isinstance(updated_at, (int, str)) else None,
-            }
-
-            if "id" in raw and raw["id"] is not None:
-                item["id"] = raw["id"]
-
-            result.append(item)
-
-        return result
-
-    # ---- Plugin Store Source CRUD ----
-
-    async def list_plugin_sources(self) -> List[PluginStoreSourceItem]:
-        if not self.lifecycle or not self.lifecycle.db_service:
-            raise HTTPException(status_code=503, detail="Database service not available")
-        sources = await self.lifecycle.db_service.list_plugin_store_sources()
-        return [
-            PluginStoreSourceItem(
-                id=s["id"],
-                name=s["name"],
-                url=s["url"],
-                cache_file=s.get("cache_file"),
-                updated_at=s.get("updated_at", 0),
-                is_current=s.get("is_current", False),
-                created_at=s.get("created_at", 0),
-            )
-            for s in sources
-        ]
-
-    async def create_plugin_source(self, payload: PluginStoreSourceCreateRequest) -> PluginStoreSourceItem:
-        if not self.lifecycle or not self.lifecycle.db_service:
-            raise HTTPException(status_code=503, detail="Database service not available")
-
-        db = self.lifecycle.db_service
-        source_id = uuid4().hex
-        now = int(time.time())
-
-        # Save to DB
-        await db.add_plugin_store_source(
-            source_id=source_id,
-            name=payload.name,
-            url=payload.url,
-            updated_at=now,
-            is_current=False,
-            created_at=now,
-        )
-
-        # Fetch and cache plugins
-        cache_file = await self._fetch_and_cache(source_id, payload.url)
-        if cache_file:
-            await db.update_plugin_store_source(source_id, cache_file=cache_file, updated_at=now)
-
-        created = await db.get_plugin_store_source(source_id)
-        return PluginStoreSourceItem(
-            id=created["id"],
-            name=created["name"],
-            url=created["url"],
-            cache_file=created.get("cache_file"),
-            updated_at=created.get("updated_at", 0),
-            is_current=created.get("is_current", False),
-            created_at=created.get("created_at", 0),
-        )
-
-    async def set_current_source(self, source_id: str):
-        if not self.lifecycle or not self.lifecycle.db_service:
-            raise HTTPException(status_code=503, detail="Database service not available")
-
-        db = self.lifecycle.db_service
-        source = await db.get_plugin_store_source(source_id)
-        if not source:
-            raise HTTPException(status_code=404, detail="Plugin store source not found")
-
-        # Set this source as current
-        await db.update_plugin_store_source(source_id, is_current=True)
-
-        # Refresh cache if stale
-        now = int(time.time())
-        updated_at = source.get("updated_at", 0)
-        if now - updated_at > 600:  # 10 minutes
-            cache_file = await self._fetch_and_cache(
-                source_id, source["url"], existing_filename=source.get("cache_file"),
-            )
-            if cache_file:
-                await db.update_plugin_store_source(source_id, cache_file=cache_file, updated_at=now)
-
-        return {"success": True}
-
-    async def delete_plugin_source(self, source_id: str):
-        if not self.lifecycle or not self.lifecycle.db_service:
-            raise HTTPException(status_code=503, detail="Database service not available")
-
-        db = self.lifecycle.db_service
-        source = await db.get_plugin_store_source(source_id)
-        if not source:
-            raise HTTPException(status_code=404, detail="Plugin store source not found")
-
-        # Delete cache file if exists
-        cache_file = source.get("cache_file")
-        if cache_file:
-            plugin_src_dir = get_data_path() / "plugin_src"
-            cache_path = plugin_src_dir / cache_file
-            try:
-                if cache_path.exists():
-                    cache_path.unlink()
-            except Exception as e:
-                logger.warning(f"Failed to delete cache file {cache_path}: {e}")
-
-        await db.delete_plugin_store_source(source_id)
-        return {"success": True}
-
-    @staticmethod
-    async def _fetch_and_cache(source_id: str, url: str, existing_filename: Optional[str] = None) -> Optional[str]:
-        """Fetch plugin store data, save complete raw JSON to disk. Return cache filename or None.
-
-        If *existing_filename* is provided and its file exists on disk, the fetched
-        data will **overwrite** that file instead of creating a new one, so no
-        orphaned cache files are left behind.
-        """
-        try:
-            raw_data = await PluginManager.fetch_plugin_store_data(url)
-            plugin_src_dir = get_data_path() / "plugin_src"
-            plugin_src_dir.mkdir(parents=True, exist_ok=True)
-            # Reuse the existing file when it is already on disk
-            if existing_filename and (plugin_src_dir / existing_filename).exists():
-                filename = existing_filename
-            else:
-                filename = f"plugins_{uuid4().hex}.json"
-            cache_path = plugin_src_dir / filename
-            cache_path.write_text(json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8")
-            return filename
-        except Exception as e:
-            logger.warning(f"Failed to fetch/cache plugin store data from {url}: {e}")
-            return None

@@ -79,7 +79,7 @@ class EventBus:
         await self._process_event(event)
 
     async def _dispatch_custom_event(self, event: KiraCustomEvent):
-        from core.plugin.plugin_handlers import event_handler_reg, EventType as PluginEventType
+        from core.plugin.handlers import event_handler_reg, EventType as PluginEventType
 
         for handler in event_handler_reg.get_handlers(PluginEventType.ON_CUSTOM_EVENT):
             filter_name = getattr(handler.handler, '_custom_event_name', None)

@@ -18,7 +18,7 @@ from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, Kir
 from .persona import PersonaManager
 from .provider import ProviderManager
 from .plugin import PluginContext, PluginManager
-from .plugin.plugin_handlers import event_handler_reg, EventType
+from .plugin.handlers import event_handler_reg, EventType
 from core.agent.mcp_mgr import MCPManager
 from core.agent.skills_mgr import SkillsManager
 from core.config import VERSION

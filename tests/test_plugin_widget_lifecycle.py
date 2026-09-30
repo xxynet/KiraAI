@@ -1,13 +1,14 @@
 import asyncio
 from types import ModuleType, SimpleNamespace
 
-from core.plugin import plugin_registry
+from core.plugin import manager as manager_module
+from core.plugin import registry
 from core.provider import BaseProvider
 
 def test_cleanup_preserves_widget_declarations(monkeypatch):
     """Widgets must remain declared so a disabled plugin can be re-enabled."""
     plugin_id = "widget_lifecycle_test"
-    components = plugin_registry.PluginComponents()
+    components = manager_module.PluginComponents()
 
     def status_widget():
         return "ready"
@@ -21,9 +22,9 @@ def test_cleanup_preserves_widget_declarations(monkeypatch):
         size="small",
         func=status_widget,
     )
-    monkeypatch.setitem(plugin_registry._plugin_components, plugin_id, components)
+    monkeypatch.setitem(registry._plugin_components, plugin_id, components)
 
-    manager = plugin_registry.PluginManager(ctx=None)
+    manager = manager_module.PluginManager(ctx=None)
     manager._cleanup_plugin_registration(plugin_id)
 
     assert components.widgets[0]["widget_id"] == f"{plugin_id}:status_widget"
@@ -44,12 +45,12 @@ class _ProviderManager:
 def test_unregister_plugin_adapter_keeps_metadata_when_stop_fails(monkeypatch):
     plugin_id = "adapter_cleanup_failure"
     platform = "adapter-cleanup-platform"
-    components = plugin_registry.PluginComponents()
+    components = manager_module.PluginComponents()
     adapter_cls = type("PluginAdapter", (), {})
     components.register_adapter(platform, {"class": adapter_cls})
-    monkeypatch.setitem(plugin_registry._plugin_components, plugin_id, components)
+    monkeypatch.setitem(registry._plugin_components, plugin_id, components)
 
-    manager = plugin_registry.PluginManager(
+    manager = manager_module.PluginManager(
         ctx=SimpleNamespace(adapter_mgr=_FailingStopAdapterManager())
     )
 
@@ -59,12 +60,12 @@ def test_unregister_plugin_adapter_keeps_metadata_when_stop_fails(monkeypatch):
 
 def test_runtime_cleanup_continues_after_adapter_cleanup_failure(monkeypatch):
     plugin_id = "runtime_cleanup_failure"
-    components = plugin_registry.PluginComponents()
+    components = manager_module.PluginComponents()
     components.register_adapter("failing-platform", {"class": object})
     components.register_provider("remaining-provider", {"class": object})
-    monkeypatch.setitem(plugin_registry._plugin_components, plugin_id, components)
+    monkeypatch.setitem(registry._plugin_components, plugin_id, components)
 
-    manager = plugin_registry.PluginManager(ctx=SimpleNamespace())
+    manager = manager_module.PluginManager(ctx=SimpleNamespace())
     provider_cleanup_calls = []
 
     async def fail_adapter_cleanup(plugin_id_arg, platform):
@@ -95,6 +96,6 @@ def test_component_class_lookup_ignores_imported_provider_classes():
     module.ImportedProvider = imported_provider
     module.LocalProvider = local_provider
 
-    assert plugin_registry.PluginManager._find_component_class(
+    assert manager_module.PluginManager._find_component_class(
         module, (BaseProvider,), "Provider"
     ) is local_provider

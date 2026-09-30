@@ -45,7 +45,7 @@ from .adapter.capabilities import FeedCapability, IMCapability
 from .agent.skills_mgr import SkillsManager
 from .agent.mcp_mgr import MCPManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
-from core.plugin.plugin_handlers import event_handler_reg, EventType
+from core.plugin.handlers import event_handler_reg, EventType
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
 from core.agent.message import OpenAIMessage
 from core.tag import tag_registry, TagSet, BaseTag, RootTagAction

@@ -13,7 +13,7 @@ from core.persona import PersonaManager
 from core.utils.path_utils import get_data_path
 
 if TYPE_CHECKING:
-    from core.plugin.plugin_registry import PluginManager
+    from core.plugin.manager import PluginManager
 
 
 @dataclass

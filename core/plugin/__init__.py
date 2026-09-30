@@ -1,7 +1,10 @@
-from .plugin import BasePlugin
+from .base import BasePlugin
 from .plugin_context import PluginContext
-from .plugin_registry import PluginManager, PluginInfo, register_tool, on, register, PluginPage, PageMenu
-from .plugin_handlers import EventType, Priority
+from .manager import PluginManager
+from .metadata import PluginInfo
+from .pages import PluginPage, PageMenu
+from .decorators import register_tool, on, register
+from .handlers import EventType, Priority
 
 from core.logging_manager import get_logger
 

@@ -1,9 +1,8 @@
 """Regression tests for per-page auth binding on plugin folder pages.
 
-``PluginPageStaticFiles`` / ``DeferredPluginPageStaticFiles`` are defined
-inside the page-registration loop; the auth flag must be bound per instance,
-not captured from the loop variable (which late-binds to the LAST page's
-value at request time).
+Object declarations and pages returned by plugin methods share the same
+static-file implementation. Each mount must retain its own auth flag,
+independently of the registration order.
 """
 import asyncio
 import json
@@ -12,8 +11,9 @@ import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
-from core.plugin import plugin_registry
-from core.plugin.plugin_handlers import event_handler_reg
+from core.plugin import manager as manager_module
+from core.plugin import registry
+from core.plugin.handlers import event_handler_reg
 
 PLUGIN_ID = "auth_binding_test_plugin"
 
@@ -25,7 +25,7 @@ def _reset_plugin_state(monkeypatch):
         "_plugin_manifests", "_plugin_module_dirs", "_plugin_module_paths",
         "_plugin_schemas", "_plugin_infos", "_module_to_plugin",
     ):
-        monkeypatch.setattr(plugin_registry, attr, {})
+        monkeypatch.setattr(registry, attr, {})
     monkeypatch.setattr(event_handler_reg, "_handlers", {})
 
 
@@ -42,8 +42,8 @@ def _write_plugin(plugin_root, page_specs):
     )
 
     main_lines = [
-        "from core.plugin.plugin_registry import PluginPage, register",
-        "from core.plugin.plugin import BasePlugin",
+        "from core.plugin import PluginPage, register",
+        "from core.plugin.base import BasePlugin",
         "",
     ]
     for i, (route, auth) in enumerate(page_specs):
@@ -74,12 +74,11 @@ def _load_client(tmp_path, monkeypatch, page_specs):
 
     async def setup():
         """Load the plugin and mount its page routes on a fresh app."""
-        manager = plugin_registry.PluginManager()
+        manager = manager_module.PluginManager()
         manager.plugin_dir = tmp_path
         loaded = await manager.load_plugin_from_dir(plugin_root)
         assert loaded == PLUGIN_ID, manager.get_plugin_load_errors()
-        manager._web_app = FastAPI()
-        manager._register_plugin_pages_for(PLUGIN_ID)
+        manager.set_web_app(FastAPI())
         return manager
 
     manager = asyncio.run(setup())
@@ -113,8 +112,8 @@ def test_deferred_folder_pages_bind_auth_per_page(monkeypatch, tmp_path):
         json.dumps({"plugin_id": PLUGIN_ID}), encoding="utf-8"
     )
     (plugin_root / "main.py").write_text('''
-from core.plugin.plugin_registry import PluginPage, register
-from core.plugin.plugin import BasePlugin
+from core.plugin import PluginPage, register
+from core.plugin.base import BasePlugin
 
 
 class AuthBindingPlugin(BasePlugin):
@@ -137,12 +136,11 @@ class AuthBindingPlugin(BasePlugin):
 
     async def setup():
         """Load the plugin and mount its page routes on a fresh app."""
-        manager = plugin_registry.PluginManager()
+        manager = manager_module.PluginManager()
         manager.plugin_dir = tmp_path
         loaded = await manager.load_plugin_from_dir(plugin_root)
         assert loaded == PLUGIN_ID, manager.get_plugin_load_errors()
-        manager._web_app = FastAPI()
-        manager._register_plugin_pages_for(PLUGIN_ID)
+        manager.set_web_app(FastAPI())
         return manager
 
     client = TestClient(asyncio.run(setup())._web_app)

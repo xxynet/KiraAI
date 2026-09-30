@@ -19,7 +19,7 @@ from core.utils.path_utils import get_data_path
 from core.chat.message_elements import Text
 
 if TYPE_CHECKING:
-    from .plugin_registry import PluginManager
+    from .manager import PluginManager
     from core.message_manager import MessageProcessor
     from core.db.service import DatabaseService
 

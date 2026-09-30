@@ -125,7 +125,7 @@ class FuncToolManager:
             else:
                 tool_result_obj = ToolResult(str(result))
 
-            from core.plugin.plugin_handlers import event_handler_reg, EventType
+            from core.plugin.handlers import event_handler_reg, EventType
 
             # EventType.ON_TOOL_RESULT
             llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT)
