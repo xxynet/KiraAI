@@ -78,8 +78,7 @@ def _load_client(tmp_path, monkeypatch, page_specs):
         manager.plugin_dir = tmp_path
         loaded = await manager.load_plugin_from_dir(plugin_root)
         assert loaded == PLUGIN_ID, manager.get_plugin_load_errors()
-        manager._web_app = FastAPI()
-        manager._register_plugin_pages_for(PLUGIN_ID)
+        manager.set_web_app(FastAPI())
         return manager
 
     manager = asyncio.run(setup())
@@ -141,8 +140,7 @@ class AuthBindingPlugin(BasePlugin):
         manager.plugin_dir = tmp_path
         loaded = await manager.load_plugin_from_dir(plugin_root)
         assert loaded == PLUGIN_ID, manager.get_plugin_load_errors()
-        manager._web_app = FastAPI()
-        manager._register_plugin_pages_for(PLUGIN_ID)
+        manager.set_web_app(FastAPI())
         return manager
 
     client = TestClient(asyncio.run(setup())._web_app)

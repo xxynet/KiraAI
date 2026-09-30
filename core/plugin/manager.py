@@ -93,11 +93,13 @@ class PluginManager:
         # capturing it in closures (which breaks FastAPI's deepcopy during
         # dependency resolution for WebSocket routes).
         app.state.plugin_manager = self
-        for plugin_id in list(self.plugin_instances.keys()):
-            self._register_plugin_apis_for(plugin_id)
-            self._register_plugin_ws_for(plugin_id)
-            self._register_plugin_pages_for(plugin_id)
-            self._register_plugin_static_for(plugin_id)
+        if self._web_app is not None:
+            bindings = self._get_web_bindings()
+            for plugin_id in list(self.plugin_instances.keys()):
+                bindings.register_apis(plugin_id)
+                bindings.register_ws(plugin_id)
+                bindings.register_pages(plugin_id)
+                bindings.register_static(plugin_id)
 
     def get_plugin_inst(self, plugin_id: str):
         return self.plugin_instances.get(plugin_id)
@@ -525,22 +527,6 @@ class PluginManager:
         if tag_names:
             logger.info(f"Registered {len(tag_names)} tags from {plugin_id}: {tag_names}")
 
-    def _register_plugin_apis_for(self, plugin_id: str) -> None:
-        if self._web_app is not None:
-            self._get_web_bindings().register_apis(plugin_id)
-
-    def _register_plugin_ws_for(self, plugin_id: str) -> None:
-        if self._web_app is not None:
-            self._get_web_bindings().register_ws(plugin_id)
-
-    def _register_plugin_pages_for(self, plugin_id: str) -> None:
-        if self._web_app is not None:
-            self._get_web_bindings().register_pages(plugin_id)
-
-    def _register_plugin_static_for(self, plugin_id: str) -> None:
-        if self._web_app is not None:
-            self._get_web_bindings().register_static(plugin_id)
-
     def register_plugin_tools(self) -> None:
         for plugin_id in registry._plugin_components.keys():
             self._register_plugin_tools_for(plugin_id)
@@ -770,10 +756,12 @@ class PluginManager:
             self._register_plugin_tools_for(plugin_id)
             self._register_plugin_hooks_for(plugin_id)
             self._register_plugin_tags_for(plugin_id)
-            self._register_plugin_apis_for(plugin_id)
-            self._register_plugin_ws_for(plugin_id)
-            self._register_plugin_pages_for(plugin_id)
-            self._register_plugin_static_for(plugin_id)
+            if self._web_app is not None:
+                bindings = self._get_web_bindings()
+                bindings.register_apis(plugin_id)
+                bindings.register_ws(plugin_id)
+                bindings.register_pages(plugin_id)
+                bindings.register_static(plugin_id)
             self._register_plugin_widgets_for(plugin_id)
 
     async def terminate(self, plugin_id: Optional[str] = None):
