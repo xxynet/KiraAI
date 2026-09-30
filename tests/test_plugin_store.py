@@ -119,17 +119,21 @@ async def test_cache_write_failure_is_not_treated_as_remote_failure(cached_store
     async def fetch(url, timeout):
         return {"plugins": [{"plugin_id": "remote"}]}
 
-    def fail_write(*args, **kwargs):
-        raise OSError("cache is read-only")
+    original_write = store_module.Path.write_text
+
+    def fail_write(path, text, **kwargs):
+        original_write(path, text[:12], **kwargs)
+        raise OSError("cache write interrupted")
 
     monkeypatch.setattr(store_module, "get_json", fetch)
     monkeypatch.setattr(store_module.Path, "write_text", fail_write)
-    with pytest.raises(OSError, match="read-only"):
+    with pytest.raises(OSError, match="cache write interrupted"):
         await store.fetch(
             force_refresh=True,
             persist_cache=True, allow_cache_fallback=True,
         )
     assert json.loads((store.cache_dir / "catalog.json").read_text(encoding="utf-8")) == cached
+    assert list(store.cache_dir.iterdir()) == [store.cache_dir / "catalog.json"]
 
 
 @pytest.mark.asyncio
@@ -174,3 +178,59 @@ async def test_store_instances_keep_sources_and_database_metadata_separate(tmp_p
     records[0]["name"] = "Renamed Source"
     assert sources[0].name == "Source A"
     assert StoreSource.from_record(records[0]).name == "Renamed Source"
+
+
+@pytest.mark.asyncio
+async def test_partial_cache_write_keeps_old_catalog_readable(cached_store, monkeypatch):
+    store, cached = cached_store
+    remote = {"plugins": [{"plugin_id": "remote"}], "name": "商店"}
+    observed = []
+
+    async def fetch(url, timeout):
+        return remote
+
+    def write_with_reader(path, text, **kwargs):
+        with path.open("w", encoding=kwargs["encoding"]) as stream:
+            stream.write(text[:12])
+            stream.flush()
+            observed.append(store._read_cache("catalog.json", strict=True))
+            stream.write(text[12:])
+
+    monkeypatch.setattr(store_module, "get_json", fetch)
+    monkeypatch.setattr(store_module.Path, "write_text", write_with_reader)
+    result = await store.fetch(force_refresh=True, persist_cache=True)
+
+    assert observed == [cached]
+    assert result.cache_file == "catalog.json"
+    assert await store.read_cache(strict=True) == remote
+    assert list(store.cache_dir.iterdir()) == [store.cache_dir / "catalog.json"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("existing_cache", [False, True])
+async def test_cache_replace_failure_keeps_previous_state(cached_store, monkeypatch, existing_cache):
+    store, cached = cached_store
+    cache_path = store.cache_dir / "catalog.json"
+    original_bytes = cache_path.read_bytes()
+    if not existing_cache:
+        cache_path.unlink()
+    remote = {"plugins": [{"plugin_id": "remote"}]}
+
+    async def fetch(url, timeout):
+        return remote
+
+    def fail_replace(source, target):
+        assert json.loads(source.read_text(encoding="utf-8")) == remote
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(store_module, "get_json", fetch)
+    monkeypatch.setattr(store_module.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="replace failed"):
+        await store.fetch(force_refresh=True, persist_cache=True)
+
+    if existing_cache:
+        assert cache_path.read_bytes() == original_bytes
+        assert await store.read_cache(strict=True) == cached
+        assert list(store.cache_dir.iterdir()) == [cache_path]
+    else:
+        assert not list(store.cache_dir.iterdir())

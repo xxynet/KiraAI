@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -102,9 +103,15 @@ class PluginStore:
             filename = existing_filename
         else:
             filename = f"plugins_{uuid4().hex}.json"
-        (self.cache_dir / filename).write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        target = self.cache_dir / filename
+        temporary = self.cache_dir / f".{filename}.{uuid4().hex}.tmp"
+        try:
+            temporary.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
         return filename
 
     async def fetch(
