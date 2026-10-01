@@ -140,6 +140,13 @@ class OnEventDeco:
         plugin_id = registry.get_obj_plugin_id(func)
         registry._ensure_components(plugin_id).register_hook(func, priority, event_type)
 
+    def comment(self, priority: Union[Priority, int] = Priority.MEDIUM):
+        """Receive comments; stop the event before taking over its processing."""
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_COMMENT)
+            return func
+        return decorator
+
     def im_message(self, priority: Union[Priority, int] = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_IM_MESSAGE)

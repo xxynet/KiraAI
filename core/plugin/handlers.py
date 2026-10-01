@@ -18,6 +18,7 @@ class Priority(IntEnum):
 
 
 class EventType(Enum):
+    ON_COMMENT = "on_comment"  # A comment received from a feed adapter
     ON_IM_MESSAGE = "on_im_message"  # 消息到达时
     ON_MESSAGE_BUFFERED = "on_message_buffered"  # 消息进入缓冲区后
     ON_IM_BATCH_MESSAGE = "on_im_batch_message"  # 消息合并后

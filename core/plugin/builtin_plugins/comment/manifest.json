@@ -1,0 +1,15 @@
+{
+    "display_name": "Default Comments",
+    "plugin_id": "default-comment",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "Reply to received comments with the default model when no other plugin takes over",
+    "repo": null,
+    "tags": ["comment", "feed"],
+    "locales": {
+        "zh": {
+            "display_name": "默认评论",
+            "description": "其他插件未接管时，使用默认模型回复收到的评论"
+        }
+    }
+}
