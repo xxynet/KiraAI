@@ -14,6 +14,9 @@ from core.adapter.capabilities import (
     VoiceChannelCapability,
 )
 from core.adapter.context import AdapterContext
+from core.adapter.feed import FeedItem, FeedPage, FeedQuery, FeedRef, FeedSearchQuery
+from core.chat import MessageChain
+from core.chat.message_elements import Text
 
 
 class ExampleIM(IMCapability["ExampleAdapter"]):
@@ -25,14 +28,24 @@ class ExampleIM(IMCapability["ExampleAdapter"]):
 
 
 class ExampleFeed(FeedCapability["ExampleAdapter"]):
-    async def get_feed(self, count):
-        return self.adapter.posts[:count]
+    async def get_feed(self, query):
+        return FeedPage([
+            FeedItem(FeedRef("post", str(index)), "post", MessageChain([Text(value)]))
+            for index, value in enumerate(self.adapter.posts[:query.count])
+        ])
 
-    async def search_feed(self, keyword, count):
-        return [post for post in self.adapter.posts if keyword in post][:count]
+    async def search_feed(self, query):
+        return FeedPage([
+            FeedItem(FeedRef("post", str(index)), "post", MessageChain([Text(value)]))
+            for index, value in enumerate(self.adapter.posts) if query.keyword in value
+        ][:query.count])
 
-    async def send_comment(self, text, root, sub=None):
-        await self.adapter.send_payload(self.capability_type, root, (text, sub))
+    async def send_post(self, post):
+        await self.adapter.send_payload(self.capability_type, None, post)
+
+    async def send_comment(self, message, target, *, root=None, parent=None):
+        assert isinstance(message, MessageChain)
+        await self.adapter.send_payload(self.capability_type, target, (message, root, parent))
 
 
 class ExampleAdapter(BaseAdapter):
@@ -95,10 +108,12 @@ async def test_feed_object_includes_comments_and_uses_adapter_members():
     adapter = make_adapter(enable_qzone=True)
     feed = adapter.get_capability(FeedCapability)
 
-    assert await feed.get_feed(1) == ["first post"]
-    assert await feed.search_feed("second", 1) == ["second post"]
-    await feed.send_comment("reply", "post", "comment")
-    assert adapter.sent == [(FeedCapability, "post", ("reply", "comment"))]
+    item = (await feed.get_feed(FeedQuery(count=1))).items[0]
+    assert item.content[0].text == "first post"
+    assert (await feed.search_feed(FeedSearchQuery("second", count=1))).items[0].content[0].text == "second post"
+    message = MessageChain([Text("reply")])
+    await feed.send_comment(message, item, root="comment")
+    assert adapter.sent == [(FeedCapability, item, (message, "comment", None))]
 
 
 def test_lookup_returns_the_matching_capability_type():

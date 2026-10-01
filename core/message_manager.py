@@ -853,16 +853,15 @@ class MessageProcessor:
     async def handle_cmt_message(self, msg: KiraCommentEvent):
         """process comment message"""
 
-        if msg.sub_cmt_id:
-            logger.info(f"[{msg.adapter_name} | {msg.sub_cmt_id}] [{msg.commenter_nickname}]: {msg.sub_cmt_content[0].text}")
-            cmt_content = f"""You: {msg.cmt_content[0].text}
-            {msg.commenter_nickname}: {msg.sub_cmt_content[0].text}
-            """
+        logger.info(f"[{msg.adapter_name} | {msg.comment_id}] Processing comment")
+        comment_text = "".join(element.repr for element in msg.comment_content)
+        if msg.root_comment_content is not None:
+            root_text = "".join(element.repr for element in msg.root_comment_content)
+            comment_content = f"You: {root_text}\n{msg.commenter_nickname}: {comment_text}"
         else:
-            logger.info(f"[{msg.adapter_name} | {msg.cmt_id}] [{msg.commenter_nickname}]: {msg.cmt_content[0].text}")
-            cmt_content = f"""{msg.commenter_nickname}: {msg.cmt_content[0].text}"""
+            comment_content = f"{msg.commenter_nickname}: {comment_text}"
 
-        cmt_prompt = await self.prompt_manager.get_comment_prompt(cmt_content)
+        comment_prompt = await self.prompt_manager.get_comment_prompt(comment_content)
 
         try:
             client = self.provider_mgr.get_default_llm()
@@ -873,7 +872,7 @@ class MessageProcessor:
             llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
             return
 
-        llm_req = LLMRequest(messages=[OpenAIMessage(role="user", content=cmt_prompt)])
+        llm_req = LLMRequest(messages=[OpenAIMessage(role="user", content=comment_prompt)])
 
         llm_resp = await client.chat(llm_req)
 
@@ -892,19 +891,18 @@ class MessageProcessor:
 
         response = llm_resp.text_response.strip()
 
-        logger.info(f"LLM: {response}")
-
         if response:
             adapter = self.adapter_mgr.get_adapter(msg.adapter_name)
-            target = (
-                adapter.get_capability(FeedCapability)
-                if isinstance(adapter, BaseAdapter) else adapter
-            )
-            await target.send_comment(
-                text=response,
-                root=msg.cmt_id,
-                sub=msg.sub_cmt_id
-            )
+            if isinstance(adapter, BaseAdapter):
+                await adapter.get_capability(FeedCapability).send_comment(
+                    message=MessageChain([Text(response)]), target=msg.target,
+                    root=msg.root_comment_id, parent=msg.comment_id,
+                )
+            else:
+                await adapter.send_comment(
+                    text=response, root=msg.root_comment_id,
+                    sub=msg.comment_id if msg.is_reply else None,
+                )
         else:
             logger.warning("Blank LLM response")
 

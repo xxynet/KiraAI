@@ -1,3 +1,4 @@
 from .bilibili import BiliBiliAdapter
+from .client import BiliBiliClient
 
-__all__ = ["BiliBiliAdapter"]
+__all__ = ["BiliBiliAdapter", "BiliBiliClient"]

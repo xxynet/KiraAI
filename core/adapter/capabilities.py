@@ -4,6 +4,7 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from .base import AdapterT, AdapterTargetId, BaseCapability
+from .feed import FeedItem, FeedPage, FeedPost, FeedQuery, FeedRef, FeedSearchQuery
 
 if TYPE_CHECKING:
     from core.chat.message_elements import Record
@@ -28,18 +29,29 @@ class FeedCapability(BaseCapability[AdapterT]):
     """Feed, dynamic-post, and comment operations."""
 
     @abstractmethod
-    async def get_feed(self, count: int) -> list[Any]: ...
+    async def get_feed(self, query: FeedQuery) -> FeedPage: ...
 
     @abstractmethod
-    async def search_feed(self, keyword: str, count: int) -> list[Any]: ...
+    async def search_feed(self, query: FeedSearchQuery) -> FeedPage: ...
+
+    @abstractmethod
+    async def send_post(self, post: FeedPost) -> Any: ...
 
     @abstractmethod
     async def send_comment(
         self,
-        text: str,
-        root: AdapterTargetId,
-        sub: AdapterTargetId | None = None,
-    ) -> Any: ...
+        message: MessageChain,
+        target: FeedItem | FeedRef,
+        *,
+        root: AdapterTargetId | None = None,
+        parent: AdapterTargetId | None = None,
+    ) -> Any:
+        """Comment on a feed item or an adapter-issued resource reference.
+
+        For received comments, pass the event's target, root_comment_id as root,
+        and comment_id as parent. Adapters interpret these IDs for their platform.
+        """
+        ...
 
 
 class LiveEventCapability(BaseCapability[AdapterT]):
