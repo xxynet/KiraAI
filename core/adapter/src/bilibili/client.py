@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 from PIL import Image as PILImage
-from bilibili_api import Credential, comment, dynamic, homepage, search, user
+from bilibili_api import Credential, comment, dynamic, homepage, search, session, user
 from bilibili_api.utils import network
 from bilibili_api.utils.picture import Picture
 
@@ -154,6 +154,24 @@ class BiliBiliClient:
         return await self._request(
             "comment fetching", lambda: comment.get_comments_lazy(
                 oid=oid, type_=type_, credential=self._credential,
+            ),
+        )
+
+    async def get_reply_notifications(
+        self, *, cursor_id: int | None = None, cursor_time: int | None = None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "reply notification fetching", lambda: session.get_replies(
+                self._credential, last_reply_id=cursor_id, reply_time=cursor_time,
+            ),
+        )
+
+    async def get_at_notifications(
+        self, *, cursor_id: int | None = None, cursor_time: int | None = None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "mention notification fetching", lambda: session.get_at(
+                self._credential, last_uid=cursor_id, at_time=cursor_time,
             ),
         )
 

@@ -351,6 +351,15 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
         return result
 
     async def check_new_comments(self) -> None:
+        comments, target = await self._get_comments()
+        await self._handle_new_comments(comments, target)
+
+    async def get_comment_events(self) -> list[KiraCommentEvent]:
+        """Collect video comments for deduplication within one account poll."""
+        comments, target = await self._get_comments()
+        return self._comment_events(comments, target)
+
+    async def _get_comments(self) -> tuple[list[dict[str, Any]], FeedRef]:
         target = FeedRef("video", self.adapter.config["listening_bvid"])
         comments_data = await self.adapter.get_client().get_comments_lazy(
             oid=bvid2aid(target.id),
@@ -365,7 +374,7 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             )
             comments.append(comment_info)
         comments.sort(key=lambda item: item["ctime"])
-        await self._handle_new_comments(comments, target)
+        return comments, target
 
     @staticmethod
     def _comment_info(reply: dict[str, Any]) -> dict[str, Any]:
@@ -378,13 +387,11 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             "like": reply.get("like", 0),
         }
 
-    async def _handle_new_comments(self, comments: list[dict[str, Any]], target: FeedRef) -> None:
-        interval = max(0.0, float(self.adapter.config.get("message_process_interval", 5.0) or 0))
-        poll_start_ts = self.last_process_ts
-        newest_process_ts = poll_start_ts
+    def _comment_events(self, comments: list[dict[str, Any]], target: FeedRef) -> list[KiraCommentEvent]:
+        events = []
         for cmt in comments:
-            if cmt["ctime"] > poll_start_ts and str(cmt["uid"]) != str(self.adapter.bot_uid):
-                self.publish(KiraCommentEvent(
+            if str(cmt["uid"]) != str(self.adapter.bot_uid):
+                events.append(KiraCommentEvent(
                     target=target,
                     platform=self.adapter.info.platform,
                     adapter_name=self.adapter.info.name,
@@ -393,14 +400,12 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
                     comment_id=cmt["comment_id"],
                     self_id=self.adapter.bot_uid,
                     comment_content=MessageChain([Text(cmt["message"])]),
-                    timestamp=int(time.time()),
+                    timestamp=cmt["ctime"],
                 ))
-                newest_process_ts = max(newest_process_ts, cmt["ctime"])
-                await asyncio.sleep(interval)
-            if str(cmt["uid"]) == str(self.adapter.bot_uid):
+            else:
                 for sub in cmt["sub_replies"]:
-                    if sub["ctime"] > poll_start_ts and str(sub["uid"]) != str(self.adapter.bot_uid):
-                        self.publish(KiraCommentEvent(
+                    if str(sub["uid"]) != str(self.adapter.bot_uid):
+                        events.append(KiraCommentEvent(
                             target=target,
                             platform=self.adapter.info.platform,
                             adapter_name=self.adapter.info.name,
@@ -411,8 +416,18 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
                             root_comment_id=cmt["comment_id"],
                             root_comment_content=MessageChain([Text(cmt["message"])]),
                             self_id=self.adapter.bot_uid,
-                            timestamp=int(time.time()),
+                            timestamp=sub["ctime"],
                         ))
-                        newest_process_ts = max(newest_process_ts, sub["ctime"])
-                        await asyncio.sleep(interval)
+        return events
+
+    async def _handle_new_comments(self, comments: list[dict[str, Any]], target: FeedRef) -> None:
+        interval = max(0.0, float(self.adapter.config.get("message_process_interval", 5.0) or 0))
+        poll_start_ts = self.last_process_ts
+        newest_process_ts = poll_start_ts
+        for event in self._comment_events(comments, target):
+            if event.timestamp > poll_start_ts:
+                newest_process_ts = max(newest_process_ts, event.timestamp)
+                event.timestamp = int(time.time())
+                self.publish(event)
+                await asyncio.sleep(interval)
         self.last_process_ts = newest_process_ts

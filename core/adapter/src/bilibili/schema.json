@@ -54,6 +54,15 @@
       "zh": { "name": "私信黑名单", "hint": "黑名单模式下拒绝接收私信的用户 UID" }
     }
   },
+  "enable_comment_notifications": {
+    "name": "Listen for Replies and Mentions",
+    "type": "switch",
+    "default": true,
+    "hint": "Receive new comments replying to or mentioning this account after startup. Requires login; no video BVID is needed.",
+    "locales": {
+      "zh": { "name": "监听回复与 @ 评论", "hint": "监听启动后回复或 @ 此账号的新评论。需要登录，无需配置视频 BVID。" }
+    }
+  },
   "listening_bvid": {
     "name": "Listening Video BVID",
     "type": "string",
@@ -67,9 +76,9 @@
     "name": "Polling Interval",
     "type": "float",
     "default": 20.0,
-    "hint": "Video comment polling interval in seconds",
+    "hint": "Video comments and account comment notifications polling interval in seconds",
     "locales": {
-      "zh": { "name": "轮询间隔", "hint": "视频评论轮询间隔秒数" }
+      "zh": { "name": "轮询间隔", "hint": "视频评论及账号评论通知的轮询间隔秒数" }
     }
   },
   "message_process_interval": {

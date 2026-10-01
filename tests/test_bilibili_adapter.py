@@ -21,6 +21,7 @@ feed_module = importlib.import_module("core.adapter.src.bilibili.feed")
 
 
 def make_adapter(**config):
+    config.setdefault("enable_comment_notifications", False)
     return BiliBiliAdapter(AdapterContext(
         info=AdapterInfo(True, "bili-test", "bili-test", "bilibili", config=config),
         event_queue=asyncio.Queue(),
