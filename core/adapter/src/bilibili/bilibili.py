@@ -17,6 +17,7 @@ from core.chat import KiraIMSentResult, MessageChain
 from core.logging_manager import get_logger
 
 from .client import BiliBiliClient, get_bilibili_client
+from .comment_notifications import BiliBiliCommentNotifications
 from .feed import BiliBiliFeedCapability
 from .im import BiliBiliIMCapability
 from .qr_login import BiliBiliQRCodeLoginHandler
@@ -36,6 +37,8 @@ class BiliBiliAdapter(BaseAdapter):
         )
         self._client = BiliBiliClient(self.credential)
         self.listening_task: asyncio.Task | None = None
+        self._comment_task: asyncio.Task | None = None
+        self.comment_notifications = BiliBiliCommentNotifications(self)
         self.feed = self.register_capability(FeedCapability, BiliBiliFeedCapability(self))
         self._dm_session: Session | None = None
         self._dm_task: asyncio.Task | None = None
@@ -76,7 +79,14 @@ class BiliBiliAdapter(BaseAdapter):
         get_bilibili_client()
         await self._log_login_status()
         tasks = []
-        if self.config.get("listening_bvid"):
+        if self.config.get("enable_comment_notifications", True) and self.credential.sessdata:
+            if self.bot_uid:
+                self.comment_notifications.reset()
+                self._comment_task = asyncio.create_task(self._start_comment_notifications())
+                tasks.append(self._comment_task)
+            else:
+                self.logger.warning("Bilibili comment notifications require a verified or configured account UID")
+        if self.config.get("listening_bvid") and self._comment_task is None:
             self.listening_task = asyncio.create_task(self._start_listening())
             tasks.append(self.listening_task)
         if self.im is not None:
@@ -87,6 +97,16 @@ class BiliBiliAdapter(BaseAdapter):
                 await asyncio.gather(*tasks)
             finally:
                 await self._stop_listeners()
+
+    async def _start_comment_notifications(self) -> None:
+        interval = max(1.0, float(self.config.get("listening_interval") or 20.0))
+        self.logger.info(f"Start listening comment notifications for BiliBili user {self.bot_uid}")
+        try:
+            while True:
+                await self.comment_notifications.check()
+                await asyncio.sleep(interval)
+        finally:
+            self.logger.info(f"Stopped BiliBili comment notifications for {self.bot_uid}")
 
     async def _start_im(self) -> None:
         if not self.credential.sessdata:
@@ -132,9 +152,10 @@ class BiliBiliAdapter(BaseAdapter):
             self.logger.info(f"Stopped BiliBili DM adapter for {self.bot_uid}")
 
     async def _stop_listeners(self) -> None:
-        tasks = [task for task in (self.listening_task, self._dm_task) if task is not None]
+        tasks = [task for task in (self.listening_task, self._dm_task, self._comment_task) if task is not None]
         self.listening_task = None
         self._dm_task = None
+        self._comment_task = None
         for task in tasks:
             if not task.done():
                 task.cancel()
@@ -171,6 +192,7 @@ class BiliBiliAdapter(BaseAdapter):
     async def stop(self) -> None:
         await self._stop_listeners()
         self.feed.clear_cursors()
+        self.comment_notifications.reset()
         # The account client owns no transport resources; the SDK manages them.
 
     def get_client(self) -> BiliBiliClient:
