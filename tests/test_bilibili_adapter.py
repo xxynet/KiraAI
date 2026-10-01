@@ -9,6 +9,9 @@ from core.adapter.adapter_info import AdapterInfo
 from core.adapter.base import BaseAdapter
 from core.adapter.capabilities import FeedCapability, IMCapability
 from core.adapter.context import AdapterContext
+from core.adapter.feed import FeedQuery, FeedRef, FeedSearchQuery
+from core.chat import MessageChain
+from core.chat.message_elements import Text
 from core.adapter.src.bilibili.bilibili import BiliBiliAdapter
 from core.adapter.src.bilibili.feed import BiliBiliFeedCapability
 
@@ -50,15 +53,21 @@ async def test_feed_preserves_video_fields_and_respects_count(monkeypatch):
         "stat": {"view": 10, "like": 2, "danmaku": 1},
         "rcmd_reason": {"content": "recommended"},
     }
-    fetch = AsyncMock(return_value={"item": [item, item]})
-    monkeypatch.setattr(feed_module.homepage, "get_videos", fetch)
-    result = await adapter.feed.get_feed(1)
-    assert len(result) == 1
-    assert result[0]["uploader"] == {"uid": 123, "name": "uploader"}
-    assert result[0]["recommend_reason"] == "recommended"
-    fetch.assert_awaited_once_with(credential=adapter.credential)
-    assert await adapter.feed.get_feed(0) == []
-    assert await adapter.feed.get_feed(-1) == []
+    fetch = AsyncMock(return_value={"item": [item, {**item, "bvid": "BV2xx"}]})
+    monkeypatch.setattr(adapter.get_client(), "get_recommended_videos", fetch)
+    result = await adapter.feed.get_feed(FeedQuery(count=1))
+    assert len(result.items) == 1
+    assert result.items[0].author.id == "123"
+    assert result.items[0].author.name == "uploader"
+    assert result.items[0].extra["recommend_reason"] == "recommended"
+    assert result.items[0].duration == 60
+    assert result.items[0].stats == {"view": 10, "like": 2, "danmaku": 1}
+    next_page = await adapter.feed.get_feed(FeedQuery(count=1, cursor=result.next_cursor))
+    assert next_page.items[0].ref == FeedRef("video", "BV2xx")
+    assert not next_page.has_more
+    fetch.assert_awaited_once_with()
+    with pytest.raises(ValueError, match="count"):
+        await adapter.feed.get_feed(FeedQuery(count=0))
     assert fetch.await_count == 1
 
 
@@ -70,35 +79,35 @@ async def test_search_maps_to_search_feed_and_respects_count(monkeypatch):
         {"bvid": "BV2xx", "title": "other", "pic": "https://image.test/b"},
         {"bvid": "BV3xx", "title": "extra"},
     ]})
-    monkeypatch.setattr(feed_module.search, "search_by_type", search)
-    result = await adapter.feed.search_feed("video", 2)
-    assert [item["title"] for item in result] == ["video", "other"]
-    assert [item["cover_url"] for item in result] == ["https://image.test/a", "https://image.test/b"]
-    assert search.await_args.kwargs["page_size"] == 2
-    assert search.await_args.kwargs["keyword"] == "video"
-    assert await adapter.feed.search_feed("video", 0) == []
+    monkeypatch.setattr(adapter.get_client(), "search_by_type", search)
+    result = await adapter.feed.search_feed(FeedSearchQuery("video", count=2))
+    assert [item.title for item in result.items] == ["video", "other"]
+    assert [item.cover_url for item in result.items] == ["https://image.test/a", "https://image.test/b"]
+    assert search.await_args.kwargs == {"page": 1, "page_size": 20}
+    assert search.await_args.args == ("video", feed_module.search.SearchObjectType.VIDEO)
+    tail = await adapter.feed.search_feed(FeedSearchQuery("video", count=2, cursor=result.next_cursor))
+    assert [item.title for item in tail.items] == ["extra"]
+    assert not tail.has_more
     assert search.await_count == 1
 
 
 @pytest.mark.asyncio
-async def test_comment_reply_maps_root_parent_and_credentials(monkeypatch):
-    adapter = make_adapter(enable_im=False, listening_bvid="BV17x411w7KC")
+async def test_comment_reply_maps_explicit_target_root_parent_and_credentials(monkeypatch, sdk_client):
+    adapter = make_adapter(enable_im=False, listening_bvid="a-different-video")
     adapter.logger = Mock()
     send = AsyncMock(return_value={"rpid": 345})
     monkeypatch.setattr(feed_module.comment, "send_comment", send)
-    result = await adapter.feed.send_comment("reply", 123, 234)
+    target = FeedRef("video", "BV17x411w7KC")
+    result = await adapter.feed.send_comment(MessageChain([Text("reply")]), target, root=123, parent=234)
     assert result == {"rpid": 345}
-    adapter.logger.debug.assert_called_once_with("回复成功: {'rpid': 345}")
+    adapter.logger.debug.assert_called_once_with("回复成功: 345")
     send.assert_awaited_once_with(
         text="reply", oid=170001, type_=feed_module.comment.CommentResourceType.VIDEO,
         root=123, parent=234, credential=adapter.credential,
     )
     send.side_effect = RuntimeError("test-private-comment-and-cookie")
     with pytest.raises(RuntimeError, match="^Bilibili comment reply failed$"):
-        await adapter.feed.send_comment("reply", 123)
-    with pytest.raises(ValueError, match="listening_bvid"):
-        await make_adapter().feed.send_comment("reply", 123)
-
+        await adapter.feed.send_comment(MessageChain([Text("reply")]), target, root=123)
 
 def reply(rpid, uid, timestamp, text, replies=None):
     return {
@@ -108,7 +117,7 @@ def reply(rpid, uid, timestamp, text, replies=None):
 
 
 @pytest.mark.asyncio
-async def test_comment_polling_publishes_root_and_sub_events_without_self_replies(monkeypatch):
+async def test_comment_polling_publishes_root_and_sub_events_without_self_replies(monkeypatch, sdk_client):
     adapter = make_adapter(bot_uid="123", listening_bvid="BV17x411w7KC", message_process_interval=0)
     adapter.feed.last_process_ts = 10
     fetch = AsyncMock(return_value={"replies": [
@@ -133,15 +142,36 @@ async def test_comment_polling_publishes_root_and_sub_events_without_self_replie
     second = adapter.ctx.event_queue.get_nowait()
     assert first.adapter_name == "bili-test"
     assert first.platform == "bilibili"
-    assert first.cmt_id == 1
-    assert first.cmt_content[0].text == "root"
+    assert first.target == FeedRef("video", "BV17x411w7KC")
+    assert second.target == first.target
+    assert first.comment_id == 1
+    assert first.comment_content[0].text == "root"
     assert first.self_id == "123"
-    assert second.cmt_id == 2
-    assert second.sub_cmt_id == 3
-    assert second.sub_cmt_content[0].text == "sub reply"
-    assert second.cmt_content[0].text == "bot root"
+    assert second.root_comment_id == 2
+    assert second.comment_id == 3
+    assert second.comment_content[0].text == "sub reply"
+    assert second.root_comment_content[0].text == "bot root"
     assert second.commenter_id == "789"
     assert not hasattr(first, "capability_name")
+    assert isinstance(first.comment_content, MessageChain) and isinstance(second.comment_content, MessageChain)
+    assert first.comment_id == first.root_comment_id == 1
+    assert (second.comment_id, second.root_comment_id) == (3, 2)
+    native_send = AsyncMock(return_value={"rpid": 99})
+    monkeypatch.setattr(adapter.get_client(), "send_comment", native_send)
+    await adapter.feed.send_comment(
+        MessageChain([Text("reply")]), first.target,
+        root=first.root_comment_id, parent=first.comment_id,
+    )
+    native_send.assert_awaited_once_with(
+        text="reply", oid=170001, type_=feed_module.comment.CommentResourceType.VIDEO,
+        root=1, parent=1, pic=None,
+    )
+    await adapter.feed.send_comment(
+        MessageChain([Text("nested reply")]), second.target,
+        root=second.root_comment_id, parent=second.comment_id,
+    )
+    assert native_send.await_args.kwargs["root"] == 2
+    assert native_send.await_args.kwargs["parent"] == 3
     await adapter.feed.check_new_comments()
     assert adapter.ctx.event_queue.empty()
     fetch.return_value = {"replies": None}
@@ -167,7 +197,7 @@ async def test_start_without_listener_verifies_account_and_keeps_sdk_client_shar
     adapter.logger = Mock()
     await adapter.start()
     assert adapter.bot_uid == "123"
-    assert adapter.get_client() is sdk_client
+    assert isinstance(adapter.get_client(), client_module.BiliBiliClient)
     assert sdk_client.get_wrapped_session().headers["Accept-Encoding"] == "gzip, deflate"
     assert adapter.listening_task is None
     account.assert_awaited_once_with(adapter.credential)
@@ -181,7 +211,7 @@ async def test_start_without_listener_verifies_account_and_keeps_sdk_client_shar
         + str(account.side_effect)[:100]
     )
     await adapter.stop()
-    assert adapter.get_client() is None
+    assert isinstance(adapter.get_client(), client_module.BiliBiliClient)
     sdk_client.close.assert_not_awaited()
 
 
@@ -253,7 +283,7 @@ async def test_manager_constructs_bilibili_through_adapter_context(monkeypatch, 
     assert manager.get_adapter(info.name) is None
 
 @pytest.mark.asyncio
-async def test_comment_poll_keeps_all_new_roots_and_replies_against_start_cursor(monkeypatch):
+async def test_comment_poll_keeps_all_new_roots_and_replies_against_start_cursor(monkeypatch, sdk_client):
     adapter = make_adapter(bot_uid="123", listening_bvid="BV17x411w7KC", message_process_interval=0)
     adapter.feed.last_process_ts = 10
     fetch = AsyncMock(return_value={"replies": [
@@ -273,7 +303,7 @@ async def test_comment_poll_keeps_all_new_roots_and_replies_against_start_cursor
     events = []
     while not adapter.ctx.event_queue.empty():
         event = adapter.ctx.event_queue.get_nowait()
-        events.append((event.cmt_id, event.sub_cmt_id))
+        events.append((event.root_comment_id, event.comment_id if event.is_reply else None))
     assert events == [(1, 3), (1, 2), (5, None), (6, None), (7, 8)]
     assert adapter.feed.last_process_ts == 30
     await adapter.feed.check_new_comments()

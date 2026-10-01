@@ -10,6 +10,7 @@ import pytest
 from core.adapter import AdapterContext, AdapterManager, BaseAdapter
 from core.adapter.access import ListAccessPolicy
 from core.adapter.capabilities import FeedCapability, IMCapability
+from core.adapter.feed import FeedRef
 from core.chat.message_elements import Text
 from core.chat.message_utils import (
     KiraCommentEvent, KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain,
@@ -189,10 +190,15 @@ async def test_plugin_notice_preserves_opaque_target_without_capability_name():
 
 
 @pytest.mark.asyncio
-async def test_comment_reply_uses_the_only_feed():
+@pytest.mark.parametrize("nested", [False, True])
+async def test_comment_reply_uses_the_only_feed(nested):
     adapter = routed_adapter()
     event = KiraCommentEvent(
-        "qq", adapter.info.name, "user", "user", "bot", 1, "post", [Text("comment")],
+        "qq", adapter.info.name, "user", "user", "bot", 1,
+        "sub-comment" if nested else "comment",
+        [Text("sub"), Text(" reply")] if nested else [Text("root"), Text(" context")],
+        target=FeedRef("post", "content"), root_comment_id="comment",
+        root_comment_content=[Text("root"), Text(" context")] if nested else None,
     )
     adapter.get_capability(FeedCapability).publish(event)
     assert not hasattr(event, "capability_name")
@@ -201,7 +207,16 @@ async def test_comment_reply_uses_the_only_feed():
     client = SimpleNamespace(chat=AsyncMock(return_value=SimpleNamespace(text_response="reply")))
     processor.provider_mgr = SimpleNamespace(get_default_llm=lambda: client)
     await processor.handle_cmt_message(event)
-    assert adapter.sent == [(FeedCapability, "post", ("reply", None))]
+    assert len(adapter.sent) == 1
+    kind, target, (message, root, parent) = adapter.sent[0]
+    assert kind is FeedCapability and target is event.target
+    assert isinstance(message, MessageChain) and message[0].text == "reply"
+    assert (root, parent) == (event.root_comment_id, event.comment_id)
+    assert isinstance(event.comment_content, MessageChain)
+    assert event.comment_id == ("sub-comment" if nested else "comment")
+    assert event.root_comment_id == "comment"
+    expected_prompt = "You: root context\nuser: sub reply" if nested else "user: root context"
+    processor.prompt_manager.get_comment_prompt.assert_awaited_once_with(expected_prompt)
 
 
 @pytest.mark.asyncio
@@ -364,3 +379,33 @@ async def test_notice_without_im_can_enter_message_processing(monkeypatch, sessi
     batch = processor.event_bus.publish.await_args.args[0]
     assert batch.sid == target
     assert batch.messages == [event.message]
+
+
+@pytest.mark.asyncio
+async def test_legacy_comment_reply_preserves_root_and_sub_arguments():
+    legacy = SimpleNamespace(send_comment=AsyncMock())
+    event = KiraCommentEvent(
+        "legacy", "old", "user", "user", "bot", 1, "sub", [Text("sub")],
+        target=FeedRef("post", "content"), root_comment_id="root", root_comment_content=[Text("root")],
+    )
+    processor = processor_for(legacy)
+    processor.prompt_manager = SimpleNamespace(get_comment_prompt=AsyncMock(return_value="prompt"))
+    client = SimpleNamespace(chat=AsyncMock(return_value=SimpleNamespace(text_response="reply")))
+    processor.provider_mgr = SimpleNamespace(get_default_llm=lambda: client)
+    await processor.handle_cmt_message(event)
+    legacy.send_comment.assert_awaited_once_with(text="reply", root="root", sub="sub")
+
+
+@pytest.mark.asyncio
+async def test_comment_handler_accepts_empty_chain_without_indexing_first_element():
+    adapter = routed_adapter()
+    event = KiraCommentEvent(
+        "qq", adapter.info.name, "user", "user", "bot", 1, "sub", MessageChain(),
+        target=FeedRef("post", "content"), root_comment_id="root", root_comment_content=MessageChain(),
+    )
+    processor = processor_for(adapter)
+    processor.prompt_manager = SimpleNamespace(get_comment_prompt=AsyncMock(return_value="prompt"))
+    client = SimpleNamespace(chat=AsyncMock(return_value=SimpleNamespace(text_response="reply")))
+    processor.provider_mgr = SimpleNamespace(get_default_llm=lambda: client)
+    await processor.handle_cmt_message(event)
+    assert adapter.sent[0][1] is event.target

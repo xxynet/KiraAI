@@ -16,7 +16,7 @@ from core.adapter.context import AdapterContext
 from core.chat import KiraIMSentResult, MessageChain
 from core.logging_manager import get_logger
 
-from .client import get_bilibili_client
+from .client import BiliBiliClient, get_bilibili_client
 from .feed import BiliBiliFeedCapability
 from .im import BiliBiliIMCapability
 from .qr_login import BiliBiliQRCodeLoginHandler
@@ -34,7 +34,7 @@ class BiliBiliAdapter(BaseAdapter):
             dedeuserid=self.config.get("dedeuserid") or None,
             ac_time_value=self.config.get("ac_time_value") or None,
         )
-        self._client = None
+        self._client = BiliBiliClient(self.credential)
         self.listening_task: asyncio.Task | None = None
         self.feed = self.register_capability(FeedCapability, BiliBiliFeedCapability(self))
         self._dm_session: Session | None = None
@@ -73,7 +73,7 @@ class BiliBiliAdapter(BaseAdapter):
     async def start(self) -> None:
         if self.im is not None:
             await self._load_emoji_dict()
-        self._client = get_bilibili_client()
+        get_bilibili_client()
         await self._log_login_status()
         tasks = []
         if self.config.get("listening_bvid"):
@@ -170,10 +170,10 @@ class BiliBiliAdapter(BaseAdapter):
 
     async def stop(self) -> None:
         await self._stop_listeners()
-        # bilibili-api owns the shared per-event-loop client used by other accounts.
-        self._client = None
+        self.feed.clear_cursors()
+        # The account client owns no transport resources; the SDK manages them.
 
-    def get_client(self) -> Any:
+    def get_client(self) -> BiliBiliClient:
         return self._client
 
     async def send_direct_message(

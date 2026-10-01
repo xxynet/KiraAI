@@ -26,6 +26,7 @@ from core.prompt_manager import Prompt
 
 if TYPE_CHECKING:
     from core.provider import LLMModelClient
+    from core.adapter.feed import FeedItem, FeedRef
 
 
 class MessageType(Enum):
@@ -214,20 +215,38 @@ class KiraMessageBatchEvent:
 
 @dataclass
 class KiraCommentEvent:
+    """A received comment with a content target and normalized thread metadata.
+
+    ``comment_id`` and ``comment_content`` always describe the current comment.
+    Top-level comments use their own ID as ``root_comment_id``. Consumers reply
+    using target, root_comment_id, and comment_id without passing this event.
+    """
+
     platform: str
     adapter_name: str
     commenter_id: str
     commenter_nickname: str
     self_id: str
     timestamp: int
-    cmt_id: Union[int, str]
-    cmt_content: list
-    sub_cmt_id: Union[int, str] = None
-    sub_cmt_content: Optional[list] = None
+    comment_id: int | str
+    comment_content: MessageChain | list[BaseMessageElement]
+    target: FeedItem | FeedRef
+    root_comment_id: int | str | None = None
+    root_comment_content: MessageChain | list[BaseMessageElement] | None = None
     message_str: Optional[str] = field(default=None, init=False)
 
     def __post_init__(self):
-        pass
+        if self.root_comment_id is None:
+            self.root_comment_id = self.comment_id
+        if not isinstance(self.comment_content, MessageChain):
+            self.comment_content = MessageChain(self.comment_content)
+        if self.root_comment_content is not None and not isinstance(self.root_comment_content, MessageChain):
+            self.root_comment_content = MessageChain(self.root_comment_content)
+        self.message_str = "".join(element.repr for element in self.comment_content)
+
+    @property
+    def is_reply(self) -> bool:
+        return self.root_comment_id != self.comment_id
 
 
 @dataclass
