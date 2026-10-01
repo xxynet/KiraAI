@@ -196,10 +196,6 @@ class AsyncTempMonitor:
             if self._file_versions.get(path_str) == pending_version
         }
 
-        logger.debug(
-            f"Temporary folder scan completed: {len(self.file_cache)} files, "
-            f"total size: {self.total_size / 1024 / 1024:.2f}MB"
-        )
         return eligible_directories
 
     async def _get_oldest_files(
