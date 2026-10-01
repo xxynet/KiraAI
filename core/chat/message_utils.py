@@ -234,6 +234,15 @@ class KiraCommentEvent:
     root_comment_id: int | str | None = None
     root_comment_content: MessageChain | list[BaseMessageElement] | None = None
     message_str: Optional[str] = field(default=None, init=False)
+    _is_stopped: bool = field(default=False, init=False, repr=False)
+
+    @property
+    def is_stopped(self) -> bool:
+        return self._is_stopped
+
+    def stop(self) -> None:
+        """Stop propagation; claim processing before awaiting external operations."""
+        self._is_stopped = True
 
     def __post_init__(self):
         if self.root_comment_id is None:

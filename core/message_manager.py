@@ -41,7 +41,7 @@ from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager
 from .adapter.base import BaseAdapter
-from .adapter.capabilities import FeedCapability, IMCapability
+from .adapter.capabilities import IMCapability
 from .agent.skills_mgr import SkillsManager
 from .agent.mcp_mgr import MCPManager
 from .provider import ProviderManager, LLMRequest, LLMResponse
@@ -165,7 +165,7 @@ class ImageDescCache:
 
 
 class MessageProcessor:
-    """Core message processor, responsible for handling all message sending and receiving logic"""
+    """Core message processor, responsible for IM processing and comment event delivery"""
 
     def __init__(self,
                  db: DatabaseService,
@@ -850,61 +850,12 @@ class MessageProcessor:
         # Save new memory
         self.session_manager.update_memory(sid, new_messages)
 
-    async def handle_cmt_message(self, msg: KiraCommentEvent):
-        """process comment message"""
-
-        logger.info(f"[{msg.adapter_name} | {msg.comment_id}] Processing comment")
-        comment_text = "".join(element.repr for element in msg.comment_content)
-        if msg.root_comment_content is not None:
-            root_text = "".join(element.repr for element in msg.root_comment_content)
-            comment_content = f"You: {root_text}\n{msg.commenter_nickname}: {comment_text}"
-        else:
-            comment_content = f"{msg.commenter_nickname}: {comment_text}"
-
-        comment_prompt = await self.prompt_manager.get_comment_prompt(comment_content)
-
-        try:
-            client = self.provider_mgr.get_default_llm()
-        except ValueError as exc:
-            llm_logger.error(f"Failed to get default LLM client: {exc}")
-            return
-        if not client:
-            llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
-            return
-
-        llm_req = LLMRequest(messages=[OpenAIMessage(role="user", content=comment_prompt)])
-
-        llm_resp = await client.chat(llm_req)
-
-        try:
-            await self.db.add_telemetry_llm_usage(
-                timestamp=int(time.time()),
-                model=client.model.model_id,
-                input_tokens=llm_resp.input_tokens or 0,
-                output_tokens=llm_resp.output_tokens or 0,
-                cached_tokens=llm_resp.cached_tokens,
-                response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
-                success=True,
-            )
-        except Exception as e:
-            logger.debug(f"Failed to record telemetry LLM usage: {e}")
-
-        response = llm_resp.text_response.strip()
-
-        if response:
-            adapter = self.adapter_mgr.get_adapter(msg.adapter_name)
-            if isinstance(adapter, BaseAdapter):
-                await adapter.get_capability(FeedCapability).send_comment(
-                    message=MessageChain([Text(response)]), target=msg.target,
-                    root=msg.root_comment_id, parent=msg.comment_id,
-                )
-            else:
-                await adapter.send_comment(
-                    text=response, root=msg.root_comment_id,
-                    sub=msg.comment_id if msg.is_reply else None,
-                )
-        else:
-            logger.warning("Blank LLM response")
+    async def handle_cmt_message(self, event: KiraCommentEvent):
+        """Deliver comments to plugins without prescribing a processing workflow."""
+        for handler in tuple(event_handler_reg.get_handlers(EventType.ON_COMMENT)):
+            if event.is_stopped:
+                break
+            await handler.exec_handler(event)
 
     async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str, tag_set: TagSet) -> Optional[List[KiraIMSentResult]]:
         """
