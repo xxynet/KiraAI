@@ -65,14 +65,19 @@ class KiraConfig(dict):
             else:
                 target[key] = value
 
-    def save_config(self):
-        """Save current config to JSON file"""
+    def save_config(self, *, raise_on_error: bool = False):
+        """Save configuration, optionally raising ConfigError on write failure.
+
+        Existing callers retain log-only handling unless they opt in.
+        """
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         try:
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                 f.write(json.dumps(self, indent=4, ensure_ascii=False))
         except Exception as e:
             logger.error(f"Failed to save config to JSON: {e}")
+            if raise_on_error:
+                raise ConfigError("failed to save configuration") from e
 
     def get_config(self, key: str, default: Optional = None, splitter: str = "."):
         keys = key.split(splitter)

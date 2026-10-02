@@ -4,6 +4,7 @@ from urllib.parse import quote
 from fastapi import Depends, HTTPException, status
 from fastapi.responses import FileResponse
 
+from core.config import ConfigError
 from core.logging_manager import get_logger
 from webui.models import (
     HealthCheckResponse,
@@ -370,8 +371,17 @@ class ProvidersRoutes(Routes):
             config = self.lifecycle.kira_config.get("providers", {}).get(provider_id)
             if not config:
                 raise HTTPException(status_code=404, detail="Provider not found")
+            had_status = "status" in config
+            previous_status = config.get("status")
             config["status"] = payload.status
-            self.lifecycle.kira_config.save_config()
+            try:
+                self.lifecycle.kira_config.save_config(raise_on_error=True)
+            except (ConfigError, OSError) as e:
+                if had_status:
+                    config["status"] = previous_status
+                else:
+                    config.pop("status", None)
+                raise HTTPException(status_code=500, detail="Failed to save provider status") from e
             self.lifecycle.provider_manager.set_provider(provider_id, config)
             return await self.get_provider(provider_id)
         provider = self._providers.get(provider_id)

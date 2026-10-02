@@ -239,3 +239,56 @@ def test_status_api_without_lifecycle():
         response = client.put(url, json={'name': 'Renamed', 'type': 'stub'})
         assert response.json()['status'] == 'inactive'
         assert client.patch('/api/providers/missing/status', json={'status': 'active'}).status_code == 404
+
+
+@pytest.mark.parametrize('previous_status', [None, 'active', 'inactive'])
+@pytest.mark.parametrize('failure_stage', ['open', 'mkdir'])
+def test_status_save_failure_rolls_back_without_resetting_provider(
+    api, manager, monkeypatch, tmp_path, previous_status, failure_stage,
+):
+    config = manager.kira_config['providers']['provider']
+    if previous_status is not None:
+        config['status'] = previous_status
+    manager.set_provider('provider', config)
+    manager.kira_config.save_config()
+    original_file = config_loader.CONFIG_PATH.read_bytes()
+    original_provider = manager.get_provider('provider')
+    constructions = StubProvider.constructions
+    requested_status = 'active' if previous_status == 'inactive' else 'inactive'
+
+    def fail_open(*args, **kwargs):
+        raise PermissionError('Simulated configuration write failure')
+
+    if failure_stage == 'open':
+        monkeypatch.setattr(config_loader, 'open', fail_open, raising=False)
+    else:
+        original_makedirs = config_loader.os.makedirs
+
+        def fail_config_directory(path, *args, **kwargs):
+            if str(path) == str(config_loader.CONFIG_PATH.parent):
+                raise PermissionError('Simulated configuration directory failure')
+            return original_makedirs(path, *args, **kwargs)
+
+        monkeypatch.setattr(config_loader.os, 'makedirs', fail_config_directory)
+
+    response = api.patch('/api/providers/provider/status', json={'status': requested_status})
+    assert response.status_code == 500
+    assert response.json()['detail'] == 'Failed to save provider status'
+    assert config.get('status') == previous_status
+    assert ('status' in config) == (previous_status is not None)
+    assert manager.get_provider('provider') is original_provider
+    assert StubProvider.constructions == constructions
+    assert config_loader.CONFIG_PATH.read_bytes() == original_file
+    expected_status = 'inactive' if previous_status == 'inactive' else 'active'
+    assert api.get('/api/providers/provider').json()['status'] == expected_status
+
+    if failure_stage == 'open':
+        monkeypatch.delattr(config_loader, 'open')
+    else:
+        monkeypatch.setattr(config_loader.os, 'makedirs', original_makedirs)
+    assert config_loader.CONFIG_PATH == tmp_path / 'config.json'
+    response = api.patch('/api/providers/provider/status', json={'status': requested_status})
+    assert response.status_code == 200
+    assert response.json()['status'] == requested_status
+    stored = json.loads(config_loader.CONFIG_PATH.read_text(encoding='utf-8'))
+    assert stored['providers']['provider']['status'] == requested_status
