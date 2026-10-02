@@ -101,7 +101,7 @@ export interface VersionResponse {
 export interface ProviderBase {
   name: string
   type: string
-  status: string
+  status: 'active' | 'inactive'
   config: Record<string, any>
   locales?: Record<string, Record<string, string>>
 }

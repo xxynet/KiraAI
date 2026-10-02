@@ -86,9 +86,13 @@ class VersionResponse(BaseModel):
 class ProviderBase(BaseModel):
     name: str
     type: str
-    status: str = "inactive"
+    status: Literal["active", "inactive"] = "active"
     config: Dict = Field(default_factory=dict)
     locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+
+
+class ProviderStatusUpdateRequest(BaseModel):
+    status: Literal["active", "inactive"]
 
 
 class ProviderResponse(ProviderBase):

@@ -39,7 +39,7 @@
                   ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                   : 'bg-gray-100 text-theme-strong dark:bg-gray-700'"
               >
-                {{ adapter.status }}
+                {{ $t(`adapter.${adapter.status}`) }}
               </span>
             </div>
             <div class="mt-1 flex items-center gap-2 min-w-0 text-sm text-theme-subtle">

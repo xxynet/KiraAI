@@ -98,3 +98,20 @@ def test_default_config_merged():
     c = MockConfig({"a": 1, "b": {"x": 10}})
     assert c["a"] == 1
     assert c["b"]["x"] == 10
+
+
+def test_save_config_opt_in_errors_preserve_existing_caller_behavior(monkeypatch, tmp_path):
+    from core.config import ConfigError, config_loader
+
+    monkeypatch.setattr(config_loader, 'CONFIG_PATH', tmp_path / 'config.json')
+    config = KiraConfig({'test': True})
+    assert config.save_config(raise_on_error=True) is None
+
+    def fail_open(*args, **kwargs):
+        raise PermissionError('Simulated write failure')
+
+    monkeypatch.setattr(config_loader, 'open', fail_open, raising=False)
+    assert config.save_config() is None
+    with pytest.raises(ConfigError, match='failed to save configuration') as error:
+        config.save_config(raise_on_error=True)
+    assert isinstance(error.value.__cause__, PermissionError)

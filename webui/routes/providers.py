@@ -4,6 +4,7 @@ from urllib.parse import quote
 from fastapi import Depends, HTTPException, status
 from fastapi.responses import FileResponse
 
+from core.config import ConfigError
 from core.logging_manager import get_logger
 from webui.models import (
     HealthCheckResponse,
@@ -12,6 +13,7 @@ from webui.models import (
     ModelUpdateRequest,
     ProviderBase,
     ProviderResponse,
+    ProviderStatusUpdateRequest,
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -78,6 +80,14 @@ class ProvidersRoutes(Routes):
                 path="/api/providers/{provider_id}",
                 methods=["PUT"],
                 endpoint=self.update_provider,
+                response_model=ProviderResponse,
+                tags=["providers"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/providers/{provider_id}/status",
+                methods=["PATCH"],
+                endpoint=self.update_provider_status,
                 response_model=ProviderResponse,
                 tags=["providers"],
                 dependencies=[Depends(require_auth)],
@@ -263,13 +273,12 @@ class ProvidersRoutes(Routes):
 
         providers = []
         configured_providers = self.lifecycle.kira_config.get("providers", {})
-        active_providers = self.lifecycle.provider_manager._providers
 
         for provider_id in configured_providers.keys():
             provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
             if not provider_info:
                 continue
-            is_active = provider_id in active_providers
+            is_active = self.lifecycle.provider_manager.get_provider(provider_id) is not None
             config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
             providers.append(self._provider_response(
                 provider_info,
@@ -303,6 +312,7 @@ class ProvidersRoutes(Routes):
                 generated_config["provider_config"].update(payload.config)
             if payload.name:
                 generated_config["name"] = payload.name
+            generated_config["status"] = payload.status
             self.lifecycle.kira_config["providers"][provider_id] = generated_config
             self.lifecycle.kira_config.save_config()
             config_for_instantiation = generated_config.copy()
@@ -310,9 +320,7 @@ class ProvidersRoutes(Routes):
             provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
             if not provider_info:
                 raise HTTPException(status_code=500, detail="Failed to read created provider")
-            return self._provider_response(
-                provider_info, "active", generated_config.get("model_config", {})
-            )
+            return await self.get_provider(provider_id)
         except Exception as e:
             logger.error(f"Error creating provider: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -341,6 +349,8 @@ class ProvidersRoutes(Routes):
                 config["provider_config"].update(payload.config)
             if payload.name:
                 config["name"] = payload.name
+            if "status" in payload.model_fields_set:
+                config["status"] = payload.status
             self.lifecycle.kira_config["providers"][provider_id] = config
             self.lifecycle.kira_config.save_config()
             config_for_instantiation = config.copy()
@@ -348,13 +358,36 @@ class ProvidersRoutes(Routes):
             provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
             if not provider_info:
                 raise HTTPException(status_code=500, detail="Failed to read updated provider")
-            return self._provider_response(
-                provider_info, "active", config.get("model_config", {})
-            )
+            return await self.get_provider(provider_id)
         provider = self._providers.get(provider_id)
         if not provider:
             raise HTTPException(status_code=404, detail="Provider not found")
-        updated = provider.model_copy(update=payload.model_dump())
+        updated = provider.model_copy(update=payload.model_dump(exclude_unset=True))
+        self._providers[provider_id] = updated
+        return updated
+
+    async def update_provider_status(self, provider_id: str, payload: ProviderStatusUpdateRequest):
+        if self.lifecycle and self.lifecycle.provider_manager:
+            config = self.lifecycle.kira_config.get("providers", {}).get(provider_id)
+            if not config:
+                raise HTTPException(status_code=404, detail="Provider not found")
+            had_status = "status" in config
+            previous_status = config.get("status")
+            config["status"] = payload.status
+            try:
+                self.lifecycle.kira_config.save_config(raise_on_error=True)
+            except (ConfigError, OSError) as e:
+                if had_status:
+                    config["status"] = previous_status
+                else:
+                    config.pop("status", None)
+                raise HTTPException(status_code=500, detail="Failed to save provider status") from e
+            self.lifecycle.provider_manager.set_provider(provider_id, config)
+            return await self.get_provider(provider_id)
+        provider = self._providers.get(provider_id)
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider not found")
+        updated = provider.model_copy(update={"status": payload.status})
         self._providers[provider_id] = updated
         return updated
 

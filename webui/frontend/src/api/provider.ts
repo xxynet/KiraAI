@@ -30,6 +30,10 @@ export function updateProvider(id: string, data: Partial<ProviderBase>) {
   return apiClient.put<ProviderResponse>(`/providers/${encodeURIComponent(id)}`, data)
 }
 
+export function updateProviderStatus(id: string, status: ProviderBase['status']) {
+  return apiClient.patch<ProviderResponse>(`/providers/${encodeURIComponent(id)}/status`, { status })
+}
+
 export function deleteProvider(id: string) {
   return apiClient.delete(`/providers/${encodeURIComponent(id)}`)
 }
