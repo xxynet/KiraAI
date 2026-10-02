@@ -10,13 +10,23 @@ from pathlib import Path
 
 from core.config import ConfigError
 from core.config.config_field import ConfigType, SectionField
-from .model_identity import DEFAULT_MODEL_TYPES, MODEL_CONFIG_VERSION, resolve_model_reference
+from .model_identity import (
+    DEFAULT_MODEL_TYPES, MODEL_CONFIG_VERSION, resolve_model_reference, validate_model_names,
+)
+
+
+LEGACY_MODEL_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://kira-ai.top/model-identity/v1")
 
 
 def migrate_provider_models(provider: dict) -> bool:
-    """Convert legacy name-keyed model configs without discarding model parameters."""
+    """Derive recoverable legacy identities without discarding model parameters."""
     version = provider.get("model_config_version")
     if version == MODEL_CONFIG_VERSION:
+        groups = provider.get("model_config") or {}
+        if not isinstance(groups, dict):
+            raise ValueError("Invalid model configuration")
+        for models in groups.values():
+            validate_model_names(models)
         return False
     if version is not None:
         raise ValueError("Unsupported model configuration version")
@@ -32,16 +42,21 @@ def migrate_provider_models(provider: dict) -> bool:
         for name, config in models.items():
             if not isinstance(config, dict):
                 raise ValueError("Invalid model parameters")
+            attempt = 0
             while True:
-                model_id = uuid.uuid4().hex
+                identity = json.dumps([kind, name, attempt], ensure_ascii=False)
+                model_id = uuid.uuid5(LEGACY_MODEL_NAMESPACE, identity).hex
                 if model_id not in reserved_ids:
                     break
+                attempt += 1
             reserved_ids.add(model_id)
             migrated[kind][model_id] = {
                 "model_name": name,
                 "config": config,
                 "legacy_ids": [name],
             }
+    for models in migrated.values():
+        validate_model_names(models)
     provider["model_config"] = migrated
     provider["model_config_version"] = MODEL_CONFIG_VERSION
     return True
@@ -52,11 +67,13 @@ def migrate_model_config(config: dict) -> bool:
     providers = config.get("providers") or {}
     if not isinstance(providers, dict):
         raise ValueError("Invalid providers configuration")
+    models = config.get("models", {})
+    if not isinstance(models, dict):
+        raise ValueError("Invalid models configuration")
     changed = False
     for provider in providers.values():
         if isinstance(provider, dict):
             changed = migrate_provider_models(provider) or changed
-    models = config.get("models") or {}
     for key, kind in DEFAULT_MODEL_TYPES.items():
         if key in models:
             normalized = resolve_model_reference(providers, models[key], kind)

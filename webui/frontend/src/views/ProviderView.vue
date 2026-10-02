@@ -716,6 +716,15 @@ async function handleAddModel() {
   if (!selectedId.value || !modelForm.value.model_name) return
   const providerId = selectedId.value
   const isEdit = modelEditMode.value
+  const modelName = modelForm.value.model_name.trim()
+  const models = providerModels.value[modelForm.value.model_type] || {}
+  const duplicate = Object.entries(models).some(([id, entry]: [string, any]) =>
+    (!isEdit || id !== originalModelId.value) && entry.model_name.trim() === modelName
+  )
+  if (duplicate) {
+    notify(t('provider.model_name_exists'), 'error')
+    return
+  }
   const validateRes = modelConfigFormRef.value?.validate()
   if (validateRes && !validateRes.valid) {
     notify(validateRes.message || t('configform.invalid_json'), 'error')
@@ -746,7 +755,11 @@ async function handleAddModel() {
       }
     } catch { /* refresh failure is non-critical */ }
   } catch (error: any) {
-    notify((isEdit ? t('provider.model_update_failed') : t('provider.model_add_failed')) + (error?.message ? ': ' + error.message : ''), 'error')
+    if (error?.response?.data?.detail === 'Model name already exists') {
+      notify(t('provider.model_name_exists'), 'error')
+    } else {
+      notify((isEdit ? t('provider.model_update_failed') : t('provider.model_add_failed')) + (error?.message ? ': ' + error.message : ''), 'error')
+    }
   } finally {
     addingModel.value = false
   }
@@ -872,7 +885,11 @@ async function handleSyncRemoteModels() {
       notify(t('provider.sync_failed', { count: errors.length }), 'error')
     }
   } catch (error: any) {
-    notify(t('provider.sync_failed', { count: addIds.length + deleteIds.length }) + (error?.message ? ': ' + error.message : ''), 'error')
+    if (error?.response?.data?.detail === 'Model name already exists') {
+      notify(t('provider.model_name_exists'), 'error')
+    } else {
+      notify(t('provider.sync_failed', { count: addIds.length + deleteIds.length }) + (error?.message ? ': ' + error.message : ''), 'error')
+    }
   }
   remoteModelDialogVisible.value = false
   try {

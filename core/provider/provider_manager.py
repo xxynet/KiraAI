@@ -24,6 +24,7 @@ from core.config import KiraConfig
 from core.config import config_loader
 from .model_identity import (
     DEFAULT_MODEL_TYPES, MODEL_CONFIG_VERSION, generate_model_id, resolve_model_entry,
+    validate_model_names,
 )
 from .model_migration import migrate_provider_models, migrate_model_config_file
 from core.config.config_field import BaseConfigField, build_fields
@@ -362,9 +363,9 @@ class ProviderManager:
         model_id = generate_model_id(provider)
         model_config = self._model_defaults(provider, model_type)
         model_config.update(config or {})
-        provider["model_config"].setdefault(model_type, {})[model_id] = {
-            "model_name": model_name, "config": model_config,
-        }
+        models = provider["model_config"].setdefault(model_type, {})
+        models[model_id] = {"model_name": model_name, "config": model_config}
+        validate_model_names(models)
         self._save_provider_models(provider_id, provider)
         return model_id
 
@@ -433,6 +434,7 @@ class ProviderManager:
             entry["model_name"] = model_name
         if config is not None:
             entry["config"] = copy.deepcopy(config)
+        validate_model_names(provider["model_config"][model_type])
         self._save_provider_models(provider_id, provider)
         return True
 

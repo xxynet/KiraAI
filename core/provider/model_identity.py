@@ -40,6 +40,23 @@ def generate_model_id(provider_config: dict) -> str:
             return model_id
 
 
+def validate_model_names(models: dict):
+    """Require unique upstream names within one provider and model type."""
+    if not isinstance(models, dict):
+        raise ValueError("Invalid model configuration group")
+    names = set()
+    for entry in models.values():
+        if not isinstance(entry, dict):
+            raise ValueError("Invalid model configuration entry")
+        name = entry.get("model_name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("model_name must not be empty")
+        name = name.strip()
+        if name in names:
+            raise ValueError("Model name already exists")
+        names.add(name)
+
+
 def resolve_model_entry(provider_config: dict, model_id: str, model_type=None):
     """Resolve an internal ID or an unambiguous legacy alias, within a known type."""
     if hasattr(model_type, "value"):

@@ -192,6 +192,7 @@ export default {
     edit_model: 'Edit Model',
     model_update_success: 'Model updated successfully',
     model_update_failed: 'Failed to update model',
+    model_name_exists: 'A model with this name already exists for this provider and model type. Use a different name.',
     model_delete_failed: 'Failed to delete model',
     fetch_remote_models: 'Fetch Models',
     fetch_remote_loading: 'Fetching model list from remote...',

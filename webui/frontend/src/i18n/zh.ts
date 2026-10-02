@@ -192,6 +192,7 @@ export default {
     edit_model: '编辑模型',
     model_update_success: '模型更新成功',
     model_update_failed: '更新模型失败',
+    model_name_exists: '同一提供商和模型类型下已存在同名模型，请使用不同名称。',
     model_delete_failed: '删除模型失败',
     fetch_remote_models: '从远端获取模型',
     fetch_remote_loading: '正在从远端获取模型列表...',

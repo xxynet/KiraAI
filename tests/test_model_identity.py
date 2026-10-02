@@ -311,16 +311,76 @@ def test_plugin_migration_save_failure_preserves_source_and_cache(model_manager,
     assert not list(directory.glob(".*.tmp"))
 
 
-def test_new_model_names_can_duplicate_without_reusing_internal_ids(api, model_manager):
-    ids = [api.post("/api/providers/provider/models", json={
-        "model_type": "llm", "model_name": "shared-upstream", "config": {"timeout": timeout},
-    }).json()["model_id"] for timeout in (10, 20)]
-    assert ids[0] != ids[1]
-    assert model_manager.get_model_info("provider", ids[0], "llm").model_config["timeout"] == 10
-    assert model_manager.get_model_info("provider", ids[1], "llm").model_config["timeout"] == 20
-    response = api.post("/api/providers/provider/models/sync/llm", json={"add_ids": ["shared-upstream"]})
-    assert response.json()["added"] == 0
-    assert all(model_manager.get_model_info("provider", model_id, "llm") for model_id in ids)
+@pytest.mark.parametrize("field", ["model_name", "model_id"])
+@pytest.mark.parametrize("padding", ["", "  "])
+def test_create_rejects_duplicate_names_without_changing_existing_models(api, model_manager, field, padding):
+    original = copy.deepcopy(dict(model_manager.kira_config))
+    saved = config_loader.CONFIG_PATH.read_bytes()
+    response = api.post("/api/providers/provider/models", json={
+        "model_type": "llm", field: f"{padding}{NAME}{padding}", "config": {"timeout": 10},
+    })
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Model name already exists"
+    assert dict(model_manager.kira_config) == original
+    assert config_loader.CONFIG_PATH.read_bytes() == saved
+
+
+def test_rename_rejects_duplicate_but_accepts_unchanged_name(api, model_manager):
+    response = api.post("/api/providers/provider/models", json={
+        "model_type": "llm", "model_name": "second-model", "config": {"timeout": 10},
+    })
+    model_id = response.json()["model_id"]
+    original = copy.deepcopy(dict(model_manager.kira_config))
+    saved = config_loader.CONFIG_PATH.read_bytes()
+    response = api.put(f"/api/providers/provider/models/llm/{model_id}", json={
+        "model_name": f"  {NAME}  ", "config": {"timeout": 99},
+    })
+    assert response.status_code == 400
+    assert dict(model_manager.kira_config) == original
+    assert config_loader.CONFIG_PATH.read_bytes() == saved
+    response = api.put(f"/api/providers/provider/models/llm/{model_id}", json={
+        "model_name": "second-model", "config": {"timeout": 20},
+    })
+    assert response.status_code == 200
+    assert model_manager.get_model_info("provider", model_id, "llm").model_config["timeout"] == 20
+
+
+def test_same_name_is_allowed_in_different_providers_or_model_types(api, model_manager):
+    assert api.post("/api/providers/provider/models", json={
+        "model_type": "llm", "model_name": "shared-name",
+    }).status_code == 200
+    assert api.post("/api/providers/provider/models", json={
+        "model_type": "embedding", "model_name": "shared-name",
+    }).status_code == 200
+    second = copy.deepcopy(model_manager.kira_config["providers"]["provider"])
+    model_manager.kira_config["providers"]["second"] = second
+    assert model_manager.register_model("second", "llm", "other-name")
+    assert model_manager.register_model("provider", "llm", "other-name")
+
+
+def test_remote_sync_cannot_remove_preexisting_duplicate_entries(api, model_manager):
+    models = model_manager.kira_config["providers"]["provider"]["model_config"]["llm"]
+    models["duplicate-id"] = {"model_name": NAME, "config": {"timeout": 99}}
+    model_manager.kira_config.save_config()
+    original = copy.deepcopy(dict(model_manager.kira_config))
+    saved = config_loader.CONFIG_PATH.read_bytes()
+    response = api.post("/api/providers/provider/models/sync/llm", json={
+        "add_ids": ["new-model"], "delete_ids": [NAME],
+    })
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Model name already exists"
+    assert dict(model_manager.kira_config) == original
+    assert config_loader.CONFIG_PATH.read_bytes() == saved
+
+
+def test_remote_sync_repeated_name_adds_only_one_entry(api, model_manager):
+    response = api.post("/api/providers/provider/models/sync/llm", json={
+        "add_ids": ["new-model", "new-model", "  new-model  "],
+    })
+    assert response.status_code == 200
+    assert response.json()["added"] == 1
+    models = model_manager.get_models("provider")["llm"]
+    assert sum(entry["model_name"] == "new-model" for entry in models.values()) == 1
 
 
 def test_migration_rejects_invalid_entries_without_writing_or_losing_original(monkeypatch, tmp_path):
@@ -367,4 +427,95 @@ def test_config_loader_does_not_migrate_provider_models(monkeypatch, tmp_path):
     config = KiraConfig({"providers": {}, "models": {}})
     assert dict(config) == legacy_config()
     assert path.read_bytes() == original
+    assert not path.with_name(path.name + ".model-identity-v1.bak").exists()
+
+
+@pytest.mark.parametrize("invalid", [None, [], ["default_llm"], "", "default_llm", 0, 1, False, True])
+def test_migration_rejects_non_dict_model_selections_before_writing(tmp_path, invalid):
+    config = legacy_config()
+    config["models"] = invalid
+    original = copy.deepcopy(config)
+    path = tmp_path / "system_config.json"
+    saved = json.dumps(config).encode()
+    path.write_bytes(saved)
+    with pytest.raises(ConfigError, match="failed to migrate model configuration") as error:
+        migrate_model_config_file(config, path)
+    assert isinstance(error.value.__cause__, ValueError)
+    assert config == original
+    assert path.read_bytes() == saved
+    assert not path.with_name(path.name + ".model-identity-v1.bak").exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_restoring_main_backup_preserves_migrated_plugin_references(model_manager, monkeypatch, tmp_path):
+    fields = build_fields({
+        "selection": {"type": "model_select", "model_type": "llm"},
+        "fallbacks": {"type": "multi_select", "source": "model", "model_type": "llm"},
+        "embedding": {"type": "model_select", "model_type": "embedding"},
+    })
+    directory = tmp_path / "plugins"
+    directory.mkdir()
+    plugin_path = directory / "test.json"
+    plugin_path.write_text(json.dumps({
+        "selection": f"provider:{NAME}", "fallbacks": [f"provider:{NAME}"],
+        "embedding": f"provider:{NAME}",
+    }), encoding="utf-8")
+    monkeypatch.setattr(plugin_manager_module, "PLUGIN_CONFIG_DIR", directory)
+    plugin_manager = object.__new__(PluginManager)
+    plugin_manager.ctx = SimpleNamespace(config=model_manager.kira_config)
+    plugin_manager.plugin_configs = {}
+    plugin_manager._ensure_plugin_config("test", fields)
+    plugin_bytes = plugin_path.read_bytes()
+    selections = copy.deepcopy(plugin_manager.plugin_configs["test"])
+    original_models = copy.deepcopy(model_manager.kira_config["models"])
+    original_ids = {
+        kind: set(models)
+        for kind, models in model_manager.kira_config["providers"]["provider"]["model_config"].items()
+    }
+    path = config_loader.CONFIG_PATH
+    backup = path.with_name(path.name + ".model-identity-v1.bak")
+    path.write_bytes(backup.read_bytes())
+    model_manager.kira_config = KiraConfig({"providers": {}, "models": {}})
+    model_manager._load_providers()
+    assert model_manager.kira_config["models"] == original_models
+    for kind, models in model_manager.kira_config["providers"]["provider"]["model_config"].items():
+        assert set(models) == original_ids[kind]
+    for key, kind in (("selection", "llm"), ("embedding", "embedding")):
+        provider_id, model_id = selections[key].split(":", 1)
+        info = model_manager.get_model_info(provider_id, model_id, kind)
+        assert info is not None
+        assert info.model_name == NAME
+    assert selections["fallbacks"] == [selections["selection"]]
+    plugin_manager.ctx.config = model_manager.kira_config
+    plugin_manager._ensure_plugin_config("test", fields)
+    assert plugin_manager.plugin_configs["test"] == selections
+    assert plugin_path.read_bytes() == plugin_bytes
+
+
+def test_legacy_migration_identity_does_not_depend_on_model_parameters():
+    first = legacy_config()
+    second = copy.deepcopy(first)
+    second["providers"]["provider"]["model_config"]["llm"][NAME]["timeout"] = 99
+    assert migrate_model_config(first)
+    assert migrate_model_config(second)
+    assert first["models"] == second["models"]
+    for kind in first["providers"]["provider"]["model_config"]:
+        assert set(first["providers"]["provider"]["model_config"][kind]) == set(
+            second["providers"]["provider"]["model_config"][kind]
+        )
+
+
+def test_migration_rejects_duplicate_modern_names_without_discarding_entries(tmp_path):
+    config = legacy_config()
+    assert migrate_model_config(config)
+    models = config["providers"]["provider"]["model_config"]["llm"]
+    models["duplicate-id"] = {"model_name": NAME, "config": {"timeout": 99}}
+    original = copy.deepcopy(config)
+    path = tmp_path / "system_config.json"
+    saved = json.dumps(config).encode()
+    path.write_bytes(saved)
+    with pytest.raises(ConfigError, match="failed to migrate model configuration"):
+        migrate_model_config_file(config, path)
+    assert config == original
+    assert path.read_bytes() == saved
     assert not path.with_name(path.name + ".model-identity-v1.bak").exists()
