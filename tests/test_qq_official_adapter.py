@@ -6,6 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from core.adapter.adapter_info import AdapterInfo
+from core.adapter.base import BaseAdapter
+from core.adapter.capabilities import IMCapability
+from core.adapter.context import AdapterContext
+from core.adapter.src.qq_official import im as im_module
+from core.adapter.src.qq_official.im import QQOfficialIMCapability
 from core.adapter.src.qq_official import qq_official
 from core.adapter.src.qq_official.qq_official import QQOfficialAdapter
 from core.chat import MessageChain
@@ -22,25 +27,22 @@ def test_qq_official_schema_starts_with_setup_info():
     assert field["level"] == "info"
 
 
-def make_adapter(permission_mode="allow_list"):
-    return QQOfficialAdapter(
-        AdapterInfo(
-            adapter_id="qq-official-test",
-            enabled=True,
-            name="qq_official",
-            platform="QQ Official",
-            config={
-                "app_id": "test-app",
-                "app_secret": "test-secret",
-                "permission_mode": permission_mode,
-                "group_allow_list": ["group-openid"],
-                "user_allow_list": ["user-openid"],
-                "group_deny_list": ["group-denied"],
-                "user_deny_list": ["user-denied"],
-            },
-        ),
-        asyncio.Queue(),
+def make_adapter(permission_mode="allow_list", **config_overrides):
+    config = {
+        "app_id": "test-app",
+        "app_secret": "test-secret",
+        "permission_mode": permission_mode,
+        "group_allow_list": ["group-openid"],
+        "user_allow_list": ["user-openid"],
+        "group_deny_list": ["group-denied"],
+        "user_deny_list": ["user-denied"],
+    }
+    config.update(config_overrides)
+    info = AdapterInfo(
+        adapter_id="qq-official-test", enabled=True, name="qq_official",
+        platform="QQ Official", config=config,
     )
+    return QQOfficialAdapter(AdapterContext(info=info, event_queue=asyncio.Queue()))
 
 
 def test_qq_official_defers_botpy_client_creation():
@@ -51,46 +53,46 @@ def test_qq_official_defers_botpy_client_creation():
 
 def test_qq_official_bounds_reply_state_per_conversation(monkeypatch):
     adapter = make_adapter()
-    monkeypatch.setattr(qq_official, "QQ_OFFICIAL_MAX_REPLY_IDS_PER_CONVERSATION", 2)
+    monkeypatch.setattr(im_module, "QQ_OFFICIAL_MAX_REPLY_IDS_PER_CONVERSATION", 2)
     target_id = "user-openid"
     raw_message_ids = ["message-1", "message-2", "message-3"]
     display_message_ids = []
     for raw_message_id in raw_message_ids:
         display_message_ids.append(
-            adapter._remember_reply_id(False, target_id, raw_message_id)
+            adapter.im._remember_reply_id(False, target_id, raw_message_id)
         )
-        adapter._send_locks[(False, target_id, raw_message_id)] = object()
+        adapter.im._send_locks[(False, target_id, raw_message_id)] = object()
 
     expired_key = (False, target_id, raw_message_ids[0])
-    assert (False, target_id, display_message_ids[0]) not in adapter._reply_id_aliases
-    assert expired_key not in adapter._reply_msg_seqs
-    assert expired_key not in adapter._send_locks
-    assert (False, target_id, display_message_ids[1]) in adapter._reply_id_aliases
-    assert (False, target_id, display_message_ids[2]) in adapter._reply_id_aliases
+    assert (False, target_id, display_message_ids[0]) not in adapter.im._reply_id_aliases
+    assert expired_key not in adapter.im._reply_msg_seqs
+    assert expired_key not in adapter.im._send_locks
+    assert (False, target_id, display_message_ids[1]) in adapter.im._reply_id_aliases
+    assert (False, target_id, display_message_ids[2]) in adapter.im._reply_id_aliases
 
 
 @pytest.mark.asyncio
 async def test_qq_official_allow_list_uses_openids():
     adapter = make_adapter()
 
-    assert adapter._is_allowed("group-openid", is_group=True)
-    assert adapter._is_allowed("user-openid", is_group=False)
-    assert not adapter._is_allowed("other-group", is_group=True)
-    assert not adapter._is_allowed("other-user", is_group=False)
+    assert adapter.im.is_allowed("group-openid", permission="im.group.receive")
+    assert adapter.im.is_allowed("user-openid", permission="im.direct.receive")
+    assert not adapter.im.is_allowed("other-group", permission="im.group.receive")
+    assert not adapter.im.is_allowed("other-user", permission="im.direct.receive")
 
 
 @pytest.mark.asyncio
 async def test_qq_official_deny_list_uses_openids():
     adapter = make_adapter(permission_mode="deny_list")
 
-    assert adapter._is_allowed("other-group", is_group=True)
-    assert adapter._is_allowed("other-user", is_group=False)
-    assert not adapter._is_allowed("group-denied", is_group=True)
-    assert not adapter._is_allowed("user-denied", is_group=False)
+    assert adapter.im.is_allowed("other-group", permission="im.group.receive")
+    assert adapter.im.is_allowed("other-user", permission="im.direct.receive")
+    assert not adapter.im.is_allowed("group-denied", permission="im.group.receive")
+    assert not adapter.im.is_allowed("user-denied", permission="im.direct.receive")
 
 
 def test_qq_official_text_content_omits_reply_metadata():
-    content = QQOfficialAdapter._text_content(
+    content = QQOfficialIMCapability._text_content(
         MessageChain([Reply("message-id"), Text("Hello "), At("u1", "Alice"), Emoji("1", "!"), Text(".")])
     )
 
@@ -111,7 +113,7 @@ async def test_qq_official_maps_amr_attachment_to_record():
         ],
     )
 
-    chain = make_adapter()._message_chain(message, is_group=False, target_id="user-openid")
+    chain = make_adapter().im._message_chain(message, is_group=False, target_id="user-openid")
 
     assert isinstance(chain.message_list[0], Record)
     assert not isinstance(chain.message_list[0], Image)
@@ -128,7 +130,7 @@ async def test_qq_official_increments_msg_seq_for_multiple_replies():
 
     adapter.client = SimpleNamespace(api=SimpleNamespace(post_c2c_message=post_c2c_message))
     adapter._client_task = SimpleNamespace(done=lambda: False)
-    adapter._direct_reply_ids["user-openid"] = "incoming-message-id"
+    adapter.im._direct_reply_ids["user-openid"] = "incoming-message-id"
 
     first_result = await adapter.send_direct_message("user-openid", MessageChain([Text("first")]))
     await adapter.send_direct_message("user-openid", MessageChain([Text("second")]))
@@ -136,7 +138,7 @@ async def test_qq_official_increments_msg_seq_for_multiple_replies():
     assert [payload["msg_seq"] for payload in sent_payloads] == [1, 2]
     assert all(payload["msg_id"] == "incoming-message-id" for payload in sent_payloads)
     assert first_result.message_id.startswith("qqo-")
-    assert adapter._resolve_reply_id(
+    assert adapter.im._resolve_reply_id(
         False,
         "user-openid",
         MessageChain([Reply(first_result.message_id), Text("reply")]),
@@ -164,7 +166,7 @@ async def test_qq_official_uploads_and_sends_local_file():
         )
     )
     adapter._client_task = SimpleNamespace(done=lambda: False)
-    adapter._direct_reply_ids["user-openid"] = "incoming-message-id"
+    adapter.im._direct_reply_ids["user-openid"] = "incoming-message-id"
     file_path = str(Path(__file__).resolve())
 
     result = await adapter.send_direct_message(
@@ -201,7 +203,7 @@ async def test_qq_official_uploads_and_sends_local_image():
         )
     )
     adapter._client_task = SimpleNamespace(done=lambda: False)
-    adapter._direct_reply_ids["user-openid"] = "incoming-message-id"
+    adapter.im._direct_reply_ids["user-openid"] = "incoming-message-id"
 
     result = await adapter.send_direct_message(
         "user-openid", MessageChain([Image(str(Path(__file__).resolve()), name="image.jpg")])
@@ -236,7 +238,7 @@ async def test_qq_official_uploads_and_sends_image_url():
         )
     )
     adapter._client_task = SimpleNamespace(done=lambda: False)
-    adapter._direct_reply_ids["user-openid"] = "incoming-message-id"
+    adapter.im._direct_reply_ids["user-openid"] = "incoming-message-id"
 
     result = await adapter.send_direct_message(
         "user-openid", MessageChain([Image("https://example.com/image.png")])
@@ -274,7 +276,7 @@ async def test_qq_official_group_file_keeps_reply_message_id():
         )
     )
     adapter._client_task = SimpleNamespace(done=lambda: False)
-    adapter._group_reply_ids["group-openid"] = "incoming-group-message-id"
+    adapter.im._group_reply_ids["group-openid"] = "incoming-group-message-id"
 
     result = await adapter.send_group_message(
         "group-openid", MessageChain([File(str(Path(__file__).resolve()), name="test.py")])
@@ -297,14 +299,14 @@ async def test_qq_official_uses_short_message_id_alias_for_llm_and_reply():
         author=SimpleNamespace(user_openid="user-openid"),
     )
 
-    await adapter._handle_direct_message(message)
+    await adapter.im._handle_direct_message(message)
 
     event = adapter._event_queue.get_nowait()
     display_message_id = event.message.message_id
     assert display_message_id.startswith("qqo-")
     assert len(display_message_id) == 14
     assert raw_message_id not in display_message_id
-    assert adapter._resolve_reply_id(
+    assert adapter.im._resolve_reply_id(
         False,
         "user-openid",
         MessageChain([Reply(display_message_id), Text("reply")]),
@@ -331,7 +333,7 @@ async def test_qq_official_reads_quoted_message_with_short_reply_id():
         ],
     )
 
-    await adapter._handle_direct_message(message)
+    await adapter.im._handle_direct_message(message)
 
     event = adapter._event_queue.get_nowait()
     reply, text = event.message.chain.message_list
@@ -342,7 +344,7 @@ async def test_qq_official_reads_quoted_message_with_short_reply_id():
     assert reply.chain.message_list[0].text == "被引用的内容"
     assert isinstance(text, Text)
     assert text.text == "我的回复"
-    assert adapter._resolve_reply_id(
+    assert adapter.im._resolve_reply_id(
         False,
         "user-openid",
         MessageChain([Reply(reply.message_id), Text("reply")]),
@@ -361,3 +363,208 @@ async def test_qq_official_empty_credentials_do_not_start_adapter(monkeypatch):
     assert adapter.client is None
     assert adapter._client_task is None
     assert not hasattr(adapter, "_login_task")
+
+
+def sdk_message(group, target_id, sender_id="user-openid"):
+    sdk = pytest.importorskip("botpy.message")
+    payload = {"id": "incoming-id", "content": "hello", "attachments": []}
+    if group:
+        payload.update(group_openid=target_id, author={"member_openid": sender_id})
+        return sdk.GroupMessage(None, "event-id", payload)
+    payload["author"] = {"user_openid": target_id}
+    return sdk.C2CMessage(None, "event-id", payload)
+
+
+async def dispatch_sdk_message(adapter, group, message):
+    bridge = SimpleNamespace(adapter=adapter)
+    callback = (
+        qq_official._QQOfficialClient.on_group_at_message_create
+        if group else qq_official._QQOfficialClient.on_c2c_message_create
+    )
+    await callback(bridge, message)
+
+
+def test_qq_official_registers_a_single_owned_im_capability():
+    adapter = make_adapter()
+    assert isinstance(adapter, BaseAdapter)
+    assert adapter.get_capability(IMCapability) is adapter.im
+    assert adapter.im.adapter is adapter
+    assert adapter.get_capabilities() == {IMCapability: adapter.im}
+    assert not hasattr(adapter, "group_list")
+    assert not hasattr(adapter, "user_list")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", [False, True])
+@pytest.mark.parametrize("mode,listed,allowed", [
+    ("allow_list", True, True), ("allow_list", False, False),
+    ("deny_list", True, False), ("deny_list", False, True),
+])
+async def test_sdk_callback_checks_access_before_publishing_or_caching(group, mode, listed, allowed):
+    target_id = "opaque:target/123"
+    scope = "group" if group else "user"
+    adapter = make_adapter(mode, **{
+        f"{scope}_allow_list": [target_id] if listed else [],
+        f"{scope}_deny_list": [target_id] if listed else [],
+    })
+    await dispatch_sdk_message(adapter, group, sdk_message(group, target_id))
+    reply_ids = adapter.im._group_reply_ids if group else adapter.im._direct_reply_ids
+    if allowed:
+        event = adapter.ctx.event_queue.get_nowait()
+        kind = "gm" if group else "dm"
+        assert event.session.sid == f"qq_official:{kind}:{target_id}"
+        assert event.message_types == adapter.message_types
+        assert event.message.self_id == adapter.app_id
+        assert reply_ids[target_id] == "incoming-id"
+    else:
+        assert adapter.ctx.event_queue.empty()
+        assert reply_ids == {}
+        assert adapter.im._reply_id_aliases == {}
+        assert adapter.im._reply_msg_seqs == {}
+
+
+@pytest.mark.asyncio
+async def test_empty_group_whitelist_rejects_even_a_whitelisted_private_sender():
+    adapter = make_adapter(group_allow_list=[])
+    await dispatch_sdk_message(adapter, True, sdk_message(True, "unlisted-group"))
+    assert adapter.ctx.event_queue.empty()
+    assert adapter.im._group_reply_ids == {}
+    assert adapter.im.is_allowed("user-openid", permission="im.direct.receive")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", [False, True])
+async def test_numeric_list_entries_match_sdk_string_ids(group):
+    scope = "group" if group else "user"
+    adapter = make_adapter(**{f"{scope}_allow_list": [123]})
+    await dispatch_sdk_message(adapter, group, sdk_message(group, "123"))
+    assert not adapter.ctx.event_queue.empty()
+
+
+@pytest.mark.parametrize("mode", ["invalid", "ALLOW_LIST", None, [], {}])
+def test_invalid_permission_mode_keeps_legacy_default_denial(mode):
+    adapter = make_adapter(mode)
+    assert not adapter.im.is_allowed("group-openid", permission="im.group.receive")
+    assert not adapter.im.is_allowed("user-openid", permission="im.direct.receive")
+
+
+@pytest.mark.parametrize("value", [None, "group-openid", {"group-openid": True}, 123])
+def test_non_list_permission_entries_do_not_grant_access(value):
+    adapter = make_adapter(group_allow_list=value)
+    assert not adapter.im.is_allowed("group-openid", permission="im.group.receive")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", [False, True])
+async def test_sdk_callback_rejects_missing_target_in_deny_mode(group):
+    adapter = make_adapter("deny_list")
+    await dispatch_sdk_message(adapter, group, sdk_message(group, ""))
+    assert adapter.ctx.event_queue.empty()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", [False, True])
+async def test_core_and_legacy_sending_reach_the_same_im_capability(group):
+    from unittest.mock import AsyncMock
+    from core.message_manager import MessageProcessor
+    from core.chat import KiraIMSentResult
+
+    adapter = make_adapter()
+    method = "send_group_message" if group else "send_direct_message"
+    capability_send = AsyncMock(return_value=KiraIMSentResult(message_id="sent-id"))
+    setattr(adapter.im, method, capability_send)
+    processor = object.__new__(MessageProcessor)
+    processor.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
+    chain = MessageChain([Text("reply")])
+    kind = "gm" if group else "dm"
+    target_id = "opaque:target/123"
+    await processor.send_message_chain(f"qq_official:{kind}:{target_id}", chain)
+    await getattr(adapter, method)(target_id, chain)
+    assert capability_send.await_count == 2
+    capability_send.assert_awaited_with(target_id, chain)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", [False, True])
+async def test_cross_session_tool_uses_qq_official_receive_policy(group):
+    from unittest.mock import AsyncMock
+    from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
+
+    adapter = make_adapter()
+    ctx = SimpleNamespace(
+        adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
+        publish_notice=AsyncMock(), config={"bot_config": {"bot": {}}},
+    )
+    plugin = SessionPlugin(ctx, {})
+    kind = "gm" if group else "dm"
+    target_id = "group-openid" if group else "user-openid"
+    event = SimpleNamespace(sid="source:dm:1")
+    target = f"qq_official:{kind}:{target_id}"
+    assert await plugin.session_send(event, target, "hello") == "message sent"
+    assert ctx.publish_notice.await_args.args[0] == target
+    assert "Permission denied" in await plugin.session_send(event, f"qq_official:{kind}:unlisted", "hello")
+    assert ctx.publish_notice.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_manager_reload_applies_empty_group_whitelist_and_stops_previous_client(monkeypatch):
+    from core.adapter.adapter_registry import AdapterManager
+
+    original_client = qq_official._QQOfficialClient
+
+    class FakeClient:
+        on_group_at_message_create = original_client.on_group_at_message_create
+
+        def __init__(self, adapter):
+            self.adapter = adapter
+            self.closed = False
+            self.release = asyncio.Event()
+
+        async def start(self, **kwargs):
+            await self.release.wait()
+
+        async def close(self):
+            self.closed = True
+            self.release.set()
+
+    class SavingConfig(dict):
+        def save_config(self):
+            pass
+
+    monkeypatch.setattr(qq_official, "_QQOfficialClient", FakeClient)
+    monkeypatch.setattr(qq_official, "botpy", object())
+    monkeypatch.setattr(AdapterManager, "_registry", {"QQ Official": QQOfficialAdapter})
+    manager = object.__new__(AdapterManager)
+    manager._adapters = {}
+    manager._adapter_tasks = {}
+    manager.event_queue = asyncio.Queue()
+    manager.kira_config = SavingConfig({"adapters": {"qq-official-test": {
+        "enabled": True, "name": "qq_official", "platform": "QQ Official",
+        "config": make_adapter("deny_list").config,
+    }}})
+    manager.adas_config = manager.kira_config["adapters"]
+    try:
+        await manager.register_adapter(manager.get_adapter_info("qq-official-test"))
+        previous = manager.get_adapter("qq_official")
+        previous_client = previous.client
+        previous_task = previous._client_task
+        await previous_client.on_group_at_message_create(sdk_message(True, "unlisted-group"))
+        assert manager.event_queue.get_nowait().session.sid == "qq_official:gm:unlisted-group"
+
+        await manager.update_adapter("qq-official-test", config={
+            "permission_mode": "allow_list", "group_allow_list": [],
+        })
+        current = manager.get_adapter("qq_official")
+        assert current is not previous
+        assert previous_client.closed
+        assert previous_task.done()
+        await current.client.on_group_at_message_create(sdk_message(True, "unlisted-group"))
+        assert manager.event_queue.empty()
+        current_task = current._client_task
+        current_client = current.client
+    finally:
+        await manager.stop_adapter("qq_official")
+    assert current_client.closed
+    assert current_task.done()
+    assert not manager._adapters
+    assert not manager._adapter_tasks
