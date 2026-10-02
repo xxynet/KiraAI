@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING, Literal
 
-from ..provider import ProviderManager, LLMModelClient, EmbeddingModelClient
+from ..provider import ProviderManager, ModelType, LLMModelClient, EmbeddingModelClient
 from core.chat.session_manager import SessionManager
 from ..adapter import AdapterManager
 from core.event_bus import EventBus
@@ -109,7 +109,7 @@ class PluginContext:
             parts = model_uuid.split(":")
             provider_id = parts[0]
             model_id = ":".join(parts[1:])
-            client = self.provider_mgr.get_model_client(provider_id, model_id)
+            client = self.provider_mgr.get_model_client(provider_id, model_id, ModelType.LLM)
         except:
             return
         if isinstance(client, LLMModelClient):
@@ -174,7 +174,7 @@ class PluginContext:
             parts = model_uuid.split(":")
             provider_id = parts[0]
             model_id = ":".join(parts[1:])
-            client = self.provider_mgr.get_model_client(provider_id, model_id)
+            client = self.provider_mgr.get_model_client(provider_id, model_id, ModelType.EMBEDDING)
         except:
             return
         if isinstance(client, EmbeddingModelClient):

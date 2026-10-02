@@ -113,3 +113,81 @@ async def test_tool_media_user_message_is_resolved_for_the_provider(tmp_path, mo
     assert user_parts[0] == {"type": "text", "text": "Media returned by tool call(s): read_file"}
     assert user_parts[1]["type"] == "image_url"
     assert user_parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+@pytest.mark.parametrize("result_path", ["final", "stopped", "tools"])
+@pytest.mark.parametrize("use_fallback", [False, True])
+@pytest.mark.anyio
+async def test_agent_step_carries_identity_and_upstream_name(monkeypatch, use_fallback, result_path):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from core.agent.agent_executor import AgentExecutionContext, event_handler_reg, EventType
+    from core.provider import LLMModelClient, LLMRequest, LLMResponse, ModelInfo, ModelType, ProviderAPIError
+
+    async def stop_event(event, response):
+        event.is_stopped = True
+
+    def handlers(event_type):
+        if result_path == "stopped" and event_type == EventType.ON_LLM_RESPONSE:
+            return [SimpleNamespace(exec_handler=stop_event)]
+        return []
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", handlers)
+    models = []
+    for name in ("primary-upstream", "fallback-upstream"):
+        model = LLMModelClient(ModelInfo(
+            model_type=ModelType.LLM, model_id=f"internal-{name}", model_name=name,
+            provider_id="provider", provider_name="Test Provider",
+        ))
+        response = LLMResponse("")
+        if result_path == "tools":
+            response.tool_calls = [{"id": "call-1", "type": "function",
+                                    "function": {"name": "test", "arguments": "{}"}}]
+        model.chat = AsyncMock(return_value=response)
+        models.append(model)
+    if use_fallback:
+        models[0].chat.side_effect = ProviderAPIError("Simulated provider failure")
+
+    async def execute_tool(event, response, **kwargs):
+        response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "name": "test", "content": ""}]
+
+    context = AgentExecutionContext(
+        event=SimpleNamespace(sid="test-session", is_stopped=False),
+        request=LLMRequest(messages=[]), new_messages=[], model_group=models,
+    )
+    executor = AgentExecutor(SimpleNamespace(execute_tool=execute_tool))
+    steps = [step async for step in executor.run(context, max_steps=1)]
+    assert len(steps) == 1
+    assert steps[0].state == ("stopped" if result_path == "stopped" else "success")
+    expected_name = "fallback-upstream" if use_fallback else "primary-upstream"
+    assert steps[0].model_id == f"internal-{expected_name}"
+    assert steps[0].model_name == expected_name
+
+
+@pytest.mark.anyio
+async def test_failed_agent_step_reports_last_attempted_model_identity(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from core.agent.agent_executor import AgentExecutionContext, event_handler_reg
+    from core.provider import LLMModelClient, LLMRequest, ModelInfo, ModelType, ProviderAPIError
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda *args, **kwargs: [])
+    models = []
+    for name in ("primary-upstream", "fallback-upstream"):
+        model = LLMModelClient(ModelInfo(
+            model_type=ModelType.LLM, model_id=f"internal-{name}", model_name=name,
+            provider_id="provider", provider_name="Test Provider",
+        ))
+        model.chat = AsyncMock(side_effect=ProviderAPIError("Simulated provider failure"))
+        models.append(model)
+    context = AgentExecutionContext(
+        event=SimpleNamespace(sid="test-session", is_stopped=False),
+        request=LLMRequest(messages=[]), new_messages=[], model_group=models,
+    )
+    steps = [step async for step in AgentExecutor(None).run(context, max_steps=1)]
+    assert len(steps) == 1
+    assert steps[0].state == "error"
+    assert steps[0].model_id == "internal-fallback-upstream"
+    assert steps[0].model_name == "fallback-upstream"

@@ -19,7 +19,7 @@ def _client():
 def _configured_client(images_api):
     client = _client()
     client.model = SimpleNamespace(
-        model_id="gpt-image-1",
+        model_id="internal-image-id", model_name="gpt-image-1",
         model_config={"endpoint": "v1/image", "size": "1024x1024"},
     )
     client._build_client = lambda: SimpleNamespace(images=images_api)

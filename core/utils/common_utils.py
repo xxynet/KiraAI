@@ -86,8 +86,8 @@ async def desc_img(
         request = LLMRequest(messages=messages)
         vlm_model = client
         provider_name = vlm_model.model.provider_name
-        model_id = vlm_model.model.model_id
-        logger.info(f"Describing image using {model_id} ({provider_name})")
+        model_name = vlm_model.model.model_name
+        logger.info(f"Describing image using {model_name} ({provider_name})")
         resp = await vlm_model.chat(request)
         return resp.text_response
     except Exception as e:
@@ -98,8 +98,8 @@ async def desc_img(
 async def text_to_speech(client: TTSModelClient, text: str) -> Record:
         tts_client = client
         provider_name = tts_client.model.provider_name
-        model_id = tts_client.model.model_id
-        logger.info(f"Generating speech using {model_id} ({provider_name})")
+        model_name = tts_client.model.model_name
+        logger.info(f"Generating speech using {model_name} ({provider_name})")
         record = await tts_client.text_to_speech(text)
         if record:
             logger.info(f"Generated speech from text {text}")
@@ -109,8 +109,8 @@ async def text_to_speech(client: TTSModelClient, text: str) -> Record:
 async def speech_to_text(client: STTModelClient, record: Record):
     stt_client = client
     provider_name = stt_client.model.provider_name
-    model_id = stt_client.model.model_id
-    logger.info(f"Recognizing text using {model_id} ({provider_name})")
+    model_name = stt_client.model.model_name
+    logger.info(f"Recognizing text using {model_name} ({provider_name})")
     text = await stt_client.speech_to_text(record)
     logger.info(f"Recognized text: {text}")
     return text
@@ -119,8 +119,8 @@ async def speech_to_text(client: STTModelClient, record: Record):
 async def generate_image(client: ImageModelClient, prompt: str) -> Image:
     image_client = client
     provider_name = image_client.model.provider_name
-    model_id = image_client.model.model_id
-    logger.info(f"Generating image using {model_id} ({provider_name})")
+    model_name = image_client.model.model_name
+    logger.info(f"Generating image using {model_name} ({provider_name})")
     try:
         img_res = await image_client.text_to_image(prompt)
         if img_res:
@@ -136,8 +136,8 @@ async def generate_image(client: ImageModelClient, prompt: str) -> Image:
 async def image_to_image(client: ImageModelClient, prompt: str, image: Union[Image, list[Image]]) -> Image:
     image_client = client
     provider_name = image_client.model.provider_name
-    model_id = image_client.model.model_id
-    logger.info(f"Generating image using {model_id} ({provider_name}) with a reference image")
+    model_name = image_client.model.model_name
+    logger.info(f"Generating image using {model_name} ({provider_name}) with a reference image")
     try:
         img_res = await image_client.image_to_image(prompt=prompt, image=image)
         if img_res:

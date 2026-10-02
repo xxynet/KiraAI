@@ -47,7 +47,7 @@ class ModelInfo:
     """Model type, e.g. llm, tts, image"""
     model_type: ModelType
 
-    """Model ID defined by your provider, e.g. gpt-3.5-turbo"""
+    """Stable internal model identity"""
     model_id: str
 
     """Provider instance ID"""
@@ -61,6 +61,14 @@ class ModelInfo:
 
     """Model instance config"""
     model_config: dict = field(default_factory=dict)
+
+    """Upstream model identifier sent to the provider API."""
+    model_name: str = ""
+
+    def __post_init__(self):
+        # Preserve direct ModelInfo construction used by older integrations.
+        if not self.model_name:
+            self.model_name = self.model_id
 
 
 class BaseModelClient:

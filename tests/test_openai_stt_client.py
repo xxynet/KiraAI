@@ -32,7 +32,7 @@ async def test_openai_compatible_stt_sends_audio_path_and_optional_settings(tmp_
     client = OpenAICompatibleSTTClient(
         ModelInfo(
             model_type=ModelType.STT,
-            model_id="transcription-model",
+            model_id="internal-stt-id", model_name="transcription-model",
             provider_id="test-provider",
             provider_name="Test Provider",
             model_config={"language": "zh", "prompt": "Names: KiraAI"},
@@ -57,7 +57,7 @@ def test_openai_compatible_stt_omits_empty_optional_settings():
     client = OpenAICompatibleSTTClient(
         ModelInfo(
             model_type=ModelType.STT,
-            model_id="transcription-model",
+            model_id="internal-stt-id", model_name="transcription-model",
             provider_id="test-provider",
             provider_name="Test Provider",
             model_config=None,

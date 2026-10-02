@@ -3,6 +3,7 @@ from typing import Dict
 
 from fastapi import Depends, HTTPException
 
+from core.provider.model_identity import DEFAULT_MODEL_TYPES, resolve_model_reference
 from core.logging_manager import get_logger, setup_logging
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -99,6 +100,10 @@ class ConfigRoutes(Routes):
                 notify_config_changed()
             updated = True
         if "models" in payload:
+            models = deepcopy(models)
+            for key, kind in DEFAULT_MODEL_TYPES.items():
+                if key in models:
+                    models[key] = resolve_model_reference(config.get("providers", {}), models[key], kind)
             config["models"] = models
             updated = True
         logging_changed = False

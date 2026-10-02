@@ -237,12 +237,12 @@ class BailianEmbeddingClient(EmbeddingModelClient):
             ) as client:
                 start_time = time.perf_counter()
                 kwargs = {
-                    "model": self.model.model_id,
+                    "model": self.model.model_name,
                     "input": texts,
                 }
                 # dimensions only for built-in text-embedding-v3 / v4
                 # (v2 rejects it; avoid matching custom ids like company-v3-embedding)
-                mid = (self.model.model_id or "").lower().strip()
+                mid = (self.model.model_name or "").lower().strip()
                 if dimensions and mid in {"text-embedding-v3", "text-embedding-v4"}:
                     kwargs["dimensions"] = int(dimensions)
                     kwargs["encoding_format"] = "float"
@@ -252,7 +252,7 @@ class BailianEmbeddingClient(EmbeddingModelClient):
             if elapsed > float(slow_threshold or 0):
                 logger.warning(
                     f"Slow embedding request: {elapsed}s "
-                    f"(threshold: {slow_threshold}s, model: {self.model.model_id})"
+                    f"(threshold: {slow_threshold}s, model: {self.model.model_name})"
                 )
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
@@ -287,7 +287,7 @@ class BailianRerankClient(RerankModelClient):
             logger.error("Bailian Rerank: api_key is not configured")
             return []
 
-        model_id = self.model.model_id
+        model_id = self.model.model_name
         timeout = int(mc.get("timeout", 30) or 30)
         instruct = (mc.get("instruct") or kwargs.get("instruct") or "").strip()
         return_documents = mc.get("return_documents", True)
@@ -1240,7 +1240,7 @@ class BailianImageClient(ImageModelClient):
 
     def _build_payload(self, prompt: str, size: str | None = None, model_id: str | None = None) -> dict:
         mc = self.model.model_config or {}
-        model_id = model_id or self.model.model_id
+        model_id = model_id or self.model.model_name
         n = int(mc.get("n", 1) or 1)
         n = max(1, min(4, n))
         negative_prompt = (mc.get("negative_prompt") or "").strip()
@@ -1337,7 +1337,7 @@ class BailianImageClient(ImageModelClient):
         if not api_key:
             raise RuntimeError("Bailian Image: api_key is not configured")
 
-        configured = self.model.model_id
+        configured = self.model.model_name
         auto_route = self._auto_route_enabled(mc)
         model_id = self._resolve_t2i_model(configured, auto_route=auto_route)
         if model_id != configured:
@@ -1418,7 +1418,7 @@ class BailianImageClient(ImageModelClient):
             if uri:
                 ref_uris.append(uri)
 
-        configured_model = self.model.model_id
+        configured_model = self.model.model_name
         if not ref_uris:
             logger.warning(
                 "Bailian Image2Image: no usable reference image, falling back to text_to_image "
@@ -1616,7 +1616,7 @@ class BailianSTTClient(STTModelClient):
             logger.error("Bailian STT: api_key is not configured")
             return ""
 
-        model_id = self.model.model_id or "paraformer-realtime-v2"
+        model_id = self.model.model_name or "paraformer-realtime-v2"
         sample_rate = int(mc.get("sample_rate", 16000) or 16000)
         audio_format = (mc.get("audio_format") or "wav").lower().strip()
         language_hints_raw = (mc.get("language_hints") or "zh,en").strip()
@@ -2050,7 +2050,7 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
             logger.error("Bailian CosyVoice TTS: voice is not configured")
             return None
 
-        model_id = self.model.model_id
+        model_id = self.model.model_name
         region = _region(mp)
         workspace_id = _workspace_id(mp)
 

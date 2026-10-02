@@ -49,7 +49,7 @@ class ModelScopeImageClient(ImageModelClient):
                 f"{base_url}v1/images/generations",
                 headers={**headers, "X-ModelScope-Async-Mode": "true"},
                 json={
-                    "model": self.model.model_id,
+                    "model": self.model.model_name,
                     "prompt": prompt,
                 },
             )
@@ -110,12 +110,12 @@ class ModelScopeEmbeddingClient(EmbeddingModelClient):
         try:
             start_time = time.perf_counter()
             response = await client.embeddings.create(
-                model=self.model.model_id,
+                model=self.model.model_name,
                 input=texts
             )
             elapsed = round(time.perf_counter() - start_time, 2)
             if slow_threshold is not None and elapsed > slow_threshold:
-                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
+                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Embedding API error: {e}")

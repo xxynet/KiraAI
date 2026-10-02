@@ -5,6 +5,7 @@ import os
 import json
 import sys
 import types
+import copy
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
@@ -16,7 +17,8 @@ from core.provider import BaseProvider, ProviderManager
 from core.adapter import AdapterManager
 from core.adapter.adapter_utils import IMAdapter, SocialMediaAdapter
 from core.adapter.base import BaseAdapter
-from core.config import VERSION
+from core.config import VERSION, ConfigError
+from core.provider.model_migration import migrate_model_select_fields, write_migrated_model_config
 from . import registry
 from .components import PluginComponents
 from .metadata import PluginInfo
@@ -228,19 +230,28 @@ class PluginManager:
         schema_fields = registry._plugin_schemas.get(plugin_name, [])
         if schema_fields:
             self._ensure_plugin_config(plugin_name, schema_fields)
-        current_cfg = self.plugin_configs.get(plugin_name)
+        current_cfg = copy.deepcopy(self.plugin_configs.get(plugin_name))
         if current_cfg is None:
             current_cfg = self._load_plugin_config_from_file(plugin_name)
             self.plugin_configs[plugin_name] = current_cfg
         for key, value in config.items():
             current_cfg[key] = value
+        migrated = migrate_model_select_fields(
+            current_cfg, schema_fields,
+            getattr(getattr(self, "ctx", None), "config", {}).get("providers", {}),
+        )
         PLUGIN_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         config_path = PLUGIN_CONFIG_DIR / f"{plugin_name}.json"
         try:
-            with config_path.open("w", encoding="utf-8") as f:
-                json.dump(current_cfg, f, indent=4, ensure_ascii=False)
+            if migrated:
+                write_migrated_model_config(config_path, current_cfg)
+            else:
+                with config_path.open("w", encoding="utf-8") as f:
+                    json.dump(current_cfg, f, indent=4, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Failed to save plugin config for {plugin_name}: {e}")
+            if migrated:
+                raise ConfigError("failed to save plugin model references") from e
         self.plugin_configs[plugin_name] = current_cfg
         if plugin_name in self.plugin_instances:
             await self.init_plugin(plugin_name)
@@ -629,11 +640,19 @@ class PluginManager:
                 cfg[field.key] = section_cfg
             elif isinstance(field, BaseConfigField) and field.key not in cfg:
                 cfg[field.key] = field.default
+        migrated = migrate_model_select_fields(
+            cfg, schema_fields, getattr(getattr(self, "ctx", None), "config", {}).get("providers", {}),
+        )
         try:
-            with config_path.open("w", encoding="utf-8") as f:
-                json.dump(cfg, f, indent=4, ensure_ascii=False)
+            if migrated:
+                write_migrated_model_config(config_path, cfg)
+            else:
+                with config_path.open("w", encoding="utf-8") as f:
+                    json.dump(cfg, f, indent=4, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Failed to save plugin config for {plugin_name}: {e}")
+            if migrated:
+                raise ConfigError("failed to save plugin model references") from e
         self.plugin_configs[plugin_name] = cfg
 
     async def init(self):

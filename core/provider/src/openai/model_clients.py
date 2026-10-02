@@ -125,7 +125,7 @@ class OpenAIImageClient(ImageModelClient):
         image_size = self.model.model_config.get("size", None)
         try:
             images_response = await client.images.generate(
-                model=self.model.model_id,
+                model=self.model.model_name,
                 prompt=prompt,
                 size=image_size if image_size else None,
             )
@@ -145,7 +145,7 @@ class OpenAIImageClient(ImageModelClient):
 
         try:
             response = await client.chat.completions.create(
-                model=self.model.model_id,
+                model=self.model.model_name,
                 messages=messages,
             )
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
@@ -309,7 +309,7 @@ class OpenAIImageClient(ImageModelClient):
             image_input = image_files[0] if len(image_files) == 1 else image_files
 
             images_response = await client.images.edit(
-                model=self.model.model_id,
+                model=self.model.model_name,
                 prompt=prompt,
                 image=image_input,
                 size=image_size if image_size else None,
@@ -333,7 +333,7 @@ class OpenAIImageClient(ImageModelClient):
         messages = [{"role": "user", "content": content}]
         try:
             response = await client.chat.completions.create(
-                model=self.model.model_id,
+                model=self.model.model_name,
                 messages=messages,
             )
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
@@ -379,12 +379,12 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
         try:
             start_time = time.perf_counter()
             response = await client.embeddings.create(
-                model=self.model.model_id,
+                model=self.model.model_name,
                 input=texts
             )
             elapsed = round(time.perf_counter() - start_time, 2)
             if elapsed > slow_threshold:
-                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
+                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Embedding API error: {e}")

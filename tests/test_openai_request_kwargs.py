@@ -31,7 +31,7 @@ def test_openai_compatible_requests_omit_disabled_tool_parameters(client_type):
     client = client_type(
         ModelInfo(
             model_type=ModelType.LLM,
-            model_id="test-model",
+            model_id="internal-llm-id", model_name="test-model",
             provider_id="test-provider",
             provider_name="Test Provider",
         )
@@ -39,6 +39,7 @@ def test_openai_compatible_requests_omit_disabled_tool_parameters(client_type):
     request = LLMRequest(messages=[{"role": "user", "content": "ping"}])
 
     kwargs = client._build_request_kwargs(request)
+    assert kwargs["model"] == "test-model"
 
     assert kwargs["tools"] is NOT_GIVEN
     assert kwargs["tool_choice"] is NOT_GIVEN

@@ -21,6 +21,11 @@ from core.agent.message import OpenAIMessage
 from core.utils.path_utils import get_config_path, resolve_manifest_icon_path
 from core.logging_manager import get_logger
 from core.config import KiraConfig
+from core.config import config_loader
+from .model_identity import (
+    DEFAULT_MODEL_TYPES, MODEL_CONFIG_VERSION, generate_model_id, resolve_model_entry,
+)
+from .model_migration import migrate_provider_models, migrate_model_config_file
 from core.config.config_field import BaseConfigField, build_fields
 from core.db.service import DatabaseService
 
@@ -280,38 +285,14 @@ class ProviderManager:
         return model_client
 
     def get_default_model_info(self, model_key: str):
-        default_model = self.kira_config.get_config(f"models.{model_key}")
-        if not default_model:
+        reference = self.kira_config.get_config(f"models.{model_key}")
+        if not reference or ":" not in reference:
             raise ValueError(f"{model_key} not set")
-        if default_model and ":" in default_model:
-            model_provider = default_model.split(":")[0]
-            model_id = ":".join(default_model.split(":")[1:])
-
-            model_type_mapping = {
-                "default_llm": "llm",
-                "default_fast_llm": "llm",
-                "default_vlm": "llm",
-                "default_tts": "tts",
-                "default_stt": "stt",
-                "default_image": "image",
-                "default_embedding": "embedding",
-                "default_rerank": "rerank",
-                "default_video": "video"
-            }
-            model_type = model_type_mapping[model_key]
-            model_type_enum = ModelType(model_type)
-
-            model_info = ModelInfo(
-                model_type_enum,
-                model_id,
-                model_provider,
-                self.kira_config.get_config(f"providers.{model_provider}.name"),
-                self.kira_config.get_config(f"providers.{model_provider}.provider_config"),
-                # When the model ID has a dot, kira_config.get_config would return unexpected value.
-                # Guard against a missing model_config section (get_config returns None).
-                (self.kira_config.get_config(f"providers.{model_provider}.model_config.{model_type}") or {}).get(model_id)
-            )
-            return model_info
+        provider_id, model_id = reference.split(":", 1)
+        info = self.get_model_info(provider_id, model_id, DEFAULT_MODEL_TYPES[model_key])
+        if info is None:
+            raise ValueError(f"{model_key} model not found")
+        return info
 
     def get_provider_info(self, provider_id: str) -> Optional[ProviderInfo]:
         providers_config = self.kira_config.get("providers", {})
@@ -348,244 +329,158 @@ class ProviderManager:
         else:
             return False
 
-    def register_model(self, provider_id: str, model_type: str, model_id: str, config: Optional[dict] = None):
-        """
-        Register a model to an existing provider
-        :param provider_id: an ID of an existing provider instance
-        :param model_type: type of the model, e.g. llm, tts, image
-        :param model_id: a specific model ID defined by your provider, e.g. gpt-3.5-turbo
-        :param config: model config
-        :return:
-        """
-        providers_config = self.kira_config.get("providers", {})
-        provider_config = providers_config.get(provider_id)
-        if not provider_config:
-            logger.error(f"Provider {provider_id} not found in config")
-            return False
-        
-        model_config_root = provider_config.setdefault("model_config", {})
-        model_type_config = model_config_root.setdefault(model_type, {})
-            
-        # 3. Get default config from schema
-        model_defaults = {}
-        # 提供商的名字，如OpenAI
-        provider_format = provider_config.get("format")
-        if provider_format:
-            schema = self.get_schema(provider_format)
-            if schema:
-                model_fields_root = schema.get("model_config") or {}
-                type_fields = model_fields_root.get(model_type) or []
-                for field in type_fields:
-                    if isinstance(field, BaseConfigField):
-                        model_defaults[field.key] = field.default
-        
-        model_config = dict(model_defaults)
-        if config:
-            model_config.update(config)
-        
-        model_type_config[model_id] = model_config
-        
+    def _save_provider_models(self, provider_id: str, provider_config: dict):
+        """Persist model changes before applying them to runtime clients."""
+        original = self.kira_config["providers"][provider_id]
         self.kira_config["providers"][provider_id] = provider_config
-        self.kira_config.save_config()
-        
         try:
-            self.set_provider(provider_id, provider_config)
-        except Exception as e:
-            logger.error(f"Failed to re-instantiate provider {provider_id} after registering model: {e}")
-        logger.info(f"Registered model {model_id} ({model_type}) to provider {provider_id}")
-        return True
+            self.kira_config.save_config(raise_on_error=True)
+        except Exception:
+            self.kira_config["providers"][provider_id] = original
+            raise
+        self.set_provider(provider_id, provider_config)
+
+    def _model_defaults(self, provider_config: dict, model_type: str) -> dict:
+        fields = (self.get_schema(provider_config.get("format")) or {}).get("model_config", {})
+        return {
+            field.key: copy.deepcopy(field.default)
+            for field in fields.get(model_type, [])
+            if isinstance(field, BaseConfigField)
+        }
+
+    def register_model(self, provider_id: str, model_type: str, model_name: str, config: Optional[dict] = None):
+        """Register an upstream model under a generated, immutable internal ID."""
+        ModelType(model_type)
+        model_name = model_name.strip()
+        if not model_name:
+            raise ValueError("model_name must not be empty")
+        original = self.kira_config.get("providers", {}).get(provider_id)
+        if not original:
+            return None
+        provider = copy.deepcopy(original)
+        migrate_provider_models(provider)
+        model_id = generate_model_id(provider)
+        model_config = self._model_defaults(provider, model_type)
+        model_config.update(config or {})
+        provider["model_config"].setdefault(model_type, {})[model_id] = {
+            "model_name": model_name, "config": model_config,
+        }
+        self._save_provider_models(provider_id, provider)
+        return model_id
 
     def get_models(self, provider_id: str) -> dict:
-        """Get model info and build model configs"""
-        model_infos = self.get_model_infos(provider_id)
-        models: dict = {}
-        for info in model_infos:
-            type_key = info.model_type.value if isinstance(info.model_type, ModelType) else info.model_type
-            type_dict = models.setdefault(type_key, {})
-            type_dict[info.model_id] = info.model_config
+        """Return model entries keyed by internal ID, with API names and parameters."""
+        models = {}
+        for info in self.get_model_infos(provider_id):
+            models.setdefault(info.model_type.value, {})[info.model_id] = {
+                "model_name": info.model_name, "config": info.model_config,
+            }
         return models
 
+    def _build_model_info(self, provider_id: str, provider: dict, kind: str, model_id: str, entry: dict):
+        modern = provider.get("model_config_version") == MODEL_CONFIG_VERSION
+        return ModelInfo(
+            model_type=ModelType(kind),
+            model_id=model_id,
+            model_name=entry["model_name"] if modern else model_id,
+            provider_id=provider_id,
+            provider_name=provider.get("name", provider_id),
+            provider_config=provider.get("provider_config") or {},
+            model_config=(entry.get("config") or {}) if modern else entry,
+        )
+
     def get_model_info(
-        self,
-        provider_id: str,
-        model_id: str,
+        self, provider_id: str, model_id: str,
         model_type: Optional[ModelType | str] = None,
     ) -> Optional[ModelInfo]:
-        providers_config = self.kira_config.get("providers", {})
-        provider_config = providers_config.get(provider_id) or {}
-        provider_instance_config = provider_config.get("provider_config", {}) or {}
-        provider_name = provider_config.get("name", provider_id)
-        model_config_root = provider_config.get("model_config") or {}
+        provider = self.kira_config.get("providers", {}).get(provider_id) or {}
         if isinstance(model_type, str):
             model_type = ModelType(model_type)
-        for model_type_key, type_models in model_config_root.items():
-            if not isinstance(type_models, dict):
-                continue
-            if model_type is not None and model_type_key != model_type.value:
-                continue
-            if model_id in type_models:
-                model_cfg = type_models[model_id]
-                return ModelInfo(
-                    model_type=ModelType(model_type_key),
-                    model_id=model_id,
-                    provider_id=provider_id,
-                    provider_name=provider_name,
-                    provider_config=provider_instance_config,
-                    model_config=model_cfg,
-                )
+        resolved = resolve_model_entry(provider, model_id, model_type)
+        if resolved:
+            kind, internal_id, entry = resolved
+            return self._build_model_info(provider_id, provider, kind, internal_id, entry)
         return None
 
     def get_model_infos(self, provider_id: str) -> list[ModelInfo]:
-        providers_config = self.kira_config.get("providers", {})
-        provider_config = providers_config.get(provider_id) or {}
-        provider_instance_config = provider_config.get("provider_config", {}) or {}
-        provider_name = provider_config.get("name", provider_id)
-        model_config_root = provider_config.get("model_config") or {}
-        model_infos: list[ModelInfo] = []
-        for model_type_key, type_models in model_config_root.items():
-            if not isinstance(type_models, dict):
-                continue
-            for model_id, model_cfg in type_models.items():
-                if not isinstance(model_cfg, dict):
-                    continue
-                model_infos.append(
-                    ModelInfo(
-                        model_type=ModelType(model_type_key),
-                        model_id=model_id,
-                        provider_id=provider_id,
-                        provider_name=provider_name,
-                        provider_config=provider_instance_config,
-                        model_config=model_cfg,
-                    )
-                )
-        return model_infos
+        provider = self.kira_config.get("providers", {}).get(provider_id) or {}
+        return [
+            self._build_model_info(provider_id, provider, kind, model_id, entry)
+            for kind, models in (provider.get("model_config") or {}).items()
+            if isinstance(models, dict)
+            for model_id, entry in models.items()
+            if isinstance(entry, dict)
+        ]
 
-    def update_model(self, provider_id: str, model_type: str, model_id: str, config: dict) -> bool:
-        providers_config = self.kira_config.get("providers", {})
-        provider_config = providers_config.get(provider_id)
-        if not provider_config:
-            logger.error(f"Provider {provider_id} not found in config")
+    def update_model(
+        self, provider_id: str, model_type: str, model_id: str, config: Optional[dict] = None,
+        model_name: Optional[str] = None,
+    ) -> bool:
+        ModelType(model_type)
+        original = self.kira_config.get("providers", {}).get(provider_id)
+        if not original:
             return False
-
-        model_config_root = provider_config.get("model_config") or {}
-        model_type_config = model_config_root.get(model_type)
-        if not model_type_config or model_id not in model_type_config:
-            logger.error(f"Model {model_id} ({model_type}) not found for provider {provider_id}")
+        provider = copy.deepcopy(original)
+        migrate_provider_models(provider)
+        resolved = resolve_model_entry(provider, model_id, model_type)
+        if not resolved:
             return False
-
-        model_type_config[model_id] = config
-        provider_config["model_config"] = model_config_root
-        self.kira_config["providers"][provider_id] = provider_config
-        self.kira_config.save_config()
-
-        try:
-            self.set_provider(provider_id, provider_config)
-        except Exception as e:
-            logger.error(f"Failed to re-instantiate provider {provider_id} after updating model: {e}")
-
-        logger.info(f"Updated model {model_id} ({model_type}) for provider {provider_id}")
+        entry = resolved[2]
+        if model_name is not None:
+            model_name = model_name.strip()
+            if not model_name:
+                raise ValueError("model_name must not be empty")
+            entry["model_name"] = model_name
+        if config is not None:
+            entry["config"] = copy.deepcopy(config)
+        self._save_provider_models(provider_id, provider)
         return True
 
     def delete_model(self, provider_id: str, model_type: str, model_id: str) -> bool:
-        providers_config = self.kira_config.get("providers", {})
-        provider_config = providers_config.get(provider_id)
-        if not provider_config:
-            logger.error(f"Provider {provider_id} not found in config")
+        ModelType(model_type)
+        original = self.kira_config.get("providers", {}).get(provider_id)
+        if not original:
             return False
-
-        model_config_root = provider_config.get("model_config") or {}
-        model_type_config = model_config_root.get(model_type)
-        if not model_type_config or model_id not in model_type_config:
-            logger.error(f"Model {model_id} ({model_type}) not found for provider {provider_id}")
+        provider = copy.deepcopy(original)
+        migrate_provider_models(provider)
+        resolved = resolve_model_entry(provider, model_id, model_type)
+        if not resolved:
             return False
-
-        del model_type_config[model_id]
-        provider_config["model_config"] = model_config_root
-        self.kira_config["providers"][provider_id] = provider_config
-        self.kira_config.save_config()
-
-        try:
-            self.set_provider(provider_id, provider_config)
-        except Exception as e:
-            logger.error(f"Failed to re-instantiate provider {provider_id} after deleting model: {e}")
-
-        logger.info(f"Deleted model {model_id} ({model_type}) for provider {provider_id}")
+        del provider["model_config"][model_type][resolved[1]]
+        self._save_provider_models(provider_id, provider)
         return True
 
     def sync_models(
-        self,
-        provider_id: str,
-        model_type: str,
-        add_ids: list[str],
-        delete_ids: list[str],
-        config: Optional[dict] = None,
+        self, provider_id: str, model_type: str, add_ids: list[str],
+        delete_ids: list[str], config: Optional[dict] = None,
     ) -> dict:
-        """
-        Batch sync models: add new ones and delete removed ones in a single
-        save + re-instantiate cycle.
-        :param provider_id: provider instance ID
-        :param model_type: e.g. llm, tts, image
-        :param add_ids: model IDs to add
-        :param delete_ids: model IDs to delete
-        :param config: optional config template for newly added models
-        :return: {"added": int, "removed": int, "errors": list[str]}
-        """
-        providers_config = self.kira_config.get("providers", {})
-        provider_config = providers_config.get(provider_id)
-        if not provider_config:
-            return {"added": 0, "removed": 0, "errors": [f"Provider {provider_id} not found"]}
-
-        model_config_root = provider_config.setdefault("model_config", {})
-        model_type_config = model_config_root.setdefault(model_type, {})
-
-        # Build default config from schema
-        model_defaults = {}
-        provider_format = provider_config.get("format")
-        if provider_format:
-            schema = self.get_schema(provider_format)
-            if schema:
-                model_fields_root = schema.get("model_config") or {}
-                type_fields = model_fields_root.get(model_type) or []
-                for field in type_fields:
-                    if isinstance(field, BaseConfigField):
-                        model_defaults[field.key] = field.default
-
-        added = 0
-        removed = 0
-        errors: list[str] = []
-
-        # Add new models
-        for model_id in add_ids:
-            if model_id in model_type_config:
-                continue  # already exists, skip
-            model_cfg = dict(model_defaults)
-            if config:
-                model_cfg.update(config)
-            model_type_config[model_id] = model_cfg
+        """Sync upstream names while preserving IDs and configs of retained entries."""
+        ModelType(model_type)
+        original = self.kira_config.get("providers", {}).get(provider_id)
+        if not original:
+            return {"added": 0, "removed": 0, "errors": ["Provider not found"]}
+        provider = copy.deepcopy(original)
+        migrate_provider_models(provider)
+        models = provider["model_config"].setdefault(model_type, {})
+        names_to_add = {name.strip() for name in add_ids}
+        names_to_delete = {name.strip() for name in delete_ids}
+        if "" in names_to_add or names_to_add & names_to_delete:
+            raise ValueError("Invalid model sync selection")
+        added = removed = 0
+        for name in names_to_add:
+            if any(entry["model_name"] == name for entry in models.values()):
+                continue
+            model_config = self._model_defaults(provider, model_type)
+            model_config.update(config or {})
+            models[generate_model_id(provider)] = {"model_name": name, "config": model_config}
             added += 1
-
-        # Delete removed models
-        for model_id in delete_ids:
-            if model_id not in model_type_config:
-                continue  # doesn't exist, skip
-            del model_type_config[model_id]
-            removed += 1
-
-        # Single save + re-instantiate
-        self.kira_config["providers"][provider_id] = provider_config
-        self.kira_config.save_config()
-
-        try:
-            self.set_provider(provider_id, provider_config)
-        except Exception as e:
-            errors.append(f"Failed to re-instantiate provider: {e}")
-            logger.error(f"Failed to re-instantiate provider {provider_id} after sync: {e}")
-
-        logger.info(
-            f"Synced models for provider {provider_id} ({model_type}): "
-            f"+{added} -{removed}"
-        )
-        return {"added": added, "removed": removed, "errors": errors}
+        for model_id, entry in list(models.items()):
+            if entry["model_name"] in names_to_delete:
+                del models[model_id]
+                removed += 1
+        if added or removed:
+            self._save_provider_models(provider_id, provider)
+        return {"added": added, "removed": removed, "errors": []}
 
     async def health_check(self, provider_id: str, model_type: str, model_id: str) -> dict:
         """
@@ -783,7 +678,10 @@ class ProviderManager:
             type_models = model_config_root.get(model_type)
             if not isinstance(type_models, dict):
                 continue
-            for model_id, model_cfg in type_models.items():
+            for model_id, model_entry in type_models.items():
+                if not isinstance(model_entry, dict):
+                    continue
+                model_cfg = model_entry.get("config") if provider_config.get("model_config_version") == MODEL_CONFIG_VERSION else model_entry
                 if not isinstance(model_cfg, dict):
                     continue
                 for field in type_fields:
@@ -803,6 +701,8 @@ class ProviderManager:
 
     def _load_providers(self):
         """从配置加载所有 providers，同时补充 schema 中新增的配置项"""
+        migrate_model_config_file(self.kira_config, config_loader.CONFIG_PATH)
+        self.providers_config = self.kira_config.get("providers", {})
         providers_config = self.providers_config
         need_save = False
         for provider_id, provider in providers_config.items():
@@ -827,10 +727,11 @@ class ProviderManager:
         generated_config = {
             "format": provider_format,
             "status": "active",
+            "model_config_version": MODEL_CONFIG_VERSION,
             "name": provider_id,
             "provider_config": {},
             "model_config": {
-                # model_type: { model_id: { **model_config } }
+                # model_type: { internal_id: { model_name, config } }
             }
         }
 

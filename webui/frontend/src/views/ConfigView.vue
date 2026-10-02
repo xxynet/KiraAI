@@ -713,7 +713,7 @@ function getModelOptions(key: string, modelType?: string) {
     { value: '', label: t('configuration.none') },
     ...getAvailableModels(key, modelType).map(modelId => ({
       value: modelId,
-      label: modelId,
+      label: providerModels.value[getModelProvider(key)]?.[modelType || ""]?.[modelId]?.model_name || modelId,
     })),
   ]
 }

@@ -42,6 +42,7 @@ class AgentStepResult:
     has_tool_calls: bool
     model_id: str = ""
     err: Optional[str] = None
+    model_name: str = ""
 
 
 class AgentExecutor:
@@ -124,7 +125,8 @@ class AgentExecutor:
 
         provider_name = llm_model.model.provider_name
         model_id = llm_model.model.model_id
-        llm_logger.info(f"[{sid}] Running agent using {model_id} ({provider_name})")
+        model_name = llm_model.model.model_name
+        llm_logger.info(f"[{sid}] Running agent using {model_name} ({provider_name})")
 
         for step in range(max_steps):
             step_index = step + 1
@@ -152,20 +154,21 @@ class AgentExecutor:
             llm_resp = None
             last_exc: Optional[Exception] = None
             for model_idx, model in enumerate(model_group):
+                provider_name = model.model.provider_name
+                model_id = model.model.model_id
+                model_name = model.model.model_name
                 try:
                     llm_resp = await model.chat(request)
                     llm_model = model
                     if model_idx > 0:
-                        provider_name = llm_model.model.provider_name
-                        model_id = model.model.model_id
-                        llm_logger.info(f"[{sid}] Successfully switched to model: {model_id} ({provider_name})")
+                        llm_logger.info(f"[{sid}] Successfully switched to model: {model_name} ({provider_name})")
                     break
                 except (APIStatusError, APITimeoutError, APIConnectionError, ProviderAPIError) as e:
                     last_exc = e
-                    logger.error(f"[{sid}] Model {model.model.model_id} failed: {type(e).__name__}: {e}")
+                    logger.error(f"[{sid}] Model {model.model.model_name} failed: {type(e).__name__}: {e}")
                     if model_idx < len(model_group) - 1:
                         next_model = model_group[model_idx + 1]
-                        llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_id}")
+                        llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_name}")
                         continue
                     else:
                         llm_resp = LLMResponse(f"[ProviderError] All models in the group failed to respond. {type(last_exc).__name__}: {last_exc}")
@@ -217,6 +220,7 @@ class AgentExecutor:
                         is_final=is_final,
                         has_tool_calls=has_tool_calls,
                         model_id=model_id,
+                        model_name=model_name,
                     )
                     return
 
@@ -240,6 +244,7 @@ class AgentExecutor:
                     is_final=is_final,
                     has_tool_calls=has_tool_calls,
                     model_id=model_id,
+                    model_name=model_name,
                 )
                 return
 
@@ -295,6 +300,7 @@ class AgentExecutor:
                 is_final=is_final,
                 has_tool_calls=has_tool_calls,
                 model_id=model_id,
+                model_name=model_name,
             )
             if is_final:
                 return

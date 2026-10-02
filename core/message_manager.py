@@ -818,7 +818,7 @@ class MessageProcessor:
             try:
                 await self.db.add_telemetry_llm_usage(
                     timestamp=int(time.time()),
-                    model=step.model_id,
+                    model=step.model_name,
                     input_tokens=llm_resp.input_tokens or 0,
                     output_tokens=llm_resp.output_tokens or 0,
                     cached_tokens=llm_resp.cached_tokens,

@@ -4,7 +4,7 @@ Pydantic models shared across WebUI routes.
 from typing import Any, Dict, List, Literal, Optional, Union
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from core.plugin.store import PluginStoreItemResponse
 
@@ -107,16 +107,17 @@ class ProviderResponse(ProviderBase):
 
 class ModelCreateRequest(BaseModel):
     model_type: str
-    model_id: str
+    model_name: str = Field(min_length=1, validation_alias=AliasChoices("model_name", "model_id"))
     config: Dict = Field(default_factory=dict)
 
 
 class ModelUpdateRequest(BaseModel):
+    model_name: Optional[str] = Field(default=None, min_length=1)
     config: Dict = Field(default_factory=dict)
 
 
 class ModelSyncRequest(BaseModel):
-    """Batch sync: add new model IDs and delete removed ones."""
+    """Batch sync: add and remove upstream model names."""
     add_ids: List[str] = Field(default_factory=list)
     delete_ids: List[str] = Field(default_factory=list)
     config: Dict = Field(default_factory=dict)

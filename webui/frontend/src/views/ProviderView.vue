@@ -136,7 +136,7 @@
                   :key="modelId"
                   class="flex items-center justify-between py-1 border-b border-gray-100 dark:border-gray-800 last:border-b-0"
                 >
-                  <span class="flex-1 text-sm text-theme-strong">{{ modelId }}</span>
+                  <span class="flex-1 text-sm text-theme-strong">{{ modelConfig.model_name }}</span>
                   <div class="flex items-center space-x-2">
                     <button
                       class="p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors disabled:opacity-50"
@@ -229,18 +229,18 @@
           </div>
           <div class="mb-4">
             <div class="flex items-center mb-2">
-              <label class="block text-sm font-medium text-theme-body">{{ $t('provider.model_id') }}</label>
+              <label class="block text-sm font-medium text-theme-body">{{ $t('provider.model_name') }}</label>
               <div class="relative ml-1 group">
-                <button type="button" class="p-0.5" :aria-label="$t('provider.model_id_tooltip')">
+                <button type="button" class="p-0.5" :aria-label="$t('provider.model_name_tooltip')">
                   <IconInfo class="w-4 h-4 text-theme-faint cursor-help" />
                 </button>
                 <div role="tooltip" class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
-                  {{ $t('provider.model_id_tooltip') }}
+                  {{ $t('provider.model_name_tooltip') }}
                 </div>
               </div>
             </div>
-            <UiInput v-model="modelForm.model_id" type="text" class="w-full rounded-lg px-3 py-2 transition-colors" :placeholder="$t('provider.model_id_placeholder')" :disabled="modelEditMode" />
-            <p class="text-xs text-theme-subtle mt-1">{{ $t('provider.model_id_hint') }}</p>
+            <UiInput v-model="modelForm.model_name" type="text" class="w-full rounded-lg px-3 py-2 transition-colors" :placeholder="$t('provider.model_name_placeholder')" />
+            <p class="text-xs text-theme-subtle mt-1">{{ $t('provider.model_name_hint') }}</p>
           </div>
           <div v-if="modelSchema">
             <ConfigForm ref="modelConfigFormRef" v-model="modelForm.config" :schema="modelSchema" />
@@ -436,7 +436,7 @@ const creating = ref(false)
 
 // Add model
 const modelDialogVisible = ref(false)
-const modelForm = ref({ model_id: '', model_type: '', config: {} as Record<string, any> })
+const modelForm = ref({ model_name: '', model_type: '', config: {} as Record<string, any> })
 const modelSchema = ref<any>(null)
 const addingModel = ref(false)
 const modelEditMode = ref(false)
@@ -705,7 +705,7 @@ function openAddModelDialog(modelType: string) {
   if (!providerSchema.value) return
   modelEditMode.value = false
   originalModelId.value = ''
-  modelForm.value = { model_id: '', model_type: modelType, config: {} }
+  modelForm.value = { model_name: '', model_type: modelType, config: {} }
   // Get model config schema from provider schema
   const modelConfigs = providerSchema.value?.model_config || {}
   modelSchema.value = modelConfigs[modelType] || null
@@ -713,7 +713,7 @@ function openAddModelDialog(modelType: string) {
 }
 
 async function handleAddModel() {
-  if (!selectedId.value || !modelForm.value.model_id) return
+  if (!selectedId.value || !modelForm.value.model_name) return
   const providerId = selectedId.value
   const isEdit = modelEditMode.value
   const validateRes = modelConfigFormRef.value?.validate()
@@ -725,12 +725,13 @@ async function handleAddModel() {
   try {
     if (isEdit) {
       await updateModel(providerId, modelForm.value.model_type, originalModelId.value, {
+        model_name: modelForm.value.model_name,
         config: modelForm.value.config,
       })
     } else {
       await addModel(providerId, {
         model_type: modelForm.value.model_type,
-        model_id: modelForm.value.model_id,
+        model_name: modelForm.value.model_name,
         config: modelForm.value.config,
       })
     }
@@ -751,11 +752,11 @@ async function handleAddModel() {
   }
 }
 
-function editModel(modelType: string, modelId: string, config: any) {
+function editModel(modelType: string, modelId: string, entry: any) {
   if (!providerSchema.value) return
   modelEditMode.value = true
   originalModelId.value = modelId
-  modelForm.value = { model_id: modelId, model_type: modelType, config: deepClone(config ?? {}) }
+  modelForm.value = { model_name: entry.model_name, model_type: modelType, config: deepClone(entry.config ?? {}) }
   const modelConfigs = providerSchema.value?.model_config || {}
   modelSchema.value = modelConfigs[modelType] || null
   modelDialogVisible.value = true
@@ -819,7 +820,7 @@ async function openFetchRemoteModels(modelType: string) {
     const data = res.data?.models || []
     // Snapshot which remote models already exist locally
     const existingModels = providerModels.value[modelType] || {}
-    const existingIds = new Set(Object.keys(existingModels))
+    const existingIds = new Set(Object.values(existingModels).map((entry: any) => entry.model_name))
     remoteModelExistingIds.value = new Set(
       data.map(m => m.id).filter(id => existingIds.has(id))
     )
