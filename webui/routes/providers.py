@@ -1,4 +1,3 @@
-import asyncio
 from typing import Dict, List
 from urllib.parse import quote
 
@@ -372,7 +371,7 @@ class ProvidersRoutes(Routes):
             if not config:
                 raise HTTPException(status_code=404, detail="Provider not found")
             config["status"] = payload.status
-            await asyncio.to_thread(self.lifecycle.kira_config.save_config)
+            self.lifecycle.kira_config.save_config()
             self.lifecycle.provider_manager.set_provider(provider_id, config)
             return await self.get_provider(provider_id)
         provider = self._providers.get(provider_id)
