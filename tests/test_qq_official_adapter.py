@@ -376,7 +376,8 @@ def sdk_message(group, target_id, sender_id="user-openid"):
 
 
 async def dispatch_sdk_message(adapter, group, message):
-    bridge = SimpleNamespace(adapter=adapter)
+    bridge = SimpleNamespace(adapter=adapter, _closing=False)
+    adapter.client = bridge
     callback = (
         qq_official._QQOfficialClient.on_group_at_message_create
         if group else qq_official._QQOfficialClient.on_c2c_message_create
@@ -518,6 +519,7 @@ async def test_manager_reload_applies_empty_group_whitelist_and_stops_previous_c
         def __init__(self, adapter):
             self.adapter = adapter
             self.closed = False
+            self._closing = False
             self.release = asyncio.Event()
 
         async def start(self, **kwargs):
@@ -525,6 +527,7 @@ async def test_manager_reload_applies_empty_group_whitelist_and_stops_previous_c
 
         async def close(self):
             self.closed = True
+            self._closing = True
             self.release.set()
 
     class SavingConfig(dict):
@@ -568,3 +571,278 @@ async def test_manager_reload_applies_empty_group_whitelist_and_stops_previous_c
     assert current_task.done()
     assert not manager._adapters
     assert not manager._adapter_tasks
+
+
+@pytest.fixture
+def sdk_gateway(monkeypatch):
+    from unittest.mock import AsyncMock
+    from botpy.connection import ConnectionSession
+    from botpy.gateway import BotWebSocket
+
+    opened = asyncio.Queue()
+    records = []
+
+    async def login(client, token):
+        client._ws_ap = {
+            "shards": 1, "url": "wss://example.invalid",
+            "session_start_limit": {"remaining": 10, "max_concurrency": 5},
+        }
+        client._connection = ConnectionSession(
+            max_async=5, connect=client.bot_connect, dispatch=client.ws_dispatch,
+            loop=asyncio.get_running_loop(), api=client.api,
+        )
+        client.http.close = AsyncMock()
+
+    async def heartbeat(gateway, interval):
+        await asyncio.Event().wait()
+
+    async def connect(gateway):
+        socket = SimpleNamespace(closed=False)
+        gateway._conn = socket
+        heartbeat_task = gateway._connection.loop.create_task(gateway._send_heart(30))
+        record = SimpleNamespace(
+            task=asyncio.current_task(), heartbeat=heartbeat_task, socket=socket,
+        )
+        records.append(record)
+        try:
+            await asyncio.sleep(0)
+            opened.put_nowait(record)
+            await asyncio.Event().wait()
+        finally:
+            socket.closed = True
+
+    monkeypatch.setattr(qq_official.botpy.Client, "_bot_login", login)
+    monkeypatch.setattr(BotWebSocket, "ws_connect", connect)
+    monkeypatch.setattr(BotWebSocket, "_send_heart", heartbeat)
+    return SimpleNamespace(opened=opened, records=records)
+
+
+async def cleanup_sdk_gateway(records):
+    tasks = [task for record in records for task in (record.task, record.heartbeat)]
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_stop_cancels_independent_gateway_and_heartbeat(sdk_gateway):
+    adapter = make_adapter()
+    client = None
+    try:
+        await adapter.start()
+        client = adapter.client
+        record = await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+        await adapter.stop()
+        assert record.task.done(), "SDK gateway runner survived adapter.stop()"
+        assert record.heartbeat.done(), "SDK heartbeat survived adapter.stop()"
+        assert record.socket.closed
+        await client.on_c2c_message_create(sdk_message(False, "user-openid"))
+        assert adapter.ctx.event_queue.empty(), "Stopped client still published an event"
+    finally:
+        await adapter.stop()
+        await cleanup_sdk_gateway(sdk_gateway.records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", [False, True])
+async def test_real_sdk_reload_revokes_removed_target_and_blocks_old_callbacks(monkeypatch, sdk_gateway, group):
+    from core.adapter.adapter_registry import AdapterManager
+
+    class SavingConfig(dict):
+        def save_config(self):
+            pass
+
+    monkeypatch.setattr(AdapterManager, "_registry", {"QQ Official": QQOfficialAdapter})
+    manager = object.__new__(AdapterManager)
+    manager._adapters = {}
+    manager._adapter_tasks = {}
+    manager.event_queue = asyncio.Queue()
+    manager.kira_config = SavingConfig({"adapters": {"qq-official-test": {
+        "enabled": True, "name": "qq_official", "platform": "QQ Official",
+        "config": make_adapter().config,
+    }}})
+    manager.adas_config = manager.kira_config["adapters"]
+    target_id = "group-openid" if group else "user-openid"
+    callback_name = "on_group_at_message_create" if group else "on_c2c_message_create"
+    try:
+        await manager.register_adapter(manager.get_adapter_info("qq-official-test"))
+        previous = manager.get_adapter("qq_official")
+        previous_client = previous.client
+        previous_gateway = await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+        await getattr(previous_client, callback_name)(sdk_message(group, target_id))
+        assert manager.event_queue.qsize() == 1
+        manager.event_queue.get_nowait()
+
+        scope = "group" if group else "user"
+        await manager.update_adapter("qq-official-test", config={f"{scope}_allow_list": []})
+        current = manager.get_adapter("qq_official")
+        await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+        await getattr(previous_client, callback_name)(sdk_message(group, target_id))
+        await getattr(current.client, callback_name)(sdk_message(group, target_id))
+        assert manager.event_queue.empty(), "Removed target reached the queue through an old client"
+        assert previous_gateway.task.done()
+        assert previous_gateway.heartbeat.done()
+        assert previous_gateway.socket.closed
+        assert current.im._group_reply_ids == {}
+        assert current.im._direct_reply_ids == {}
+    finally:
+        await manager.stop_adapter("qq_official")
+        await cleanup_sdk_gateway(sdk_gateway.records)
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_stop_drains_already_scheduled_message_callback(monkeypatch, sdk_gateway):
+    adapter = make_adapter()
+    entered = asyncio.Event()
+    published = []
+    handler_tasks = []
+
+    async def delayed_handler(message):
+        handler_tasks.append(asyncio.current_task())
+        entered.set()
+        await asyncio.Event().wait()
+        published.append(message)
+
+    monkeypatch.setattr(adapter.im, "_handle_direct_message", delayed_handler)
+    try:
+        await adapter.start()
+        client = adapter.client
+        await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+        client.ws_dispatch("c2c_message_create", sdk_message(False, "user-openid"))
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        await adapter.stop()
+        assert handler_tasks[0].done()
+        assert published == []
+        assert client._tasks == set()
+        client.ws_dispatch("c2c_message_create", sdk_message(False, "user-openid"))
+        await asyncio.sleep(0)
+        assert len(handler_tasks) == 1
+    finally:
+        await adapter.stop()
+        await cleanup_sdk_gateway(sdk_gateway.records)
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_restart_uses_fresh_client_and_only_current_callback_publishes(sdk_gateway):
+    adapter = make_adapter()
+    try:
+        await adapter.start()
+        previous_client = adapter.client
+        await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+        await adapter.stop()
+        await adapter.start()
+        current_client = adapter.client
+        await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+        assert current_client is not previous_client
+        previous_client.ws_dispatch("c2c_message_create", sdk_message(False, "user-openid"))
+        current_client.ws_dispatch("c2c_message_create", sdk_message(False, "user-openid"))
+        await asyncio.sleep(0)
+        assert adapter.ctx.event_queue.qsize() == 1
+    finally:
+        await adapter.stop()
+        await cleanup_sdk_gateway(sdk_gateway.records)
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_http_close_failure_still_cleans_gateway_tasks(sdk_gateway):
+    from unittest.mock import AsyncMock
+
+    adapter = make_adapter()
+    try:
+        await adapter.start()
+        record = await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+        adapter.client.http.close = AsyncMock(side_effect=RuntimeError("simulated HTTP close failure"))
+        await adapter.stop()
+        assert record.task.done()
+        assert record.heartbeat.done()
+        assert record.socket.closed
+        assert adapter.client is None
+        assert adapter._client_task is None
+    finally:
+        await adapter.stop()
+        await cleanup_sdk_gateway(sdk_gateway.records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["stop", "reload"])
+@pytest.mark.parametrize("group", [False, True])
+async def test_real_sdk_stopping_or_reloading_one_instance_keeps_other_instance_alive(monkeypatch, sdk_gateway, action, group):
+    from core.adapter.adapter_registry import AdapterManager
+
+    class SavingConfig(dict):
+        def save_config(self):
+            pass
+
+    monkeypatch.setattr(AdapterManager, "_registry", {"QQ Official": QQOfficialAdapter})
+    manager = object.__new__(AdapterManager)
+    manager._adapters = {}
+    manager._adapter_tasks = {}
+    manager.event_queue = asyncio.Queue()
+    manager.kira_config = SavingConfig({"adapters": {
+        "instance-a": {
+            "enabled": True, "name": "official-a", "platform": "QQ Official",
+            "config": make_adapter(
+                app_id="app-a", user_allow_list=["user-a"], group_allow_list=["group-a"],
+            ).config,
+        },
+        "instance-b": {
+            "enabled": True, "name": "official-b", "platform": "QQ Official",
+            "config": make_adapter(
+                app_id="app-b", user_allow_list=["user-b"], group_allow_list=["group-b"],
+            ).config,
+        },
+    }})
+    manager.adas_config = manager.kira_config["adapters"]
+    try:
+        await manager.register_adapter(manager.get_adapter_info("instance-a"))
+        gateway_a = await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+        adapter_a = manager.get_adapter("official-a")
+        client_a = adapter_a.client
+        await manager.register_adapter(manager.get_adapter_info("instance-b"))
+        gateway_b = await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+        adapter_b = manager.get_adapter("official-b")
+        client_b = adapter_b.client
+        task_b = adapter_b._client_task
+        assert client_a is not client_b
+        assert client_a._tasks.isdisjoint(client_b._tasks)
+        assert client_a.http is not client_b.http
+
+        if action == "stop":
+            await manager.stop_adapter("official-a")
+        else:
+            await manager.update_adapter("instance-a", config={
+                "user_allow_list": [], "group_allow_list": [],
+            })
+            await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
+
+        assert gateway_a.task.done()
+        assert gateway_a.heartbeat.done()
+        assert gateway_a.socket.closed
+        assert manager.get_adapter("official-b") is adapter_b
+        assert adapter_b.client is client_b
+        assert adapter_b._client_task is task_b
+        assert not task_b.done()
+        assert not gateway_b.task.done()
+        assert not gateway_b.heartbeat.done()
+        assert not gateway_b.socket.closed
+        client_b.http.close.assert_not_awaited()
+
+        target_b = "group-b" if group else "user-b"
+        event_name = "group_at_message_create" if group else "c2c_message_create"
+        client_a.ws_dispatch(event_name, sdk_message(group, target_b))
+        client_b.ws_dispatch(event_name, sdk_message(group, target_b))
+        await asyncio.sleep(0)
+        assert manager.event_queue.qsize() == 1
+        event = manager.event_queue.get_nowait()
+        kind = "gm" if group else "dm"
+        assert event.session.sid == f"official-b:{kind}:{target_b}"
+        assert event.message.self_id == "app-b"
+        client_b.ws_dispatch(event_name, sdk_message(group, "unlisted"))
+        await asyncio.sleep(0)
+        assert manager.event_queue.empty()
+    finally:
+        await manager.stop_adapter("official-a")
+        await manager.stop_adapter("official-b")
+        await cleanup_sdk_gateway(sdk_gateway.records)

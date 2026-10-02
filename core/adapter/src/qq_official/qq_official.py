@@ -8,8 +8,10 @@ from Crypto.Cipher import AES
 
 try:
     import botpy
+    from botpy.gateway import BotWebSocket
 except ImportError:
     botpy = None
+    BotWebSocket = None
 
 from core.adapter.access import ListAccessPolicy
 from core.adapter.base import BaseAdapter
@@ -27,11 +29,27 @@ logger = get_logger("qq_official_adapter", "blue")
 QQ_OFFICIAL_BIND_HOST = "q.qq.com"
 
 
+class _QQOfficialWebSocket(BotWebSocket if botpy else object):
+    """Keep SDK heartbeat tasks within the owning client's lifecycle."""
+
+    def __init__(self, session, connection, client):
+        super().__init__(session, connection)
+        self._client = client
+
+    async def _send_heart(self, interval):
+        self._client._track_task(asyncio.current_task())
+        if self._client._closing:
+            return
+        await super()._send_heart(interval)
+
+
 class _QQOfficialClient(botpy.Client if botpy else object):
     """Bridge QQ OpenAPI events to the adapter instance."""
 
     def __init__(self, adapter: "QQOfficialAdapter"):
         self.adapter = adapter
+        self._closing = False
+        self._tasks: set[asyncio.Task] = set()
         intents = botpy.Intents(public_messages=True)
         super().__init__(
             intents=intents,
@@ -39,13 +57,54 @@ class _QQOfficialClient(botpy.Client if botpy else object):
             bot_log=False,
         )
 
+    def _track_task(self, task: asyncio.Task) -> asyncio.Task:
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
+
+    async def bot_connect(self, session):
+        """Own the SDK's independent gateway runner until the entire task exits."""
+        self._track_task(asyncio.current_task())
+        if self._closing:
+            raise asyncio.CancelledError
+        gateway = _QQOfficialWebSocket(session, self._connection, self)
+        try:
+            await gateway.ws_connect()
+        except (Exception, KeyboardInterrupt, SystemExit) as exc:
+            if not self._closing:
+                await gateway.on_error(exc)
+
+    def _schedule_event(self, coro, event_name, *args, **kwargs):
+        return self._track_task(super()._schedule_event(coro, event_name, *args, **kwargs))
+
+    def ws_dispatch(self, event, *args, **kwargs):
+        if not self._closing:
+            super().ws_dispatch(event, *args, **kwargs)
+
+    async def close(self):
+        """Stop gateway, heartbeat and callback tasks as well as the SDK HTTP client."""
+        self._closing = True
+        try:
+            await super().close()
+        finally:
+            current = asyncio.current_task()
+            pending = [task for task in self._tasks if task is not current and not task.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
     async def on_group_at_message_create(self, message):
-        await self.adapter.im._handle_group_message(message)
+        if not self._closing and self.adapter.client is self:
+            await self.adapter.im._handle_group_message(message)
 
     async def on_c2c_message_create(self, message):
-        await self.adapter.im._handle_direct_message(message)
+        if not self._closing and self.adapter.client is self:
+            await self.adapter.im._handle_direct_message(message)
 
     async def on_ready(self):
+        if self._closing or self.adapter.client is not self:
+            return
         robot_name = getattr(getattr(self, "robot", None), "name", "QQ official bot")
         logger.info(f"QQ official bot connected: {robot_name}")
 
@@ -171,6 +230,7 @@ class QQOfficialAdapter(BaseAdapter):
             except asyncio.CancelledError:
                 pass
         self._client_task = None
+        self.client = None
 
     def get_client(self):
         return self.client
