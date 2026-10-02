@@ -41,7 +41,7 @@
               <div class="text-xs text-theme-subtle">{{ localizeProviderType(provider) }}</div>
             </div>
             <span class="px-2 py-1 text-xs rounded-full" :class="provider.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-theme-strong dark:bg-gray-700'">
-              {{ provider.status }}
+              {{ $t(`provider.${provider.status}`) }}
             </span>
           </div>
         </div>
@@ -85,8 +85,18 @@
           <div v-else-if="schemaLoading" class="text-center text-theme-subtle py-4">{{ $t('provider.schema_loading') }}</div>
           <div v-else class="text-theme-subtle py-2">{{ $t('provider.schema_none') }}</div>
           <div class="flex justify-end space-x-3 pt-2">
-            <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50" :disabled="saving || schemaError" @click="saveProviderConfig">
+            <button class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50" :disabled="saving || schemaError || (!!selectedId && togglingIds.has(selectedId))" @click="saveProviderConfig">
               {{ $t('provider.save') }}
+            </button>
+            <button
+              v-if="selectedProvider"
+              type="button"
+              class="text-white px-3 py-2 rounded-lg transition-colors flex items-center disabled:opacity-50"
+              :class="selectedProvider.status === 'active' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'"
+              :disabled="saving || togglingIds.has(selectedProvider.id)"
+              @click="toggleProviderStatus(selectedProvider, selectedProvider.status !== 'active')"
+            >
+              {{ $t(selectedProvider.status === 'active' ? 'provider.disable' : 'provider.enable') }}
             </button>
             <button class="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center" @click="handleDelete">
               {{ $t('provider.delete') }}
@@ -114,7 +124,7 @@
                 <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors" @click.stop="openAddModelDialog(modelType)">
                   <IconPlus class="w-5 h-5" />
                 </button>
-                <button class="p-1 text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors" :title="$t('provider.fetch_remote_models')" @click.stop="openFetchRemoteModels(modelType)">
+                <button class="p-1 text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors disabled:opacity-50" :disabled="selectedProvider.status !== 'active'" :title="$t('provider.fetch_remote_models')" @click.stop="openFetchRemoteModels(modelType)">
                   <IconRefresh class="w-5 h-5" />
                 </button>
               </div>
@@ -130,7 +140,7 @@
                   <div class="flex items-center space-x-2">
                     <button
                       class="p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors disabled:opacity-50"
-                      :disabled="healthCheckingKey === `${modelType}:${String(modelId)}`"
+                      :disabled="selectedProvider.status !== 'active' || healthCheckingKey === `${modelType}:${String(modelId)}`"
                       :title="$t('provider.health_check')"
                       @click="handleHealthCheck(modelType, String(modelId))"
                     >
@@ -153,7 +163,7 @@
                 <button class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="openAddModelDialog(modelType)">
                   + {{ $t('provider.add_model') }}
                 </button>
-                <button class="px-3 py-1.5 text-sm border border-green-300 dark:border-green-600 rounded-lg text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors flex items-center" @click="openFetchRemoteModels(modelType)">
+                <button class="px-3 py-1.5 text-sm border border-green-300 dark:border-green-600 rounded-lg text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors flex items-center disabled:opacity-50" :disabled="selectedProvider.status !== 'active'" @click="openFetchRemoteModels(modelType)">
                   <IconRefresh class="w-4 h-4 mr-1" />
                   {{ $t('provider.fetch_remote_models') }}
                 </button>
@@ -357,7 +367,7 @@ import { useTheme } from '@/composables/useTheme'
 import { notify } from '@/composables/useNotification'
 import {
   getProviders, getProviderTypes, getProviderSchema,
-  createProvider, updateProvider, deleteProvider,
+  createProvider, updateProvider, updateProviderStatus, deleteProvider,
   addModel, updateModel, getModels, deleteModel,
   fetchRemoteModels, syncModels, healthCheck,
 } from '@/api/provider'
@@ -412,6 +422,7 @@ const providerModels = ref<Record<string, any>>({})
 const activeModelGroups = ref<string[]>([])
 const providerName = ref('')
 const saving = ref(false)
+const togglingIds = ref(new Set<string>())
 const schemaLoading = ref(false)
 const schemaError = ref(false)
 let selectProviderRequestId = 0
@@ -509,6 +520,25 @@ async function loadProviders() {
     providers.value = []
     console.error('Failed to load providers:', e)
     notify(t('provider.load_failed'), 'error')
+  }
+}
+
+async function toggleProviderStatus(provider: ProviderResponse, enabled: boolean) {
+  if (togglingIds.value.has(provider.id) || saving.value) return
+  togglingIds.value.add(provider.id)
+  try {
+    const res = await updateProviderStatus(provider.id, enabled ? 'active' : 'inactive')
+    const index = providers.value.findIndex(p => p.id === provider.id)
+    if (index >= 0) providers.value[index] = res.data
+    if (enabled && res.data.status !== 'active') {
+      notify(t('provider.enable_failed'), 'error')
+    } else {
+      notify(t(enabled ? 'provider.enabled' : 'provider.disabled'), 'success')
+    }
+  } catch {
+    notify(t('provider.toggle_failed'), 'error')
+  } finally {
+    togglingIds.value.delete(provider.id)
   }
 }
 
@@ -622,7 +652,7 @@ async function handleCreate() {
 }
 
 async function saveProviderConfig() {
-  if (!selectedId.value) return
+  if (!selectedId.value || togglingIds.value.has(selectedId.value)) return
   const provider = selectedProvider.value
   if (!provider) return
   if (schemaError.value) {
@@ -639,7 +669,6 @@ async function saveProviderConfig() {
     await updateProvider(selectedId.value, {
       name: providerName.value,
       type: provider.type,
-      status: provider.status,
       config: providerConfigValues.value,
     })
     notify(t('provider.save_success'), 'success')

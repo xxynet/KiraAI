@@ -5,11 +5,13 @@ import uuid
 import importlib.util
 import inspect
 import copy
+from contextlib import aclosing
+from functools import wraps
 from pathlib import Path
 from typing import Dict, Optional, Type
 
 from .provider import (
-    BaseProvider, BaseModelClient, ProviderInfo, ModelInfo, ModelType,
+    BaseProvider, BaseModelClient, ProviderInfo, ModelInfo, ModelType, ProviderAPIError,
     LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient,
     VideoModelClient, EmbeddingModelClient, RerankModelClient
 )
@@ -130,7 +132,7 @@ class ProviderManager:
         model_id: str,
         model_type: Optional[ModelType | str] = None,
     ) -> Optional[BaseModelClient]:
-        provider = self.get_provider(provider_id)
+        provider = self._require_provider_available(provider_id)
         model_info = self.get_model_info(provider_id, model_id, model_type)
         if not model_info:
             return
@@ -141,7 +143,38 @@ class ProviderManager:
 
         model_cls = provider.models[model_type_enum]
         model_client = model_cls(model_info)
+        # Recheck at invocation time for clients retained by plugins or agent loops.
+        for name, method in inspect.getmembers(model_client, callable):
+            if not name.startswith('_') and (
+                inspect.iscoroutinefunction(method) or inspect.isasyncgenfunction(method)
+            ):
+                setattr(model_client, name, self._guard_model_call(provider_id, method))
         return model_client
+
+    def _require_provider_available(self, provider_id: str) -> BaseProvider:
+        config = self.kira_config.get('providers', {}).get(provider_id, {})
+        if config.get('status', 'active') != 'active':
+            raise ProviderAPIError(f'Provider {provider_id} is disabled')
+        provider = self.get_provider(provider_id)
+        if provider is None:
+            raise ValueError(f'Provider {provider_id} is not available')
+        return provider
+
+    def _guard_model_call(self, provider_id: str, method):
+        if inspect.isasyncgenfunction(method):
+            @wraps(method)
+            async def guarded_stream(*args, **kwargs):
+                self._require_provider_available(provider_id)
+                async with aclosing(method(*args, **kwargs)) as stream:
+                    async for chunk in stream:
+                        yield chunk
+            return guarded_stream
+
+        @wraps(method)
+        async def guarded_call(*args, **kwargs):
+            self._require_provider_available(provider_id)
+            return await method(*args, **kwargs)
+        return guarded_call
 
     def get_default_llm(self) -> LLMModelClient:
         model_info = self.get_default_model_info("default_llm")
@@ -793,6 +826,7 @@ class ProviderManager:
         provider_fields = schema.get("provider_config") or []
         generated_config = {
             "format": provider_format,
+            "status": "active",
             "name": provider_id,
             "provider_config": {},
             "model_config": {
@@ -813,6 +847,9 @@ class ProviderManager:
         return generated_config
 
     def set_provider(self, provider_id: str, provider: dict):
+        if provider.get("status", "active") != "active":
+            self._providers.pop(provider_id, None)
+            return
         provider_type = provider.get("type")
         provider_format = provider.get("format")
         provider_name = provider.get("name", provider_id)
@@ -837,6 +874,9 @@ class ProviderManager:
 
     def get_provider(self, provider_id: str) -> Optional[BaseProvider]:
         """获取指定的 provider"""
+        config = self.kira_config.get("providers", {}).get(provider_id, {})
+        if config.get("status", "active") != "active":
+            return None
         return self._providers.get(provider_id)
     
     def get_all_providers(self) -> Dict[str, BaseProvider]:
@@ -848,9 +888,7 @@ class ProviderManager:
         Fetch available models from a provider's remote API.
         Returns a list of model info dicts.
         """
-        provider = self.get_provider(provider_id)
-        if not provider:
-            raise ValueError(f"Provider {provider_id} not found")
+        provider = self._require_provider_available(provider_id)
         try:
             models = await provider.get_llm_list()
             return models
