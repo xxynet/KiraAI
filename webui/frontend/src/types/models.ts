@@ -127,11 +127,12 @@ export interface ProviderResponse extends ProviderBase {
 
 export interface ModelCreateRequest {
   model_type: string
-  model_id: string
+  model_name: string
   config: Record<string, any>
 }
 
 export interface ModelUpdateRequest {
+  model_name?: string
   config: Record<string, any>
 }
 

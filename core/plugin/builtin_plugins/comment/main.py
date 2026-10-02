@@ -55,7 +55,7 @@ class DefaultCommentPlugin(BasePlugin):
         try:
             await self.ctx.db.add_telemetry_llm_usage(
                 timestamp=int(time.time()),
-                model=client.model.model_id,
+                model=client.model.model_name,
                 input_tokens=llm_resp.input_tokens or 0,
                 output_tokens=llm_resp.output_tokens or 0,
                 cached_tokens=llm_resp.cached_tokens,

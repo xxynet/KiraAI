@@ -28,7 +28,7 @@ class VolcengineImageClient(ImageModelClient):
         )
         image_size = self.model.model_config.get("size", None)
         images_response = await client.images.generate(
-            model=self.model.model_id,
+            model=self.model.model_name,
             prompt=prompt,
             size=image_size if image_size else None,
             response_format="url",
@@ -50,7 +50,7 @@ class VolcengineImageClient(ImageModelClient):
         )
         image_size = self.model.model_config.get("size", None)
         images_response = await client.images.generate(
-            model=self.model.model_id,
+            model=self.model.model_name,
             prompt=prompt,
             size=image_size if image_size else None,
             response_format="url",
@@ -106,7 +106,7 @@ class VolcengineVideoClient(VideoModelClient):
             "Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}",
         }
         json_data = {
-            "model": self.model.model_id,
+            "model": self.model.model_name,
             "content": [
                 {
                     "type": "text",
@@ -179,12 +179,12 @@ class VolcengineEmbeddingClient(EmbeddingModelClient):
         try:
             start_time = time.perf_counter()
             response = await client.embeddings.create(
-                model=self.model.model_id,
+                model=self.model.model_name,
                 input=texts
             )
             elapsed = round(time.perf_counter() - start_time, 2)
             if slow_threshold is not None and elapsed > slow_threshold:
-                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
+                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Embedding API error: {e}")

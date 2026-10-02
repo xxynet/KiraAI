@@ -61,7 +61,7 @@ class DeepSeekLLMClient(LLMModelClient):
             extra_body.update(user_extra_body)
 
         kwargs = dict(
-            model=self.model.model_id,
+            model=self.model.model_name,
             messages=[m if isinstance(m, dict) else m.to_dict() for m in request.messages],
             tools=request.tools if request.tools else NOT_GIVEN,
             tool_choice=request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,

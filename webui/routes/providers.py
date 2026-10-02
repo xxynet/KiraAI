@@ -391,22 +391,30 @@ class ProvidersRoutes(Routes):
         self._providers[provider_id] = updated
         return updated
 
+    def _change_model(self, operation, **kwargs):
+        try:
+            return operation(**kwargs)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except (ConfigError, OSError) as e:
+            raise HTTPException(status_code=500, detail="Failed to save model configuration") from e
+
     async def add_model(self, provider_id: str, payload: ModelCreateRequest):
         if not self.lifecycle or not self.lifecycle.provider_manager:
             raise HTTPException(status_code=500, detail="Provider manager not available")
         model_type = payload.model_type
-        model_id = payload.model_id
-        if not model_type or not model_id:
-            raise HTTPException(status_code=400, detail="model_type and model_id are required")
-        success = self.lifecycle.provider_manager.register_model(
+        model_name = payload.model_name.strip()
+        if not model_type or not model_name:
+            raise HTTPException(status_code=400, detail="model_type and model_name are required")
+        model_id = self._change_model(self.lifecycle.provider_manager.register_model,
             provider_id=provider_id,
             model_type=model_type,
-            model_id=model_id,
+            model_name=model_name,
             config=payload.config or {},
         )
-        if not success:
-            raise HTTPException(status_code=400, detail="Failed to register model")
-        return {"success": True}
+        if not model_id:
+            raise HTTPException(status_code=404, detail="Provider not found")
+        return {"success": True, "model_id": model_id}
 
     async def get_models(self, provider_id: str):
         if not self.lifecycle or not self.lifecycle.provider_manager:
@@ -423,11 +431,12 @@ class ProvidersRoutes(Routes):
     ):
         if not self.lifecycle or not self.lifecycle.provider_manager:
             raise HTTPException(status_code=500, detail="Provider manager not available")
-        success = self.lifecycle.provider_manager.update_model(
+        success = self._change_model(self.lifecycle.provider_manager.update_model,
             provider_id=provider_id,
             model_type=model_type,
             model_id=model_id,
-            config=payload.config or {},
+            model_name=payload.model_name,
+            config=payload.config if "config" in payload.model_fields_set else None,
         )
         if not success:
             raise HTTPException(status_code=404, detail="Model not found")
@@ -436,7 +445,7 @@ class ProvidersRoutes(Routes):
     async def delete_model(self, provider_id: str, model_type: str, model_id: str):
         if not self.lifecycle or not self.lifecycle.provider_manager:
             raise HTTPException(status_code=500, detail="Provider manager not available")
-        success = self.lifecycle.provider_manager.delete_model(
+        success = self._change_model(self.lifecycle.provider_manager.delete_model,
             provider_id=provider_id,
             model_type=model_type,
             model_id=model_id,
@@ -464,10 +473,10 @@ class ProvidersRoutes(Routes):
         return None
 
     async def sync_models(self, provider_id: str, model_type: str, payload: ModelSyncRequest):
-        """Batch sync models: add new IDs and delete removed IDs in one request."""
+        """Batch sync upstream names while retaining existing internal model IDs."""
         if not self.lifecycle or not self.lifecycle.provider_manager:
             raise HTTPException(status_code=500, detail="Provider manager not available")
-        result = self.lifecycle.provider_manager.sync_models(
+        result = self._change_model(self.lifecycle.provider_manager.sync_models,
             provider_id=provider_id,
             model_type=model_type,
             add_ids=payload.add_ids,

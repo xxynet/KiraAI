@@ -62,7 +62,7 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         if not isinstance(extra_body, dict) or not extra_body:
             extra_body = None
         kwargs = dict(
-            model=self.model.model_id,
+            model=self.model.model_name,
             messages=[m if isinstance(m, dict) else m.to_dict() for m in request.messages],
             tools=request.tools if request.tools else NOT_GIVEN,
             tool_choice=request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
@@ -208,7 +208,7 @@ class OpenAICompatibleTTSClient(TTSModelClient):
         extra_body = section_advanced.get("extra_body")
 
         request_kwargs = {
-            "model": self.model.model_id,
+            "model": self.model.model_name,
             "voice": model_config.get("voice_name", ""),
             "input": text,
             "response_format": "mp3",
@@ -264,7 +264,7 @@ class OpenAICompatibleSTTClient(STTModelClient):
     def _build_request_kwargs(self, record_path: str, **overrides) -> dict:
         model_config = self.model.model_config or {}
         request_kwargs = {
-            "model": self.model.model_id,
+            "model": self.model.model_name,
             "file": Path(record_path),
         }
         for field in ("language", "prompt"):

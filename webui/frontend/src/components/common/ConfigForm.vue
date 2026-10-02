@@ -221,10 +221,10 @@ async function loadModelSelectOptions() {
           const mRes = await getModels(provider.id)
           const modelConfig = mRes.data || {}
           const typeModels = modelConfig[modelType] || {}
-          Object.keys(typeModels).forEach(modelId => {
+          Object.entries(typeModels).forEach(([modelId, entry]: [string, any]) => {
             options.push({
               value: `${provider.id}:${modelId}`,
-              label: `${modelId} (${provider.name || provider.id})`,
+              label: `${entry.model_name} (${provider.name || provider.id})`,
             })
           })
         } catch {

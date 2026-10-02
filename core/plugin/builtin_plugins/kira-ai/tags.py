@@ -132,8 +132,8 @@ class VideoTag(BaseTag):
             return []
 
         provider_name = video_client.model.provider_name
-        model_id = video_client.model.model_id
-        provider_logger.info(f"Generating video using {model_id} ({provider_name})")
+        model_name = video_client.model.model_name
+        provider_logger.info(f"Generating video using {model_name} ({provider_name})")
 
         try:
             video_obj = await video_client.generate_video(prompt=value)

@@ -23,7 +23,7 @@ def build_client(
     return AnthropicCompatibleLLMClient(
         ModelInfo(
             model_type=ModelType.LLM,
-            model_id="claude-test",
+            model_id="internal-anthropic-id", model_name="claude-test",
             provider_id="anthropic-test",
             provider_name="Anthropic Test",
             provider_config=provider_config

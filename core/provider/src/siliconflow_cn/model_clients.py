@@ -30,7 +30,7 @@ class SiliconflowImageClient(ImageModelClient):
     async def text_to_image(self, prompt) -> Image:
         url = "https://api.siliconflow.cn/v1/images/generations"
         payload = {
-            "model": self.model.model_id,
+            "model": self.model.model_name,
             "prompt": prompt,
             "image_size": self.model.model_config.get("image_size", "1024x1024"),
             "batch_size": 1,
@@ -75,7 +75,7 @@ class SiliconflowSTTClient(STTModelClient):
         audio_file.name = filename
 
         files = {"file": (filename, audio_file, mime)}
-        payload = {"model": self.model.model_id}
+        payload = {"model": self.model.model_name}
         headers = {"Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}"}
 
         async with httpx.AsyncClient(timeout=30) as client:
@@ -109,12 +109,12 @@ class SiliconflowEmbeddingClient(EmbeddingModelClient):
         try:
             start_time = time.perf_counter()
             response = await client.embeddings.create(
-                model=self.model.model_id,
+                model=self.model.model_name,
                 input=texts
             )
             elapsed = round(time.perf_counter() - start_time, 2)
             if elapsed > slow_threshold:
-                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_id})")
+                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Embedding API error: {e}")
@@ -139,7 +139,7 @@ class SiliconflowRerankClient(RerankModelClient):
         url = "https://api.siliconflow.cn/v1/rerank"
 
         payload = {
-            "model": self.model.model_id,
+            "model": self.model.model_name,
             "query": query,
             "documents": documents,
         }

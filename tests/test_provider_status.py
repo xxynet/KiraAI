@@ -183,13 +183,14 @@ def test_status_api_persists_toggle_and_preserves_models_and_config(api, manager
     })
     assert response.status_code == 200
     assert manager.get_provider('provider') is None
+    model_id = response.json()['model_id']
     response = api.patch('/api/providers/provider/status', json={'status': 'active'})
     assert response.status_code == 200
     assert response.json()['status'] == 'active'
     assert response.json()['name'] == 'Renamed'
     assert response.json()['config'] == {'option': 'value'}
-    assert 'extra' in api.get('/api/providers/provider/models').json()['llm']
-    assert manager.get_model_client('provider', 'extra', 'llm') is not None
+    assert model_id in api.get('/api/providers/provider/models').json()['llm']
+    assert manager.get_model_client('provider', model_id, 'llm') is not None
 
 
 @pytest.mark.parametrize('status', ['active', 'inactive'])

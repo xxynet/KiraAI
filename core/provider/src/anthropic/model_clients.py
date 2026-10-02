@@ -223,7 +223,7 @@ class AnthropicCompatibleLLMClient(LLMModelClient):
         system, messages = self._convert_messages(request, resolved_messages)
 
         body = {
-            "model": self.model.model_id,
+            "model": self.model.model_name,
             "max_tokens": model_config.get("max_tokens") or 4096,
             "messages": messages,
         }

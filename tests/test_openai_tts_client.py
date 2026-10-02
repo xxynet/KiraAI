@@ -6,7 +6,7 @@ def test_openai_compatible_tts_sends_extra_body_from_advanced_settings():
     client = OpenAICompatibleTTSClient(
         ModelInfo(
             model_type=ModelType.TTS,
-            model_id="tts-model",
+            model_id="internal-tts-id", model_name="tts-model",
             provider_id="test-provider",
             provider_name="Test Provider",
             model_config={
@@ -29,7 +29,7 @@ def test_openai_compatible_tts_omits_empty_extra_body():
     client = OpenAICompatibleTTSClient(
         ModelInfo(
             model_type=ModelType.TTS,
-            model_id="tts-model",
+            model_id="internal-tts-id", model_name="tts-model",
             provider_id="test-provider",
             provider_name="Test Provider",
             model_config={"section_advanced": {"extra_body": {}}},
