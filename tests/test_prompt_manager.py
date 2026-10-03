@@ -2,6 +2,7 @@ import pytest
 
 from core.config.config_loader import KiraConfig
 from core.prompt_manager import PromptManager
+from core.persona.model import PersonaInfo
 
 
 class MockConfig(KiraConfig):
@@ -17,7 +18,7 @@ class MockConfig(KiraConfig):
 
 class MockPersonaManager:
     async def get_persona(self):
-        return type("Persona", (), {"content": "Test persona"})()
+        return PersonaInfo(id="test", content="Test persona")
 
 
 CHAT_ENV = {

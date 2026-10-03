@@ -40,6 +40,9 @@ class PersonaManager:
             created_at=persona_dict.get("created_at"),
             is_active=persona_dict.get("is_active", False),
             reference_image_path=persona_dict.get("reference_image_path"),
+            chat_rules=persona_dict.get("chat_rules", ""),
+            private_chat_rules=persona_dict.get("private_chat_rules", ""),
+            group_chat_rules=persona_dict.get("group_chat_rules", ""),
         )
 
     async def update_persona(self, persona: PersonaInfo):
@@ -53,6 +56,9 @@ class PersonaManager:
             name=persona.name,
             content=persona.content,
             format=persona.format,
+            chat_rules=persona.chat_rules,
+            private_chat_rules=persona.private_chat_rules,
+            group_chat_rules=persona.group_chat_rules,
         )
         return success
 
@@ -80,6 +86,9 @@ class PersonaManager:
             content=persona.content,
             format=persona.format,
             reference_image_path=persona.reference_image_path,
+            chat_rules=persona.chat_rules or "",
+            private_chat_rules=persona.private_chat_rules or "",
+            group_chat_rules=persona.group_chat_rules or "",
         )
         return True
 

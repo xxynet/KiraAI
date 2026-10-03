@@ -11,3 +11,6 @@ class PersonaInfo:
     created_at: Optional[int] = None
     is_active: Optional[bool] = None
     reference_image_path: Optional[str] = None
+    chat_rules: Optional[str] = None
+    private_chat_rules: Optional[str] = None
+    group_chat_rules: Optional[str] = None

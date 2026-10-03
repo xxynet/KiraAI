@@ -160,6 +160,9 @@ class PersonaBase(BaseModel):
     name: str
     format: str = "text"
     content: str = ""
+    chat_rules: str = ""
+    private_chat_rules: str = ""
+    group_chat_rules: str = ""
 
 
 class PersonaGeneratorMessage(BaseModel):

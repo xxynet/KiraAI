@@ -99,4 +99,12 @@ class PromptManager:
             Prompt(templates["tools"], name="tools", source="system"),
             Prompt(templates["time"], name="time", source="system", render_template=True, time_str=formatted_time)
         ]
+        chat_rules = [persona.chat_rules]
+        if chat_env.get("chat_type") == "DirectMessage":
+            chat_rules.append(persona.private_chat_rules)
+        elif chat_env.get("chat_type") == "GroupMessage":
+            chat_rules.append(persona.group_chat_rules)
+        chat_rules_prompt = "\n\n".join(rule for rule in chat_rules if rule)
+        if chat_rules_prompt:
+            agent_prompt.insert(2, Prompt(chat_rules_prompt, name="chat_rules", source="system", end="\n\n"))
         return agent_prompt

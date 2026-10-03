@@ -263,6 +263,7 @@ async def test_reference_image_schema_migration_does_not_scan_or_backfill(legacy
     monkeypatch.setattr(Path, "iterdir", forbid_scan)
     await migrate_to_db.migrate_persona_reference_image_path(service)
     await migrate_to_db.migrate_persona_reference_image_path(service)
+    await migrate_to_db.migrate_persona_chat_rules(service)
     first = await service.get_persona("p1")
     assert first["content"] == "Original"
     assert first["is_active"] is True
