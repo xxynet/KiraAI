@@ -181,6 +181,9 @@ export interface PersonaBase {
   name: string
   format: string
   content: string
+  chat_rules?: string
+  private_chat_rules?: string
+  group_chat_rules?: string
 }
 
 export interface PersonaResponse extends PersonaBase {

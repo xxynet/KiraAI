@@ -281,6 +281,30 @@
               height="50vh"
             />
           </div>
+          <CollapsibleSection
+            class="mb-4"
+            :title="$t('persona.modal_chat_rules_label')"
+            :description="$t('persona.chat_rules_description')"
+            v-model:collapsed="chatRulesCollapsed"
+          >
+            <div class="flex flex-col gap-4">
+              <div v-for="field in chatRuleFields" :key="field.key">
+                <div class="flex justify-between items-center mb-2">
+                  <label class="block text-sm font-medium text-theme-body">
+                    {{ $t(field.label) }}
+                  </label>
+                  <span class="text-xs text-theme-subtle tabular-nums">
+                    {{ t('persona.char_count', { count: [...form[field.key]].length }) }}
+                  </span>
+                </div>
+                <MonacoEditor
+                  v-model="form[field.key]"
+                  language="plaintext"
+                  height="25vh"
+                />
+              </div>
+            </div>
+          </CollapsibleSection>
         </div>
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
           <button
@@ -331,6 +355,7 @@ import {
 } from '@/api/persona'
 import type { PersonaGeneratorMessage, PersonaGeneratorStreamEvent } from '@/api/persona'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
+import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
@@ -465,6 +490,9 @@ const form = ref({
   name: '',
   format: 'text',
   content: '',
+  chat_rules: '',
+  private_chat_rules: '',
+  group_chat_rules: '',
 })
 
 const monacoLanguage = computed(() => {
@@ -480,6 +508,12 @@ const monacoLanguage = computed(() => {
 // Count Unicode code points so that emoji and other non-BMP characters
 // count as one instead of two (UTF-16 surrogate pairs).
 const charCount = computed(() => (form.value.content ? [...form.value.content].length : 0))
+const chatRulesCollapsed = ref(false)
+const chatRuleFields = [
+  { key: 'chat_rules', label: 'persona.global_chat_rules' },
+  { key: 'private_chat_rules', label: 'persona.private_chat_rules' },
+  { key: 'group_chat_rules', label: 'persona.group_chat_rules' },
+] as const
 
 function formatLabel(fmt: string) {
   const map: Record<string, string> = {
@@ -511,7 +545,7 @@ function openManualCreateDialog() {
   createModeVisible.value = false
   editMode.value = false
   editId.value = null
-  form.value = { name: '', format: 'text', content: '' }
+  form.value = { name: '', format: 'text', content: '', chat_rules: '', private_chat_rules: '', group_chat_rules: '' }
   dialogVisible.value = true
 }
 
@@ -582,7 +616,7 @@ function handleGeneratorStreamEvent(event: PersonaGeneratorStreamEvent) {
     resetReferenceImage()
     editMode.value = false
     editId.value = null
-    form.value = { name: event.name, format: event.format, content: event.content }
+    form.value = { name: event.name, format: event.format, content: event.content, chat_rules: '', private_chat_rules: '', group_chat_rules: '' }
     generatorVisible.value = false
     dialogVisible.value = true
     return
@@ -604,6 +638,9 @@ function openEditDialog(persona: PersonaResponse) {
     name: persona.name,
     format: persona.format || 'text',
     content: persona.content || '',
+    chat_rules: persona.chat_rules || '',
+    private_chat_rules: persona.private_chat_rules || '',
+    group_chat_rules: persona.group_chat_rules || '',
   }
   dialogVisible.value = true
   referenceImageStored.value = Boolean(persona.reference_image_path)
@@ -621,6 +658,9 @@ async function handleSave() {
     name: trimmedName,
     format: form.value.format || 'text',
     content: form.value.content || '',
+    chat_rules: form.value.chat_rules || '',
+    private_chat_rules: form.value.private_chat_rules || '',
+    group_chat_rules: form.value.group_chat_rules || '',
   }
   try {
     let id = editId.value

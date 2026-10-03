@@ -174,11 +174,14 @@ class DatabaseService:
         created_at: Optional[int] = None,
         is_active: bool = False,
         reference_image_path: Optional[str] = None,
+        chat_rules: str = "",
+        private_chat_rules: str = "",
+        group_chat_rules: str = "",
     ) -> None:
         if created_at is None:
             created_at = int(time.time())
         async with self.db.transaction() as session:
-            session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at, is_active=is_active, reference_image_path=reference_image_path))
+            session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at, is_active=is_active, reference_image_path=reference_image_path, chat_rules=chat_rules, private_chat_rules=private_chat_rules, group_chat_rules=group_chat_rules))
 
     async def get_persona(self, persona_id: str) -> Optional[dict]:
         stmt = select(Persona).where(Persona.id == persona_id)
@@ -186,7 +189,7 @@ class DatabaseService:
         if row is None:
             return None
         item = row["Persona"]
-        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active, "reference_image_path": item.reference_image_path}
+        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active, "reference_image_path": item.reference_image_path, "chat_rules": item.chat_rules, "private_chat_rules": item.private_chat_rules, "group_chat_rules": item.group_chat_rules}
 
     async def update_persona(
         self,
@@ -195,6 +198,9 @@ class DatabaseService:
         content: Optional[str] = None,
         format: Optional[str] = None,
         reference_image_path: Optional[str] = None,
+        chat_rules: Optional[str] = None,
+        private_chat_rules: Optional[str] = None,
+        group_chat_rules: Optional[str] = None,
     ) -> bool:
         """Update non-activation fields of a persona.
 
@@ -216,6 +222,12 @@ class DatabaseService:
                 item.format = format
             if reference_image_path is not None:
                 item.reference_image_path = reference_image_path
+            if chat_rules is not None:
+                item.chat_rules = chat_rules
+            if private_chat_rules is not None:
+                item.private_chat_rules = private_chat_rules
+            if group_chat_rules is not None:
+                item.group_chat_rules = group_chat_rules
             return True
 
     async def clear_persona_reference_image(self, persona_id: str) -> bool:
@@ -255,7 +267,7 @@ class DatabaseService:
         if row is None:
             return None
         item = row["Persona"]
-        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active, "reference_image_path": item.reference_image_path}
+        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active, "reference_image_path": item.reference_image_path, "chat_rules": item.chat_rules, "private_chat_rules": item.private_chat_rules, "group_chat_rules": item.group_chat_rules}
 
     async def delete_persona(self, persona_id: str) -> bool:
         async with self.db.transaction() as session:
@@ -272,7 +284,7 @@ class DatabaseService:
         stmt = select(Persona).order_by(Persona.id)
         rows = await self.db.fetch_all(stmt)
         return [
-            {"id": r["Persona"].id, "name": r["Persona"].name, "format": r["Persona"].format, "content": r["Persona"].content, "created_at": r["Persona"].created_at, "is_active": r["Persona"].is_active, "reference_image_path": r["Persona"].reference_image_path}
+            {"id": r["Persona"].id, "name": r["Persona"].name, "format": r["Persona"].format, "content": r["Persona"].content, "created_at": r["Persona"].created_at, "is_active": r["Persona"].is_active, "reference_image_path": r["Persona"].reference_image_path, "chat_rules": r["Persona"].chat_rules, "private_chat_rules": r["Persona"].private_chat_rules, "group_chat_rules": r["Persona"].group_chat_rules}
             for r in rows
         ]
 

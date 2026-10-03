@@ -178,6 +178,17 @@ async def migrate_persona_reference_image_path(db_service: DatabaseService) -> N
     logger.info("Added persona reference image path column")
 
 
+async def migrate_persona_chat_rules(db_service: DatabaseService) -> None:
+    """Add separate chat rules while preserving existing persona content."""
+    async with db_service.db.engine.begin() as conn:
+        columns = await conn.run_sync(
+            lambda sync_conn: {column["name"] for column in inspect(sync_conn).get_columns("personas")}
+        )
+        for column in ("chat_rules", "private_chat_rules", "group_chat_rules"):
+            if column not in columns:
+                await conn.execute(text(f"ALTER TABLE personas ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"))
+
+
 def _read_configured_selfie_image(configured_path: str) -> tuple[bytes, str]:
     """Resolve the legacy path using the same rules as the former selfie tag."""
     normalized = configured_path.replace("\\", "/")
@@ -230,5 +241,6 @@ async def run_migrations(db_service: DatabaseService) -> None:
     # Ensure the is_active column exists before migrate_persona reads the table
     await migrate_persona_is_active(db_service)
     await migrate_persona_reference_image_path(db_service)
+    await migrate_persona_chat_rules(db_service)
     await migrate_persona(db_service)
     await migrate_plugin_store_sources(db_service)

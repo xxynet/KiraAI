@@ -32,6 +32,9 @@ class Persona(Base):
     format = Column(String, nullable=False, default="text")
     content = Column(Text, nullable=False)
     reference_image_path = Column(Text, nullable=True)
+    chat_rules = Column(Text, nullable=False, default="")
+    private_chat_rules = Column(Text, nullable=False, default="")
+    group_chat_rules = Column(Text, nullable=False, default="")
     created_at = Column(BigInteger, nullable=False)
     is_active = Column(Boolean, nullable=False, default=False)
 
