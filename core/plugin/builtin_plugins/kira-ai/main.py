@@ -72,7 +72,7 @@ class DefaultPlugin(BasePlugin):
         if "img" in message_types:
             caps = capabilities.get("image_generation", {})
             if caps.get("enabled", True):
-                tag_set.register(ImgTag(ctx=self.ctx))
+                tag_set.register(ImgTag(ctx=self.ctx), SelfieTag(ctx=self.ctx))
         if "record" in message_types:
             caps = capabilities.get("tts", {})
             if caps.get("enabled", True):
@@ -82,10 +82,6 @@ class DefaultPlugin(BasePlugin):
             tag_set.register(build_emoji_tag(emoji_json=emoji_dict)())
         if "poke" in message_types:
             tag_set.register(PokeTag)
-        if "selfie" in message_types:
-            caps = capabilities.get("image_generation", {})
-            if caps.get("enabled", True):
-                tag_set.register(SelfieTag(ctx=self.ctx))
         if "file" in message_types:
             tag_set.register(build_file_tag(sid=event.sid))
         if "video" in message_types:

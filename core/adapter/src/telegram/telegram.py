@@ -71,7 +71,7 @@ class TelegramAdapter(IMAdapter):
 
         # config
         self.bot_token: str = self.config.get("bot_token", "")
-        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "selfie", "file", "video"]
+        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "file", "video"]
 
         self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
 
