@@ -299,7 +299,7 @@
                 </div>
                 <MonacoEditor
                   v-model="form[field.key]"
-                  language="plaintext"
+                  :language="monacoLanguage"
                   height="25vh"
                 />
               </div>
