@@ -15,7 +15,7 @@ REFERENCE_IMAGE_DIRECTORY = "selfie_refs"
 MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024
 _IMAGE_FORMATS = {
     ".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG",
-    ".webp": "WEBP", ".gif": "GIF",
+    ".webp": "WEBP",
 }
 
 
@@ -55,7 +55,7 @@ def save_reference_image(persona_id: str, file_bytes: bytes, filename: str) -> P
     extension = Path(filename).suffix
     expected_format = _IMAGE_FORMATS.get(extension.lower())
     if expected_format is None:
-        raise ValueError("Supported reference image formats: PNG, JPEG, WebP, GIF")
+        raise ValueError("Supported reference image formats: PNG, JPEG, WebP")
     if not file_bytes or len(file_bytes) > MAX_REFERENCE_IMAGE_BYTES:
         raise ValueError("Reference image must be nonempty and at most 10 MB")
     try:

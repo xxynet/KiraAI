@@ -238,7 +238,7 @@
             <input
               ref="referenceImageInput"
               type="file"
-              accept=".png,.jpg,.jpeg,.webp,.gif"
+              accept=".png,.jpg,.jpeg,.webp"
               class="hidden"
               :disabled="saving || referenceImageLoading"
               @change="handleReferenceImageChange"
@@ -391,7 +391,7 @@ function handleReferenceImageChange(event: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
-  if (!/\.(png|jpe?g|webp|gif)$/i.test(file.name) || !file.type.startsWith('image/')) {
+  if (!/\.(png|jpe?g|webp)$/i.test(file.name) || !file.type.startsWith('image/')) {
     notify(t('persona.reference_image_invalid'), 'warning')
     return
   }

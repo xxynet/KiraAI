@@ -94,6 +94,10 @@ async def test_missing_persona_image_cannot_be_saved(image_manager):
 @pytest.mark.anyio
 @pytest.mark.parametrize("filename,content", [
     ("image.svg", b"<svg></svg>"),
+    ("image.gif", image_bytes("GIF")),
+    ("image.GIF", image_bytes("GIF")),
+    ("image.png", image_bytes("GIF")),
+    ("image.webp", image_bytes("GIF")),
     ("image.png", b"not an image"),
     ("image.jpg", image_bytes()),
     ("image.png", b""),
@@ -142,7 +146,7 @@ async def test_reference_image_api_auth_upload_preview_and_errors(image_manager,
         assert (await client.get(endpoint)).content == image_bytes()
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("extension,image_format", [(".jpg", "JPEG"), (".webp", "WEBP"), (".gif", "GIF")])
+@pytest.mark.parametrize("extension,image_format", [(".jpg", "JPEG"), (".webp", "WEBP")])
 async def test_reference_image_supported_formats(image_manager, extension, image_format):
     data = image_bytes(image_format)
     path = await image_manager.set_reference_image("p1", data, "portrait" + extension)
@@ -224,7 +228,7 @@ async def test_reference_image_failed_database_update_restores_old_file(image_ma
     assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1.png"
 
 
-@pytest.mark.parametrize("stored_path", ["../outside.png", "selfie_refs/p2.png", "selfie_refs/p1.txt", "selfie_refs/../p1.png"])
+@pytest.mark.parametrize("stored_path", ["../outside.png", "selfie_refs/p2.png", "selfie_refs/p1.txt", "selfie_refs/../p1.png", "selfie_refs/p1.gif", "selfie_refs/p1.GIF"])
 def test_recorded_reference_image_path_rejects_invalid_locations(stored_path):
     with pytest.raises(ValueError):
         reference_image.get_reference_image_path("p1", stored_path)
@@ -319,7 +323,7 @@ async def test_configured_selfie_migration_copies_to_active_persona_once(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("extension,image_format", [(".jpg", "JPEG"), (".WebP", "WEBP"), (".gif", "GIF")])
+@pytest.mark.parametrize("extension,image_format", [(".jpg", "JPEG"), (".WebP", "WEBP")])
 async def test_configured_selfie_migration_preserves_original_extension(
     image_manager, legacy_selfie_config, tmp_path, extension, image_format,
 ):
@@ -575,3 +579,38 @@ async def test_remove_reference_image_api_auth_idempotency_and_preview(image_man
         assert (await client.get("/api/personas/p1")).json()["reference_image_path"] is None
         assert (await client.delete(endpoint)).status_code == 204
         assert (await client.delete("/api/personas/missing/reference-image")).status_code == 404
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("filename,mime", [
+    ("portrait.gif", "image/gif"),
+    ("portrait.GIF", "image/gif"),
+    ("portrait.png", "image/png"),
+])
+async def test_reference_image_api_rejects_gif_and_keeps_existing_image(image_manager, filename, mime):
+    original = await image_manager.set_reference_image("p1", image_bytes(), "original.png")
+    app = FastAPI()
+    PersonasRoutes(app, SimpleNamespace(persona_manager=image_manager)).register()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        endpoint = "/api/personas/p1/reference-image"
+        response = await client.put(endpoint, files={"file": (filename, image_bytes("GIF"), mime)})
+        assert response.status_code == 400
+        assert (await client.get(endpoint)).content == image_bytes()
+    assert original.read_bytes() == image_bytes()
+    assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1.png"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("operation", ["remove", "replace"])
+async def test_gif_reference_path_is_rejected_for_remove_or_replace(image_manager, tmp_path, operation):
+    path = tmp_path / "data" / "selfie_refs" / "p1.gif"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(image_bytes("GIF"))
+    await image_manager.db.update_persona("p1", reference_image_path="selfie_refs/p1.gif")
+    with pytest.raises(ValueError, match="Invalid reference image path"):
+        if operation == "remove":
+            await image_manager.remove_reference_image("p1")
+        else:
+            await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
+    assert path.exists()
