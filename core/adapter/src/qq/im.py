@@ -393,7 +393,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         if group_id:
             group_info = await self.adapter.bot.get_group_info(group_id=group_id)
-            group_name = group_info.get("data").get("group_name")
+            group_name = ((group_info or {}).get("data") or {}).get("group_name") or str(group_id)
             group_obj = Group(
                 group_id=str(group_id),
                 group_name=group_name

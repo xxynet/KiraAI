@@ -666,3 +666,36 @@ async def test_runner_return_also_cleans_up_handlers(fake_client):
         assert not adapter._event_tasks
     finally:
         await adapter.stop()
+
+
+@pytest.mark.parametrize("group_info", [
+    None,
+    {},
+    {"data": None},
+    {"data": {}},
+    {"data": {"group_name": None}},
+    {"data": {"group_name": ""}},
+])
+async def test_group_notice_survives_missing_group_lookup_data(group_info):
+    adapter = make_adapter({"group_allow_list": [123]})
+    adapter.bot = AsyncMock()
+    adapter.bot.get_group_info.return_value = group_info
+    adapter.bot.get_user_info.return_value = {"data": {"nickname": "alice"}}
+    msg = {
+        "notice_type": "notify", "sub_type": "poke",
+        "self_id": 10000, "target_id": "10000",
+        "user_id": 456, "group_id": 123, "time": 1700000000,
+        "action": "nudged", "suffix": "gently",
+    }
+
+    await adapter.im._on_notice_message(msg)
+
+    event = adapter.ctx.event_queue.get_nowait()
+    assert event.session.sid == "qq:gm:123"
+    assert event.message.group.group_name == "123"
+    assert event.message.is_notice
+    assert event.message.is_mentioned
+    assert "nudged" in event.message.chain[0].text
+    assert "gently" in event.message.chain[0].text
+    assert event.message.raw_message is msg
+    adapter.bot.get_group_info.assert_awaited_once_with(group_id=123)
