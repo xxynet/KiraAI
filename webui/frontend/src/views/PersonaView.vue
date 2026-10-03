@@ -188,36 +188,67 @@
     </Modal>
 
     <!-- Create/Edit Modal -->
-    <Modal v-model="dialogVisible" content-class="max-w-4xl" content-style="width: 90%;">
+    <Modal :model-value="dialogVisible" @update:model-value="setDialogVisible" :persistent="saving" content-class="max-w-4xl" content-style="width: 90%;">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col modal-card" style="max-height: 90vh;">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-lg font-semibold text-theme-strong">
             {{ editMode ? $t('persona.edit_title') : $t('persona.modal_title') }}
           </h3>
-          <button class="text-theme-faint text-theme-faint-hover" @click="dialogVisible = false">
+          <button class="text-theme-faint text-theme-faint-hover" :disabled="saving" @click="setDialogVisible(false)">
             <IconClose class="w-6 h-6" />
           </button>
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-theme-body mb-2">
+          <div
+            class="mb-4 grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-[var(--reference-image-width)_minmax(10rem,1fr)]"
+            :style="{ '--reference-image-width': `${referenceImageHeight * referenceImageAspectRatio}px` }"
+          >
+            <label class="text-sm font-medium text-theme-body sm:col-start-1 sm:row-start-1" for="persona-reference-image">
+              {{ $t('persona.reference_image') }}
+            </label>
+            <button
+              id="persona-reference-image"
+              ref="referenceImageControl"
+              type="button"
+              class="relative flex h-40 w-[var(--reference-image-width)] items-center justify-center overflow-hidden rounded-lg border border-dashed border-gray-300 bg-gray-50 transition-colors duration-300 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:hover:!border-gray-500 dark:hover:bg-gray-700 disabled:opacity-50 sm:col-start-1 sm:row-start-2 sm:row-span-3 sm:h-auto sm:min-h-0 sm:w-full"
+              :aria-label="t('persona.select_reference_image')"
+              :disabled="saving || referenceImageLoading"
+              @click="referenceImageInput?.click()"
+            >
+              <img v-if="referenceImagePreview" :src="referenceImagePreview" :alt="t('persona.reference_image')" class="absolute inset-0 h-full w-full object-contain" @load="handleReferenceImageLoad" />
+              <span v-else class="px-3 text-sm text-theme-subtle">
+                {{ referenceImageLoading ? t('persona.reference_image_loading') : t('persona.select_reference_image') }}
+              </span>
+            </button>
+            <input
+              ref="referenceImageInput"
+              type="file"
+              accept=".png,.jpg,.jpeg,.webp,.gif"
+              class="hidden"
+              :disabled="saving || referenceImageLoading"
+              @change="handleReferenceImageChange"
+            />
+            <p class="text-xs text-theme-subtle sm:col-span-2 sm:col-start-1 sm:row-start-5">{{ $t('persona.reference_image_hint') }}</p>
+            <label class="mt-3 text-sm font-medium text-theme-body sm:col-start-2 sm:row-start-1 sm:mt-0" for="persona-name">
               {{ $t('persona.modal_name_label') }}
             </label>
             <UiInput
+              id="persona-name"
               v-model="form.name"
               type="text"
-              class="w-full rounded-lg px-3 py-2 transition-colors"
+              class="w-full min-w-0 rounded-lg px-3 py-2 transition-colors sm:col-start-2 sm:row-start-2"
               :placeholder="$t('persona.name')"
+              :disabled="saving"
             />
-          </div>
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-theme-body mb-2">
+            <label class="pt-2 text-sm font-medium text-theme-body sm:col-start-2 sm:row-start-3">
               {{ $t('persona.format') }}
             </label>
             <CustomSelect
               v-model="form.format"
               :options="formatOptions"
               :placeholder="$t('persona.format')"
+              :disabled="saving"
+              class="min-w-0 sm:col-start-2 sm:row-start-4"
             />
           </div>
           <div class="mb-4">
@@ -239,7 +270,7 @@
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
           <button
             class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            @click="dialogVisible = false"
+            :disabled="saving" @click="setDialogVisible(false)"
           >
             {{ $t('persona.modal_cancel') }}
           </button>
@@ -276,11 +307,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import {
   getPersonas, createPersona, streamPersonaGenerator, updatePersona, deletePersona, setActivePersona,
+  getPersonaReferenceImage, uploadPersonaReferenceImage,
 } from '@/api/persona'
 import type { PersonaGeneratorMessage, PersonaGeneratorStreamEvent } from '@/api/persona'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
@@ -304,6 +336,78 @@ const dialogVisible = ref(false)
 const editMode = ref(false)
 const editId = ref<string | null>(null)
 const saving = ref(false)
+const referenceImageInput = ref<HTMLInputElement>()
+const referenceImageControl = ref<HTMLButtonElement>()
+const referenceImageAspectRatio = ref(1)
+const referenceImageHeight = ref(126)
+let referenceImageResizeObserver: ResizeObserver | undefined
+const referenceImageFile = ref<File | null>(null)
+const referenceImagePreview = ref('')
+const referenceImageLoading = ref(false)
+let referenceImageRevision = 0
+
+function setDialogVisible(visible: boolean) {
+  if (!saving.value) dialogVisible.value = visible
+}
+
+function resetReferenceImage() {
+  referenceImageRevision++
+  referenceImageFile.value = null
+  referenceImageAspectRatio.value = 1
+  referenceImageLoading.value = false
+  if (referenceImageInput.value) referenceImageInput.value.value = ''
+  if (referenceImagePreview.value) URL.revokeObjectURL(referenceImagePreview.value)
+  referenceImagePreview.value = ''
+}
+
+function handleReferenceImageLoad(event: Event) {
+  const image = event.target as HTMLImageElement
+  if (image.currentSrc === referenceImagePreview.value && image.naturalWidth && image.naturalHeight) {
+    referenceImageAspectRatio.value = image.naturalWidth / image.naturalHeight
+  }
+}
+
+function handleReferenceImageChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (!/\.(png|jpe?g|webp|gif)$/i.test(file.name) || !file.type.startsWith('image/')) {
+    notify(t('persona.reference_image_invalid'), 'warning')
+    return
+  }
+  if (file.size === 0 || file.size > 10 * 1024 * 1024) {
+    notify(t('persona.reference_image_size_limit'), 'warning')
+    return
+  }
+  resetReferenceImage()
+  referenceImageFile.value = file
+  referenceImagePreview.value = URL.createObjectURL(file)
+}
+
+async function loadReferenceImage(id: string) {
+  const revision = referenceImageRevision
+  referenceImageLoading.value = true
+  try {
+    const response = await getPersonaReferenceImage(id)
+    if (revision !== referenceImageRevision || !dialogVisible.value) return
+    referenceImagePreview.value = URL.createObjectURL(response.data)
+  } catch (error: any) {
+    if (revision === referenceImageRevision && error?.response?.status !== 404) {
+      notify(t('persona.reference_image_load_failed'), 'error')
+    }
+  } finally {
+    if (revision === referenceImageRevision) referenceImageLoading.value = false
+  }
+}
+
+watch(dialogVisible, (visible) => {
+  if (!visible) resetReferenceImage()
+})
+onUnmounted(() => {
+  referenceImageResizeObserver?.disconnect()
+  resetReferenceImage()
+})
 const generating = ref(false)
 const generatorAnswer = ref('')
 const generatorConversationRef = ref<HTMLElement>()
@@ -374,6 +478,7 @@ function openCreateDialog() {
 }
 
 function openManualCreateDialog() {
+  resetReferenceImage()
   createModeVisible.value = false
   editMode.value = false
   editId.value = null
@@ -445,6 +550,7 @@ function handleGeneratorStreamEvent(event: PersonaGeneratorStreamEvent) {
     return
   }
   if (event.type === 'proposal') {
+    resetReferenceImage()
     editMode.value = false
     editId.value = null
     form.value = { name: event.name, format: event.format, content: event.content }
@@ -462,6 +568,7 @@ async function scrollGeneratorConversationToBottom() {
 }
 
 function openEditDialog(persona: PersonaResponse) {
+  resetReferenceImage()
   editMode.value = true
   editId.value = persona.id
   form.value = {
@@ -470,6 +577,7 @@ function openEditDialog(persona: PersonaResponse) {
     content: persona.content || '',
   }
   dialogVisible.value = true
+  loadReferenceImage(persona.id)
 }
 
 async function handleSave() {
@@ -485,10 +593,24 @@ async function handleSave() {
     content: form.value.content || '',
   }
   try {
-    if (editMode.value && editId.value) {
-      await updatePersona(editId.value, payload)
+    let id = editId.value
+    if (editMode.value && id) {
+      await updatePersona(id, payload)
     } else {
-      await createPersona(payload)
+      const created = await createPersona(payload)
+      id = created.data.id
+      // Keep the created ID so retrying a failed upload cannot create a duplicate persona.
+      editId.value = id
+      editMode.value = true
+    }
+    if (referenceImageFile.value) {
+      try {
+        await uploadPersonaReferenceImage(id, referenceImageFile.value)
+      } catch {
+        notify(t('persona.reference_image_upload_failed'), 'error')
+        await loadPersonas()
+        return
+      }
     }
     dialogVisible.value = false
     notify(t('persona.save_success'), 'success')
@@ -539,6 +661,11 @@ async function onConfirmSwitch() {
 }
 
 onMounted(() => {
+  referenceImageResizeObserver = new ResizeObserver(([entry]) => {
+    const height = entry?.borderBoxSize[0]?.blockSize
+    if (height && height > 0) referenceImageHeight.value = height
+  })
+  if (referenceImageControl.value) referenceImageResizeObserver.observe(referenceImageControl.value)
   loadPersonas()
 })
 </script>

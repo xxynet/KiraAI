@@ -31,6 +31,7 @@ class Persona(Base):
     name = Column(String, nullable=False)
     format = Column(String, nullable=False, default="text")
     content = Column(Text, nullable=False)
+    reference_image_path = Column(Text, nullable=True)
     created_at = Column(BigInteger, nullable=False)
     is_active = Column(Boolean, nullable=False, default=False)
 

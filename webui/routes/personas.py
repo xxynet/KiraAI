@@ -1,13 +1,14 @@
 import json
 from typing import AsyncIterator, List
 
-from fastapi import Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse, StreamingResponse
 
 from core.logging_manager import get_logger
 from core.agent.message import OpenAIMessage
 from core.persona import PersonaGenerationError, PersonaGenerator, PersonaQuestion, PersonaTextDelta
 from core.persona.model import PersonaInfo
+from core.persona.reference_image import MAX_REFERENCE_IMAGE_BYTES
 
 from webui.models import (
     PersonaBase,
@@ -86,6 +87,20 @@ class PersonasRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
+                path="/api/personas/{persona_id}/reference-image",
+                methods=["GET"],
+                endpoint=self.get_reference_image,
+                tags=["personas"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/personas/{persona_id}/reference-image",
+                methods=["PUT"],
+                endpoint=self.upload_reference_image,
+                tags=["personas"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/personas/{persona_id}",
                 methods=["GET"],
                 endpoint=self.get_persona,
@@ -157,7 +172,7 @@ class PersonasRoutes(Routes):
         if not self.lifecycle or not self.lifecycle.persona_manager:
             raise HTTPException(status_code=404, detail="Persona manager not available")
         items = await self.lifecycle.persona_manager.list_personas()
-        return [PersonaResponse(id=p.id, name=p.name, format=p.format, content=p.content, created_at=p.created_at or 0, is_active=p.is_active or False) for p in items]
+        return [PersonaResponse(id=p.id, name=p.name, format=p.format, content=p.content, created_at=p.created_at or 0, is_active=p.is_active or False, reference_image_path=p.reference_image_path) for p in items]
 
     async def get_active_persona(self):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -165,7 +180,7 @@ class PersonasRoutes(Routes):
         persona = await self.lifecycle.persona_manager.get_active_persona()
         if not persona:
             raise HTTPException(status_code=404, detail="No active persona found")
-        return PersonaResponse(id=persona.id, name=persona.name, format=persona.format, content=persona.content, created_at=persona.created_at or 0, is_active=True)
+        return PersonaResponse(id=persona.id, name=persona.name, format=persona.format, content=persona.content, created_at=persona.created_at or 0, is_active=True, reference_image_path=persona.reference_image_path)
 
     async def set_active_persona(self, payload: dict):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -194,7 +209,7 @@ class PersonasRoutes(Routes):
         created = await self.lifecycle.persona_manager.get_persona(persona_id)
         if not created:
             raise HTTPException(status_code=500, detail="Failed to create persona")
-        return PersonaResponse(id=created.id, name=created.name, format=created.format, content=created.content, created_at=created.created_at or 0, is_active=created.is_active or False)
+        return PersonaResponse(id=created.id, name=created.name, format=created.format, content=created.content, created_at=created.created_at or 0, is_active=created.is_active or False, reference_image_path=created.reference_image_path)
 
     async def persona_generator_turn(self, payload: PersonaGeneratorTurnRequest):
         """Advance a persona-generation interview by one LLM tool call."""
@@ -282,13 +297,42 @@ class PersonasRoutes(Routes):
     def _sse_event(data: dict) -> str:
         return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
+    async def get_reference_image(self, persona_id: str):
+        if not self.lifecycle or not self.lifecycle.persona_manager:
+            raise HTTPException(status_code=404, detail="Persona manager not available")
+        try:
+            path = await self.lifecycle.persona_manager.get_reference_image(persona_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if path is None:
+            raise HTTPException(status_code=404, detail="Reference image not found")
+        return FileResponse(path, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    async def upload_reference_image(self, persona_id: str, file: UploadFile = File(...)):
+        if not self.lifecycle or not self.lifecycle.persona_manager:
+            raise HTTPException(status_code=404, detail="Persona manager not available")
+        try:
+            if not file.filename:
+                raise HTTPException(status_code=400, detail="Reference image file is required")
+            file_bytes = await file.read(MAX_REFERENCE_IMAGE_BYTES + 1)
+            if len(file_bytes) > MAX_REFERENCE_IMAGE_BYTES:
+                raise HTTPException(status_code=413, detail="Reference image exceeds the 10 MB limit")
+            path = await self.lifecycle.persona_manager.set_reference_image(persona_id, file_bytes, file.filename)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="Persona not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        finally:
+            await file.close()
+        return {"filename": path.name}
+
     async def get_persona(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:
             raise HTTPException(status_code=404, detail="Persona manager not available")
         persona = await self.lifecycle.persona_manager.get_persona(persona_id)
         if not persona:
             raise HTTPException(status_code=404, detail="Persona not found")
-        return PersonaResponse(id=persona.id, name=persona.name, format=persona.format, content=persona.content, created_at=persona.created_at or 0, is_active=persona.is_active or False)
+        return PersonaResponse(id=persona.id, name=persona.name, format=persona.format, content=persona.content, created_at=persona.created_at or 0, is_active=persona.is_active or False, reference_image_path=persona.reference_image_path)
 
     async def update_persona(self, persona_id: str, payload: PersonaBase):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -303,7 +347,7 @@ class PersonasRoutes(Routes):
         if not success:
             raise HTTPException(status_code=404, detail="Persona not found")
         updated = await self.lifecycle.persona_manager.get_persona(persona_id)
-        return PersonaResponse(id=persona_id, name=updated.name, format=updated.format, content=updated.content, created_at=updated.created_at or 0, is_active=updated.is_active or False)
+        return PersonaResponse(id=persona_id, name=updated.name, format=updated.format, content=updated.content, created_at=updated.created_at or 0, is_active=updated.is_active or False, reference_image_path=updated.reference_image_path)
 
     async def delete_persona(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:

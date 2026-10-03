@@ -1,12 +1,20 @@
+import asyncio
 import json
 import os
 import time
 from uuid import uuid4
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from sqlalchemy import select, text
+from sqlalchemy import inspect, select, text
 
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
+from core.persona.reference_image import MAX_REFERENCE_IMAGE_BYTES
+
+if TYPE_CHECKING:
+    from core.config import KiraConfig
+    from core.persona import PersonaManager
 
 from .service import DatabaseService
 from .models import ImageDescCache
@@ -158,11 +166,69 @@ async def migrate_persona_is_active(db_service: DatabaseService) -> None:
         raise
 
 
+async def migrate_persona_reference_image_path(db_service: DatabaseService) -> None:
+    """Add the reference image column without inspecting intermediate image files."""
+    async with db_service.db.engine.begin() as conn:
+        columns = await conn.run_sync(
+            lambda sync_conn: {column["name"] for column in inspect(sync_conn).get_columns("personas")}
+        )
+        if "reference_image_path" in columns:
+            return
+        await conn.execute(text("ALTER TABLE personas ADD COLUMN reference_image_path TEXT"))
+    logger.info("Added persona reference image path column")
+
+
+def _read_configured_selfie_image(configured_path: str) -> tuple[bytes, str]:
+    """Resolve the legacy path using the same rules as the former selfie tag."""
+    normalized = configured_path.replace("\\", "/")
+    source = Path(normalized)
+    if not source.is_absolute():
+        source = get_data_path() / normalized.removeprefix("data/")
+    with source.open("rb") as image:
+        return image.read(MAX_REFERENCE_IMAGE_BYTES + 1), source.name
+
+
+async def migrate_selfie_reference_image(persona_manager: "PersonaManager", config: "KiraConfig") -> None:
+    """Copy the legacy configured selfie image to the active persona once."""
+    bot_config = config.get("bot_config", {})
+    selfie_config = bot_config.get("selfie")
+    if not isinstance(selfie_config, dict) or "path" not in selfie_config:
+        return
+
+    configured_path = selfie_config["path"]
+    if configured_path:
+        persona = await persona_manager.get_active_persona()
+        if not persona:
+            logger.warning("Selfie reference migration deferred: no active persona")
+            return
+        # Preserve a reference already saved through the persona editor.
+        if not persona.reference_image_path:
+            try:
+                content, filename = await asyncio.to_thread(_read_configured_selfie_image, configured_path)
+                await persona_manager.set_reference_image(persona.id, content, filename)
+            except Exception as exc:
+                logger.warning("Selfie reference migration deferred (%s)", type(exc).__name__)
+                return
+            logger.info("Copied configured selfie reference to the active persona")
+
+    remaining_config = {key: value for key, value in selfie_config.items() if key != "path"}
+    if remaining_config:
+        bot_config["selfie"] = remaining_config
+    else:
+        bot_config.pop("selfie")
+    try:
+        await asyncio.to_thread(config.save_config, raise_on_error=True)
+    except Exception as exc:
+        bot_config["selfie"] = selfie_config
+        logger.warning("Selfie reference migration config cleanup deferred (%s)", type(exc).__name__)
+
+
 async def run_migrations(db_service: DatabaseService) -> None:
     """Run all data migrations."""
     await migrate_stickers(db_service)
     await migrate_image_desc_cache(db_service)
     # Ensure the is_active column exists before migrate_persona reads the table
     await migrate_persona_is_active(db_service)
+    await migrate_persona_reference_image_path(db_service)
     await migrate_persona(db_service)
     await migrate_plugin_store_sources(db_service)

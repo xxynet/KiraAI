@@ -173,11 +173,12 @@ class DatabaseService:
         format: str = "text",
         created_at: Optional[int] = None,
         is_active: bool = False,
+        reference_image_path: Optional[str] = None,
     ) -> None:
         if created_at is None:
             created_at = int(time.time())
         async with self.db.transaction() as session:
-            session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at, is_active=is_active))
+            session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at, is_active=is_active, reference_image_path=reference_image_path))
 
     async def get_persona(self, persona_id: str) -> Optional[dict]:
         stmt = select(Persona).where(Persona.id == persona_id)
@@ -185,7 +186,7 @@ class DatabaseService:
         if row is None:
             return None
         item = row["Persona"]
-        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active}
+        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active, "reference_image_path": item.reference_image_path}
 
     async def update_persona(
         self,
@@ -193,6 +194,7 @@ class DatabaseService:
         name: Optional[str] = None,
         content: Optional[str] = None,
         format: Optional[str] = None,
+        reference_image_path: Optional[str] = None,
     ) -> bool:
         """Update non-activation fields of a persona.
 
@@ -212,6 +214,8 @@ class DatabaseService:
                 item.content = content
             if format is not None:
                 item.format = format
+            if reference_image_path is not None:
+                item.reference_image_path = reference_image_path
             return True
 
     async def set_active_persona(self, persona_id: str) -> bool:
@@ -243,7 +247,7 @@ class DatabaseService:
         if row is None:
             return None
         item = row["Persona"]
-        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active}
+        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active, "reference_image_path": item.reference_image_path}
 
     async def delete_persona(self, persona_id: str) -> bool:
         async with self.db.transaction() as session:
@@ -260,7 +264,7 @@ class DatabaseService:
         stmt = select(Persona).order_by(Persona.id)
         rows = await self.db.fetch_all(stmt)
         return [
-            {"id": r["Persona"].id, "name": r["Persona"].name, "format": r["Persona"].format, "content": r["Persona"].content, "created_at": r["Persona"].created_at, "is_active": r["Persona"].is_active}
+            {"id": r["Persona"].id, "name": r["Persona"].name, "format": r["Persona"].format, "content": r["Persona"].content, "created_at": r["Persona"].created_at, "is_active": r["Persona"].is_active, "reference_image_path": r["Persona"].reference_image_path}
             for r in rows
         ]
 

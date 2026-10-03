@@ -185,6 +185,7 @@ class PersonaResponse(PersonaBase):
     id: str
     created_at: int = 0
     is_active: bool = False
+    reference_image_path: Optional[str] = None
 
 
 class TokenLoginRequest(BaseModel):

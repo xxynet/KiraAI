@@ -1,15 +1,18 @@
+import asyncio
+from pathlib import Path
 from typing import Optional
 
-from core.utils.path_utils import get_data_path
 from core.db.service import DatabaseService
 
 from .default import default_persona_template
 from .model import PersonaInfo
+from .reference_image import REFERENCE_IMAGE_DIRECTORY, delete_reference_image, get_reference_image_path, save_reference_image
 
 
 class PersonaManager:
     def __init__(self, db: DatabaseService):
         self.db = db
+        self._reference_image_lock = asyncio.Lock()
 
     async def get_persona(self, persona_id: Optional[str] = None) -> Optional[PersonaInfo]:
         """
@@ -35,7 +38,8 @@ class PersonaManager:
             format=persona_dict.get("format"),
             content=persona_dict.get("content"),
             created_at=persona_dict.get("created_at"),
-            is_active=persona_dict.get("is_active", False)
+            is_active=persona_dict.get("is_active", False),
+            reference_image_path=persona_dict.get("reference_image_path"),
         )
 
     async def update_persona(self, persona: PersonaInfo):
@@ -75,6 +79,7 @@ class PersonaManager:
             name=persona.name,
             content=persona.content,
             format=persona.format,
+            reference_image_path=persona.reference_image_path,
         )
         return True
 
@@ -84,7 +89,45 @@ class PersonaManager:
         active = await self.get_active_persona()
         if active and active.id == persona_id:
             raise ValueError("Cannot delete the active persona. Switch to another persona first.")
-        return await self.db.delete_persona(persona_id)
+        async with self._reference_image_lock:
+            persona = await self.get_persona(persona_id)
+            if not persona:
+                return False
+            deleted = await self.db.delete_persona(persona_id)
+            if deleted:
+                await asyncio.to_thread(delete_reference_image, persona.id, persona.reference_image_path)
+            return deleted
+
+    async def get_reference_image(self, persona_id: Optional[str] = None) -> Optional[Path]:
+        """Get the database-recorded selfie reference for a given or active persona."""
+        async with self._reference_image_lock:
+            persona = await self.get_persona(persona_id)
+            if not persona:
+                return None
+            return await asyncio.to_thread(get_reference_image_path, persona.id, persona.reference_image_path)
+
+    async def set_reference_image(self, persona_id: str, file_bytes: bytes, filename: str) -> Path:
+        """Replace a selfie reference and persist its path before removing the old file."""
+        async with self._reference_image_lock:
+            persona = await self.get_persona(persona_id)
+            if not persona:
+                raise LookupError("Persona not found")
+            previous_path = await asyncio.to_thread(get_reference_image_path, persona.id, persona.reference_image_path)
+            previous_bytes = await asyncio.to_thread(previous_path.read_bytes) if previous_path else None
+            path = await asyncio.to_thread(save_reference_image, persona_id, file_bytes, filename)
+            stored_path = f"{REFERENCE_IMAGE_DIRECTORY}/{path.name}"
+            try:
+                if not await self.db.update_persona(persona_id, reference_image_path=stored_path):
+                    raise LookupError("Persona not found")
+            except Exception:
+                if previous_path == path and previous_bytes is not None:
+                    await asyncio.to_thread(save_reference_image, persona_id, previous_bytes, previous_path.name)
+                else:
+                    await asyncio.to_thread(delete_reference_image, persona_id, stored_path)
+                raise
+            if previous_path and previous_path != path:
+                await asyncio.to_thread(delete_reference_image, persona_id, persona.reference_image_path)
+            return path
 
     async def set_active_persona(self, persona_id: str) -> bool:
         """Set a persona as the active one."""
