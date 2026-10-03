@@ -2,7 +2,7 @@ import json
 from typing import AsyncIterator, List
 
 from fastapi import Depends, File, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from core.logging_manager import get_logger
 from core.agent.message import OpenAIMessage
@@ -97,6 +97,14 @@ class PersonasRoutes(Routes):
                 path="/api/personas/{persona_id}/reference-image",
                 methods=["PUT"],
                 endpoint=self.upload_reference_image,
+                tags=["personas"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/personas/{persona_id}/reference-image",
+                methods=["DELETE"],
+                endpoint=self.remove_reference_image,
+                status_code=status.HTTP_204_NO_CONTENT,
                 tags=["personas"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -307,6 +315,17 @@ class PersonasRoutes(Routes):
         if path is None:
             raise HTTPException(status_code=404, detail="Reference image not found")
         return FileResponse(path, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    async def remove_reference_image(self, persona_id: str):
+        if not self.lifecycle or not self.lifecycle.persona_manager:
+            raise HTTPException(status_code=404, detail="Persona manager not available")
+        try:
+            await self.lifecycle.persona_manager.remove_reference_image(persona_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="Persona not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     async def upload_reference_image(self, persona_id: str, file: UploadFile = File(...)):
         if not self.lifecycle or not self.lifecycle.persona_manager:

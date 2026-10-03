@@ -1,7 +1,7 @@
 import time
 import uuid
 from typing import Optional
-from sqlalchemy import select, delete, or_, and_, func, cast, Integer
+from sqlalchemy import select, update, delete, or_, and_, func, cast, Integer
 
 from .db_mgr import DatabaseManager
 from .models import Sticker, ImageDescCache, Persona, PluginStoreSource, TelemetryMessage, TelemetryLLMUsage
@@ -217,6 +217,14 @@ class DatabaseService:
             if reference_image_path is not None:
                 item.reference_image_path = reference_image_path
             return True
+
+    async def clear_persona_reference_image(self, persona_id: str) -> bool:
+        """Clear the reference path without changing other persona fields."""
+        async with self.db.transaction() as session:
+            result = await session.execute(
+                update(Persona).where(Persona.id == persona_id).values(reference_image_path=None)
+            )
+            return result.rowcount > 0
 
     async def set_active_persona(self, persona_id: str) -> bool:
         """Set a persona as the active one and deactivate all others."""

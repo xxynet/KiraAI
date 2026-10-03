@@ -129,6 +129,24 @@ class PersonaManager:
                 await asyncio.to_thread(delete_reference_image, persona_id, persona.reference_image_path)
             return path
 
+    async def remove_reference_image(self, persona_id: str) -> None:
+        """Clear the recorded reference and remove only that persona's image."""
+        async with self._reference_image_lock:
+            persona = await self.get_persona(persona_id)
+            if not persona:
+                raise LookupError("Persona not found")
+            path = await asyncio.to_thread(
+                get_reference_image_path, persona.id, persona.reference_image_path, require_exists=False
+            )
+            if not await self.db.clear_persona_reference_image(persona.id):
+                raise LookupError("Persona not found")
+            if path is not None:
+                try:
+                    await asyncio.to_thread(delete_reference_image, persona.id, persona.reference_image_path)
+                except OSError:
+                    await self.db.update_persona(persona.id, reference_image_path=persona.reference_image_path)
+                    raise
+
     async def set_active_persona(self, persona_id: str) -> bool:
         """Set a persona as the active one."""
         return await self.db.set_active_persona(persona_id)

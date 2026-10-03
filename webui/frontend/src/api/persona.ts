@@ -113,3 +113,7 @@ export function uploadPersonaReferenceImage(id: string, file: File) {
   data.append('file', file)
   return apiClient.put<{ filename: string }>(`/personas/${encodeURIComponent(id)}/reference-image`, data)
 }
+
+export function removePersonaReferenceImage(id: string) {
+  return apiClient.delete<void>('/personas/' + encodeURIComponent(id) + '/reference-image')
+}

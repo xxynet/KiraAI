@@ -491,3 +491,87 @@ async def test_selfie_tag_missing_reference_does_not_generate(image_manager, mon
     await image_manager.set_active_persona("p1")
     assert await tag.handle("the character smiling") == []
     generate.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_remove_reference_image_clears_database_and_only_recorded_file(image_manager, monkeypatch):
+    removed = await image_manager.set_reference_image("p1", image_bytes(), "portrait.PNG")
+    kept = await image_manager.set_reference_image("p2", image_bytes("JPEG"), "other.jpg")
+    unrecorded = removed.parent / "p1.gif"
+    unrecorded.write_bytes(image_bytes("GIF"))
+    await image_manager.set_active_persona("p1")
+
+    def forbid_scan(*args):
+        raise AssertionError("Removing a reference must not scan directories")
+
+    monkeypatch.setattr(Path, "iterdir", forbid_scan)
+    await image_manager.remove_reference_image("p1")
+    assert not removed.exists()
+    assert kept.exists()
+    assert unrecorded.exists()
+    assert (await image_manager.get_persona("p1")).reference_image_path is None
+    assert (await image_manager.get_active_persona()).is_active is True
+    assert (await image_manager.get_persona("p1")).content == "Original"
+    assert await image_manager.get_reference_image() is None
+    assert await PersonaManager(image_manager.db).get_reference_image("p1") is None
+    await image_manager.remove_reference_image("p1")
+    await image_manager.set_reference_image("p1", image_bytes(), "new.png")
+    assert (await image_manager.get_reference_image()).read_bytes() == image_bytes()
+
+
+@pytest.mark.anyio
+async def test_remove_reference_image_missing_file_still_clears_database(image_manager):
+    path = await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
+    path.unlink()
+    await image_manager.remove_reference_image("p1")
+    assert (await image_manager.get_persona("p1")).reference_image_path is None
+    with pytest.raises(LookupError):
+        await image_manager.remove_reference_image("missing")
+
+
+@pytest.mark.anyio
+async def test_remove_reference_image_database_failure_keeps_file(image_manager, monkeypatch):
+    path = await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
+
+    async def fail_clear(*args):
+        raise RuntimeError("Simulated database failure")
+
+    monkeypatch.setattr(image_manager.db, "clear_persona_reference_image", fail_clear)
+    with pytest.raises(RuntimeError, match="database failure"):
+        await image_manager.remove_reference_image("p1")
+    assert path.read_bytes() == image_bytes()
+    assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1.png"
+
+
+@pytest.mark.anyio
+async def test_remove_reference_image_file_failure_restores_database(image_manager, monkeypatch):
+    path = await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
+
+    def fail_delete(*args):
+        raise OSError("Simulated delete failure")
+
+    monkeypatch.setattr("core.persona.persona_manager.delete_reference_image", fail_delete)
+    with pytest.raises(OSError, match="delete failure"):
+        await image_manager.remove_reference_image("p1")
+    assert path.read_bytes() == image_bytes()
+    assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1.png"
+
+
+@pytest.mark.anyio
+async def test_remove_reference_image_api_auth_idempotency_and_preview(image_manager):
+    app = FastAPI()
+    PersonasRoutes(app, SimpleNamespace(persona_manager=image_manager)).register()
+    path = await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        endpoint = "/api/personas/p1/reference-image"
+        assert (await client.delete(endpoint)).status_code == 401
+        assert path.exists()
+        app.dependency_overrides[require_auth] = lambda: "admin"
+        response = await client.delete(endpoint)
+        assert response.status_code == 204
+        assert response.content == b""
+        assert not path.exists()
+        assert (await client.get(endpoint)).status_code == 404
+        assert (await client.get("/api/personas/p1")).json()["reference_image_path"] is None
+        assert (await client.delete(endpoint)).status_code == 204
+        assert (await client.delete("/api/personas/missing/reference-image")).status_code == 404

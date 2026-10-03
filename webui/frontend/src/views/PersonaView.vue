@@ -206,20 +206,35 @@
             <label class="text-sm font-medium text-theme-body sm:col-start-1 sm:row-start-1" for="persona-reference-image">
               {{ $t('persona.reference_image') }}
             </label>
-            <button
-              id="persona-reference-image"
+            <div
               ref="referenceImageControl"
-              type="button"
-              class="relative flex h-40 w-[var(--reference-image-width)] items-center justify-center overflow-hidden rounded-lg border border-dashed border-gray-300 bg-gray-50 transition-colors duration-300 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:hover:!border-gray-500 dark:hover:bg-gray-700 disabled:opacity-50 sm:col-start-1 sm:row-start-2 sm:row-span-3 sm:h-auto sm:min-h-0 sm:w-full"
-              :aria-label="t('persona.select_reference_image')"
-              :disabled="saving || referenceImageLoading"
-              @click="referenceImageInput?.click()"
+              class="group/reference-image relative h-40 w-[var(--reference-image-width)] sm:col-start-1 sm:row-start-2 sm:row-span-3 sm:h-auto sm:min-h-0 sm:w-full"
             >
-              <img v-if="referenceImagePreview" :src="referenceImagePreview" :alt="t('persona.reference_image')" class="absolute inset-0 h-full w-full object-contain" @load="handleReferenceImageLoad" />
-              <span v-else class="px-3 text-sm text-theme-subtle">
-                {{ referenceImageLoading ? t('persona.reference_image_loading') : t('persona.select_reference_image') }}
-              </span>
-            </button>
+              <button
+                id="persona-reference-image"
+                type="button"
+                class="absolute inset-0 flex h-full w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-gray-300 bg-gray-50 transition-colors duration-300 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:hover:!border-gray-500 dark:hover:bg-gray-700 disabled:opacity-50"
+                :aria-label="t('persona.select_reference_image')"
+                :disabled="saving || referenceImageLoading"
+                @click="referenceImageInput?.click()"
+              >
+                <img v-if="referenceImagePreview" :src="referenceImagePreview" :alt="t('persona.reference_image')" class="absolute inset-0 h-full w-full object-contain" @load="handleReferenceImageLoad" />
+                <span v-else class="px-3 text-sm text-theme-subtle">
+                  {{ referenceImageLoading ? t('persona.reference_image_loading') : t('persona.select_reference_image') }}
+                </span>
+              </button>
+              <button
+                v-if="!referenceImageRemoved && (referenceImagePreview || referenceImageStored)"
+                type="button"
+                class="pointer-events-none absolute right-2 top-2 z-10 rounded-full bg-black/60 p-1 text-white opacity-0 transition-[opacity,background-color] duration-200 hover:bg-black/80 group-hover/reference-image:pointer-events-auto group-hover/reference-image:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 disabled:cursor-not-allowed"
+                :aria-label="t('persona.remove_reference_image')"
+                :title="t('persona.remove_reference_image')"
+                :disabled="saving || referenceImageLoading"
+                @click="handleRemoveReferenceImage"
+              >
+                <IconClose class="h-4 w-4" />
+              </button>
+            </div>
             <input
               ref="referenceImageInput"
               type="file"
@@ -312,7 +327,7 @@ import { useI18n } from 'vue-i18n'
 import { notify } from '@/composables/useNotification'
 import {
   getPersonas, createPersona, streamPersonaGenerator, updatePersona, deletePersona, setActivePersona,
-  getPersonaReferenceImage, uploadPersonaReferenceImage,
+  getPersonaReferenceImage, uploadPersonaReferenceImage, removePersonaReferenceImage,
 } from '@/api/persona'
 import type { PersonaGeneratorMessage, PersonaGeneratorStreamEvent } from '@/api/persona'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
@@ -337,10 +352,12 @@ const editMode = ref(false)
 const editId = ref<string | null>(null)
 const saving = ref(false)
 const referenceImageInput = ref<HTMLInputElement>()
-const referenceImageControl = ref<HTMLButtonElement>()
+const referenceImageControl = ref<HTMLDivElement>()
 const referenceImageAspectRatio = ref(1)
 const referenceImageHeight = ref(126)
 let referenceImageResizeObserver: ResizeObserver | undefined
+const referenceImageStored = ref(false)
+const referenceImageRemoved = ref(false)
 const referenceImageFile = ref<File | null>(null)
 const referenceImagePreview = ref('')
 const referenceImageLoading = ref(false)
@@ -352,6 +369,8 @@ function setDialogVisible(visible: boolean) {
 
 function resetReferenceImage() {
   referenceImageRevision++
+  referenceImageStored.value = false
+  referenceImageRemoved.value = false
   referenceImageFile.value = null
   referenceImageAspectRatio.value = 1
   referenceImageLoading.value = false
@@ -380,9 +399,18 @@ function handleReferenceImageChange(event: Event) {
     notify(t('persona.reference_image_size_limit'), 'warning')
     return
   }
+  const stored = referenceImageStored.value
   resetReferenceImage()
+  referenceImageStored.value = stored
   referenceImageFile.value = file
   referenceImagePreview.value = URL.createObjectURL(file)
+}
+
+function handleRemoveReferenceImage() {
+  const stored = referenceImageStored.value
+  resetReferenceImage()
+  referenceImageStored.value = stored
+  referenceImageRemoved.value = stored
 }
 
 async function loadReferenceImage(id: string) {
@@ -391,6 +419,7 @@ async function loadReferenceImage(id: string) {
   try {
     const response = await getPersonaReferenceImage(id)
     if (revision !== referenceImageRevision || !dialogVisible.value) return
+    referenceImageStored.value = true
     referenceImagePreview.value = URL.createObjectURL(response.data)
   } catch (error: any) {
     if (revision === referenceImageRevision && error?.response?.status !== 404) {
@@ -577,6 +606,7 @@ function openEditDialog(persona: PersonaResponse) {
     content: persona.content || '',
   }
   dialogVisible.value = true
+  referenceImageStored.value = Boolean(persona.reference_image_path)
   loadReferenceImage(persona.id)
 }
 
@@ -608,6 +638,14 @@ async function handleSave() {
         await uploadPersonaReferenceImage(id, referenceImageFile.value)
       } catch {
         notify(t('persona.reference_image_upload_failed'), 'error')
+        await loadPersonas()
+        return
+      }
+    } else if (referenceImageRemoved.value) {
+      try {
+        await removePersonaReferenceImage(id)
+      } catch {
+        notify(t('persona.reference_image_remove_failed'), 'error')
         await loadPersonas()
         return
       }
