@@ -10,3 +10,4 @@ class PersonaInfo:
     content: Optional[str] = None
     created_at: Optional[int] = None
     is_active: Optional[bool] = None
+    reference_image_path: Optional[str] = None

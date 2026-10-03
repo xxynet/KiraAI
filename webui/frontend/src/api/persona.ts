@@ -103,3 +103,17 @@ export function getActivePersona() {
 export function setActivePersona(personaId: string) {
   return apiClient.put('/personas/active', { persona_id: personaId })
 }
+
+export function getPersonaReferenceImage(id: string) {
+  return apiClient.get<Blob>(`/personas/${encodeURIComponent(id)}/reference-image`, { responseType: 'blob' })
+}
+
+export function uploadPersonaReferenceImage(id: string, file: File) {
+  const data = new FormData()
+  data.append('file', file)
+  return apiClient.put<{ filename: string }>(`/personas/${encodeURIComponent(id)}/reference-image`, data)
+}
+
+export function removePersonaReferenceImage(id: string) {
+  return apiClient.delete<void>('/personas/' + encodeURIComponent(id) + '/reference-image')
+}

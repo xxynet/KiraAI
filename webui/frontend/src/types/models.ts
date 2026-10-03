@@ -187,6 +187,7 @@ export interface PersonaResponse extends PersonaBase {
   id: string
   created_at?: number
   is_active?: boolean
+  reference_image_path?: string | null
 }
 
 export interface PersonaContentResponse {

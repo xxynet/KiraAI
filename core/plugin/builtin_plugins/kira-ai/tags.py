@@ -1,4 +1,5 @@
 import asyncio
+import mimetypes
 import os
 from pathlib import Path
 from typing import Optional, Type
@@ -195,30 +196,22 @@ class SelfieTag(BaseTag):
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         try:
-            ref_img_path = self.ctx.config.get('bot_config', {}).get('selfie', {}).get('path', '')
-            if not ref_img_path:
-                message_logger.warning("Selfie reference image not set, skipped generation")
+            ref_file = await self.ctx.persona_mgr.get_reference_image()
+            if ref_file is None:
+                message_logger.warning("Active persona selfie reference image not set or missing, skipped generation")
                 return []
-            ref_img_path = ref_img_path.replace("\\", "/")
-            if os.path.isabs(ref_img_path):
-                ref_file = Path(ref_img_path)
-            elif ref_img_path.startswith("data/"):
-                ref_file = get_data_path() / ref_img_path.removeprefix("data/")
-            else:
-                ref_file = get_data_path() / ref_img_path
-            if ref_file.is_file():
-                img_extension = ref_file.suffix.lstrip(".")
-                bs64 = await image_to_base64(str(ref_file))
-                image_client = self.ctx.provider_mgr.get_default_image()
-                if not image_client:
-                    message_logger.error("Failed to get image client, please set default image model in Configuration")
-                    return []
-                img_res = await image_to_image(image_client, value, image=Image(image=bs64, name=ref_img_path, mime=f"image/{img_extension}"))
-                if img_res:
-                    return [img_res]
-                message_logger.warning("Invalid selfie image result")
-            else:
-                message_logger.warning(f"Selfie reference image not found, skipped generation")
+            image_client = self.ctx.provider_mgr.get_default_image()
+            if not image_client:
+                message_logger.error("Failed to get image client, please set default image model in Configuration")
+                return []
+            bs64 = await image_to_base64(str(ref_file))
+            mime = mimetypes.guess_type(ref_file.name)[0] or "application/octet-stream"
+            img_res = await image_to_image(
+                image_client, value, image=Image(image=bs64, name=ref_file.name, mime=mime)
+            )
+            if img_res:
+                return [img_res]
+            message_logger.warning("Invalid selfie image result")
         except Exception as e:
             message_logger.error(f"Failed to generate selfie: {e}")
         return []

@@ -27,7 +27,7 @@ from core.temp_monitor import AsyncTempMonitor
 from core.telemetry import TelemetryClient
 from core.db.db_mgr import DatabaseManager
 from core.db.service import DatabaseService
-from core.db.migrate_to_db import run_migrations
+from core.db.migrate_to_db import run_migrations, migrate_selfie_reference_image
 
 
 logger = get_logger("lifecycle", "blue")
@@ -170,6 +170,7 @@ class KiraLifecycle:
         # ====== init persona manager ======
         self.persona_manager = PersonaManager(db=self.db_service)
         await self.persona_manager.init_persona()
+        await migrate_selfie_reference_image(self.persona_manager, self.kira_config)
 
         # ====== init sticker manager ======
         self.sticker_manager = StickerManager(db=self.db_service)

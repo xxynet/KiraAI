@@ -17,9 +17,6 @@ DEFAULT_CONFIG = {
             "max_tool_calls_per_turn": 5,
             "tool_call_timeout": 60
         },
-        "selfie": {
-            "path": None
-        },
         "cache": {
             "max_size_mb": 50,
             "max_files": 50,

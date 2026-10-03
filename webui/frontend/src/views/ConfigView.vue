@@ -495,17 +495,6 @@ const allGroups: ConfigGroup[] = [
     ],
   },
   {
-    id: 'selfie',
-    labelKey: 'configuration.groups.selfie',
-    labelFallback: 'Digital Life Appearance',
-    descKey: 'configuration.groups.selfie_desc',
-    descFallback: 'Digital life appearance reference settings',
-    icon: IconImage,
-    fields: [
-      { key: 'bot_config.selfie.path', labelKey: 'configuration.message.selfie_path', labelFallback: 'Selfie Path', hintKey: 'configuration.hints.selfie_path', hintFallback: 'Path to the digital life appearance reference image. Supports both relative (to data directory) and absolute paths', type: 'string', default: '', validation: { required: false } },
-    ],
-  },
-  {
     id: 'locale',
     labelKey: 'configuration.groups.locale',
     labelFallback: 'Locale Settings',
@@ -596,7 +585,7 @@ interface CategoryTab {
 }
 
 const categoryTabs: CategoryTab[] = [
-  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'image-compression', 'selfie'] },
+  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'image-compression'] },
   { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['locale', 'network', 'cache', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
