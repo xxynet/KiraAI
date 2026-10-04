@@ -57,6 +57,7 @@ class NapCatWebSocketClient:
         self.websocket = None
         self.response_futures: dict[str, asyncio.Future] = {}
         self.shutdown_event = asyncio.Event()
+        self._close_task: Optional[asyncio.Task] = None
         self.last_heartbeat: Optional[int] = None
         self.login_success_event: asyncio.Event = asyncio.Event()
         self._listening_task: Optional[asyncio.Task] = None
@@ -258,6 +259,8 @@ class NapCatWebSocketClient:
                         # log it, drop that message, keep listening. Only iterator and
                         # connection failures below are worth a reconnect.
                         logger.error(f"❌ 处理消息失败，已跳过该消息: {e}")
+                if self.shutdown_event.is_set():
+                    break
                 # 走到这里 = 迭代器“正常结束”。websockets 的 __aiter__ 在收到
                 # close code 1000/1001 时是 return，而不是抛异常，所以上面两个
                 # except 都不会触发。不在这里显式按断线处理，外层 while 就会对着
@@ -269,6 +272,8 @@ class NapCatWebSocketClient:
                     break
                 continue
             except websockets.exceptions.ConnectionClosed:
+                if self.shutdown_event.is_set():
+                    break
                 logger.warning("🔌 WebSocket 连接已关闭")
                 success = await self._reconnect()
                 if not success and not self.shutdown_event.is_set():
@@ -277,6 +282,8 @@ class NapCatWebSocketClient:
                     break
                 continue
             except Exception as e:
+                if self.shutdown_event.is_set():
+                    break
                 # Iterator / connection-level failure (individual messages are handled
                 # inside the loop above), so a reconnect is the right response.
                 logger.error(f"❌ 监听错误: {e}，尝试重连")
@@ -550,7 +557,23 @@ class NapCatWebSocketClient:
         return response
 
     async def close(self) -> None:
-        self.shutdown_event.set()
+        current = asyncio.current_task()
+        if self._close_task is None:
+            self.shutdown_event.set()
+            self._close_task = asyncio.create_task(self._close_resources(current))
+        elif current is self._listening_task:
+            # An external cleanup may already be waiting for this listener.
+            return
+        # Caller cancellation must not interrupt the shared resource cleanup.
+        await asyncio.shield(self._close_task)
+        if (
+            self._listening_task is not None
+            and self._listening_task is not current
+            and not self._listening_task.done()
+        ):
+            await asyncio.wait({self._listening_task})
+
+    async def _close_resources(self, caller: Optional[asyncio.Task]) -> None:
         self.login_success_event.clear()
         # fail 挂起请求：等待响应的调用方立即收到明确异常，
         # 而非各自耗尽 wait_for 超时
@@ -570,10 +593,9 @@ class NapCatWebSocketClient:
         # On a reconnect failure, listen_messages calls close() from within
         # _listening_task itself: a task must not cancel and then await itself,
         # and it must not swallow its own cancellation signal either.
-        current = asyncio.current_task()
         if (
             self._listening_task is not None
-            and self._listening_task is not current
+            and self._listening_task is not caller
             and not self._listening_task.done()
         ):
             self._listening_task.cancel()
