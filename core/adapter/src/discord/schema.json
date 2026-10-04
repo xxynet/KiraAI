@@ -76,9 +76,9 @@
     "name": "Debug Mode",
     "type": "switch",
     "default": false,
-    "hint": "Print received raw messages at DEBUG level",
+    "hint": "Log received message IDs at DEBUG level",
     "locales": {
-      "zh": { "name": "调试模式", "hint": "开启后，会以 DEBUG 等级打印收到的原始消息" }
+      "zh": { "name": "调试模式", "hint": "开启后，会以 DEBUG 等级记录收到的消息 ID" }
     }
   },
   "debug_mode_list": {

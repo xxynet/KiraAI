@@ -12,6 +12,7 @@ from core.adapter.src.telegram.telegram import (
 from core.adapter.src.discord.discord import DiscordAdapter
 from core.adapter.adapter_registry import AdapterManager
 from core.adapter.adapter_info import AdapterInfo
+from core.adapter.context import AdapterContext
 
 
 def test_uses_a_separate_get_updates_connection_for_shutdown_cleanup():
@@ -34,7 +35,7 @@ def test_uses_a_separate_get_updates_connection_for_shutdown_cleanup():
         "core.adapter.src.telegram.telegram.ApplicationBuilder",
         return_value=builder,
     ):
-        TelegramAdapter(info, asyncio.Queue())
+        TelegramAdapter(AdapterContext(info, asyncio.Queue()))
 
     builder.get_updates_connection_pool_size.assert_called_once_with(2)
     builder.get_updates_pool_timeout.assert_called_once_with(5.0)
@@ -58,6 +59,8 @@ def test_filters_only_telegram_shutdown_cancellation_log():
 @pytest.mark.asyncio
 async def test_stop_closes_application_after_updater_stop_failure():
     adapter = TelegramAdapter.__new__(TelegramAdapter)
+    adapter._lifecycle_lock = asyncio.Lock()
+    adapter._message_tasks = set()
     updater_stop = AsyncMock(side_effect=RuntimeError("connection pool timeout"))
     application_stop = AsyncMock()
     application_shutdown = AsyncMock()
@@ -79,6 +82,8 @@ async def test_stop_closes_application_after_updater_stop_failure():
 @pytest.mark.asyncio
 async def test_stop_attempts_http_client_shutdown_after_application_stop_failure():
     adapter = TelegramAdapter.__new__(TelegramAdapter)
+    adapter._lifecycle_lock = asyncio.Lock()
+    adapter._message_tasks = set()
     updater_stop = AsyncMock()
     application_stop = AsyncMock(side_effect=RuntimeError("application stop failed"))
     application_shutdown = AsyncMock()
@@ -102,6 +107,8 @@ async def test_stop_continues_after_updater_stop_times_out(monkeypatch):
         "core.adapter.src.telegram.telegram.TELEGRAM_SHUTDOWN_TIMEOUT", 0.01
     )
     adapter = TelegramAdapter.__new__(TelegramAdapter)
+    adapter._lifecycle_lock = asyncio.Lock()
+    adapter._message_tasks = set()
     updater_stop = AsyncMock(side_effect=asyncio.Event().wait)
     application_stop = AsyncMock()
     application_shutdown = AsyncMock()
@@ -124,6 +131,8 @@ async def test_stop_continues_after_updater_stop_times_out(monkeypatch):
 async def test_adapter_stop_timeout_propagates_to_telegram_stop(monkeypatch):
     monkeypatch.setattr("core.adapter.adapter_registry.ADAPTER_STOP_TIMEOUT", 0.01)
     adapter = TelegramAdapter.__new__(TelegramAdapter)
+    adapter._lifecycle_lock = asyncio.Lock()
+    adapter._message_tasks = set()
     updater_stop = AsyncMock(side_effect=asyncio.Event().wait)
     application_stop = AsyncMock()
     application_shutdown = AsyncMock()
@@ -150,6 +159,8 @@ async def test_adapter_stop_timeout_propagates_to_telegram_stop(monkeypatch):
 @pytest.mark.asyncio
 async def test_stop_continues_after_application_stop_is_cancelled():
     adapter = TelegramAdapter.__new__(TelegramAdapter)
+    adapter._lifecycle_lock = asyncio.Lock()
+    adapter._message_tasks = set()
     updater_stop = AsyncMock()
     application_stop = AsyncMock(side_effect=asyncio.CancelledError())
     application_shutdown = AsyncMock()
@@ -183,6 +194,8 @@ async def test_discord_stop_closes_gateway_before_cancelling_bot_task():
         events.append("bot-closed")
 
     adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._lifecycle_lock = asyncio.Lock()
+    adapter._message_tasks = set()
     adapter._bot_task = asyncio.create_task(wait_for_cancellation())
     adapter.bot = SimpleNamespace(
         is_closed=Mock(return_value=False),
@@ -211,6 +224,8 @@ async def test_discord_stop_propagates_caller_cancellation_racing_with_bot_task(
         await close_release.wait()
 
     adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._lifecycle_lock = asyncio.Lock()
+    adapter._message_tasks = set()
     adapter._bot_task = asyncio.create_task(wait_for_cancellation())
     adapter.bot = SimpleNamespace(
         is_closed=Mock(return_value=False),
