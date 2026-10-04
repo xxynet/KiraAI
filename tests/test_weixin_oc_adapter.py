@@ -724,3 +724,124 @@ async def test_concurrent_account_saves_preserve_both_accounts(monkeypatch):
     assert second_loaded.is_set()
     assert stored["adapters"][first.info.adapter_id]["config"] == first.info.config
     assert stored["adapters"][second.info.adapter_id]["config"] == second.info.config
+
+
+@pytest.mark.parametrize("element", [Image, Sticker, Video, File])
+@pytest.mark.parametrize("failure", ["resolve", "prepare"])
+async def test_failed_media_keeps_pending_text(element, failure, tmp_path, monkeypatch):
+    path = tmp_path / "media.bin"
+    path.write_bytes(b"media")
+    segment = Sticker(sticker_id="test", sticker=str(path)) if element is Sticker else element(str(path))
+    adapter = make_adapter()
+    adapter._context_tokens["123"] = "context"
+    if failure == "resolve":
+        path.unlink()
+    else:
+        monkeypatch.setattr(
+            adapter.im, "_prepare_media_item",
+            AsyncMock(side_effect=RuntimeError("fake upload failure")),
+        )
+
+    result = await adapter.im.send_direct_message("123", MessageChain([Text("see this"), segment]))
+
+    assert result.ok
+    sent = [call[2]["payload"]["msg"]["item_list"] for call in adapter.client.calls
+            if call[1] == "ilink/bot/sendmessage"]
+    assert sent == [[{"type": 1, "text_item": {"text": "see this"}}]]
+
+
+async def test_failed_media_preserves_text_and_emoji_for_trailing_flush(tmp_path):
+    path = tmp_path / "missing-image.jpg"
+    path.write_bytes(b"image")
+    segment = Image(str(path))
+    path.unlink()
+    adapter = make_adapter()
+    adapter._context_tokens["123"] = "context"
+
+    result = await adapter.im.send_direct_message(
+        "123", MessageChain([Text("before "), segment, Emoji("1", "smile"), Text(" after")]),
+    )
+
+    assert result.ok
+    sent = [call[2]["payload"]["msg"]["item_list"] for call in adapter.client.calls]
+    assert sent == [[{"type": 1, "text_item": {"text": "before smile after"}}]]
+
+
+async def test_failed_media_keeps_text_after_earlier_success(tmp_path):
+    first_path = tmp_path / "first.jpg"
+    first_path.write_bytes(b"image")
+    missing_path = tmp_path / "missing.jpg"
+    missing_path.write_bytes(b"image")
+    missing = Image(str(missing_path))
+    missing_path.unlink()
+    adapter = make_adapter()
+    adapter._context_tokens["123"] = "context"
+
+    result = await adapter.im.send_direct_message(
+        "123", MessageChain([Image(str(first_path)), Text("keep this"), missing]),
+    )
+
+    assert result.ok
+    sent = [call[2]["payload"]["msg"]["item_list"] for call in adapter.client.calls
+            if call[1] == "ilink/bot/sendmessage"]
+    assert [items[0]["type"] for items in sent] == [2, 1]
+    assert sent[1][0]["text_item"]["text"] == "keep this"
+
+
+async def test_sent_text_is_not_repeated_when_media_context_disappears(tmp_path, monkeypatch):
+    path = tmp_path / "media.jpg"
+    path.write_bytes(b"image")
+    adapter = make_adapter()
+    adapter._context_tokens["123"] = "context"
+    request_json = adapter.client.request_json
+    uploads = 0
+
+    async def change_context(method, endpoint, **kwargs):
+        nonlocal uploads
+        if endpoint == "ilink/bot/getuploadurl":
+            uploads += 1
+            if uploads == 2:
+                adapter._context_tokens["123"] = "new-context"
+        result = await request_json(method, endpoint, **kwargs)
+        if endpoint == "ilink/bot/sendmessage":
+            items = kwargs["payload"]["msg"]["item_list"]
+            if items[0]["type"] == 1:
+                adapter._context_tokens.pop("123")
+        return result
+
+    monkeypatch.setattr(adapter.client, "request_json", change_context)
+
+    result = await adapter.im.send_direct_message(
+        "123", MessageChain([Text("only once"), Image(str(path)), Image(str(path))]),
+    )
+
+    assert result.ok
+    sent = [call[2]["payload"]["msg"]["item_list"] for call in adapter.client.calls
+            if call[1] == "ilink/bot/sendmessage"]
+    assert [items[0]["type"] for items in sent] == [1, 2]
+    assert sent[0][0]["text_item"]["text"] == "only once"
+
+
+async def test_sent_text_counts_as_success_when_token_expires_before_media(tmp_path, monkeypatch):
+    path = tmp_path / "media.jpg"
+    path.write_bytes(b"image")
+    adapter = make_adapter()
+    adapter._context_tokens["123"] = "context"
+    request_json = adapter.client.request_json
+
+    async def expire_after_text(method, endpoint, **kwargs):
+        result = await request_json(method, endpoint, **kwargs)
+        if endpoint == "ilink/bot/sendmessage":
+            adapter.token = None
+        return result
+
+    monkeypatch.setattr(adapter.client, "request_json", expire_after_text)
+
+    result = await adapter.im.send_direct_message(
+        "123", MessageChain([Text("sent"), Image(str(path))]),
+    )
+
+    assert result.ok
+    sent = [call[2]["payload"]["msg"]["item_list"] for call in adapter.client.calls
+            if call[1] == "ilink/bot/sendmessage"]
+    assert sent == [[{"type": 1, "text_item": {"text": "sent"}}]]

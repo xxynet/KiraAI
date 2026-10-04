@@ -405,20 +405,21 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
         user_id: str,
         segment: Image | Video | File | Sticker,
         text: str | None = None,
-    ) -> bool:
+    ) -> tuple[bool, bool]:
+        """Return (text_sent, media_sent) as independent send outcomes."""
         if not self.adapter.token:
             self.adapter.logger.warning(
                 "weixin_oc(%s): missing token, skip media send",
                 self.adapter.info.name
             )
-            return False
+            return False, False
         media_path = await self._resolve_media_file_path(segment)
         if media_path is None:
             self.adapter.logger.warning(
                 "weixin_oc(%s): skip media segment, file not resolvable",
                 self.adapter.info.name,
             )
-            return False
+            return False, False
 
         item_type = self.IMAGE_ITEM_TYPE
         upload_media_type = self.IMAGE_UPLOAD_TYPE
@@ -448,14 +449,16 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
                 self.adapter.info.name,
                 type(e).__name__,
             )
-            return False
+            return False, False
 
+        text_sent = False
         if text:
-            await self._send_items_to_session(
+            text_sent = await self._send_items_to_session(
                 user_id,
                 [self._build_plain_text_item(text)],
             )
-        return await self._send_items_to_session(user_id, [media_item])
+        media_sent = await self._send_items_to_session(user_id, [media_item])
+        return text_sent, media_sent
 
     async def _send_text_message(
         self, user_id: str, text: str
@@ -506,14 +509,15 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
 
             if isinstance(segment, (Image, Video, File, Sticker)):
                 try:
-                    success = await self._send_media_segment(
+                    text_sent, media_sent = await self._send_media_segment(
                         str(user_id),
                         segment,
                         text=pending_text.strip() or None,
                     )
-                    if success:
+                    if text_sent or media_sent:
                         has_sent = True
-                    pending_text = ""
+                    if text_sent:
+                        pending_text = ""
                 except Exception as e:
                     msg_res.ok = False
                     msg_res.err = type(e).__name__
