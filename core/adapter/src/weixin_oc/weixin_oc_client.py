@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import asyncio
 import base64
-import hashlib
 import json
 import random
 from pathlib import Path
@@ -110,6 +110,16 @@ class WeixinOCClient:
             return bytes.fromhex(decoded_text)
         raise ValueError("unsupported media aes key format")
 
+    @classmethod
+    def _encrypt_media(cls, raw_data: bytes, aes_key_hex: str) -> bytes:
+        cipher = AES.new(bytes.fromhex(aes_key_hex), AES.MODE_ECB)
+        return cipher.encrypt(cls.pkcs7_pad(raw_data))
+
+    @classmethod
+    def _decrypt_media(cls, encrypted: bytes, key: bytes) -> bytes:
+        cipher = AES.new(key, AES.MODE_ECB)
+        return cls.pkcs7_unpad(cipher.decrypt(encrypted))
+
     async def upload_to_cdn(
         self,
         upload_full_url: str,
@@ -127,23 +137,11 @@ class WeixinOCClient:
                 "CDN upload URL missing (need upload_full_url or upload_param)"
             )
 
-        raw_data = media_path.read_bytes()
+        raw_data = await asyncio.to_thread(media_path.read_bytes)
+        encrypted = await asyncio.to_thread(self._encrypt_media, raw_data, aes_key_hex)
         logger.debug(
-            "weixin_oc(%s): prepare CDN upload file=%s size=%s md5=%s filekey=%s",
-            self.adapter_id,
-            media_path.name,
-            len(raw_data),
-            hashlib.md5(raw_data).hexdigest(),
-            file_key,
-        )
-        cipher = AES.new(bytes.fromhex(aes_key_hex), AES.MODE_ECB)
-        encrypted = cipher.encrypt(self.pkcs7_pad(raw_data))
-        logger.debug(
-            "weixin_oc(%s): encrypt done aes_key_len=%s plain_size=%s cipher_size=%s",
-            self.adapter_id,
-            len(bytes.fromhex(aes_key_hex)),
-            len(raw_data),
-            len(encrypted),
+            "weixin_oc(%s): encrypt done plain_size=%s cipher_size=%s",
+            self.adapter_id, len(raw_data), len(encrypted),
         )
 
         await self.ensure_http_client()
@@ -155,24 +153,12 @@ class WeixinOCClient:
             headers={"Content-Type": "application/octet-stream"},
             timeout=self.api_timeout_ms / 1000,
         )
-        detail = resp.text
         logger.debug(
-            "weixin_oc(%s): CDN upload response status=%s url=%s x-error-message=%s x-encrypted-param=%s body=%s",
-            self.adapter_id,
-            resp.status_code,
-            cdn_url,
-            resp.headers.get("x-error-message"),
-            resp.headers.get("x-encrypted-param"),
-            detail[:512],
+            "weixin_oc(%s): CDN upload response status=%s",
+            self.adapter_id, resp.status_code,
         )
-        if resp.status_code >= 400 and resp.status_code < 500:
-            raise RuntimeError(
-                f"upload media to cdn failed: {resp.status_code} {detail}"
-            )
         if resp.status_code != 200:
-            raise RuntimeError(
-                f"upload media to cdn failed: {resp.status_code} {detail}"
-            )
+            raise RuntimeError(f"upload media to cdn failed: {resp.status_code}")
         download_param = resp.headers.get("x-encrypted-param")
         if not download_param:
             raise RuntimeError(
@@ -189,7 +175,7 @@ class WeixinOCClient:
         )
         if resp.status_code >= 400:
             raise RuntimeError(
-                f"download media from cdn failed: {resp.status_code} {resp.text}"
+                f"download media from cdn failed: {resp.status_code}"
             )
         return resp.content
 
@@ -200,8 +186,7 @@ class WeixinOCClient:
     ) -> bytes:
         encrypted = await self.download_cdn_bytes(encrypted_query_param)
         key = self.parse_media_aes_key(aes_key_value)
-        cipher = AES.new(key, AES.MODE_ECB)
-        return self.pkcs7_unpad(cipher.decrypt(encrypted))
+        return await asyncio.to_thread(self._decrypt_media, encrypted, key)
 
     async def request_json(
         self,
@@ -231,7 +216,7 @@ class WeixinOCClient:
         )
         text = resp.text
         if resp.status_code >= 400:
-            raise RuntimeError(f"{method} {endpoint} failed: {resp.status_code} {text}")
+            raise RuntimeError(f"{method} {endpoint} failed: {resp.status_code}")
         if not text:
             return {}
         return cast(dict[str, Any], json.loads(text))
