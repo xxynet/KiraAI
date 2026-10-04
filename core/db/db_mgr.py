@@ -118,9 +118,10 @@ class DatabaseManager:
             rows = result.mappings().all()
             return list(rows)
 
-    async def create_all(self) -> None:
-        """Create all tables defined by ``Base.metadata`` if they do not exist."""
+    async def create_all(self, metadata=None) -> None:
+        """Create all tables in the supplied metadata if they do not exist."""
         if self.engine is None:
             raise RuntimeError("DatabaseManager is not initialized. Call init() first.")
+        metadata = metadata or Base.metadata
         async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(metadata.create_all)
