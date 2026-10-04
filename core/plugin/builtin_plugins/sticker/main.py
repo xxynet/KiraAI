@@ -176,7 +176,7 @@ class DefaultStickerPlugin(BasePlugin):
     @on.llm_request(priority=Priority.SYS_HIGH - 1)
     async def inject_sticker_tag(self, event: KiraMessageBatchEvent, _, tag_set: TagSet):
         """Inject sticker tag"""
-        message_types = event.message_types
-        if "sticker" in message_types:
+        supported_elements = event.supported_elements
+        if "sticker" in supported_elements:
             sticker_dict = self.ctx.sticker_manager.sticker_dict
             tag_set.register(build_sticker_tag(sticker_dict=sticker_dict))

@@ -14,12 +14,22 @@ from core.adapter.capabilities import (
     VoiceChannelCapability,
 )
 from core.adapter.context import AdapterContext
+from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.adapter.feed import FeedItem, FeedPage, FeedQuery, FeedRef, FeedSearchQuery
 from core.chat import MessageChain
 from core.chat.message_elements import Text
 
 
 class ExampleIM(IMCapability["ExampleAdapter"]):
+    _SUPPORTED_ELEMENTS = ["text"]
+
+    def __init__(self, adapter):
+        super().__init__(adapter)
+        self._metadata = MessageFormatMetadata(["text"])
+
+    async def get_message_metadata(self):
+        return MessageFormatMetadata(self._supported_elements, emojis=self._metadata.emojis)
+
     async def send_group_message(self, group_id, message):
         await self.adapter.send_payload(self.capability_type, group_id, message)
 
@@ -28,6 +38,12 @@ class ExampleIM(IMCapability["ExampleAdapter"]):
 
 
 class ExampleFeed(FeedCapability["ExampleAdapter"]):
+    async def get_comment_metadata(self):
+        return MessageFormatMetadata(["text"])
+
+    async def get_post_metadata(self):
+        return MessageFormatMetadata(["text"])
+
     async def get_feed(self, query):
         return FeedPage([
             FeedItem(FeedRef("post", str(index)), "post", MessageChain([Text(value)]))
@@ -51,7 +67,6 @@ class ExampleFeed(FeedCapability["ExampleAdapter"]):
 class ExampleAdapter(BaseAdapter):
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.message_types = ["text"]
         self.sent = []
         self.posts = ["first post", "second post"]
         if self.config.get("enable_im", True):
@@ -372,3 +387,29 @@ def test_capability_discovery_rejects_type_filter_arguments():
     with pytest.raises(TypeError):
         adapter.get_capabilities(capability_type=IMCapability)
     assert make_adapter(enable_im=False).get_capabilities() == {}
+
+@pytest.mark.asyncio
+async def test_legacy_elements_assignment_before_im_registration_is_preserved():
+    adapter = make_adapter(enable_im=False)
+    replacement = ["text", "custom"]
+    with pytest.warns(DeprecationWarning, match="message_types is deprecated"):
+        adapter.message_types = replacement
+    im = adapter.register_capability(IMCapability, ExampleIM(adapter))
+    assert (await im.get_message_metadata()).supported_elements == replacement
+    with pytest.warns(DeprecationWarning, match="message_types is deprecated"):
+        assert adapter.message_types is replacement
+
+
+def test_legacy_elements_without_im_are_mutable_and_instance_scoped():
+    first, second = make_adapter(enable_im=False), make_adapter(enable_im=False)
+    with pytest.warns(DeprecationWarning, match="message_types is deprecated"):
+        first.message_types.append("custom")
+    with pytest.warns(DeprecationWarning, match="message_types is deprecated"):
+        assert first.message_types == ["custom"]
+    with pytest.warns(DeprecationWarning, match="message_types is deprecated"):
+        assert second.message_types == []
+    replacement = ["replacement"]
+    with pytest.warns(DeprecationWarning, match="message_types is deprecated"):
+        first.message_types = replacement
+    with pytest.warns(DeprecationWarning, match="message_types is deprecated"):
+        assert first.message_types is replacement

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
@@ -11,6 +12,7 @@ from bilibili_api.video import Video as BiliVideo
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import IMCapability
+from core.adapter.message_format_metadata import MessageFormatMetadata, load_emoji_mapping
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, User
 from core.chat.message_elements import Text, Image, Emoji
 
@@ -20,6 +22,17 @@ if TYPE_CHECKING:
 
 class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
     """Receive and send Bilibili private messages using the account's resources."""
+
+    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "emoji", "share_video"]
+
+    def __init__(self, adapter: BiliBiliAdapter):
+        super().__init__(adapter)
+        self._metadata = MessageFormatMetadata(
+            self._supported_elements, emojis=load_emoji_mapping(Path(__file__).with_name("emoji.json")),
+        )
+
+    async def get_message_metadata(self) -> MessageFormatMetadata:
+        return MessageFormatMetadata(self._supported_elements, emojis=self._metadata.emojis)
 
     # ===== User info cache =====
     async def _get_user_nickname(self, uid: int) -> str:
@@ -131,7 +144,7 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
 
             message_obj = KiraMessageEvent(
                 adapter=self.adapter.info,
-                message_types=self.adapter.message_types,
+                supported_elements=list((await self.get_message_metadata()).supported_elements),
                 message=KiraIMMessage(
                     timestamp=ts,
                     sender=User(
@@ -180,8 +193,7 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
                 if isinstance(ele, Text):
                     text_parts.append(ele.text)
                 elif isinstance(ele, Emoji):
-                    await self.adapter._load_emoji_dict()
-                    text_parts.append(self.adapter.emoji_dict.get(ele.emoji_id, ele.emoji_id))
+                    text_parts.append(self._metadata.emojis.get(ele.emoji_id, ele.emoji_id))
                 elif isinstance(ele, Image):
                     await flush_text()
                     if ele.image_type == "url":

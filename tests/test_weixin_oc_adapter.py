@@ -110,8 +110,8 @@ async def test_registers_one_owned_im_and_preserves_metadata():
     assert first.im is not second.im
     assert first.client is not second.client
     assert first.get_client() is first.client
-    assert first.message_types == ["text", "image", "video", "file", "record"]
-    assert first.emoji_dict is None
+    assert (await first.im.get_message_metadata()).supported_elements == ["text", "image", "video", "file", "record"]
+    assert (await first.im.get_message_metadata()).emojis is None
     assert not first.im.is_allowed("group", permission="im.group.receive")
 
 
@@ -174,7 +174,7 @@ async def test_inbound_event_keeps_native_ids_and_explicit_metadata(timestamp, e
     event = adapter.ctx.event_queue.get_nowait()
     assert event.session.sid == "wechat:dm:user:opaque/id"
     assert event.adapter is adapter.info
-    assert event.message_types == adapter.message_types
+    assert event.supported_elements == list((await adapter.im.get_message_metadata()).supported_elements)
     assert event.message.message_id == "message-123"
     assert event.message.self_id == "test-account"
     assert event.message.sender.user_id == "user:opaque/id"

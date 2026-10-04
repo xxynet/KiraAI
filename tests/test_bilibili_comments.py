@@ -18,7 +18,7 @@ from tests.test_bilibili_feed_post import image_bytes
 @pytest.mark.asyncio
 async def test_comment_chain_preserves_text_and_native_emoji_order(monkeypatch):
     adapter = make_adapter()
-    adapter.emoji_dict = {"1": "[微笑]"}
+    adapter.feed._comment_metadata.emojis = {"1": "[微笑]"}
     send = AsyncMock(return_value={"rpid": 1})
     monkeypatch.setattr(adapter.get_client(), "send_comment", send)
     message = MessageChain([Text("one"), Emoji(1), Text("two"), Emoji(2, "[大笑]")])
@@ -61,7 +61,7 @@ async def test_text_keyword_is_no_longer_accepted():
 @pytest.mark.asyncio
 async def test_unknown_emoji_is_not_sent_as_a_numeric_token(monkeypatch):
     adapter = make_adapter()
-    adapter.emoji_dict = {}
+    adapter.feed._comment_metadata.emojis = {}
     send = AsyncMock()
     monkeypatch.setattr(adapter.get_client(), "send_comment", send)
     with pytest.raises(ValueError, match="native token"):
@@ -106,7 +106,7 @@ async def test_comment_sdk_payload_includes_images_and_cleans_unique_files(monke
     monkeypatch.setattr(comment, "Api", Api)
     monkeypatch.setattr(dynamic, "Api", Api)
     adapter = make_adapter(sessdata="session", bili_jct="csrf")
-    adapter.emoji_dict = {"1": "[微笑]"}
+    adapter.feed._comment_metadata.emojis = {"1": "[微笑]"}
     image = base64.b64encode(image_bytes()).decode()
     message = MessageChain([Text("one"), Image(image, caption="caption"), Emoji(1), Image(image), Text("two")])
     assert await adapter.feed.send_comment(message, FeedRef("video", "42"), root=10, parent=11) == {"rpid": 123}

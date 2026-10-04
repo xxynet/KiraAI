@@ -9,6 +9,7 @@ from core.prompt_manager import Prompt
 
 from core.utils.tool_utils import BaseTool
 from core.tag import TagSet
+from core.adapter import BaseAdapter, IMCapability
 
 from .tags import *
 
@@ -61,34 +62,44 @@ class DefaultPlugin(BasePlugin):
     @on.llm_request(priority=Priority.SYS_HIGH)
     async def inject_builtin_tags(self, event: KiraMessageBatchEvent, _, tag_set: TagSet):
         """Inject builtin tags, respecting capability toggles"""
-        message_types = event.message_types
+        supported_elements = event.supported_elements
         capabilities = self.ctx.get_session_capabilities(event.sid)
-        if "text" in message_types:
+        if "text" in supported_elements:
             tag_set.register(TextTag)
-        if "at" in message_types:
+        if "at" in supported_elements:
             tag_set.register(AtTag)
-        if "reply" in message_types:
+        if "reply" in supported_elements:
             tag_set.register(ReplyTag)
-        if "img" in message_types:
+        if "img" in supported_elements:
             caps = capabilities.get("image_generation", {})
             if caps.get("enabled", True):
                 tag_set.register(ImgTag(ctx=self.ctx), SelfieTag(ctx=self.ctx))
-        if "record" in message_types:
+        if "record" in supported_elements:
             caps = capabilities.get("tts", {})
             if caps.get("enabled", True):
                 tag_set.register(RecordTag(ctx=self.ctx))
-        if "emoji" in message_types:
-            emoji_dict = getattr(self.ctx.adapter_mgr.get_adapter(event.adapter.name), "emoji_dict", {})
-            tag_set.register(build_emoji_tag(emoji_json=emoji_dict)())
-        if "poke" in message_types:
+        if "emoji" in supported_elements:
+            adapter = self.ctx.adapter_mgr.get_adapter(event.adapter.name)
+            if isinstance(adapter, BaseAdapter):
+                try:
+                    im = adapter.get_capability(IMCapability)
+                except ValueError:
+                    pass
+                else:
+                    metadata = await im.get_message_metadata()
+                    if metadata.emojis is not None:
+                        tag_set.register(build_emoji_tag(emoji_json=metadata.emojis)())
+            else:
+                tag_set.register(build_emoji_tag(emoji_json=getattr(adapter, "emoji_dict", {}) or {})())
+        if "poke" in supported_elements:
             tag_set.register(PokeTag)
-        if "file" in message_types:
+        if "file" in supported_elements:
             tag_set.register(build_file_tag(sid=event.sid))
-        if "video" in message_types:
+        if "video" in supported_elements:
             caps = capabilities.get("video_generation", {})
             if caps.get("enabled", False):
                 tag_set.register(VideoTag(ctx=self.ctx))
-        if "forward" in message_types:
+        if "forward" in supported_elements:
             tag_set.register(ForwardTag())
 
     @on.llm_request(priority=Priority.SYS_HIGH)

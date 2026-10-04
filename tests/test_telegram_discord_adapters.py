@@ -197,7 +197,7 @@ async def test_incoming_messages_keep_metadata_and_native_session_targets(adapte
     assert event.message.sender.user_id == "123"
     assert event.message.message_id == "42"
     assert event.message.chain[0].text == "hello"
-    assert event.message_types == adapter.message_types
+    assert event.supported_elements == list((await adapter.im.get_message_metadata()).supported_elements)
     assert event.adapter is adapter.info
     assert not hasattr(event, "capability_name")
     assert event.message.is_mentioned is (not group)
@@ -247,8 +247,8 @@ async def test_plugin_notices_use_adapter_metadata_and_session_format(adapter_fa
     event = ctx.event_bus.publish.await_args.args[0]
     assert event.session.sid == sid
     assert event.message.is_notice
-    assert event.message_types == adapter.message_types
-    assert event.message_types is not adapter.message_types
+    assert event.supported_elements == list((await adapter.im.get_message_metadata()).supported_elements)
+    assert hasattr(type(adapter), "message_types")
 
 
 @pytest.mark.asyncio
@@ -288,8 +288,10 @@ async def test_repeated_start_stop_restart_and_multiple_accounts(adapter_factory
     if platform == "Telegram":
         first.app.initialize.assert_awaited_once()
         assert len(first.app.handlers) == 3
-        first.emoji_dict["test"] = "only first"
-        assert "test" not in second.emoji_dict
+        metadata = await first.im.get_message_metadata()
+        metadata.emojis["test"] = "only first"
+        assert metadata.emojis["test"] == "only first"
+        assert "test" not in (await second.im.get_message_metadata()).emojis
     else:
         first.bot.start.assert_awaited_once()
         assert set(first.bot.commands) == {"ping", "help"}
@@ -408,7 +410,7 @@ async def test_telegram_incoming_media(adapter_factory, monkeypatch, kind, expec
 @pytest.mark.parametrize("method,target", [("send_group_message", "-456"), ("send_direct_message", "123")])
 async def test_telegram_sends_merged_html_reply_mentions_and_emoji(adapter_factory, method, target):
     adapter = adapter_factory("Telegram")
-    adapter.emoji_dict = {"1": "🙂"}
+    adapter.im._metadata.emojis = {"1": "🙂"}
     chain = MessageChain([Reply("10"), Text("<hello> & "), At("123", "Test & Name"), At("username"), At("all"), Emoji("1")])
     result = await getattr(adapter.im, method)(target, message=chain)
     assert result.ok and result.message_id == "501"
@@ -835,3 +837,76 @@ async def test_discord_stop_quiesces_runner_even_if_callback_cleanup_is_interrup
     assert adapter._bot_task.done()
     assert adapter.bot.closed
     adapter.bot.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", ["Telegram", "Discord"])
+async def test_metadata_query_is_mutable_and_does_not_start_clients(adapter_factory, platform):
+    adapter = adapter_factory(platform)
+    metadata = await adapter.im.get_message_metadata()
+    assert metadata.supported_elements == ["text", "img", "at", "reply", "record", "emoji", "sticker", "file", "video"]
+    assert hasattr(type(adapter), "message_types") and not hasattr(adapter, "emoji_dict")
+    metadata.emojis["new"] = "changed"
+    assert metadata.emojis["new"] == "changed"
+    assert "new" not in (await adapter.im.get_message_metadata()).emojis
+    if platform == "Telegram":
+        assert metadata.emojis["1"] == "😀"
+        adapter.app.initialize.assert_not_awaited()
+        adapter.app.start.assert_not_awaited()
+    else:
+        assert (await adapter.im.get_message_metadata()).emojis == {}
+        adapter.bot.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_telegram_capability_loads_once_during_construction(adapter_factory, monkeypatch):
+    import importlib
+
+    module = importlib.import_module("core.adapter.src.telegram.im")
+    loader = Mock(return_value={"1": "capability emoji"})
+    monkeypatch.setattr(module, "load_emoji_mapping", loader)
+    adapter = adapter_factory("Telegram")
+    loader.assert_called_once()
+    assert not hasattr(adapter, "emojis")
+    loader.side_effect = AssertionError("Metadata queries must not reload emojis")
+    metadata = await asyncio.gather(*(adapter.im.get_message_metadata() for _ in range(5)))
+    assert all(item.emojis == {"1": "capability emoji"} for item in metadata)
+    metadata[0].emojis["1"] = "caller change"
+    assert metadata[1].emojis["1"] == "capability emoji"
+    assert adapter.im._metadata.emojis["1"] == "capability emoji"
+    adapter.im._metadata.emojis["1"] = "capability change"
+    assert (await adapter.im.get_message_metadata()).emojis["1"] == "capability change"
+    adapter.app.initialize.assert_not_awaited()
+    adapter.app.start.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_discord_empty_emoji_catalog_reaches_builtin_tag(adapter_factory):
+    import importlib
+    from core.tag import TagSet
+
+    module = importlib.import_module("core.plugin.builtin_plugins.kira-ai.main")
+    adapter = adapter_factory("Discord")
+    ctx = NS(
+        adapter_mgr=NS(get_adapter=lambda name: adapter),
+        get_session_capabilities=lambda sid: {},
+    )
+    event = NS(supported_elements=["emoji"], adapter=adapter.info, sid="discord:dm:123")
+    tags = TagSet()
+    await module.DefaultPlugin(ctx, {}).inject_builtin_tags(event, None, tags)
+    assert "{}" in tags.get("emoji").description
+    assert "mappingproxy" not in tags.get("emoji").description
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", ["Telegram", "Discord"])
+async def test_legacy_adapter_elements_write_through_without_starting_clients(adapter_factory, platform):
+    adapter = adapter_factory(platform)
+    with pytest.warns(DeprecationWarning, match="message_types is deprecated"):
+        elements = adapter.message_types
+    assert not hasattr(adapter, '_emoji_mapping')
+    assert not hasattr(adapter, '_emoji_load_lock')
+    elements.append("custom")
+    assert "custom" in (await adapter.im.get_message_metadata()).supported_elements
+    replacement = ["text", "custom"]
+    with pytest.warns(DeprecationWarning, match="message_types is deprecated"):
+        adapter.message_types = replacement
+    assert (await adapter.im.get_message_metadata()).supported_elements == replacement

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import IMCapability
+from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, User
 from core.chat.message_elements import Text, Image, File, Video, Record, Emoji, Sticker
 from core.utils.path_utils import get_data_path
@@ -20,6 +21,11 @@ if TYPE_CHECKING:
 
 class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
     """Convert, receive and send messages for one personal WeChat account."""
+
+    _SUPPORTED_ELEMENTS = ["text", "image", "video", "file", "record"]
+
+    async def get_message_metadata(self) -> MessageFormatMetadata:
+        return MessageFormatMetadata(self._supported_elements)
 
     IMAGE_ITEM_TYPE = 2
     VOICE_ITEM_TYPE = 3
@@ -325,7 +331,7 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            message_types=self.adapter.message_types,
+            supported_elements=list((await self.get_message_metadata()).supported_elements),
             message=KiraIMMessage(
                 timestamp=ts,
                 message_id=message_id,

@@ -19,6 +19,7 @@ from bilibili_api.utils.aid_bvid_transformer import bvid2aid
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import FeedCapability
+from core.adapter.message_format_metadata import MessageFormatMetadata, load_emoji_mapping
 from core.adapter.feed import FeedItem, FeedPage, FeedPost, FeedQuery, FeedRef, FeedSearchQuery
 from core.chat import KiraCommentEvent
 from core.chat.message_elements import At, Emoji, Image, Text
@@ -44,8 +45,17 @@ class _FeedCursor:
 class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
     def __init__(self, adapter: BiliBiliAdapter):
         super().__init__(adapter)
+        emojis = load_emoji_mapping(Path(__file__).with_name("emoji.json"))
+        self._comment_metadata = MessageFormatMetadata(["text", "img", "emoji"], emojis=emojis)
+        self._post_metadata = MessageFormatMetadata(["text", "img", "emoji", "at"], emojis=emojis)
         self.last_process_ts = int(time.time())
         self._cursors: OrderedDict[str, _FeedCursor] = OrderedDict()
+
+    async def get_comment_metadata(self) -> MessageFormatMetadata:
+        return MessageFormatMetadata(self._comment_metadata.supported_elements, emojis=self._comment_metadata.emojis)
+
+    async def get_post_metadata(self) -> MessageFormatMetadata:
+        return MessageFormatMetadata(self._post_metadata.supported_elements, emojis=self._post_metadata.emojis)
 
     def clear_cursors(self) -> None:
         self._cursors.clear()
@@ -228,11 +238,10 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
                 has_content = True
         return has_content
 
-    async def _emoji_token(self, element: Emoji) -> str:
+    def _emoji_token(self, element: Emoji, metadata: MessageFormatMetadata) -> str:
         token = element.emoji_desc
         if not token:
-            await self.adapter._load_emoji_dict()
-            token = self.adapter.emoji_dict.get(element.emoji_id)
+            token = metadata.emojis.get(element.emoji_id)
         if not isinstance(token, str) or not token:
             raise ValueError("Bilibili emoji requires a native token or known ID")
         return token
@@ -245,7 +254,7 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             elif isinstance(element, At):
                 draft.add_at(uid=int(element.pid), uname=element.nickname or "")
             elif isinstance(element, Emoji):
-                draft.add_emoji(await self._emoji_token(element))
+                draft.add_emoji(self._emoji_token(element, self._post_metadata))
             elif isinstance(element, Image):
                 draft.add_image(await self._load_picture(element))
                 if element.caption:
@@ -294,7 +303,7 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             if isinstance(element, Text):
                 parts.append(element.text)
             elif isinstance(element, Emoji):
-                parts.append(await self._emoji_token(element))
+                parts.append(self._emoji_token(element, self._comment_metadata))
             elif isinstance(element, Image):
                 pictures.append(await self._load_picture(element))
                 if element.caption:

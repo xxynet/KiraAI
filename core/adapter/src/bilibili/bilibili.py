@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from pathlib import Path
 from typing import Any
 
 from bilibili_api import Credential, user
@@ -45,8 +43,6 @@ class BiliBiliAdapter(BaseAdapter):
         self._user_info_cache: dict[int, dict] = {}
         self.im: BiliBiliIMCapability | None = None
         if self.config.get("enable_im", True):
-            self.message_types = ["text", "img", "at", "reply", "emoji", "share_video"]
-
             self.im = self.register_capability(IMCapability, BiliBiliIMCapability(self))
             policy = ListAccessPolicy.from_lists(
                 self.config.get("permission_mode", "allow_list"),
@@ -63,19 +59,7 @@ class BiliBiliAdapter(BaseAdapter):
     ) -> BiliBiliQRCodeLoginHandler:
         return BiliBiliQRCodeLoginHandler()
 
-    async def _load_emoji_dict(self) -> None:
-        """Load common native tokens from Bilibili's default emote package.
-
-        Source: https://api.bilibili.com/x/emote/package?ids=1&business=reply
-        Snapshot retrieved on 2026-09-29, excluding game and franchise emotes; retained IDs and text are unchanged.
-        """
-        if self.emoji_dict is None:
-            contents = await asyncio.to_thread(Path(__file__).with_name("emoji.json").read_text, encoding="utf-8")
-            self.emoji_dict = json.loads(contents)
-
     async def start(self) -> None:
-        if self.im is not None:
-            await self._load_emoji_dict()
         get_bilibili_client()
         await self._log_login_status()
         tasks = []

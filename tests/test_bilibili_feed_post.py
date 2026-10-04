@@ -51,7 +51,7 @@ async def test_native_clients_bind_distinct_accounts_and_survive_restart(monkeyp
 @pytest.mark.asyncio
 async def test_send_post_preserves_native_elements_and_extra(monkeypatch):
     adapter = make_adapter(sessdata="session", bili_jct="csrf")
-    adapter.emoji_dict = {"1": "[微笑]"}
+    adapter.feed._post_metadata.emojis = {"1": "[微笑]"}
     send = AsyncMock(return_value={"dyn_id_str": "123"})
     monkeypatch.setattr(adapter.get_client(), "send_dynamic", send)
     when = datetime(2030, 1, 1, tzinfo=timezone.utc)
@@ -131,7 +131,7 @@ async def test_invalid_posts_fail_before_loading_media_or_sending(monkeypatch, p
 @pytest.mark.asyncio
 async def test_unrecognized_emoji_and_invalid_image_fail_without_publishing(monkeypatch):
     adapter = make_adapter(sessdata="session", bili_jct="csrf")
-    adapter.emoji_dict = {}
+    adapter.feed._post_metadata.emojis = {}
     send = AsyncMock()
     monkeypatch.setattr(adapter.get_client(), "send_dynamic", send)
     with pytest.raises(ValueError, match="native token"):

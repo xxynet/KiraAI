@@ -1,8 +1,10 @@
 import copy
+import warnings
+from dataclasses import asdict, fields, replace
 import pytest
 
 from core.chat.message_elements import Text, At, Image, Emoji, Notice, Poke, Sticker, Record
-from core.chat.message_utils import MessageChain, KiraMessageEvent, KiraIMMessage
+from core.chat.message_utils import MessageChain, KiraMessageEvent, KiraMessageBatchEvent, KiraIMMessage
 from core.chat.session import Session, User, Group
 
 
@@ -242,7 +244,7 @@ def _make_event():
     )
     adapter = type("A", (), {"name": "test_adapter"})()
     return KiraMessageEvent(
-        message_types=[], timestamp=1, message=msg, adapter=adapter
+        supported_elements=[], timestamp=1, message=msg, adapter=adapter
     )
 
 
@@ -309,3 +311,83 @@ def test_event_properties():
 def test_event_message_repr():
     evt = _make_event()
     assert "hi" in evt.message_repr
+
+
+@pytest.fixture(params=[KiraMessageEvent, KiraMessageBatchEvent])
+def format_event_factory(request):
+    def build(*args, **kwargs):
+        if request.param is KiraMessageEvent:
+            source = _make_event()
+            kwargs.setdefault("message", source.message)
+            kwargs.setdefault("adapter", source.adapter)
+        if len(args) < 2:
+            kwargs.setdefault("timestamp", 1)
+        return request.param(*args, **kwargs)
+    return build
+
+
+def test_supported_elements_constructor_and_access_are_not_deprecated(format_event_factory):
+    values = ["text"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        event = format_event_factory(supported_elements=values)
+        assert event.supported_elements is values
+        event.supported_elements.append("emoji")
+    assert values == ["text", "emoji"]
+
+
+def test_legacy_message_types_constructor_is_supported_and_deprecated(format_event_factory):
+    values = ["text"]
+    with pytest.warns(DeprecationWarning, match="message_types.*supported_elements"):
+        event = format_event_factory(message_types=values)
+    assert event.supported_elements is values
+
+
+def test_legacy_message_types_read_write_and_mutation_share_the_new_field(format_event_factory):
+    event = format_event_factory(supported_elements=["text"])
+    with pytest.warns(DeprecationWarning, match="message_types.*supported_elements"):
+        legacy = event.message_types
+    assert legacy is event.supported_elements
+    legacy.append("emoji")
+    assert event.supported_elements == ["text", "emoji"]
+    replacement = ["img"]
+    with pytest.warns(DeprecationWarning, match="message_types.*supported_elements"):
+        event.message_types = replacement
+    assert event.supported_elements is replacement
+    event.supported_elements = ["file"]
+    with pytest.warns(DeprecationWarning, match="message_types.*supported_elements"):
+        assert event.message_types is event.supported_elements
+    assert "message_types" not in vars(event)
+
+
+def test_positional_constructor_keeps_its_argument_order(format_event_factory):
+    values = ["text"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        event = format_event_factory(values, 42)
+    assert event.supported_elements is values
+    assert event.timestamp == 42
+
+
+@pytest.mark.parametrize("positional", [False, True])
+def test_constructor_rejects_conflicting_new_and_legacy_values(format_event_factory, positional):
+    with pytest.raises(TypeError, match="Specify only supported_elements"):
+        if positional:
+            format_event_factory(["text"], message_types=["emoji"])
+        else:
+            format_event_factory(supported_elements=["text"], message_types=["emoji"])
+
+
+def test_dataclass_fields_and_serialization_use_only_the_new_name(format_event_factory):
+    event = format_event_factory(supported_elements=["text"])
+    field_names = {item.name for item in fields(event)}
+    assert "supported_elements" in field_names
+    assert "message_types" not in field_names
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        serialized = asdict(event)
+        updated = replace(event, supported_elements=["emoji"])
+    assert serialized["supported_elements"] == ["text"]
+    assert "message_types" not in serialized
+    assert updated.supported_elements == ["emoji"]
+    assert event.supported_elements == ["text"]
