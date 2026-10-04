@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.adapter.adapter_info import AdapterInfo
+from core.adapter.context import AdapterContext
 from core.adapter.qr_login import (
     QRCodeLoginHandler,
     QRCodeLoginPollResult,
@@ -100,16 +101,16 @@ async def test_weixin_oc_qrcode_handler_returns_config_patch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_weixin_oc_empty_token_does_not_start_adapter(monkeypatch):
-    adapter = WeixinOCAdapter(
-        AdapterInfo(
+    adapter = WeixinOCAdapter(AdapterContext(
+        info=AdapterInfo(
             adapter_id="weixin-oc-test",
             enabled=True,
             name="weixin_oc",
             platform="weixin_oc",
             config={},
         ),
-        asyncio.Queue(),
-    )
+        event_queue=asyncio.Queue(),
+    ))
     run_loop_started = False
 
     async def fake_run_loop():
