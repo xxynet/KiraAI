@@ -153,26 +153,20 @@ class DiscordAdapter(BaseAdapter):
     async def _stop(self):
         """Stop the Discord adapter."""
         self._accepting_messages = False
-        await self._cancel_message_tasks()
         try:
-            if self.bot and not self.bot.is_closed():
-                await self.bot.close()
+            await self._cancel_message_tasks()
         finally:
-            if self._bot_task and not self._bot_task.done():
-                self._bot_task.cancel()
-
-                async def wait_for_bot_task():
-                    try:
-                        await self._bot_task
-                    except asyncio.CancelledError:
-                        pass
-
-                waiter = asyncio.create_task(wait_for_bot_task())
-                try:
-                    await asyncio.shield(waiter)
-                except asyncio.CancelledError:
-                    waiter.cancel()
-                    raise
+            try:
+                task = self._bot_task
+                if task and task is not asyncio.current_task():
+                    if not task.done():
+                        task.cancel()
+                    # The runner must stop issuing requests before its HTTP session closes.
+                    # Runtime failures are already recorded by _run_bot.
+                    await asyncio.gather(task, return_exceptions=True)
+            finally:
+                if self.bot and not self.bot.is_closed():
+                    await self.bot.close()
 
         if self.bot:
             self.logger.info(f"Stopped Discord adapter for {self.config.get('bot_pid', 'bot')}")
