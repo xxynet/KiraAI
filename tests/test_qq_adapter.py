@@ -5,6 +5,7 @@ that one segment/event instead of aborting the whole incoming message.
 """
 
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -410,6 +411,7 @@ async def test_start_stop_restart_owns_runner_and_rebinds_callbacks(fake_client)
     assert task.done()
     assert adapter._client_task is None
     assert old_client.shutdown_event.is_set()
+    assert old_client.close_calls == 1
     await adapter.start()
     try:
         await wait_until_started(adapter)
@@ -433,6 +435,7 @@ async def test_stop_before_runner_starts_is_complete_and_idempotent(fake_client)
     assert task.done()
     assert adapter.bot.shutdown_event.is_set()
     assert not adapter._event_tasks
+    assert adapter.bot.close_calls == 1
 
 
 async def test_stop_cancels_inflight_handlers_and_rejects_late_callbacks(fake_client):
@@ -488,25 +491,27 @@ async def test_stop_preserves_callers_cancellation_and_finishes_cleanup(fake_cli
     runner = adapter._client_task
     close_entered = asyncio.Event()
     original_close = adapter.bot.close
-    first = True
+    close_release = asyncio.Event()
 
     async def close():
-        nonlocal first
-        if first:
-            first = False
-            close_entered.set()
-            await asyncio.Event().wait()
+        close_entered.set()
+        await close_release.wait()
         await original_close()
 
     adapter.bot.close = close
     stopping = asyncio.create_task(adapter.stop())
     await asyncio.wait_for(close_entered.wait(), timeout=1)
     stopping.cancel()
+    await asyncio.sleep(0)
+    assert not stopping.done()
+    assert not adapter._client_close_task.cancelled()
+    close_release.set()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(stopping, timeout=1)
     assert runner.done()
     assert adapter._client_task is None
     assert adapter.bot.shutdown_event.is_set()
+    assert adapter.bot.close_calls == 1
 
 
 async def test_two_instances_keep_clients_permissions_and_lifecycle_independent(fake_client):
@@ -699,3 +704,41 @@ async def test_group_notice_survives_missing_group_lookup_data(group_info):
     assert "gently" in event.message.chain[0].text
     assert event.message.raw_message is msg
     adapter.bot.get_group_info.assert_awaited_once_with(group_id=123)
+
+
+async def test_webui_stop_with_real_client_logs_one_stop_without_disconnect_warning(monkeypatch):
+    from core.adapter.src.qq.napcat_client import client as napcat_client
+    from tests.test_napcat_ws_client import (
+        YieldingCloseWebSocket, lifecycle_meta_frame, patch_ws_factory, wait_until,
+    )
+    adapter = lifecycle_adapter()
+    adapter.bot.close = AsyncMock(wraps=adapter.bot.close)
+    ws = YieldingCloseWebSocket([lifecycle_meta_frame()])
+    calls = patch_ws_factory(monkeypatch, ws)
+    logs = Mock()
+    monkeypatch.setattr(napcat_client, "logger", logs)
+    await adapter.start()
+    runner = adapter._client_task
+    try:
+        await wait_until(lambda: bool(ws.actions))
+        echo = ws.actions[0]["echo"]
+        ws.push(json.dumps({
+            "status": "ok", "retcode": 0,
+            "data": {"user_id": 10000}, "echo": echo,
+        }))
+        await wait_until(lambda: any("登录成功" in call.args[0] for call in logs.info.call_args_list))
+        await adapter.stop()
+        await adapter.stop()
+        assert runner.done()
+        assert adapter._client_task is None
+        assert adapter.bot._listening_task.done()
+        assert not adapter._event_tasks
+        assert calls and len(calls) == 1
+        assert ws.close_count == 1
+        adapter.bot.close.assert_awaited_once()
+        logs.warning.assert_not_called()
+        logs.error.assert_not_called()
+        stopped = [call for call in logs.info.call_args_list if "已停止监听" in call.args[0]]
+        assert len(stopped) == 1
+    finally:
+        await adapter.stop()

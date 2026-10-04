@@ -26,6 +26,7 @@ class QQAdapter(BaseAdapter):
         self.debug_mode_list = self.config.get("debug_mode_list", [])
         self.permanently_disconnected = False
         self._client_task: asyncio.Task | None = None
+        self._client_close_task: asyncio.Task | None = None
         self._event_tasks: set[asyncio.Task] = set()
         self._stopping = False
         self.im = self.register_capability(IMCapability, QQIMCapability(self))
@@ -106,6 +107,7 @@ class QQAdapter(BaseAdapter):
             return
         if self.bot.shutdown_event.is_set():
             self.bot = self._create_client()
+            self._client_close_task = None
         self._stopping = False
         self.permanently_disconnected = False
         self._client_task = asyncio.create_task(
@@ -129,9 +131,15 @@ class QQAdapter(BaseAdapter):
         finally:
             self._stopping = True
             try:
-                await client.close()
+                await self._close_client(client)
             finally:
                 await self._cancel_event_tasks()
+
+    async def _close_client(self, client: NapCatWebSocketClient) -> None:
+        # stop() and the runner's finally block join the same close operation.
+        if self._client_close_task is None:
+            self._client_close_task = asyncio.create_task(client.close())
+        await asyncio.shield(self._client_close_task)
 
     async def _cancel_event_tasks(self) -> None:
         current = asyncio.current_task()
@@ -144,7 +152,7 @@ class QQAdapter(BaseAdapter):
     async def stop(self) -> None:
         self._stopping = True
         try:
-            await self.bot.close()
+            await self._close_client(self.bot)
         finally:
             task = self._client_task
             if task and task is not asyncio.current_task() and not task.done():

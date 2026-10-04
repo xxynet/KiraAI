@@ -12,7 +12,7 @@ import inspect
 import json
 import time
 from typing import Any, Callable, Dict, List, Optional
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import websockets
@@ -721,3 +721,177 @@ async def test_dispatch_event_logs_callback_exception_without_killing_dispatch(m
 
     assert len(seen) == 1
     assert any("boom" in err for err in record_logger.errors)
+
+
+class YieldingCloseWebSocket(FakeWebSocket):
+    """Let the receive loop observe close before socket shutdown returns."""
+
+    def __init__(self, script=(), close_mode="normal"):
+        super().__init__(script, end_instead_of_close=close_mode == "normal")
+        self.close_mode = close_mode
+        self.listening = asyncio.Event()
+
+    def __aiter__(self):
+        self.listening.set()
+        return self
+
+    async def __anext__(self):
+        try:
+            return await super().__anext__()
+        except websockets.exceptions.ConnectionClosed:
+            if self.close_mode == "error":
+                raise RuntimeError("receive stopped")
+            raise
+
+    async def close(self):
+        await super().close()
+        await asyncio.sleep(0)
+
+
+@pytest.mark.parametrize("close_mode", ["normal", "exception", "error"])
+async def test_explicit_close_does_not_report_disconnect_or_reconnect(monkeypatch, close_mode):
+    client = make_client()
+    ws = YieldingCloseWebSocket(close_mode=close_mode)
+    client.websocket = ws
+    client._reconnect = AsyncMock(return_value=False)
+    notified = track_notify(client)
+    logs = Mock()
+    monkeypatch.setattr(napcat_client, "logger", logs)
+    listener = asyncio.create_task(client.listen_messages())
+    client._listening_task = listener
+    try:
+        await asyncio.wait_for(ws.listening.wait(), timeout=1)
+        await client.close()
+        await await_listener(listener)
+        client._reconnect.assert_not_awaited()
+        logs.warning.assert_not_called()
+        logs.error.assert_not_called()
+        stopped = [call for call in logs.info.call_args_list if "已停止监听" in call.args[0]]
+        assert len(stopped) == 1
+        assert notified == []
+        assert client.shutdown_event.is_set()
+        assert ws.close_count == 1
+    finally:
+        await client.close()
+        await await_listener(listener)
+
+
+async def test_concurrent_close_waits_for_one_resource_cleanup(monkeypatch):
+    client = make_client()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    ws = FakeWebSocket()
+    original_close = ws.close
+
+    async def slow_close():
+        entered.set()
+        await release.wait()
+        await original_close()
+
+    ws.close = slow_close
+    client.websocket = ws
+    cleanup = AsyncMock(wraps=client._close_resources)
+    monkeypatch.setattr(client, "_close_resources", cleanup)
+    logs = Mock()
+    monkeypatch.setattr(napcat_client, "logger", logs)
+    first = asyncio.create_task(client.close())
+    second = None
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        second = asyncio.create_task(client.close())
+        await asyncio.sleep(0)
+        assert not first.done()
+        assert not second.done()
+        cleanup.assert_awaited_once()
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        assert not client._close_task.cancelled()
+        assert not second.done()
+        release.set()
+        await asyncio.wait_for(second, timeout=1)
+        await client.close()
+        cleanup.assert_awaited_once()
+        assert ws.close_count == 1
+        stopped = [call for call in logs.info.call_args_list if "已停止监听" in call.args[0]]
+        assert len(stopped) == 1
+    finally:
+        release.set()
+        await client.close()
+        await asyncio.gather(first, *([second] if second else []), return_exceptions=True)
+
+
+async def test_listener_exhaustion_joins_external_close_without_deadlock(monkeypatch):
+    client = make_client()
+    ws = FakeWebSocket(end_instead_of_close=True)
+    client.websocket = ws
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def reconnect():
+        entered.set()
+        await release.wait()
+        return False
+
+    monkeypatch.setattr(client, "_reconnect", reconnect)
+    listener = asyncio.create_task(client.listen_messages())
+    client._listening_task = listener
+    await ws.close()
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    original_close = ws.close
+
+    async def slow_close():
+        release.set()
+        await asyncio.sleep(0)
+        await original_close()
+
+    ws.close = slow_close
+    await asyncio.wait_for(client.close(), timeout=1)
+    assert listener.done()
+    assert client._close_task.done()
+
+
+async def test_registered_listener_can_close_itself_after_reconnect_exhaustion(monkeypatch):
+    client = make_client()
+    client.websocket = FakeWebSocket([websockets.exceptions.ConnectionClosed(None, None)])
+    monkeypatch.setattr(client, "_reconnect", AsyncMock(return_value=False))
+    listener = asyncio.create_task(client.listen_messages())
+    client._listening_task = listener
+    await asyncio.wait_for(listener, timeout=1)
+    assert not listener.cancelled()
+    assert client.shutdown_event.is_set()
+    await client.close()
+
+
+async def test_peer_normal_close_still_reconnects_and_receives(monkeypatch, fast_backoff):
+    client = make_client()
+    ws = YieldingCloseWebSocket()
+    client.websocket = ws
+    got = asyncio.Event()
+    received = []
+
+    @client.group_event()
+    async def on_group(msg):
+        received.append(msg)
+        got.set()
+
+    message = {"post_type": "message", "message_type": "group"}
+    replacement = FakeWebSocket([json.dumps(message)])
+    calls = script_connect(monkeypatch, client, [replacement])
+    logs = Mock()
+    monkeypatch.setattr(napcat_client, "logger", logs)
+    listener = asyncio.create_task(client.listen_messages())
+    client._listening_task = listener
+    try:
+        await asyncio.wait_for(ws.listening.wait(), timeout=1)
+        await ws.close()
+        await asyncio.wait_for(got.wait(), timeout=1)
+        assert calls == [1]
+        assert received == [message]
+        assert not client.shutdown_event.is_set()
+        assert client.login_success_event.is_set()
+        assert not listener.done()
+        assert any("被对端正常关闭" in call.args[0] for call in logs.warning.call_args_list)
+    finally:
+        await client.close()
+        await await_listener(listener)
