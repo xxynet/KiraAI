@@ -1,0 +1,436 @@
+from __future__ import annotations
+
+import asyncio
+import base64
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING, List, Optional, Union
+
+from telegram import Update
+from telegram.ext import ContextTypes
+
+from core.adapter.capabilities import IMCapability
+from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, Group, User
+from core.chat.message_elements import Text, Image, At, Reply, Emoji, Sticker, Record, File, Video
+from core.utils.network import get_file_content
+
+if TYPE_CHECKING:
+    from .telegram import TelegramAdapter
+
+
+class MessageSender:
+    """concurrency control & retry config"""
+
+    def __init__(self, max_concurrent: int = 3, max_retries: int = 3, retry_delay: float = 1.0):
+        self.semaphore = asyncio.Semaphore(max_concurrent)
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+    async def send_with_retry(self, send_func, *args, **kwargs):
+        async with self.semaphore:
+            for attempt in range(self.max_retries + 1):
+                try:
+                    return await asyncio.wait_for(send_func(*args, **kwargs), timeout=30.0)
+                except Exception:
+                    if attempt < self.max_retries:
+                        await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                        continue
+                    raise
+
+
+class TelegramIMCapability(IMCapability["TelegramAdapter"]):
+    """Receive, convert and send messages for one Telegram account."""
+
+    # ===== Command processing =====
+    async def _cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.effective_message.reply_text("Hi, I'm online.")
+
+    async def _cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.effective_message.reply_text("Help: just talk to me.")
+
+    # ===== Incoming message handler =====
+    async def _on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        msg = update.effective_message
+        if msg is None or msg.from_user is None:
+            return
+        chat = msg.chat
+        user = msg.from_user
+
+        if chat.type in ("group", "supergroup"):
+
+            if not self.is_allowed(chat.id, permission="im.group.receive"):
+                return
+            # Only react when replied to bot or explicitly mentioned (@mention)
+            try:
+                bot_id = getattr(self.adapter.app.bot, "id", None)
+                bot_username = getattr(self.adapter.app.bot, "username", None)
+            except Exception as e:
+                bot_id = None
+                bot_username = None
+                self.adapter.logger.error("Telegram message conversion failed (%s)", type(e).__name__)
+
+            is_mentioned = False
+            # 1) Check if message is a reply to bot
+            try:
+                if msg.reply_to_message and getattr(msg.reply_to_message, "from_user", None):
+                    if bot_id is not None and msg.reply_to_message.from_user.id == bot_id:
+                        is_mentioned = True
+            except Exception as e:
+                self.adapter.logger.error("Telegram message conversion failed (%s)", type(e).__name__)
+            # 2) Check if bot is mentioned by username or text_mention
+            if not is_mentioned:
+                try:
+                    # Media messages carry their text in caption/caption_entities;
+                    # use parse_entity/parse_caption_entity so non-BMP characters
+                    # (whose UTF-16 offsets differ from Python str indices) are
+                    # handled correctly instead of slicing the string manually.
+                    using_caption = msg.text is None
+                    scan_entities = msg.caption_entities if using_caption else msg.entities
+                    if scan_entities:
+                        for ent in scan_entities:
+                            if ent.type == "mention" and bot_username:
+                                mention_text = (
+                                    msg.parse_caption_entity(ent)
+                                    if using_caption
+                                    else msg.parse_entity(ent)
+                                )
+                                if mention_text.lower() == f"@{bot_username.lower()}":
+                                    is_mentioned = True
+                                    break
+                            elif ent.type == "text_mention" and getattr(ent, "user", None) and bot_id is not None:
+                                if ent.user.id == bot_id:
+                                    is_mentioned = True
+                                    break
+                except Exception as e:
+                    self.adapter.logger.error("Telegram message conversion failed (%s)", type(e).__name__)
+
+            message_chain = await self._process_incoming_message(msg)
+
+            message_obj = KiraMessageEvent(
+                adapter=self.adapter.info,
+                message_types=self.adapter.message_types,
+                message=KiraIMMessage(
+                    timestamp=int(msg.date.timestamp() or time.time()),
+                    group=Group(
+                        group_id=str(chat.id),
+                        group_name=chat.title or str(chat.id)
+                    ),
+                    sender=User(
+                        user_id=str(user.id),
+                        nickname=user.full_name or str(user.id)
+                    ),
+                    is_mentioned=is_mentioned,
+                    message_id=str(msg.id),
+                    self_id=self.adapter.config["bot_pid"],
+                    chain=message_chain,
+                ),
+                timestamp=int(msg.date.timestamp() or time.time())
+            )
+            self.publish(message_obj)
+        else:
+            # direct message
+
+            if not self.is_allowed(user.id, permission="im.direct.receive"):
+                return
+            message_chain = await self._process_incoming_message(msg)
+
+            message_obj = KiraMessageEvent(
+                adapter=self.adapter.info,
+                message_types=self.adapter.message_types,
+                message=KiraIMMessage(
+                    timestamp=int(msg.date.timestamp() or time.time()),
+                    sender=User(
+                        user_id=str(user.id),
+                        nickname=user.full_name or str(user.id)
+                    ),
+                    is_mentioned=True,
+                    message_id=str(msg.id),
+                    self_id=self.adapter.config["bot_pid"],
+                    chain=message_chain,
+                ),
+                timestamp=int(msg.date.timestamp() or time.time())
+            )
+            self.publish(message_obj)
+
+    async def _process_incoming_message(self, tg_message) -> MessageChain:
+        elements: List = []
+
+        # Reply
+        if tg_message.reply_to_message:
+            replied_text = tg_message.reply_to_message.text or ""
+            elements.append(Reply(str(tg_message.reply_to_message.id), replied_text))
+
+        # Text + inline mentions
+        # Media messages (photo/video/document) put their text in caption/caption_entities,
+        # so fall back to those when plain text is absent to avoid losing the caption.
+        message_text = tg_message.text if tg_message.text is not None else tg_message.caption
+        if message_text:
+            try:
+                entities = getattr(tg_message, "entities", None) or getattr(tg_message, "caption_entities", None) or []
+                # Telegram entity offset/length are in UTF-16 code units, which
+                # diverge from Python str indices once the text contains non-BMP
+                # characters (e.g. emoji). Slice on the UTF-16-LE encoding so the
+                # mention text and the surrounding text segments stay aligned.
+                text_u16 = message_text.encode("utf-16-le")
+
+                def _u16_slice(start_units: int, len_units: int) -> str:
+                    return text_u16[start_units * 2: (start_units + len_units) * 2].decode("utf-16-le", "ignore")
+
+                total_units = len(text_u16) // 2
+                # Collect mention entities with their positions
+                mentions = []
+                for ent in entities:
+                    if ent.type == "mention":
+                        username = _u16_slice(ent.offset, ent.length).lstrip("@")
+                        # Resolve display name: bot self → full_name directly,
+                        # others → use @username (avoid per-mention get_chat to prevent rate-limit issues)
+                        display = username
+                        try:
+                            if self.adapter.app.bot.username and username.lower() == self.adapter.app.bot.username.lower():
+                                display = self.adapter.app.bot.full_name or username
+                        except Exception:
+                            self.adapter.logger.debug(f"Failed to resolve display name for @{username}", exc_info=False)
+                        mentions.append((ent.offset, ent.length, At(pid=username, nickname=display)))
+                    elif ent.type == "text_mention" and getattr(ent, "user", None):
+                        user_obj = ent.user
+                        display = getattr(user_obj, "full_name", None) or getattr(user_obj, "username", None) or str(user_obj.id)
+                        mentions.append((ent.offset, ent.length, At(pid=str(user_obj.id), nickname=display)))
+                # Sort by position to interleave text and At in order
+                mentions.sort(key=lambda m: m[0])
+                # Build elements by splitting text around mention ranges (UTF-16 units)
+                pos = 0
+                for offset, length, at_elem in mentions:
+                    if offset > pos:
+                        plain = _u16_slice(pos, offset - pos)
+                        if plain:
+                            elements.append(Text(plain))
+                    elements.append(at_elem)
+                    pos = offset + length
+                # Remaining text after the last mention
+                if pos < total_units:
+                    trailing = _u16_slice(pos, total_units - pos)
+                    if trailing:
+                        elements.append(Text(trailing))
+            except Exception:
+                elements.append(Text(message_text))
+
+        # Photo
+        if tg_message.photo:
+            try:
+                # Select the highest resolution photo
+                best_photo = tg_message.photo[-1]
+                tg_file = await self.adapter.app.bot.get_file(best_photo.file_id)
+                # Build direct download URL
+
+                image_url = tg_file.file_path
+                elements.append(Image(image_url))
+            except Exception:
+                # Fallback to placeholder text to ensure non-blocking
+
+                elements.append(Text("[Image]"))
+
+        # Voice/Audio
+        if tg_message.voice:
+            voice_id = tg_message.voice.file_id
+            voice_file = await self.adapter.app.bot.get_file(voice_id)
+            voice_url = voice_file.file_path
+
+            voice_content = await get_file_content(voice_url)
+            base64_data = base64.b64encode(voice_content)
+            elements.append(Record(record=base64_data.decode('utf-8')))
+
+        elif tg_message.audio:
+            audio_id = tg_message.audio.file_id
+            audio_file = await self.adapter.app.bot.get_file(audio_id)
+            audio_url = audio_file.file_path
+
+            audio_content = await get_file_content(audio_url)
+            base64_data = base64.b64encode(audio_content)
+            elements.append(Record(record=base64_data.decode('utf-8')))
+
+        # Document (File)
+        if tg_message.document:
+            try:
+                doc = tg_message.document
+                tg_file = await self.adapter.app.bot.get_file(doc.file_id)
+                # tg_file.file_path is already a full URL resolved by the library
+                elements.append(File(
+                    file=tg_file.file_path,
+                    name=getattr(doc, 'file_name', None),
+                    size=str(doc.file_size) if doc.file_size else None,
+                    mime=doc.mime_type,
+                ))
+            except Exception:
+                elements.append(Text("[File]"))
+
+        # Video
+        if tg_message.video:
+            try:
+                vid = tg_message.video
+                tg_file = await self.adapter.app.bot.get_file(vid.file_id)
+                # tg_file.file_path is already a full URL resolved by the library
+                elements.append(Video(
+                    file=tg_file.file_path,
+                    name=getattr(vid, 'file_name', None),
+                    size=str(vid.file_size) if vid.file_size else None,
+                    mime=vid.mime_type,
+                ))
+            except Exception:
+                elements.append(Text("[Video]"))
+
+        # Sticker
+        if tg_message.sticker:
+            try:
+                stk = tg_message.sticker
+                if stk.is_animated:
+                    sticker_mime = "application/x-tgsticker"
+                elif stk.is_video:
+                    sticker_mime = "video/webm"
+                else:
+                    sticker_mime = "image/webp"
+                tg_file = await self.adapter.app.bot.get_file(stk.file_id)
+                sticker_content = await get_file_content(tg_file.file_path)
+                sticker_b64 = base64.b64encode(sticker_content).decode('utf-8')
+                elements.append(Sticker(
+                    sticker=sticker_b64,
+                    mime=sticker_mime,
+                ))
+            except Exception:
+                elements.append(Text(str(tg_message.sticker.emoji or 'sticker')))
+
+        return MessageChain(elements or [Text("[Unsupported message]")])
+
+    # ===== Send messages (called by core) =====
+
+    @staticmethod
+    def _escape_html(text: str) -> str:
+        """Escape special characters for Telegram HTML parse mode."""
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+    async def _send_message_to_chat(self, chat_id: int, message: MessageChain) -> Optional[str]:
+        """Core send logic shared by group and direct messages.
+
+        Iterates over message elements in ``message`` and sends them
+        to ``chat_id`` via the Telegram Bot API.  Returns the id of the last
+        sent Telegram message, or ``None`` if nothing was sent.
+        """
+        message_id = None
+        idx = 0
+        reply_to_id = None
+
+        while idx < len(message):
+            ele = message[idx]
+
+            # Reply element: capture target message id and advance
+            if isinstance(ele, Reply):
+                reply_to_id = int(ele.message_id)
+                idx += 1
+                continue
+
+            # Build reply kwargs (consumed by the first send_* call after a Reply)
+            reply_kw = {"reply_to_message_id": reply_to_id} if reply_to_id is not None else {}
+            reply_to_id = None
+
+            # ── Text / At / Emoji (merge contiguous run into one HTML message) ──
+            if isinstance(ele, (Text, At, Emoji)):
+                html_text = ""
+                while idx < len(message) and isinstance(message[idx], (Text, At, Emoji)):
+                    part = message[idx]
+                    if isinstance(part, Text):
+                        html_text += self._escape_html(part.text)
+                    elif isinstance(part, At):
+                        if part.pid.lower() == "all":
+                            html_text += "@all"
+                        elif part.pid.isdigit():
+                            # Numeric user ID from text_mention: show display name as clickable link
+                            display = part.nickname if part.nickname else part.pid
+                            html_text += f"<a href=\"tg://user?id={self._escape_html(part.pid)}\">@{self._escape_html(display)}</a>"
+                        else:
+                            # String username from mention: use @username
+                            html_text += f"@{self._escape_html(part.pid)}"
+                    else:  # Emoji
+                        html_text += self.adapter.emoji_dict.get(part.emoji_id, "")
+                    idx += 1
+                sent = await self.adapter.message_sender.send_with_retry(
+                    self.adapter.app.bot.send_message, chat_id=chat_id, text=html_text, parse_mode="HTML", **reply_kw
+                )
+                message_id = str(sent.message_id)
+                continue
+
+            # ── Image ──
+            elif isinstance(ele, Image):
+                # if ele.image_type == "url":
+                #     sent = await self.adapter.message_sender.send_with_retry(
+                #         self.adapter.app.bot.send_photo, chat_id=chat_id, photo=ele.image, **reply_kw
+                #     )
+                # else:
+
+                # Some URLs may not accessible by Telegram's servers
+                image_base64 = await ele.to_base64()
+                sent = await self.adapter.message_sender.send_with_retry(
+                    self.adapter.app.bot.send_photo, chat_id=chat_id, photo=base64.b64decode(image_base64), **reply_kw
+                )
+                message_id = str(sent.message_id)
+
+            # ── Record (voice) ──
+            elif isinstance(ele, Record):
+                record_base64 = await ele.to_base64()
+                sent = await self.adapter.message_sender.send_with_retry(
+                    self.adapter.app.bot.send_voice, chat_id=chat_id, voice=base64.b64decode(record_base64), **reply_kw
+                )
+                message_id = str(sent.message_id)
+
+            # ── Sticker ──
+            elif isinstance(ele, Sticker):
+                sticker_base64 = await ele.to_base64()
+                sent = await self.adapter.message_sender.send_with_retry(
+                    self.adapter.app.bot.send_sticker, chat_id=chat_id, sticker=base64.b64decode(sticker_base64), **reply_kw
+                )
+                message_id = str(sent.message_id)
+
+            # ── File (document) ──
+            elif isinstance(ele, File):
+                file_path = await ele.to_path()
+                file_bytes = await asyncio.to_thread(Path(file_path).read_bytes)
+                sent = await self.adapter.message_sender.send_with_retry(
+                    self.adapter.app.bot.send_document, chat_id=chat_id, document=file_bytes, filename=ele.name or "file", **reply_kw
+                )
+                message_id = str(sent.message_id)
+
+            # ── Video ──
+            elif isinstance(ele, Video):
+                video_path = await ele.to_path()
+                video_bytes = await asyncio.to_thread(Path(video_path).read_bytes)
+                sent = await self.adapter.message_sender.send_with_retry(
+                    self.adapter.app.bot.send_video, chat_id=chat_id, video=video_bytes, filename=ele.name or "video", **reply_kw
+                )
+                message_id = str(sent.message_id)
+
+            # ── Fallback ──
+            else:
+                sent = await self.adapter.message_sender.send_with_retry(
+                    self.adapter.app.bot.send_message, chat_id=chat_id, text=str(getattr(ele, 'text', '[Message]')), **reply_kw
+                )
+                message_id = str(sent.message_id)
+
+            idx += 1
+
+        return message_id
+
+    async def send_group_message(self, group_id: Union[int, str], message: MessageChain):
+        if not self.adapter.app:
+            return KiraIMSentResult(ok=False, err="Telegram bot not started")
+        try:
+            msg_id = await self._send_message_to_chat(int(group_id), message)
+            return KiraIMSentResult(msg_id)
+        except Exception as e:
+            return KiraIMSentResult(ok=False, err=f"Failed to send group message ({type(e).__name__})")
+
+    async def send_direct_message(self, user_id: Union[int, str], message: MessageChain):
+        if not self.adapter.app:
+            return KiraIMSentResult(ok=False, err="Telegram bot not started")
+        try:
+            msg_id = await self._send_message_to_chat(int(user_id), message)
+            return KiraIMSentResult(msg_id)
+        except Exception as e:
+            return KiraIMSentResult(ok=False, err=f"Failed to send direct message ({type(e).__name__})")
