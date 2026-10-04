@@ -582,11 +582,25 @@ async def test_failed_sends_do_not_expose_exception_payloads(adapter_factory, pl
 
 
 @pytest.mark.asyncio
-async def test_discord_debug_logging_does_not_include_conversation(adapter_factory):
-    adapter = adapter_factory("Discord", {"permission_mode": "deny_list", "debug_mode": True})
-    await adapter.im._handle_message(dc_message(adapter, content="private conversation"))
-    assert "private conversation" not in repr(adapter.logger.mock_calls)
-    adapter.logger.debug.assert_called_once_with("Received Discord direct message id=%s", 42)
+@pytest.mark.parametrize("group", [False, True])
+@pytest.mark.parametrize("enabled,targets,expected", [
+    (False, [], False),
+    (True, [], True),
+    (True, ["gm:456", "dm:123"], True),
+    (True, ["gm:999", "dm:999"], False),
+    (True, ["dm:456", "gm:123"], False),
+])
+async def test_discord_debug_logging_preserves_raw_message_and_target_filter(adapter_factory, group, enabled, targets, expected):
+    adapter = adapter_factory("Discord", {
+        "permission_mode": "deny_list", "debug_mode": enabled, "debug_mode_list": targets,
+    })
+    message = dc_message(adapter, group)
+    await adapter.im._handle_message(message)
+    if expected:
+        prefix = "Raw message" if group else "Raw DM"
+        adapter.logger.debug.assert_called_once_with(f"{prefix}: {message}")
+    else:
+        adapter.logger.debug.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -138,9 +138,9 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
         if self.adapter.debug_mode:
             if self.adapter.debug_mode_list:
                 if f"gm:{channel_id}" in self.adapter.debug_mode_list:
-                    self.adapter.logger.debug("Received Discord group message id=%s", message.id)
+                    self.adapter.logger.debug(f"Raw message: {message}")
             else:
-                self.adapter.logger.debug("Received Discord group message id=%s", message.id)
+                self.adapter.logger.debug(f"Raw message: {message}")
 
         # Check if bot is mentioned (user mention, role mention, or everyone)
         is_mentioned = False
@@ -205,9 +205,9 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
         if self.adapter.debug_mode:
             if self.adapter.debug_mode_list:
                 if f"dm:{user_id}" in self.adapter.debug_mode_list:
-                    self.adapter.logger.debug("Received Discord direct message id=%s", message.id)
+                    self.adapter.logger.debug(f"Raw DM: {message}")
             else:
-                self.adapter.logger.debug("Received Discord direct message id=%s", message.id)
+                self.adapter.logger.debug(f"Raw DM: {message}")
 
         message_chain = await self._process_incoming_message(message)
 
