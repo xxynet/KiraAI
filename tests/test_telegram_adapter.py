@@ -180,7 +180,7 @@ async def test_stop_continues_after_application_stop_is_cancelled():
 
 
 @pytest.mark.asyncio
-async def test_discord_stop_closes_gateway_before_cancelling_bot_task():
+async def test_discord_stop_cancels_bot_task_before_closing_gateway():
     events = []
 
     async def wait_for_cancellation():
@@ -208,7 +208,7 @@ async def test_discord_stop_closes_gateway_before_cancelling_bot_task():
     await adapter.stop()
 
     adapter.bot.close.assert_awaited_once()
-    assert events == ["bot-closed", "bot-task-cancelled"]
+    assert events == ["bot-task-cancelled", "bot-closed"]
 
 
 @pytest.mark.asyncio

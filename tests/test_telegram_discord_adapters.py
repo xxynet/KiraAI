@@ -723,3 +723,115 @@ async def test_sender_cancellation_does_not_retry(platform):
     with pytest.raises(asyncio.CancelledError):
         await sender.send_with_retry(send)
     send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_discord_stop_quiesces_gateway_request_before_closing_session(adapter_factory):
+    adapter = adapter_factory("Discord")
+    session_closed = asyncio.Event()
+    request_started = asyncio.Event()
+    request_finished = asyncio.Event()
+    events = []
+
+    async def gateway_request():
+        request_started.set()
+        try:
+            await session_closed.wait()
+            raise RuntimeError("Session is closed")
+        finally:
+            request_finished.set()
+            events.append("request-finished")
+
+    async def start(token):
+        await asyncio.wait_for(gateway_request(), timeout=60)
+
+    async def close():
+        session_closed.set()
+        events.append("session-closed")
+        await asyncio.sleep(0)
+        adapter.bot.closed = True
+
+    adapter.bot.start.side_effect = start
+    adapter.bot.close.side_effect = close
+    await adapter.start()
+    await request_started.wait()
+    await adapter.stop()
+    assert events == ["request-finished", "session-closed"]
+    assert request_finished.is_set()
+    assert adapter._bot_task.done()
+    assert adapter._last_error is None
+    adapter.logger.error.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_discord_stop_collects_runner_error_that_arrives_during_cancellation(adapter_factory):
+    adapter = adapter_factory("Discord")
+    started = asyncio.Event()
+
+    async def start(token):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise RuntimeError("gateway failure during cancellation")
+
+    adapter.bot.start.side_effect = start
+    await adapter.start()
+    await started.wait()
+    await adapter.stop()
+    assert adapter._bot_task.done()
+    assert isinstance(adapter._last_error, RuntimeError)
+    adapter.logger.error.assert_called_once_with("Discord bot error (%s)", "RuntimeError")
+    adapter.bot.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_discord_stop_propagates_client_close_failure_after_runner_exits(adapter_factory):
+    adapter = adapter_factory("Discord")
+    await adapter.start()
+    await asyncio.sleep(0)
+    adapter.bot.close.side_effect = RuntimeError("close failure")
+    with pytest.raises(RuntimeError, match="close failure"):
+        await adapter.stop()
+    assert adapter._bot_task.done()
+    adapter.bot.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_stop", [False, True])
+async def test_discord_stop_quiesces_runner_even_if_callback_cleanup_is_interrupted(adapter_factory, cancel_stop):
+    adapter = adapter_factory("Discord")
+    runner_started = asyncio.Event()
+    cleanup_entered = asyncio.Event()
+
+    async def start(token):
+        runner_started.set()
+        await asyncio.Event().wait()
+
+    async def cleanup():
+        cleanup_entered.set()
+        if cancel_stop:
+            await asyncio.Event().wait()
+        raise RuntimeError("callback cleanup failed")
+
+    async def close():
+        assert adapter._bot_task.done()
+        adapter.bot.closed = True
+
+    adapter.bot.start.side_effect = start
+    adapter.bot.close.side_effect = close
+    adapter._cancel_message_tasks = cleanup
+    await adapter.start()
+    await runner_started.wait()
+    task = asyncio.create_task(adapter.stop())
+    await cleanup_entered.wait()
+    if cancel_stop:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    else:
+        with pytest.raises(RuntimeError, match="callback cleanup failed"):
+            await task
+    assert adapter._bot_task.done()
+    assert adapter.bot.closed
+    adapter.bot.close.assert_awaited_once()
