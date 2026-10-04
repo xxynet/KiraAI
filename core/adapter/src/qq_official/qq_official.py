@@ -131,6 +131,7 @@ class QQOfficialAdapter(BaseAdapter):
         self.app_secret = str(self.config.get("app_secret", "")).strip()
         self.sandbox = bool(self.config.get("sandbox", False))
         self._client_task: Optional[asyncio.Task] = None
+        self._client_close_task: Optional[asyncio.Task] = None
         self.client = None
         self.im = self.register_capability(IMCapability, QQOfficialIMCapability(self))
         self._configure_access()
@@ -151,23 +152,30 @@ class QQOfficialAdapter(BaseAdapter):
                 capability_type=IMCapability, permission=permission, policy=policy,
             )
 
-    async def start(self):
+    async def start(self) -> None:
         if botpy is None:
             logger.error("QQ official bot requires qq-botpy. Install project dependencies first.")
-            return
+            raise RuntimeError("QQ official bot requires qq-botpy")
         if not self.app_id or not self.app_secret:
             logger.error(
                 "QQ official bot AppID and AppSecret must both be configured; "
                 "use QR-code login in WebUI before enabling the adapter"
             )
-            return
+            raise ValueError("QQ official AppID and AppSecret are required")
         if self._client_task and not self._client_task.done():
+            await asyncio.shield(self._client_task)
             return
-        if self.client is None:
-            self.client = _QQOfficialClient(self)
+        self.client = _QQOfficialClient(self)
+        self._client_close_task = None
         self._client_task = asyncio.create_task(
             self._run_client(), name=f"qq-official:{self.info.name}"
         )
+        task = self._client_task
+        try:
+            await task
+        finally:
+            if self._client_task is task:
+                await self._close_client()
 
     async def _run_client(self):
         try:
@@ -175,7 +183,20 @@ class QQOfficialAdapter(BaseAdapter):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.error(f"QQ official bot connection stopped: {exc}")
+            logger.error("QQ official bot connection stopped (%s)", type(exc).__name__)
+            raise
+        finally:
+            await self._close_client()
+
+    async def _close_client(self) -> None:
+        if self.client is None:
+            return
+        if self._client_close_task is None:
+            self._client_close_task = asyncio.create_task(self.client.close())
+        try:
+            await asyncio.shield(self._client_close_task)
+        except Exception as exc:
+            logger.warning("Failed to close QQ official bot client (%s)", type(exc).__name__)
 
     @staticmethod
     def _generate_bind_key() -> str:
@@ -217,17 +238,10 @@ class QQOfficialAdapter(BaseAdapter):
         return result
 
     async def stop(self):
-        if self.client:
-            try:
-                await self.client.close()
-            except Exception as exc:
-                logger.warning(f"Failed to close QQ official bot client: {exc}")
+        await self._close_client()
         if self._client_task and not self._client_task.done():
             self._client_task.cancel()
-            try:
-                await self._client_task
-            except asyncio.CancelledError:
-                pass
+            await asyncio.gather(self._client_task, return_exceptions=True)
         self._client_task = None
         self.client = None
 

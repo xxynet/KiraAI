@@ -119,7 +119,8 @@ async def test_weixin_oc_empty_token_does_not_start_adapter(monkeypatch):
 
     monkeypatch.setattr(adapter, "_run_loop", fake_run_loop)
 
-    await adapter.start()
+    with pytest.raises(ValueError, match="token is required"):
+        await adapter.start()
     await asyncio.sleep(0)
 
     assert adapter.token is None

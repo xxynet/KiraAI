@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, Mock
 
 import discord
 import pytest
+
+from tests.adapter_lifecycle import start_adapter
 from telegram import Chat, Message, MessageEntity, Update, User as TelegramUser
 
 from core.adapter import AdapterContext, BaseAdapter
@@ -282,7 +284,7 @@ async def test_repeated_start_stop_restart_and_multiple_accounts(adapter_factory
     assert first.message_sender is not second.message_sender
     assert first.im.is_allowed(123, permission="im.direct.receive")
     assert not second.im.is_allowed(123, permission="im.direct.receive")
-    await asyncio.gather(first.start(), first.start(), second.start())
+    await asyncio.gather(start_adapter(first), start_adapter(first), start_adapter(second))
     await asyncio.sleep(0)
     old_client = first.get_client()
     if platform == "Telegram":
@@ -302,7 +304,7 @@ async def test_repeated_start_stop_restart_and_multiple_accounts(adapter_factory
     else:
         assert first.bot.closed
         assert not second.bot.closed
-    await first.start()
+    await start_adapter(first)
     await asyncio.sleep(0)
     if platform == "Telegram":
         assert first.app.running
@@ -333,7 +335,7 @@ async def test_stop_cancels_own_inflight_callback_and_rejects_late_messages(adap
             finished.set()
 
     adapter.im._process_incoming_message = blocked_conversion
-    await adapter.start()
+    await start_adapter(adapter)
     if platform == "Telegram":
         receive = lambda: adapter._on_message(tg_update(text="hello"), None)
     else:
@@ -442,7 +444,8 @@ async def test_telegram_outgoing_media_preserves_order_and_reply(adapter_factory
 async def test_telegram_start_failure_cleans_started_components(adapter_factory):
     adapter = adapter_factory("Telegram")
     adapter.app.updater.start_polling.side_effect = RuntimeError("sensitive-token")
-    await adapter.start()
+    with pytest.raises(RuntimeError):
+        await adapter.start()
     adapter.app.stop.assert_awaited_once()
     adapter.app.shutdown.assert_awaited_once()
     assert not adapter._accepting_messages
@@ -609,7 +612,7 @@ async def test_discord_debug_logging_preserves_raw_message_and_target_filter(ada
 async def test_discord_task_failure_is_observed_and_records_error(adapter_factory):
     adapter = adapter_factory("Discord")
     adapter.bot.start.side_effect = RuntimeError("secret-token")
-    await adapter.start()
+    await start_adapter(adapter)
     with pytest.raises(RuntimeError):
         await adapter._bot_task
     assert isinstance(adapter._last_error, RuntimeError)
@@ -622,7 +625,8 @@ async def test_discord_task_failure_is_observed_and_records_error(adapter_factor
 @pytest.mark.parametrize("platform", ["Telegram", "Discord"])
 async def test_missing_credentials_do_not_start_clients(adapter_factory, platform):
     adapter = adapter_factory(platform, {"bot_token": ""})
-    await adapter.start()
+    with pytest.raises(ValueError, match="token is required"):
+        await adapter.start()
     if platform == "Telegram":
         adapter.app.initialize.assert_not_awaited()
     else:
@@ -656,7 +660,7 @@ async def test_telegram_cancellation_during_start_cleans_initialized_client(adap
 async def test_cancelling_stop_waiter_does_not_cancel_other_account(adapter_factory, platform):
     first = adapter_factory(platform, name="first")
     second = adapter_factory(platform, name="second")
-    await asyncio.gather(first.start(), second.start())
+    await asyncio.gather(start_adapter(first), start_adapter(second))
     entered = asyncio.Event()
 
     async def close():
@@ -755,7 +759,7 @@ async def test_discord_stop_quiesces_gateway_request_before_closing_session(adap
 
     adapter.bot.start.side_effect = start
     adapter.bot.close.side_effect = close
-    await adapter.start()
+    await start_adapter(adapter)
     await request_started.wait()
     await adapter.stop()
     assert events == ["request-finished", "session-closed"]
@@ -778,7 +782,7 @@ async def test_discord_stop_collects_runner_error_that_arrives_during_cancellati
             raise RuntimeError("gateway failure during cancellation")
 
     adapter.bot.start.side_effect = start
-    await adapter.start()
+    await start_adapter(adapter)
     await started.wait()
     await adapter.stop()
     assert adapter._bot_task.done()
@@ -790,7 +794,7 @@ async def test_discord_stop_collects_runner_error_that_arrives_during_cancellati
 @pytest.mark.asyncio
 async def test_discord_stop_propagates_client_close_failure_after_runner_exits(adapter_factory):
     adapter = adapter_factory("Discord")
-    await adapter.start()
+    await start_adapter(adapter)
     await asyncio.sleep(0)
     adapter.bot.close.side_effect = RuntimeError("close failure")
     with pytest.raises(RuntimeError, match="close failure"):
@@ -823,7 +827,7 @@ async def test_discord_stop_quiesces_runner_even_if_callback_cleanup_is_interrup
     adapter.bot.start.side_effect = start
     adapter.bot.close.side_effect = close
     adapter._cancel_message_tasks = cleanup
-    await adapter.start()
+    await start_adapter(adapter)
     await runner_started.wait()
     task = asyncio.create_task(adapter.stop())
     await cleanup_entered.wait()

@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
+
+from tests.adapter_lifecycle import start_adapter
 from Crypto.Cipher import AES
 
 from core.adapter.adapter_info import AdapterInfo
@@ -393,13 +395,13 @@ async def test_core_send_routes_opaque_target_through_im_capability():
     assert adapter.client.calls[0][2]["payload"]["msg"]["to_user_id"] == "user:opaque/id"
 
 
-async def test_start_is_immediate_and_duplicate_start_is_ignored():
+async def test_start_waits_for_runner_and_duplicate_start_shares_runner():
     adapter = make_adapter()
-    await adapter.start()
+    await start_adapter(adapter)
     first = adapter._run_task
     try:
         await asyncio.wait_for(adapter.client.poll_started.wait(), 1)
-        await adapter.start()
+        await start_adapter(adapter)
         assert adapter._run_task is first
         assert not first.done()
     finally:
@@ -412,7 +414,7 @@ async def test_start_is_immediate_and_duplicate_start_is_ignored():
 
 async def test_stop_before_runner_executes_closes_client_once():
     adapter = make_adapter()
-    await adapter.start()
+    await start_adapter(adapter)
     first = adapter._run_task
     await adapter.stop()
     assert first.done()
@@ -425,7 +427,7 @@ async def test_stop_before_start_and_repeated_stop_are_safe():
     await adapter.stop()
     await adapter.stop()
     assert adapter.client.close_count == 1
-    await adapter.start()
+    await start_adapter(adapter)
     try:
         await asyncio.wait_for(adapter.client.poll_started.wait(), 1)
         assert not adapter._run_task.done()
@@ -436,12 +438,12 @@ async def test_stop_before_start_and_repeated_stop_are_safe():
 
 async def test_restart_resets_shutdown_and_runs_new_poll_task():
     adapter = make_adapter()
-    await adapter.start()
+    await start_adapter(adapter)
     await asyncio.wait_for(adapter.client.poll_started.wait(), 1)
     first = adapter._run_task
     await adapter.stop()
     adapter.client.poll_started.clear()
-    await adapter.start()
+    await start_adapter(adapter)
     try:
         await asyncio.wait_for(adapter.client.poll_started.wait(), 1)
         assert adapter._run_task is not first
@@ -466,7 +468,7 @@ async def test_stop_cancels_inbound_media_conversion_before_event_publish(monkey
 
     monkeypatch.setattr(adapter.im, "_item_list_to_components", blocked_conversion)
     adapter.client.responses.append({"msgs": [inbound()]})
-    await adapter.start()
+    await start_adapter(adapter)
     await asyncio.wait_for(converting.wait(), 1)
     await adapter.stop()
     assert cancelled.is_set()
@@ -487,7 +489,7 @@ async def test_concurrent_stop_and_cancelled_waiter_join_same_cleanup(monkeypatc
         await release.wait()
 
     monkeypatch.setattr(adapter.client, "close", delayed_close)
-    await adapter.start()
+    await start_adapter(adapter)
     await asyncio.wait_for(adapter.client.poll_started.wait(), 1)
     waiter = asyncio.create_task(adapter.stop())
     await asyncio.wait_for(closing.wait(), 1)
@@ -495,7 +497,8 @@ async def test_concurrent_stop_and_cancelled_waiter_join_same_cleanup(monkeypatc
     with pytest.raises(asyncio.CancelledError):
         await waiter
     try:
-        await adapter.start()
+        with pytest.raises(RuntimeError, match="stopping"):
+            await adapter.start()
         assert adapter._shutdown_event.is_set()
         assert not adapter._stop_task.done()
     finally:
@@ -508,8 +511,8 @@ async def test_concurrent_stop_and_cancelled_waiter_join_same_cleanup(monkeypatc
 
 async def test_stopping_one_account_does_not_touch_other_account():
     first, second = make_adapter(), make_adapter(name="other")
-    await first.start()
-    await second.start()
+    await start_adapter(first)
+    await start_adapter(second)
     try:
         await asyncio.wait_for(first.client.poll_started.wait(), 1)
         await asyncio.wait_for(second.client.poll_started.wait(), 1)
@@ -616,9 +619,9 @@ async def test_invalidated_account_stops_runner_and_closes_once(monkeypatch):
     adapter = make_adapter()
     monkeypatch.setattr(adapter, "_persist_account_state", Mock())
     adapter.client.responses.append({"errcode": -14})
-    await adapter.start()
-    task = adapter._run_task
-    await asyncio.wait_for(asyncio.shield(task), 1)
+    task = await start_adapter(adapter)
+    with pytest.raises(RuntimeError, match="no longer valid"):
+        await asyncio.wait_for(asyncio.shield(task), 1)
     assert adapter.token is None
     assert adapter.client.close_count == 1
     await adapter.stop()
@@ -639,7 +642,7 @@ async def test_stop_during_long_poll_timeout_retry(monkeypatch):
         await asyncio.Event().wait()
 
     monkeypatch.setattr(adapter, "_poll_inbound_updates", timeout_then_wait)
-    await adapter.start()
+    await start_adapter(adapter)
     await asyncio.wait_for(retry_started.wait(), 1)
     await adapter.stop()
     assert calls == 2
@@ -656,7 +659,7 @@ async def test_stop_interrupts_error_backoff_without_logging_raw_exception(monke
         raise RuntimeError("private-body secret-token")
 
     monkeypatch.setattr(adapter, "_poll_inbound_updates", fail_poll)
-    await adapter.start()
+    await start_adapter(adapter)
     await asyncio.wait_for(failed.wait(), 1)
     await adapter.stop()
     logged = str(adapter.logger.mock_calls)

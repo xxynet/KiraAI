@@ -93,6 +93,7 @@ class QQAdapter(BaseAdapter):
 
     async def start(self) -> None:
         if self._client_task and not self._client_task.done():
+            await asyncio.shield(self._client_task)
             return
         if self.bot.shutdown_event.is_set():
             self.bot = self._create_client()
@@ -103,6 +104,17 @@ class QQAdapter(BaseAdapter):
             self._run_client(self.bot), name=f"qq:{self.info.name}",
         )
         self._client_task.add_done_callback(self._on_client_done)
+        task = self._client_task
+        try:
+            await task
+        finally:
+            # Cancellation may arrive before the child coroutine executes its finally.
+            if self._client_task is task:
+                self._stopping = True
+                try:
+                    await self._close_client(self.bot)
+                finally:
+                    await self._cancel_event_tasks()
 
     def _on_client_done(self, task: asyncio.Task) -> None:
         if not task.cancelled():
@@ -117,6 +129,8 @@ class QQAdapter(BaseAdapter):
                 ws_uri=self.config["ws_uri"],
                 ws_token=self.config["ws_token"],
             )
+            if self.permanently_disconnected:
+                raise ConnectionError("NapCat reconnect attempts exhausted")
         finally:
             self._stopping = True
             try:

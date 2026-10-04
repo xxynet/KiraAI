@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+
+from tests.adapter_lifecycle import start_adapter
 from PIL import Image as PILImage
 from bilibili_api import dynamic
 from bilibili_api.utils.picture import Picture
@@ -40,9 +42,10 @@ async def test_native_clients_bind_distinct_accounts_and_survive_restart(monkeyp
         first.credential, second.credential,
     ]
     assert all(call.kwargs["info"] is not draft for call in send.await_args_list)
-    await first.start()
+    first._log_login_status = AsyncMock()
+    await start_adapter(first)
     await first.stop()
-    await first.start()
+    await start_adapter(first)
     assert first.get_client() is first_client
     sdk_client.close.assert_not_awaited()
     await first.stop()

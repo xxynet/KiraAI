@@ -68,6 +68,7 @@ class ExampleAdapter(BaseAdapter):
     def __init__(self, ctx):
         super().__init__(ctx)
         self.sent = []
+        self._shutdown_event = asyncio.Event()
         self.posts = ["first post", "second post"]
         if self.config.get("enable_im", True):
             self.im = self.register_capability(IMCapability, ExampleIM(self))
@@ -78,10 +79,11 @@ class ExampleAdapter(BaseAdapter):
         self.sent.append((capability_type, target, payload))
 
     async def start(self):
-        pass
+        self._shutdown_event.clear()
+        await self._shutdown_event.wait()
 
     async def stop(self):
-        pass
+        self._shutdown_event.set()
 
     def get_client(self):
         return None

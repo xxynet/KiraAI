@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.adapter_lifecycle import start_adapter
+
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.base import BaseAdapter
 from core.adapter.capabilities import IMCapability
@@ -358,7 +360,8 @@ async def test_qq_official_empty_credentials_do_not_start_adapter(monkeypatch):
     adapter.app_secret = ""
     monkeypatch.setattr(qq_official, "botpy", object())
 
-    await adapter.start()
+    with pytest.raises(ValueError, match="AppID and AppSecret"):
+        await adapter.start()
 
     assert adapter.client is None
     assert adapter._client_task is None
@@ -631,7 +634,7 @@ async def test_real_sdk_stop_cancels_independent_gateway_and_heartbeat(sdk_gatew
     adapter = make_adapter()
     client = None
     try:
-        await adapter.start()
+        await start_adapter(adapter)
         client = adapter.client
         record = await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
         await adapter.stop()
@@ -707,7 +710,7 @@ async def test_real_sdk_stop_drains_already_scheduled_message_callback(monkeypat
 
     monkeypatch.setattr(adapter.im, "_handle_direct_message", delayed_handler)
     try:
-        await adapter.start()
+        await start_adapter(adapter)
         client = adapter.client
         await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
         client.ws_dispatch("c2c_message_create", sdk_message(False, "user-openid"))
@@ -728,11 +731,11 @@ async def test_real_sdk_stop_drains_already_scheduled_message_callback(monkeypat
 async def test_real_sdk_restart_uses_fresh_client_and_only_current_callback_publishes(sdk_gateway):
     adapter = make_adapter()
     try:
-        await adapter.start()
+        await start_adapter(adapter)
         previous_client = adapter.client
         await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
         await adapter.stop()
-        await adapter.start()
+        await start_adapter(adapter)
         current_client = adapter.client
         await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
         assert current_client is not previous_client
@@ -751,7 +754,7 @@ async def test_real_sdk_http_close_failure_still_cleans_gateway_tasks(sdk_gatewa
 
     adapter = make_adapter()
     try:
-        await adapter.start()
+        await start_adapter(adapter)
         record = await asyncio.wait_for(sdk_gateway.opened.get(), timeout=2)
         adapter.client.http.close = AsyncMock(side_effect=RuntimeError("simulated HTTP close failure"))
         await adapter.stop()

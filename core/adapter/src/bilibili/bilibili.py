@@ -34,6 +34,7 @@ class BiliBiliAdapter(BaseAdapter):
             ac_time_value=self.config.get("ac_time_value") or None,
         )
         self._client = BiliBiliClient(self.credential)
+        self._run_task: asyncio.Task | None = None
         self.listening_task: asyncio.Task | None = None
         self._comment_task: asyncio.Task | None = None
         self.comment_notifications = BiliBiliCommentNotifications(self)
@@ -60,6 +61,19 @@ class BiliBiliAdapter(BaseAdapter):
         return BiliBiliQRCodeLoginHandler()
 
     async def start(self) -> None:
+        if self._run_task and not self._run_task.done():
+            await asyncio.shield(self._run_task)
+            return
+        self._run_task = asyncio.create_task(self._run(), name=f"bilibili:{self.info.name}")
+        await self._run_task
+
+    async def _run(self) -> None:
+        try:
+            await self._run_listeners()
+        finally:
+            await self._stop_listeners()
+
+    async def _run_listeners(self) -> None:
         get_bilibili_client()
         await self._log_login_status()
         tasks = []
@@ -77,10 +91,10 @@ class BiliBiliAdapter(BaseAdapter):
             self._dm_task = asyncio.create_task(self._start_im())
             tasks.append(self._dm_task)
         if tasks:
-            try:
-                await asyncio.gather(*tasks)
-            finally:
-                await self._stop_listeners()
+            await asyncio.gather(*tasks)
+        else:
+            # Feed operations remain available even without inbound listeners.
+            await asyncio.Event().wait()
 
     async def _start_comment_notifications(self) -> None:
         interval = max(1.0, float(self.config.get("listening_interval") or 20.0))
@@ -95,7 +109,7 @@ class BiliBiliAdapter(BaseAdapter):
     async def _start_im(self) -> None:
         if not self.credential.sessdata:
             self.logger.error("BiliBili credential (sessdata) is not set")
-            return
+            raise ValueError("Bilibili IM requires sessdata")
         session = Session(self.credential, debug=False)
         self._dm_session = session
         handlers: set[asyncio.Task] = set()
@@ -122,6 +136,7 @@ class BiliBiliAdapter(BaseAdapter):
             await session.start(exclude_self=True)
         except Exception as exc:
             self.logger.error(f"Failed to start BiliBili DM adapter: {type(exc).__name__}")
+            raise
         finally:
             self._dm_session = None
             pending = list(handlers)
@@ -174,6 +189,10 @@ class BiliBiliAdapter(BaseAdapter):
             await asyncio.sleep(interval)
 
     async def stop(self) -> None:
+        task = self._run_task
+        if task and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         await self._stop_listeners()
         self.feed.clear_cursors()
         self.comment_notifications.reset()

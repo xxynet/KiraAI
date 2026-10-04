@@ -105,19 +105,32 @@ class DiscordAdapter(BaseAdapter):
 
     # ===== Lifecycle =====
 
-    async def start(self):
+    async def start(self) -> None:
         async with self._lifecycle_lock:
-            await self._start()
+            existing = self._bot_task and not self._bot_task.done()
+            if not existing:
+                await self._start()
+            task = self._bot_task
+        if existing:
+            await asyncio.shield(task)
+            return
+        try:
+            await task
+        finally:
+            async with self._lifecycle_lock:
+                if self._bot_task is task and not self._stopping:
+                    await self._stop()
 
     async def _start(self):
-        """Start the Discord adapter (non-blocking)."""
+        """Create the gateway runner while holding the lifecycle lock."""
         if not self.bot_token:
             self.logger.error("Discord bot_token is not set")
-            return
+            raise ValueError("Discord bot token is required")
         if self._bot_task and not self._bot_task.done():
             return
         if self.bot.is_closed():
             self._create_bot()
+        self._stopping = False
         self._last_error = None
         self._accepting_messages = True
         self.logger.info("Starting Discord adapter, proxy configured=%s", bool(self.proxy))
@@ -148,6 +161,7 @@ class DiscordAdapter(BaseAdapter):
 
     async def _stop(self):
         """Stop the Discord adapter."""
+        self._stopping = True
         self._accepting_messages = False
         try:
             await self._cancel_message_tasks()

@@ -2,6 +2,8 @@ import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+
+from tests.adapter_lifecycle import start_adapter
 from bilibili_api import comment
 
 from core.adapter import FeedItem, FeedRef
@@ -271,7 +273,11 @@ async def test_notifications_default_on_but_require_login(monkeypatch, sdk_clien
     with pytest.raises(asyncio.CancelledError):
         await task
     logged_out = make_adapter(enable_im=False, enable_comment_notifications=True)
-    await asyncio.wait_for(logged_out.start(), timeout=1)
+    logged_out_task = await start_adapter(logged_out)
+    await asyncio.sleep(0)
+    assert not logged_out_task.done()
+    await logged_out.stop()
+    await asyncio.gather(logged_out_task, return_exceptions=True)
     assert logged_out._comment_task is None
 
 @pytest.mark.asyncio
@@ -279,7 +285,11 @@ async def test_notifications_require_known_account_uid_to_exclude_self(monkeypat
     adapter = make_adapter(enable_im=False, enable_comment_notifications=True, sessdata="session")
     adapter._log_login_status = AsyncMock()
     adapter.logger = Mock()
-    await asyncio.wait_for(adapter.start(), timeout=1)
+    task = await start_adapter(adapter)
+    await asyncio.sleep(0)
+    assert not task.done()
+    await adapter.stop()
+    await asyncio.gather(task, return_exceptions=True)
     assert adapter._comment_task is None
     adapter.logger.warning.assert_called_once_with(
         "Bilibili comment notifications require a verified or configured account UID"
