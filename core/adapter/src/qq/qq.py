@@ -1,7 +1,5 @@
 import asyncio
-import json
-from pathlib import Path
-from typing import Any, Callable, Awaitable
+from typing import Callable, Awaitable
 
 from core.adapter.access import ListAccessPolicy
 from core.adapter.base import AdapterTargetId, BaseAdapter
@@ -19,8 +17,6 @@ class QQAdapter(BaseAdapter):
 
     def __init__(self, ctx: AdapterContext):
         super().__init__(ctx)
-        self.emoji_dict = self._load_dict(Path(__file__).with_name("emoji.json"))
-        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "file", "video", "forward"]
         self.logger = get_logger(self.info.name, "blue")
         self.debug_mode = self.config.get("debug_mode", False)
         self.debug_mode_list = self.config.get("debug_mode_list", [])
@@ -32,13 +28,6 @@ class QQAdapter(BaseAdapter):
         self.im = self.register_capability(IMCapability, QQIMCapability(self))
         self._configure_access()
         self.bot = self._create_client()
-
-    @staticmethod
-    def _load_dict(path: Path) -> dict[str, Any]:
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
 
     def _configure_access(self) -> None:
         mode = self.config.get("permission_mode", "allow_list")

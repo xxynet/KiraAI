@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Dict
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import IMCapability
+from core.adapter.message_format_metadata import MessageFormatMetadata, load_emoji_mapping
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult
 from core.chat.message_elements import (
     Text, Image, At, Reply, Forward, Emoji, Sticker, Record, Poke, Json, File, Video,
@@ -54,6 +56,17 @@ def extract_card_info(card_json: str) -> dict:
 
 class QQIMCapability(IMCapability["QQAdapter"]):
     """Convert, receive and send OneBot messages for the owning QQ account."""
+
+    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "file", "video", "forward"]
+
+    def __init__(self, adapter: QQAdapter):
+        super().__init__(adapter)
+        self._metadata = MessageFormatMetadata(
+            self._supported_elements, emojis=load_emoji_mapping(Path(__file__).with_name("emoji.json")),
+        )
+
+    async def get_message_metadata(self) -> MessageFormatMetadata:
+        return MessageFormatMetadata(self._supported_elements, emojis=self._metadata.emojis)
 
     @staticmethod
     def _extract_poke_texts(msg: Dict) -> tuple[str, str]:
@@ -278,7 +291,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                     self.adapter.logger.error(f"QQ message conversion failed ({type(e).__name__})")
             elif ele.get("type") == "face":
                 emoji_id = str(ele.get("data").get("id"))
-                emoji_desc = self.adapter.emoji_dict.get(emoji_id)
+                emoji_desc = self._metadata.emojis.get(emoji_id)
                 message_content.append(Emoji(emoji_id, emoji_desc))
             elif ele.get("type") == "image":
                 img_url = ele.get("data", {}).get("url", "")
@@ -429,7 +442,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            message_types=self.adapter.message_types,
+            supported_elements=list((await self.get_message_metadata()).supported_elements),
             message=KiraIMMessage(
                 timestamp=timestamp,
                 message_id="None",
@@ -490,7 +503,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            message_types=self.adapter.message_types,
+            supported_elements=list((await self.get_message_metadata()).supported_elements),
             message=KiraIMMessage(
                 timestamp=timestamp,
                 group=Group(
@@ -530,7 +543,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            message_types=self.adapter.message_types,
+            supported_elements=list((await self.get_message_metadata()).supported_elements),
             message=KiraIMMessage(
                 timestamp=timestamp,
                 sender=User(
@@ -598,7 +611,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
             if isinstance(ele, Text):
                 message_chain_elements.append(QQMessageType.Text(ele.text))
             elif isinstance(ele, Emoji):
-                if ele.emoji_id in self.adapter.emoji_dict:
+                if ele.emoji_id in self._metadata.emojis:
                     message_chain_elements.append(QQMessageType.Emoji(int(ele.emoji_id)))
                 else:
                     self.adapter.logger.warning(f"未定义的 Emoji ID: {ele.emoji_id}")

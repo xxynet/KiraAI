@@ -35,9 +35,8 @@ async def test_im_enabled_by_default_and_correct_credential_field():
     assert adapter.get_capability(IMCapability) is adapter.im
     assert adapter.im.adapter is adapter
     assert adapter.credential.sessdata == "test-session"
-    assert adapter.message_types == ["text", "img", "at", "reply", "emoji", "share_video"]
-    await adapter._load_emoji_dict()
-    assert adapter.emoji_dict["510"] == "[打call]"
+    assert (await adapter.im.get_message_metadata()).supported_elements == ["text", "img", "at", "reply", "emoji", "share_video"]
+    assert (await adapter.im.get_message_metadata()).emojis["510"] == "[打call]"
     assert make_adapter(enable_im=False).im is None
     assert make_im_adapter(sessdata="", sesdata="misspelled-session").credential.sessdata is None
 
@@ -78,7 +77,7 @@ async def test_incoming_permissions_and_unchanged_target(config, allowed):
         assert event.message.sender.nickname == "test-user"
         assert event.timestamp == 10
         assert event.is_mentioned
-        assert event.message_types == adapter.message_types
+        assert event.supported_elements == list((await adapter.im.get_message_metadata()).supported_elements)
         assert not hasattr(event, "capability_name")
     else:
         nickname.assert_not_awaited()
@@ -226,7 +225,6 @@ def dm_sessions(monkeypatch):
 async def test_im_lifecycle_handlers_restart_and_shared_client(monkeypatch, sdk_client, dm_sessions, with_feed):
     adapter = make_im_adapter(permission_mode="deny_list", listening_bvid="BV17x411w7KC" if with_feed else "")
     adapter._log_login_status = AsyncMock()
-    await adapter._load_emoji_dict()
     adapter.im._get_user_nickname = AsyncMock(return_value="user")
     adapter.feed.check_new_comments = AsyncMock()
     for _ in range(2):
@@ -263,7 +261,6 @@ async def test_im_lifecycle_handlers_restart_and_shared_client(monkeypatch, sdk_
 async def test_stop_cancels_inflight_message_handler(sdk_client, dm_sessions):
     adapter = make_im_adapter(permission_mode="deny_list")
     adapter._log_login_status = AsyncMock()
-    await adapter._load_emoji_dict()
     entered = asyncio.Event()
 
     async def nickname(uid):
@@ -292,7 +289,6 @@ async def test_stop_cancels_inflight_message_handler(sdk_client, dm_sessions):
 async def test_cancel_during_sdk_login_does_not_close_unstarted_scheduler(monkeypatch, sdk_client, dm_sessions):
     adapter = make_im_adapter()
     adapter._log_login_status = AsyncMock()
-    await adapter._load_emoji_dict()
     entered = asyncio.Event()
 
     async def starting(session, exclude_self):
@@ -314,12 +310,11 @@ async def test_cancel_during_sdk_login_does_not_close_unstarted_scheduler(monkey
 @pytest.mark.asyncio
 async def test_emoji_dictionary_contains_official_native_tokens_only():
     adapter = make_im_adapter()
-    await adapter._load_emoji_dict()
-    assert adapter.emoji_dict["1"] == "[微笑]"
-    assert adapter.emoji_dict["26"] == "[doge]"
-    assert adapter.emoji_dict["510"] == "[打call]"
-    assert all(key.isdigit() for key in adapter.emoji_dict)
-    assert all(token.startswith("[") and token.endswith("]") for token in adapter.emoji_dict.values())
+    assert (await adapter.im.get_message_metadata()).emojis["1"] == "[微笑]"
+    assert (await adapter.im.get_message_metadata()).emojis["26"] == "[doge]"
+    assert (await adapter.im.get_message_metadata()).emojis["510"] == "[打call]"
+    assert all(key.isdigit() for key in (await adapter.im.get_message_metadata()).emojis)
+    assert all(token.startswith("[") and token.endswith("]") for token in (await adapter.im.get_message_metadata()).emojis.values())
 
 @pytest.mark.asyncio
 async def test_text_and_emoji_merge_without_reordering_images(monkeypatch):

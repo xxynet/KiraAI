@@ -29,10 +29,6 @@ class DiscordAdapter(BaseAdapter):
 
         # config
         self.bot_token: str = self.config.get("bot_token", "")
-        self.message_types = [
-            "text", "img", "at", "reply", "record", "emoji",
-            "sticker", "file", "video",
-        ]
 
         # intents
         intent_names = self.config.get("intents", [

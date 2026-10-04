@@ -4,6 +4,7 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from .base import AdapterT, AdapterTargetId, BaseCapability
+from .message_format_metadata import MessageFormatMetadata
 from .feed import FeedItem, FeedPage, FeedPost, FeedQuery, FeedRef, FeedSearchQuery
 
 if TYPE_CHECKING:
@@ -13,6 +14,19 @@ if TYPE_CHECKING:
 
 class IMCapability(BaseCapability[AdapterT]):
     """Instant messaging operations for an adapter."""
+
+    def __init__(self, adapter: AdapterT):
+        super().__init__(adapter)
+        self._supported_elements: list[str] = (
+            adapter._legacy_message_types
+            if adapter._legacy_message_types is not None
+            else list(getattr(self, "_SUPPORTED_ELEMENTS", []))
+        )
+
+    @abstractmethod
+    async def get_message_metadata(self) -> MessageFormatMetadata:
+        """Return the initialized output-format metadata."""
+        ...
 
     @abstractmethod
     async def send_group_message(
@@ -27,6 +41,12 @@ class IMCapability(BaseCapability[AdapterT]):
 
 class FeedCapability(BaseCapability[AdapterT]):
     """Feed, dynamic-post, and comment operations."""
+
+    @abstractmethod
+    async def get_comment_metadata(self) -> MessageFormatMetadata: ...
+
+    @abstractmethod
+    async def get_post_metadata(self) -> MessageFormatMetadata: ...
 
     @abstractmethod
     async def get_feed(self, query: FeedQuery) -> FeedPage: ...

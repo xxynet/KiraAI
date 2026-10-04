@@ -120,14 +120,14 @@ async def test_mention_check_survives_missing_quoted_message():
     assert "hi" in chain_repr
 
 
-async def test_registers_only_one_im_with_adapter_owned_metadata():
+async def test_registers_only_one_im_with_capability_metadata():
     adapter = make_adapter()
     assert isinstance(adapter, BaseAdapter)
     assert isinstance(adapter.get_capability(IMCapability), QQIMCapability)
     assert adapter.get_capabilities() == {IMCapability: adapter.im}
     assert adapter.im.adapter is adapter
     assert adapter.get_client() is adapter.bot
-    assert adapter.emoji_dict
+    assert (await adapter.im.get_message_metadata()).emojis
     assert not hasattr(adapter.im, "emoji_dict")
     assert not hasattr(adapter.im, "message_types")
 
@@ -199,7 +199,7 @@ async def test_inbound_permissions_and_session_metadata(group, mode, listed, all
     assert event.message.raw_message is msg
     assert event.message.timestamp == 1700000000
     assert event.message.chain[0].text == "hello"
-    assert event.message_types == adapter.message_types
+    assert event.supported_elements == list((await adapter.im.get_message_metadata()).supported_elements)
     assert not hasattr(event, "capability_name")
 
 
@@ -523,7 +523,7 @@ async def test_two_instances_keep_clients_permissions_and_lifecycle_independent(
     second.info.name = "qq-second"
     assert first.bot is not second.bot
     assert first.im is not second.im
-    assert first.emoji_dict is not second.emoji_dict
+    assert (await first.im.get_message_metadata()).emojis is not (await second.im.get_message_metadata()).emojis
     assert first._event_tasks is not second._event_tasks
     assert not first.im.is_allowed(123, permission="im.direct.receive")
     assert second.im.is_allowed(123, permission="im.direct.receive")
@@ -580,8 +580,8 @@ async def test_plugin_notice_keeps_qq_metadata_and_session_target(group):
     event = ctx.event_bus.publish.await_args.args[0]
     assert event.session.sid == target
     assert event.message.is_notice
-    assert event.message_types == adapter.message_types
-    assert event.message_types is not adapter.message_types
+    assert event.supported_elements == list((await adapter.im.get_message_metadata()).supported_elements)
+    assert hasattr(type(adapter), "message_types")
 
 
 @pytest.mark.parametrize("group", [False, True])

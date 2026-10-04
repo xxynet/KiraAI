@@ -10,6 +10,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from core.adapter.capabilities import IMCapability
+from core.adapter.message_format_metadata import MessageFormatMetadata, load_emoji_mapping
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, Group, User
 from core.chat.message_elements import Text, Image, At, Reply, Emoji, Sticker, Record, File, Video
 from core.utils.network import get_file_content
@@ -40,6 +41,17 @@ class MessageSender:
 
 class TelegramIMCapability(IMCapability["TelegramAdapter"]):
     """Receive, convert and send messages for one Telegram account."""
+
+    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "record", "emoji", "sticker", "file", "video"]
+
+    def __init__(self, adapter: TelegramAdapter):
+        super().__init__(adapter)
+        self._metadata = MessageFormatMetadata(
+            self._supported_elements, emojis=load_emoji_mapping(Path(__file__).with_name("emoji.json")),
+        )
+
+    async def get_message_metadata(self) -> MessageFormatMetadata:
+        return MessageFormatMetadata(self._supported_elements, emojis=self._metadata.emojis)
 
     # ===== Command processing =====
     async def _cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,7 +120,7 @@ class TelegramIMCapability(IMCapability["TelegramAdapter"]):
 
             message_obj = KiraMessageEvent(
                 adapter=self.adapter.info,
-                message_types=self.adapter.message_types,
+                supported_elements=list((await self.get_message_metadata()).supported_elements),
                 message=KiraIMMessage(
                     timestamp=int(msg.date.timestamp() or time.time()),
                     group=Group(
@@ -136,7 +148,7 @@ class TelegramIMCapability(IMCapability["TelegramAdapter"]):
 
             message_obj = KiraMessageEvent(
                 adapter=self.adapter.info,
-                message_types=self.adapter.message_types,
+                supported_elements=list((await self.get_message_metadata()).supported_elements),
                 message=KiraIMMessage(
                     timestamp=int(msg.date.timestamp() or time.time()),
                     sender=User(
@@ -349,7 +361,7 @@ class TelegramIMCapability(IMCapability["TelegramAdapter"]):
                             # String username from mention: use @username
                             html_text += f"@{self._escape_html(part.pid)}"
                     else:  # Emoji
-                        html_text += self.adapter.emoji_dict.get(part.emoji_id, "")
+                        html_text += self._metadata.emojis.get(part.emoji_id, "")
                     idx += 1
                 sent = await self.adapter.message_sender.send_with_retry(
                     self.adapter.app.bot.send_message, chat_id=chat_id, text=html_text, parse_mode="HTML", **reply_kw

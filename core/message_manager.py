@@ -244,8 +244,12 @@ class MessageProcessor:
         if not pending_messages:
             return False
         last_event = pending_messages[-1]
+        try:
+            supported_elements = last_event.supported_elements
+        except AttributeError:
+            supported_elements = last_event.message_types
         batch_msg = KiraMessageBatchEvent(
-            message_types=last_event.message_types,
+            supported_elements=supported_elements,
             timestamp=int(time.time()),
             adapter=last_event.adapter,
             session=last_event.session,
@@ -546,7 +550,7 @@ class MessageProcessor:
 
         if event.process_strategy == "trigger":
             batch_msg = KiraMessageBatchEvent(
-                message_types=event.message_types,
+                supported_elements=event.supported_elements,
                 timestamp=int(time.time()),
                 adapter=event.adapter,
                 session=event.session,

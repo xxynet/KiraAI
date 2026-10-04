@@ -130,7 +130,6 @@ class QQOfficialAdapter(BaseAdapter):
         self.app_id = str(self.config.get("app_id", "")).strip()
         self.app_secret = str(self.config.get("app_secret", "")).strip()
         self.sandbox = bool(self.config.get("sandbox", False))
-        self.message_types = ["text", "img", "at", "reply", "record", "file", "video", "emoji"]
         self._client_task: Optional[asyncio.Task] = None
         self.client = None
         self.im = self.register_capability(IMCapability, QQOfficialIMCapability(self))

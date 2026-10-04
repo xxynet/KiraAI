@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import uuid
+import warnings
+from functools import wraps
+from deprecated import deprecated
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -80,9 +83,31 @@ class KiraFinalResult:
     step_results: list[KiraStepResult]
 
 
+def _accept_legacy_message_types(cls):
+    """Accept the deprecated constructor keyword without adding a second field."""
+    original_init = cls.__init__
+
+    @wraps(original_init)
+    def initialize(self, *args, **kwargs):
+        if "message_types" in kwargs:
+            if args or "supported_elements" in kwargs:
+                raise TypeError("Specify only supported_elements or deprecated message_types")
+            warnings.warn(
+                "message_types is deprecated; use supported_elements instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            kwargs["supported_elements"] = kwargs.pop("message_types")
+        original_init(self, *args, **kwargs)
+
+    cls.__init__ = initialize
+    return cls
+
+
+@_accept_legacy_message_types
 @dataclass
 class KiraMessageEvent:
-    message_types: list
+    supported_elements: list[str]
     timestamp: int
     message: KiraIMMessage
     _process_strategy: Literal["trigger", "buffer", "discard", "flush"] = "discard"
@@ -91,6 +116,17 @@ class KiraMessageEvent:
     message_repr: Optional[str] = field(default=None, init=False)
     _is_stopped: bool = False
     _is_forced: bool = False
+
+    @property
+    @deprecated("message_types is deprecated; use supported_elements instead")
+    def message_types(self) -> list[str]:
+        """Deprecated read/write alias of supported_elements."""
+        return self.supported_elements
+
+    @message_types.setter
+    @deprecated("message_types is deprecated; use supported_elements instead")
+    def message_types(self, value: list[str]) -> None:
+        self.supported_elements = value
 
     def __post_init__(self):
         self.message_repr = " ".join(ele.repr for ele in self.message.chain)
@@ -168,9 +204,10 @@ class KiraMessageEvent:
         return True
 
 
+@_accept_legacy_message_types
 @dataclass
 class KiraMessageBatchEvent:
-    message_types: list
+    supported_elements: list[str]
     timestamp: int
 
     """event id to uniquely identify a event"""
@@ -190,6 +227,17 @@ class KiraMessageBatchEvent:
     model_group: Optional[list[LLMModelClient]] = field(default_factory=list)
 
     _is_stopped: bool = False
+
+    @property
+    @deprecated("message_types is deprecated; use supported_elements instead")
+    def message_types(self) -> list[str]:
+        """Deprecated read/write alias of supported_elements."""
+        return self.supported_elements
+
+    @message_types.setter
+    @deprecated("message_types is deprecated; use supported_elements instead")
+    def message_types(self, value: list[str]) -> None:
+        self.supported_elements = value
 
     def __post_init__(self):
         self.event_id = uuid.uuid4().hex

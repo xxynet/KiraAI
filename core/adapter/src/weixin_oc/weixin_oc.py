@@ -43,7 +43,6 @@ class WeixinOCAdapter(BaseAdapter):
 
     def __init__(self, ctx: AdapterContext):
         super().__init__(ctx)
-        self.message_types = ["text", "image", "video", "file", "record"]
         self.logger = get_logger(self.info.name, "green")
 
         self.base_url = str(

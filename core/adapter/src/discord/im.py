@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, List, Optional, Union
 import discord
 
 from core.adapter.capabilities import IMCapability
+from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.logging_manager import get_logger
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, Group, User
 from core.chat.message_elements import Text, Image, At, Reply, Emoji, Sticker, Record, File, Video
@@ -77,6 +78,11 @@ class MessageSender:
 
 class DiscordIMCapability(IMCapability["DiscordAdapter"]):
     """Receive, convert and send messages for one Discord account."""
+
+    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "record", "emoji", "sticker", "file", "video"]
+
+    async def get_message_metadata(self) -> MessageFormatMetadata:
+        return MessageFormatMetadata(self._supported_elements, emojis={})
 
     # ===== Slash Commands =====
 
@@ -175,7 +181,7 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            message_types=self.adapter.message_types,
+            supported_elements=list((await self.get_message_metadata()).supported_elements),
             message=KiraIMMessage(
                 timestamp=int(message.created_at.timestamp()),
                 group=Group(
@@ -213,7 +219,7 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            message_types=self.adapter.message_types,
+            supported_elements=list((await self.get_message_metadata()).supported_elements),
             message=KiraIMMessage(
                 timestamp=int(message.created_at.timestamp()),
                 sender=User(

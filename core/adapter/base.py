@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from deprecated import deprecated
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar, Union
@@ -28,11 +29,36 @@ class BaseAdapter(ABC):
         self.ctx = ctx
         self.info = ctx.info
         self.config = ctx.info.config
-        self.message_types: list[str] = []
-        self.emoji_dict: dict | None = None
+        self._legacy_message_types: list[str] | None = None
         self._event_queue = ctx.event_queue
         self.access = AccessController()
         self._capabilities: dict[type[BaseCapability[Any]], BaseCapability[Any]] = {}
+
+    @property
+    @deprecated("message_types is deprecated; use IMCapability.get_message_metadata().supported_elements instead")
+    def message_types(self) -> list[str]:
+        """Expose the live IM declaration for existing plugins without loading resources."""
+        from .capabilities import IMCapability
+
+        try:
+            im = self.get_capability(IMCapability)
+        except ValueError:
+            if self._legacy_message_types is None:
+                self._legacy_message_types = []
+            return self._legacy_message_types
+        return im._supported_elements
+
+    @message_types.setter
+    @deprecated("message_types is deprecated; use IMCapability.get_message_metadata().supported_elements instead")
+    def message_types(self, value: list[str]) -> None:
+        from .capabilities import IMCapability
+
+        try:
+            im = self.get_capability(IMCapability)
+        except ValueError:
+            self._legacy_message_types = value
+        else:
+            im._supported_elements = value
 
     @property
     def capabilities(self) -> Mapping[type[BaseCapability[Any]], BaseCapability[Any]]:

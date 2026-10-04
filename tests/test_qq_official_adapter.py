@@ -414,7 +414,7 @@ async def test_sdk_callback_checks_access_before_publishing_or_caching(group, mo
         event = adapter.ctx.event_queue.get_nowait()
         kind = "gm" if group else "dm"
         assert event.session.sid == f"qq_official:{kind}:{target_id}"
-        assert event.message_types == adapter.message_types
+        assert event.supported_elements == list((await adapter.im.get_message_metadata()).supported_elements)
         assert event.message.self_id == adapter.app_id
         assert reply_ids[target_id] == "incoming-id"
     else:

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import json
 import logging
-from typing import Any, Dict, Union
+from typing import Union
 
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
@@ -42,9 +40,6 @@ class TelegramAdapter(BaseAdapter):
 
         # config
         self.bot_token: str = self.config.get("bot_token", "")
-        self.message_types = ["text", "img", "at", "reply", "record", "emoji", "sticker", "file", "video"]
-
-        self.emoji_dict = self._load_dict(os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji.json"))
 
         # runtime
         base_url = self.config.get("base_url", "https://api.telegram.org/bot")
@@ -76,16 +71,6 @@ class TelegramAdapter(BaseAdapter):
         self.app.add_handler(CommandHandler("start", self.im._cmd_start))
         self.app.add_handler(CommandHandler("help", self.im._cmd_help))
         self.app.add_handler(MessageHandler(filters.ALL, self._on_message))
-
-    @staticmethod
-    def _load_dict(path: str) -> Dict[str, Any]:
-        """Load dictionary from file"""
-        try:
-            with open(path, 'r', encoding="utf-8") as f:
-                emoji_json = f.read()
-            return json.loads(emoji_json)
-        except Exception as e:
-            return {}
 
     async def start(self):
         async with self._lifecycle_lock:

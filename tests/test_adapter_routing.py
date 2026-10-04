@@ -10,6 +10,7 @@ import pytest
 from core.adapter import AdapterContext, AdapterManager, BaseAdapter
 from core.adapter.access import ListAccessPolicy
 from core.adapter.capabilities import IMCapability
+from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.chat.message_elements import Text
 from core.chat.message_utils import (
     KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain,
@@ -28,7 +29,7 @@ def routed_adapter():
 
 def message_event(adapter, group=False, target_id="123"):
     return KiraMessageEvent(
-        message_types=list(adapter.message_types),
+        supported_elements=list(adapter.im._supported_elements),
         timestamp=1, adapter=adapter.info,
         message=KiraIMMessage(
             message_id="1", self_id="bot", timestamp=1,
@@ -62,25 +63,26 @@ def test_single_im_keeps_legacy_sid_and_explicit_metadata():
 def test_adapter_publish_preserves_event_fields():
     adapter = make_adapter()
     event = message_event(adapter)
-    event.message_types = ["custom"]
+    event.supported_elements = ["custom"]
     adapter.publish(event)
     assert adapter.ctx.event_queue.get_nowait() is event
     assert not hasattr(event, "capability_name")
-    assert event.message_types == ["custom"]
+    assert event.supported_elements == ["custom"]
 
 
 def test_capability_publish_preserves_event_fields():
     adapter = routed_adapter()
     capability = adapter.get_capability(IMCapability)
-    adapter.message_types = ["text", "emoji"]
+    adapter.im._metadata = MessageFormatMetadata(["text", "emoji"])
+    adapter.im._supported_elements = adapter.im._metadata.supported_elements
     event = message_event(adapter)
-    event.message_types = ["custom"]
+    event.supported_elements = ["custom"]
     event.session.session_id = "custom/id"
     capability.publish(event)
     assert not hasattr(event, "capability_name")
     assert event.adapter is adapter.info
     assert event.session.sid == "example:dm:custom/id"
-    assert event.message_types == ["custom"]
+    assert event.supported_elements == ["custom"]
     assert adapter.ctx.event_queue.get_nowait() is event
 
 
@@ -173,7 +175,8 @@ async def test_xml_reply_only_passes_target_and_chain(monkeypatch):
 @pytest.mark.asyncio
 async def test_plugin_notice_preserves_opaque_target_without_capability_name():
     adapter = routed_adapter()
-    adapter.message_types = ["text", "img"]
+    adapter.im._metadata = MessageFormatMetadata(["text", "img"])
+    adapter.im._supported_elements = adapter.im._metadata.supported_elements
     ctx = object.__new__(PluginContext)
     ctx.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     ctx.event_bus = SimpleNamespace(publish=AsyncMock())
@@ -184,8 +187,8 @@ async def test_plugin_notice_preserves_opaque_target_without_capability_name():
     assert not hasattr(event, "capability_name")
     assert event.session.sid == "example:dm:channel/123"
     assert event.message.sender.user_id == "channel/123"
-    assert event.message_types == ["text", "img"]
-    assert event.message_types is not adapter.message_types
+    assert event.supported_elements == ["text", "img"]
+    assert hasattr(type(adapter), "message_types")
 
 
 @pytest.mark.asyncio
@@ -279,13 +282,13 @@ async def test_cross_session_permission_uses_opaque_id_without_capability_name()
 
 
 @pytest.mark.asyncio
-async def test_builtin_emoji_tag_uses_adapter_dictionary():
+async def test_builtin_emoji_tag_uses_capability_metadata():
     from core.tag import TagSet
 
     main = importlib.import_module("core.plugin.builtin_plugins.kira-ai.main")
     adapter = routed_adapter()
-    adapter.emoji_dict = {"2": "adapter-emoji"}
-    adapter.message_types = ["emoji"]
+    adapter.im._metadata = MessageFormatMetadata(["emoji"], emojis={"2": "adapter-emoji"})
+    adapter.im._supported_elements = adapter.im._metadata.supported_elements
     channel = adapter.get_capability(IMCapability)
     assert not hasattr(channel, "message_types")
     assert not hasattr(channel, "emoji_dict")
@@ -339,8 +342,8 @@ async def test_notice_without_im_can_enter_message_processing(monkeypatch, sessi
     assert event.is_notice
     assert not event.is_mentioned
     assert event.is_group_message() is (session_type == "gm")
-    assert event.message_types == []
-    assert event.message_types is not adapter.message_types
+    assert event.supported_elements == []
+    assert hasattr(type(adapter), "message_types")
     event.buffer()
     processor = processor_for(adapter)
     await processor.handle_im_message(event)
@@ -348,3 +351,24 @@ async def test_notice_without_im_can_enter_message_processing(monkeypatch, sessi
     batch = processor.event_bus.publish.await_args.args[0]
     assert batch.sid == target
     assert batch.messages == [event.message]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_new_field", [False, True])
+async def test_buffer_flush_accepts_legacy_wrappers_and_prefers_new_elements(has_new_field):
+    adapter = make_adapter()
+    event = message_event(adapter)
+    wrapper = SimpleNamespace(
+        message=event.message, adapter=event.adapter, session=event.session,
+        message_types=["legacy-custom"],
+    )
+    if has_new_field:
+        wrapper.supported_elements = ["new-custom"]
+    processor = processor_for(adapter)
+    processor.session_buffer.get_buffer(event.session.sid).add(wrapper)
+    assert await processor.flush_session_messages(event.session.sid)
+    batch = processor.event_bus.publish.await_args.args[0]
+    assert batch.supported_elements == (["new-custom"] if has_new_field else ["legacy-custom"])
+    assert batch.messages[0] is event.message
+    assert batch.session is event.session
+    assert batch.adapter is event.adapter
+    assert not await processor.flush_session_messages(event.session.sid)

@@ -15,6 +15,7 @@ except ImportError:
     Route = None
 
 from core.adapter.capabilities import IMCapability
+from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.chat import Group, User, KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain
 from core.chat.message_elements import At, Emoji, File, Image, Record, Reply, Text, Video
 from core.logging_manager import get_logger
@@ -30,6 +31,11 @@ QQ_OFFICIAL_MAX_REPLY_IDS_PER_CONVERSATION = 100
 
 class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
     """Receive and send QQ OpenAPI messages using the adapter's account."""
+
+    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "record", "file", "video", "emoji"]
+
+    async def get_message_metadata(self) -> MessageFormatMetadata:
+        return MessageFormatMetadata(self._supported_elements, emojis={})
 
     def __init__(self, adapter: QQOfficialAdapter):
         super().__init__(adapter)
@@ -148,7 +154,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         self.publish(
             KiraMessageEvent(
                 adapter=self.adapter.info,
-                message_types=self.adapter.message_types,
+                supported_elements=list((await self.get_message_metadata()).supported_elements),
                 message=KiraIMMessage(
                     timestamp=int(time.time()),
                     group=Group(group_id=group_id, group_name=group_id),
@@ -174,7 +180,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         self.publish(
             KiraMessageEvent(
                 adapter=self.adapter.info,
-                message_types=self.adapter.message_types,
+                supported_elements=list((await self.get_message_metadata()).supported_elements),
                 message=KiraIMMessage(
                     timestamp=int(time.time()),
                     sender=User(user_id=user_id, nickname=user_id),
