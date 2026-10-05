@@ -202,18 +202,19 @@ class WeixinOCAdapter(BaseAdapter):
 
     async def start(self) -> None:
         if self._stop_task and not self._stop_task.done():
-            return
+            raise RuntimeError("Weixin adapter is stopping")
         if self._run_task and not self._run_task.done():
+            await asyncio.shield(self._run_task)
             return
         if self._close_task and not self._close_task.done():
-            return
+            raise RuntimeError("Weixin client is closing")
         if not self.token:
             self.logger.error(
                 "weixin_oc(%s): bot token is required; use QR-code login in "
                 "WebUI before enabling the adapter",
                 self.info.name,
             )
-            return
+            raise ValueError("Weixin bot token is required")
         self._shutdown_event.clear()
         self._sync_client_state()
         self._close_task = None
@@ -222,6 +223,12 @@ class WeixinOCAdapter(BaseAdapter):
             self._run_loop(), name=f"weixin-oc:{self.info.name}",
         )
         self._run_task.add_done_callback(self._on_run_done)
+        task = self._run_task
+        try:
+            await task
+        finally:
+            if self._run_task is task:
+                await self._close_client()
 
     def _on_run_done(self, task: asyncio.Task) -> None:
         if not task.cancelled():
@@ -241,7 +248,7 @@ class WeixinOCAdapter(BaseAdapter):
                         "credentials in WebUI before enabling the adapter again",
                         self.info.name,
                     )
-                    return
+                    raise RuntimeError("Weixin bot token is no longer valid")
                 try:
                     await self._poll_inbound_updates()
                 except asyncio.TimeoutError:

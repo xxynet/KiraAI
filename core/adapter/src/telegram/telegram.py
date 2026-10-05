@@ -63,6 +63,9 @@ class TelegramAdapter(BaseAdapter):
             .build()
         )
         self._lifecycle_lock = asyncio.Lock()
+        self._run_task: asyncio.Task | None = None
+        self._shutdown_event = asyncio.Event()
+        self._resources_started = True
         self._accepting_messages = False
         self._message_tasks: set[asyncio.Task] = set()
         self.message_sender = MessageSender()
@@ -72,15 +75,37 @@ class TelegramAdapter(BaseAdapter):
         self.app.add_handler(CommandHandler("help", self.im._cmd_help))
         self.app.add_handler(MessageHandler(filters.ALL, self._on_message))
 
-    async def start(self):
+    async def start(self) -> None:
         async with self._lifecycle_lock:
-            await self._start()
+            existing = self._run_task and not self._run_task.done()
+            if not existing:
+                self._shutdown_event.clear()
+                self._resources_started = True
+                await self._start()
+                self._run_task = asyncio.create_task(self._run(), name=f"telegram:{self.info.name}")
+            task = self._run_task
+        if existing:
+            await asyncio.shield(task)
+            return
+        try:
+            await task
+        finally:
+            async with self._lifecycle_lock:
+                if self._run_task is task:
+                    await self._stop()
+
+    async def _run(self) -> None:
+        try:
+            await self._shutdown_event.wait()
+        finally:
+            async with self._lifecycle_lock:
+                await self._stop()
 
     async def _start(self):
         """Start the Telegram adapter asynchronously"""
         if not self.bot_token:
             logger.error("Telegram bot_token is not set")
-            return
+            raise ValueError("Telegram bot token is required")
 
         if self.app.running:
             return
@@ -103,13 +128,22 @@ class TelegramAdapter(BaseAdapter):
         except Exception as e:
             logger.error("Failed to start Telegram (%s)", type(e).__name__)
             await self._stop()
+            raise
 
-    async def stop(self):
+    async def stop(self) -> None:
+        if hasattr(self, "_shutdown_event"):
+            self._shutdown_event.set()
         async with self._lifecycle_lock:
             await self._stop()
+        task = getattr(self, "_run_task", None)
+        if task and task is not asyncio.current_task():
+            await asyncio.gather(task, return_exceptions=True)
 
     async def _stop(self):
         """Stop the Telegram adapter asynchronously"""
+        if not getattr(self, "_resources_started", True):
+            return
+
         self._accepting_messages = False
         await self._cancel_message_tasks()
         if not self.app:
@@ -154,6 +188,7 @@ class TelegramAdapter(BaseAdapter):
         finally:
             application_logger.removeFilter(cancellation_filter)
 
+        self._resources_started = False
         logger.info(f"Stopped listening messages for {self.config.get('bot_pid', 'your bot account')}")
 
     async def _on_message(self, update, context):

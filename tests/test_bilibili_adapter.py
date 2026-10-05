@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from tests.adapter_lifecycle import start_adapter
+
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.base import BaseAdapter
 from core.adapter.capabilities import FeedCapability, IMCapability
@@ -196,7 +198,9 @@ async def test_start_without_listener_verifies_account_and_keeps_sdk_client_shar
     account = AsyncMock(return_value={"mid": 123, "name": "test-name"})
     monkeypatch.setattr(adapter_module.user, "get_self_info", account)
     adapter.logger = Mock()
-    await adapter.start()
+    task = await start_adapter(adapter)
+    await asyncio.sleep(0)
+    assert not task.done()
     assert adapter.bot_uid == "123"
     assert isinstance(adapter.get_client(), client_module.BiliBiliClient)
     assert sdk_client.get_wrapped_session().headers["Accept-Encoding"] == "gzip, deflate"

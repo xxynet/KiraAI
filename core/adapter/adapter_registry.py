@@ -478,15 +478,16 @@ class AdapterManager:
         logger.info(f"Adapter configuration saved for {name_for_runtime}")
         return info
 
-    def _handle_adapter_start_failure(
+    def _handle_adapter_run_failure(
         self,
         name: str,
         adapter: Union[BaseAdapter, IMAdapter, SocialMediaAdapter],
         error: BaseException,
     ) -> None:
         """Remove a failed adapter and persist it as disabled when possible."""
-        if self._adapters.get(name) is adapter:
-            self._adapters.pop(name, None)
+        if self._adapters.get(name) is not adapter:
+            return
+        self._adapters.pop(name, None)
 
         adapter_id = getattr(getattr(adapter, "info", None), "adapter_id", None)
         if not adapter_id:
@@ -503,25 +504,40 @@ class AdapterManager:
             self.kira_config.save_config()
         except Exception as exc:
             logger.error(f"Failed to persist disabled adapter {adapter_id}: {exc}")
-        logger.error(f"Adapter {name} stopped after a start failure: {error}")
+        logger.error(f"Adapter {name} stopped after a run failure ({type(error).__name__})")
 
-    def _handle_adapter_start_task_completion(
+    def _handle_adapter_run_completion(
         self,
         name: str,
         adapter: Union[BaseAdapter, IMAdapter, SocialMediaAdapter],
         task: asyncio.Task,
     ) -> None:
-        """Release a completed startup task and record asynchronous failures."""
+        """Observe one run without allowing stale tasks to change a replacement."""
+        current = (
+            self._adapter_tasks.get(name) is task
+            and self._adapters.get(name) is adapter
+        )
         if self._adapter_tasks.get(name) is task:
             self._adapter_tasks.pop(name, None)
         if task.cancelled():
-            logger.info(f"Adapter {name} start task was cancelled")
+            if current and isinstance(adapter, BaseAdapter):
+                self._adapters.pop(name, None)
+            logger.info(f"Adapter {name} run task was cancelled")
             return
         try:
             task.result()
-            logger.info(f"Started adapter {name}")
         except Exception as exc:
-            self._handle_adapter_start_failure(name, adapter, exc)
+            if current:
+                self._handle_adapter_run_failure(name, adapter, exc)
+            return
+        if not current:
+            return
+        if isinstance(adapter, BaseAdapter):
+            self._adapters.pop(name, None)
+            logger.info(f"Adapter {name} run finished")
+        else:
+            # Legacy adapters may return while their SDK keeps running.
+            logger.info(f"Started adapter {name}")
 
     async def register_adapter(self, info: AdapterInfo):
         platform = info.platform
@@ -556,24 +572,28 @@ class AdapterManager:
             raise
 
     async def start_adapter(self, name: str):
-        """Start an adapter and retain its task until startup completes."""
+        """Schedule a run; returning does not indicate login or connection readiness."""
         adapter = self._adapters.get(name)
         if not adapter:
             raise KeyError(f"Adapter {name} is not registered")
 
-        task = asyncio.create_task(adapter.start())
+        existing = self._adapter_tasks.get(name)
+        if existing and not existing.done():
+            return
+        task = asyncio.create_task(adapter.start(), name=f"adapter:{name}")
         self._adapter_tasks[name] = task
         task.add_done_callback(
-            lambda completed_task: self._handle_adapter_start_task_completion(
+            lambda completed_task: self._handle_adapter_run_completion(
                 name, adapter, completed_task
             )
         )
         await asyncio.sleep(0)
         if task.done():
+            self._handle_adapter_run_completion(name, adapter, task)
             task.result()
 
     async def stop_adapter(self, name: str):
-        """Stop an adapter and cancel any still-running startup task."""
+        """Cancel and join the run before stopping any remaining owned resources."""
         task = self._adapter_tasks.pop(name, None)
         if task and not task.done():
             task.cancel()
@@ -583,13 +603,13 @@ class AdapterManager:
                 )
             except asyncio.TimeoutError:
                 logger.error(
-                    f"Adapter {name} start task did not finish after cancellation within "
+                    f"Adapter {name} run task did not finish after cancellation within "
                     f"{ADAPTER_STOP_TIMEOUT:.0f}s; continuing application shutdown"
                 )
             except asyncio.CancelledError:
                 pass
             except Exception as exc:
-                logger.error(f"Adapter {name} failed while stopping its start task: {exc}")
+                logger.error(f"Adapter {name} failed while stopping its run task ({type(exc).__name__})")
 
         adapter = self._adapters.get(name)
         if adapter:

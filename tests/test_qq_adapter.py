@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from tests.adapter_lifecycle import start_adapter
+
 import core.utils.common_utils as common_utils
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.base import BaseAdapter
@@ -396,11 +398,11 @@ async def wait_until_started(adapter):
 async def test_start_stop_restart_owns_runner_and_rebinds_callbacks(fake_client):
     adapter = lifecycle_adapter()
     old_client = adapter.bot
-    await adapter.start()
+    await start_adapter(adapter)
     task = adapter._client_task
     try:
         await wait_until_started(adapter)
-        await adapter.start()
+        await start_adapter(adapter)
         assert adapter._client_task is task
         assert old_client.run_calls == 1
         assert len(old_client.event_callbacks["group"]) == 1
@@ -412,7 +414,7 @@ async def test_start_stop_restart_owns_runner_and_rebinds_callbacks(fake_client)
     assert adapter._client_task is None
     assert old_client.shutdown_event.is_set()
     assert old_client.close_calls == 1
-    await adapter.start()
+    await start_adapter(adapter)
     try:
         await wait_until_started(adapter)
         assert adapter.bot is not old_client
@@ -428,7 +430,7 @@ async def test_start_stop_restart_owns_runner_and_rebinds_callbacks(fake_client)
 
 async def test_stop_before_runner_starts_is_complete_and_idempotent(fake_client):
     adapter = lifecycle_adapter()
-    await adapter.start()
+    await start_adapter(adapter)
     task = adapter._client_task
     await adapter.stop()
     await adapter.stop()
@@ -451,7 +453,7 @@ async def test_stop_cancels_inflight_handlers_and_rejects_late_callbacks(fake_cl
             cancelled.set()
 
     adapter.im._on_private_message = handler
-    await adapter.start()
+    await start_adapter(adapter)
     task = None
     try:
         await wait_until_started(adapter)
@@ -472,7 +474,7 @@ async def test_runner_failure_closes_client_and_is_observed_without_sensitive_de
     adapter = lifecycle_adapter()
     adapter.logger = Mock()
     adapter.bot.run = AsyncMock(side_effect=RuntimeError("sensitive-token"))
-    await adapter.start()
+    await start_adapter(adapter)
     task = adapter._client_task
     try:
         await asyncio.wait({task}, timeout=1)
@@ -486,7 +488,7 @@ async def test_runner_failure_closes_client_and_is_observed_without_sensitive_de
 
 async def test_stop_preserves_callers_cancellation_and_finishes_cleanup(fake_client):
     adapter = lifecycle_adapter()
-    await adapter.start()
+    await start_adapter(adapter)
     await wait_until_started(adapter)
     runner = adapter._client_task
     close_entered = asyncio.Event()
@@ -527,8 +529,8 @@ async def test_two_instances_keep_clients_permissions_and_lifecycle_independent(
     assert first._event_tasks is not second._event_tasks
     assert not first.im.is_allowed(123, permission="im.direct.receive")
     assert second.im.is_allowed(123, permission="im.direct.receive")
-    await first.start()
-    await second.start()
+    await start_adapter(first)
+    await start_adapter(second)
     try:
         await wait_until_started(first)
         await wait_until_started(second)
@@ -634,7 +636,7 @@ async def test_real_client_dispatch_reaches_im_and_stop_waits_for_its_handler(fa
         adapter.im._on_group_message = handler
     else:
         adapter.im._on_private_message = handler
-    await adapter.start()
+    await start_adapter(adapter)
     try:
         await wait_until_started(adapter)
         msg = inbound_message(group)
@@ -657,7 +659,7 @@ async def test_runner_return_also_cleans_up_handlers(fake_client):
         await asyncio.Event().wait()
 
     adapter.im._on_private_message = handler
-    await adapter.start()
+    await start_adapter(adapter)
     task = adapter._client_task
     callback = None
     try:
@@ -717,7 +719,7 @@ async def test_webui_stop_with_real_client_logs_one_stop_without_disconnect_warn
     calls = patch_ws_factory(monkeypatch, ws)
     logs = Mock()
     monkeypatch.setattr(napcat_client, "logger", logs)
-    await adapter.start()
+    await start_adapter(adapter)
     runner = adapter._client_task
     try:
         await wait_until(lambda: bool(ws.actions))

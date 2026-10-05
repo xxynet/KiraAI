@@ -143,7 +143,14 @@ class BaseAdapter(ABC):
         self._event_queue.put_nowait(event)
 
     @abstractmethod
-    async def start(self) -> None: ...
+    async def start(self) -> None:
+        """Run until stopped, cancelled, or failed; returning means the run has ended.
+
+        The manager schedules and observes this coroutine without waiting for login.
+        Implementations must release owned resources before exiting and propagate
+        unrecoverable errors. Concurrent calls must not create duplicate runners.
+        """
+        ...
 
     @abstractmethod
     async def stop(self) -> None: ...
