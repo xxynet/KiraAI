@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import importlib
 import json
 from pathlib import Path
@@ -7,13 +8,17 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from bilibili_api import dynamic
+from bilibili_api.exceptions import ResponseCodeException
 from bilibili_api.session import EventType
+from bilibili_api.utils.picture import Picture
 from core.adapter.capabilities import FeedCapability, IMCapability
 from core.chat import MessageChain
 from core.chat.message_elements import Emoji, Image, Text
 from core.config.config_field import build_fields
 from tests.test_adapter_routing import processor_for
 from tests.test_bilibili_adapter import make_adapter, sdk_client
+from tests.test_bilibili_feed_post import image_bytes
 
 adapter_module = importlib.import_module("core.adapter.src.bilibili.bilibili")
 im_module = importlib.import_module("core.adapter.src.bilibili.im")
@@ -160,25 +165,178 @@ async def test_new_core_route_and_legacy_sending_share_one_implementation(monkey
 
 
 @pytest.mark.asyncio
-async def test_outgoing_images_and_send_failures(monkeypatch):
-    from bilibili_api.utils.picture import Picture
+@pytest.mark.parametrize("source", ["path", "url", "base64", "data_url"])
+@pytest.mark.parametrize("format", ["PNG", "JPEG", "WEBP"])
+async def test_outgoing_images_use_uploaded_url_and_real_format(monkeypatch, tmp_path, source, format):
+    adapter = make_im_adapter(bili_jct="test-csrf", dedeuserid="99")
+    data = image_bytes(format=format)
+    if source == "path":
+        path = tmp_path / "image.bin"
+        path.write_bytes(data)
+        value = str(path)
+    elif source == "url":
+        value = "https://image.test/no-extension?signature=private"
+        fetch = AsyncMock(return_value=data)
+        monkeypatch.setattr("core.adapter.src.bilibili.client.get_file_content", fetch)
+    else:
+        value = base64.b64encode(data).decode()
+        if source == "data_url":
+            value = "data:image/png;base64," + value
+
+    calls = []
+    paths = []
+    uploaded_url = "https://i0.hdslb.com/bfs/new_dyn/uploaded-image"
+
+    class Api:
+        def __init__(self, **kwargs):
+            self.data = {}
+            self.files = {}
+            assert kwargs["credential"] is adapter.credential
+
+        def update_data(self, **data):
+            self.data = data
+            return self
+
+        def update_params(self, **params):
+            return self
+
+        def update_files(self, **files):
+            self.files = files
+            return self
+
+        @property
+        def result(self):
+            async def resolve():
+                if self.files:
+                    file = self.files["file_up"]
+                    path = Path(file.path)
+                    paths.append(path)
+                    assert path.read_bytes() == data
+                    assert file.mime_type == f"image/{format.lower()}"
+                    calls.append("upload")
+                    return {
+                        "image_height": 3, "image_width": 2,
+                        "image_url": uploaded_url, "img_size": 0.5,
+                    }
+                calls.append(self.data)
+                return {"msg_key": "456"}
+            return resolve()
+
+    monkeypatch.setattr(dynamic, "Api", Api)
+    monkeypatch.setattr(session_module, "Api", Api)
+    download = AsyncMock(side_effect=AssertionError("SDK must not re-download images"))
+    monkeypatch.setattr(Picture, "load_url", download)
+    chain = MessageChain([Text("before"), Image(value), Text("after")])
+    assert (await adapter.im.send_direct_message(123, chain)).ok
+    assert [call if isinstance(call, str) else call["msg[msg_type]"] for call in calls] == [1, "upload", 2, 1]
+    payload = json.loads(calls[2]["msg[content]"])
+    assert payload == {
+        "url": uploaded_url, "height": 3, "width": 2,
+        "imageType": format.lower(), "original": 1, "size": 0.5,
+    }
+    assert all(call["msg[receiver_id]"] == 123 for call in calls if isinstance(call, dict))
+    assert paths and all(not path.parent.exists() for path in paths)
+    download.assert_not_awaited()
+    if source == "url":
+        fetch.assert_awaited_once_with(value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["load image", "upload image", "send image"])
+async def test_image_failures_report_stage_and_code_without_private_details(monkeypatch, stage):
     adapter = make_im_adapter()
     adapter.logger = Mock()
     send = AsyncMock()
     monkeypatch.setattr(session_module, "send_msg", send)
-    picture = object()
-    load = AsyncMock(return_value=picture)
-    from_content = Mock(return_value=picture)
-    monkeypatch.setattr(Picture, "load_url", load)
-    monkeypatch.setattr(Picture, "from_content", from_content)
-    chain = MessageChain([Image("https://image.test/a.png"), Image("data:image/png;base64,aW1hZ2U=")])
-    assert (await adapter.im.send_direct_message(123, chain)).ok
-    load.assert_awaited_once_with("https://image.test/a.png")
-    from_content.assert_called_once_with(b"image", "png")
-    assert all(call.args[2:] == (EventType.PICTURE, picture) for call in send.await_args_list)
-    send.side_effect = RuntimeError("private-message-and-cookie")
-    result = await adapter.im.send_direct_message(123, MessageChain([Text("hello")]))
-    assert not result.ok and "RuntimeError" in result.err and "private" not in result.err
+    paths = []
+    error = ResponseCodeException(21037, "private-message", {"cookie": "private-cookie"})
+
+    async def upload(picture, credential):
+        assert credential is adapter.credential
+        paths.append(Path(picture._to_biliapifile().path))
+        if stage == "upload image":
+            raise error
+        return {
+            "image_height": 3, "image_width": 2,
+            "image_url": "https://i0.hdslb.com/bfs/new_dyn/uploaded", "img_size": 1,
+        }
+
+    monkeypatch.setattr(dynamic, "upload_image", upload)
+    if stage == "load image":
+        fetch = AsyncMock(side_effect=RuntimeError("private-signed-url"))
+        monkeypatch.setattr("core.adapter.src.bilibili.client.get_file_content", fetch)
+        element = Image("https://image.test/private-signature")
+    else:
+        element = Image(base64.b64encode(image_bytes()).decode())
+    if stage == "send image":
+        send.side_effect = error
+    result = await adapter.im.send_direct_message(123, MessageChain([element, Text("after")]))
+    assert not result.ok and f"stage={stage}" in result.err
+    if stage != "load image":
+        assert "code=21037" in result.err
+        assert paths
+    assert "private" not in result.err
+    assert "private" not in str(adapter.logger.mock_calls)
+    assert all(not path.parent.exists() for path in paths)
+    assert send.await_count == (1 if stage == "send image" else 0)
+    adapter.logger.info.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_invalid_image_is_rejected_before_upload_or_send(monkeypatch):
+    adapter = make_im_adapter()
+    upload, send = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(dynamic, "upload_image", upload)
+    monkeypatch.setattr(session_module, "send_msg", send)
+    result = await adapter.im.send_direct_message(123, MessageChain([Image("data:image/png;base64,aW1hZ2U=")]))
+    assert not result.ok and "stage=load image" in result.err
+    upload.assert_not_awaited()
+    send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["upload image", "send image"])
+async def test_image_timeouts_cancel_requests_and_clean_upload_files(monkeypatch, stage):
+    adapter = make_im_adapter()
+    adapter.get_client().timeout = 0.1
+    paths = []
+    cancelled = asyncio.Event()
+
+    async def blocked(*args):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    async def upload(picture, credential):
+        paths.append(Path(picture._to_biliapifile().path))
+        if stage == "upload image":
+            await blocked()
+        return {
+            "image_height": 3, "image_width": 2,
+            "image_url": "https://i0.hdslb.com/bfs/new_dyn/uploaded", "img_size": 1,
+        }
+
+    send = AsyncMock(side_effect=blocked if stage == "send image" else None)
+    monkeypatch.setattr(dynamic, "upload_image", upload)
+    monkeypatch.setattr(session_module, "send_msg", send)
+    result = await adapter.im.send_direct_message(123, MessageChain([Image(base64.b64encode(image_bytes()).decode())]))
+    assert not result.ok and "TimeoutError" in result.err and f"stage={stage}" in result.err
+    assert cancelled.is_set()
+    assert paths and all(not path.parent.exists() for path in paths)
+    assert send.await_count == (1 if stage == "send image" else 0)
+
+
+@pytest.mark.asyncio
+async def test_outgoing_text_failure_and_missing_credentials(monkeypatch):
+    adapter = make_im_adapter()
+    adapter.logger = Mock()
+    send = AsyncMock(side_effect=RuntimeError("private-message-and-cookie"))
+    monkeypatch.setattr(session_module, "send_msg", send)
+    chain = MessageChain([Text("hello")])
+    result = await adapter.im.send_direct_message(123, chain)
+    assert not result.ok and "RuntimeError" in result.err and "stage=send text" in result.err
+    assert "private" not in result.err
     assert "private" not in str(adapter.logger.mock_calls)
     empty = make_im_adapter(sessdata="")
     assert not (await empty.send_direct_message(123, chain)).ok
@@ -318,12 +476,12 @@ async def test_emoji_dictionary_contains_official_native_tokens_only():
 
 @pytest.mark.asyncio
 async def test_text_and_emoji_merge_without_reordering_images(monkeypatch):
-    from bilibili_api.utils.picture import Picture
     adapter = make_im_adapter()
     send = AsyncMock()
-    picture = object()
+    picture = SimpleNamespace(upload=AsyncMock())
     monkeypatch.setattr(session_module, "send_msg", send)
-    monkeypatch.setattr(Picture, "load_url", AsyncMock(return_value=picture))
+    monkeypatch.setattr(im_module, "load_picture", AsyncMock(return_value=picture))
+    monkeypatch.setattr(im_module._BiliBiliPicture, "from_picture", Mock(return_value=picture))
     chain = MessageChain([
         Text("before"), Emoji("510"), Text("!"),
         Image("https://image.test/a.png"),

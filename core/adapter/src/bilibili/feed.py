@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass, field
-from io import BytesIO
 from pathlib import Path
 from datetime import datetime
 import uuid
 import time
 from typing import TYPE_CHECKING, Any
 
-from PIL import Image as PILImage
 from bilibili_api import comment, dynamic, search
 from bilibili_api.utils.picture import Picture
 from bilibili_api.utils.aid_bvid_transformer import bvid2aid
@@ -24,8 +21,8 @@ from core.adapter.feed import FeedItem, FeedPage, FeedPost, FeedQuery, FeedRef, 
 from core.chat import KiraCommentEvent
 from core.chat.message_elements import At, Emoji, Image, Text
 from core.chat.message_utils import MessageChain
-from core.utils.network import get_file_content
 
+from .client import load_picture
 from .feed_content import COMMENT_RESOURCES, article_item, comment_target, dynamic_item, video_item
 
 if TYPE_CHECKING:
@@ -256,7 +253,7 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             elif isinstance(element, Emoji):
                 draft.add_emoji(self._emoji_token(element, self._post_metadata))
             elif isinstance(element, Image):
-                draft.add_image(await self._load_picture(element))
+                draft.add_image(await load_picture(element))
                 if element.caption:
                     draft.add_plain_text(element.caption)
         extra = post.extra
@@ -274,28 +271,6 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
         )
         return draft
 
-    @staticmethod
-    def _picture_from_bytes(data: bytes) -> Picture:
-        with PILImage.open(BytesIO(data)) as image:
-            image.verify()
-            return Picture(
-                content=data, width=image.width, height=image.height,
-                imageType=image.format.lower(), size=round(len(data) / 1024),
-            )
-
-    async def _load_picture(self, element: Image) -> Picture:
-        try:
-            if element.file_type == "path":
-                data = await asyncio.to_thread(Path(element.file).read_bytes)
-            elif element.file_type == "url":
-                data = await get_file_content(element.file)
-            else:
-                encoded = await element.to_base64()
-                data = await asyncio.to_thread(base64.b64decode, encoded, validate=True)
-            return await asyncio.to_thread(self._picture_from_bytes, data)
-        except Exception:
-            raise ValueError("Bilibili image could not be loaded") from None
-
     async def _build_comment(self, message: MessageChain) -> tuple[str, list[Picture]]:
         parts = []
         pictures = []
@@ -305,7 +280,7 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             elif isinstance(element, Emoji):
                 parts.append(self._emoji_token(element, self._comment_metadata))
             elif isinstance(element, Image):
-                pictures.append(await self._load_picture(element))
+                pictures.append(await load_picture(element))
                 if element.caption:
                     parts.append(element.caption)
         return "".join(parts), pictures

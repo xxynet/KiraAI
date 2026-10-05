@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
 from io import BytesIO
@@ -13,6 +14,9 @@ from bilibili_api import Credential, comment, dynamic, homepage, search, session
 from bilibili_api.utils import network
 from bilibili_api.utils.picture import Picture
 
+from core.chat.message_elements import Image
+from core.utils.network import get_file_content
+
 
 def get_bilibili_client() -> network.BiliAPIClient:
     """Configure the SDK-owned transport shared by adapters and QR login."""
@@ -20,6 +24,30 @@ def get_bilibili_client() -> network.BiliAPIClient:
     client = network.get_client()
     client.get_wrapped_session().headers["Accept-Encoding"] = "gzip, deflate"
     return client
+
+
+def _picture_from_bytes(data: bytes) -> Picture:
+    with PILImage.open(BytesIO(data)) as image:
+        image.verify()
+        return Picture(
+            content=data, width=image.width, height=image.height,
+            imageType=image.format.lower(), size=round(len(data) / 1024),
+        )
+
+
+async def load_picture(element: Image) -> Picture:
+    """Load and validate image bytes without retaining an external URL."""
+    try:
+        if element.file_type == "path":
+            data = await asyncio.to_thread(Path(element.file).read_bytes)
+        elif element.file_type == "url":
+            data = await get_file_content(element.file)
+        else:
+            encoded = await element.to_base64()
+            data = await asyncio.to_thread(base64.b64decode, encoded, validate=True)
+        return await asyncio.to_thread(_picture_from_bytes, data)
+    except Exception:
+        raise ValueError("Bilibili image could not be loaded") from None
 
 
 class _BiliBiliPicture(Picture):

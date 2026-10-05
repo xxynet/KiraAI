@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
+from bilibili_api.exceptions import ResponseCodeException
 from bilibili_api.session import Event
 from bilibili_api.user import User as BiliUser
 from bilibili_api.video import Video as BiliVideo
@@ -15,6 +17,8 @@ from core.adapter.capabilities import IMCapability
 from core.adapter.message_format_metadata import MessageFormatMetadata, load_emoji_mapping
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, User
 from core.chat.message_elements import Text, Image, Emoji
+
+from .client import _BiliBiliPicture, load_picture
 
 if TYPE_CHECKING:
     from .bilibili import BiliBiliAdapter
@@ -172,21 +176,24 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
         if not self.adapter.credential.sessdata:
             return KiraIMSentResult(ok=False, err="BiliBili credential not configured")
 
+        stage = "send text"
+        timeout = self.adapter.get_client().timeout
         try:
             from bilibili_api.session import send_msg
             from bilibili_api.session import EventType as SessionEventType
-            from bilibili_api.utils.picture import Picture
 
             text_parts: list[str] = []
 
             async def flush_text() -> None:
+                nonlocal stage
                 if text_parts:
-                    await send_msg(
+                    stage = "send text"
+                    await asyncio.wait_for(send_msg(
                         self.adapter.credential,
                         int(user_id),
                         SessionEventType.TEXT,
                         "".join(text_parts),
-                    )
+                    ), timeout=timeout)
                     text_parts.clear()
 
             for ele in message:
@@ -196,17 +203,18 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
                     text_parts.append(self._metadata.emojis.get(ele.emoji_id, ele.emoji_id))
                 elif isinstance(ele, Image):
                     await flush_text()
-                    if ele.image_type == "url":
-                        pic = await Picture.load_url(ele.image)
-                    else:
-                        img_bytes = base64.b64decode(await ele.to_base64())
-                        pic = Picture.from_content(img_bytes, "png")
-                    await send_msg(
+                    stage = "load image"
+                    picture = await asyncio.wait_for(load_picture(ele), timeout=timeout)
+                    pic = _BiliBiliPicture.from_picture(picture)
+                    stage = "upload image"
+                    await asyncio.wait_for(pic.upload(self.adapter.credential), timeout=timeout)
+                    stage = "send image"
+                    await asyncio.wait_for(send_msg(
                         self.adapter.credential,
                         int(user_id),
                         SessionEventType.PICTURE,
                         pic,
-                    )
+                    ), timeout=timeout)
                 else:
                     text_parts.append(str(getattr(ele, 'text', '[Message]')))
             await flush_text()
@@ -214,8 +222,12 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
             self.adapter.logger.info(f"[BiliDM] Sent DM to {user_id}")
             return KiraIMSentResult(ok=True)
         except Exception as e:
-            self.adapter.logger.error(f"[BiliDM] Failed to send DM to {user_id}: {type(e).__name__}")
-            return KiraIMSentResult(ok=False, err=f"Failed to send direct message: {type(e).__name__}")
+            detail = f"{type(e).__name__} (stage={stage}"
+            if isinstance(e, ResponseCodeException) and isinstance(e.code, int):
+                detail += f", code={e.code}"
+            detail += ")"
+            self.adapter.logger.error(f"[BiliDM] Failed to send DM to {user_id}: {detail}")
+            return KiraIMSentResult(ok=False, err=f"Failed to send direct message: {detail}")
 
     async def send_group_message(self, group_id: AdapterTargetId, message: MessageChain) -> KiraIMSentResult | None:
         raise NotImplementedError("Bilibili does not support group messages")
