@@ -44,7 +44,7 @@ async def test_invalid_comment_chains_fail_before_external_work(monkeypatch, mes
     load = AsyncMock()
     monkeypatch.setattr(adapter.get_client(), "send_comment", send)
     monkeypatch.setattr(adapter.get_client(), "get_dynamic_info", detail)
-    monkeypatch.setattr(adapter.feed, "_load_picture", load)
+    monkeypatch.setattr("core.adapter.src.bilibili.feed.load_picture", load)
     with pytest.raises((TypeError, ValueError)):
         await adapter.feed.send_comment(message, FeedRef("dynamic", "42"))
     send.assert_not_awaited()

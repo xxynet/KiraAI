@@ -1,4 +1,4 @@
-bilibili_api_python>=17.4.0
+bilibili_api_python>=17.4.2
 colorlog>=6.9.0
 python-telegram-bot~=21.3
 openai>=1.106.1

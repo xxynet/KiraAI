@@ -89,7 +89,7 @@ async def test_image_sources_and_format_detection(monkeypatch, tmp_path, source)
     elif source == "url":
         value = "https://image.test/no-extension"
         fetch = AsyncMock(return_value=data)
-        monkeypatch.setattr("core.adapter.src.bilibili.feed.get_file_content", fetch)
+        monkeypatch.setattr("core.adapter.src.bilibili.client.get_file_content", fetch)
     else:
         value = base64.b64encode(data).decode()
         if source == "data_url":
@@ -124,7 +124,7 @@ async def test_invalid_posts_fail_before_loading_media_or_sending(monkeypatch, p
     send = AsyncMock()
     load = AsyncMock()
     monkeypatch.setattr(adapter.get_client(), "send_dynamic", send)
-    monkeypatch.setattr(adapter.feed, "_load_picture", load)
+    monkeypatch.setattr("core.adapter.src.bilibili.feed.load_picture", load)
     with pytest.raises((TypeError, ValueError)):
         await adapter.feed.send_post(post)
     send.assert_not_awaited()
