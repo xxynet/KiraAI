@@ -192,11 +192,16 @@ async def test_plugin_notice_preserves_opaque_target_without_capability_name():
 
 
 @pytest.mark.asyncio
-async def test_legacy_sending_still_calls_adapter_directly():
-    legacy = SimpleNamespace(send_direct_message=AsyncMock(return_value=KiraIMSentResult()))
-    chain = MessageChain([Text("legacy")])
-    await processor_for(legacy).send_message_chain("old:dm:123", chain)
-    legacy.send_direct_message.assert_awaited_once_with("123", chain)
+@pytest.mark.parametrize("session_type", ["dm", "gm"])
+async def test_sending_only_uses_im_capability(session_type):
+    adapter = routed_adapter()
+    adapter.send_direct_message = AsyncMock(side_effect=AssertionError("Adapter-level send must not be used"))
+    adapter.send_group_message = AsyncMock(side_effect=AssertionError("Adapter-level send must not be used"))
+    chain = MessageChain([Text("reply")])
+    await processor_for(adapter).send_message_chain(f"example:{session_type}:opaque:123", chain)
+    assert adapter.sent == [(IMCapability, "opaque:123", chain)]
+    adapter.send_direct_message.assert_not_awaited()
+    adapter.send_group_message.assert_not_awaited()
 
 
 @pytest.fixture
@@ -226,27 +231,35 @@ async def test_manager_constructs_new_adapter_with_context_and_stops_it(manager,
 
 
 @pytest.mark.asyncio
-async def test_plugin_registration_accepts_new_base(manager, monkeypatch, tmp_path):
+@pytest.mark.parametrize("inherits_base", [False, True])
+async def test_plugin_registration_requires_base_adapter(manager, monkeypatch, tmp_path, inherits_base):
     monkeypatch.setattr(registry, "_plugin_components", {})
     (tmp_path / "manifest.json").write_text(json.dumps({"name": "new-platform"}), encoding="utf-8")
     module = ModuleType("plugin_adapter_example")
     module.BaseAdapter = BaseAdapter
-    module.PluginAdapter = type("PluginAdapter", (ExampleAdapter,), {"__module__": module.__name__})
+    module.PluginAdapter = type("PluginAdapter", (ExampleAdapter if inherits_base else object,), {"__module__": module.__name__})
     plugins = object.__new__(manager_module.PluginManager)
     plugins.ctx = SimpleNamespace(adapter_mgr=manager, config={})
     monkeypatch.setattr(plugins, "_resolve_plugin_component_dir", lambda *args: tmp_path)
     monkeypatch.setattr(plugins, "_load_plugin_component_module", lambda *args: module)
-    assert await plugins.register_plugin_adapter("test-plugin", "adapter") == "new-platform"
-    assert manager.get_adapter_class("new-platform") is module.PluginAdapter
+    if inherits_base:
+        assert await plugins.register_plugin_adapter("test-plugin", "adapter") == "new-platform"
+        assert manager.get_adapter_class("new-platform") is module.PluginAdapter
+    else:
+        with pytest.raises(ValueError, match="No Adapter class inheriting from BaseAdapter"):
+            await plugins.register_plugin_adapter("test-plugin", "adapter")
+        assert manager.get_adapter_class("new-platform") is None
+        assert not registry._ensure_components("test-plugin").adapters
 
 
-def test_directory_scan_discovers_new_adapter(manager, tmp_path, monkeypatch):
+@pytest.mark.parametrize("inherits_base", [False, True])
+def test_directory_scan_requires_base_adapter(manager, tmp_path, monkeypatch, inherits_base):
     folder = tmp_path / "routing_test_adapter"
     folder.mkdir()
     (folder / "manifest.json").write_text(json.dumps({"name": "scan-test"}), encoding="utf-8")
     (folder / "adapter.py").write_text(
-        "from core.adapter import BaseAdapter\n"
-        "class ScannedAdapter(BaseAdapter):\n"
+        "from core.adapter import BaseAdapter\n" +
+        ("class ScannedAdapter(BaseAdapter):\n" if inherits_base else "class ScannedAdapter:\n") +
         "    async def start(self): pass\n"
         "    async def stop(self): pass\n"
         "    def get_client(self): return None\n",
@@ -255,7 +268,18 @@ def test_directory_scan_discovers_new_adapter(manager, tmp_path, monkeypatch):
     package_name = "core.adapter.src.routing_test_adapter"
     monkeypatch.setitem(sys.modules, package_name, ModuleType(package_name))
     manager.scan_adapters(str(tmp_path))
-    assert issubclass(manager.get_adapter_class("scan-test"), BaseAdapter)
+    if inherits_base:
+        assert issubclass(manager.get_adapter_class("scan-test"), BaseAdapter)
+    else:
+        assert manager.get_adapter_class("scan-test") is None
+
+
+@pytest.mark.parametrize("adapter_class", [object, object()])
+def test_adapter_registration_rejects_non_base_types(manager, tmp_path, adapter_class):
+    with pytest.raises(TypeError, match="Adapter class must inherit from BaseAdapter"):
+        manager.register_adapter_type("invalid", adapter_class, {"name": "invalid"}, tmp_path)
+    assert manager.get_adapter_class("invalid") is None
+    assert manager.get_manifest("invalid") == {}
 
 
 @pytest.mark.asyncio
@@ -353,21 +377,15 @@ async def test_notice_without_im_can_enter_message_processing(monkeypatch, sessi
     assert batch.messages == [event.message]
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("has_new_field", [False, True])
-async def test_buffer_flush_accepts_legacy_wrappers_and_prefers_new_elements(has_new_field):
+async def test_buffer_flush_preserves_event_supported_elements():
     adapter = make_adapter()
     event = message_event(adapter)
-    wrapper = SimpleNamespace(
-        message=event.message, adapter=event.adapter, session=event.session,
-        message_types=["legacy-custom"],
-    )
-    if has_new_field:
-        wrapper.supported_elements = ["new-custom"]
+    event.supported_elements = ["custom"]
     processor = processor_for(adapter)
-    processor.session_buffer.get_buffer(event.session.sid).add(wrapper)
+    processor.session_buffer.get_buffer(event.session.sid).add(event)
     assert await processor.flush_session_messages(event.session.sid)
     batch = processor.event_bus.publish.await_args.args[0]
-    assert batch.supported_elements == (["new-custom"] if has_new_field else ["legacy-custom"])
+    assert batch.supported_elements == ["custom"]
     assert batch.messages[0] is event.message
     assert batch.session is event.session
     assert batch.adapter is event.adapter

@@ -1,4 +1,4 @@
-from core.adapter import BaseAdapter, FeedCapability
+from core.adapter import FeedCapability
 from core.agent.message import OpenAIMessage
 from core.chat import KiraCommentEvent, MessageChain
 from core.chat.message_elements import Text
@@ -54,16 +54,10 @@ class DefaultCommentPlugin(BasePlugin):
 
         if response:
             adapter = self.ctx.adapter_mgr.get_adapter(msg.adapter_name)
-            if isinstance(adapter, BaseAdapter):
-                await adapter.get_capability(FeedCapability).send_comment(
-                    message=MessageChain([Text(response)]), target=msg.target,
-                    root=msg.root_comment_id, parent=msg.comment_id,
-                )
-            else:
-                await adapter.send_comment(
-                    text=response, root=msg.root_comment_id,
-                    sub=msg.comment_id if msg.is_reply else None,
-                )
+            await adapter.get_capability(FeedCapability).send_comment(
+                message=MessageChain([Text(response)]), target=msg.target,
+                root=msg.root_comment_id, parent=msg.comment_id,
+            )
         else:
             logger.warning("Blank LLM response")
 
