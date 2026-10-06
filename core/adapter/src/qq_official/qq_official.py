@@ -55,7 +55,22 @@ class _QQOfficialClient(botpy.Client if botpy else object):
             intents=intents,
             is_sandbox=adapter.sandbox,
             bot_log=False,
+            timeout=15,
         )
+
+    async def _bot_login(self, token):
+        await super()._bot_login(token)
+        self._install_message_parsers()
+
+    def _install_message_parsers(self):
+        """Preserve OpenAPI fields without modifying the SDK's global parser class."""
+        for event in ("group_message_create", "group_at_message_create", "c2c_message_create"):
+            def parse(payload, event_name=event):
+                body = payload.get("d") if isinstance(payload, dict) else None
+                if isinstance(body, dict):
+                    self.ws_dispatch(event_name, body)
+
+            self._connection.state.parsers[event] = parse
 
     def _track_task(self, task: asyncio.Task) -> asyncio.Task:
         self._tasks.add(task)
@@ -97,6 +112,10 @@ class _QQOfficialClient(botpy.Client if botpy else object):
     async def on_group_at_message_create(self, message):
         if not self._closing and self.adapter.client is self:
             await self.adapter.im._handle_group_message(message)
+
+    async def on_group_message_create(self, message):
+        if not self._closing and self.adapter.client is self:
+            await self.adapter.im._handle_group_message(message, force_mention=False)
 
     async def on_c2c_message_create(self, message):
         if not self._closing and self.adapter.client is self:
