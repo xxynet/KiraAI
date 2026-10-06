@@ -234,12 +234,18 @@ class MessageProcessor:
         buffer = self.session_buffer.get_buffer(sid)
         buffer.pop(count)
 
-    async def flush_session_messages(self, sid: str, extra_event: KiraMessageEvent | None = None) -> bool:
+    async def flush_session_messages(
+        self,
+        sid: str,
+        extra_event: KiraMessageEvent | None = None,
+        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+    ) -> bool:
+        """Publish buffered events matching a synchronous predicate, or all events by default."""
         buffer = self.session_buffer.get_buffer(sid)
         async with buffer.lock:
             if extra_event is not None:
                 buffer.add(extra_event)
-            pending_messages: list[KiraMessageEvent] = buffer.flush()
+            pending_messages: list[KiraMessageEvent] = buffer.flush(filter_fn=filter_fn)
         if not pending_messages:
             return False
         last_event = pending_messages[-1]

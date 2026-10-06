@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import inspect
 import time
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING, Literal
+from typing import Optional, TYPE_CHECKING, Literal, Callable
 
 from ..provider import ProviderManager, ModelType, LLMModelClient, EmbeddingModelClient
 from core.chat.session_manager import SessionManager
@@ -78,8 +78,13 @@ class PluginContext:
         return self.session_mgr.get_effective_capabilities(sid, global_capabilities)
 
     
-    async def flush_session_messages(self, sid: str):
-        await self.message_processor.flush_session_messages(sid)
+    async def flush_session_messages(
+        self,
+        sid: str,
+        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+    ):
+        """Trigger processing of matching buffered events, leaving unmatched events buffered."""
+        await self.message_processor.flush_session_messages(sid, filter_fn=filter_fn)
 
     def get_default_llm_client(self) -> LLMModelClient:
         client = self.get_llm_client(llm_type="default")

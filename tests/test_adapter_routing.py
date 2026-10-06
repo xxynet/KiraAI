@@ -390,3 +390,70 @@ async def test_buffer_flush_preserves_event_supported_elements():
     assert batch.session is event.session
     assert batch.adapter is event.adapter
     assert not await processor.flush_session_messages(event.session.sid)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("selected_ids", [None, {"0", "2"}, set()])
+async def test_plugin_flush_filters_buffered_events_before_publishing(selected_ids):
+    adapter = make_adapter()
+    processor = processor_for(adapter)
+    ctx = object.__new__(PluginContext)
+    ctx.message_processor = processor
+    events = [message_event(adapter) for _ in range(4)]
+    for index, event in enumerate(events):
+        event.message.message_id = str(index)
+        event.supported_elements = [f"custom-{index}"]
+    sid = events[0].session.sid
+    buffer = ctx.get_buffer(sid)
+    for event in events:
+        buffer.add(event)
+
+    if selected_ids is None:
+        await ctx.flush_session_messages(sid)
+        selected = events
+    else:
+        def select_event(event):
+            assert buffer.lock.locked()
+            return event.message.message_id in selected_ids
+
+        await ctx.flush_session_messages(sid, filter_fn=select_event)
+        selected = [event for event in events if event.message.message_id in selected_ids]
+
+    assert buffer.buffer == [event for event in events if event not in selected]
+    assert not buffer.lock.locked()
+    if not selected:
+        processor.event_bus.publish.assert_not_awaited()
+        return
+
+    processor.event_bus.publish.assert_awaited_once()
+    batch = processor.event_bus.publish.await_args.args[0]
+    assert batch.messages == [event.message for event in selected]
+    assert batch.supported_elements == selected[-1].supported_elements
+    assert batch.session is selected[-1].session
+    assert batch.adapter is selected[-1].adapter
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_extra", [False, True])
+async def test_filtered_flush_applies_predicate_to_extra_event(include_extra):
+    adapter = make_adapter()
+    processor = processor_for(adapter)
+    buffered = message_event(adapter)
+    extra = message_event(adapter)
+    buffer = processor.session_buffer.get_buffer(buffered.session.sid)
+    buffer.add(buffered)
+
+    flushed = await processor.flush_session_messages(
+        buffered.session.sid,
+        extra,
+        filter_fn=lambda event: include_extra and event is extra,
+    )
+
+    assert flushed is include_extra
+    assert buffer.buffer == ([buffered] if include_extra else [buffered, extra])
+    if include_extra:
+        processor.event_bus.publish.assert_awaited_once()
+        batch = processor.event_bus.publish.await_args.args[0]
+        assert batch.messages == [extra.message]
+    else:
+        processor.event_bus.publish.assert_not_awaited()
