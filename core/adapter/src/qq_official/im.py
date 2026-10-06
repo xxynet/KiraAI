@@ -6,9 +6,11 @@ import hashlib
 import re
 import time
 from collections import OrderedDict
+from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
+from weakref import ReferenceType, ref
 
 try:
     from botpy.http import Route
@@ -34,6 +36,15 @@ QQ_OFFICIAL_DEDUP_TTL = 180
 QQ_OFFICIAL_MAX_RECEIVED_MESSAGES = 4096
 
 
+@dataclass
+class _ReceivedMessage:
+    """Keep deduplication and forced mention state without retaining message content."""
+
+    seen_at: float
+    force_mention: bool = False
+    message: Optional[ReferenceType[KiraIMMessage]] = None
+
+
 class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
     """Receive and send QQ OpenAPI messages using the adapter's account."""
 
@@ -45,7 +56,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
     def __init__(self, adapter: QQOfficialAdapter):
         super().__init__(adapter)
         self._parser = QQOfficialMessageParser()
-        self._received_messages: OrderedDict[tuple[bool, str, str, str], float] = OrderedDict()
+        self._received_messages: OrderedDict[tuple[bool, str, str, str], _ReceivedMessage] = OrderedDict()
         self._reply_received_at: dict[tuple[bool, str, str], float] = {}
         self._message_references: dict[tuple[bool, str, str], str] = {}
         self._sent_message_ids: set[tuple[bool, str, str]] = set()
@@ -96,23 +107,33 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         elements.extend(self._parser.content_elements(message, is_group, target_id))
         return MessageChain(elements or [Text("[Unsupported message]")])
 
-    def _accept_message(self, message, is_group: bool, target_id: str) -> bool:
+    def _accept_message(
+        self, message, is_group: bool, target_id: str, force_mention: bool = False,
+    ) -> Optional[_ReceivedMessage]:
+        """Merge forced mentions into an existing message while publishing it only once."""
         message_id = str(field(message, "id", "") or "")
-        if not message_id:
-            return True
         now = time.monotonic()
+        if not message_id:
+            return _ReceivedMessage(now, force_mention)
         while self._received_messages:
-            key, seen_at = next(iter(self._received_messages.items()))
-            if now - seen_at < QQ_OFFICIAL_DEDUP_TTL:
+            key, received = next(iter(self._received_messages.items()))
+            if now - received.seen_at < QQ_OFFICIAL_DEDUP_TTL:
                 break
             self._received_messages.popitem(last=False)
         key = (is_group, target_id, message_id, str(field(message, "msg_seq", "")))
-        if key in self._received_messages:
-            return False
-        self._received_messages[key] = now
+        received = self._received_messages.get(key)
+        if received is not None:
+            if force_mention:
+                received.force_mention = True
+                shared_message = received.message() if received.message is not None else None
+                if shared_message is not None:
+                    shared_message.is_mentioned = True
+            return None
+        received = _ReceivedMessage(now, force_mention)
+        self._received_messages[key] = received
         while len(self._received_messages) > QQ_OFFICIAL_MAX_RECEIVED_MESSAGES:
             self._received_messages.popitem(last=False)
-        return True
+        return received
 
     async def _handle_group_message(self, message, force_mention: bool = True):
         await self._handle_message(message, is_group=True, force_mention=force_mention)
@@ -127,7 +148,8 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         permission = "im.group.receive" if is_group else "im.direct.receive"
         if not target_id or not user_id or not self.is_allowed(target_id, permission=permission):
             return
-        if not self._accept_message(message, is_group, target_id):
+        received = self._accept_message(message, is_group, target_id, force_mention)
+        if received is None:
             return
         robot = getattr(self.adapter.client, "robot", None)
         robot_id = str(getattr(robot, "id", "") or "")
@@ -143,20 +165,22 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
             age = max(0, time.time() - timestamp)
             self._reply_received_at[(is_group, target_id, message_id)] = time.monotonic() - age
             self._remember_reference(message, is_group, target_id, message_id)
-        self.publish(KiraMessageEvent(
+        event = KiraMessageEvent(
             adapter=self.adapter.info,
             supported_elements=list((await self.get_message_metadata()).supported_elements),
             message=KiraIMMessage(
                 timestamp=timestamp,
                 group=Group(group_id=target_id, group_name=target_id) if is_group else None,
                 sender=User(user_id=user_id, nickname=self._parser.nickname(is_group, target_id, author, user_id)),
-                is_mentioned=force_mention or is_self_quote or self._parser.is_mentioned(message, self_ids),
+                is_mentioned=received.force_mention or is_self_quote or self._parser.is_mentioned(message, self_ids),
                 message_id=display_id or message_id,
                 self_id=robot_id or self.adapter.app_id,
                 chain=self._message_chain(message, is_group, target_id),
             ),
             timestamp=int(time.time()),
-        ))
+        )
+        received.message = ref(event.message)
+        self.publish(event)
 
     @staticmethod
     def _text_content(send_message_obj: MessageChain) -> str:

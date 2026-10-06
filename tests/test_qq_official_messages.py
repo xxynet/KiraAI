@@ -621,3 +621,135 @@ async def test_markdown_send_errors_do_not_start_extra_retries(code):
     assert send.await_count == 1
     assert send.await_args.kwargs["msg_type"] == 2
     assert adapter.im._group_reply_ids["group-openid"] == "incoming"
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("first_forced, second_forced", [(False, True), (True, False), (True, True), (False, False)])
+async def test_duplicate_group_event_preserves_forced_mention_on_shared_message(first_forced, second_forced):
+    from core.plugin.builtin_plugins.chat.main import DefaultChatPlugin
+
+    adapter = make_adapter()
+    send = AsyncMock(return_value={"id": "sent"})
+    attach_api(adapter, send)
+    body = message(msg_seq=1)
+    await adapter.im._handle_group_message(body, force_mention=first_forced)
+    event = adapter.ctx.event_queue.get_nowait()
+    original_message = event.message
+    await adapter.send_group_message("group-openid", MessageChain([Text("first reply")]))
+    await adapter.im._handle_group_message(body, force_mention=second_forced)
+    assert adapter.ctx.event_queue.empty()
+    assert event.message is original_message
+    assert event.is_mentioned == (first_forced or second_forced)
+    assert adapter.im._reply_msg_seqs[(True, "group-openid", "incoming")] == 1
+    ctx = SimpleNamespace(config={"bot_config": {"bot": {"max_buffer_messages": 1}}},
+                          message_processor=SimpleNamespace(get_session_buffer_length=lambda _sid: 0))
+    chat = DefaultChatPlugin(ctx, {"receive_unmentioned": False})
+    await chat.handle_msg(event)
+    assert event.process_strategy == ("flush" if first_forced or second_forced else "discard")
+    await adapter.im._handle_group_message(body, force_mention=second_forced)
+    assert adapter.ctx.event_queue.empty()
+
+
+@pytest.mark.asyncio
+async def test_forced_duplicate_during_metadata_await_is_applied_before_publication():
+    adapter = make_adapter()
+    metadata_started = asyncio.Event()
+    release_metadata = asyncio.Event()
+    get_metadata = adapter.im.get_message_metadata
+    async def delayed_metadata():
+        metadata_started.set()
+        await release_metadata.wait()
+        return await get_metadata()
+    adapter.im.get_message_metadata = delayed_metadata
+    body = message(msg_seq=1)
+    first = asyncio.create_task(adapter.im._handle_group_message(body, force_mention=False))
+    try:
+        await metadata_started.wait()
+        await adapter.im._handle_group_message(body, force_mention=True)
+        assert adapter.ctx.event_queue.empty()
+        release_metadata.set()
+        await first
+        event = adapter.ctx.event_queue.get_nowait()
+        assert event.is_mentioned
+        assert adapter.ctx.event_queue.empty()
+    finally:
+        release_metadata.set()
+        await first
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("first_event", ["group_message_create", "group_at_message_create"])
+async def test_real_sdk_duplicate_at_event_promotes_single_queued_message(sdk_gateway, first_event):
+    adapter = make_adapter()
+    try:
+        await start_adapter(adapter)
+        await asyncio.wait_for(sdk_gateway.opened.get(), 2)
+        body = message(msg_seq=1)
+        second_event = "group_at_message_create" if first_event == "group_message_create" else "group_message_create"
+        adapter.client._connection.parser[first_event]({"d": body})
+        await asyncio.sleep(0)
+        event = adapter.ctx.event_queue.get_nowait()
+        adapter.client._connection.parser[second_event]({"d": body})
+        await asyncio.sleep(0)
+        assert event.is_mentioned
+        assert adapter.ctx.event_queue.empty()
+    finally:
+        await adapter.stop()
+        await cleanup_sdk_gateway(sdk_gateway.records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("other_key", ["group", "direct", "sequence"])
+async def test_forced_dedup_upgrade_does_not_cross_conversation_or_sequence(other_key):
+    adapter = make_adapter(permission_mode="deny_list")
+    body = message(msg_seq=1)
+    await adapter.im._handle_group_message(body, force_mention=False)
+    original = adapter.ctx.event_queue.get_nowait()
+    if other_key == "direct":
+        await adapter.im._handle_direct_message(message(False, msg_seq=1))
+    else:
+        other = dict(body, group_openid="other-group") if other_key == "group" else dict(body, msg_seq=2)
+        await adapter.im._handle_group_message(other, force_mention=True)
+    assert adapter.ctx.event_queue.get_nowait().is_mentioned
+    assert not original.is_mentioned
+    await adapter.im._handle_group_message(body, force_mention=True)
+    assert original.is_mentioned
+    assert adapter.ctx.event_queue.empty()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("eviction", ["ttl", "capacity"])
+async def test_evicted_dedup_record_does_not_promote_old_message(monkeypatch, eviction):
+    adapter = make_adapter()
+    now = [10.0]
+    monkeypatch.setattr(im_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(im_module, "QQ_OFFICIAL_MAX_RECEIVED_MESSAGES", 1)
+    body = message()
+    await adapter.im._handle_group_message(body, force_mention=False)
+    original = adapter.ctx.event_queue.get_nowait()
+    if eviction == "ttl":
+        now[0] += 181
+    else:
+        await adapter.im._handle_group_message(message(message_id="other"), force_mention=False)
+        adapter.ctx.event_queue.get_nowait()
+    await adapter.im._handle_group_message(body, force_mention=True)
+    replacement = adapter.ctx.event_queue.get_nowait()
+    assert replacement.is_mentioned
+    assert not original.is_mentioned
+    assert replacement.message is not original.message
+    assert len(adapter.im._received_messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_dedup_record_does_not_retain_consumed_message_content():
+    import gc
+    from weakref import ref
+
+    adapter = make_adapter()
+    body = message()
+    await adapter.im._handle_group_message(body, force_mention=False)
+    event = adapter.ctx.event_queue.get_nowait()
+    message_ref = ref(event.message)
+    del event
+    gc.collect()
+    assert message_ref() is None
+    await adapter.im._handle_group_message(body, force_mention=True)
+    assert adapter.ctx.event_queue.empty()
