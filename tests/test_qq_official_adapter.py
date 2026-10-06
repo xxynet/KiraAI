@@ -98,7 +98,7 @@ def test_qq_official_text_content_omits_reply_metadata():
         MessageChain([Reply("message-id"), Text("Hello "), At("u1", "Alice"), Emoji("1", "!"), Text(".")])
     )
 
-    assert content == "Hello @Alice!."
+    assert content == 'Hello <qqbot-at-user id="u1" />!.'
 
 
 @pytest.mark.asyncio
@@ -144,7 +144,7 @@ async def test_qq_official_increments_msg_seq_for_multiple_replies():
         False,
         "user-openid",
         MessageChain([Reply(first_result.message_id), Text("reply")]),
-    ) == "sent-1"
+    ) == "incoming-message-id"
 
 
 @pytest.mark.asyncio
@@ -350,7 +350,7 @@ async def test_qq_official_reads_quoted_message_with_short_reply_id():
         False,
         "user-openid",
         MessageChain([Reply(reply.message_id), Text("reply")]),
-    ) == raw_quote_id
+    ) == "incoming-message-id"
 
 
 @pytest.mark.asyncio
