@@ -9,7 +9,7 @@ from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.logging_manager import get_logger
 from core.chat.message_elements import Image
-from core.utils.model_clients import OpenAICompatibleLLMClient
+from core.provider.openai_compatible import OpenAICompatibleLLMClient
 
 logger = get_logger("provider", "purple")
 

@@ -13,7 +13,7 @@ from core.provider.src.anthropic.model_clients import (
     normalize_anthropic_base_url,
 )
 from core.provider.src.anthropic.provider import AnthropicProvider
-from core.utils.model_clients import DEFAULT_USER_AGENT
+from core.provider.openai_compatible import DEFAULT_USER_AGENT
 
 
 def build_client(

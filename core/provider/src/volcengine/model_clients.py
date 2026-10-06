@@ -8,7 +8,7 @@ from core.provider import ModelInfo, ImageModelClient, VideoModelClient, Embeddi
 from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse
 from core.chat.message_elements import Image, Video
-from core.utils.model_clients import OpenAICompatibleLLMClient
+from core.provider.openai_compatible import OpenAICompatibleLLMClient
 
 logger = get_logger("provider", "purple")
 

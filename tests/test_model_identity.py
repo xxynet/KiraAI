@@ -20,7 +20,7 @@ from core.plugin import manager as plugin_manager_module
 from core.plugin.manager import PluginManager
 from core.provider import BaseProvider, LLMModelClient, ModelType, ProviderManager
 from core.provider.llm_model import LLMRequest
-from core.utils.model_clients import OpenAICompatibleLLMClient
+from core.provider.openai_compatible import OpenAICompatibleLLMClient
 from webui.routes.auth import require_auth
 from webui.routes.config import ConfigRoutes
 from webui.routes.providers import ProvidersRoutes
