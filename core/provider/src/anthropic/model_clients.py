@@ -8,7 +8,7 @@ from anthropic import AnthropicError, AsyncAnthropic
 
 from core.provider import LLMModelClient, ModelInfo, ProviderAPIError
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
-from core.utils.model_clients import build_llm_default_headers
+from core.provider.openai_compatible import build_llm_default_headers
 from core.utils.media_refs import resolve_media_references
 
 DEFAULT_BASE_URL = "https://api.anthropic.com"

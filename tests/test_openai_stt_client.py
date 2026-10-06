@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.provider import ModelInfo, ModelType
-from core.utils.model_clients import OpenAICompatibleSTTClient
+from core.provider.openai_compatible import OpenAICompatibleSTTClient
 
 
 class _FakeTranscriptions:

@@ -14,7 +14,7 @@ from core.logging_manager import get_logger
 from core.provider.llm_model import LLMRequest, LLMResponse, RerankResult
 
 from core.chat.message_elements import Record, Image
-from core.utils.model_clients import OpenAICompatibleLLMClient, OpenAICompatibleTTSClient
+from core.provider.openai_compatible import OpenAICompatibleLLMClient, OpenAICompatibleTTSClient
 
 logger = get_logger("provider", "purple")
 

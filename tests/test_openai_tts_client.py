@@ -1,5 +1,5 @@
 from core.provider import ModelInfo, ModelType
-from core.utils.model_clients import OpenAICompatibleTTSClient
+from core.provider.openai_compatible import OpenAICompatibleTTSClient
 
 
 def test_openai_compatible_tts_sends_extra_body_from_advanced_settings():

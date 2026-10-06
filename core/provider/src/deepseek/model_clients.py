@@ -11,7 +11,7 @@ from typing import AsyncGenerator
 from core.provider import ModelInfo, LLMModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.logging_manager import get_logger
-from core.utils.model_clients import build_llm_default_headers
+from core.provider.openai_compatible import build_llm_default_headers
 from core.utils.media_refs import resolve_media_references
 
 logger = get_logger("provider", "purple")
