@@ -40,7 +40,6 @@ from core.agent.func_tool_manager import FuncToolManager
 from core.chat.session_manager import SessionManager
 from .prompt_manager import PromptManager
 from .adapter import AdapterManager
-from .adapter.base import BaseAdapter
 from .adapter.capabilities import IMCapability
 from .agent.skills_mgr import SkillsManager
 from .agent.mcp_mgr import MCPManager
@@ -244,10 +243,7 @@ class MessageProcessor:
         if not pending_messages:
             return False
         last_event = pending_messages[-1]
-        try:
-            supported_elements = last_event.supported_elements
-        except AttributeError:
-            supported_elements = last_event.message_types
+        supported_elements = last_event.supported_elements
         batch_msg = KiraMessageBatchEvent(
             supported_elements=supported_elements,
             timestamp=int(time.time()),
@@ -931,9 +927,7 @@ class MessageProcessor:
             raise ValueError(f"Adapter '{adapter_name}' is not available")
         if chat_type not in {"dm", "gm"}:
             raise ValueError("chat_type must be 'dm' or 'gm'")
-        target = adapter
-        if isinstance(adapter, BaseAdapter):
-            target = adapter.get_capability(IMCapability)
+        target = adapter.get_capability(IMCapability)
 
         if chat_type == "dm":
             result = await target.send_direct_message(pid, chain)

@@ -8,7 +8,7 @@ from typing import Optional, TYPE_CHECKING, Literal
 
 from ..provider import ProviderManager, ModelType, LLMModelClient, EmbeddingModelClient
 from core.chat.session_manager import SessionManager
-from ..adapter import AdapterManager, BaseAdapter, IMCapability
+from ..adapter import AdapterManager, IMCapability
 from core.event_bus import EventBus
 from core.agent.func_tool_manager import FuncToolManager
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group, KiraIMSentResult
@@ -216,15 +216,12 @@ class PluginContext:
         ada = self.adapter_mgr.get_adapter(ada_name)
         if not ada:
             raise ValueError(f"Failed to get adapter: {ada_name}")
-        if isinstance(ada, BaseAdapter):
-            try:
-                im = ada.get_capability(IMCapability)
-            except ValueError:
-                supported_elements = []
-            else:
-                supported_elements = list((await im.get_message_metadata()).supported_elements)
+        try:
+            im = ada.get_capability(IMCapability)
+        except ValueError:
+            supported_elements = []
         else:
-            supported_elements = list(ada.message_types)
+            supported_elements = list((await im.get_message_metadata()).supported_elements)
         group = None
         if st == "gm":
             group = Group(group_id=sid)

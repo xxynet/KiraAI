@@ -243,15 +243,20 @@ async def test_old_run_completion_does_not_remove_or_disable_a_replacement(outco
 
 
 @pytest.mark.asyncio
-async def test_legacy_nonblocking_start_remains_registered():
-    adapter = SimpleNamespace(start=AsyncMock(), stop=AsyncMock(), info=AdapterInfo(True, "old", "old", "old"))
+async def test_cancelled_run_removes_the_instance_without_disabling_its_configuration():
+    info = AdapterInfo(True, "cancelled", "cancelled", "test")
+    adapter = LifetimeAdapter(AdapterContext(info, asyncio.Queue()))
     manager = manager_for(adapter)
-    await manager.start_adapter("old")
+    await manager.start_adapter(info.name)
+    task = manager._adapter_tasks[info.name]
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
     await asyncio.sleep(0)
-    assert manager.get_adapter("old") is adapter
+    assert adapter.cleaned
+    assert manager.get_adapter(info.name) is None
     assert not manager._adapter_tasks
-    await manager.stop_adapter("old")
-    adapter.stop.assert_awaited_once()
+    assert manager.kira_config["adapters"][info.adapter_id]["enabled"] is True
+    assert manager.kira_config.save_count == 0
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ from core.prompt_manager import Prompt
 
 from core.utils.tool_utils import BaseTool
 from core.tag import TagSet
-from core.adapter import BaseAdapter, IMCapability
+from core.adapter import IMCapability
 
 from .tags import *
 
@@ -80,7 +80,7 @@ class DefaultPlugin(BasePlugin):
                 tag_set.register(RecordTag(ctx=self.ctx))
         if "emoji" in supported_elements:
             adapter = self.ctx.adapter_mgr.get_adapter(event.adapter.name)
-            if isinstance(adapter, BaseAdapter):
+            if adapter is not None:
                 try:
                     im = adapter.get_capability(IMCapability)
                 except ValueError:
@@ -89,8 +89,6 @@ class DefaultPlugin(BasePlugin):
                     metadata = await im.get_message_metadata()
                     if metadata.emojis is not None:
                         tag_set.register(build_emoji_tag(emoji_json=metadata.emojis)())
-            else:
-                tag_set.register(build_emoji_tag(emoji_json=getattr(adapter, "emoji_dict", {}) or {})())
         if "poke" in supported_elements:
             tag_set.register(PokeTag)
         if "file" in supported_elements:
