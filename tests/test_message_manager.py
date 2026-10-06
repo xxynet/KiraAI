@@ -1,3 +1,12 @@
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from core.chat import KiraCommentEvent, KiraMessageEvent
+from core.chat.message_elements import Text
+from core.event_bus import EventBus
 from core.message_manager import SessionBuffer
 
 
@@ -51,3 +60,43 @@ def test_session_buffer_flush_with_filter_keeps_buffer_when_none_match():
 
     assert flushed == []
     assert buffer.buffer == [1, 3, 5]
+
+
+def _comment_event():
+    return KiraCommentEvent(
+        platform="test", adapter_name="test", commenter_id="user",
+        commenter_nickname="User", self_id="bot", timestamp=1,
+        comment_id="comment", comment_content=[Text("hello")], target=None,
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("is_comment", [False, True])
+async def test_event_bus_records_telemetry_only_for_im(is_comment):
+    db = SimpleNamespace(add_telemetry_message=AsyncMock())
+    bus = EventBus(Mock(), asyncio.Queue(), db=db)
+    event = _comment_event() if is_comment else object.__new__(KiraMessageEvent)
+    if not is_comment:
+        event.adapter = SimpleNamespace(platform="test")
+    dispatched = asyncio.Event()
+
+    async def handler(received):
+        assert received is event
+        dispatched.set()
+
+    bus.subscribe(type(event), handler)
+    await bus.publish(event)
+    task = asyncio.create_task(bus.dispatch())
+    try:
+        await asyncio.wait_for(dispatched.wait(), timeout=2)
+    finally:
+        await bus.stop()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert bus.total_messages_stats["total_messages"] == 1
+    if is_comment:
+        db.add_telemetry_message.assert_not_awaited()
+    else:
+        db.add_telemetry_message.assert_awaited_once()
+        assert db.add_telemetry_message.await_args.args[1] == "test"

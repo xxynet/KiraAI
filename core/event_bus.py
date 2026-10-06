@@ -177,7 +177,7 @@ class EventBus:
             if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
                 self.total_messages_stats["total_messages"] += 1
                 self.stats.set_stats("messages", self.total_messages_stats)
-                if self.db:
+                if self.db and isinstance(event, KiraMessageEvent):
                     platform = getattr(getattr(event, "adapter", None), "platform", None) or getattr(event, "platform", "unknown")
                     try:
                         await self.db.add_telemetry_message(int(time.time()), platform)
