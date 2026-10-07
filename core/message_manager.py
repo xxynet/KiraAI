@@ -49,6 +49,7 @@ from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
 from core.agent.message import OpenAIMessage
 from core.tag import tag_registry, TagSet, BaseTag, RootTagAction
 from core.db.service import DatabaseService
+from core.chat.message_history import MessageHistoryService
 
 from core.provider import LLMModelClient
 from core.utils.image_compression import compress_image_element
@@ -192,6 +193,7 @@ class MessageProcessor:
 
         # managers
         self.session_manager = session_manager
+        self.message_history = MessageHistoryService(db, session_manager)
         self.prompt_manager = prompt_manager
         self.provider_mgr = provider_manager
         self.adapter_mgr = adapter_manager
@@ -522,12 +524,22 @@ class MessageProcessor:
                 logger.warning(f"Failed to persist image for native multimodal input: {exc}")
         return content
 
+    async def _record_incoming_message(self, message, session_id, platform):
+        history = getattr(self, "message_history", None)
+        if history is not None:
+            try:
+                return await history.record_incoming(message, session_id, platform)
+            except Exception as exc:
+                logger.error("Unable to store incoming message (%s)", type(exc).__name__)
+
     async def handle_im_message(self, event: KiraMessageEvent):
         """process im message"""
 
         # decorating event info
 
         sid = event.session.sid
+
+        await self._record_incoming_message(event.message, sid, event.adapter.platform)
 
         event.session.session_description = self.session_manager.get_session_info(sid).session_description
 
@@ -597,7 +609,10 @@ class MessageProcessor:
             "mode", self.kira_config.get_config("bot_config.capabilities.image_recognition.mode", "vlm_description")
         ) if isinstance(image_recognition, dict) else "vlm_description"
 
+        incoming_record_ids = {}
         for message in event.messages:
+            incoming_record_ids[id(message)] = await self._record_incoming_message(
+                message, sid, event.adapter.platform)
             for image in self._iter_message_images(message.chain):
                 await compress_image_element(image, compression_config)
             message_str = await self.message_format_to_text(message.chain, sid, capabilities)
@@ -756,7 +771,18 @@ class MessageProcessor:
                 *persisted_native_parts,
             ]
         new_messages: list[OpenAIMessage] = []
-        new_messages.append(OpenAIMessage(role="user", content=persisted_content))
+        user_memory = OpenAIMessage(role="user", content=persisted_content)
+        user_memory.to_memory_dict()
+        history = getattr(self, "message_history", None)
+        if history is not None:
+            try:
+                await history.link_incoming_messages(sid, user_memory.extra["llm_message_id"], [
+                    record_id for message in event.messages
+                    if (record_id := incoming_record_ids.get(id(message)))
+                ])
+            except Exception as exc:
+                logger.error("Unable to link incoming messages (%s)", type(exc).__name__)
+        new_messages.append(user_memory)
 
         # Get max tool loop config, defaults to 2 if not a valid integer
         # Note: This variable represents the total agent loop iterations (not just tool calls),
@@ -780,7 +806,7 @@ class MessageProcessor:
         # Accumulates per-step results so ON_FINAL_RESULT can report the whole turn
         turn_steps: list[KiraStepResult] = []
 
-        async def send_llm_text(resp: LLMResponse) -> bool:
+        async def send_llm_text(resp: LLMResponse, memory_message: OpenAIMessage | None) -> bool:
             """Process and send LLM text response. Returns False if stopped, True to continue."""
             text = resp.text_response
             message_results = []
@@ -788,7 +814,7 @@ class MessageProcessor:
             if text:
                 session_lock = self.get_session_lock(sid)
                 async with session_lock:
-                    message_results = await self.send_xml_messages(event, text.strip(), tag_set)
+                    message_results = await self.send_xml_messages(event, text.strip(), tag_set, memory_message=memory_message)
                     if message_results is None:
                         return False
                     raw_output = self._add_message_ids(text, message_results)
@@ -834,7 +860,7 @@ class MessageProcessor:
             except Exception as e:
                 logger.debug(f"Failed to record telemetry LLM usage: {e}")
 
-            if not await send_llm_text(llm_resp):
+            if not await send_llm_text(llm_resp, step.assistant_message):
                 break
 
             if not step.has_tool_calls or step.is_final:
@@ -863,7 +889,7 @@ class MessageProcessor:
                 break
             await handler.exec_handler(event)
 
-    async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str, tag_set: TagSet) -> Optional[List[KiraIMSentResult]]:
+    async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str, tag_set: TagSet, *, memory_message: OpenAIMessage | None = None) -> Optional[List[KiraIMSentResult]]:
         """
         send message via session id & xml data
         :param event: KiraMessageBatchEvent
@@ -893,7 +919,7 @@ class MessageProcessor:
         for action in actions:
             if isinstance(action, MessageChain):
                 if not action.is_empty():
-                    result = await self.send_message_chain(event.sid, action)
+                    result = await self.send_message_chain(event.sid, action, source="llm", memory_message=memory_message, self_id=getattr(event, "self_id", None))
                     if not result.ok and result.err:
                         logger.error(result.err)
                 else:
@@ -915,7 +941,7 @@ class MessageProcessor:
 
         return message_results
 
-    async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
+    async def send_message_chain(self, session: str, chain: MessageChain, *, source: str = "plugin", memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
         """
         Send a MessageChain to target.
 
@@ -935,14 +961,43 @@ class MessageProcessor:
             raise ValueError("chat_type must be 'dm' or 'gm'")
         target = adapter.get_capability(IMCapability)
 
-        if chat_type == "dm":
-            result = await target.send_direct_message(pid, chain)
-        else:
-            result = await target.send_group_message(pid, chain)
+        history = getattr(self, "message_history", None)
+        record_id = None
+        if history is not None:
+            try:
+                config = adapter.config
+                bot_id = self_id or config.get("self_id") or config.get("bot_pid") or config.get("app_id")
+                llm_message_id = None
+                if memory_message is not None:
+                    llm_message_id = memory_message.to_memory_dict()["_extra"]["llm_message_id"]
+                record_id = await history.record_outgoing(
+                    session, chain, platform=adapter.info.platform,
+                    self_id=str(bot_id) if bot_id is not None else None, source=source,
+                    llm_message_id=llm_message_id,
+                )
+            except Exception as exc:
+                logger.error("Unable to store outgoing message (%s)", type(exc).__name__)
 
+        async def finish(status, platform_id=None, error_type=None):
+            if record_id:
+                try:
+                    await history.finish_outgoing(
+                        record_id, status=status, platform_message_id=platform_id, error_type=error_type)
+                except Exception as exc:
+                    logger.error("Unable to update delivery status (%s)", type(exc).__name__)
+
+        try:
+            if chat_type == "dm":
+                result = await target.send_direct_message(pid, chain)
+            else:
+                result = await target.send_group_message(pid, chain)
+        except BaseException as exc:
+            await finish("unknown", error_type=type(exc).__name__)
+            raise
         if not result:
-            return KiraIMSentResult(ok=False)
-
+            result = KiraIMSentResult(ok=False)
+        await finish("sent" if result.ok else "failed", result.message_id)
+        result.history_id = record_id
         return result
 
     @staticmethod

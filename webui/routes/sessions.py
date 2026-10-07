@@ -11,6 +11,14 @@ class SessionsRoutes(Routes):
     def get_routes(self):
         return [
             RouteDefinition(
+                path="/api/messages", methods=["GET"], endpoint=self.list_messages,
+                tags=["sessions"], dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/messages/{message_id}", methods=["GET"], endpoint=self.get_message,
+                tags=["sessions"], dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/sessions",
                 methods=["GET"],
                 endpoint=self.list_sessions,
@@ -40,6 +48,29 @@ class SessionsRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
         ]
+
+    @property
+    def message_history(self):
+        processor = getattr(self.lifecycle, "message_processor", None)
+        return getattr(processor, "message_history", None)
+
+    async def list_messages(self, session_id: str, cursor: str | None = None,
+                            limit: int = 50, llm_message_id: str | None = None):
+        if self.message_history is None:
+            raise HTTPException(status_code=503, detail="Message history unavailable")
+        try:
+            return await self.message_history.list_messages(
+                session_id, cursor=cursor, limit=limit, llm_message_id=llm_message_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    async def get_message(self, message_id: str):
+        if self.message_history is None:
+            raise HTTPException(status_code=503, detail="Message history unavailable")
+        message = await self.message_history.get_message(message_id)
+        if message is None:
+            raise HTTPException(status_code=404, detail="Message not found")
+        return {"message": message, "memory": self.message_history.get_linked_memory(message)}
 
     @staticmethod
     def _validate_capabilities_payload(capabilities: object) -> None:
@@ -91,6 +122,18 @@ class SessionsRoutes(Routes):
                 "description": description,
                 "message_count": self.lifecycle.session_manager.get_memory_count(session_key),
             })
+        if self.message_history is not None:
+            history_sessions = await self.message_history.list_sessions()
+            by_id = {item["id"]: item for item in sessions}
+            for item in history_sessions:
+                sid = item["session_id"]
+                if sid not in by_id:
+                    adapter, kind, target = sid.split(":", 2)
+                    record = {"id": sid, "adapter_name": adapter, "session_type": kind,
+                              "session_id": target, "title": "", "description": "", "message_count": 0}
+                    sessions.append(record)
+                    by_id[sid] = record
+                by_id[sid]["history_count"] = item["message_count"]
         return {"sessions": sessions}
 
     async def get_session(self, session_id: str):
@@ -103,7 +146,10 @@ class SessionsRoutes(Routes):
 
         memory = self.lifecycle.session_manager.get_existing_memory_snapshot(session_id)
         if memory is None:
-            raise HTTPException(status_code=404, detail="Session not found")
+            history = await self.message_history.list_messages(session_id, limit=1) if self.message_history else None
+            if not history or not history["messages"]:
+                raise HTTPException(status_code=404, detail="Session not found")
+            memory = []
 
         adapter_name, session_type, session_key = parts[0], parts[1], ":".join(parts[2:])
         session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})
@@ -134,7 +180,10 @@ class SessionsRoutes(Routes):
             self._validate_capabilities_payload(capabilities)
 
         if messages is not None:
-            self.lifecycle.session_manager.write_memory(session_id, messages)
+            try:
+                self.lifecycle.session_manager.write_memory(session_id, messages)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         if title is not None or description is not None:
             self.lifecycle.session_manager.update_session_info(
@@ -165,7 +214,7 @@ class SessionsRoutes(Routes):
             "title": title if title is not None else "",
             "description": description if description is not None else "",
             "capabilities": session_meta.get("capabilities"),
-            "messages": messages,
+            "messages": self.lifecycle.session_manager.get_existing_memory_snapshot(session_id),
         }
 
     async def delete_session(self, session_id: str):

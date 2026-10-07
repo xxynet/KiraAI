@@ -210,6 +210,7 @@ class KiraLifecycle:
             )
         )
 
+        await self.message_processor.message_history.initialize()
         self.message_processor.event_bus = self.event_bus
         self.event_bus.subscribe(KiraMessageEvent, self.message_processor.handle_event)
         self.event_bus.subscribe(KiraMessageBatchEvent, self.message_processor.handle_event)

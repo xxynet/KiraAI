@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 from core.chat.message_elements import BaseMediaElement, _infer_mime_from_bytes
+from core.agent.message import provider_message_dict
 from core.utils.path_utils import get_data_path, is_within_directory
 
 
@@ -123,7 +124,7 @@ async def resolve_media_references(messages: Iterable[object]) -> list[dict]:
     """Return provider-ready message dictionaries without mutating stored history."""
     resolved_messages: list[dict] = []
     for raw_message in messages:
-        message = raw_message if isinstance(raw_message, dict) else raw_message.to_dict()
+        message = provider_message_dict(raw_message)
         resolved_message = dict(message)
         content = message.get("content")
         if isinstance(content, list):

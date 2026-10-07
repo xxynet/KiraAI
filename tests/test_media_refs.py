@@ -149,6 +149,7 @@ async def test_stopped_batch_does_not_persist_native_media(monkeypatch):
             )
         ],
         event_id="event-1",
+        adapter=SimpleNamespace(platform="test"),
         is_stopped=False,
     )
 

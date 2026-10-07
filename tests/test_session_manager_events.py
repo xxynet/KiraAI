@@ -129,7 +129,7 @@ async def test_update_memory_publishes_new_and_discarded_memory_after_persistenc
     assert event.event_type == "session_memory_updated"
     assert event.payload == {
         "session": "adapter:dm:user",
-        "new_chunk": new_chunk,
+        "new_chunk": manager.get_existing_memory_snapshot("adapter:dm:user")[-1],
         "discarded_memory": [],
     }
     assert '"new"' in (tmp_path / "chat_memory.json").read_text(encoding="utf-8")
@@ -148,7 +148,7 @@ async def test_update_memory_publishes_truncated_memory_after_persistence(tmp_pa
 
     assert manager.event_bus.events[0].payload == {
         "session": "adapter:dm:user",
-        "new_chunk": new_chunk,
+        "new_chunk": manager.get_existing_memory_snapshot("adapter:dm:user")[-1],
         "discarded_memory": memory[:2],
     }
 
@@ -167,7 +167,7 @@ async def test_write_memory_publishes_old_and_new_memory(tmp_path):
     assert event.payload == {
         "session": "adapter:dm:user",
         "old_memory": old_memory,
-        "new_memory": new_memory,
+        "new_memory": manager.get_existing_memory_snapshot("adapter:dm:user"),
     }
 
 

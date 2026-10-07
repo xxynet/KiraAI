@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
+from core.agent.message import provider_message_dict
 from core.provider import ModelInfo
 from core.provider import LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient, EmbeddingModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
@@ -63,7 +64,7 @@ class OpenAICompatibleLLMClient(LLMModelClient):
             extra_body = None
         kwargs = dict(
             model=self.model.model_name,
-            messages=[m if isinstance(m, dict) else m.to_dict() for m in request.messages],
+            messages=[provider_message_dict(m) for m in request.messages],
             tools=request.tools if request.tools else NOT_GIVEN,
             tool_choice=request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
             temperature=temperature if temperature is not None else NOT_GIVEN,

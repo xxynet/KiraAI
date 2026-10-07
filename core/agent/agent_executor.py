@@ -43,6 +43,7 @@ class AgentStepResult:
     model_id: str = ""
     err: Optional[str] = None
     model_name: str = ""
+    assistant_message: Optional[OpenAIMessage] = None
 
 
 class AgentExecutor:
@@ -237,6 +238,7 @@ class AgentExecutor:
                 ctx.new_messages.append(msg)
                 yield AgentStepResult(
                     state=state,
+                    assistant_message=msg,
                     err=err,
                     step_index=step_index,
                     llm_response=llm_resp,
@@ -293,6 +295,7 @@ class AgentExecutor:
 
             yield AgentStepResult(
                 state=state,
+                assistant_message=msg,
                 err=err,
                 step_index=step_index,
                 llm_response=llm_resp,

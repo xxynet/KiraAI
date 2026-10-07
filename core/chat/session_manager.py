@@ -15,6 +15,7 @@ from core.utils.path_utils import get_data_path
 from core.db.service import DatabaseService
 
 from .session import Session
+from .memory_metadata import normalize_memory
 
 if TYPE_CHECKING:
     from core.event_bus import EventBus
@@ -79,6 +80,8 @@ class SessionManager:
                     "timestamp": None,
                     "memory": session_content
                 }
+        for session_data in self.chat_memory.values():
+            session_data["memory"] = normalize_memory(session_data.get("memory", []))
         self._save_memory(self.chat_memory, self.chat_memory_path)
 
     def _ensure_session_data(self, session: str):
@@ -222,12 +225,13 @@ class SessionManager:
             return copy.deepcopy(session_data.get("memory", []))
 
     def write_memory(self, session: str, memory: list[list[dict]]):
+        normalize_memory(memory)
         self._ensure_session_data(session)
         with self.memory_lock:
             old_memory = copy.deepcopy(self.chat_memory[session].get("memory", []))
-            self.chat_memory[session]["memory"] = memory
+            self.chat_memory[session]["memory"] = normalize_memory(memory, previous=old_memory)
             saved = self._save_memory(self.chat_memory, self.chat_memory_path)
-            new_memory = copy.deepcopy(memory)
+            new_memory = copy.deepcopy(self.chat_memory[session]["memory"])
         if saved:
             self._publish_session_event(
                 "session_memory_written",
@@ -242,7 +246,7 @@ class SessionManager:
     def update_memory(self, session: str, new_chunk):
         self._ensure_session_data(session)
         from core.agent.message import OpenAIMessage
-        new_chunk = [m.to_dict() if isinstance(m, OpenAIMessage) else m for m in new_chunk]
+        new_chunk = normalize_memory([[m.to_memory_dict() if isinstance(m, OpenAIMessage) else m for m in new_chunk]])[0]
         with self.memory_lock:
             session_data = self.chat_memory[session]
 
@@ -267,6 +271,7 @@ class SessionManager:
                 },
             )
         logger.info(f"Memory updated for {session}")
+        return saved
 
     def _get_memory_limits(self) -> tuple[int, int]:
         """Read the current memory-limit settings so WebUI updates apply immediately."""

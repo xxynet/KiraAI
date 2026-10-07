@@ -156,7 +156,7 @@ async def test_target_survives_trigger_and_buffer_flush(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_xml_reply_only_passes_target_and_chain(monkeypatch):
+async def test_xml_reply_passes_history_provenance(monkeypatch):
     monkeypatch.setattr("core.message_manager.event_handler_reg.get_handlers", lambda **kw: [])
     from core.tag import TagSet
     adapter = routed_adapter()
@@ -168,7 +168,7 @@ async def test_xml_reply_only_passes_target_and_chain(monkeypatch):
     event = SimpleNamespace(sid="example:dm:channel/123")
     await processor.send_xml_messages(event, "<msg/>", TagSet())
     processor.send_message_chain.assert_awaited_once_with(
-        event.sid, chain,
+        event.sid, chain, source="llm", memory_message=None, self_id=None,
     )
 
 
