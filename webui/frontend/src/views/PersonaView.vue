@@ -123,17 +123,15 @@
             :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
           >
             <div
-              class="max-w-[85%] rounded-lg px-4 py-3 whitespace-pre-wrap"
-              :class="message.role === 'user'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-theme-strong dark:bg-gray-800'"
+              class="chat-bubble max-w-[85%] rounded-lg px-4 py-3 whitespace-pre-wrap"
+              :class="{ 'chat-bubble--accent': message.role === 'user' }"
             >
               {{ message.content }}
               <div v-if="message.role === 'assistant' && message.options.length" class="mt-3 flex flex-wrap gap-2">
                 <button
                   v-for="option in message.options"
                   :key="option"
-                  class="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:bg-gray-900 dark:text-blue-300 dark:hover:bg-blue-950/30 disabled:opacity-50"
+                  class="chat-bubble-option rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
                   :disabled="generating || index !== generatorMessages.length - 1"
                   @click="handleGeneratorAnswer(option)"
                 >

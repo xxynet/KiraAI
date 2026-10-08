@@ -182,3 +182,109 @@ async def test_session_reads_skip_malformed_records_without_changing_storage(
     assert healthy.status_code == 200
     assert manager.chat_memory["adapter:dm:bad"] == record
     assert path.read_bytes() == saved
+
+
+def _history_app(message):
+    history = SimpleNamespace(get_message=AsyncMock(return_value=message))
+    app = FastAPI()
+    routes = SessionsRoutes(app, SimpleNamespace(
+        message_processor=SimpleNamespace(message_history=history),
+    ))
+    routes.register()
+    return app, history
+
+
+@pytest.mark.asyncio
+async def test_message_media_requires_authentication():
+    app, history = _history_app({"chain": []})
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/messages/id/media", params={"element_path": "0"})
+    assert response.status_code == 401
+    history.get_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("nested", [False, True])
+async def test_message_media_serves_referenced_archive(tmp_path, monkeypatch, nested):
+    import webui.routes.sessions as sessions_module
+    from webui.routes.auth import require_auth
+
+    monkeypatch.setattr(sessions_module, "get_data_path", lambda: tmp_path)
+    path = tmp_path / "session_media" / "archive" / ("a" * 64)
+    path.parent.mkdir(parents=True)
+    content = b"\x89PNG\r\n\x1a\n" + b"image content"
+    path.write_bytes(content)
+    element = {"type": "image", "file_type": "archive", "file": path.relative_to(tmp_path).as_posix()}
+    chain = [{"type": "reply", "chain": [element]}] if nested else [element]
+    app, history = _history_app({"chain": chain})
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/messages/id/media", params={"element_path": "0.0" if nested else "0"})
+    assert response.status_code == 200
+    assert response.content == content
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"].startswith("attachment;")
+    history.get_message.assert_awaited_once_with("id")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("element_path,element,expected", [
+    ("-1", {}, 400),
+    ("0/1", {}, 400),
+    ("0.0.0.0.0", {}, 400),
+    ("9" * 100, {}, 400),
+    ("1", {}, 404),
+    ("0.0", {"chain": [None]}, 404),
+    ("0", {"type": "image", "file_type": "url", "file": "https://example.com/image"}, 404),
+    ("0", {"type": "image", "file_type": "archive", "file": "../../secret"}, 404),
+    ("0", {"type": "image", "file_type": "archive", "file": "session_media/archive/../../secret"}, 404),
+    ("0", {"type": "image", "file_type": "archive", "file": "session_media/archive/" + "a" * 64}, 404),
+])
+async def test_message_media_rejects_invalid_or_missing_media(tmp_path, monkeypatch, element_path, element, expected):
+    import webui.routes.sessions as sessions_module
+    from webui.routes.auth import require_auth
+
+    monkeypatch.setattr(sessions_module, "get_data_path", lambda: tmp_path)
+    app, _ = _history_app({"chain": [element]})
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/messages/id/media", params={"element_path": element_path})
+    assert response.status_code == expected
+
+
+@pytest.mark.asyncio
+async def test_message_media_rejects_archive_symlink_escape(tmp_path, monkeypatch):
+    import webui.routes.sessions as sessions_module
+
+    monkeypatch.setattr(sessions_module, "get_data_path", lambda: tmp_path)
+    secret = tmp_path / "private.txt"
+    secret.write_text("private", encoding="utf-8")
+    archive = tmp_path / "session_media" / "archive" / ("b" * 64)
+    archive.parent.mkdir(parents=True)
+    try:
+        archive.symlink_to(secret)
+    except OSError:
+        pytest.skip("Creating symlinks requires permission on this host")
+    history = SimpleNamespace(get_message=AsyncMock(return_value={"chain": [{
+        "type": "file", "file_type": "archive", "file": archive.relative_to(tmp_path).as_posix(),
+    }]}))
+    routes = SessionsRoutes(FastAPI(), SimpleNamespace(message_processor=SimpleNamespace(message_history=history)))
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.get_message_media("id", "0")
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_message_media_handles_missing_message_and_unavailable_history():
+    app, _ = _history_app(None)
+    from webui.routes.auth import require_auth
+
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/messages/missing/media", params={"element_path": "0"})
+    assert response.status_code == 404
+    with pytest.raises(HTTPException) as exc_info:
+        await SessionsRoutes(FastAPI()).get_message_media("id", "0")
+    assert exc_info.value.status_code == 503

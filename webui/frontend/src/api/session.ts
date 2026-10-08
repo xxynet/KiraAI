@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { SessionItem, SessionDetail, SessionCapabilities } from '@/types'
+import type { SessionItem, SessionDetail, SessionCapabilities, MessagePage } from '@/types'
 
 export function getSessions() {
   return apiClient.get<{ sessions: SessionItem[] }>('/sessions')
@@ -15,4 +15,16 @@ export function updateSession(id: string, data: { title?: string; description?: 
 
 export function deleteSession(id: string) {
   return apiClient.delete(`/sessions/${encodeURIComponent(id)}`)
+}
+
+export function getSessionMessages(sessionId: string, cursor?: string) {
+  return apiClient.get<MessagePage>('/messages', {
+    params: { session_id: sessionId, cursor, limit: 50 },
+  })
+}
+
+export function getMessageMedia(id: string, elementPath: string, signal: AbortSignal) {
+  return apiClient.get<Blob>(`/messages/${encodeURIComponent(id)}/media`, {
+    params: { element_path: elementPath }, responseType: 'blob', signal,
+  })
 }

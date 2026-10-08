@@ -37,6 +37,15 @@
   --color-border-strong: rgba(156, 163, 175, 0.5);
   --color-overlay-border: rgba(255, 255, 255, 0.3);
 
+  /* Chat surfaces derive from the theme accent instead of a fixed color palette. */
+  --color-chat-surface: color-mix(in srgb, var(--color-surface) 94%, var(--color-text-strong));
+  --color-chat-accent-solid: color-mix(in srgb, var(--color-accent) 80%, black);
+  --color-chat-accent-surface: color-mix(in srgb, var(--color-chat-accent-solid) 16%, var(--color-surface));
+  --color-chat-accent-text: var(--color-text-strong);
+  --color-chat-accent-muted: color-mix(in srgb, var(--color-chat-accent-text) 88%, var(--color-chat-accent-surface));
+  --color-chat-accent-border: color-mix(in srgb, var(--color-chat-accent-solid) 45%, var(--color-chat-accent-surface));
+  --color-chat-link: var(--color-chat-accent-solid);
+
   --color-accent: #3b82f6;
   --color-accent-strong: #3864d5;
   --color-accent-soft: rgba(197, 213, 246, 0.7);
@@ -78,6 +87,11 @@
 }
 
 :root.dark {
+  --color-chat-accent-surface: var(--color-chat-accent-solid);
+  --color-chat-accent-text: #ffffff;
+  --color-chat-accent-border: color-mix(in srgb, var(--color-chat-accent-text) 65%, var(--color-chat-accent-surface));
+  --color-chat-link: color-mix(in srgb, var(--color-accent) 55%, white);
+
   --color-page: #16161a;
   --color-surface: #111827;
   --color-surface-raised: rgba(31, 41, 55, 0.7);
@@ -153,4 +167,11 @@
   --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.3);
   --shadow-accent-indicator: 0 0 8px rgba(59, 130, 246, 0.5);
   --shadow-session-hover: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Preserve hue while keeping bubble lightness and chroma consistent across accent colors. */
+@supports (color: oklch(from red l c h)) {
+  :root {
+    --color-chat-accent-solid: oklch(from var(--color-accent) 0.52 min(c, 0.18) h);
+  }
 }
