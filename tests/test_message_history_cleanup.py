@@ -445,3 +445,38 @@ async def test_session_deleted_event_triggers_archive_deletion(history, session_
     await dispatch_session_events(history, session_events)
     assert await history.get_message(identity) is None
     assert not manager._background_tasks
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("malformed", ["scalar", "null", "flat", "object", "nested"])
+async def test_media_gc_tolerates_malformed_sessions_and_preserves_references(
+    cleaner, history, tmp_path, malformed,
+):
+    healthy_path = _archive_media("aGVhbHRoeQ==", "base64")
+    damaged_path = _archive_media("ZGFtYWdlZA==", "base64")
+    orphan_path = _archive_media("b3JwaGFu", "base64")
+    reference = {"type": "kira_image_ref", "path": damaged_path}
+    records = {
+        "scalar": 42,
+        "null": {"memory": None},
+        "flat": {"memory": [{"role": "user", "content": [reference]}]},
+        "object": {"memory": {"content": [reference]}},
+        "nested": {"memory": [None, ["bad", {"role": "invalid", "content": [reference]}]]},
+    }
+    damaged_record = deepcopy(records[malformed])
+    history.session_manager.chat_memory["adapter:dm:damaged"] = damaged_record
+    history.session_manager.chat_memory[SID]["memory"] = [[{
+        "role": "user", "content": [{"type": "kira_image_ref", "path": healthy_path}],
+    }]]
+    if malformed in {"scalar", "null"}:
+        await seed(history, 1, chain=[{
+            "type": "image", "file_type": "archive", "file": damaged_path,
+        }])
+
+    result = await cleaner.cleanup_once(settings())
+    assert result["deleted_files"] == 1
+    assert not (tmp_path / orphan_path).exists()
+    assert (tmp_path / healthy_path).is_file()
+    assert (tmp_path / damaged_path).is_file()
+    assert history.session_manager.chat_memory["adapter:dm:damaged"] == records[malformed]
+    assert (await cleaner.cleanup_once(settings()))["deleted_files"] == 0

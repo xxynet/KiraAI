@@ -75,3 +75,56 @@ def test_explicit_memory_edit_still_rejects_invalid_roles(tmp_path, monkeypatch)
     with pytest.raises(ValueError):
         manager.write_memory("adapter:dm:user", [[{"role": "invalid", "content": "bad"}]])
     assert path.read_bytes() == saved
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("old_memory", [
+    [["bad"]],
+    [{"role": "user", "content": "old"}],
+    None,
+    42,
+    {"invalid": "memory"},
+    [[{"role": ["user"], "_extra": {"llm_message_id": "bad-id"}}]],
+])
+@pytest.mark.parametrize("replacement", [[], [[{"role": "user", "content": "repaired"}]]])
+async def test_api_can_replace_malformed_memory(tmp_path, monkeypatch, old_memory, replacement):
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from webui.routes.sessions import SessionsRoutes
+
+    path = tmp_path / "chat_memory.json"
+    path.write_text(json.dumps({"adapter:dm:user": {"memory": old_memory}}), encoding="utf-8")
+    monkeypatch.setattr(session_manager_module, "CHAT_MEMORY_PATH", str(path))
+    monkeypatch.setattr(session_manager_module, "logger", Mock())
+    manager = SessionManager(Mock(), Mock())
+    app = FastAPI()
+    routes = SessionsRoutes(app, SimpleNamespace(session_manager=manager))
+    app.add_api_route("/api/sessions/{session_id:path}", routes.update_session, methods=["PUT"])
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test",
+    ) as client:
+        response = await client.put("/api/sessions/adapter:dm:user", json={"messages": replacement})
+
+    assert response.status_code == 200
+    saved = json.loads(path.read_text(encoding="utf-8"))["adapter:dm:user"]["memory"]
+    assert saved == response.json()["messages"]
+    if replacement:
+        assert saved[0][0]["content"] == "repaired"
+        assert saved[0][0]["_extra"]["llm_message_id"]
+    else:
+        assert saved == []
+
+
+def test_repair_preserves_valid_ids_among_malformed_old_entries(tmp_path, monkeypatch):
+    from core.chat.memory_metadata import normalize_memory
+
+    valid = {"role": "user", "content": "original", "_extra": {"llm_message_id": "keep"}}
+    old = [None, {"role": "assistant"}, ["bad", valid]]
+    edited = [[{**valid, "content": "edited"}]]
+    assert normalize_memory(edited, previous=old) == edited
+    with pytest.raises(ValueError):
+        normalize_memory([[{"role": ["user"], "content": "invalid"}]], previous=old)

@@ -156,3 +156,13 @@ async def test_stopped_batch_does_not_persist_native_media(monkeypatch):
     await manager.handle_im_batch_message(event)
 
     assert persisted_messages == []
+
+
+def test_reference_collection_accepts_iterables_and_malformed_shapes():
+    reference = {"type": "kira_image_ref", "path": "session_media/archive/retained"}
+    memory = [[{"role": "user", "content": [reference]}]]
+    expected = {reference["path"]}
+    assert media_refs.collect_media_reference_paths(iter(memory)) == expected
+    assert media_refs.collect_media_reference_paths({"memory": [None, reference]}) == expected
+    for invalid in (None, 42, "invalid", b"invalid", {"memory": None}):
+        assert media_refs.collect_media_reference_paths(invalid) == set()

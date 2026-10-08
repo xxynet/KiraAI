@@ -143,7 +143,7 @@ class MessageHistoryCleanup:
         # No async lock or await is involved in this worker-thread critical section.
         with manager.memory_lock:
             for session_data in manager.chat_memory.values():
-                retained.update(collect_media_reference_paths(session_data.get("memory", [])))
+                retained.update(collect_media_reference_paths(session_data))
             retained_paths = {(data_root / path).resolve() for path in retained}
             for path in root.iterdir():
                 if path.is_symlink() or not path.is_file():
