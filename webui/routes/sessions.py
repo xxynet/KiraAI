@@ -128,7 +128,10 @@ class SessionsRoutes(Routes):
             for item in history_sessions:
                 sid = item["session_id"]
                 if sid not in by_id:
-                    adapter, kind, target = sid.split(":", 2)
+                    parts = sid.split(":", 2)
+                    if len(parts) < 3:
+                        continue
+                    adapter, kind, target = parts
                     record = {"id": sid, "adapter_name": adapter, "session_type": kind,
                               "session_id": target, "title": "", "description": "", "message_count": 0}
                     sessions.append(record)

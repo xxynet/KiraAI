@@ -80,8 +80,17 @@ class SessionManager:
                     "timestamp": None,
                     "memory": session_content
                 }
-        for session_data in self.chat_memory.values():
-            session_data["memory"] = normalize_memory(session_data.get("memory", []))
+        for index, session_data in enumerate(self.chat_memory.values(), start=1):
+            if not isinstance(session_data, dict):
+                logger.warning("Skipping malformed session entry %d; preserving raw data", index)
+                continue
+            try:
+                session_data["memory"] = normalize_memory(session_data.get("memory", []))
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "Unable to normalize memory for session entry %d (%s); preserving raw memory",
+                    index, type(exc).__name__,
+                )
         self._save_memory(self.chat_memory, self.chat_memory_path)
 
     def _ensure_session_data(self, session: str):
