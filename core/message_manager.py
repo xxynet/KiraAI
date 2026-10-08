@@ -919,7 +919,7 @@ class MessageProcessor:
         for action in actions:
             if isinstance(action, MessageChain):
                 if not action.is_empty():
-                    result = await self.send_message_chain(event.sid, action, source="llm", memory_message=memory_message, self_id=getattr(event, "self_id", None))
+                    result = await self.send_message_chain(event.sid, action, memory_message=memory_message, self_id=getattr(event, "self_id", None))
                     if not result.ok and result.err:
                         logger.error(result.err)
                 else:
@@ -941,7 +941,7 @@ class MessageProcessor:
 
         return message_results
 
-    async def send_message_chain(self, session: str, chain: MessageChain, *, source: str = "plugin", memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
+    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
         """
         Send a MessageChain to target.
 
@@ -972,7 +972,7 @@ class MessageProcessor:
                     llm_message_id = memory_message.to_memory_dict()["_extra"]["llm_message_id"]
                 record_id = await history.record_outgoing(
                     session, chain, platform=adapter.info.platform,
-                    self_id=str(bot_id) if bot_id is not None else None, source=source,
+                    self_id=str(bot_id) if bot_id is not None else None,
                     llm_message_id=llm_message_id,
                 )
             except Exception as exc:

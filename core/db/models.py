@@ -100,7 +100,6 @@ class MessageRecord(Base):
     is_notice = Column(Boolean, nullable=False, default=False)
     is_mentioned = Column(Boolean, nullable=True)
     direction = Column(String(16), nullable=False)
-    source = Column(String(16), nullable=False)
     sender_id = Column(String, nullable=True)
     sender_name = Column(String, nullable=True)
     timestamp = Column(BigInteger, nullable=False)

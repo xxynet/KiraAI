@@ -137,9 +137,8 @@ class MessageHistoryService:
         if cached is not None and cached[0]() is message:
             return cached[1]
         platform_id = str(message.message_id) if message.message_id is not None else None
-        source = "system" if message.is_notice and platform_id == "system_message" else "platform"
         dedup_key = None
-        if source == "platform" and platform_id and platform_id.lower() not in {"none", "null", "system_message"}:
+        if platform_id and platform_id.lower() not in {"none", "null", "system_message"}:
             identity = [session_id, message.self_id, platform_id, "incoming"]
             dedup_key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         # Freeze before the first await, so later processing cannot rewrite the snapshot.
@@ -147,7 +146,7 @@ class MessageHistoryService:
         record_id = await self._insert(
             session_id=session_id, self_id=message.self_id, platform=platform,
             platform_message_id=platform_id, dedup_key=dedup_key,
-            direction="incoming", source=source, is_notice=message.is_notice, is_mentioned=message.is_mentioned,
+            direction="incoming", is_notice=message.is_notice, is_mentioned=message.is_mentioned,
             sender_id=message.sender.user_id if message.sender else None,
             sender_name=message.sender.nickname if message.sender else None,
             timestamp=message.timestamp, chain=await serialize_message_chain(snapshot), status="received",
@@ -160,11 +159,11 @@ class MessageHistoryService:
         return record_id
 
     async def record_outgoing(self, session_id: str, chain, *, platform: str,
-                              self_id: str | None, source: str, llm_message_id: str | None = None) -> str:
+                              self_id: str | None, llm_message_id: str | None = None) -> str:
         snapshot = copy.deepcopy(chain)
         return await self._insert(
             session_id=session_id, self_id=self_id, platform=platform,
-            direction="outgoing", source=source, sender_id=self_id, sender_name=None,
+            direction="outgoing", sender_id=self_id, sender_name=None,
             llm_message_id=llm_message_id,
             timestamp=int(time.time()), chain=await serialize_message_chain(snapshot), status="pending",
         )

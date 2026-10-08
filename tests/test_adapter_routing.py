@@ -168,7 +168,7 @@ async def test_xml_reply_passes_history_provenance(monkeypatch):
     event = SimpleNamespace(sid="example:dm:channel/123")
     await processor.send_xml_messages(event, "<msg/>", TagSet())
     processor.send_message_chain.assert_awaited_once_with(
-        event.sid, chain, source="llm", memory_message=None, self_id=None,
+        event.sid, chain, memory_message=None, self_id=None,
     )
 
 

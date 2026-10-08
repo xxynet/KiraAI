@@ -72,6 +72,7 @@ async def test_incoming_snapshot_dedup_accounts_and_notices(history):
         await history.record_incoming(notice, SID, "test")
     record = await history.get_message(identity)
     assert record["chain"] == [{"type": "text", "text": "original"}]
+    assert "source" not in record
     assert "raw_message" not in record
     assert "must not persist" not in json.dumps(record)
     assert len((await history.list_messages(SID))["messages"]) == 4
@@ -103,6 +104,7 @@ async def test_outgoing_success_failure_exception_and_proactive(history):
         response = await instance.send_message_chain(SID, MessageChain([Text("out")]))
         row = await history.get_message(response.history_id)
         assert row["direction"] == "outgoing"
+        assert "source" not in row
         assert row["sender_id"] == "bot"
         assert row["status"] == expected
         assert row["llm_message_id"] is None
@@ -127,7 +129,7 @@ async def test_many_messages_link_to_exact_user_and_assistant_and_survive_prunin
     emitted = []
     for memory in (first, first, second):
         result = await instance.send_message_chain(SID, MessageChain([Text(memory.content)]),
-                                                    source="llm", memory_message=memory)
+                                                    memory_message=memory)
         emitted.append(result.history_id)
     history.session_manager.update_memory(SID, [user, first, second])
     linked_inputs = (await history.get_messages_by_llm_message_id(SID, user.extra["llm_message_id"]))["messages"]
@@ -191,7 +193,7 @@ async def test_startup_preserves_database_links_and_marks_incomplete_sends_unkno
     memory.to_memory_dict()
     await history.link_incoming_messages(SID, memory.extra["llm_message_id"], [identity])
     history.session_manager.update_memory(SID, [memory])
-    pending = await history.record_outgoing(SID, MessageChain([Text("out")]), platform="test", self_id="bot", source="plugin")
+    pending = await history.record_outgoing(SID, MessageChain([Text("out")]), platform="test", self_id="bot")
     restored = MessageHistoryService(SimpleNamespace(db=history.db), history.session_manager)
     await restored.initialize()
     row = await restored.get_message(identity)
@@ -366,7 +368,7 @@ async def test_all_media_store_only_local_relative_paths(history, tmp_path, monk
         message.chain = chain
         identity = await history.record_incoming(message, SID, "test")
     else:
-        identity = await history.record_outgoing(SID, chain, platform="test", self_id="bot", source="llm")
+        identity = await history.record_outgoing(SID, chain, platform="test", self_id="bot")
     row = await history.get_message(identity)
     serialized = json.dumps(row["chain"])
     assert encoded not in serialized
@@ -421,7 +423,7 @@ async def test_incoming_tracking_preserves_message_fields_and_releases_reference
     assert await history.record_incoming(message, SID, "test") == identity
     row = await history.get_message(identity)
     assert row["chain"][0]["text"] == "original"
-    assert row["source"] == "system"
+    assert "source" not in row
     assert len((await history.list_messages(SID))["messages"]) == 1
     reference = weakref.ref(message)
     del message
@@ -438,7 +440,7 @@ async def test_persisted_messages_keep_full_session_identity(history):
         identity = await history.record_incoming(incoming("same-platform-id"), sid, "test")
         incoming_ids.add(identity)
         outgoing_id = await history.record_outgoing(
-            sid, MessageChain([Text("reply")]), platform="test", self_id="bot", source="llm")
+            sid, MessageChain([Text("reply")]), platform="test", self_id="bot")
         assert (await history.get_message(identity))["session_id"] == sid
         assert (await history.get_message(outgoing_id))["session_id"] == sid
         records = (await history.list_messages(sid))["messages"]
@@ -473,7 +475,7 @@ async def test_incoming_link_update_is_scoped_to_session_and_direction(history):
     source = await history.record_incoming(incoming(), SID, "test")
     other = await history.record_incoming(incoming(), "other:dm:user", "test")
     outgoing = await history.record_outgoing(
-        SID, MessageChain([Text("sent")]), platform="test", self_id="bot", source="llm", llm_message_id="assistant-id")
+        SID, MessageChain([Text("sent")]), platform="test", self_id="bot", llm_message_id="assistant-id")
     await history.link_incoming_messages(SID, "user-id", [source, other, outgoing])
     await history.link_incoming_messages(SID, "unused", [])
     assert (await history.get_message(source))["llm_message_id"] == "user-id"
