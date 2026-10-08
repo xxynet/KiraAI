@@ -111,6 +111,8 @@ class SessionsRoutes(Routes):
                 continue
             adapter_name, session_type, session_id = parts[0], parts[1], ":".join(parts[2:])
             session_meta = self.lifecycle.session_manager.chat_memory.get(session_key, {})
+            if not isinstance(session_meta, dict):
+                continue
             title = session_meta.get("title", "")
             description = session_meta.get("description", "")
             sessions.append({
@@ -127,6 +129,8 @@ class SessionsRoutes(Routes):
             by_id = {item["id"]: item for item in sessions}
             for item in history_sessions:
                 sid = item["session_id"]
+                if not isinstance(self.lifecycle.session_manager.chat_memory.get(sid, {}), dict):
+                    continue
                 if sid not in by_id:
                     parts = sid.split(":", 2)
                     if len(parts) < 3:
@@ -147,6 +151,9 @@ class SessionsRoutes(Routes):
         if len(parts) < 3:
             raise HTTPException(status_code=400, detail="Invalid session id format")
 
+        session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})
+        if not isinstance(session_meta, dict):
+            raise HTTPException(status_code=404, detail="Session not found")
         memory = self.lifecycle.session_manager.get_existing_memory_snapshot(session_id)
         if memory is None:
             history = await self.message_history.list_messages(session_id, limit=1) if self.message_history else None
@@ -155,7 +162,6 @@ class SessionsRoutes(Routes):
             memory = []
 
         adapter_name, session_type, session_key = parts[0], parts[1], ":".join(parts[2:])
-        session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})
         title = session_meta.get("title", "")
         description = session_meta.get("description", "")
 
