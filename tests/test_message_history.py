@@ -3,7 +3,7 @@ import copy
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -92,7 +92,7 @@ async def test_nested_chain_media_survives_original_file_removal(history, tmp_pa
     image = stored[2]["chain"][0]
     assert image["file_type"] == "archive"
     assert (tmp_path / image["file"]).read_bytes() == b"image bytes"
-    assert stored[3]["chains"][0][0]["data"] == {"nested": [1, 2]}
+    assert stored[3] == {"type": "forward"}
     assert stored[1] == {"type": "at", "pid": "123", "nickname": "Alice"}
 
 
@@ -377,7 +377,8 @@ async def test_all_media_store_only_local_relative_paths(history, tmp_path, monk
     assert "temporary-media.bin" not in serialized
     source_path.unlink()
     paths = set()
-    for element in row["chain"][0]["chain"] + row["chain"][1]["chains"][0]:
+    assert row["chain"][1] == {"type": "forward"}
+    for element in row["chain"][0]["chain"]:
         relative = element["file"]
         assert element["file_type"] == "archive"
         assert relative.startswith("session_media/archive/")
@@ -481,3 +482,35 @@ async def test_incoming_link_update_is_scoped_to_session_and_direction(history):
     assert (await history.get_message(source))["llm_message_id"] == "user-id"
     assert (await history.get_message(other))["llm_message_id"] is None
     assert (await history.get_message(outgoing))["llm_message_id"] == "assistant-id"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("direction", ["incoming", "outgoing"])
+async def test_forward_placeholder_does_not_archive_contents(history, tmp_path, monkeypatch, direction):
+    archive = Mock()
+    monkeypatch.setattr("core.chat.message_history._archive_media", archive)
+    forward = Forward(
+        message_id=["forward-id"],
+        chains=[MessageChain([
+            Text("private forwarded text"),
+            Image("https://media.example/image?token=temporary"),
+            Forward(chains=[MessageChain([Image("base64://aGVsbG8=")])]),
+        ])],
+    )
+    chain = MessageChain([forward, Reply("quoted", chain=MessageChain([forward]))])
+    if direction == "incoming":
+        message = incoming()
+        message.chain = chain
+        identity = await history.record_incoming(message, SID, "test")
+    else:
+        identity = await history.record_outgoing(SID, chain, platform="test", self_id="bot")
+    row = await history.get_message(identity)
+    assert row["chain"] == [
+        {"type": "forward"},
+        {"type": "reply", "message_id": "quoted", "message_content": None,
+         "chain": [{"type": "forward"}]},
+    ]
+    archive.assert_not_called()
+    assert not (tmp_path / "session_media").exists()
+    assert forward.chains[0][0].text == "private forwarded text"
+    assert len(forward.chains[0]) == 3

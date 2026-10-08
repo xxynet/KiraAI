@@ -536,6 +536,20 @@ const allGroups: ConfigGroup[] = [
     ],
   },
   {
+    id: 'message-history-cleanup',
+    labelKey: 'configuration.groups.message_history_cleanup',
+    labelFallback: 'Message History Cleanup',
+    descKey: 'configuration.groups.message_history_cleanup_desc',
+    descFallback: 'Retain structured messages and reclaim unreferenced media without changing LLM context',
+    icon: IconDatabase,
+    fields: [
+      { key: 'bot_config.message_history_cleanup.enabled', labelKey: 'configuration.message.history_cleanup_enabled', labelFallback: 'Automatic Cleanup', hintKey: 'configuration.hints.history_cleanup_enabled', hintFallback: 'Automatically clean up structured message history and unreferenced archive media. Changes apply after saving.', type: 'boolean', default: true },
+      { key: 'bot_config.message_history_cleanup.max_age_days', labelKey: 'configuration.message.history_max_age_days', labelFallback: 'Retention Period (days)', hintKey: 'configuration.hints.history_max_age_days', hintFallback: 'Delete messages older than this many days since storage. 0 disables the age limit.', type: 'integer', default: 0, validation: { min: 0, max: 36500, required: true } },
+      { key: 'bot_config.message_history_cleanup.max_messages_per_session', labelKey: 'configuration.message.history_max_messages_per_session', labelFallback: 'Max Messages per Session', hintKey: 'configuration.hints.history_max_messages_per_session', hintFallback: 'Retain the newest messages per session, counting incoming and outgoing together. 0 disables the count limit.', type: 'integer', default: 500, validation: { min: 0, max: 1000000, required: true } },
+      { key: 'bot_config.message_history_cleanup.cleanup_interval_seconds', labelKey: 'configuration.message.history_cleanup_interval_seconds', labelFallback: 'Check Interval (seconds)', hintKey: 'configuration.hints.history_cleanup_interval_seconds', hintFallback: 'Interval between cleanup checks. Messages exceeding either enabled limit are removed; messages being processed are temporarily protected.', type: 'integer', default: 3600, validation: { min: 60, max: 604800, required: true } },
+    ],
+  },
+  {
     id: 'logging',
     labelKey: 'configuration.groups.logging',
     labelFallback: 'Logging Settings',
@@ -586,7 +600,7 @@ interface CategoryTab {
 
 const categoryTabs: CategoryTab[] = [
   { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'image-compression'] },
-  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['locale', 'network', 'cache', 'logging'] },
+  { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['locale', 'network', 'cache', 'message-history-cleanup', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]
 
@@ -921,6 +935,11 @@ async function handleSave() {
   }
   const allFields = allGroups.flatMap(g => g.fields)
   allFields.forEach(f => validateField(f.key))
+  const cleanup = currentData.value.bot_config?.message_history_cleanup
+  if (cleanup?.enabled && cleanup.max_age_days === 0 && cleanup.max_messages_per_session === 0) {
+    notify(t('configuration.validation.history_cleanup_limit_required'), 'error')
+    return
+  }
   if (Object.keys(validationErrors.value).length > 0) {
     notify(t('configuration.validation_failed'), 'error')
     return

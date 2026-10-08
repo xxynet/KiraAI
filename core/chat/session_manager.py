@@ -304,17 +304,18 @@ class SessionManager:
             logger.warning("Unable to publish session lifecycle event outside a running event loop")
 
     def delete_session(self, session: str):
-        deleted = False
+        """Delete context and notify subscribers after the change is persisted."""
         with self.memory_lock:
-            deleted = session in self.chat_memory
-            old_memory = copy.deepcopy(
-                self.chat_memory.get(session, {}).get("memory", [])
-            )
-            self.chat_memory.pop(session, None)
+            old_session = self.chat_memory.pop(session, None)
+            old_memory = copy.deepcopy(old_session.get("memory", [])) if old_session is not None else []
             saved = self._save_memory(self.chat_memory, self.chat_memory_path)
-        if deleted and saved:
-            self._publish_session_event(
-                "session_deleted",
-                {"session": session, "old_memory": old_memory},
-            )
+            if not saved:
+                if old_session is not None:
+                    self.chat_memory[session] = old_session
+                raise OSError("Unable to persist session deletion")
+
+        # Archive-only sessions must also notify lifecycle subscribers.
+        self._publish_session_event(
+            "session_deleted", {"session": session, "old_memory": old_memory},
+        )
         logger.info(f"Memory deleted for {session}")
