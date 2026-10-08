@@ -48,6 +48,11 @@ class PluginContext:
 
     plugin_mgr: Optional[PluginManager] = None
 
+    @property
+    def message_history(self):
+        """Query structured incoming/outgoing messages and their memory links."""
+        return self.message_processor.message_history
+
     def get_plugin_data_dir(self):
         base_dir = get_data_path() / "plugin_data"
         frame = inspect.currentframe()

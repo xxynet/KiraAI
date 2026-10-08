@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 from core.chat.message_elements import BaseMediaElement, _infer_mime_from_bytes
+from core.agent.message import provider_message_dict
 from core.utils.path_utils import get_data_path, is_within_directory
 
 
@@ -123,7 +124,7 @@ async def resolve_media_references(messages: Iterable[object]) -> list[dict]:
     """Return provider-ready message dictionaries without mutating stored history."""
     resolved_messages: list[dict] = []
     for raw_message in messages:
-        message = raw_message if isinstance(raw_message, dict) else raw_message.to_dict()
+        message = provider_message_dict(raw_message)
         resolved_message = dict(message)
         content = message.get("content")
         if isinstance(content, list):
@@ -138,24 +139,23 @@ async def resolve_media_references(messages: Iterable[object]) -> list[dict]:
     return resolved_messages
 
 
-def collect_media_reference_paths(memory: Iterable[object]) -> set[str]:
-    """Collect media paths still referenced by the serialized session history."""
+def collect_media_reference_paths(memory: object) -> set[str]:
+    """Collect recognizable references even in malformed serialized history."""
     paths: set[str] = set()
-    for chunk in memory:
-        messages = chunk if isinstance(chunk, list) else []
-        for message in messages:
-            if not isinstance(message, dict):
-                continue
-            content = message.get("content")
-            if not isinstance(content, list):
-                continue
-            for part in content:
-                if (
-                    isinstance(part, dict)
-                    and part.get("type") == MEDIA_REF_TYPE
-                    and isinstance(part.get("path"), str)
-                ):
-                    paths.add(part["path"])
+    if isinstance(memory, (dict, list)):
+        pending = [memory]
+    elif isinstance(memory, Iterable) and not isinstance(memory, (str, bytes)):
+        pending = list(memory)
+    else:
+        return paths
+    while pending:
+        item = pending.pop()
+        if isinstance(item, list):
+            pending.extend(item)
+        elif isinstance(item, dict):
+            if item.get("type") == MEDIA_REF_TYPE and isinstance(item.get("path"), str):
+                paths.add(item["path"])
+            pending.extend(value for value in item.values() if isinstance(value, (dict, list)))
     return paths
 
 

@@ -665,6 +665,8 @@ export default {
     no_results: 'No matching settings found',
     categories_aria: 'Configuration categories',
     groups: {
+      message_history_cleanup: 'Message History Cleanup',
+      message_history_cleanup_desc: 'Clean up structured message history and unreferenced media without changing LLM context',
       chat: 'Chat Settings',
       chat_desc: 'Core chat behavior parameters',
       agent: 'Agent Settings',
@@ -685,6 +687,10 @@ export default {
       network_desc: 'Network and package source configuration',
     },
     hints: {
+      history_cleanup_enabled: 'Automatically clean up structured message history and unreferenced archive media. Changes apply after saving.',
+      history_max_age_days: 'Delete messages older than this many days since storage. 0 disables the age limit.',
+      history_max_messages_per_session: 'Retain the newest messages per source session, counting incoming and outgoing together. 0 disables the count limit.',
+      history_cleanup_interval_seconds: 'Interval between cleanup checks. Messages exceeding either enabled limit are removed; messages being processed are temporarily protected.',
       chat_info: 'More chat settings are available in the active message plugin config under Add-ons → Plugins',
       max_memory_length: 'Maximum number of messages retained in context window',
       memory_overflow_discard_count: 'Number of oldest messages discarded each time the context limit is exceeded. Values beyond the maximum context length are capped automatically.',
@@ -722,6 +728,7 @@ export default {
       forward_parsing_enabled: 'Parse the content of forwarded messages. When disabled, only a placeholder is kept',
     },
     validation: {
+      history_cleanup_limit_required: 'Enable at least one nonzero age or message count limit for message history cleanup',
       required: 'This field is required',
       invalid_number: 'Please enter a valid number',
       integer: 'Please enter a whole number',
@@ -732,6 +739,10 @@ export default {
       timezone_invalid: 'Please enter a valid timezone, e.g. Asia/Shanghai or UTC',
     },
     message: {
+      history_cleanup_enabled: 'Automatic Cleanup',
+      history_max_age_days: 'Retention Period (days)',
+      history_max_messages_per_session: 'Max Messages per Session',
+      history_cleanup_interval_seconds: 'Check Interval (seconds)',
       chat_info: 'More Chat Settings',
       max_memory_length: 'Max Context Length',
       memory_overflow_discard_count: 'Overflow Discard Count',

@@ -67,6 +67,7 @@ class KiraIMSentResult:
     is_notice: bool = False
     ok: bool = True
     err: str = ""
+    history_id: Optional[str] = None
 
 
 @dataclass

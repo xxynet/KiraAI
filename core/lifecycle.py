@@ -10,6 +10,7 @@ from .message_manager import MessageProcessor
 from .prompt_manager import PromptManager
 from core.chat.session_manager import SessionManager
 from core.chat.session_media_manager import SessionMediaManager
+from core.chat.message_history_cleanup import MessageHistoryCleanup
 from .adapter import AdapterManager
 from .statistics import Statistics
 from .agent.func_tool_manager import FuncToolManager
@@ -74,6 +75,8 @@ class KiraLifecycle:
         self.skills_manager: Optional[SkillsManager] = None
 
         self.telemetry_client: Optional[TelemetryClient] = None
+
+        self.message_history_cleanup: Optional[MessageHistoryCleanup] = None
 
         self.tasks: list[asyncio.Task] = []
 
@@ -210,6 +213,14 @@ class KiraLifecycle:
             )
         )
 
+        await self.message_processor.message_history.initialize()
+        self.event_bus.subscribe(
+            "session_deleted", self.message_processor.message_history.on_session_deleted
+        )
+        self.message_history_cleanup = MessageHistoryCleanup(
+            self.message_processor.message_history, self.kira_config
+        )
+        self.message_history_cleanup.start()
         self.message_processor.event_bus = self.event_bus
         self.event_bus.subscribe(KiraMessageEvent, self.message_processor.handle_event)
         self.event_bus.subscribe(KiraMessageBatchEvent, self.message_processor.handle_event)
@@ -294,6 +305,9 @@ class KiraLifecycle:
             await self.adapter_manager.stop_adapters()
         if self.event_bus:
             await self.event_bus.stop()
+
+        if self.message_history_cleanup:
+            await self.message_history_cleanup.stop()
 
         # dispose database manager
         if self.db_manager:

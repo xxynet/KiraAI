@@ -665,6 +665,8 @@ export default {
     no_results: '未找到匹配的设置项',
     categories_aria: '配置分类',
     groups: {
+      message_history_cleanup: '消息历史清理',
+      message_history_cleanup_desc: '清理持久化结构化消息和无引用媒体，不影响 LLM 上下文',
       chat: '聊天设置',
       chat_desc: '聊天核心行为参数',
       agent: '代理设置',
@@ -685,6 +687,10 @@ export default {
       network_desc: '网络和包源配置',
     },
     hints: {
+      history_cleanup_enabled: '自动清理结构化消息历史及无引用的归档媒体，保存配置后生效。',
+      history_max_age_days: '按入库时间删除超过指定天数的消息，0 表示不限制时间。',
+      history_max_messages_per_session: '每个来源会话保留最新的指定条数，收到和发出的消息合并计数，0 表示不限制条数。',
+      history_cleanup_interval_seconds: '定时检查的间隔秒数。超过任一已启用限制的消息会被清理；正在处理的消息暂时保留。',
       chat_info: '更多聊天设置位于「附加功能 → 插件」中已启用的消息插件配置中',
       max_memory_length: '上下文窗口中保留的最大消息数',
       memory_overflow_discard_count: '上下文达到上限后，每次从最早历史中丢弃的消息数；超出最大上下文长度时会自动按最大长度限制。',
@@ -722,6 +728,7 @@ export default {
       forward_parsing_enabled: '解析转发消息的内容，关闭后仅保留占位符',
     },
     validation: {
+      history_cleanup_limit_required: '开启消息历史清理时，保留天数和每会话最大消息数至少一项必须大于 0',
       required: '此字段为必填项',
       invalid_number: '请输入有效的数字',
       integer: '请输入整数',
@@ -732,6 +739,10 @@ export default {
       timezone_invalid: '请输入有效的时区，例如 Asia/Shanghai 或 UTC',
     },
     message: {
+      history_cleanup_enabled: '自动清理',
+      history_max_age_days: '保留天数',
+      history_max_messages_per_session: '每会话最大消息数',
+      history_cleanup_interval_seconds: '检查间隔（秒）',
       chat_info: '更多聊天设置',
       max_memory_length: '最大上下文长度',
       memory_overflow_discard_count: '上下文溢出丢弃条数',

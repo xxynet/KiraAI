@@ -81,3 +81,31 @@ class PluginStoreSource(Base):
     updated_at = Column(BigInteger, nullable=False, default=0)
     is_current = Column(Boolean, nullable=False, default=False)
     created_at = Column(BigInteger, nullable=False, default=0)
+
+
+class MessageRecord(Base):
+    """Structured IM history, independent of the bounded LLM context."""
+    __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_session_created", "session_id", "created_at", "id"),
+        Index("ix_messages_memory", "session_id", "llm_message_id"),
+    )
+
+    id = Column(String(32), primary_key=True)
+    session_id = Column(String, nullable=False)
+    self_id = Column(String, nullable=True)
+    platform = Column(String, nullable=False)
+    platform_message_id = Column(String, nullable=True)
+    dedup_key = Column(String(64), unique=True, nullable=True)
+    is_notice = Column(Boolean, nullable=False, default=False)
+    is_mentioned = Column(Boolean, nullable=True)
+    direction = Column(String(16), nullable=False)
+    sender_id = Column(String, nullable=True)
+    sender_name = Column(String, nullable=True)
+    timestamp = Column(BigInteger, nullable=False)
+    created_at = Column(BigInteger, nullable=False)
+    chain = Column(JSON, nullable=False)
+    status = Column(String(16), nullable=False)
+    error_type = Column(String, nullable=True)
+    llm_message_id = Column(String(32), nullable=True)
+    schema_version = Column(Integer, nullable=False, default=1)

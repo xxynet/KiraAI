@@ -15,6 +15,7 @@ from core.utils.path_utils import get_data_path
 from core.db.service import DatabaseService
 
 from .session import Session
+from .memory_metadata import normalize_memory
 
 if TYPE_CHECKING:
     from core.event_bus import EventBus
@@ -79,6 +80,17 @@ class SessionManager:
                     "timestamp": None,
                     "memory": session_content
                 }
+        for index, session_data in enumerate(self.chat_memory.values(), start=1):
+            if not isinstance(session_data, dict):
+                logger.warning("Skipping malformed session entry %d; preserving raw data", index)
+                continue
+            try:
+                session_data["memory"] = normalize_memory(session_data.get("memory", []))
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "Unable to normalize memory for session entry %d (%s); preserving raw memory",
+                    index, type(exc).__name__,
+                )
         self._save_memory(self.chat_memory, self.chat_memory_path)
 
     def _ensure_session_data(self, session: str):
@@ -222,12 +234,13 @@ class SessionManager:
             return copy.deepcopy(session_data.get("memory", []))
 
     def write_memory(self, session: str, memory: list[list[dict]]):
+        normalize_memory(memory)
         self._ensure_session_data(session)
         with self.memory_lock:
             old_memory = copy.deepcopy(self.chat_memory[session].get("memory", []))
-            self.chat_memory[session]["memory"] = memory
+            self.chat_memory[session]["memory"] = normalize_memory(memory, previous=old_memory)
             saved = self._save_memory(self.chat_memory, self.chat_memory_path)
-            new_memory = copy.deepcopy(memory)
+            new_memory = copy.deepcopy(self.chat_memory[session]["memory"])
         if saved:
             self._publish_session_event(
                 "session_memory_written",
@@ -242,7 +255,7 @@ class SessionManager:
     def update_memory(self, session: str, new_chunk):
         self._ensure_session_data(session)
         from core.agent.message import OpenAIMessage
-        new_chunk = [m.to_dict() if isinstance(m, OpenAIMessage) else m for m in new_chunk]
+        new_chunk = normalize_memory([[m.to_memory_dict() if isinstance(m, OpenAIMessage) else m for m in new_chunk]])[0]
         with self.memory_lock:
             session_data = self.chat_memory[session]
 
@@ -267,6 +280,7 @@ class SessionManager:
                 },
             )
         logger.info(f"Memory updated for {session}")
+        return saved
 
     def _get_memory_limits(self) -> tuple[int, int]:
         """Read the current memory-limit settings so WebUI updates apply immediately."""
@@ -299,17 +313,18 @@ class SessionManager:
             logger.warning("Unable to publish session lifecycle event outside a running event loop")
 
     def delete_session(self, session: str):
-        deleted = False
+        """Delete context and notify subscribers after the change is persisted."""
         with self.memory_lock:
-            deleted = session in self.chat_memory
-            old_memory = copy.deepcopy(
-                self.chat_memory.get(session, {}).get("memory", [])
-            )
-            self.chat_memory.pop(session, None)
+            old_session = self.chat_memory.pop(session, None)
+            old_memory = copy.deepcopy(old_session.get("memory", [])) if old_session is not None else []
             saved = self._save_memory(self.chat_memory, self.chat_memory_path)
-        if deleted and saved:
-            self._publish_session_event(
-                "session_deleted",
-                {"session": session, "old_memory": old_memory},
-            )
+            if not saved:
+                if old_session is not None:
+                    self.chat_memory[session] = old_session
+                raise OSError("Unable to persist session deletion")
+
+        # Archive-only sessions must also notify lifecycle subscribers.
+        self._publish_session_event(
+            "session_deleted", {"session": session, "old_memory": old_memory},
+        )
         logger.info(f"Memory deleted for {session}")

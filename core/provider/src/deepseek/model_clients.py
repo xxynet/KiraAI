@@ -8,6 +8,7 @@ from openai import (
 import time
 from typing import AsyncGenerator
 
+from core.agent.message import provider_message_dict
 from core.provider import ModelInfo, LLMModelClient
 from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.logging_manager import get_logger
@@ -62,7 +63,7 @@ class DeepSeekLLMClient(LLMModelClient):
 
         kwargs = dict(
             model=self.model.model_name,
-            messages=[m if isinstance(m, dict) else m.to_dict() for m in request.messages],
+            messages=[provider_message_dict(m) for m in request.messages],
             tools=request.tools if request.tools else NOT_GIVEN,
             tool_choice=request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
         )

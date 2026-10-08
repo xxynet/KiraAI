@@ -3,6 +3,7 @@ from typing import Dict
 
 from fastapi import Depends, HTTPException
 
+from core.chat.message_history_cleanup import validate_cleanup_config
 from core.provider.model_identity import DEFAULT_MODEL_TYPES, resolve_model_reference
 from core.logging_manager import get_logger, setup_logging
 from webui.routes.auth import require_auth
@@ -87,6 +88,11 @@ class ConfigRoutes(Routes):
                     detail=f"Invalid configuration: '{section}' must be an object",
                 )
         bot_config = payload.get("bot_config")
+        if isinstance(bot_config, dict) and "message_history_cleanup" in bot_config:
+            try:
+                validate_cleanup_config(bot_config["message_history_cleanup"])
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         models = payload.get("models")
         logging_config = payload.get("logging")
         adapters_config = payload.get("adapters")
@@ -133,6 +139,10 @@ class ConfigRoutes(Routes):
             updated = True
         if updated:
             config.save_config()
+            if "bot_config" in payload:
+                history_cleanup = getattr(self.lifecycle, "message_history_cleanup", None)
+                if history_cleanup is not None:
+                    history_cleanup.notify_config_changed()
             if isinstance(network_config, dict) and self.lifecycle:
                 self.lifecycle._apply_network_env()
             logger.info("Configuration saved")

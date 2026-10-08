@@ -23,6 +23,12 @@ DEFAULT_CONFIG = {
             "max_age_hours": 24,
             "check_interval_minutes": 5
         },
+        "message_history_cleanup": {
+            "enabled": True,
+            "max_age_days": 0,
+            "max_messages_per_session": 500,
+            "cleanup_interval_seconds": 3600
+        },
         "image_compression": {
             "enabled": False,
             "max_size": 1280,
