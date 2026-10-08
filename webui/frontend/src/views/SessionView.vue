@@ -42,8 +42,8 @@
               </span>
             </td>
             <td class="px-6 py-4">
-              <div class="flex items-center gap-2 max-w-xs">
-                <div class="text-sm text-theme-subtle font-mono break-all">{{ session.session_id || session.id }}</div>
+              <div class="flex items-center gap-2 max-w-48">
+                <div class="min-w-0 truncate text-sm text-theme-subtle font-mono" :title="session.session_id || session.id">{{ session.session_id || session.id }}</div>
                 <button
                   type="button"
                   class="session-copy-button shrink-0 text-theme-faint hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
