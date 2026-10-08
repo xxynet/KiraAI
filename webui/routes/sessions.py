@@ -1,4 +1,14 @@
+import asyncio
+import mimetypes
+import re
+from pathlib import PureWindowsPath
+
 from fastapi import Depends, HTTPException, status
+from fastapi.responses import FileResponse
+
+from core.chat.message_elements import _infer_mime_from_bytes
+from core.utils.media_refs import MEDIA_ROOT_NAME
+from core.utils.path_utils import get_data_path, is_within_directory
 
 from core.logging_manager import get_logger
 from webui.routes.auth import require_auth
@@ -12,6 +22,10 @@ class SessionsRoutes(Routes):
         return [
             RouteDefinition(
                 path="/api/messages", methods=["GET"], endpoint=self.list_messages,
+                tags=["sessions"], dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/messages/{message_id}/media", methods=["GET"], endpoint=self.get_message_media,
                 tags=["sessions"], dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
@@ -71,6 +85,50 @@ class SessionsRoutes(Routes):
         if message is None:
             raise HTTPException(status_code=404, detail="Message not found")
         return {"message": message, "memory": self.message_history.get_linked_memory(message)}
+
+    async def get_message_media(self, message_id: str, element_path: str):
+        """Serve only archived media referenced by a persisted message element."""
+        if self.message_history is None:
+            raise HTTPException(status_code=503, detail="Message history unavailable")
+        if not re.fullmatch(r"[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}", element_path):
+            raise HTTPException(status_code=400, detail="Invalid element path")
+        message = await self.message_history.get_message(message_id)
+        if message is None:
+            raise HTTPException(status_code=404, detail="Message not found")
+        element = message
+        for part in element_path.split("."):
+            chain = element.get("chain")
+            index = int(part)
+            if not isinstance(chain, list) or index >= len(chain) or not isinstance(chain[index], dict):
+                raise HTTPException(status_code=404, detail="Message element not found")
+            element = chain[index]
+        file = element.get("file")
+        if (element.get("type") not in {"image", "sticker", "record", "video", "file"}
+                or element.get("file_type") != "archive" or not isinstance(file, str)
+                or not re.fullmatch(rf"{MEDIA_ROOT_NAME}/archive/[0-9a-f]{{64}}", file)):
+            raise HTTPException(status_code=404, detail="Archived media unavailable")
+
+        def resolve_media():
+            root = get_data_path() / MEDIA_ROOT_NAME / "archive"
+            target = (get_data_path() / file).resolve()
+            if not is_within_directory(root, target) or not target.is_file():
+                raise HTTPException(status_code=404, detail="Archived media unavailable")
+            with target.open("rb") as source:
+                inferred = _infer_mime_from_bytes(source.read(16))
+            return target, inferred
+
+        try:
+            target, inferred_mime = await asyncio.to_thread(resolve_media)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="Archived media unavailable") from exc
+        name = element.get("name")
+        filename = PureWindowsPath(name).name if isinstance(name, str) and name else target.name
+        mime = inferred_mime or element.get("mime") or mimetypes.guess_type(filename)[0]
+        if not isinstance(mime, str) or not re.fullmatch(r"(?:image|audio|video)/[a-zA-Z0-9.+-]+", mime):
+            mime = "application/octet-stream"
+        return FileResponse(target, media_type=mime, filename=filename, headers={
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        })
 
     @staticmethod
     def _validate_capabilities_payload(capabilities: object) -> None:

@@ -1,0 +1,53 @@
+/* Shared chat colors for persona generation and saved message history. */
+.chat-bubble {
+  --chat-mention-color: var(--color-chat-link);
+  --chat-quote-border: var(--color-accent);
+  --chat-quote-label: var(--color-text-subtle);
+  background-color: var(--color-chat-surface);
+  color: var(--color-text-strong);
+}
+
+.chat-bubble--accent {
+  --chat-mention-color: var(--color-chat-accent-muted);
+  --chat-quote-border: var(--color-chat-accent-border);
+  --chat-quote-label: var(--color-chat-accent-muted);
+  background-color: var(--color-chat-accent-surface);
+  color: var(--color-chat-accent-text);
+}
+
+.chat-bubble-mention {
+  color: var(--chat-mention-color, var(--color-chat-link));
+}
+
+.chat-bubble-quote {
+  border-color: var(--chat-quote-border, var(--color-accent));
+}
+
+.chat-bubble-quote-label {
+  color: var(--chat-quote-label, var(--color-text-subtle));
+}
+
+.chat-bubble-data {
+  background-color: var(--color-chat-surface);
+  color: var(--color-text-body);
+}
+
+.chat-media {
+  background-color: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text-body);
+}
+
+.chat-media-link {
+  color: var(--color-chat-link);
+}
+
+.chat-bubble-option {
+  background-color: var(--color-surface);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-surface));
+  color: var(--color-chat-link);
+}
+
+.chat-bubble-option:hover {
+  background-color: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+}

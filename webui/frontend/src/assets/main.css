@@ -2,6 +2,7 @@
 @import './components/custom-select.css';
 @import './components/form-controls.css';
 @import './components/theme-text.css';
+@import './components/chat-bubble.css';
 
 @tailwind base;
 @tailwind components;

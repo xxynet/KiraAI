@@ -24,6 +24,7 @@
             <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.session_type') }}</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.session_id') }}</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.message_count') }}</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.history.count') }}</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-theme-subtle uppercase tracking-wider">{{ $t('sessions.actions') }}</th>
           </tr>
         </thead>
@@ -57,7 +58,9 @@
             <td class="px-6 py-4 whitespace-nowrap">
               <div class="text-sm text-theme-subtle">{{ session.message_count }}</div>
             </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-theme-subtle">{{ session.history_count || 0 }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+              <button class="text-blue-600 hover:text-blue-900 dark:hover:text-blue-300 mr-3" @click="showHistory(session)">{{ $t('sessions.history.view') }}</button>
               <button class="text-blue-600 hover:text-blue-900 dark:hover:text-blue-300 mr-3" @click="editSession(session)">{{ $t('sessions.edit') }}</button>
               <button class="text-amber-600 hover:text-amber-900 dark:hover:text-amber-600 mr-3" @click="handleClear(session)">{{ $t('sessions.clear') }}</button>
               <button class="text-red-600 hover:text-red-900 dark:hover:text-red-300" @click="handleDelete(session)">{{ $t('sessions.delete') }}</button>
@@ -67,6 +70,10 @@
       </table>
     </div>
   </div>
+
+  <Modal v-model="historyVisible" content-class="max-w-4xl">
+    <SessionHistory v-if="historyVisible && historySession" :key="historySession.id" :session="historySession" @close="historyVisible = false" />
+  </Modal>
 
   <!-- Session Editor Modal -->
   <Modal
@@ -178,6 +185,7 @@ import { getSessions, getSession, updateSession, deleteSession } from '@/api/ses
 import { getConfiguration } from '@/api/config'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import Modal from '@/components/common/Modal.vue'
+import SessionHistory from '@/components/sessions/SessionHistory.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import UiInput from '@/components/ui/UiInput.vue'
@@ -187,6 +195,14 @@ import type { SessionCapabilities, SessionItem } from '@/types'
 
 const { t } = useI18n()
 const sessions = ref<SessionItem[]>([])
+const historyVisible = ref(false)
+const historySession = ref<SessionItem | null>(null)
+
+function showHistory(session: SessionItem) {
+  historySession.value = session
+  historyVisible.value = true
+}
+
 const editorVisible = ref(false)
 const editorContent = ref('')
 const currentSessionId = ref('')

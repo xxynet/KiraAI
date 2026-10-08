@@ -359,6 +359,7 @@ export interface SessionCapabilities {
 }
 
 export interface SessionItem {
+  history_count?: number
   id: string
   adapter_name: string
   session_type: string
@@ -440,4 +441,52 @@ export interface ScopeResponse {
   sessions: { id: string; adapter: string; type: string; session_id: string; title: string }[]
   mcp_servers: { id: string; name: string; enabled: boolean }[]
   skills: { name: string; enabled: boolean }[]
+}
+
+// Persisted platform messages are independent of editable LLM memory.
+export interface MessageElement {
+  type: string
+  text?: string
+  pid?: string
+  nickname?: string | null
+  emoji_id?: string
+  emoji_desc?: string | null
+  message_id?: string
+  message_content?: string | null
+  chain?: MessageElement[]
+  data?: unknown
+  file?: string
+  file_type?: string
+  name?: string
+  mime?: string
+  size?: number
+  caption?: string
+  transcript?: string
+  description?: string
+  [key: string]: unknown
+}
+
+export interface MessageRecord {
+  id: string
+  session_id: string
+  platform: string
+  self_id: string | null
+  platform_message_id: string | null
+  direction: string
+  sender_id: string | null
+  sender_name: string | null
+  timestamp: number
+  created_at: number
+  chain: MessageElement[]
+  status: string
+  is_notice: boolean
+  is_mentioned: boolean | null
+  error_type: string | null
+  llm_message_id: string | null
+  schema_version: number
+}
+
+export interface MessagePage {
+  messages: MessageRecord[]
+  next_cursor: string | null
 }
