@@ -6,10 +6,7 @@ import asyncio
 import re
 import time
 
-from sqlalchemy import and_, delete, or_, select
-
 from core.config.default import DEFAULT_CONFIG
-from core.db.models import MessageRecord
 from core.logging_manager import get_logger
 from core.utils.media_refs import MEDIA_ROOT_NAME, collect_media_reference_paths
 from core.utils.path_utils import get_data_path, is_within_directory
@@ -109,12 +106,16 @@ class MessageHistoryCleanup:
                 if protected is None:
                     result["deferred"] = True
                     return result
-                result["deleted_messages"] = await self._prune(settings, protected)
+                cutoff = (
+                    time.time_ns() // 1_000_000 - settings["max_age_days"] * 86400000
+                    if settings["max_age_days"] else None
+                )
+                result["deleted_messages"] = await self.history.db.prune_message_records(
+                    cutoff=cutoff, max_messages_per_session=settings["max_messages_per_session"],
+                    protected=protected,
+                )
                 retained = set()
-                async with self.history.db.get_session() as session:
-                    chains = await session.stream_scalars(
-                        select(MessageRecord.chain).execution_options(yield_per=500)
-                    )
+                async with self.history.db.stream_message_chains() as chains:
                     async for chain in chains:
                         # Collect references from all nested message components.
                         pending = [chain]
@@ -129,56 +130,6 @@ class MessageHistoryCleanup:
                 removed, freed = await asyncio.to_thread(self._cleanup_media, retained)
                 result.update(deleted_files=removed, freed_bytes=freed)
                 return result
-
-    async def _prune(self, settings: dict, protected: set[str]) -> int:
-        cutoff = time.time_ns() // 1_000_000 - settings["max_age_days"] * 86400000
-        total = 0
-        async with self.history.db.get_session() as session:
-            sessions = (await session.scalars(select(MessageRecord.session_id).distinct())).all()
-        for session_id in sessions:
-            conditions = []
-            if settings["max_age_days"]:
-                conditions.append(MessageRecord.created_at < cutoff)
-            if settings["max_messages_per_session"]:
-                async with self.history.db.get_session() as session:
-                    boundary = (await session.execute(select(MessageRecord.created_at, MessageRecord.id).where(
-                        MessageRecord.session_id == session_id
-                    ).order_by(MessageRecord.created_at.desc(), MessageRecord.id.desc()).offset(
-                        settings["max_messages_per_session"]
-                    ).limit(1))).first()
-                if boundary:
-                    conditions.append(or_(
-                        MessageRecord.created_at < boundary.created_at,
-                        and_(MessageRecord.created_at == boundary.created_at, MessageRecord.id <= boundary.id),
-                    ))
-            if not conditions:
-                continue
-            cursor = None
-            while total < 5000:
-                query = select(MessageRecord.id, MessageRecord.created_at).where(
-                    MessageRecord.session_id == session_id,
-                    MessageRecord.status != "pending",
-                    or_(*conditions),
-                )
-                if cursor:
-                    query = query.where(or_(
-                        MessageRecord.created_at > cursor.created_at,
-                        and_(MessageRecord.created_at == cursor.created_at, MessageRecord.id > cursor.id),
-                    ))
-                async with self.history.db.transaction() as session:
-                    rows = (await session.execute(query.order_by(
-                        MessageRecord.created_at, MessageRecord.id
-                    ).limit(min(500, 5000 - total)))).all()
-                    if not rows:
-                        break
-                    ids = [row.id for row in rows if row.id not in protected]
-                    if ids:
-                        await session.execute(delete(MessageRecord).where(MessageRecord.id.in_(ids)))
-                        total += len(ids)
-                    cursor = rows[-1]
-            if total >= 5000:
-                break
-        return total
 
     def _cleanup_media(self, retained: set[str]) -> tuple[int, int]:
         data_root = get_data_path().resolve()

@@ -14,11 +14,8 @@ import weakref
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from sqlalchemy import and_, delete, func, or_, select, update
-from sqlalchemy.exc import IntegrityError
-
 from core.chat.message_elements import BaseMediaElement, Json, Reply
-from core.db.models import MessageRecord
+from core.db.service import DatabaseService
 from core.logging_manager import get_logger
 from core.utils.media_refs import MEDIA_ROOT_NAME
 from core.utils.path_utils import get_data_path
@@ -104,37 +101,16 @@ async def serialize_message_chain(chain, *, depth: int = 0) -> list[dict]:
 
 
 class MessageHistoryService:
-    def __init__(self, db, session_manager):
-        self.db = db.db
+    def __init__(self, db: DatabaseService, session_manager):
+        self.db = db
         self.session_manager = session_manager
         self._archive_gate = asyncio.Lock()
         self._archive_tasks: set[asyncio.Task] = set()
         self._incoming_records: dict[int, tuple[weakref.ReferenceType, str]] = {}
 
-    @staticmethod
-    def _record(row) -> dict:
-        return {column.name: copy.deepcopy(getattr(row, column.name))
-                for column in MessageRecord.__table__.columns if column.name != "dedup_key"}
-
-    async def _insert(self, **values) -> str:
-        values.update(id=uuid.uuid4().hex, created_at=time.time_ns() // 1_000_000, schema_version=1)
-        try:
-            async with self.db.transaction() as session:
-                session.add(MessageRecord(**values))
-        except IntegrityError:
-            if not values.get("dedup_key"):
-                raise
-            async with self.db.get_session() as session:
-                identity = await session.scalar(select(MessageRecord.id).where(
-                    MessageRecord.dedup_key == values["dedup_key"]))
-            if identity is None:
-                raise
-            return identity
-        return values["id"]
-
     async def _persist_chain(self, chain, **values) -> str:
         async def persist():
-            return await self._insert(chain=await serialize_message_chain(chain), **values)
+            return await self.db.add_message_record(chain=await serialize_message_chain(chain), **values)
 
         # Publish files and their database references as one protected operation.
         # Concurrent archives remain allowed; maintenance waits for a quiet point.
@@ -200,9 +176,9 @@ class MessageHistoryService:
 
     async def finish_outgoing(self, record_id: str, *, status: str,
                               platform_message_id: str | None = None, error_type: str | None = None):
-        async with self.db.transaction() as session:
-            await session.execute(update(MessageRecord).where(MessageRecord.id == record_id).values(
-                status=status, platform_message_id=platform_message_id, error_type=error_type))
+        await self.db.update_message_delivery(
+            record_id, status=status, platform_message_id=platform_message_id, error_type=error_type,
+        )
 
     async def on_session_deleted(self, event) -> None:
         await self.delete_session_messages(event.payload["session"])
@@ -213,8 +189,7 @@ class MessageHistoryService:
             async with self._archive_gate:
                 if self._archive_tasks:
                     await asyncio.gather(*tuple(self._archive_tasks), return_exceptions=True)
-                async with self.db.transaction() as session:
-                    await session.execute(delete(MessageRecord).where(MessageRecord.session_id == session_id))
+                await self.db.delete_session_message_records(session_id)
                 # Keep live receive identities so a buffered message cannot be re-archived.
 
         task = asyncio.create_task(remove())
@@ -227,29 +202,13 @@ class MessageHistoryService:
                 raise
 
     async def get_message(self, message_id: str) -> dict | None:
-        async with self.db.get_session() as session:
-            row = await session.get(MessageRecord, message_id)
-            return self._record(row) if row else None
+        return await self.db.get_message_record(message_id)
 
     async def list_messages(self, session_id: str, *, cursor: str | None = None,
                             limit: int = 50, llm_message_id: str | None = None) -> dict:
-        if not 1 <= limit <= 200:
-            raise ValueError("limit must be between 1 and 200")
-        query = select(MessageRecord).where(MessageRecord.session_id == session_id)
-        if llm_message_id:
-            query = query.where(MessageRecord.llm_message_id == llm_message_id)
-        async with self.db.get_session() as session:
-            if cursor:
-                previous = await session.get(MessageRecord, cursor)
-                if not previous or previous.session_id != session_id:
-                    raise ValueError("Invalid message cursor")
-                query = query.where(or_(
-                    MessageRecord.created_at < previous.created_at,
-                    and_(MessageRecord.created_at == previous.created_at, MessageRecord.id < previous.id)))
-            rows = list((await session.scalars(query.order_by(
-                MessageRecord.created_at.desc(), MessageRecord.id.desc()).limit(limit + 1))).all())
-        return {"messages": [self._record(row) for row in rows[:limit]],
-                "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
+        return await self.db.list_message_records(
+            session_id, cursor=cursor, limit=limit, llm_message_id=llm_message_id,
+        )
 
     async def get_messages_by_llm_message_id(self, session_id: str, llm_message_id: str,
                                         *, cursor: str | None = None, limit: int = 50) -> dict:
@@ -267,26 +226,12 @@ class MessageHistoryService:
         return None
 
     async def list_sessions(self) -> list[dict]:
-        async with self.db.get_session() as session:
-            rows = (await session.execute(select(
-                MessageRecord.session_id, func.count().label("message_count")
-            ).group_by(MessageRecord.session_id))).all()
-        return [{"session_id": row.session_id, "message_count": row.message_count} for row in rows]
+        return await self.db.list_message_sessions()
 
     async def link_incoming_messages(self, session_id: str, llm_message_id: str,
                                      message_ids: list[str]) -> None:
         """Persist source links in the database without adding reverse links to memory."""
-        if not message_ids:
-            return
-        async with self.db.transaction() as session:
-            await session.execute(update(MessageRecord).where(
-                MessageRecord.session_id == session_id,
-                MessageRecord.direction == "incoming",
-                MessageRecord.id.in_(message_ids),
-            ).values(llm_message_id=llm_message_id))
+        await self.db.link_message_records(session_id, llm_message_id, message_ids)
 
     async def initialize(self):
-        # A process crash after sending leaves delivery ambiguous; never resend automatically.
-        async with self.db.transaction() as session:
-            await session.execute(update(MessageRecord).where(
-                MessageRecord.status == "pending").values(status="unknown"))
+        await self.db.mark_pending_messages_unknown()

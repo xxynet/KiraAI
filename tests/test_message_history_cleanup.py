@@ -51,7 +51,7 @@ def settings(**overrides):
 async def seed(history, number, *, age_days=0, sid=SID, direction="incoming", status="received", chain=None):
     identity = f"{number:032x}"
     created_at = int(time.time() * 1000) - age_days * 86400000
-    async with history.db.transaction() as session:
+    async with history.db.db.transaction() as session:
         session.add(MessageRecord(
             id=identity, session_id=sid, platform="test", direction=direction,
             timestamp=created_at // 1000, created_at=created_at,
@@ -81,7 +81,7 @@ async def test_age_and_count_limits_are_combined_per_session(cleaner, history):
 @pytest.mark.anyio
 async def test_count_tie_breaking_and_disabled_age_limit(cleaner, history):
     ids = [await seed(history, n, age_days=60) for n in range(1, 5)]
-    async with history.db.transaction() as session:
+    async with history.db.db.transaction() as session:
         await session.execute(update(MessageRecord).values(created_at=1))
     result = await cleaner.cleanup_once(settings(max_age_days=0, max_messages_per_session=2))
     assert result["deleted_messages"] == 2
@@ -96,7 +96,7 @@ async def test_active_incoming_and_pending_outgoing_are_temporarily_protected(cl
     message = incoming()
     active = await history.record_incoming(message, SID, "test")
     pending = await seed(history, 2, age_days=40, direction="outgoing", status="pending")
-    async with history.db.transaction() as session:
+    async with history.db.db.transaction() as session:
         await session.execute(update(MessageRecord).values(created_at=1))
     result = await cleaner.cleanup_once(settings(max_messages_per_session=0))
     assert result["deleted_messages"] == 0
@@ -305,7 +305,7 @@ async def test_cancelled_cleanup_keeps_writers_out_until_worker_finishes(cleaner
 
 @pytest.mark.anyio
 async def test_large_prune_uses_bounded_batches(cleaner, history):
-    async with history.db.transaction() as session:
+    async with history.db.db.transaction() as session:
         session.add_all([
             MessageRecord(id=f"{n:032x}", session_id=SID, platform="test", direction="incoming",
                           timestamp=1, created_at=1, chain=[], status="received", schema_version=1)
@@ -345,7 +345,7 @@ async def test_default_policy_keeps_latest_500_without_age_limit(cleaner, histor
     defaults = DEFAULT_CONFIG["bot_config"]["message_history_cleanup"]
     assert defaults == {"enabled": True, "max_age_days": 0,
                         "max_messages_per_session": 500, "cleanup_interval_seconds": 3600}
-    async with history.db.transaction() as session:
+    async with history.db.db.transaction() as session:
         session.add_all([
             MessageRecord(id=f"{n:032x}", session_id=SID, platform="test", direction="incoming",
                           timestamp=1, created_at=1, chain=[], status="received", schema_version=1)

@@ -194,7 +194,7 @@ async def test_startup_preserves_database_links_and_marks_incomplete_sends_unkno
     await history.link_incoming_messages(SID, memory.extra["llm_message_id"], [identity])
     history.session_manager.update_memory(SID, [memory])
     pending = await history.record_outgoing(SID, MessageChain([Text("out")]), platform="test", self_id="bot")
-    restored = MessageHistoryService(SimpleNamespace(db=history.db), history.session_manager)
+    restored = MessageHistoryService(history.db, history.session_manager)
     await restored.initialize()
     row = await restored.get_message(identity)
     assert restored.get_linked_memory(row)["_extra"] == {"llm_message_id": memory.extra["llm_message_id"]}
