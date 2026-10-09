@@ -13,17 +13,39 @@ class DefaultChatPlugin(BasePlugin):
         self.session_events: dict[str, asyncio.Event] = {}
         self.session_tasks: dict[str, asyncio.Task] = {}
         self._terminating = False
-        bot_cfg = ctx.config["bot_config"].get("bot", {})
-        self.debounce_interval = float(bot_cfg.get("max_message_interval", 1.5))
-        self.max_buffer_messages = int(bot_cfg.get("max_buffer_messages", 3))
-        self.max_unmentioned_messages = int(self.plugin_cfg.get("max_unmentioned_messages", 5))
-        self.receive_unmentioned = self.plugin_cfg.get("receive_unmentioned", True)
-        self.group_chat_prompt = self.plugin_cfg.get("group_chat_prompt", "")
-        self.group_proactive_chat = self.plugin_cfg.get("group_proactive_chat", False)
-        self.group_proactive_chat_probability = self.plugin_cfg.get("group_proactive_chat_probability", 0.1)
 
-        self.waking_words = cfg.get("waking_words", [])
-    
+    @property
+    def debounce_interval(self) -> float:
+        return float(self.ctx.config.get("bot_config", {}).get("bot", {}).get("max_message_interval", 1.5))
+
+    @property
+    def max_buffer_messages(self) -> int:
+        return int(self.ctx.config.get("bot_config", {}).get("bot", {}).get("max_buffer_messages", 3))
+
+    @property
+    def max_unmentioned_messages(self) -> int:
+        return int(self.plugin_cfg.get("max_unmentioned_messages", 5))
+
+    @property
+    def receive_unmentioned(self) -> bool:
+        return self.plugin_cfg.get("receive_unmentioned", True)
+
+    @property
+    def group_chat_prompt(self) -> str:
+        return self.plugin_cfg.get("group_chat_prompt", "")
+
+    @property
+    def group_proactive_chat(self) -> bool:
+        return self.plugin_cfg.get("group_proactive_chat", False)
+
+    @property
+    def group_proactive_chat_probability(self) -> float:
+        return self.plugin_cfg.get("group_proactive_chat_probability", 0.1)
+
+    @property
+    def waking_words(self) -> list[str]:
+        return self.plugin_cfg.get("waking_words", [])
+
     async def initialize(self):
         self._terminating = False
         logger.info(f"[Default Chat] initialize")
@@ -68,7 +90,7 @@ class DefaultChatPlugin(BasePlugin):
         sid = event.session.sid
         event.buffer()
 
-        buffer_len = self.ctx.message_processor.get_session_buffer_length(sid)
+        buffer_len = self.ctx.get_buffer(sid).get_length()
         if buffer_len + 1 >= self.max_buffer_messages:
             event.flush()
             return
@@ -94,11 +116,11 @@ class DefaultChatPlugin(BasePlugin):
                     return
                 if event.is_set() and not self.receive_unmentioned:
                     continue
-                buffer_len = self.ctx.message_processor.get_session_buffer_length(sid)
+                buffer_len = self.ctx.get_buffer(sid).get_length()
                 if buffer_len == 0:
                     return
                 try:
-                    await self.ctx.message_processor.flush_session_messages(sid)
+                    await self.ctx.flush_session_messages(sid)
                 except Exception:
                     logger.exception(f"[Debounce] Error flushing session {sid}")
                 return

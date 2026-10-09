@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import random
 import xml.etree.ElementTree as ET
 from asyncio import Lock
-from typing import List, Optional, Union, TYPE_CHECKING
+from typing import List, Union, TYPE_CHECKING
 
 from core.adapter.capabilities import IMCapability
 from core.agent.message import OpenAIMessage
 from core.chat.message_elements import BaseMessageElement
-from core.chat.message_utils import KiraMessageBatchEvent, KiraIMSentResult, MessageChain
+from core.chat.message_utils import KiraIMSentResult, MessageChain
 from core.logging_manager import get_logger
-from core.plugin.handlers import EventType, event_handler_reg
-from core.tag import TagSet, RootTagAction
 
 if TYPE_CHECKING:
+    from core.tag import TagSet, RootTagAction
     from core.adapter import AdapterManager
     from core.chat.message_history import MessageHistoryService
     from core.config.config_loader import KiraConfig
@@ -57,58 +55,6 @@ class MessageDeliveryService:
         if sid not in self.session_locks:
             self.session_locks[sid] = asyncio.Lock()
         return self.session_locks[sid]
-
-    async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str, tag_set: TagSet, *, memory_message: OpenAIMessage | None = None) -> Optional[List[KiraIMSentResult]]:
-        """
-        send message via session id & xml data
-        :param event: KiraMessageBatchEvent
-        :param xml_data: xml string
-        :param tag_set: TagSet object
-        :return: list[KiraIMSentResult]
-        """
-        parts = event.sid.split(":", maxsplit=2)
-        if len(parts) != 3 or any(not part for part in parts):
-            raise ValueError("invalid target, must follow the form of <adapter>:<dm|gm>:<id>")
-
-        message_results = []
-        try:
-            actions = await self.parse_xml(xml_data, tag_set)
-
-            # EventType.AFTER_XML_PARSE
-            llm_handlers = event_handler_reg.get_handlers(event_type=EventType.AFTER_XML_PARSE)
-            for handler in llm_handlers:
-                await handler.exec_handler(event, actions)
-                if event.is_stopped:
-                    logger.info(f"Event {event.event_id} stopped while AFTER_XML_PARSE stage")
-                    return None
-        except Exception as e:
-            logger.error(f"Error parsing message: {str(e)}")
-            return []
-
-        for action in actions:
-            if isinstance(action, MessageChain):
-                if not action.is_empty():
-                    result = await self.send_message_chain(event.sid, action, memory_message=memory_message, self_id=getattr(event, "self_id", None))
-                    if not result.ok and result.err:
-                        logger.error(result.err)
-                else:
-                    result = KiraIMSentResult(ok=False, err="Blank message list detected")
-                message_results.append(result)
-                # EventType.ON_MESSAGE_SENT
-                sent_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_MESSAGE_SENT)
-                for handler in sent_handlers:
-                    await handler.exec_handler(event, action, result)
-                    if event.is_stopped:
-                        logger.info(f"Event {event.event_id} stopped while ON_MESSAGE_SENT stage")
-                        return message_results
-                await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
-            elif isinstance(action, RootTagAction):
-                try:
-                    await action.tag.handle(action.value, **action.attrs)
-                except Exception as e:
-                    logger.error(f"Error executing root tag <{action.tag.name}>{action.value}: {e}")
-
-        return message_results
 
     async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
         """
@@ -172,6 +118,8 @@ class MessageDeliveryService:
     @staticmethod
     async def parse_xml(xml_data, tag_set: TagSet) -> list[Union[MessageChain, RootTagAction]]:
         """Parse xml into an ordered list of MessageChain and RootTagAction."""
+        from core.tag import RootTagAction
+
         root = ET.fromstring(f"<root>{xml_data}</root>")
         actions: list[Union[MessageChain, RootTagAction]] = []
 

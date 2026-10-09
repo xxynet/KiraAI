@@ -41,8 +41,8 @@ class IMWorkflowContext:
     skills_manager: SkillsManager
     mcp_manager: MCPManager
     db: DatabaseService
+    event_bus: EventBus
     message_history: MessageHistoryService | None = None
-    event_bus: EventBus | None = None
 
 
 @dataclass

@@ -6,6 +6,7 @@ import pytest
 from PIL import Image as PILImage
 
 from core.agent.tool import ToolResult
+from core.image_desc_cache import ImageDescCache
 from core.plugin.builtin_plugins.agent import main as agent_main
 from core.plugin.builtin_plugins.agent.main import BackgroundExecTask, AgentPlugin
 from core.utils import image_compression, media_refs
@@ -110,6 +111,11 @@ def make_media_ctx(mode="vlm_description", enabled=True, stt_enabled=True, compr
     Compression defaults to disabled so tests opt in explicitly; the db mock
     backs the shared VLM description cache used by read_file.
     """
+    db = db or SimpleNamespace(
+        get_image_desc_cache=AsyncMock(return_value=None),
+        add_image_desc_cache=AsyncMock(),
+        update_image_desc_cache=AsyncMock(),
+    )
     config_values = {
         "bot_config.image_compression": compression or {"enabled": False},
     }
@@ -128,12 +134,8 @@ def make_media_ctx(mode="vlm_description", enabled=True, stt_enabled=True, compr
             get_default_stt=Mock(return_value=object()),
         ),
         get_lang=Mock(return_value="en"),
-        db=db
-        or SimpleNamespace(
-            get_image_desc_cache=AsyncMock(return_value=None),
-            add_image_desc_cache=AsyncMock(),
-            update_image_desc_cache=AsyncMock(),
-        ),
+        db=db,
+        image_desc_cache=ImageDescCache(db),
     )
 
 

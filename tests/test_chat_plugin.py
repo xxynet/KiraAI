@@ -8,16 +8,12 @@ from core.plugin.builtin_plugins.chat.main import DefaultChatPlugin
 
 
 def _plugin():
-    processor = SimpleNamespace(
-        get_session_buffer_length=lambda _sid: 1,
+    ctx = SimpleNamespace(
+        config={"bot_config": {"bot": {"max_message_interval": 0}}},
+        get_buffer=lambda _sid: SimpleNamespace(get_length=lambda: 1),
         flush_session_messages=AsyncMock(),
     )
-    ctx = SimpleNamespace(
-        config={"bot_config": {"bot": {}}},
-        message_processor=processor,
-    )
     plugin = DefaultChatPlugin(ctx, {})
-    plugin.debounce_interval = 0
     return plugin
 
 
@@ -51,7 +47,7 @@ async def test_completed_debounce_task_releases_session_state():
 
     await task
 
-    plugin.ctx.message_processor.flush_session_messages.assert_awaited_once_with(sid)
+    plugin.ctx.flush_session_messages.assert_awaited_once_with(sid)
     assert sid not in plugin.session_tasks
     assert sid not in plugin.session_events
 
@@ -88,3 +84,52 @@ async def test_terminate_rejects_messages_arriving_during_cleanup():
         release.set()
 
     await terminate_task
+
+@pytest.mark.anyio
+async def test_buffer_threshold_uses_updated_bot_config():
+    plugin = _plugin()
+    event = SimpleNamespace(
+        message=SimpleNamespace(chain=[]), is_mentioned=True,
+        session=SimpleNamespace(sid="test:dm:1"), buffer=Mock(), flush=Mock(),
+    )
+    try:
+        await plugin.handle_msg(event)
+        event.flush.assert_not_called()
+        plugin.ctx.config["bot_config"]["bot"] = {"max_buffer_messages": 2}
+        await plugin.handle_msg(event)
+        event.flush.assert_called_once()
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_debounce_uses_current_interval_when_wait_begins(monkeypatch):
+    plugin = _plugin()
+    sid = "test:dm:1"
+    trigger = asyncio.Event()
+    task = asyncio.create_task(plugin._debounce_loop(sid, trigger))
+    plugin.session_events[sid] = trigger
+    plugin.session_tasks[sid] = task
+    await asyncio.sleep(0)
+    plugin.ctx.config["bot_config"]["bot"] = {"max_message_interval": "0.25"}
+    sleep = AsyncMock()
+    monkeypatch.setattr("core.plugin.builtin_plugins.chat.main.asyncio.sleep", sleep)
+    trigger.set()
+    await task
+
+    sleep.assert_awaited_once_with(0.25)
+    plugin.ctx.flush_session_messages.assert_awaited_once_with(sid)
+
+
+@pytest.mark.parametrize("name,value", [
+    ("max_unmentioned_messages", 2),
+    ("receive_unmentioned", False),
+    ("group_chat_prompt", "updated"),
+    ("group_proactive_chat", True),
+    ("group_proactive_chat_probability", 0.75),
+    ("waking_words", ["wake"]),
+])
+def test_chat_properties_use_replaced_plugin_config(name, value):
+    plugin = _plugin()
+    plugin.plugin_cfg = {name: value}
+    assert getattr(plugin, name) == value

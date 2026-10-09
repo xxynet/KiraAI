@@ -17,6 +17,7 @@ from core.persona import PersonaManager
 from core.sticker_manager import StickerManager
 from core.utils.path_utils import get_data_path
 from core.chat.message_elements import Text
+from core.workflow.src.im.batching import publish_buffered_messages
 
 if TYPE_CHECKING:
     from .manager import PluginManager
@@ -26,6 +27,9 @@ if TYPE_CHECKING:
     from core.message_manager import MessageProcessor
     from core.chat.message_history import MessageHistoryService
     from core.db.service import DatabaseService
+    from core.image_desc_cache import ImageDescCache
+    from core.chat.session_buffer import SessionBufferManager
+    from core.workflow.src.im.message_delivery import MessageDeliveryService
 
 
 @dataclass
@@ -59,6 +63,12 @@ class PluginContext:
     # Query structured incoming/outgoing messages and their memory links.
     message_history: MessageHistoryService
 
+    image_desc_cache: ImageDescCache
+
+    session_buffer_mgr: SessionBufferManager
+
+    message_delivery: MessageDeliveryService
+
     plugin_mgr: Optional[PluginManager] = None
 
     @property
@@ -89,7 +99,7 @@ class PluginContext:
         return inst
 
     def get_buffer(self, sid: str):
-        buffer = self.message_processor.session_buffer.get_buffer(sid)
+        buffer = self.session_buffer_mgr.get_buffer(sid)
         return buffer
     def get_session_capabilities(self, sid: str) -> dict:
         global_capabilities = self.config.get_config("bot_config.capabilities", {})
@@ -100,9 +110,15 @@ class PluginContext:
         self,
         sid: str,
         filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
-    ):
-        """Trigger processing of matching buffered events, leaving unmatched events buffered."""
-        await self.message_processor.flush_session_messages(sid, filter_fn=filter_fn)
+    ) -> bool:
+        """Publish matching buffered events, leaving unmatched events buffered.
+
+        Return True when a batch is published, or False when no events match.
+        Publication does not imply processing has completed. Errors propagate.
+        """
+        return await publish_buffered_messages(
+            self.session_buffer_mgr, self.event_bus, sid, filter_fn=filter_fn,
+        )
 
     def get_default_llm_client(self) -> LLMModelClient:
         client = self.get_llm_client(llm_type="default")
@@ -275,7 +291,7 @@ class PluginContext:
         :param chain: MessageChain object
         :return: KiraIMSentResult object
         """
-        return await self.message_processor.send_message_chain(session, chain)
+        return await self.message_delivery.send_message_chain(session, chain)
 
     def get_lang(self) -> str:
         """Get the configured backend language code (e.g. 'zh', 'en').

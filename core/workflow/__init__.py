@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC
+from asyncio import Semaphore
 from typing import Generic, TYPE_CHECKING, TypeVar
 
 from .base_stage import BaseStage
@@ -19,6 +20,10 @@ class BaseWorkflow(ABC, Generic[ContextT]):
 
 
 class IMWorkflow(BaseWorkflow["IMWorkflowContext"]):
+    def __init__(self, ctx: IMWorkflowContext, max_concurrent_messages: int = 3):
+        super().__init__(ctx)
+        self.message_processing_semaphore = Semaphore(max_concurrent_messages)
+
     async def handle_event(self, event: KiraMessageEvent):
         raise NotImplementedError
 

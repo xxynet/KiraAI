@@ -464,7 +464,7 @@ async def test_quoting_sent_message_triggers_chat_without_matching_author_id(quo
     await adapter.im._handle_group_message(body, force_mention=False)
     event = adapter.ctx.event_queue.get_nowait()
     ctx = SimpleNamespace(config={"bot_config": {"bot": {"max_buffer_messages": 1}}},
-                          message_processor=SimpleNamespace(get_session_buffer_length=lambda _sid: 0))
+                          get_buffer=lambda _sid: SimpleNamespace(get_length=lambda: 0))
     chat = DefaultChatPlugin(ctx, {"receive_unmentioned": False})
     await chat.handle_msg(event)
     assert event.is_mentioned
@@ -535,7 +535,7 @@ async def test_real_sdk_full_message_quote_wakes_chat_without_at(sdk_gateway):
         await asyncio.sleep(0)
         event = adapter.ctx.event_queue.get_nowait()
         ctx = SimpleNamespace(config={"bot_config": {"bot": {"max_buffer_messages": 1}}},
-                              message_processor=SimpleNamespace(get_session_buffer_length=lambda _sid: 0))
+                              get_buffer=lambda _sid: SimpleNamespace(get_length=lambda: 0))
         chat = DefaultChatPlugin(ctx, {"receive_unmentioned": False})
         await chat.handle_msg(event)
         assert event.is_mentioned
@@ -641,7 +641,7 @@ async def test_duplicate_group_event_preserves_forced_mention_on_shared_message(
     assert event.is_mentioned == (first_forced or second_forced)
     assert adapter.im._reply_msg_seqs[(True, "group-openid", "incoming")] == 1
     ctx = SimpleNamespace(config={"bot_config": {"bot": {"max_buffer_messages": 1}}},
-                          message_processor=SimpleNamespace(get_session_buffer_length=lambda _sid: 0))
+                          get_buffer=lambda _sid: SimpleNamespace(get_length=lambda: 0))
     chat = DefaultChatPlugin(ctx, {"receive_unmentioned": False})
     await chat.handle_msg(event)
     assert event.process_strategy == ("flush" if first_forced or second_forced else "discard")

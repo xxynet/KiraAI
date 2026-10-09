@@ -17,8 +17,8 @@ class DefaultIMWorkflow(IMWorkflow):
     once agent execution starts, final-result hooks and memory saving still run.
     """
 
-    def __init__(self, ctx: IMWorkflowContext):
-        super().__init__(ctx)
+    def __init__(self, ctx: IMWorkflowContext, max_concurrent_messages: int = 3):
+        super().__init__(ctx, max_concurrent_messages=max_concurrent_messages)
         self.event_stages: tuple[BaseStage[IMEventContext], ...] = (
             ReceiveStage(), RouteStage(),
         )
@@ -31,10 +31,11 @@ class DefaultIMWorkflow(IMWorkflow):
         )
 
     async def handle_event(self, event: KiraMessageEvent):
-        ctx = IMEventContext(self.ctx, event)
-        for stage in self.event_stages:
-            if not await stage.run(ctx):
-                return
+        async with self.message_processing_semaphore:
+            ctx = IMEventContext(self.ctx, event)
+            for stage in self.event_stages:
+                if not await stage.run(ctx):
+                    return
 
     async def handle_batch_event(self, event: KiraMessageBatchEvent):
         ctx = IMBatchContext(self.ctx, event)

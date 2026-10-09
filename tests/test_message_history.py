@@ -16,6 +16,8 @@ from core.chat.memory_metadata import normalize_memory
 from core.db.db_mgr import DatabaseManager
 from core.db.service import DatabaseService
 from core.message_manager import MessageProcessor
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from tests.im_workflow_helpers import make_workflow_context
 from core.provider.llm_model import LLMRequest
 from core.utils.media_refs import cleanup_session_media, resolve_media_references, store_session_media
 from tests.test_session_manager_events import build_session_manager
@@ -47,24 +49,17 @@ def incoming(identity="in-1", bot="bot"):
 
 
 def processor(history, result=None, error=None):
-    instance = object.__new__(MessageProcessor)
-    instance.event_bus = None
-    instance.kira_config = Mock()
-    instance.session_manager = history.session_manager
-    instance.prompt_manager = Mock()
-    instance.provider_mgr = Mock()
-    instance.tool_manager = Mock()
-    instance.skills_manager = Mock()
-    instance.mcp_manager = Mock()
-    instance.db = history.db
-    instance.message_history = history
     target = SimpleNamespace(
         send_direct_message=AsyncMock(return_value=result, side_effect=error),
         send_group_message=AsyncMock(return_value=result, side_effect=error),
     )
     adapter = SimpleNamespace(config={"self_id": "bot"}, info=SimpleNamespace(platform="test"),
                               get_capability=lambda _: target)
-    instance.adapter_mgr = SimpleNamespace(get_adapter=lambda _: adapter)
+    services = make_workflow_context(
+        session_manager=history.session_manager, db=history.db, message_history=history,
+        adapter_mgr=SimpleNamespace(get_adapter=lambda _: adapter),
+    )
+    instance = MessageProcessor(DefaultIMWorkflow(services))
     return instance, target
 
 
@@ -254,22 +249,23 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
     async def parse(text, tag_set):
         return [MessageChain([Text(value)]) for value in (["one", "two"] if "one" in text else ["three"])]
 
-    instance.session_manager = history.session_manager
-    instance.kira_config = SimpleNamespace(get_config=lambda key, default=None: {"bot_config.agent.max_tool_loop": 2, "bot_config.bot.min_message_delay": 0, "bot_config.bot.max_message_delay": 0}.get(key, default))
-    instance.provider_mgr = SimpleNamespace(get_default_llm=lambda: model)
-    instance.prompt_manager = SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[]))
-    instance.skills_manager = SimpleNamespace(skills_info=[])
-    instance.mcp_manager = SimpleNamespace(get_tool_server_map=lambda: {})
-    instance.tool_manager = SimpleNamespace(build_tool_set=ToolSet, execute_tool=execute_tool)
-    instance.db = SimpleNamespace(add_telemetry_llm_usage=AsyncMock())
-    instance.session_locks = {}
+    instance.im_workflow.ctx.session_manager = history.session_manager
+    instance.im_workflow.ctx.config = SimpleNamespace(get_config=lambda key, default=None: {"bot_config.agent.max_tool_loop": 2, "bot_config.bot.min_message_delay": 0, "bot_config.bot.max_message_delay": 0}.get(key, default))
+    instance.im_workflow.ctx.provider_mgr = SimpleNamespace(get_default_llm=lambda: model)
+    instance.im_workflow.ctx.prompt_manager = SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[]))
+    instance.im_workflow.ctx.skills_manager = SimpleNamespace(skills_info=[])
+    instance.im_workflow.ctx.mcp_manager = SimpleNamespace(get_tool_server_map=lambda: {})
+    instance.im_workflow.ctx.tool_manager = SimpleNamespace(build_tool_set=ToolSet, execute_tool=execute_tool)
+    instance.im_workflow.ctx.db = SimpleNamespace(add_telemetry_llm_usage=AsyncMock())
+    instance.message_delivery.session_locks = {}
+    instance.message_delivery.kira_config = instance.im_workflow.ctx.config
     instance.message_delivery.parse_xml = parse
     event = KiraMessageBatchEvent(
         supported_elements=["text"], timestamp=1,
         adapter=AdapterInfo(True, "test", "adapter", "test"),
         session=Session("adapter", "dm", "user"), messages=[incoming("a"), incoming("b")],
     )
-    await instance.handle_im_batch_message(event)
+    await instance.im_workflow.handle_batch_event(event)
     memory = history.session_manager.get_existing_memory_snapshot(SID)[0]
     assert [message["role"] for message in memory] == ["user", "assistant", "tool", "assistant"]
     assert memory[1]["_extra"]["llm_message_id"] != memory[3]["_extra"]["llm_message_id"]
@@ -296,7 +292,7 @@ async def test_stopped_or_discarded_incoming_is_recorded_before_plugin_changes(h
             event.stop()
 
     instance, _ = processor(history)
-    instance.session_manager = history.session_manager
+    instance.im_workflow.ctx.session_manager = history.session_manager
     monkeypatch.setattr("core.message_manager.event_handler_reg.get_handlers", lambda *a, **kw: [StopHandler()])
     event = KiraMessageEvent(supported_elements=["text"], timestamp=1, message=incoming(),
                             adapter=AdapterInfo(True, "test", "adapter", "test"))

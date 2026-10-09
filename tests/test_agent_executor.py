@@ -163,6 +163,18 @@ async def test_agent_step_carries_identity_and_upstream_name(monkeypatch, use_fa
     expected_name = "fallback-upstream" if use_fallback else "primary-upstream"
     assert steps[0].model_id == f"internal-{expected_name}"
     assert steps[0].model_name == expected_name
+    assert "final model call" in context.request.messages[0].content
+    if result_path == "stopped":
+        assert context.new_messages == []
+        assert steps[0].assistant_message is None
+    else:
+        assert [message.role for message in context.new_messages] == (
+            ["assistant", "tool"] if result_path == "tools" else ["assistant"]
+        )
+        assert len(context.request.messages) == len(context.new_messages) + 1
+        assert all(request_message is memory_message for request_message, memory_message
+                   in zip(context.request.messages[1:], context.new_messages))
+        assert steps[0].assistant_message is context.new_messages[0]
 
 
 @pytest.mark.anyio

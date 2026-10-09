@@ -6,15 +6,20 @@ import pytest
 
 from core.adapter.adapter_info import AdapterInfo
 from core.agent.tool import ToolSet
+from core.agent.message import OpenAIMessage
 from core.chat.message_elements import Text
 from core.chat.message_utils import (
     KiraIMMessage, KiraIMSentResult, KiraMessageBatchEvent, MessageChain,
 )
 from core.chat.session import Session, User
+from core.config.config_loader import KiraConfig
 from core.message_manager import MessageProcessor
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from tests.im_workflow_helpers import make_workflow_context
 from core.plugin.handlers import EventType, event_handler_reg
 from core.prompt_manager import Prompt
 from core.provider import LLMResponse
+from core.tag import RootTagAction
 
 
 def batch(user="user"):
@@ -32,44 +37,44 @@ def batch(user="user"):
 @pytest.fixture
 def processor(monkeypatch):
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda *a, **kw: [])
-    instance = object.__new__(MessageProcessor)
-    instance.event_bus = None
-    instance.kira_config = SimpleNamespace(
-        get_config=lambda key, default=None: (
-            {"bot_config.agent.max_tool_loop": 2, "bot_config.bot.min_message_delay": 0, "bot_config.bot.max_message_delay": 0}.get(key, default)
-        )
-    )
-    instance.session_manager = SimpleNamespace(
-        get_effective_capabilities=lambda sid, default: default,
-        get_session_info=lambda sid: SimpleNamespace(session_title="Chat"),
-        fetch_memory=lambda sid: [],
-        update_memory=Mock(),
-    )
-    instance.prompt_manager = SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[]))
-    instance.skills_manager = SimpleNamespace(skills_info=[])
-    instance.mcp_manager = SimpleNamespace(get_tool_server_map=lambda: {})
-    instance.tool_manager = SimpleNamespace(build_tool_set=ToolSet)
-    instance.db = SimpleNamespace(add_telemetry_llm_usage=AsyncMock())
-    instance.message_history = SimpleNamespace(
-        record_incoming_safely=AsyncMock(side_effect=lambda msg, *_: msg.message_id),
-        link_incoming_messages=AsyncMock(),
-    )
-    instance.session_locks = {}
-    instance.message_delivery.parse_xml = AsyncMock(return_value=[MessageChain([Text("reply")])])
-    instance.message_delivery.send_message_chain = AsyncMock(return_value=KiraIMSentResult("sent-id"))
-    instance.message_media.build_native_content = AsyncMock(return_value=[])
+    config = SimpleNamespace(get_config=lambda key, default=None: {
+        "bot_config.agent.max_tool_loop": 2,
+        "bot_config.bot.min_message_delay": 0,
+        "bot_config.bot.max_message_delay": 0,
+    }.get(key, default))
     model = SimpleNamespace(
         model=SimpleNamespace(provider_name="test", model_id="test", model_name="test"),
         chat=AsyncMock(side_effect=lambda request: LLMResponse("<msg><text>reply</text></msg>")),
     )
-    instance.provider_mgr = SimpleNamespace(get_default_llm=lambda: model)
+    services = make_workflow_context(
+        config=config,
+        session_manager=SimpleNamespace(
+            get_effective_capabilities=lambda sid, default: default,
+            get_session_info=lambda sid: SimpleNamespace(session_title="Chat"),
+            fetch_memory=lambda sid: [], update_memory=Mock(),
+        ),
+        provider_mgr=SimpleNamespace(get_default_llm=lambda: model),
+        prompt_manager=SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[])),
+        skills_manager=SimpleNamespace(skills_info=[]),
+        mcp_manager=SimpleNamespace(get_tool_server_map=lambda: {}),
+        tool_manager=SimpleNamespace(build_tool_set=ToolSet),
+        db=SimpleNamespace(add_telemetry_llm_usage=AsyncMock()),
+        message_history=SimpleNamespace(
+            record_incoming_safely=AsyncMock(side_effect=lambda msg, *_: msg.message_id),
+            link_incoming_messages=AsyncMock(),
+        ),
+    )
+    services.message_delivery.parse_xml = AsyncMock(return_value=[MessageChain([Text("reply")])])
+    services.message_delivery.send_message_chain = AsyncMock(return_value=KiraIMSentResult("sent-id"))
+    services.message_media.build_native_content = AsyncMock(return_value=[])
+    instance = MessageProcessor(DefaultIMWorkflow(services))
     return instance, model
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("stop_at", [
     None, EventType.ON_IM_BATCH_MESSAGE, EventType.ON_LLM_REQUEST,
-    EventType.AFTER_XML_PARSE, EventType.ON_STEP_RESULT, EventType.ON_FINAL_RESULT,
+    EventType.AFTER_XML_PARSE, EventType.ON_MESSAGE_SENT, EventType.ON_STEP_RESULT, EventType.ON_FINAL_RESULT,
 ])
 async def test_plugin_stop_preserves_stage_boundaries_and_finalization(processor, monkeypatch, stop_at):
     instance, model = processor
@@ -86,7 +91,7 @@ async def test_plugin_stop_preserves_stage_boundaries_and_finalization(processor
         return [SimpleNamespace(exec_handler=handle)]
 
     monkeypatch.setattr(event_handler_reg, "get_handlers", handlers)
-    await instance.handle_im_batch_message(batch())
+    await instance.im_workflow.handle_batch_event(batch())
 
     order = [
         EventType.ON_IM_BATCH_MESSAGE, EventType.ON_LLM_REQUEST,
@@ -96,8 +101,8 @@ async def test_plugin_stop_preserves_stage_boundaries_and_finalization(processor
     if stop_at in (EventType.ON_IM_BATCH_MESSAGE, EventType.ON_LLM_REQUEST):
         assert observed == order[:order.index(stop_at) + 1]
         model.chat.assert_not_awaited()
-        instance.session_manager.update_memory.assert_not_called()
-        instance.message_history.link_incoming_messages.assert_not_awaited()
+        instance.im_workflow.ctx.session_manager.update_memory.assert_not_called()
+        instance.im_workflow.ctx.message_history.link_incoming_messages.assert_not_awaited()
     else:
         expected = order
         if stop_at == EventType.AFTER_XML_PARSE:
@@ -108,10 +113,10 @@ async def test_plugin_stop_preserves_stage_boundaries_and_finalization(processor
         assert observed == expected
         assert len(final_results) == 1
         assert len(final_results[0].step_results) == (0 if stop_at == EventType.AFTER_XML_PARSE else 1)
-        instance.session_manager.update_memory.assert_called_once()
-        memory = instance.session_manager.update_memory.call_args.args[1]
+        instance.im_workflow.ctx.session_manager.update_memory.assert_called_once()
+        memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
         assert [message.role for message in memory] == ["user", "assistant"]
-        instance.message_history.link_incoming_messages.assert_awaited_once()
+        instance.im_workflow.ctx.message_history.link_incoming_messages.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -128,7 +133,7 @@ async def test_tool_loop_config_fallback_preserves_execution_and_finalization(
 ):
     instance, model = processor
     values = {f"bot_config.agent.{key}": value for key, value in settings.items()}
-    instance.kira_config = SimpleNamespace(get_config=lambda key, default=None: values.get(key, default))
+    instance.im_workflow.ctx.config = SimpleNamespace(get_config=lambda key, default=None: values.get(key, default))
     final = AsyncMock()
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
         [SimpleNamespace(exec_handler=final)] if event_type == EventType.ON_FINAL_RESULT else []
@@ -142,14 +147,14 @@ async def test_tool_loop_config_fallback_preserves_execution_and_finalization(
     async def execute_tool(event, response, **kwargs):
         response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
 
-    instance.tool_manager.execute_tool = execute_tool
-    await instance.handle_im_batch_message(batch())
+    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    await instance.im_workflow.handle_batch_event(batch())
 
     assert model.chat.await_count == expected_steps
     assert instance.message_delivery.send_message_chain.await_count == expected_steps
     final.assert_awaited_once()
-    instance.session_manager.update_memory.assert_called_once()
-    memory = instance.session_manager.update_memory.call_args.args[1]
+    instance.im_workflow.ctx.session_manager.update_memory.assert_called_once()
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
     assert memory[0].role == "user"
     assert sum(message.role == "assistant" for message in memory) == expected_steps
 
@@ -157,7 +162,7 @@ async def test_tool_loop_config_fallback_preserves_execution_and_finalization(
 @pytest.mark.anyio
 async def test_request_stop_does_not_persist_native_media(processor, monkeypatch):
     instance, model = processor
-    instance.session_manager.get_effective_capabilities = lambda *_: {
+    instance.im_workflow.ctx.session_manager.get_effective_capabilities = lambda *_: {
         "image_recognition": {"mode": "native"}
     }
 
@@ -167,30 +172,31 @@ async def test_request_stop_does_not_persist_native_media(processor, monkeypatch
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
         [SimpleNamespace(exec_handler=stop)] if event_type == EventType.ON_LLM_REQUEST else []
     ))
-    await instance.handle_im_batch_message(batch())
+    await instance.im_workflow.handle_batch_event(batch())
 
-    instance.message_media.build_native_content.assert_not_awaited()
+    instance.im_workflow.ctx.message_media.build_native_content.assert_not_awaited()
     model.chat.assert_not_awaited()
-    instance.session_manager.update_memory.assert_not_called()
+    instance.im_workflow.ctx.session_manager.update_memory.assert_not_called()
 
 
 @pytest.mark.anyio
 async def test_missing_model_stops_before_request_hooks_and_memory(processor, monkeypatch):
     instance, _ = processor
-    instance.provider_mgr.get_default_llm = lambda: None
+    instance.im_workflow.ctx.provider_mgr.get_default_llm = lambda: None
     request_hook = AsyncMock()
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
         [SimpleNamespace(exec_handler=request_hook)] if event_type == EventType.ON_LLM_REQUEST else []
     ))
 
-    await instance.handle_im_batch_message(batch())
+    await instance.im_workflow.handle_batch_event(batch())
 
     request_hook.assert_not_awaited()
-    instance.session_manager.update_memory.assert_not_called()
+    instance.im_workflow.ctx.session_manager.update_memory.assert_not_called()
 
 
 @pytest.mark.anyio
-async def test_request_only_prompts_and_step_edits_keep_memory_contract(processor, monkeypatch):
+@pytest.mark.parametrize("append_request_only", [False, True])
+async def test_request_only_prompts_and_step_edits_keep_memory_contract(processor, monkeypatch, append_request_only):
     instance, model = processor
 
     async def customize_request(event, request, tags):
@@ -199,6 +205,9 @@ async def test_request_only_prompts_and_step_edits_keep_memory_contract(processo
 
     async def customize_result(event, result):
         result.raw_output = "edited reply"
+        if append_request_only:
+            request = model.chat.await_args.args[0]
+            request.messages.append(OpenAIMessage(role="user", content="request-only tail"))
 
     callbacks = {
         EventType.ON_LLM_REQUEST: customize_request,
@@ -207,14 +216,19 @@ async def test_request_only_prompts_and_step_edits_keep_memory_contract(processo
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
         [SimpleNamespace(exec_handler=callbacks[event_type])] if event_type in callbacks else []
     ))
-    await instance.handle_im_batch_message(batch())
+    await instance.im_workflow.handle_batch_event(batch())
 
-    memory = instance.session_manager.update_memory.call_args.args[1]
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
     assert memory[0].content == "user\nremember\n"
     assert memory[1].content == "edited reply"
     request = model.chat.await_args.args[0]
     assert "temporary" in request.messages[0].content
-    assert request.messages[-1].content == "edited reply"
+    assistant = next(message for message in reversed(request.messages) if message.role == "assistant")
+    assert assistant is memory[1]
+    assert assistant.content == "edited reply"
+    if append_request_only:
+        assert request.messages[-1].content == "request-only tail"
+    assert len(memory) == 2
 
 
 @pytest.mark.anyio
@@ -240,15 +254,15 @@ async def test_concurrent_batches_keep_requests_links_and_results_separate(proce
         [SimpleNamespace(exec_handler=final)] if event_type == EventType.ON_FINAL_RESULT else []
     ))
     await asyncio.gather(
-        instance.handle_im_batch_message(batch("alice")),
-        instance.handle_im_batch_message(batch("bob")),
+        instance.im_workflow.handle_batch_event(batch("alice")),
+        instance.im_workflow.handle_batch_event(batch("bob")),
     )
 
-    saved = dict(call.args for call in instance.session_manager.update_memory.call_args_list)
+    saved = dict(call.args for call in instance.im_workflow.ctx.session_manager.update_memory.call_args_list)
     assert requests[0] is not requests[1]
     assert saved["adapter:dm:alice"] is not saved["adapter:dm:bob"]
     assert results["adapter:dm:alice"].step_results is not results["adapter:dm:bob"].step_results
-    links = {call.args[0]: call.args[2] for call in instance.message_history.link_incoming_messages.await_args_list}
+    links = {call.args[0]: call.args[2] for call in instance.im_workflow.ctx.message_history.link_incoming_messages.await_args_list}
     for user in ("alice", "bob"):
         sid = f"adapter:dm:{user}"
         assert saved[sid][0].content == user + "\n"
@@ -270,18 +284,18 @@ async def test_batch_keeps_original_sid_when_plugin_changes_session(processor, m
         [SimpleNamespace(exec_handler=redirect)]
         if event_type == EventType.ON_IM_BATCH_MESSAGE else []
     ))
-    await instance.handle_im_batch_message(event)
+    await instance.im_workflow.handle_batch_event(event)
 
     assert event.sid != original_sid
-    assert instance.session_manager.update_memory.call_args.args[0] == original_sid
-    assert instance.message_history.link_incoming_messages.await_args.args[0] == original_sid
-    assert original_sid in instance.session_locks
+    assert instance.im_workflow.ctx.session_manager.update_memory.call_args.args[0] == original_sid
+    assert instance.im_workflow.ctx.message_history.link_incoming_messages.await_args.args[0] == original_sid
+    assert original_sid in instance.im_workflow.ctx.message_delivery.session_locks
 
 
 @pytest.mark.anyio
 async def test_receive_keeps_original_buffer_sid_when_plugin_changes_session(processor, monkeypatch):
     from core.chat.message_utils import KiraMessageEvent
-    from core.message_manager import SessionBufferManager
+    from core.chat.session_buffer import SessionBufferManager
 
     instance, _ = processor
     incoming = batch()
@@ -290,8 +304,8 @@ async def test_receive_keeps_original_buffer_sid_when_plugin_changes_session(pro
         timestamp=1, message=incoming.messages[0], adapter=incoming.adapter,
     )
     original_sid = event.session.sid
-    instance.session_buffer = SessionBufferManager()
-    instance.session_manager.get_session_info = lambda sid: SimpleNamespace(session_description="")
+    instance.im_workflow.ctx.message_buffer = SessionBufferManager()
+    instance.im_workflow.ctx.session_manager.get_session_info = lambda sid: SimpleNamespace(session_description="")
 
     async def redirect(event):
         event.session = Session("adapter", "dm", "changed")
@@ -322,7 +336,10 @@ async def test_batch_runs_with_injected_services_without_processor(processor):
     )
     delivery = SimpleNamespace(
         get_session_lock=lambda sid: asyncio.Lock(),
-        send_xml_messages=AsyncMock(return_value=[KiraIMSentResult("injected-id")]),
+        parse_xml=AsyncMock(return_value=[MessageChain([Text("reply")])]),
+        send_message_chain=AsyncMock(return_value=KiraIMSentResult("injected-id")),
+        min_message_delay=0,
+        max_message_delay=0,
         add_message_ids=MessageDeliveryService.add_message_ids,
     )
     services = replace(
@@ -340,7 +357,8 @@ async def test_batch_runs_with_injected_services_without_processor(processor):
     assert not hasattr(services, "processor")
     model.chat.assert_awaited_once()
     media.build_native_content.assert_awaited_once()
-    delivery.send_xml_messages.assert_awaited_once()
+    delivery.parse_xml.assert_awaited_once()
+    delivery.send_message_chain.assert_awaited_once()
     services.db.add_telemetry_llm_usage.assert_awaited_once()
     services.message_history.link_incoming_messages.assert_awaited_once()
     assert services.message_history.link_incoming_messages.await_args.args[2] == ["record-id"]
@@ -378,14 +396,13 @@ async def test_receive_and_trigger_use_injected_session_manager_and_event_bus(pr
 
 
 @pytest.mark.anyio
-async def test_cached_workflow_picks_up_event_bus_bound_after_creation(processor):
+async def test_processor_preserves_injected_workflow_and_event_bus(processor):
     from core.chat.message_utils import KiraMessageEvent
 
     instance, _ = processor
     workflow = instance.im_workflow
-    assert workflow.ctx.event_bus is None
-    instance.event_bus = SimpleNamespace(publish=AsyncMock())
-    instance.session_manager.get_session_info = lambda sid: SimpleNamespace(session_description="")
+    event_bus = workflow.ctx.event_bus
+    instance.im_workflow.ctx.session_manager.get_session_info = lambda sid: SimpleNamespace(session_description="")
     incoming = batch()
     event = KiraMessageEvent(
         supported_elements=incoming.supported_elements,
@@ -396,5 +413,239 @@ async def test_cached_workflow_picks_up_event_bus_bound_after_creation(processor
     await instance.handle_im_message(event)
 
     assert instance.im_workflow is workflow
-    assert workflow.ctx.event_bus is instance.event_bus
-    instance.event_bus.publish.assert_awaited_once()
+    assert workflow.ctx.event_bus is event_bus
+    instance.im_workflow.ctx.event_bus.publish.assert_awaited_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("root_fails", [False, True])
+async def test_execution_preserves_message_and_root_action_order(processor, monkeypatch, root_fails):
+    instance, _ = processor
+    delivery = instance.message_delivery
+    seen = []
+    final = AsyncMock()
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=final)] if event_type == EventType.ON_FINAL_RESULT else []
+    ))
+
+    async def send(sid, chain, **kwargs):
+        seen.append(chain[0].text)
+        return KiraIMSentResult(chain[0].text)
+
+    async def root(value, **attrs):
+        seen.append(value)
+        if root_fails:
+            raise ValueError("control failed")
+
+    delivery.send_message_chain = send
+    delivery.parse_xml.return_value = [
+        MessageChain([Text("first")]),
+        RootTagAction(tag=SimpleNamespace(name="control", handle=root), value="control", attrs={}),
+        MessageChain([Text("second")]),
+    ]
+
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert seen == ["first", "control", "second"]
+    results = final.await_args.args[1].step_results[0].message_results
+    assert [result.message_id for result in results] == ["first", "second"]
+    instance.im_workflow.ctx.session_manager.update_memory.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("invalid_delay", [None, "", "invalid", []])
+async def test_execution_continues_after_invalid_runtime_delay_update(processor, monkeypatch, invalid_delay):
+    instance, _ = processor
+    config = dict.__new__(KiraConfig)
+    config["bot_config"] = {"bot": {"min_message_delay": 0, "max_message_delay": 0}}
+    delivery = instance.message_delivery
+    delivery.kira_config = config
+    sleep = AsyncMock()
+    uniform = Mock(side_effect=lambda low, high: low)
+    warning = Mock()
+    monkeypatch.setattr("core.workflow.src.im.stages.execute.asyncio.sleep", sleep)
+    monkeypatch.setattr("core.workflow.src.im.stages.execute.random.uniform", uniform)
+    monkeypatch.setattr("core.workflow.src.im.message_delivery.logger.warning", warning)
+    seen = []
+
+    async def send(sid, chain, **kwargs):
+        seen.append(chain[0].text)
+        if len(seen) == 1:
+            config["bot_config"]["bot"] = {
+                "min_message_delay": invalid_delay, "max_message_delay": invalid_delay,
+            }
+        return KiraIMSentResult(chain[0].text)
+
+    async def root(value, **attrs):
+        seen.append(value)
+        config["bot_config"]["bot"] = {"min_message_delay": 0, "max_message_delay": 0}
+
+    delivery.send_message_chain = send
+    delivery.parse_xml.return_value = [
+        MessageChain([Text("first")]),
+        RootTagAction(tag=SimpleNamespace(name="control", handle=root), value="control", attrs={}),
+        MessageChain([Text("second")]),
+    ]
+
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert seen == ["first", "control", "second"]
+    assert [call.args for call in uniform.call_args_list] == [(0.8, 1.5), (0, 0)]
+    assert [call.args for call in sleep.await_args_list] == [(0.8,), (0,)]
+    assert [call.args[1:] for call in warning.call_args_list] == [
+        ("bot_config.bot.min_message_delay", 0.8),
+        ("bot_config.bot.max_message_delay", 1.5),
+    ]
+
+
+@pytest.mark.anyio
+async def test_execution_passes_history_provenance(processor):
+    instance, _ = processor
+    event = batch("channel/123")
+    chain = MessageChain([Text("reply")])
+    instance.message_delivery.parse_xml.return_value = [chain]
+
+    await instance.im_workflow.handle_batch_event(event)
+
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
+    instance.message_delivery.send_message_chain.assert_awaited_once_with(
+        event.sid, chain, memory_message=memory[-1], self_id=event.self_id,
+    )
+    assert instance.message_delivery.send_message_chain.await_args.kwargs["memory_message"] is memory[-1]
+
+
+@pytest.mark.anyio
+async def test_message_sent_stop_skips_remaining_actions_and_preserves_results(processor, monkeypatch):
+    instance, _ = processor
+    root = AsyncMock()
+    final = AsyncMock()
+    sleep = AsyncMock()
+    monkeypatch.setattr("core.workflow.src.im.stages.execute.asyncio.sleep", sleep)
+
+    async def stop(event, *args):
+        event.stop()
+
+    callbacks = {EventType.ON_MESSAGE_SENT: stop, EventType.ON_FINAL_RESULT: final}
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=callbacks[event_type])] if event_type in callbacks else []
+    ))
+    first = MessageChain([Text("first")])
+    instance.message_delivery.parse_xml.return_value = [
+        first,
+        RootTagAction(tag=SimpleNamespace(name="control", handle=root), value="control", attrs={}),
+        MessageChain([Text("second")]),
+    ]
+
+    await instance.im_workflow.handle_batch_event(batch())
+
+    instance.message_delivery.send_message_chain.assert_awaited_once()
+    assert instance.message_delivery.send_message_chain.await_args.args[1] is first
+    root.assert_not_awaited()
+    sleep.assert_not_awaited()
+    final.assert_awaited_once()
+    results = final.await_args.args[1].step_results[0].message_results
+    assert [result.message_id for result in results] == ["sent-id"]
+    instance.im_workflow.ctx.session_manager.update_memory.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_xml_parse_failure_still_finalizes(processor, monkeypatch):
+    instance, _ = processor
+    instance.message_delivery.parse_xml.side_effect = ValueError("invalid XML")
+    final = AsyncMock()
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=final)] if event_type == EventType.ON_FINAL_RESULT else []
+    ))
+
+    await instance.im_workflow.handle_batch_event(batch())
+
+    instance.message_delivery.send_message_chain.assert_not_awaited()
+    final.assert_awaited_once()
+    assert final.await_args.args[1].step_results[0].message_results == []
+    instance.im_workflow.ctx.session_manager.update_memory.assert_called_once()
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("through_processor", [False, True])
+async def test_direct_im_and_comments_share_limit_while_batches_can_run(processor, through_processor, monkeypatch):
+    from core.chat.message_utils import KiraMessageEvent, KiraCommentEvent
+
+    original, _ = processor
+    workflow = DefaultIMWorkflow(original.im_workflow.ctx, max_concurrent_messages=1)
+    instance = MessageProcessor(workflow)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def receive(ctx):
+        entered.set()
+        await release.wait()
+        return False
+
+    receive_stage = SimpleNamespace(run=AsyncMock(side_effect=receive))
+    batch_stage = SimpleNamespace(run=AsyncMock(return_value=False))
+    workflow.event_stages = (receive_stage,)
+    workflow.batch_stages = (batch_stage,)
+    comment_handler = AsyncMock()
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=comment_handler)] if event_type == EventType.ON_COMMENT else []
+    ))
+    incoming = batch()
+    event = KiraMessageEvent(
+        supported_elements=incoming.supported_elements, timestamp=1,
+        message=incoming.messages[0], adapter=incoming.adapter,
+    )
+    handle = instance.handle_im_message if through_processor else workflow.handle_event
+    tasks = [asyncio.create_task(handle(event))]
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        tasks.append(asyncio.create_task(handle(event)))
+        tasks.append(asyncio.create_task(instance.handle_cmt_event(Mock(spec=KiraCommentEvent, is_stopped=False))))
+        await asyncio.sleep(0)
+        assert receive_stage.run.await_count == 1
+        comment_handler.assert_not_awaited()
+
+        await asyncio.wait_for(workflow.handle_batch_event(incoming), timeout=1)
+        batch_stage.run.assert_awaited_once()
+
+        release.set()
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=1)
+        assert receive_stage.run.await_count == 2
+        comment_handler.assert_awaited_once()
+    finally:
+        release.set()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_stopped_response_does_not_overwrite_previous_assistant(processor, monkeypatch):
+    instance, model = processor
+    model.chat.side_effect = [
+        LLMResponse("first reply", tool_calls=[{
+            "id": "call-1", "type": "function",
+            "function": {"name": "check", "arguments": "{}"},
+        }]),
+        LLMResponse("stopped reply"),
+    ]
+
+    async def execute_tool(event, response, **kwargs):
+        response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
+
+    async def stop_second_response(event, response):
+        if response.agent_step_index == 2:
+            event.stop()
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=stop_second_response)]
+        if event_type == EventType.ON_LLM_RESPONSE else []
+    ))
+    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    await instance.im_workflow.handle_batch_event(batch())
+
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
+    assert [message.role for message in memory] == ["user", "assistant", "tool"]
+    assert "first reply" in memory[1].content
+    assert "stopped reply" not in memory[1].content
+    request = model.chat.await_args.args[0]
+    assert next(message for message in request.messages if message.role == "assistant") is memory[1]
+    assert "final model call" in request.messages[-1].content

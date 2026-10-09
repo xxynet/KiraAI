@@ -5,7 +5,9 @@ from unittest.mock import Mock
 import pytest
 
 from core.chat.message_elements import Image
-from core.message_manager import MessageProcessor
+from core.workflow.src.im.message_formatter import MessageFormatter
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from tests.im_workflow_helpers import make_workflow_context
 from core.utils import media_refs
 
 
@@ -103,10 +105,9 @@ async def test_native_mode_does_not_call_vlm_for_incoming_images():
                 return "native"
             return default
 
-    manager = object.__new__(MessageProcessor)
-    manager.kira_config = NativeConfig()
+    formatter = MessageFormatter(NativeConfig())
 
-    result = await manager.message_format_to_text(
+    result = await formatter.format_to_text(
         [Image("data:image/png;base64,aGVsbG8=")]
     )
 
@@ -128,25 +129,20 @@ async def test_stopped_batch_does_not_persist_native_media(monkeypatch):
         async def exec_handler(self, event):
             event.is_stopped = True
 
-    manager = object.__new__(MessageProcessor)
-    manager.kira_config = NativeConfig()
-    manager.event_bus = None
-    manager.session_manager = SimpleNamespace(
-        get_effective_capabilities=lambda sid, capabilities: capabilities,
+    services = make_workflow_context(
+        config=NativeConfig(),
+        session_manager=SimpleNamespace(
+            get_effective_capabilities=lambda sid, capabilities: capabilities,
+        ),
     )
-    manager.prompt_manager = Mock()
-    manager.provider_mgr = Mock()
-    manager.tool_manager = Mock()
-    manager.skills_manager = Mock()
-    manager.mcp_manager = Mock()
-    manager.db = Mock()
+    workflow = DefaultIMWorkflow(services)
     persisted_messages = []
 
     async def record_persistence(message, _session):
         persisted_messages.append(message)
         return []
 
-    manager.message_media.build_native_content = record_persistence
+    services.message_media.build_native_content = record_persistence
     monkeypatch.setattr(
         "core.message_manager.event_handler_reg.get_handlers",
         lambda *_args, **_kwargs: [StopHandler()],
@@ -164,7 +160,7 @@ async def test_stopped_batch_does_not_persist_native_media(monkeypatch):
         is_stopped=False,
     )
 
-    await manager.handle_im_batch_message(event)
+    await workflow.handle_batch_event(event)
 
     assert persisted_messages == []
 

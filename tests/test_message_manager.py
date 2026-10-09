@@ -7,7 +7,7 @@ import pytest
 from core.chat import KiraCommentEvent, KiraMessageEvent
 from core.chat.message_elements import Text
 from core.event_bus import EventBus
-from core.message_manager import SessionBuffer
+from core.chat.session_buffer import SessionBuffer
 
 
 def _make_buffer(messages):
@@ -100,3 +100,35 @@ async def test_event_bus_records_telemetry_only_for_im(is_comment):
     else:
         db.add_telemetry_message.assert_awaited_once()
         assert db.add_telemetry_message.await_args.args[1] == "test"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("already_stopped", [False, True])
+async def test_comment_subscription_respects_stop_and_releases_shared_limit(monkeypatch, already_stopped):
+    from core.message_manager import MessageProcessor
+    from core.plugin.handlers import EventType, event_handler_reg
+
+    semaphore = asyncio.Semaphore(1)
+    processor = MessageProcessor(SimpleNamespace(message_processing_semaphore=semaphore))
+    event = _comment_event()
+    if already_stopped:
+        event.stop()
+
+    async def stop(received):
+        assert semaphore.locked()
+        received.stop()
+
+    first = AsyncMock(side_effect=stop)
+    second = AsyncMock()
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=first), SimpleNamespace(exec_handler=second)]
+        if event_type == EventType.ON_COMMENT else []
+    ))
+    bus = EventBus(Mock(), asyncio.Queue())
+    bus.subscribe(KiraCommentEvent, processor.handle_cmt_event)
+    await bus._process_event(event)
+
+    assert first.await_count == (0 if already_stopped else 1)
+    second.assert_not_awaited()
+    assert not semaphore.locked()
+    assert bus.event_bus_stats["errors"] == 0

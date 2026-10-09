@@ -16,9 +16,9 @@ from core.chat.message_utils import KiraIMMessage, KiraIMSentResult, KiraMessage
 from core.chat.session import User
 from core.config.config_loader import KiraConfig
 from core.message_manager import MessageProcessor
-from core.plugin.handlers import event_handler_reg
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from tests.im_workflow_helpers import make_workflow_context
 from core.plugin.plugin_context import PluginContext
-from core.tag import RootTagAction, TagSet
 from core.workflow.src.im.batching import publish_buffered_messages
 
 
@@ -38,22 +38,57 @@ def test_delivery_delays_follow_config_changes():
     assert delivery.max_message_delay == 0.5
 
 
-def test_plugin_context_exposes_services_without_processor_dependency():
+@pytest.mark.anyio
+async def test_plugin_context_exposes_services_without_processor_dependency():
     history = MessageHistoryService(Mock(), Mock())
     prompt_manager, skills_manager, mcp_manager = Mock(), Mock(), Mock()
+    cache = ImageDescCache(history.db)
     context = PluginContext(
         db=history.db, config=Mock(), event_bus=Mock(), provider_mgr=Mock(),
         tool_mgr=Mock(), adapter_mgr=Mock(), persona_mgr=Mock(),
         sticker_mgr=Mock(), session_mgr=history.session_manager,
         message_processor=SimpleNamespace(), message_history=history,
         prompt_mgr=prompt_manager, skills_mgr=skills_manager, mcp_mgr=mcp_manager,
+        image_desc_cache=cache, session_buffer_mgr=SessionBufferManager(),
+        message_delivery=MessageDeliveryService(Mock(), Mock(), history),
     )
 
+    assert context.image_desc_cache is cache
     assert context.message_history is history
     assert context.prompt_mgr is prompt_manager
     assert context.skills_mgr is skills_manager
     assert context.mcp_mgr is mcp_manager
     assert context.sticker_manager is context.sticker_mgr
+
+    first, second = make_event("first"), make_event("second")
+    sid = first.session.sid
+    buffer = context.get_buffer(sid)
+    assert buffer is context.session_buffer_mgr.get_buffer(sid)
+    buffer.add(first)
+    buffer.add(second)
+    context.event_bus = SimpleNamespace(publish=AsyncMock())
+    assert await context.flush_session_messages(sid, filter_fn=lambda event: event is first) is True
+    assert buffer.buffer == [second]
+    assert context.event_bus.publish.await_args.args[0].messages == [first.message]
+
+    context.event_bus.publish.reset_mock()
+    assert await context.flush_session_messages(sid, filter_fn=lambda event: False) is False
+    assert buffer.buffer == [second]
+    context.event_bus.publish.assert_not_awaited()
+    assert await context.flush_session_messages(sid) is True
+    context.event_bus.publish.reset_mock()
+    assert await context.flush_session_messages(sid) is False
+    context.event_bus.publish.assert_not_awaited()
+
+    buffer.add(first)
+    context.event_bus.publish.side_effect = RuntimeError("publish failed")
+    with pytest.raises(RuntimeError, match="publish failed"):
+        await context.flush_session_messages(sid)
+
+    result = KiraIMSentResult("sent-id")
+    context.message_delivery.send_message_chain = AsyncMock(return_value=result)
+    assert await context.send_message_chain(sid, first.message.chain) is result
+    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain)
 
 
 def make_event(identity="one"):
@@ -77,17 +112,14 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
         "max_message_delay": 0.2,
     }}})
     history = MessageHistoryService(Mock(), Mock())
-    processor = MessageProcessor(Mock(), config, Mock(), Mock(), Mock(), Mock(), Mock(), Mock(), Mock(),
-                                 message_history=history)
-    processor.event_bus = SimpleNamespace(publish=AsyncMock())
-    services = processor.im_workflow.ctx
+    cache = ImageDescCache(history.db)
+    services = make_workflow_context(config=config, message_history=history, image_desc_cache=cache)
+    processor = MessageProcessor(DefaultIMWorkflow(services))
     event = make_event()
     sid = event.session.sid
 
     assert services.message_buffer is processor.session_buffer
-    assert services.message_formatter is processor.message_formatter
-    assert services.message_formatter.image_desc_cache is processor.image_desc_cache
-    assert processor.message_history is history
+    assert services.message_formatter.image_desc_cache is cache
     assert services.message_history is history
     assert services.message_delivery.message_history is history
     assert not hasattr(services, "processor")
@@ -99,7 +131,7 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
     assert processor.get_session_buffer_length(sid) == 1
     assert await processor.flush_session_messages(sid)
     assert processor.get_session_buffer_length(sid) == 0
-    assert processor.event_bus.publish.await_args.args[0].messages == [event.message]
+    assert services.event_bus.publish.await_args.args[0].messages == [event.message]
 
     acquired = asyncio.Event()
 
@@ -108,7 +140,7 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
             acquired.set()
 
     lock = processor.get_session_lock(sid)
-    assert lock is processor.session_locks[sid]
+    assert lock is services.message_delivery.session_locks[sid]
     async with lock:
         task = asyncio.create_task(service_sender())
         await asyncio.sleep(0)
@@ -193,81 +225,6 @@ async def test_native_media_keeps_nested_order_and_continues_after_one_failure(m
 
     assert result == [{"type": "text", "text": "text"}, *refs]
     assert [call.args[0] for call in persist.await_args_list] == [first, second, third]
-
-
-@pytest.mark.anyio
-async def test_delivery_preserves_message_and_root_action_order(monkeypatch):
-    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda **kw: [])
-    config = SimpleNamespace(get_config=lambda key, default=None: 0)
-    delivery = MessageDeliveryService(config, Mock())
-    seen = []
-
-    async def send(sid, chain, **kwargs):
-        seen.append(chain[0].text)
-        return KiraIMSentResult(chain[0].text)
-
-    async def root(value, **attrs):
-        seen.append(value)
-
-    delivery.send_message_chain = send
-    delivery.parse_xml = AsyncMock(return_value=[
-        MessageChain([Text("first")]),
-        RootTagAction(tag=SimpleNamespace(name="control", handle=root), value="control", attrs={}),
-        MessageChain([Text("second")]),
-    ])
-    event = SimpleNamespace(sid="adapter:dm:user", is_stopped=False)
-
-    results = await delivery.send_xml_messages(event, "<msg/>", TagSet())
-
-    assert seen == ["first", "control", "second"]
-    assert [result.message_id for result in results] == ["first", "second"]
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("invalid_delay", [None, "", "invalid", []])
-async def test_delivery_continues_after_invalid_runtime_delay_update(monkeypatch, invalid_delay):
-    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda **kw: [])
-    config = dict.__new__(KiraConfig)
-    config["bot_config"] = {"bot": {"min_message_delay": 0, "max_message_delay": 0}}
-    delivery = MessageDeliveryService(config, Mock())
-    sleep = AsyncMock()
-    uniform = Mock(side_effect=lambda low, high: low)
-    warning = Mock()
-    monkeypatch.setattr("core.workflow.src.im.message_delivery.asyncio.sleep", sleep)
-    monkeypatch.setattr("core.workflow.src.im.message_delivery.random.uniform", uniform)
-    monkeypatch.setattr("core.workflow.src.im.message_delivery.logger.warning", warning)
-    seen = []
-
-    async def send(sid, chain, **kwargs):
-        seen.append(chain[0].text)
-        if len(seen) == 1:
-            config["bot_config"]["bot"] = {
-                "min_message_delay": invalid_delay, "max_message_delay": invalid_delay,
-            }
-        return KiraIMSentResult(chain[0].text)
-
-    async def root(value, **attrs):
-        seen.append(value)
-        config["bot_config"]["bot"] = {"min_message_delay": 0, "max_message_delay": 0}
-
-    delivery.send_message_chain = send
-    delivery.parse_xml = AsyncMock(return_value=[
-        MessageChain([Text("first")]),
-        RootTagAction(tag=SimpleNamespace(name="control", handle=root), value="control", attrs={}),
-        MessageChain([Text("second")]),
-    ])
-    results = await delivery.send_xml_messages(
-        SimpleNamespace(sid="adapter:dm:user", is_stopped=False), "<msg/>", TagSet(),
-    )
-
-    assert seen == ["first", "control", "second"]
-    assert [result.message_id for result in results] == ["first", "second"]
-    assert [call.args for call in uniform.call_args_list] == [(0.8, 1.5), (0, 0)]
-    assert [call.args for call in sleep.await_args_list] == [(0.8,), (0,)]
-    assert [call.args[1:] for call in warning.call_args_list] == [
-        ("bot_config.bot.min_message_delay", 0.8),
-        ("bot_config.bot.max_message_delay", 1.5),
-    ]
 
 
 @pytest.mark.anyio

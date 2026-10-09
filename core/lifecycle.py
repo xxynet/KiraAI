@@ -7,6 +7,13 @@ from .logging_manager import get_logger, setup_logging
 from .config import KiraConfig
 from .sticker_manager import StickerManager
 from .message_manager import MessageProcessor
+from core.chat.session_buffer import SessionBufferManager
+from core.workflow.src.im.context import IMWorkflowContext
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from core.workflow.src.im.message_delivery import MessageDeliveryService
+from core.workflow.src.im.message_formatter import MessageFormatter
+from core.workflow.src.im.native_content import MessageMediaService
+from .image_desc_cache import ImageDescCache
 from .prompt_manager import PromptManager
 from core.chat.session_manager import SessionManager
 from core.chat.session_media_manager import SessionMediaManager
@@ -61,6 +68,8 @@ class KiraLifecycle:
 
         self.message_processor: Optional[MessageProcessor] = None
 
+        self.image_desc_cache: Optional[ImageDescCache] = None
+
         self.sticker_manager: Optional[StickerManager] = None
 
         self.event_bus: Optional[EventBus] = None
@@ -83,15 +92,20 @@ class KiraLifecycle:
 
         self.tasks: list[asyncio.Task] = []
 
-    async def schedule_tasks(self):
-        self.tasks = [
-            # asyncio.create_task(self.sticker_manager.scan_and_register_sticker(), name="sticker_scan")
-        ]
-        results = await asyncio.gather(*self.tasks, return_exceptions=True)
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                task = self.tasks[i]
-                logger.error(f"Scheduled task '{task.get_name()}' failed: {result}")
+    def schedule_tasks(self):
+        """Report failures of registered background tasks as soon as they finish."""
+        def report_result(task: asyncio.Task):
+            if task.cancelled():
+                return
+            error = task.exception()
+            if error is not None:
+                logger.error(
+                    "Scheduled task '%s' failed: %s", task.get_name(), error,
+                    exc_info=(type(error), error, error.__traceback__),
+                )
+
+        for task in self.tasks:
+            task.add_done_callback(report_result)
 
     def _apply_network_env(self):
         network = self.kira_config.get("network") or {}
@@ -202,22 +216,40 @@ class KiraLifecycle:
         await self.message_history.initialize()
         self.event_bus.subscribe("session_deleted", self.message_history.on_session_deleted)
 
-        # ====== init message processor ======
-        self.message_processor = MessageProcessor(
-            db=self.db_service,
-            kira_config=self.kira_config,
-            tool_manager=self.tool_manager,
-            provider_manager=self.provider_manager,
-            skills_manager=self.skills_manager,
-            adapter_manager=self.adapter_manager,
+        # ====== init image description cache ======
+        self.image_desc_cache = ImageDescCache(self.db_service)
+
+        # ====== assemble shared IM services and workflow ======
+        message_buffer = SessionBufferManager(
+            max_count=int(self.kira_config.get_config("bot_config.bot.max_buffer_messages", 3)),
+        )
+        message_delivery = MessageDeliveryService(
+            self.kira_config, self.adapter_manager, self.message_history,
+        )
+        message_formatter = MessageFormatter(
+            self.kira_config, self.provider_manager, self.session_manager, self.image_desc_cache,
+        )
+        workflow = DefaultIMWorkflow(IMWorkflowContext(
+            message_formatter=message_formatter,
+            message_media=MessageMediaService(),
+            message_buffer=message_buffer,
+            message_delivery=message_delivery,
+            config=self.kira_config,
             session_manager=self.session_manager,
             prompt_manager=self.prompt_manager,
+            provider_mgr=self.provider_manager,
+            tool_manager=self.tool_manager,
+            skills_manager=self.skills_manager,
             mcp_manager=self.mcp_manager,
-            message_history=self.message_history)
+            db=self.db_service,
+            message_history=self.message_history,
+            event_bus=self.event_bus,
+        ))
+        self.message_processor = MessageProcessor(workflow)
 
         self.tasks.append(
             asyncio.create_task(
-                self.message_processor.cleanup_image_desc_cache_task(),
+                self.image_desc_cache.cleanup_task(),
                 name="image_desc_cache_cleanup"
             )
         )
@@ -226,10 +258,9 @@ class KiraLifecycle:
             self.message_history, self.kira_config
         )
         self.message_history_cleanup.start()
-        self.message_processor.event_bus = self.event_bus
-        self.event_bus.subscribe(KiraMessageEvent, self.message_processor.handle_event)
-        self.event_bus.subscribe(KiraMessageBatchEvent, self.message_processor.handle_event)
-        self.event_bus.subscribe(KiraCommentEvent, self.message_processor.handle_event)
+        self.event_bus.subscribe(KiraMessageEvent, workflow.handle_event)
+        self.event_bus.subscribe(KiraMessageBatchEvent, workflow.handle_batch_event)
+        self.event_bus.subscribe(KiraCommentEvent, self.message_processor.handle_cmt_event)
 
         # ====== init plugin system ======
         self.plugin_context = PluginContext(
@@ -246,7 +277,10 @@ class KiraLifecycle:
             skills_mgr=self.skills_manager,
             mcp_mgr=self.mcp_manager,
             message_processor=self.message_processor,
-            message_history=self.message_history
+            session_buffer_mgr=message_buffer,
+            message_delivery=message_delivery,
+            message_history=self.message_history,
+            image_desc_cache=self.image_desc_cache,
         )
 
         self.plugin_manager = PluginManager(self.plugin_context)
@@ -278,8 +312,7 @@ class KiraLifecycle:
             )
         )
 
-        # ====== schedule tasks ======
-        asyncio.create_task(self.schedule_tasks())
+        self.schedule_tasks()
 
         logger.info("All modules initialized, starting message processing loop...")
 
@@ -318,10 +351,11 @@ class KiraLifecycle:
         if self.message_history_cleanup:
             await self.message_history_cleanup.stop()
 
+        # Stop background tasks before disposing the database they use.
+        for task in self.tasks:
+            task.cancel()
+        await asyncio.gather(*self.tasks, return_exceptions=True)
+
         # dispose database manager
         if self.db_manager:
             await self.db_manager.dispose()
-
-        # cancel all tasks
-        for task in self.tasks:
-            task.cancel()
