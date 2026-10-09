@@ -17,6 +17,7 @@ from core.chat.session import User
 from core.config.config_loader import KiraConfig
 from core.message_manager import MessageProcessor
 from core.plugin.handlers import event_handler_reg
+from core.plugin.plugin_context import PluginContext
 from core.tag import RootTagAction, TagSet
 from core.workflow.src.im.batching import publish_buffered_messages
 
@@ -35,6 +36,24 @@ def test_delivery_delays_follow_config_changes():
     config["bot_config"]["bot"] = {"min_message_delay": 0, "max_message_delay": 0.5}
     assert delivery.min_message_delay == 0
     assert delivery.max_message_delay == 0.5
+
+
+def test_plugin_context_exposes_services_without_processor_dependency():
+    history = MessageHistoryService(Mock(), Mock())
+    prompt_manager, skills_manager, mcp_manager = Mock(), Mock(), Mock()
+    context = PluginContext(
+        db=history.db, config=Mock(), event_bus=Mock(), provider_mgr=Mock(),
+        tool_mgr=Mock(), adapter_mgr=Mock(), persona_mgr=Mock(),
+        sticker_mgr=Mock(), session_mgr=history.session_manager,
+        message_processor=SimpleNamespace(), message_history=history,
+        prompt_mgr=prompt_manager, skills_mgr=skills_manager, mcp_mgr=mcp_manager,
+    )
+
+    assert context.message_history is history
+    assert context.prompt_mgr is prompt_manager
+    assert context.skills_mgr is skills_manager
+    assert context.mcp_mgr is mcp_manager
+    assert context.sticker_manager is context.sticker_mgr
 
 
 def make_event(identity="one"):
@@ -57,7 +76,9 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
         "min_message_delay": 0.1,
         "max_message_delay": 0.2,
     }}})
-    processor = MessageProcessor(Mock(), config, Mock(), Mock(), Mock(), Mock(), Mock(), Mock(), Mock())
+    history = MessageHistoryService(Mock(), Mock())
+    processor = MessageProcessor(Mock(), config, Mock(), Mock(), Mock(), Mock(), Mock(), Mock(), Mock(),
+                                 message_history=history)
     processor.event_bus = SimpleNamespace(publish=AsyncMock())
     services = processor.im_workflow.ctx
     event = make_event()
@@ -66,7 +87,9 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
     assert services.message_buffer is processor.session_buffer
     assert services.message_formatter is processor.message_formatter
     assert services.message_formatter.image_desc_cache is processor.image_desc_cache
-    assert services.message_delivery.message_history is processor.message_history
+    assert processor.message_history is history
+    assert services.message_history is history
+    assert services.message_delivery.message_history is history
     assert not hasattr(services, "processor")
     assert processor.message_delivery.min_message_delay == 0.1
     config["bot_config"]["bot"]["max_message_delay"] = 0

@@ -1,4 +1,4 @@
-from core.workflow import BaseStage, WorkflowType, register_workflow, IMWorkflow
+from core.workflow import BaseStage, IMWorkflow
 from core.chat import KiraMessageEvent, KiraMessageBatchEvent
 
 from .context import IMEventContext, IMBatchContext, IMWorkflowContext
@@ -10,15 +10,12 @@ from .stages.execute import ExecuteAgentStage
 from .stages.finalize import FinalizeStage
 
 
-@register_workflow("default", WorkflowType.IM)
 class DefaultIMWorkflow(IMWorkflow):
     """Coordinate stateless stages with a fresh context for every event.
 
     A stage returns False to end the pipeline. Do not stop solely on event.stop():
     once agent execution starts, final-result hooks and memory saving still run.
     """
-
-    type = WorkflowType.IM
 
     def __init__(self, ctx: IMWorkflowContext):
         super().__init__(ctx)

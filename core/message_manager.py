@@ -47,6 +47,7 @@ class MessageProcessor:
                  session_manager: SessionManager,
                  prompt_manager: PromptManager,
                  mcp_manager: MCPManager,
+                 message_history: MessageHistoryService,
                  max_concurrent_messages: int = 3):
         self.db = db
         self.kira_config = kira_config
@@ -61,7 +62,7 @@ class MessageProcessor:
 
         # managers
         self.session_manager = session_manager
-        self.message_history = MessageHistoryService(db, session_manager)
+        self.message_history = message_history
         self.prompt_manager = prompt_manager
         self.provider_mgr = provider_manager
         self.adapter_mgr = adapter_manager

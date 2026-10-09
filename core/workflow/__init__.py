@@ -5,7 +5,6 @@ from typing import Generic, TYPE_CHECKING, TypeVar
 
 from .base_stage import BaseStage
 from .workflow_context import WorkflowContext
-from .workflow_registry import register_workflow, WorkflowType
 from core.chat import KiraMessageEvent, KiraMessageBatchEvent
 
 if TYPE_CHECKING:
@@ -15,8 +14,6 @@ ContextT = TypeVar("ContextT")
 
 
 class BaseWorkflow(ABC, Generic[ContextT]):
-    type: WorkflowType
-
     def __init__(self, ctx: ContextT):
         self.ctx = ctx
 
@@ -29,4 +26,4 @@ class IMWorkflow(BaseWorkflow["IMWorkflowContext"]):
         raise NotImplementedError
 
 
-__all__ = ["BaseStage", "BaseWorkflow", "IMWorkflow", "register_workflow", "WorkflowType", "WorkflowContext"]
+__all__ = ["BaseStage", "BaseWorkflow", "IMWorkflow", "WorkflowContext"]

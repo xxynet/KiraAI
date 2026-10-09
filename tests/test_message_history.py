@@ -216,7 +216,7 @@ async def test_history_api_and_archive_only_sessions(history):
     identity = await history.record_incoming(incoming(), SID, "test")
     history.session_manager.chat_memory.clear()
     lifecycle = SimpleNamespace(session_manager=history.session_manager,
-                                message_processor=SimpleNamespace(message_history=history))
+                                message_history=history)
     routes = SessionsRoutes(FastAPI(), lifecycle)
     assert (await routes.list_sessions())["sessions"][0]["history_count"] == 1
     assert (await routes.get_session(SID))["messages"] == []

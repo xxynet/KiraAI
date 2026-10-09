@@ -373,7 +373,7 @@ async def test_session_delete_removes_all_archive_rows_even_when_cleanup_disable
     other = await seed(history, 3, sid="other:dm:user")
     scopes = SimpleNamespace(remove_session_from_scopes=Mock())
     routes = SessionsRoutes(FastAPI(), SimpleNamespace(
-        session_manager=manager, message_processor=SimpleNamespace(message_history=history),
+        session_manager=manager, message_history=history,
         mcp_manager=scopes, skills_manager=None,
     ))
     await routes.delete_session(SID)
