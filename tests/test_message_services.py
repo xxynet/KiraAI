@@ -224,6 +224,53 @@ async def test_delivery_preserves_message_and_root_action_order(monkeypatch):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("invalid_delay", [None, "", "invalid", []])
+async def test_delivery_continues_after_invalid_runtime_delay_update(monkeypatch, invalid_delay):
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda **kw: [])
+    config = dict.__new__(KiraConfig)
+    config["bot_config"] = {"bot": {"min_message_delay": 0, "max_message_delay": 0}}
+    delivery = MessageDeliveryService(config, Mock())
+    sleep = AsyncMock()
+    uniform = Mock(side_effect=lambda low, high: low)
+    warning = Mock()
+    monkeypatch.setattr("core.workflow.src.im.message_delivery.asyncio.sleep", sleep)
+    monkeypatch.setattr("core.workflow.src.im.message_delivery.random.uniform", uniform)
+    monkeypatch.setattr("core.workflow.src.im.message_delivery.logger.warning", warning)
+    seen = []
+
+    async def send(sid, chain, **kwargs):
+        seen.append(chain[0].text)
+        if len(seen) == 1:
+            config["bot_config"]["bot"] = {
+                "min_message_delay": invalid_delay, "max_message_delay": invalid_delay,
+            }
+        return KiraIMSentResult(chain[0].text)
+
+    async def root(value, **attrs):
+        seen.append(value)
+        config["bot_config"]["bot"] = {"min_message_delay": 0, "max_message_delay": 0}
+
+    delivery.send_message_chain = send
+    delivery.parse_xml = AsyncMock(return_value=[
+        MessageChain([Text("first")]),
+        RootTagAction(tag=SimpleNamespace(name="control", handle=root), value="control", attrs={}),
+        MessageChain([Text("second")]),
+    ])
+    results = await delivery.send_xml_messages(
+        SimpleNamespace(sid="adapter:dm:user", is_stopped=False), "<msg/>", TagSet(),
+    )
+
+    assert seen == ["first", "control", "second"]
+    assert [result.message_id for result in results] == ["first", "second"]
+    assert [call.args for call in uniform.call_args_list] == [(0.8, 1.5), (0, 0)]
+    assert [call.args for call in sleep.await_args_list] == [(0.8,), (0,)]
+    assert [call.args[1:] for call in warning.call_args_list] == [
+        ("bot_config.bot.min_message_delay", 0.8),
+        ("bot_config.bot.max_message_delay", 1.5),
+    ]
+
+
+@pytest.mark.anyio
 async def test_incoming_archive_failure_is_nonfatal_but_cancellation_propagates():
     history = MessageHistoryService(Mock(), Mock())
     history.record_incoming = AsyncMock(side_effect=RuntimeError("database unavailable"))

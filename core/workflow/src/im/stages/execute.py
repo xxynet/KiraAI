@@ -24,10 +24,10 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
         # Get max tool loop config, defaults to 2 if not a valid integer
         # Note: This variable represents the total agent loop iterations (not just tool calls),
         # but the name is kept as-is for backward compatibility with existing config files.
-        max_tool_loop = services.config.get_config("bot_config.agent.max_tool_loop")
+        max_tool_loop = services.config.get_config("bot_config.agent.max_tool_loop", 2)
         try:
             max_tool_loop = int(max_tool_loop)
-        except ValueError:
+        except (TypeError, ValueError):
             max_tool_loop = 2
 
         max_agent_steps = max_tool_loop

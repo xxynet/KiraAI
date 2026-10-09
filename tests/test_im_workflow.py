@@ -115,6 +115,46 @@ async def test_plugin_stop_preserves_stage_boundaries_and_finalization(processor
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("settings, expected_steps", [
+    ({}, 2),
+    ({"max_tool_loop": None}, 2),
+    ({"max_tool_loop": ""}, 2),
+    ({"max_tool_loop": "invalid"}, 2),
+    ({"max_tool_loop": []}, 2),
+    ({"max_tool_loop": "3"}, 3),
+])
+async def test_tool_loop_config_fallback_preserves_execution_and_finalization(
+    processor, monkeypatch, settings, expected_steps,
+):
+    instance, model = processor
+    values = {f"bot_config.agent.{key}": value for key, value in settings.items()}
+    instance.kira_config = SimpleNamespace(get_config=lambda key, default=None: values.get(key, default))
+    final = AsyncMock()
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=final)] if event_type == EventType.ON_FINAL_RESULT else []
+    ))
+    model.chat.side_effect = lambda request: LLMResponse(
+        "<msg><text>reply</text></msg>",
+        tool_calls=[{"id": "call-1", "type": "function",
+                     "function": {"name": "check", "arguments": "{}"}}],
+    )
+
+    async def execute_tool(event, response, **kwargs):
+        response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
+
+    instance.tool_manager.execute_tool = execute_tool
+    await instance.handle_im_batch_message(batch())
+
+    assert model.chat.await_count == expected_steps
+    assert instance.message_delivery.send_message_chain.await_count == expected_steps
+    final.assert_awaited_once()
+    instance.session_manager.update_memory.assert_called_once()
+    memory = instance.session_manager.update_memory.call_args.args[1]
+    assert memory[0].role == "user"
+    assert sum(message.role == "assistant" for message in memory) == expected_steps
+
+
+@pytest.mark.anyio
 async def test_request_stop_does_not_persist_native_media(processor, monkeypatch):
     instance, model = processor
     instance.session_manager.get_effective_capabilities = lambda *_: {

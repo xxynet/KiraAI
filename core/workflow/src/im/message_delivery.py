@@ -36,13 +36,21 @@ class MessageDeliveryService:
         self.message_history = message_history
         self.session_locks: dict[str, asyncio.Lock] = {}
 
+    def _read_delay(self, key: str, default: float) -> float:
+        value = self.kira_config.get_config(key, default)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            logger.warning("Invalid %s value; using default of %s", key, default)
+            return default
+
     @property
     def min_message_delay(self) -> float:
-        return float(self.kira_config.get_config("bot_config.bot.min_message_delay", 0.8))
+        return self._read_delay("bot_config.bot.min_message_delay", 0.8)
 
     @property
     def max_message_delay(self) -> float:
-        return float(self.kira_config.get_config("bot_config.bot.max_message_delay", 1.5))
+        return self._read_delay("bot_config.bot.max_message_delay", 1.5)
 
     def get_session_lock(self, sid: str) -> Lock:
         """get session lock to avoid sending message simultaneously"""
