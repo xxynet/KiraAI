@@ -6,6 +6,7 @@ import pytest
 
 from core.adapter.adapter_info import AdapterInfo
 from core.agent.tool import ToolSet
+from core.agent.message import OpenAIMessage
 from core.chat.message_elements import Text
 from core.chat.message_utils import (
     KiraIMMessage, KiraIMSentResult, KiraMessageBatchEvent, MessageChain,
@@ -194,7 +195,8 @@ async def test_missing_model_stops_before_request_hooks_and_memory(processor, mo
 
 
 @pytest.mark.anyio
-async def test_request_only_prompts_and_step_edits_keep_memory_contract(processor, monkeypatch):
+@pytest.mark.parametrize("append_request_only", [False, True])
+async def test_request_only_prompts_and_step_edits_keep_memory_contract(processor, monkeypatch, append_request_only):
     instance, model = processor
 
     async def customize_request(event, request, tags):
@@ -203,6 +205,9 @@ async def test_request_only_prompts_and_step_edits_keep_memory_contract(processo
 
     async def customize_result(event, result):
         result.raw_output = "edited reply"
+        if append_request_only:
+            request = model.chat.await_args.args[0]
+            request.messages.append(OpenAIMessage(role="user", content="request-only tail"))
 
     callbacks = {
         EventType.ON_LLM_REQUEST: customize_request,
@@ -218,7 +223,12 @@ async def test_request_only_prompts_and_step_edits_keep_memory_contract(processo
     assert memory[1].content == "edited reply"
     request = model.chat.await_args.args[0]
     assert "temporary" in request.messages[0].content
-    assert request.messages[-1].content == "edited reply"
+    assistant = next(message for message in reversed(request.messages) if message.role == "assistant")
+    assert assistant is memory[1]
+    assert assistant.content == "edited reply"
+    if append_request_only:
+        assert request.messages[-1].content == "request-only tail"
+    assert len(memory) == 2
 
 
 @pytest.mark.anyio
@@ -605,3 +615,37 @@ async def test_direct_im_and_comments_share_limit_while_batches_can_run(processo
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_stopped_response_does_not_overwrite_previous_assistant(processor, monkeypatch):
+    instance, model = processor
+    model.chat.side_effect = [
+        LLMResponse("first reply", tool_calls=[{
+            "id": "call-1", "type": "function",
+            "function": {"name": "check", "arguments": "{}"},
+        }]),
+        LLMResponse("stopped reply"),
+    ]
+
+    async def execute_tool(event, response, **kwargs):
+        response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
+
+    async def stop_second_response(event, response):
+        if response.agent_step_index == 2:
+            event.stop()
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=stop_second_response)]
+        if event_type == EventType.ON_LLM_RESPONSE else []
+    ))
+    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    await instance.im_workflow.handle_batch_event(batch())
+
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
+    assert [message.role for message in memory] == ["user", "assistant", "tool"]
+    assert "first reply" in memory[1].content
+    assert "stopped reply" not in memory[1].content
+    request = model.chat.await_args.args[0]
+    assert next(message for message in request.messages if message.role == "assistant") is memory[1]
+    assert "final model call" in request.messages[-1].content

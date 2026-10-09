@@ -31,6 +31,11 @@ class AgentExecutionContext:
     new_messages: list[OpenAIMessage]
     model_group: list[LLMModelClient]
 
+    def append_messages(self, *messages: OpenAIMessage) -> None:
+        """Add shared message objects to the request and this turn's memory."""
+        self.request.messages.extend(messages)
+        self.new_messages.extend(messages)
+
 
 @dataclass
 class AgentStepResult:
@@ -234,8 +239,7 @@ class AgentExecutor:
                     content=assistant_content,
                     reasoning_content=reasoning
                 )
-                request.messages.append(msg)
-                ctx.new_messages.append(msg)
+                ctx.append_messages(msg)
                 yield AgentStepResult(
                     state=state,
                     assistant_message=msg,
@@ -287,11 +291,8 @@ class AgentExecutor:
                 tool_calls=answered_tool_calls,
                 reasoning_content=reasoning
             )
-            request.messages.append(msg)
-            ctx.new_messages.append(msg)
             tool_msgs = self._build_tool_messages(llm_resp.tool_results)
-            request.messages.extend(tool_msgs)
-            ctx.new_messages.extend(tool_msgs)
+            ctx.append_messages(msg, *tool_msgs)
 
             yield AgentStepResult(
                 state=state,

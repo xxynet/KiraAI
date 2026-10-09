@@ -114,11 +114,8 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
                     return False
             if raw_output:
                 resp.text_response = step_result.raw_output
-                for idx in range(-1, -len(new_messages), -1):
-                    if new_messages[idx].role == "assistant":
-                        new_messages[idx].content = step_result.raw_output
-                        request.messages[idx].content = step_result.raw_output
-                        break
+                if memory_message is not None:
+                    memory_message.content = step_result.raw_output
             return True
 
         # Iter agent executor to get LLMResponse
