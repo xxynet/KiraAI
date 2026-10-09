@@ -50,9 +50,6 @@ class SessionPlugin(BasePlugin):
         super().__init__(ctx, cfg)
         self.session_events: dict[str, asyncio.Event] = {}
         self.session_tasks: dict[str, asyncio.Task] = {}
-        bot_cfg = ctx.config["bot_config"].get("bot", {})
-        self.debounce_interval = float(bot_cfg.get("max_message_interval", 1.5))
-        self.max_buffer_messages = int(bot_cfg.get("max_buffer_messages", 3))
     
     async def initialize(self):
         pass
