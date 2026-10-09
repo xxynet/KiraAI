@@ -167,3 +167,30 @@ async def test_image_edit_requires_input_image():
         await client.image_to_image("edit it", [])
 
     edit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mime", ["image/jpg", "image/JPG", "image/jpeg"])
+@pytest.mark.parametrize("source", ["data_url", "base64"])
+async def test_image_edit_normalizes_jpeg_mime(mime, source):
+    jpeg_bytes = b"\xff\xd8\xff\xe0jpeg"
+    encoded = base64.b64encode(jpeg_bytes).decode()
+    image = (
+        Image(image=f"data:{mime};base64,{encoded}")
+        if source == "data_url"
+        else Image(image=encoded, mime=mime)
+    )
+    edit = AsyncMock(
+        return_value=SimpleNamespace(
+            data=[SimpleNamespace(url=None, b64_json=PNG_BASE64)]
+        )
+    )
+    client = _configured_client(SimpleNamespace(edit=edit))
+
+    result = await client.image_to_image("edit it", image)
+
+    assert result.image == PNG_BASE64
+    edit.assert_awaited_once()
+    assert edit.await_args.kwargs["image"] == (
+        "image_0.jpg", jpeg_bytes, "image/jpeg"
+    )
