@@ -12,10 +12,12 @@ from core.chat.message_elements import Forward, Image, Reply, Sticker, Text
 from core.workflow.src.im.message_formatter import MessageFormatter
 from core.chat.message_history import MessageHistoryService
 from core.workflow.src.im.native_content import MessageMediaService
-from core.chat.message_utils import KiraIMMessage, KiraMessageEvent, MessageChain
+from core.chat.message_utils import KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain
 from core.chat.session import User
 from core.config.config_loader import KiraConfig
 from core.message_manager import MessageProcessor
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from tests.im_workflow_helpers import make_workflow_context
 from core.plugin.plugin_context import PluginContext
 from core.workflow.src.im.batching import publish_buffered_messages
 
@@ -36,7 +38,8 @@ def test_delivery_delays_follow_config_changes():
     assert delivery.max_message_delay == 0.5
 
 
-def test_plugin_context_exposes_services_without_processor_dependency():
+@pytest.mark.anyio
+async def test_plugin_context_exposes_services_without_processor_dependency():
     history = MessageHistoryService(Mock(), Mock())
     prompt_manager, skills_manager, mcp_manager = Mock(), Mock(), Mock()
     cache = ImageDescCache(history.db)
@@ -46,7 +49,8 @@ def test_plugin_context_exposes_services_without_processor_dependency():
         sticker_mgr=Mock(), session_mgr=history.session_manager,
         message_processor=SimpleNamespace(), message_history=history,
         prompt_mgr=prompt_manager, skills_mgr=skills_manager, mcp_mgr=mcp_manager,
-        image_desc_cache=cache,
+        image_desc_cache=cache, session_buffer_mgr=SessionBufferManager(),
+        message_delivery=MessageDeliveryService(Mock(), Mock(), history),
     )
 
     assert context.image_desc_cache is cache
@@ -55,6 +59,36 @@ def test_plugin_context_exposes_services_without_processor_dependency():
     assert context.skills_mgr is skills_manager
     assert context.mcp_mgr is mcp_manager
     assert context.sticker_manager is context.sticker_mgr
+
+    first, second = make_event("first"), make_event("second")
+    sid = first.session.sid
+    buffer = context.get_buffer(sid)
+    assert buffer is context.session_buffer_mgr.get_buffer(sid)
+    buffer.add(first)
+    buffer.add(second)
+    context.event_bus = SimpleNamespace(publish=AsyncMock())
+    assert await context.flush_session_messages(sid, filter_fn=lambda event: event is first) is True
+    assert buffer.buffer == [second]
+    assert context.event_bus.publish.await_args.args[0].messages == [first.message]
+
+    context.event_bus.publish.reset_mock()
+    assert await context.flush_session_messages(sid, filter_fn=lambda event: False) is False
+    assert buffer.buffer == [second]
+    context.event_bus.publish.assert_not_awaited()
+    assert await context.flush_session_messages(sid) is True
+    context.event_bus.publish.reset_mock()
+    assert await context.flush_session_messages(sid) is False
+    context.event_bus.publish.assert_not_awaited()
+
+    buffer.add(first)
+    context.event_bus.publish.side_effect = RuntimeError("publish failed")
+    with pytest.raises(RuntimeError, match="publish failed"):
+        await context.flush_session_messages(sid)
+
+    result = KiraIMSentResult("sent-id")
+    context.message_delivery.send_message_chain = AsyncMock(return_value=result)
+    assert await context.send_message_chain(sid, first.message.chain) is result
+    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain)
 
 
 def make_event(identity="one"):
@@ -79,17 +113,13 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
     }}})
     history = MessageHistoryService(Mock(), Mock())
     cache = ImageDescCache(history.db)
-    processor = MessageProcessor(Mock(), config, Mock(), Mock(), Mock(), Mock(), Mock(), Mock(), Mock(),
-                                 message_history=history, image_desc_cache=cache)
-    processor.event_bus = SimpleNamespace(publish=AsyncMock())
-    services = processor.im_workflow.ctx
+    services = make_workflow_context(config=config, message_history=history, image_desc_cache=cache)
+    processor = MessageProcessor(DefaultIMWorkflow(services))
     event = make_event()
     sid = event.session.sid
 
     assert services.message_buffer is processor.session_buffer
-    assert services.message_formatter is processor.message_formatter
-    assert services.message_formatter.image_desc_cache is processor.image_desc_cache is cache
-    assert processor.message_history is history
+    assert services.message_formatter.image_desc_cache is cache
     assert services.message_history is history
     assert services.message_delivery.message_history is history
     assert not hasattr(services, "processor")
@@ -101,7 +131,7 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
     assert processor.get_session_buffer_length(sid) == 1
     assert await processor.flush_session_messages(sid)
     assert processor.get_session_buffer_length(sid) == 0
-    assert processor.event_bus.publish.await_args.args[0].messages == [event.message]
+    assert services.event_bus.publish.await_args.args[0].messages == [event.message]
 
     acquired = asyncio.Event()
 
@@ -110,7 +140,7 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
             acquired.set()
 
     lock = processor.get_session_lock(sid)
-    assert lock is processor.session_locks[sid]
+    assert lock is services.message_delivery.session_locks[sid]
     async with lock:
         task = asyncio.create_task(service_sender())
         await asyncio.sleep(0)

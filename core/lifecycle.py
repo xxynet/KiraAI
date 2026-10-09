@@ -7,6 +7,12 @@ from .logging_manager import get_logger, setup_logging
 from .config import KiraConfig
 from .sticker_manager import StickerManager
 from .message_manager import MessageProcessor
+from core.chat.session_buffer import SessionBufferManager
+from core.workflow.src.im.context import IMWorkflowContext
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from core.workflow.src.im.message_delivery import MessageDeliveryService
+from core.workflow.src.im.message_formatter import MessageFormatter
+from core.workflow.src.im.native_content import MessageMediaService
 from .image_desc_cache import ImageDescCache
 from .prompt_manager import PromptManager
 from core.chat.session_manager import SessionManager
@@ -213,19 +219,33 @@ class KiraLifecycle:
         # ====== init image description cache ======
         self.image_desc_cache = ImageDescCache(self.db_service)
 
-        # ====== init message processor ======
-        self.message_processor = MessageProcessor(
-            db=self.db_service,
-            kira_config=self.kira_config,
-            tool_manager=self.tool_manager,
-            provider_manager=self.provider_manager,
-            skills_manager=self.skills_manager,
-            adapter_manager=self.adapter_manager,
+        # ====== assemble shared IM services and workflow ======
+        message_buffer = SessionBufferManager(
+            max_count=int(self.kira_config.get_config("bot_config.bot.max_buffer_messages", 3)),
+        )
+        message_delivery = MessageDeliveryService(
+            self.kira_config, self.adapter_manager, self.message_history,
+        )
+        message_formatter = MessageFormatter(
+            self.kira_config, self.provider_manager, self.session_manager, self.image_desc_cache,
+        )
+        workflow = DefaultIMWorkflow(IMWorkflowContext(
+            message_formatter=message_formatter,
+            message_media=MessageMediaService(),
+            message_buffer=message_buffer,
+            message_delivery=message_delivery,
+            config=self.kira_config,
             session_manager=self.session_manager,
             prompt_manager=self.prompt_manager,
+            provider_mgr=self.provider_manager,
+            tool_manager=self.tool_manager,
+            skills_manager=self.skills_manager,
             mcp_manager=self.mcp_manager,
+            db=self.db_service,
             message_history=self.message_history,
-            image_desc_cache=self.image_desc_cache)
+            event_bus=self.event_bus,
+        ))
+        self.message_processor = MessageProcessor(workflow)
 
         self.tasks.append(
             asyncio.create_task(
@@ -238,10 +258,9 @@ class KiraLifecycle:
             self.message_history, self.kira_config
         )
         self.message_history_cleanup.start()
-        self.message_processor.event_bus = self.event_bus
-        self.event_bus.subscribe(KiraMessageEvent, self.message_processor.handle_event)
-        self.event_bus.subscribe(KiraMessageBatchEvent, self.message_processor.handle_event)
-        self.event_bus.subscribe(KiraCommentEvent, self.message_processor.handle_event)
+        self.event_bus.subscribe(KiraMessageEvent, workflow.handle_event)
+        self.event_bus.subscribe(KiraMessageBatchEvent, workflow.handle_batch_event)
+        self.event_bus.subscribe(KiraCommentEvent, self.message_processor.handle_cmt_event)
 
         # ====== init plugin system ======
         self.plugin_context = PluginContext(
@@ -258,6 +277,8 @@ class KiraLifecycle:
             skills_mgr=self.skills_manager,
             mcp_mgr=self.mcp_manager,
             message_processor=self.message_processor,
+            session_buffer_mgr=message_buffer,
+            message_delivery=message_delivery,
             message_history=self.message_history,
             image_desc_cache=self.image_desc_cache,
         )

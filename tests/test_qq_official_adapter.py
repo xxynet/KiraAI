@@ -470,16 +470,14 @@ async def test_sdk_callback_rejects_missing_target_in_deny_mode(group):
 @pytest.mark.parametrize("group", [False, True])
 async def test_core_and_legacy_sending_reach_the_same_im_capability(group):
     from unittest.mock import AsyncMock
-    from core.message_manager import MessageProcessor
+    from tests.test_adapter_routing import processor_for
     from core.chat import KiraIMSentResult
 
     adapter = make_adapter()
     method = "send_group_message" if group else "send_direct_message"
     capability_send = AsyncMock(return_value=KiraIMSentResult(message_id="sent-id"))
     setattr(adapter.im, method, capability_send)
-    processor = object.__new__(MessageProcessor)
-    processor.kira_config = SimpleNamespace(get_config=lambda key, default=None: default)
-    processor.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
+    processor = processor_for(adapter)
     chain = MessageChain([Text("reply")])
     kind = "gm" if group else "dm"
     target_id = "opaque:target/123"

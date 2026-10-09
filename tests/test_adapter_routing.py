@@ -16,7 +16,9 @@ from core.chat.message_utils import (
     KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain,
 )
 from core.chat.session import Group, User
-from core.message_manager import MessageProcessor, SessionBufferManager
+from core.message_manager import MessageProcessor
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from tests.im_workflow_helpers import make_workflow_context
 from core.plugin.plugin_context import PluginContext
 from core.plugin import manager as manager_module
 from core.plugin import registry
@@ -40,23 +42,16 @@ def message_event(adapter, group=False, target_id="123"):
 
 
 def processor_for(adapter):
-    processor = object.__new__(MessageProcessor)
-    processor.kira_config = SimpleNamespace(get_config=lambda key, default=None: {
-        "bot_config.bot.min_message_delay": 0, "bot_config.bot.max_message_delay": 0,
-    }.get(key, default))
-    processor.prompt_manager = Mock()
-    processor.provider_mgr = Mock()
-    processor.tool_manager = Mock()
-    processor.skills_manager = Mock()
-    processor.mcp_manager = Mock()
-    processor.db = Mock()
-    processor.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
-    processor.session_buffer = SessionBufferManager()
-    processor.session_locks = {}
-    processor.event_bus = SimpleNamespace(publish=AsyncMock())
-    processor.session_manager = SimpleNamespace(
-        get_session_info=lambda sid: SimpleNamespace(session_description=None),
+    services = make_workflow_context(
+        config=SimpleNamespace(get_config=lambda key, default=None: {
+            "bot_config.bot.min_message_delay": 0, "bot_config.bot.max_message_delay": 0,
+        }.get(key, default)),
+        adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
+        session_manager=SimpleNamespace(
+            get_session_info=lambda sid: SimpleNamespace(session_description=None),
+        ),
     )
+    processor = MessageProcessor(DefaultIMWorkflow(services))
     return processor
 
 
@@ -153,13 +148,13 @@ async def test_target_survives_trigger_and_buffer_flush(monkeypatch):
     processor = processor_for(adapter)
     event.trigger()
     await processor.handle_im_message(event)
-    batch = processor.event_bus.publish.await_args.args[0]
+    batch = processor.im_workflow.ctx.event_bus.publish.await_args.args[0]
     assert not hasattr(batch, "capability_name")
     assert batch.sid == "example:dm:channel/123"
     event.buffer()
     await processor.handle_im_message(event)
     assert await processor.flush_session_messages(event.session.sid)
-    batch = processor.event_bus.publish.await_args.args[0]
+    batch = processor.im_workflow.ctx.event_bus.publish.await_args.args[0]
     assert not hasattr(batch, "capability_name")
     assert batch.sid == "example:dm:channel/123"
 
@@ -364,7 +359,7 @@ async def test_notice_without_im_can_enter_message_processing(monkeypatch, sessi
     processor = processor_for(adapter)
     await processor.handle_im_message(event)
     assert await processor.flush_session_messages(target)
-    batch = processor.event_bus.publish.await_args.args[0]
+    batch = processor.im_workflow.ctx.event_bus.publish.await_args.args[0]
     assert batch.sid == target
     assert batch.messages == [event.message]
 
@@ -376,7 +371,7 @@ async def test_buffer_flush_preserves_event_supported_elements():
     processor = processor_for(adapter)
     processor.session_buffer.get_buffer(event.session.sid).add(event)
     assert await processor.flush_session_messages(event.session.sid)
-    batch = processor.event_bus.publish.await_args.args[0]
+    batch = processor.im_workflow.ctx.event_bus.publish.await_args.args[0]
     assert batch.supported_elements == ["custom"]
     assert batch.messages[0] is event.message
     assert batch.session is event.session
@@ -391,6 +386,8 @@ async def test_plugin_flush_filters_buffered_events_before_publishing(selected_i
     processor = processor_for(adapter)
     ctx = object.__new__(PluginContext)
     ctx.message_processor = processor
+    ctx.session_buffer_mgr = processor.im_workflow.ctx.message_buffer
+    ctx.event_bus = processor.im_workflow.ctx.event_bus
     events = [message_event(adapter) for _ in range(4)]
     for index, event in enumerate(events):
         event.message.message_id = str(index)
@@ -414,11 +411,11 @@ async def test_plugin_flush_filters_buffered_events_before_publishing(selected_i
     assert buffer.buffer == [event for event in events if event not in selected]
     assert not buffer.lock.locked()
     if not selected:
-        processor.event_bus.publish.assert_not_awaited()
+        processor.im_workflow.ctx.event_bus.publish.assert_not_awaited()
         return
 
-    processor.event_bus.publish.assert_awaited_once()
-    batch = processor.event_bus.publish.await_args.args[0]
+    processor.im_workflow.ctx.event_bus.publish.assert_awaited_once()
+    batch = processor.im_workflow.ctx.event_bus.publish.await_args.args[0]
     assert batch.messages == [event.message for event in selected]
     assert batch.supported_elements == selected[-1].supported_elements
     assert batch.session is selected[-1].session
@@ -444,8 +441,8 @@ async def test_filtered_flush_applies_predicate_to_extra_event(include_extra):
     assert flushed is include_extra
     assert buffer.buffer == ([buffered] if include_extra else [buffered, extra])
     if include_extra:
-        processor.event_bus.publish.assert_awaited_once()
-        batch = processor.event_bus.publish.await_args.args[0]
+        processor.im_workflow.ctx.event_bus.publish.assert_awaited_once()
+        batch = processor.im_workflow.ctx.event_bus.publish.await_args.args[0]
         assert batch.messages == [extra.message]
     else:
-        processor.event_bus.publish.assert_not_awaited()
+        processor.im_workflow.ctx.event_bus.publish.assert_not_awaited()
