@@ -43,6 +43,7 @@ class MessageProcessor:
     async def pop_session_messages(self, sid: str, count: int = 1):
         self.session_buffer.get_buffer(sid).pop(count)
 
+    @deprecated("Use PluginContext.flush_session_messages instead")
     async def flush_session_messages(
         self,
         sid: str,
