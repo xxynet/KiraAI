@@ -807,10 +807,9 @@ export default {
   sessions: {
     history: {
       close: 'Close',
-      title: 'Message history',
       view: 'View',
       count: 'Saved messages',
-      hint: 'Received messages appear on the left, bot messages on the right, with the newest messages at the bottom.',
+      hint: 'Scroll to view message history',
       empty: 'No saved messages in this session.',
       loading: 'Loading…',
       load_failed: 'Failed to load message history.',

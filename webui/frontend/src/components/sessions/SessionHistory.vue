@@ -2,9 +2,8 @@
   <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl flex flex-col max-h-[90vh] modal-card">
     <div class="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
       <div class="min-w-0">
-        <h3 class="text-lg font-semibold text-theme-strong">{{ $t('sessions.history.title') }}</h3>
-        <p class="text-sm text-theme-subtle break-all">{{ session.title || session.id }}</p>
-        <p v-if="session.title" class="text-xs text-theme-subtle break-all">{{ session.id }}</p>
+        <h3 class="text-lg font-semibold text-theme-strong break-all">{{ session.title || session.session_id || session.adapter_name || session.id }}</h3>
+        <p class="text-sm text-theme-subtle break-all">{{ session.id }}</p>
       </div>
       <button type="button" :aria-label="$t('sessions.history.close')" class="text-theme-faint text-theme-faint-hover" @click="$emit('close')"><IconClose class="w-6 h-6" /></button>
     </div>

@@ -807,10 +807,9 @@ export default {
   sessions: {
     history: {
       close: '关闭',
-      title: '消息记录',
       view: '查看',
       count: '已存消息数',
-      hint: '接收消息在左，机器人消息在右，最新消息在底部。',
+      hint: '滚动以查看历史消息记录',
       empty: '此会话暂无保存的消息。',
       loading: '加载中…',
       load_failed: '加载消息记录失败。',
