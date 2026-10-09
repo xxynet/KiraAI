@@ -185,7 +185,7 @@ async function loadContext() {
   try {
     const { data } = await getSession(props.session.id)
     if (disposed) return
-    contextMessages.value = data.messages.flat()
+    contextMessages.value = data.messages.flat().filter(message => message != null)
     contextLoaded.value = true
     await nextTick()
     if (contextList.value) contextList.value.scrollTop = contextList.value.scrollHeight
