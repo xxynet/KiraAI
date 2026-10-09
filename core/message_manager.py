@@ -47,6 +47,7 @@ class MessageProcessor:
                  prompt_manager: PromptManager,
                  mcp_manager: MCPManager,
                  message_history: MessageHistoryService,
+                 image_desc_cache: ImageDescCache,
                  max_concurrent_messages: int = 3):
         self.db = db
         self.kira_config = kira_config
@@ -74,7 +75,7 @@ class MessageProcessor:
         self.session_buffer = SessionBufferManager(max_count=self.max_buffer_messages)
 
         # image description cache
-        self.image_desc_cache = ImageDescCache(db)
+        self.image_desc_cache = image_desc_cache
 
         logger.info("MessageProcessor initialized")
 
@@ -185,10 +186,6 @@ class MessageProcessor:
     async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
         return await self.message_delivery.send_message_chain(
             session, chain, memory_message=memory_message, self_id=self_id)
-
-    async def cleanup_image_desc_cache_task(self):
-        """Background task: clean up expired image desc cache every 24 hours."""
-        await self.image_desc_cache.cleanup_task()
 
     @property
     def im_workflow(self) -> DefaultIMWorkflow:

@@ -39,14 +39,17 @@ def test_delivery_delays_follow_config_changes():
 def test_plugin_context_exposes_services_without_processor_dependency():
     history = MessageHistoryService(Mock(), Mock())
     prompt_manager, skills_manager, mcp_manager = Mock(), Mock(), Mock()
+    cache = ImageDescCache(history.db)
     context = PluginContext(
         db=history.db, config=Mock(), event_bus=Mock(), provider_mgr=Mock(),
         tool_mgr=Mock(), adapter_mgr=Mock(), persona_mgr=Mock(),
         sticker_mgr=Mock(), session_mgr=history.session_manager,
         message_processor=SimpleNamespace(), message_history=history,
         prompt_mgr=prompt_manager, skills_mgr=skills_manager, mcp_mgr=mcp_manager,
+        image_desc_cache=cache,
     )
 
+    assert context.image_desc_cache is cache
     assert context.message_history is history
     assert context.prompt_mgr is prompt_manager
     assert context.skills_mgr is skills_manager
@@ -75,8 +78,9 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
         "max_message_delay": 0.2,
     }}})
     history = MessageHistoryService(Mock(), Mock())
+    cache = ImageDescCache(history.db)
     processor = MessageProcessor(Mock(), config, Mock(), Mock(), Mock(), Mock(), Mock(), Mock(), Mock(),
-                                 message_history=history)
+                                 message_history=history, image_desc_cache=cache)
     processor.event_bus = SimpleNamespace(publish=AsyncMock())
     services = processor.im_workflow.ctx
     event = make_event()
@@ -84,7 +88,7 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
 
     assert services.message_buffer is processor.session_buffer
     assert services.message_formatter is processor.message_formatter
-    assert services.message_formatter.image_desc_cache is processor.image_desc_cache
+    assert services.message_formatter.image_desc_cache is processor.image_desc_cache is cache
     assert processor.message_history is history
     assert services.message_history is history
     assert services.message_delivery.message_history is history

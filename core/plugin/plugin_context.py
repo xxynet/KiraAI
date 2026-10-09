@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from core.message_manager import MessageProcessor
     from core.chat.message_history import MessageHistoryService
     from core.db.service import DatabaseService
+    from core.image_desc_cache import ImageDescCache
 
 
 @dataclass
@@ -58,6 +59,8 @@ class PluginContext:
 
     # Query structured incoming/outgoing messages and their memory links.
     message_history: MessageHistoryService
+
+    image_desc_cache: ImageDescCache
 
     plugin_mgr: Optional[PluginManager] = None
 

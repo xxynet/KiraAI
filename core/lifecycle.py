@@ -7,6 +7,7 @@ from .logging_manager import get_logger, setup_logging
 from .config import KiraConfig
 from .sticker_manager import StickerManager
 from .message_manager import MessageProcessor
+from .image_desc_cache import ImageDescCache
 from .prompt_manager import PromptManager
 from core.chat.session_manager import SessionManager
 from core.chat.session_media_manager import SessionMediaManager
@@ -61,6 +62,8 @@ class KiraLifecycle:
 
         self.message_processor: Optional[MessageProcessor] = None
 
+        self.image_desc_cache: Optional[ImageDescCache] = None
+
         self.sticker_manager: Optional[StickerManager] = None
 
         self.event_bus: Optional[EventBus] = None
@@ -83,15 +86,20 @@ class KiraLifecycle:
 
         self.tasks: list[asyncio.Task] = []
 
-    async def schedule_tasks(self):
-        self.tasks = [
-            # asyncio.create_task(self.sticker_manager.scan_and_register_sticker(), name="sticker_scan")
-        ]
-        results = await asyncio.gather(*self.tasks, return_exceptions=True)
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                task = self.tasks[i]
-                logger.error(f"Scheduled task '{task.get_name()}' failed: {result}")
+    def schedule_tasks(self):
+        """Report failures of registered background tasks as soon as they finish."""
+        def report_result(task: asyncio.Task):
+            if task.cancelled():
+                return
+            error = task.exception()
+            if error is not None:
+                logger.error(
+                    "Scheduled task '%s' failed: %s", task.get_name(), error,
+                    exc_info=(type(error), error, error.__traceback__),
+                )
+
+        for task in self.tasks:
+            task.add_done_callback(report_result)
 
     def _apply_network_env(self):
         network = self.kira_config.get("network") or {}
@@ -202,6 +210,9 @@ class KiraLifecycle:
         await self.message_history.initialize()
         self.event_bus.subscribe("session_deleted", self.message_history.on_session_deleted)
 
+        # ====== init image description cache ======
+        self.image_desc_cache = ImageDescCache(self.db_service)
+
         # ====== init message processor ======
         self.message_processor = MessageProcessor(
             db=self.db_service,
@@ -213,11 +224,12 @@ class KiraLifecycle:
             session_manager=self.session_manager,
             prompt_manager=self.prompt_manager,
             mcp_manager=self.mcp_manager,
-            message_history=self.message_history)
+            message_history=self.message_history,
+            image_desc_cache=self.image_desc_cache)
 
         self.tasks.append(
             asyncio.create_task(
-                self.message_processor.cleanup_image_desc_cache_task(),
+                self.image_desc_cache.cleanup_task(),
                 name="image_desc_cache_cleanup"
             )
         )
@@ -246,7 +258,8 @@ class KiraLifecycle:
             skills_mgr=self.skills_manager,
             mcp_mgr=self.mcp_manager,
             message_processor=self.message_processor,
-            message_history=self.message_history
+            message_history=self.message_history,
+            image_desc_cache=self.image_desc_cache,
         )
 
         self.plugin_manager = PluginManager(self.plugin_context)
@@ -278,8 +291,7 @@ class KiraLifecycle:
             )
         )
 
-        # ====== schedule tasks ======
-        asyncio.create_task(self.schedule_tasks())
+        self.schedule_tasks()
 
         logger.info("All modules initialized, starting message processing loop...")
 
@@ -318,10 +330,11 @@ class KiraLifecycle:
         if self.message_history_cleanup:
             await self.message_history_cleanup.stop()
 
+        # Stop background tasks before disposing the database they use.
+        for task in self.tasks:
+            task.cancel()
+        await asyncio.gather(*self.tasks, return_exceptions=True)
+
         # dispose database manager
         if self.db_manager:
             await self.db_manager.dispose()
-
-        # cancel all tasks
-        for task in self.tasks:
-            task.cancel()
