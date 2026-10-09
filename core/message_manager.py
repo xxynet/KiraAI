@@ -1,6 +1,6 @@
 import asyncio
 from asyncio import Lock, Semaphore
-from typing import Callable, List, Optional, TYPE_CHECKING, Union
+from typing import Callable, Optional, TYPE_CHECKING
 
 from core.agent.func_tool_manager import FuncToolManager
 from core.agent.message import OpenAIMessage
@@ -23,7 +23,6 @@ from core.logging_manager import get_logger
 from core.plugin.handlers import event_handler_reg, EventType
 from core.prompt_manager import PromptManager
 from core.provider import ProviderManager
-from core.tag import TagSet, RootTagAction
 from core.workflow.src.im.batching import publish_buffered_messages
 from core.workflow.src.im.context import IMWorkflowContext
 from core.workflow.src.im.workflow import DefaultIMWorkflow
@@ -183,21 +182,9 @@ class MessageProcessor:
         if history is not None:
             return await history.record_incoming_safely(message, session_id, platform)
 
-    async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str, tag_set: TagSet, *, memory_message: OpenAIMessage | None = None) -> Optional[List[KiraIMSentResult]]:
-        return await self.message_delivery.send_xml_messages(
-            event, xml_data, tag_set, memory_message=memory_message)
-
     async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
         return await self.message_delivery.send_message_chain(
             session, chain, memory_message=memory_message, self_id=self_id)
-
-    @staticmethod
-    async def _parse_xml_msg(xml_data, tag_set: TagSet) -> list[Union[MessageChain, RootTagAction]]:
-        return await MessageDeliveryService.parse_xml(xml_data, tag_set)
-
-    @staticmethod
-    def _add_message_ids(xml_data: str, message_results: List[KiraIMSentResult]) -> str:
-        return MessageDeliveryService.add_message_ids(xml_data, message_results)
 
     async def cleanup_image_desc_cache_task(self):
         """Background task: clean up expired image desc cache every 24 hours."""

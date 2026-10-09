@@ -1,10 +1,13 @@
 from core.workflow.base_stage import BaseStage
+import asyncio
+import random
 import time
 
 from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
 from core.agent.message import OpenAIMessage
-from core.chat.message_utils import KiraStepResult
+from core.chat.message_utils import KiraIMSentResult, KiraStepResult, MessageChain
 from core.provider import LLMResponse
+from core.tag import RootTagAction
 from ..context import IMBatchContext
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
@@ -51,9 +54,51 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
             if text:
                 session_lock = services.message_delivery.get_session_lock(sid)
                 async with session_lock:
-                    message_results = await services.message_delivery.send_xml_messages(event, text.strip(), tag_set, memory_message=memory_message)
-                    if message_results is None:
-                        return False
+                    delivery = services.message_delivery
+                    parts = event.sid.split(":", maxsplit=2)
+                    if len(parts) != 3 or any(not part for part in parts):
+                        raise ValueError("invalid target, must follow the form of <adapter>:<dm|gm>:<id>")
+
+                    try:
+                        actions = await delivery.parse_xml(text.strip(), tag_set)
+                        parse_handlers = event_handler_reg.get_handlers(event_type=EventType.AFTER_XML_PARSE)
+                        for handler in parse_handlers:
+                            await handler.exec_handler(event, actions)
+                            if event.is_stopped:
+                                logger.info(f"Event {event.event_id} stopped while AFTER_XML_PARSE stage")
+                                return False
+                    except Exception as e:
+                        logger.error(f"Error parsing message: {str(e)}")
+                        actions = []
+
+                    for action in actions:
+                        if isinstance(action, MessageChain):
+                            if not action.is_empty():
+                                result = await delivery.send_message_chain(
+                                    event.sid, action, memory_message=memory_message,
+                                    self_id=getattr(event, "self_id", None),
+                                )
+                                if not result.ok and result.err:
+                                    logger.error(result.err)
+                            else:
+                                result = KiraIMSentResult(ok=False, err="Blank message list detected")
+                            message_results.append(result)
+                            stop_delivery = False
+                            sent_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_MESSAGE_SENT)
+                            for handler in sent_handlers:
+                                await handler.exec_handler(event, action, result)
+                                if event.is_stopped:
+                                    logger.info(f"Event {event.event_id} stopped while ON_MESSAGE_SENT stage")
+                                    stop_delivery = True
+                                    break
+                            if stop_delivery:
+                                break
+                            await asyncio.sleep(random.uniform(delivery.min_message_delay, delivery.max_message_delay))
+                        elif isinstance(action, RootTagAction):
+                            try:
+                                await action.tag.handle(action.value, **action.attrs)
+                            except Exception as e:
+                                logger.error(f"Error executing root tag <{action.tag.name}>{action.value}: {e}")
                     raw_output = services.message_delivery.add_message_ids(text, message_results)
                     logger.info(f"LLM -> {sid}: {raw_output}")
             step_result = KiraStepResult(message_results=message_results, raw_output=raw_output)

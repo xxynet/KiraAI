@@ -165,22 +165,6 @@ async def test_target_survives_trigger_and_buffer_flush(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_xml_reply_passes_history_provenance(monkeypatch):
-    monkeypatch.setattr("core.message_manager.event_handler_reg.get_handlers", lambda **kw: [])
-    from core.tag import TagSet
-    adapter = routed_adapter()
-    processor = processor_for(adapter)
-    chain = MessageChain([Text("reply")])
-    processor.message_delivery.parse_xml = AsyncMock(return_value=[chain])
-    processor.message_delivery.send_message_chain = AsyncMock(return_value=KiraIMSentResult())
-    event = SimpleNamespace(sid="example:dm:channel/123")
-    await processor.send_xml_messages(event, "<msg/>", TagSet())
-    processor.message_delivery.send_message_chain.assert_awaited_once_with(
-        event.sid, chain, memory_message=None, self_id=None,
-    )
-
-
-@pytest.mark.asyncio
 async def test_plugin_notice_preserves_opaque_target_without_capability_name():
     adapter = routed_adapter()
     adapter.im._metadata = MessageFormatMetadata(["text", "img"])
