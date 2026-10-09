@@ -478,6 +478,7 @@ async def test_core_and_legacy_sending_reach_the_same_im_capability(group):
     capability_send = AsyncMock(return_value=KiraIMSentResult(message_id="sent-id"))
     setattr(adapter.im, method, capability_send)
     processor = object.__new__(MessageProcessor)
+    processor.kira_config = SimpleNamespace(get_config=lambda key, default=None: default)
     processor.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     chain = MessageChain([Text("reply")])
     kind = "gm" if group else "dm"

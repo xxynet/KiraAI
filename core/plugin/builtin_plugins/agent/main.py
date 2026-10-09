@@ -750,7 +750,7 @@ class AgentPlugin(BasePlugin):
         desc_cache = None
         md5 = None
         try:
-            from core.message_manager import ImageDescCache
+            from core.image_desc_cache import ImageDescCache
 
             desc_cache = ImageDescCache(self.ctx.db)
             md5 = await Image(image=str(image_path), mime=mime).hash_image()

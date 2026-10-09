@@ -3,7 +3,7 @@ import importlib
 import json
 import sys
 from types import ModuleType, SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -41,6 +41,15 @@ def message_event(adapter, group=False, target_id="123"):
 
 def processor_for(adapter):
     processor = object.__new__(MessageProcessor)
+    processor.kira_config = SimpleNamespace(get_config=lambda key, default=None: {
+        "bot_config.bot.min_message_delay": 0, "bot_config.bot.max_message_delay": 0,
+    }.get(key, default))
+    processor.prompt_manager = Mock()
+    processor.provider_mgr = Mock()
+    processor.tool_manager = Mock()
+    processor.skills_manager = Mock()
+    processor.mcp_manager = Mock()
+    processor.db = Mock()
     processor.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     processor.session_buffer = SessionBufferManager()
     processor.session_locks = {}
@@ -162,12 +171,11 @@ async def test_xml_reply_passes_history_provenance(monkeypatch):
     adapter = routed_adapter()
     processor = processor_for(adapter)
     chain = MessageChain([Text("reply")])
-    processor._parse_xml_msg = AsyncMock(return_value=[chain])
-    processor.send_message_chain = AsyncMock(return_value=KiraIMSentResult())
-    processor.min_message_delay = processor.max_message_delay = 0
+    processor.message_delivery.parse_xml = AsyncMock(return_value=[chain])
+    processor.message_delivery.send_message_chain = AsyncMock(return_value=KiraIMSentResult())
     event = SimpleNamespace(sid="example:dm:channel/123")
     await processor.send_xml_messages(event, "<msg/>", TagSet())
-    processor.send_message_chain.assert_awaited_once_with(
+    processor.message_delivery.send_message_chain.assert_awaited_once_with(
         event.sid, chain, memory_message=None, self_id=None,
     )
 

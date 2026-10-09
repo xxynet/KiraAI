@@ -1,21 +1,27 @@
-from abc import ABC, abstractmethod
+from __future__ import annotations
 
+from abc import ABC
+from typing import Generic, TYPE_CHECKING, TypeVar
+
+from .base_stage import BaseStage
 from .workflow_context import WorkflowContext
 from .workflow_registry import register_workflow, WorkflowType
 from core.chat import KiraMessageEvent, KiraMessageBatchEvent
 
+if TYPE_CHECKING:
+    from .src.im.context import IMWorkflowContext
 
-class BaseWorkflow(ABC):
+ContextT = TypeVar("ContextT")
+
+
+class BaseWorkflow(ABC, Generic[ContextT]):
     type: WorkflowType
 
-    def __init__(self, ctx: WorkflowContext):
+    def __init__(self, ctx: ContextT):
         self.ctx = ctx
 
 
-class IMWorkflow(BaseWorkflow):
-    def __init__(self, ctx: WorkflowContext):
-        super().__init__(ctx)
-
+class IMWorkflow(BaseWorkflow["IMWorkflowContext"]):
     async def handle_event(self, event: KiraMessageEvent):
         raise NotImplementedError
 
@@ -23,4 +29,4 @@ class IMWorkflow(BaseWorkflow):
         raise NotImplementedError
 
 
-__all__ = ["BaseWorkflow", "IMWorkflow", "register_workflow", "WorkflowType", "WorkflowContext"]
+__all__ = ["BaseStage", "BaseWorkflow", "IMWorkflow", "register_workflow", "WorkflowType", "WorkflowContext"]
