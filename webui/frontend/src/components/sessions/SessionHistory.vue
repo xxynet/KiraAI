@@ -8,10 +8,25 @@
       <button type="button" :aria-label="$t('sessions.history.close')" class="text-theme-faint text-theme-faint-hover" @click="$emit('close')"><IconClose class="w-6 h-6" /></button>
     </div>
     <div class="flex items-center justify-between gap-4 px-6 py-3">
-      <p class="text-xs text-theme-subtle">{{ $t('sessions.history.hint') }}</p>
-      <button type="button" class="shrink-0 text-sm text-blue-600 dark:text-blue-300 disabled:opacity-50" :disabled="loading" @click="loadMessages(true)">{{ $t('common.refresh') }}</button>
+      <div role="tablist" :aria-label="$t('sessions.history.view')" class="flex gap-4 border-b border-gray-200 dark:border-gray-700">
+        <button
+          v-for="tab in tabs"
+          :id="tabId(tab)"
+          :key="tab"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === tab"
+          :aria-controls="panelId(tab)"
+          :tabindex="activeTab === tab ? 0 : -1"
+          class="px-1 py-2 text-sm font-medium border-b-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+          :class="activeTab === tab ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400' : 'border-transparent text-theme-subtle text-theme-subtle-hover'"
+          @click="activeTab = tab"
+          @keydown="navigateTabs($event, tab)"
+        >{{ $t(tab === 'history' ? 'sessions.history.title' : 'sessions.session_data') }}</button>
+      </div>
+      <button type="button" class="shrink-0 text-sm text-blue-600 dark:text-blue-300 disabled:opacity-50" :disabled="activeTab === 'history' ? loading : contextLoading" @click="activeTab === 'history' ? loadMessages(true) : loadContext()">{{ $t('common.refresh') }}</button>
     </div>
-    <div ref="messageList" class="px-6 pb-6 min-h-0 overflow-y-auto space-y-4 [overflow-anchor:none]" :aria-busy="loading">
+    <div v-show="activeTab === 'history'" :id="panelId('history')" role="tabpanel" :aria-labelledby="tabId('history')" tabindex="0" ref="messageList" class="px-6 pb-6 min-h-0 overflow-y-auto space-y-4 [overflow-anchor:none]" :aria-busy="loading">
       <div v-if="loading || error || nextCursor" class="text-center text-sm">
         <div v-if="error" class="text-red-600 dark:text-red-400" role="alert">
           <p>{{ $t('sessions.history.load_failed') }}</p>
@@ -58,13 +73,54 @@
         </div>
       </article>
     </div>
+    <div
+      v-show="activeTab === 'context'"
+      :id="panelId('context')"
+      ref="contextList"
+      role="tabpanel"
+      :aria-labelledby="tabId('context')"
+      :aria-busy="contextLoading"
+      tabindex="0"
+      class="px-6 pb-6 min-h-0 overflow-y-auto space-y-4"
+    >
+      <p v-if="contextLoading" class="py-4 text-center text-sm text-theme-subtle" role="status">{{ $t('sessions.history.loading') }}</p>
+      <div v-else-if="contextError" class="text-center text-sm text-red-600 dark:text-red-400" role="alert">
+        <p>{{ $t('sessions.context.load_failed') }}</p>
+        <button type="button" class="mt-2 text-blue-600 dark:text-blue-300" @click="loadContext()">{{ $t('sessions.history.retry') }}</button>
+      </div>
+      <p v-else-if="!contextMessages.length" class="py-10 text-center text-theme-subtle">{{ $t('sessions.context.empty') }}</p>
+      <article v-for="(message, index) in contextMessages" :key="index" class="flex" :class="message.role === 'assistant' ? 'justify-end' : 'justify-start'">
+        <div class="min-w-0 max-w-[85%] flex flex-col gap-2" :class="message.role === 'assistant' ? 'items-end' : 'items-start'">
+          <p class="max-w-full text-xs text-theme-subtle break-all">{{ contextRole(message.role) }}<template v-if="message.name"> · {{ message.name }}</template></p>
+          <div class="chat-bubble min-w-0 max-w-full rounded-lg px-4 py-3 text-sm break-words space-y-2" :class="{ 'chat-bubble--accent': message.role === 'assistant' }">
+            <details v-if="message.reasoning_content" class="chat-bubble-data rounded p-2">
+              <summary class="cursor-pointer">{{ $t('sessions.context.reasoning') }}</summary>
+              <p class="mt-2 whitespace-pre-wrap">{{ message.reasoning_content }}</p>
+            </details>
+            <template v-for="(part, partIndex) in contentParts(message.content)" :key="partIndex">
+              <p v-if="typeof part === 'string'" class="whitespace-pre-wrap">{{ part }}</p>
+              <details v-else class="chat-bubble-data rounded p-2">
+                <summary class="cursor-pointer">{{ $t('sessions.context.structured_content') }}</summary>
+                <pre class="mt-2 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(part, null, 2) }}</pre>
+              </details>
+            </template>
+            <details v-if="message.tool_calls?.length" class="chat-bubble-data rounded p-2">
+              <summary class="cursor-pointer">{{ $t('sessions.context.tool_calls') }}</summary>
+              <pre class="mt-2 text-xs whitespace-pre-wrap break-all">{{ JSON.stringify(message.tool_calls, null, 2) }}</pre>
+            </details>
+            <p v-if="message.tool_call_id" class="text-xs break-all">{{ $t('sessions.context.tool_call_id') }}: {{ message.tool_call_id }}</p>
+            <p v-if="!contentParts(message.content).length && !message.reasoning_content && !message.tool_calls?.length && !message.tool_call_id">{{ $t('sessions.context.empty_message') }}</p>
+          </div>
+        </div>
+      </article>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, nextTick, onMounted, onBeforeUnmount, watch, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getSessionMessages } from '@/api/session'
+import { getSession, getSessionMessages } from '@/api/session'
 import { IconClose } from '@/components/icons'
 import MessageChain from './MessageChain.vue'
 import type { MessageRecord, SessionItem } from '@/types'
@@ -79,6 +135,70 @@ const error = ref(false)
 const messageList = ref<HTMLElement | null>(null)
 const expandedSenderIds = ref(new Set<string>())
 let generation = 0
+
+const tabs = ['history', 'context'] as const
+type Tab = typeof tabs[number]
+interface ContextMessage {
+  role: string
+  content?: unknown
+  name?: string
+  reasoning_content?: string
+  tool_calls?: unknown[]
+  tool_call_id?: string
+}
+const activeTab = ref<Tab>('history')
+const instanceId = useId()
+const tabId = (tab: Tab) => instanceId + '-' + tab + '-tab'
+const panelId = (tab: Tab) => instanceId + '-' + tab + '-panel'
+const contextMessages = ref<ContextMessage[]>([])
+const contextList = ref<HTMLElement | null>(null)
+const contextLoading = ref(false)
+const contextError = ref(false)
+const contextLoaded = ref(false)
+let disposed = false
+
+function navigateTabs(event: KeyboardEvent, tab: Tab) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  activeTab.value = event.key === 'Home' ? 'history' : event.key === 'End' ? 'context' : tab === 'history' ? 'context' : 'history'
+  document.getElementById(tabId(activeTab.value))?.focus()
+}
+
+function contextRole(role: string) {
+  return ['system', 'user', 'assistant', 'tool', 'developer'].includes(role) ? t('sessions.context.roles.' + role) : role
+}
+
+function contentParts(content: unknown): unknown[] {
+  if (content == null || content === '') return []
+  const parts = Array.isArray(content) ? content : [content]
+  return parts.map(part => {
+    if (part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string') return part.text
+    return part
+  })
+}
+
+async function loadContext() {
+  if (contextLoading.value) return
+  contextLoading.value = true
+  contextError.value = false
+  contextMessages.value = []
+  try {
+    const { data } = await getSession(props.session.id)
+    if (disposed) return
+    contextMessages.value = data.messages.flat()
+    contextLoaded.value = true
+    await nextTick()
+    if (contextList.value) contextList.value.scrollTop = contextList.value.scrollHeight
+  } catch {
+    if (!disposed) contextError.value = true
+  } finally {
+    if (!disposed) contextLoading.value = false
+  }
+}
+
+watch(activeTab, async tab => {
+  if (tab === 'context' && !contextLoaded.value) await loadContext()
+})
 
 function getSenderName(message: MessageRecord) {
   if (message.sender_name && message.sender_name !== message.sender_id) return message.sender_name
@@ -139,7 +259,7 @@ async function loadMessages(reset: boolean) {
 }
 
 onMounted(() => loadMessages(true))
-onBeforeUnmount(() => { generation++ })
+onBeforeUnmount(() => { generation++; disposed = true })
 </script>
 
 <style scoped>
