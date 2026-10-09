@@ -65,8 +65,7 @@ class SessionsRoutes(Routes):
 
     @property
     def message_history(self):
-        processor = getattr(self.lifecycle, "message_processor", None)
-        return getattr(processor, "message_history", None)
+        return getattr(self.lifecycle, "message_history", None)
 
     async def list_messages(self, session_id: str, cursor: str | None = None,
                             limit: int = 50, llm_message_id: str | None = None):

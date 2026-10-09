@@ -20,7 +20,11 @@ from core.chat.message_elements import Text
 
 if TYPE_CHECKING:
     from .manager import PluginManager
+    from core.agent.mcp_mgr import MCPManager
+    from core.agent.skills_mgr import SkillsManager
+    from core.prompt_manager import PromptManager
     from core.message_manager import MessageProcessor
+    from core.chat.message_history import MessageHistoryService
     from core.db.service import DatabaseService
 
 
@@ -40,18 +44,27 @@ class PluginContext:
 
     persona_mgr: PersonaManager
 
-    sticker_manager: StickerManager
+    sticker_mgr: StickerManager
 
     session_mgr: SessionManager
 
+    prompt_mgr: PromptManager
+
+    skills_mgr: SkillsManager
+
+    mcp_mgr: Optional[MCPManager]
+
     message_processor: MessageProcessor
+
+    # Query structured incoming/outgoing messages and their memory links.
+    message_history: MessageHistoryService
 
     plugin_mgr: Optional[PluginManager] = None
 
     @property
-    def message_history(self):
-        """Query structured incoming/outgoing messages and their memory links."""
-        return self.message_processor.message_history
+    def sticker_manager(self) -> StickerManager:
+        """Compatibility alias for plugins using the original attribute name."""
+        return self.sticker_mgr
 
     def get_plugin_data_dir(self):
         base_dir = get_data_path() / "plugin_data"

@@ -108,6 +108,14 @@ class MessageHistoryService:
         self._archive_tasks: set[asyncio.Task] = set()
         self._incoming_records: dict[int, tuple[weakref.ReferenceType, str]] = {}
 
+    async def record_incoming_safely(self, message, session_id, platform):
+        """Preserve message processing when incoming archival fails."""
+        try:
+            return await self.record_incoming(message, session_id, platform)
+        except Exception as exc:
+            get_logger("message", "cyan").error(
+                "Unable to store incoming message (%s)", type(exc).__name__)
+
     async def _persist_chain(self, chain, **values) -> str:
         async def persist():
             return await self.db.add_message_record(chain=await serialize_message_chain(chain), **values)

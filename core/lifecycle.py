@@ -10,6 +10,7 @@ from .message_manager import MessageProcessor
 from .prompt_manager import PromptManager
 from core.chat.session_manager import SessionManager
 from core.chat.session_media_manager import SessionMediaManager
+from core.chat.message_history import MessageHistoryService
 from core.chat.message_history_cleanup import MessageHistoryCleanup
 from .adapter import AdapterManager
 from .statistics import Statistics
@@ -75,6 +76,8 @@ class KiraLifecycle:
         self.skills_manager: Optional[SkillsManager] = None
 
         self.telemetry_client: Optional[TelemetryClient] = None
+
+        self.message_history: Optional[MessageHistoryService] = None
 
         self.message_history_cleanup: Optional[MessageHistoryCleanup] = None
 
@@ -194,6 +197,11 @@ class KiraLifecycle:
 
         self.skills_manager = SkillsManager()
 
+        # ====== init message history ======
+        self.message_history = MessageHistoryService(self.db_service, self.session_manager)
+        await self.message_history.initialize()
+        self.event_bus.subscribe("session_deleted", self.message_history.on_session_deleted)
+
         # ====== init message processor ======
         self.message_processor = MessageProcessor(
             db=self.db_service,
@@ -204,7 +212,8 @@ class KiraLifecycle:
             adapter_manager=self.adapter_manager,
             session_manager=self.session_manager,
             prompt_manager=self.prompt_manager,
-            mcp_manager=self.mcp_manager)
+            mcp_manager=self.mcp_manager,
+            message_history=self.message_history)
 
         self.tasks.append(
             asyncio.create_task(
@@ -213,12 +222,8 @@ class KiraLifecycle:
             )
         )
 
-        await self.message_processor.message_history.initialize()
-        self.event_bus.subscribe(
-            "session_deleted", self.message_processor.message_history.on_session_deleted
-        )
         self.message_history_cleanup = MessageHistoryCleanup(
-            self.message_processor.message_history, self.kira_config
+            self.message_history, self.kira_config
         )
         self.message_history_cleanup.start()
         self.message_processor.event_bus = self.event_bus
@@ -235,9 +240,13 @@ class KiraLifecycle:
             tool_mgr=self.tool_manager,
             adapter_mgr=self.adapter_manager,
             persona_mgr=self.persona_manager,
-            sticker_manager=self.sticker_manager,
+            sticker_mgr=self.sticker_manager,
             session_mgr=self.session_manager,
-            message_processor=self.message_processor
+            prompt_mgr=self.prompt_manager,
+            skills_mgr=self.skills_manager,
+            mcp_mgr=self.mcp_manager,
+            message_processor=self.message_processor,
+            message_history=self.message_history
         )
 
         self.plugin_manager = PluginManager(self.plugin_context)

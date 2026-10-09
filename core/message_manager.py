@@ -1,167 +1,37 @@
 import asyncio
-import json
-import time
-from asyncio import Lock
-import xml.etree.ElementTree as ET
-from typing import Union, Any, Callable, List, Optional, TYPE_CHECKING
+from asyncio import Lock, Semaphore
+from typing import Callable, List, Optional, TYPE_CHECKING, Union
+
+from core.agent.func_tool_manager import FuncToolManager
+from core.agent.message import OpenAIMessage
+from core.agent.mcp_mgr import MCPManager
+from core.agent.skills_mgr import SkillsManager
+from core.adapter import AdapterManager
+from core.image_desc_cache import ImageDescCache
+from core.chat.session_buffer import SessionBuffer, SessionBufferManager
+from core.workflow.src.im.message_delivery import MessageDeliveryService
+from core.workflow.src.im.message_formatter import MessageFormatter
+from core.chat.message_history import MessageHistoryService
+from core.workflow.src.im.native_content import MessageMediaService
+from core.chat.message_utils import (
+    KiraIMMessage, KiraIMSentResult, KiraMessageEvent, KiraMessageBatchEvent,
+    KiraCommentEvent, MessageChain,
+)
+from core.chat.session_manager import SessionManager
+from core.db.service import DatabaseService
+from core.logging_manager import get_logger
+from core.plugin.handlers import event_handler_reg, EventType
+from core.prompt_manager import PromptManager
+from core.provider import ProviderManager
+from core.tag import TagSet, RootTagAction
+from core.workflow.src.im.batching import publish_buffered_messages
+from core.workflow.src.im.context import IMWorkflowContext
+from core.workflow.src.im.workflow import DefaultIMWorkflow
 
 if TYPE_CHECKING:
     from core.event_bus import EventBus
-from pathlib import Path
-from asyncio import Semaphore
-import random
-import os
-
-from core.logging_manager import get_logger
-from core.utils.common_utils import desc_img, speech_to_text
-from core.utils.path_utils import get_data_path
-from core.chat.message_utils import KiraIMMessage, KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent, MessageChain
-from core.chat.message_utils import KiraIMSentResult, KiraStepResult, KiraFinalResult
-from core.prompt_manager import Prompt
-
-from core.chat.message_elements import (
-    BaseMessageElement,
-    Text,
-    Image,
-    At,
-    Reply,
-    Forward,
-    Emoji,
-    Sticker,
-    Record,
-    Notice,
-    Poke,
-    Json,
-    File,
-    Video
-)
-
-from core.agent.func_tool_manager import FuncToolManager
-from core.chat.session_manager import SessionManager
-from .prompt_manager import PromptManager
-from .adapter import AdapterManager
-from .adapter.capabilities import IMCapability
-from .agent.skills_mgr import SkillsManager
-from .agent.mcp_mgr import MCPManager
-from .provider import ProviderManager, LLMRequest, LLMResponse
-from core.plugin.handlers import event_handler_reg, EventType
-from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
-from core.agent.message import OpenAIMessage
-from core.tag import tag_registry, TagSet, BaseTag, RootTagAction
-from core.db.service import DatabaseService
-from core.chat.message_history import MessageHistoryService
-
-from core.provider import LLMModelClient
-from core.utils.image_compression import compress_image_element
-from core.utils.media_refs import store_session_media
-
 
 logger = get_logger("message", "cyan")
-llm_logger = get_logger("llm", "purple")
-
-
-class SessionBuffer:
-    def __init__(self, max_count: int = None):
-        self.buffer: list = []
-        self.lock: asyncio.Lock = asyncio.Lock()
-        self.max_count = max_count
-
-    def add(self, message: KiraMessageEvent):
-        self.buffer.append(message)
-
-    def pop(self, count: int = 1):
-        if self.get_length() < count:
-            popped = self.buffer[:]
-            self.buffer.clear()
-            return popped
-        popped = self.buffer[:count]
-        del self.buffer[:count]
-        return popped
-
-    def flush(
-        self,
-        count: int = None,
-        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
-    ):
-        if filter_fn is None:
-            if count and count <= len(self.buffer):
-                pending_messages = self.buffer[:count]
-                del self.buffer[:count]
-            else:
-                pending_messages = self.buffer[:]
-                self.buffer.clear()
-            return pending_messages
-
-        matched_indices = [
-            index for index, message in enumerate(self.buffer) if filter_fn(message)
-        ]
-        matched_index_set = set(matched_indices)
-        pending_messages = [self.buffer[index] for index in matched_indices]
-        self.buffer[:] = [
-            message
-            for index, message in enumerate(self.buffer)
-            if index not in matched_index_set
-        ]
-        return pending_messages
-
-    def get_length(self):
-        return len(self.buffer)
-
-    def get_buffer_lock(self) -> Lock:
-        """get buffer lock"""
-        return self.lock
-
-
-class SessionBufferManager:
-    def __init__(self, max_count: int = None):
-        self.buffers: dict[str, SessionBuffer] = {}
-        self.max_count = max_count
-
-    def get_buffer(self, session: str):
-        if session not in self.buffers:
-            self.buffers[session] = SessionBuffer(self.max_count)
-        return self.buffers[session]
-
-
-class ImageDescCache:
-    """Cache image/sticker VLM descriptions using MD5 hash backed by database."""
-
-    def __init__(self, db_service: DatabaseService):
-        self.db = db_service
-
-    async def get(self, md5: str) -> Optional[str]:
-        entry = await self.db.get_image_desc_cache(md5)
-        if entry:
-            await self.db.update_image_desc_cache(
-                md5,
-                count=entry["count"] + 1,
-                last_seen=int(time.time()),
-            )
-            return entry["description"]
-        return None
-
-    async def set(self, md5: str, description: str):
-        # Never cache an empty/failed description: an empty string would otherwise be
-        # stored permanently as the caption for this md5 and served to every later hit.
-        if not description:
-            return
-        existing = await self.db.get_image_desc_cache(md5)
-        if existing:
-            # Preserve the accumulated hit count that cleanup relies on; resetting it to 1
-            # on every update would prevent frequently-seen entries from being retained.
-            await self.db.update_image_desc_cache(
-                md5,
-                description=description,
-                count=existing["count"],
-                last_seen=int(time.time()),
-            )
-        else:
-            await self.db.add_image_desc_cache(
-                md5,
-                description,
-                count=1,
-                last_seen=int(time.time()),
-            )
 
 
 class MessageProcessor:
@@ -177,14 +47,13 @@ class MessageProcessor:
                  session_manager: SessionManager,
                  prompt_manager: PromptManager,
                  mcp_manager: MCPManager,
+                 message_history: MessageHistoryService,
                  max_concurrent_messages: int = 3):
         self.db = db
         self.kira_config = kira_config
         self.bot_config = kira_config["bot_config"].get("bot")
         self.max_message_interval = float(self.bot_config.get("max_message_interval"))
         self.max_buffer_messages = int(self.bot_config.get("max_buffer_messages"))
-        self.min_message_delay = float(self.bot_config.get("min_message_delay", "0.8"))
-        self.max_message_delay = float(self.bot_config.get("max_message_delay", "1.5"))
 
         self.tool_manager = tool_manager
         self.event_bus: Optional[EventBus] = None
@@ -193,7 +62,7 @@ class MessageProcessor:
 
         # managers
         self.session_manager = session_manager
-        self.message_history = MessageHistoryService(db, session_manager)
+        self.message_history = message_history
         self.prompt_manager = prompt_manager
         self.provider_mgr = provider_manager
         self.adapter_mgr = adapter_manager
@@ -222,19 +91,69 @@ class MessageProcessor:
             elif isinstance(event, KiraCommentEvent):
                 await self.handle_cmt_message(event)
 
+    @property
+    def message_formatter(self) -> MessageFormatter:
+        if not hasattr(self, "_message_formatter"):
+            self._message_formatter = MessageFormatter(
+                self.kira_config,
+                getattr(self, "provider_mgr", None),
+                getattr(self, "session_manager", None),
+                getattr(self, "image_desc_cache", None),
+            )
+        return self._message_formatter
+
+    @property
+    def message_media(self) -> MessageMediaService:
+        if not hasattr(self, "_message_media"):
+            self._message_media = MessageMediaService()
+        return self._message_media
+
+    @property
+    def message_delivery(self) -> MessageDeliveryService:
+        if not hasattr(self, "_message_delivery"):
+            self._message_delivery = MessageDeliveryService(
+                self.kira_config,
+                getattr(self, "adapter_mgr", None),
+                getattr(self, "message_history", None),
+            )
+        return self._message_delivery
+
+    @property
+    def session_buffer(self) -> SessionBufferManager:
+        if not hasattr(self, "_session_buffer"):
+            self._session_buffer = SessionBufferManager(
+                max_count=getattr(self, "max_buffer_messages", None))
+        return self._session_buffer
+
+    @session_buffer.setter
+    def session_buffer(self, value: SessionBufferManager):
+        self._session_buffer = value
+
+    @property
+    def session_locks(self) -> dict[str, asyncio.Lock]:
+        return self.message_delivery.session_locks
+
+    @session_locks.setter
+    def session_locks(self, value: dict[str, asyncio.Lock]):
+        self.message_delivery.session_locks = value
+
+    @property
+    def min_message_delay(self) -> float:
+        return self.message_delivery.min_message_delay
+
+    @property
+    def max_message_delay(self) -> float:
+        return self.message_delivery.max_message_delay
+
     def get_session_lock(self, sid: str) -> Lock:
         """get session lock to avoid sending message simultaneously"""
-        if sid not in self.session_locks:
-            self.session_locks[sid] = asyncio.Lock()
-        return self.session_locks[sid]
+        return self.message_delivery.get_session_lock(sid)
 
     def get_session_buffer_length(self, sid: str) -> int:
-        buffer = self.session_buffer.get_buffer(sid)
-        return buffer.get_length()
+        return self.session_buffer.get_buffer(sid).get_length()
 
     async def pop_session_messages(self, sid: str, count: int = 1):
-        buffer = self.session_buffer.get_buffer(sid)
-        buffer.pop(count)
+        self.session_buffer.get_buffer(sid).pop(count)
 
     async def flush_session_messages(
         self,
@@ -243,644 +162,75 @@ class MessageProcessor:
         filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
     ) -> bool:
         """Publish buffered events matching a synchronous predicate, or all events by default."""
-        buffer = self.session_buffer.get_buffer(sid)
-        async with buffer.lock:
-            if extra_event is not None:
-                buffer.add(extra_event)
-            pending_messages: list[KiraMessageEvent] = buffer.flush(filter_fn=filter_fn)
-        if not pending_messages:
-            return False
-        last_event = pending_messages[-1]
-        supported_elements = last_event.supported_elements
-        batch_msg = KiraMessageBatchEvent(
-            supported_elements=supported_elements,
-            timestamp=int(time.time()),
-            adapter=last_event.adapter,
-            session=last_event.session,
-            messages=[m.message for m in pending_messages]
-        )
-        await self.event_bus.publish(batch_msg)
-        return True
+        return await publish_buffered_messages(
+            self.session_buffer, self.event_bus, sid, extra_event=extra_event, filter_fn=filter_fn)
 
     async def message_format_to_text(self, message_chain: MessageChain, session_id: Optional[str] = None, capabilities: Optional[dict] = None):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
-        message_str = ""
-        if capabilities is None:
-            global_capabilities = self.kira_config.get_config("bot_config.capabilities", {})
-            if not isinstance(global_capabilities, dict):
-                global_capabilities = {}
-            capabilities = self.session_manager.get_effective_capabilities(
-                session_id, global_capabilities
-            ) if session_id and hasattr(self, "session_manager") else global_capabilities
-        if not isinstance(capabilities, dict):
-            capabilities = {}
-        image_recognition = capabilities.get("image_recognition", {})
-        if not isinstance(image_recognition, dict) or not image_recognition:
-            image_recognition = {
-                "mode": self.kira_config.get_config("bot_config.capabilities.image_recognition.mode", "vlm_description")
-            }
-        for ele in message_chain:
-            if isinstance(ele, Text):
-                message_str += ele.text
-            elif isinstance(ele, Emoji):
-                if ele.emoji_desc:
-                    message_str += f"[Emoji {ele.emoji_desc} (ID: {ele.emoji_id})]"
-                else:
-                    message_str += f"[Emoji {ele.emoji_id}]"
-            elif isinstance(ele, At):
-                if ele.nickname:
-                    message_str += f"[At {ele.pid}(nickname: {ele.nickname})]"
-                else:
-                    message_str += f"[At {ele.pid}]"
-            elif isinstance(ele, Image):
-                image_mode = image_recognition.get("mode", "vlm_description")
-                if image_mode == "native":
-                    ele.caption = "attached image"
-                    message_str += "[Image attached]"
-                    continue
-                if ele.caption is None:
-                    try:
-                        md5 = await ele.hash_image()
-                        cached_desc = await self.image_desc_cache.get(md5)
-                    except (ValueError, Exception) as e:
-                        logger.warning(f"Failed to hash image: {e}")
-                        md5 = None
-                        cached_desc = None
-                    if cached_desc:
-                        img_desc = cached_desc
-                    else:
-                        try:
-                            vlm_model = self.provider_mgr.get_default_vlm()
-
-                            # Check if image recognition is enabled
-                            caps = image_recognition
-                            if caps.get("enabled", True):
-                                img_prompt = caps.get("desc_prompt", "").strip() or None
-                                img_desc = await desc_img(
-                                    client=vlm_model,
-                                    image=ele,
-                                    prompt=img_prompt,
-                                    lang=self.kira_config.get_config("locale.lang") or "en",
-                                )
-                            else:
-                                img_desc = ""
-                        except Exception as e:
-                            logger.error(f"Failed to get default VLM model for image description: {e}")
-                            img_desc = ""
-
-                        if md5 and img_desc:
-                            try:
-                                await self.image_desc_cache.set(md5, img_desc)
-                            except Exception as e:
-                                logger.warning(f"Failed to cache image desc: {e}")
-                    ele.caption = img_desc
-                else:
-                    try:
-                        md5 = await ele.hash_image()
-                        cached = await self.image_desc_cache.get(md5)
-                        if not cached:
-                            await self.image_desc_cache.set(md5, ele.caption)
-                    except Exception as e:
-                        logger.warning(f"Failed to cache image desc: {e}")
-                try:
-                    path = Path(await ele.to_path())
-                    data_dir = get_data_path()
-                    try:
-                        rel = path.relative_to(data_dir)
-                        path_result = f"data/{rel}"
-                    except ValueError:
-                        path_result = str(path)
-                    message_str += f"[Image {str(ele.caption)}, file_path: {path_result}]"
-                except Exception as e:
-                    logger.warning(f"Failed to save image: {e}")
-                    message_str += f"[Image {str(ele.caption)}]"
-            elif isinstance(ele, Sticker):
-                image_mode = image_recognition.get("mode", "vlm_description")
-                if image_mode == "native":
-                    ele.caption = "attached sticker"
-                    message_str += "[Sticker attached]"
-                    continue
-                if ele.caption is None:
-                    try:
-                        md5 = await ele.hash_image()
-                        cached_desc = await self.image_desc_cache.get(md5)
-                    except (ValueError, Exception) as e:
-                        logger.warning(f"Failed to hash sticker: {e}")
-                        md5 = None
-                        cached_desc = None
-                    if cached_desc:
-                        sticker_desc = cached_desc
-                    else:
-                        try:
-                            vlm_model = self.provider_mgr.get_default_vlm()
-
-                            # Check if image recognition is enabled
-                            caps = image_recognition
-                            if caps.get("enabled", True):
-                                sticker_prompt = caps.get("desc_prompt", "").strip() or None
-                                sticker_desc = await desc_img(
-                                    client=vlm_model,
-                                    image=ele,
-                                    prompt=sticker_prompt,
-                                    lang=self.kira_config.get_config("locale.lang") or "en",
-                                )
-                            else:
-                                sticker_desc = ""
-                        except Exception as e:
-                            logger.error(f"Failed to get default VLM model for sticker description: {e}")
-                            sticker_desc = ""
-
-                        if md5 and sticker_desc:
-                            try:
-                                await self.image_desc_cache.set(md5, sticker_desc)
-                            except Exception as e:
-                                logger.warning(f"Failed to cache sticker desc: {e}")
-                    ele.caption = sticker_desc
-                else:
-                    try:
-                        md5 = await ele.hash_image()
-                        cached = await self.image_desc_cache.get(md5)
-                        if not cached:
-                            await self.image_desc_cache.set(md5, ele.caption)
-                    except Exception as e:
-                        logger.warning(f"Failed to cache sticker desc: {e}")
-                message_str += f"[Sticker {str(ele.caption)}]"
-            elif isinstance(ele, Reply):
-                if ele.chain:
-                    ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
-                    reply_content = await self.message_format_to_text(ele.chain, session_id, capabilities)
-                    message_str += f"[Reply ID: {ele.message_id} content: {reply_content}]"
-                elif ele.message_content:
-                    message_str += f"[Reply ID: {ele.message_id} content: {ele.message_content}]"
-                else:
-                    message_str += f"[Reply ID: {ele.message_id}]"
-            elif isinstance(ele, Forward):
-                caps = capabilities.get("forward_parsing", {})
-                if not caps.get("enabled", True):
-                    message_str += "[Forward message]"
-                elif ele.chains:
-                    forward_contents = ""
-                    for i, chain in enumerate(ele.chains):
-                        ele.chains[i].message_list = [x for x in chain if not isinstance(x, Forward)]
-                        forward_content = await self.message_format_to_text(ele.chains[i], session_id, capabilities)
-                        forward_contents += f"\n{forward_content}\n"
-                    message_str += f"[Forward {forward_contents.strip()}]"
-            elif isinstance(ele, Record):
-                try:
-                    caps = capabilities.get("stt", {})
-                    if caps.get("enabled", True):
-                        stt_client = self.provider_mgr.get_default_stt()
-                        if not stt_client:
-                            logger.error("Failed to get STT client, please set default STT model in Configuration")
-                            record_text = "[Speech recognition unavailable]"
-                        else:
-                            record_text = await speech_to_text(client=stt_client, record=ele)
-                    else:
-                        record_text = "[Speech recognition disabled]"
-                except Exception as e:
-                    logger.error(f"Failed to get STT model for speech recognition: {e}")
-                    record_text = "[Speech recognition unavailable]"
-                ele.transcript = record_text
-                message_str += f"[Record {record_text}]"
-            elif isinstance(ele, Notice):
-                message_str += f"{ele.text}"
-            elif isinstance(ele, Json):
-                try:
-                    card_str = json.dumps(ele.data, ensure_ascii=False)
-                except (TypeError, ValueError):
-                    card_str = json.dumps(str(ele.data), ensure_ascii=False)
-                message_str += f"[Json card {card_str}]"
-            elif isinstance(ele, File):
-                try:
-                    file_size = int(ele.size)
-                except Exception as _:
-                    file_size = None
-
-                # TODO Make it customizable
-                if not file_size or file_size > 10 * 1024 * 1024:
-                    message_str += f"[File name: {ele.name} (File size over 10MB, not cached)]"
-                    continue
-
-                try:
-                    path = Path(await ele.to_path())
-                    data_dir = get_data_path()
-
-                    try:
-                        rel = path.relative_to(data_dir)
-                        path_result = f"data/{rel}"
-                    except ValueError:
-                        path_result = str(path)
-
-                    message_str += f"[File name: {ele.name}, file_path: {path_result}]"
-                except Exception as e:
-                    logger.error(f"Failed to save temp file: {e}")
-            elif isinstance(ele, Video):
-                try:
-                    video_file_size = int(ele.size)
-                except Exception as _:
-                    video_file_size = None
-
-                # TODO Make it customizable
-                if not video_file_size or video_file_size > 10 * 1024 * 1024:
-                    message_str += f"[Video name: {ele.name} (Video size over 10MB, not cached)]"
-                    continue
-
-                try:
-                    path = Path(await ele.to_path())
-                    data_dir = get_data_path()
-
-                    try:
-                        rel = path.relative_to(data_dir)
-                        path_result = f"data/{rel}"
-                    except ValueError:
-                        path_result = str(path)
-
-                    message_str += f"[Video name: {ele.name}, file_path: {path_result}]"
-                except Exception as e:
-                    logger.error(f"Failed to save temp video file: {e}")
-            else:
-                pass
-        return message_str
+        return await self.message_formatter.format_to_text(message_chain, session_id, capabilities)
 
     @staticmethod
     def _iter_message_images(message_chain: MessageChain):
         """Yield every image-like element contained in a message chain."""
-        for element in message_chain:
-            if isinstance(element, (Image, Sticker)):
-                yield element
-            elif isinstance(element, Reply) and element.chain:
-                yield from MessageProcessor._iter_message_images(element.chain)
-            elif isinstance(element, Forward):
-                for chain in element.chains:
-                    yield from MessageProcessor._iter_message_images(chain)
+        yield from MessageMediaService.iter_images(message_chain)
 
     async def _build_native_content(self, message: KiraIMMessage, session_id: str) -> list[dict]:
         """Persist incoming images and create the provider-independent content parts."""
-        content: list[dict] = [{"type": "text", "text": message.message_str or ""}]
-        for image in self._iter_message_images(message.chain):
-            try:
-                content.append(await store_session_media(image, session_id, message.message_id))
-            except Exception as exc:
-                logger.warning(f"Failed to persist image for native multimodal input: {exc}")
-        return content
+        return await self.message_media.build_native_content(message, session_id)
 
     async def _record_incoming_message(self, message, session_id, platform):
         history = getattr(self, "message_history", None)
         if history is not None:
-            try:
-                return await history.record_incoming(message, session_id, platform)
-            except Exception as exc:
-                logger.error("Unable to store incoming message (%s)", type(exc).__name__)
+            return await history.record_incoming_safely(message, session_id, platform)
+
+    async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str, tag_set: TagSet, *, memory_message: OpenAIMessage | None = None) -> Optional[List[KiraIMSentResult]]:
+        return await self.message_delivery.send_xml_messages(
+            event, xml_data, tag_set, memory_message=memory_message)
+
+    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
+        return await self.message_delivery.send_message_chain(
+            session, chain, memory_message=memory_message, self_id=self_id)
+
+    @staticmethod
+    async def _parse_xml_msg(xml_data, tag_set: TagSet) -> list[Union[MessageChain, RootTagAction]]:
+        return await MessageDeliveryService.parse_xml(xml_data, tag_set)
+
+    @staticmethod
+    def _add_message_ids(xml_data: str, message_results: List[KiraIMSentResult]) -> str:
+        return MessageDeliveryService.add_message_ids(xml_data, message_results)
+
+    async def cleanup_image_desc_cache_task(self):
+        """Background task: clean up expired image desc cache every 24 hours."""
+        await self.image_desc_cache.cleanup_task()
+
+    @property
+    def im_workflow(self) -> DefaultIMWorkflow:
+        """Inject shared services on first use and refresh the late-bound event bus."""
+        if not hasattr(self, "_im_workflow"):
+            self._im_workflow = DefaultIMWorkflow(IMWorkflowContext(
+                message_formatter=self.message_formatter,
+                message_media=self.message_media,
+                message_buffer=self.session_buffer,
+                message_delivery=self.message_delivery,
+                config=self.kira_config,
+                session_manager=self.session_manager,
+                prompt_manager=self.prompt_manager,
+                provider_mgr=self.provider_mgr,
+                tool_manager=self.tool_manager,
+                skills_manager=self.skills_manager,
+                mcp_manager=self.mcp_manager,
+                db=self.db,
+                message_history=getattr(self, "message_history", None),
+            ))
+        self._im_workflow.ctx.event_bus = self.event_bus
+        return self._im_workflow
 
     async def handle_im_message(self, event: KiraMessageEvent):
         """process im message"""
-
-        # decorating event info
-
-        sid = event.session.sid
-
-        await self._record_incoming_message(event.message, sid, event.adapter.platform)
-
-        event.session.session_description = self.session_manager.get_session_info(sid).session_description
-
-        # EventType.ON_IM_MESSAGE
-        im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_MESSAGE)
-        for handler in im_handlers:
-            await handler.exec_handler(event)
-            if event.is_stopped:
-                # Print event
-                logger.info(event.get_log_info())
-                return
-
-        # Print event
-        logger.info(event.get_log_info())
-
-        # Check if message chain is valid, filter out unprocessed notice messages
-        if event.message.chain.is_empty():
-            return
-
-        if event.process_strategy == "discard":
-            return
-
-        if event.process_strategy == "trigger":
-            batch_msg = KiraMessageBatchEvent(
-                supported_elements=event.supported_elements,
-                timestamp=int(time.time()),
-                adapter=event.adapter,
-                session=event.session,
-                messages=[event.message]
-            )
-            await self.event_bus.publish(batch_msg)
-            return
-
-        if event.process_strategy == "buffer":
-            buffer = self.session_buffer.get_buffer(sid)
-            async with buffer.lock:
-                buffer.add(event)
-
-            # EventType.ON_MESSAGE_BUFFERED
-            im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_MESSAGE_BUFFERED)
-            for handler in im_handlers:
-                await handler.exec_handler(event.session.sid)
-            return
-
-        if event.process_strategy == "flush":
-            flushed = await self.flush_session_messages(sid, extra_event=event)
-            if not flushed:
-                logger.warning(f"No pending messages to flush for session {sid}")
-            return
+        await self.im_workflow.handle_event(event)
 
     async def handle_im_batch_message(self, event: KiraMessageBatchEvent):
-        # Start processing
-        sid = event.session.sid
-        compression_config = self.kira_config.get_config(
-            "bot_config.image_compression", {}
-        )
-        global_capabilities = self.kira_config.get_config("bot_config.capabilities", {})
-        if not isinstance(global_capabilities, dict):
-            global_capabilities = {}
-        capabilities = self.session_manager.get_effective_capabilities(
-            sid, global_capabilities
-        ) if hasattr(self, "session_manager") else global_capabilities
-        if not isinstance(capabilities, dict):
-            capabilities = global_capabilities
-        image_recognition = capabilities.get("image_recognition", {})
-        image_mode = image_recognition.get(
-            "mode", self.kira_config.get_config("bot_config.capabilities.image_recognition.mode", "vlm_description")
-        ) if isinstance(image_recognition, dict) else "vlm_description"
-
-        incoming_record_ids = {}
-        for message in event.messages:
-            incoming_record_ids[id(message)] = await self._record_incoming_message(
-                message, sid, event.adapter.platform)
-            for image in self._iter_message_images(message.chain):
-                await compress_image_element(image, compression_config)
-            message_str = await self.message_format_to_text(message.chain, sid, capabilities)
-            message.message_str = message_str
-
-        # EventType.ON_IM_BATCH_MESSAGE
-        im_batch_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_BATCH_MESSAGE)
-        for handler in im_batch_handlers:
-            await handler.exec_handler(event)
-            if event.is_stopped:
-                logger.info(f"[ON_IM_BATCH_MESSAGE] Event {event.event_id} stopped")
-                return
-
-        # Set session title
-        if not self.session_manager.get_session_info(sid).session_title:
-            self.session_manager.update_session_info(sid, event.session.session_title)
-        session_title = self.session_manager.get_session_info(sid).session_title
-
-        # Build chat environment
-        chat_env = {
-            "platform": event.adapter.platform,
-            "adapter": event.adapter.name,
-            "chat_type": 'GroupMessage' if event.is_group_message() else 'DirectMessage',
-            "self_id": event.self_id,
-            "session_title": session_title,
-            "session_description": event.session.session_description
-        }
-
-        # Get chat history memory
-        session_memory = self.session_manager.fetch_memory(sid)
-
-        # Generate agent prompt
-        agent_prompt_list = await self.prompt_manager.get_agent_prompt(chat_env)
-
-        # Inject skills prompt (filtered by scope)
-        allowed_skills = []
-        for s in self.skills_manager.skills_info:
-            if not s.enabled:
-                continue
-            if self.skills_manager.is_skill_allowed(s.name, sid):
-                allowed_skills.append(s)
-        if allowed_skills:
-            for i, p in enumerate(agent_prompt_list):
-                if p.name == "tools":
-                    agent_prompt_list.insert(i+1, self.skills_manager.build_skills_prompt(allowed_skills))
-                    break
-        
-        model_group: list[LLMModelClient] = []
-        if event.model_group:
-            model_group = [m for m in event.model_group if isinstance(m, LLMModelClient)]
-        if not model_group:
-            # Get default LLM model client
-            try:
-                default_llm = self.provider_mgr.get_default_llm()
-                if not default_llm:
-                    llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
-                    return
-                model_group = [default_llm]
-            except Exception as _:
-                llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
-                return
-
-        # Filter tools by scope
-        tool_server_map = self.mcp_manager.get_tool_server_map()
-
-        tool_set = self.tool_manager.build_tool_set()
-        # Remove tools blocked by MCP server scope
-        tool_set.tools = [
-            t for t in tool_set.tools
-            if not (tool_server_map.get(t.name)
-                    and not self.mcp_manager.is_server_allowed(tool_server_map[t.name], sid))
-        ]
-
-        request = LLMRequest(messages=session_memory[:], tool_set=tool_set)
-        request.system_prompt.extend(agent_prompt_list)
-
-        # Add received im messages
-        for message in event.messages:
-            request.user_prompt.append(Prompt(
-                message.message_str,
-                name="message",
-                source="system",
-                render_template=False,
-            ))
-
-        # Build tag set
-        tag_set = TagSet()
-
-        # EventType.ON_LLM_REQUEST
-        llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_REQUEST)
-        for handler in llm_handlers:
-            await handler.exec_handler(event, request, tag_set)
-            if event.is_stopped:
-                logger.info(f"Event {event.event_id} stopped while llm request stage")
-                return
-
-        # Register persistent tags registered by user plugins
-        tag_set.register(*tag_registry.get_all())
-        tag_set.register(*tag_registry.get_all_root())
-
-        # Assemble messages
-        root_prompt = tag_set.to_root_prompt()
-        for sp in request.system_prompt:
-            if sp.name == "format":
-                sp.kwargs["message_types"] = tag_set.to_prompt()
-                sp.kwargs["root_tags"] = (
-                    f"此外，你可以在<msg>标签外使用以下控制标签（与<msg>同级）：\n{root_prompt}"
-                    if root_prompt else ""
-                )
-                break
-        request.assemble_prompt(
-            dynamic_position=self.kira_config.get_config(
-                "bot_config.bot.dynamic_prompt_position", "latest_user"
-            ),
-            memory_position=self.kira_config.get_config(
-                "bot_config.bot.memory_prompt_position", "latest_user"
-            ),
-        )
-
-        if image_mode == "native":
-            for message in event.messages:
-                message.native_content = await self._build_native_content(message, sid)
-
-        native_parts = [
-            part
-            for message in event.messages
-            for part in (message.native_content or [])[1:]
-        ]
-        if native_parts and request.messages and request.messages[-1].role == "user":
-            request.messages[-1].content = [
-                {"type": "text", "text": request.messages[-1].content or ""},
-                *native_parts,
-            ]
-
-        # Re-derive tools list after plugins may have added to tool_set
-        request.tools = request.tool_set.to_list()
-        # Recompute tool_choice if it was auto-derived (not explicitly set by a plugin)
-        if request.tool_choice in ("auto", "none"):
-            request.tool_choice = "auto" if request.tools else "none"
-
-        # Print user message info (skip persist=False prompts to avoid log spam)
-        user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
-        logger.info(f"processing message(s) from {sid}:\n{user_message}")
-
-        # 把收到的消息放到新收到的消息内容中（仅持久化 persist=True 的 Prompt）
-        persist_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
-        persisted_native_parts = [
-            part
-            for message in event.messages
-            for part in (message.native_content or [])[1:]
-        ]
-        persisted_content: str | list[dict] = persist_message
-        if persisted_native_parts:
-            persisted_content = [
-                {"type": "text", "text": persist_message},
-                *persisted_native_parts,
-            ]
-        new_messages: list[OpenAIMessage] = []
-        user_memory = OpenAIMessage(role="user", content=persisted_content)
-        user_memory.to_memory_dict()
-        history = getattr(self, "message_history", None)
-        if history is not None:
-            try:
-                await history.link_incoming_messages(sid, user_memory.extra["llm_message_id"], [
-                    record_id for message in event.messages
-                    if (record_id := incoming_record_ids.get(id(message)))
-                ])
-            except Exception as exc:
-                logger.error("Unable to link incoming messages (%s)", type(exc).__name__)
-        new_messages.append(user_memory)
-
-        # Get max tool loop config, defaults to 2 if not a valid integer
-        # Note: This variable represents the total agent loop iterations (not just tool calls),
-        # but the name is kept as-is for backward compatibility with existing config files.
-        max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
-        try:
-            max_tool_loop = int(max_tool_loop)
-        except ValueError:
-            max_tool_loop = 2
-
-        max_agent_steps = max_tool_loop
-
-        agent_executor = AgentExecutor(self.tool_manager, request.tool_set)
-        agent_ctx = AgentExecutionContext(
-            event=event,
-            request=request,
-            new_messages=new_messages,
-            model_group=model_group,
-        )
-
-        # Accumulates per-step results so ON_FINAL_RESULT can report the whole turn
-        turn_steps: list[KiraStepResult] = []
-
-        async def send_llm_text(resp: LLMResponse, memory_message: OpenAIMessage | None) -> bool:
-            """Process and send LLM text response. Returns False if stopped, True to continue."""
-            text = resp.text_response
-            message_results = []
-            raw_output = ""
-            if text:
-                session_lock = self.get_session_lock(sid)
-                async with session_lock:
-                    message_results = await self.send_xml_messages(event, text.strip(), tag_set, memory_message=memory_message)
-                    if message_results is None:
-                        return False
-                    raw_output = self._add_message_ids(text, message_results)
-                    logger.info(f"LLM -> {sid}: {raw_output}")
-            step_result = KiraStepResult(message_results=message_results, raw_output=raw_output)
-            # Record the step before dispatching, so ON_FINAL_RESULT still sees messages
-            # that were already sent even if a handler stops the turn below.
-            turn_steps.append(step_result)
-            # EventType.ON_STEP_RESULT
-            step_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_STEP_RESULT)
-            for step_handler in step_handlers:
-                await step_handler.exec_handler(event, step_result)
-                if event.is_stopped:
-                    logger.info(f"Event {event.event_id} stopped while ON_STEP_RESULT stage")
-                    return False
-            if raw_output:
-                llm_resp.text_response = step_result.raw_output
-                for idx in range(-1, -len(new_messages), -1):
-                    if new_messages[idx].role == "assistant":
-                        new_messages[idx].content = step_result.raw_output
-                        request.messages[idx].content = step_result.raw_output
-                        break
-            return True
-
-        # Iter agent executor to get LLMResponse
-        # TODO use llm_semaphore to restrict concurrent LLM requests
-        async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
-            llm_resp = step.llm_response
-            if not llm_resp:
-                break
-
-            # Record LLM usage telemetry per step
-            try:
-                await self.db.add_telemetry_llm_usage(
-                    timestamp=int(time.time()),
-                    model=step.model_name,
-                    input_tokens=llm_resp.input_tokens or 0,
-                    output_tokens=llm_resp.output_tokens or 0,
-                    cached_tokens=llm_resp.cached_tokens,
-                    response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
-                    success=(step.state != "error"),
-                )
-            except Exception as e:
-                logger.debug(f"Failed to record telemetry LLM usage: {e}")
-
-            if not await send_llm_text(llm_resp, step.assistant_message):
-                break
-
-            if not step.has_tool_calls or step.is_final:
-                break
-
-            # Process tool calls if existed
-
-        # EventType.ON_FINAL_RESULT
-        # Fired once per turn, after the agent loop finished. Calling event.stop() here
-        # cannot unsend already-delivered messages; it only suppresses the remaining handlers.
-        final_result = KiraFinalResult(step_results=turn_steps)
-        final_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_FINAL_RESULT)
-        for handler in final_handlers:
-            await handler.exec_handler(event, final_result)
-            if event.is_stopped:
-                logger.info(f"Event {event.event_id} stopped while ON_FINAL_RESULT stage")
-                break
-
-        # Save new memory
-        self.session_manager.update_memory(sid, new_messages)
+        await self.im_workflow.handle_batch_event(event)
 
     async def handle_cmt_message(self, event: KiraCommentEvent):
         """Deliver comments to plugins without prescribing a processing workflow."""
@@ -888,180 +238,3 @@ class MessageProcessor:
             if event.is_stopped:
                 break
             await handler.exec_handler(event)
-
-    async def send_xml_messages(self, event: KiraMessageBatchEvent, xml_data: str, tag_set: TagSet, *, memory_message: OpenAIMessage | None = None) -> Optional[List[KiraIMSentResult]]:
-        """
-        send message via session id & xml data
-        :param event: KiraMessageBatchEvent
-        :param xml_data: xml string
-        :param tag_set: TagSet object
-        :return: list[KiraIMSentResult]
-        """
-        parts = event.sid.split(":", maxsplit=2)
-        if len(parts) != 3 or any(not part for part in parts):
-            raise ValueError("invalid target, must follow the form of <adapter>:<dm|gm>:<id>")
-
-        message_results = []
-        try:
-            actions = await self._parse_xml_msg(xml_data, tag_set)
-
-            # EventType.AFTER_XML_PARSE
-            llm_handlers = event_handler_reg.get_handlers(event_type=EventType.AFTER_XML_PARSE)
-            for handler in llm_handlers:
-                await handler.exec_handler(event, actions)
-                if event.is_stopped:
-                    logger.info(f"Event {event.event_id} stopped while AFTER_XML_PARSE stage")
-                    return None
-        except Exception as e:
-            logger.error(f"Error parsing message: {str(e)}")
-            return []
-
-        for action in actions:
-            if isinstance(action, MessageChain):
-                if not action.is_empty():
-                    result = await self.send_message_chain(event.sid, action, memory_message=memory_message, self_id=getattr(event, "self_id", None))
-                    if not result.ok and result.err:
-                        logger.error(result.err)
-                else:
-                    result = KiraIMSentResult(ok=False, err="Blank message list detected")
-                message_results.append(result)
-                # EventType.ON_MESSAGE_SENT
-                sent_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_MESSAGE_SENT)
-                for handler in sent_handlers:
-                    await handler.exec_handler(event, action, result)
-                    if event.is_stopped:
-                        logger.info(f"Event {event.event_id} stopped while ON_MESSAGE_SENT stage")
-                        return message_results
-                await asyncio.sleep(random.uniform(self.min_message_delay, self.max_message_delay))
-            elif isinstance(action, RootTagAction):
-                try:
-                    await action.tag.handle(action.value, **action.attrs)
-                except Exception as e:
-                    logger.error(f"Error executing root tag <{action.tag.name}>{action.value}: {e}")
-
-        return message_results
-
-    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
-        """
-        Send a MessageChain to target.
-
-        :param session: adapter_name:dm|gm:session_id
-        :param chain: MessageChain instance
-        :return: KiraIMSentResult instance
-        """
-        parts = session.split(":", maxsplit=2)
-        if len(parts) != 3 or any(not part for part in parts):
-            raise ValueError("invalid target, must follow <adapter>:<dm|gm>:<id>")
-
-        adapter_name, chat_type, pid = parts
-        adapter = self.adapter_mgr.get_adapter(adapter_name)
-        if adapter is None:
-            raise ValueError(f"Adapter '{adapter_name}' is not available")
-        if chat_type not in {"dm", "gm"}:
-            raise ValueError("chat_type must be 'dm' or 'gm'")
-        target = adapter.get_capability(IMCapability)
-
-        history = getattr(self, "message_history", None)
-        record_id = None
-        if history is not None:
-            try:
-                config = adapter.config
-                bot_id = self_id or config.get("self_id") or config.get("bot_pid") or config.get("app_id")
-                llm_message_id = None
-                if memory_message is not None:
-                    llm_message_id = memory_message.to_memory_dict()["_extra"]["llm_message_id"]
-                record_id = await history.record_outgoing(
-                    session, chain, platform=adapter.info.platform,
-                    self_id=str(bot_id) if bot_id is not None else None,
-                    llm_message_id=llm_message_id,
-                )
-            except Exception as exc:
-                logger.error("Unable to store outgoing message (%s)", type(exc).__name__)
-
-        async def finish(status, platform_id=None, error_type=None):
-            if record_id:
-                try:
-                    await history.finish_outgoing(
-                        record_id, status=status, platform_message_id=platform_id, error_type=error_type)
-                except Exception as exc:
-                    logger.error("Unable to update delivery status (%s)", type(exc).__name__)
-
-        try:
-            if chat_type == "dm":
-                result = await target.send_direct_message(pid, chain)
-            else:
-                result = await target.send_group_message(pid, chain)
-        except BaseException as exc:
-            await finish("unknown", error_type=type(exc).__name__)
-            raise
-        if not result:
-            result = KiraIMSentResult(ok=False)
-        await finish("sent" if result.ok else "failed", result.message_id)
-        result.history_id = record_id
-        return result
-
-    @staticmethod
-    async def _parse_xml_msg(xml_data, tag_set: TagSet) -> list[Union[MessageChain, RootTagAction]]:
-        """Parse xml into an ordered list of MessageChain and RootTagAction."""
-        root = ET.fromstring(f"<root>{xml_data}</root>")
-        actions: list[Union[MessageChain, RootTagAction]] = []
-
-        for element in root:
-            if element.tag == "msg":
-                message_elements = []
-                for child in element:
-                    tag = child.tag
-                    value = child.text.strip() if child.text else ""
-                    attrs = child.attrib
-
-                    if tag in tag_set:
-                        tag_inst = tag_set.get(name=tag)
-                        tag_res = await tag_inst.handle(value, **attrs)
-
-                        if isinstance(tag_res, BaseMessageElement):
-                            message_elements.append(tag_res)
-                        elif isinstance(tag_res, list):
-                            message_elements.extend(tag_res)
-
-                if message_elements:
-                    actions.append(MessageChain(message_elements))
-            elif element.tag in tag_set:
-                root_tag = tag_set.get(name=element.tag)
-                if root_tag and root_tag.parent is None:
-                    value = element.text.strip() if element.text else ""
-                    actions.append(RootTagAction(tag=root_tag, value=value, attrs=element.attrib))
-
-        return actions
-
-    @staticmethod
-    def _add_message_ids(xml_data: str, message_results: List[KiraIMSentResult]) -> str:
-        """为XML响应添加消息ID"""
-        try:
-            root = ET.fromstring(f"<root>{xml_data}</root>")
-
-            for i, msg in enumerate(root.findall("msg")):
-                if i < len(message_results):
-                    message_id = message_results[i].message_id
-                    if not message_id:
-                        message_id = ""
-                    msg.set("message_id", message_id)
-
-            return ET.tostring(root, encoding='unicode', method='xml')[6:-7]
-
-        except Exception as e:
-            logger.error(f"Error adding message IDs: {str(e)}")
-            return xml_data
-
-    async def cleanup_image_desc_cache_task(self):
-        """Background task: clean up expired image desc cache every 24 hours."""
-        while True:
-            try:
-                deleted = await self.db.cleanup_expired_image_desc_cache()
-                if deleted:
-                    logger.info(f"Cleaned up {deleted} expired image desc cache entries")
-                await asyncio.sleep(24 * 60 * 60)
-            except asyncio.CancelledError:
-                logger.info("Image desc cache cleanup task cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Error in image desc cache cleanup: {e}")

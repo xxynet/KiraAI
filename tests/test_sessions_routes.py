@@ -111,7 +111,7 @@ async def test_list_sessions_skips_malformed_history_ids():
     app = FastAPI()
     routes = SessionsRoutes(app, SimpleNamespace(
         session_manager=session_manager,
-        message_processor=SimpleNamespace(message_history=history),
+        message_history=history,
     ))
     app.add_api_route("/api/sessions", routes.list_sessions, methods=["GET"])
     async with AsyncClient(
@@ -159,7 +159,7 @@ async def test_session_reads_skip_malformed_records_without_changing_storage(
     app = FastAPI()
     routes = SessionsRoutes(app, SimpleNamespace(
         session_manager=manager,
-        message_processor=SimpleNamespace(message_history=history),
+        message_history=history,
     ))
     app.add_api_route("/api/sessions", routes.list_sessions, methods=["GET"])
     app.add_api_route("/api/sessions/{session_id:path}", routes.get_session, methods=["GET"])
@@ -188,7 +188,7 @@ def _history_app(message):
     history = SimpleNamespace(get_message=AsyncMock(return_value=message))
     app = FastAPI()
     routes = SessionsRoutes(app, SimpleNamespace(
-        message_processor=SimpleNamespace(message_history=history),
+        message_history=history,
     ))
     routes.register()
     return app, history
@@ -270,7 +270,7 @@ async def test_message_media_rejects_archive_symlink_escape(tmp_path, monkeypatc
     history = SimpleNamespace(get_message=AsyncMock(return_value={"chain": [{
         "type": "file", "file_type": "archive", "file": archive.relative_to(tmp_path).as_posix(),
     }]}))
-    routes = SessionsRoutes(FastAPI(), SimpleNamespace(message_processor=SimpleNamespace(message_history=history)))
+    routes = SessionsRoutes(FastAPI(), SimpleNamespace(message_history=history))
     with pytest.raises(HTTPException) as exc_info:
         await routes.get_message_media("id", "0")
     assert exc_info.value.status_code == 404

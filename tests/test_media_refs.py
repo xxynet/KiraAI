@@ -1,5 +1,6 @@
 import base64
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -129,13 +130,23 @@ async def test_stopped_batch_does_not_persist_native_media(monkeypatch):
 
     manager = object.__new__(MessageProcessor)
     manager.kira_config = NativeConfig()
+    manager.event_bus = None
+    manager.session_manager = SimpleNamespace(
+        get_effective_capabilities=lambda sid, capabilities: capabilities,
+    )
+    manager.prompt_manager = Mock()
+    manager.provider_mgr = Mock()
+    manager.tool_manager = Mock()
+    manager.skills_manager = Mock()
+    manager.mcp_manager = Mock()
+    manager.db = Mock()
     persisted_messages = []
 
     async def record_persistence(message, _session):
         persisted_messages.append(message)
         return []
 
-    manager._build_native_content = record_persistence
+    manager.message_media.build_native_content = record_persistence
     monkeypatch.setattr(
         "core.message_manager.event_handler_reg.get_handlers",
         lambda *_args, **_kwargs: [StopHandler()],

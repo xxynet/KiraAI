@@ -48,6 +48,15 @@ def incoming(identity="in-1", bot="bot"):
 
 def processor(history, result=None, error=None):
     instance = object.__new__(MessageProcessor)
+    instance.event_bus = None
+    instance.kira_config = Mock()
+    instance.session_manager = history.session_manager
+    instance.prompt_manager = Mock()
+    instance.provider_mgr = Mock()
+    instance.tool_manager = Mock()
+    instance.skills_manager = Mock()
+    instance.mcp_manager = Mock()
+    instance.db = history.db
     instance.message_history = history
     target = SimpleNamespace(
         send_direct_message=AsyncMock(return_value=result, side_effect=error),
@@ -207,7 +216,7 @@ async def test_history_api_and_archive_only_sessions(history):
     identity = await history.record_incoming(incoming(), SID, "test")
     history.session_manager.chat_memory.clear()
     lifecycle = SimpleNamespace(session_manager=history.session_manager,
-                                message_processor=SimpleNamespace(message_history=history))
+                                message_history=history)
     routes = SessionsRoutes(FastAPI(), lifecycle)
     assert (await routes.list_sessions())["sessions"][0]["history_count"] == 1
     assert (await routes.get_session(SID))["messages"] == []
@@ -245,9 +254,8 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
     async def parse(text, tag_set):
         return [MessageChain([Text(value)]) for value in (["one", "two"] if "one" in text else ["three"])]
 
-    instance._parse_xml_msg = parse
     instance.session_manager = history.session_manager
-    instance.kira_config = SimpleNamespace(get_config=lambda key, default=None: 2 if key == "bot_config.agent.max_tool_loop" else default)
+    instance.kira_config = SimpleNamespace(get_config=lambda key, default=None: {"bot_config.agent.max_tool_loop": 2, "bot_config.bot.min_message_delay": 0, "bot_config.bot.max_message_delay": 0}.get(key, default))
     instance.provider_mgr = SimpleNamespace(get_default_llm=lambda: model)
     instance.prompt_manager = SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[]))
     instance.skills_manager = SimpleNamespace(skills_info=[])
@@ -255,7 +263,7 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
     instance.tool_manager = SimpleNamespace(build_tool_set=ToolSet, execute_tool=execute_tool)
     instance.db = SimpleNamespace(add_telemetry_llm_usage=AsyncMock())
     instance.session_locks = {}
-    instance.min_message_delay = instance.max_message_delay = 0
+    instance.message_delivery.parse_xml = parse
     event = KiraMessageBatchEvent(
         supported_elements=["text"], timestamp=1,
         adapter=AdapterInfo(True, "test", "adapter", "test"),

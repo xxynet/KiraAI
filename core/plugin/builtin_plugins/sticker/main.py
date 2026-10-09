@@ -61,7 +61,7 @@ class DefaultStickerPlugin(BasePlugin):
         self.recognition_prompt = self.DEFAULT_RECOGNITION_PROMPT
         self.vlm_concurrency = 3
         self._vlm_sem: Optional[asyncio.Semaphore] = None
-        self.sticker_mgr = self.ctx.sticker_manager
+        self.sticker_mgr = self.ctx.sticker_mgr
         self._scan_task: Optional[asyncio.Task] = None
     
     async def initialize(self):
@@ -178,5 +178,5 @@ class DefaultStickerPlugin(BasePlugin):
         """Inject sticker tag"""
         supported_elements = event.supported_elements
         if "sticker" in supported_elements:
-            sticker_dict = self.ctx.sticker_manager.sticker_dict
+            sticker_dict = self.ctx.sticker_mgr.sticker_dict
             tag_set.register(build_sticker_tag(sticker_dict=sticker_dict))
