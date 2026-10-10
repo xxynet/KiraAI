@@ -55,9 +55,16 @@ class MessageHistoryCleanup:
     async def stop(self):
         self._stopping = True
         self._changed.set()
-        if self._task is not None:
-            await self._task
-            self._task = None
+        task = self._task
+        if task is not None:
+            try:
+                # Collect worker cancellation without swallowing cancellation of stop().
+                result, = await asyncio.gather(task, return_exceptions=True)
+                if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                    raise result
+            finally:
+                if task.done() and self._task is task:
+                    self._task = None
 
     async def run(self):
         while not self._stopping:
