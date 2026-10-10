@@ -25,7 +25,7 @@ import { ref, onBeforeUnmount } from 'vue'
 import { getMessageMedia } from '@/api/session'
 import type { MessageElement } from '@/types'
 
-const props = defineProps<{ element: MessageElement; messageId: string; elementPath: string }>()
+const props = defineProps<{ element: MessageElement; messageId: string; elementPath: string; mediaScope?: 'sessions' | 'webchat' }>()
 const url = ref('')
 const loading = ref(false)
 const failed = ref(false)
@@ -35,7 +35,7 @@ async function loadMedia() {
   loading.value = true
   failed.value = false
   try {
-    const response = await getMessageMedia(props.messageId, props.elementPath, controller.signal)
+    const response = await getMessageMedia(props.messageId, props.elementPath, controller.signal, props.mediaScope)
     if (!controller.signal.aborted) url.value = URL.createObjectURL(response.data)
   } catch {
     if (!controller.signal.aborted) failed.value = true

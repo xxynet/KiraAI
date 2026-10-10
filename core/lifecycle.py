@@ -20,6 +20,11 @@ from core.chat.session_media_manager import SessionMediaManager
 from core.chat.message_history import MessageHistoryService
 from core.chat.message_history_cleanup import MessageHistoryCleanup
 from .adapter import AdapterManager
+from core.adapter.adapter_info import AdapterInfo
+from core.adapter.context import AdapterContext
+from core.adapter.builtin.webchat.webchat import WebChatAdapter
+from core.webchat.store import WebChatStore
+from core.webchat.service import WebChatService
 from .statistics import Statistics
 from .agent.func_tool_manager import FuncToolManager
 from .event_bus import EventBus
@@ -89,6 +94,8 @@ class KiraLifecycle:
         self.message_history: Optional[MessageHistoryService] = None
 
         self.message_history_cleanup: Optional[MessageHistoryCleanup] = None
+
+        self.webchat: Optional[WebChatService] = None
 
         self.tasks: list[asyncio.Task] = []
 
@@ -172,6 +179,13 @@ class KiraLifecycle:
         self.tool_manager = FuncToolManager(self.kira_config)
         # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(self.kira_config, event_queue)
+        webchat_store = WebChatStore(get_data_path() / "webchat")
+        await webchat_store.initialize()
+        webchat_adapter = WebChatAdapter(AdapterContext(
+            info=AdapterInfo(True, "builtin-webchat", WebChatAdapter.NAME, "webchat"),
+            event_queue=event_queue,
+        ), webchat_store)
+        await self.adapter_manager.register_builtin_adapter(webchat_adapter)
         await self.adapter_manager.initialize()
 
         # ====== init event bus ======
@@ -246,6 +260,8 @@ class KiraLifecycle:
             event_bus=self.event_bus,
         ))
         self.message_processor = MessageProcessor(workflow)
+        self.webchat = WebChatService(webchat_adapter, self.session_manager)
+        await self.webchat.initialize()
 
         self.tasks.append(
             asyncio.create_task(
@@ -330,6 +346,9 @@ class KiraLifecycle:
                 await self.telemetry_client.shutdown()
             except Exception as e:
                 logger.error(f"Telemetry shutdown error: {e}")
+
+        if self.webchat is not None:
+            await self.webchat.stop()
 
         # terminate all plugins
         if self.plugin_manager:

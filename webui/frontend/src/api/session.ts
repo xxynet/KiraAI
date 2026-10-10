@@ -23,8 +23,8 @@ export function getSessionMessages(sessionId: string, cursor?: string) {
   })
 }
 
-export function getMessageMedia(id: string, elementPath: string, signal: AbortSignal) {
-  return apiClient.get<Blob>(`/messages/${encodeURIComponent(id)}/media`, {
+export function getMessageMedia(id: string, elementPath: string, signal: AbortSignal, scope: 'sessions' | 'webchat' = 'sessions') {
+  return apiClient.get<Blob>(`${scope === 'webchat' ? '/webchat' : ''}/messages/${encodeURIComponent(id)}/media`, {
     params: { element_path: elementPath }, responseType: 'blob', signal,
   })
 }

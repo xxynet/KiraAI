@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-screen">
+  <div class="flex" :class="route.name === 'WebChat' ? 'h-[100dvh]' : 'h-screen'">
     <div class="page-background"></div>
     <div
       class="sidebar-overlay"
@@ -12,13 +12,13 @@
     ></div>
     <AppSidebar :open="sidebarOpen" />
     <div class="flex-1 flex flex-col overflow-hidden">
-      <main class="flex-1 flex flex-col" :class="route.meta.pluginPage ? 'overflow-hidden' : 'overflow-auto'">
-        <AppHeader
+      <main class="flex-1 flex flex-col" :class="route.meta.pluginPage || route.name === 'WebChat' ? 'min-h-0 overflow-hidden' : 'overflow-auto'">
+        <AppHeader :class="{ 'shrink-0': route.name === 'WebChat' }"
           :title="pageTitle"
           :sidebar-open="sidebarOpen"
           @toggle-sidebar="toggleSidebar"
         />
-        <PageContainer :class="{ 'flex-1 min-h-0 !p-0 !max-w-none': route.meta.pluginPage }">
+        <PageContainer :class="{ 'flex-1 min-h-0 !p-0 !max-w-none': route.meta.pluginPage, 'flex-1 min-h-0 !pb-4': route.name === 'WebChat' }">
           <router-view v-slot="{ Component, route: r }">
             <transition name="page-fade">
               <component :is="Component" :key="r.fullPath" />

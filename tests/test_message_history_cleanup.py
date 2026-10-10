@@ -164,8 +164,8 @@ async def test_cleanup_defers_until_media_and_database_are_both_persisted(cleane
     release = threading.Event()
     loop = asyncio.get_running_loop()
 
-    def archive(file, kind):
-        result = _archive_media(file, kind)
+    def archive(file, kind, archive_root=None):
+        result = _archive_media(file, kind, archive_root)
         loop.call_soon_threadsafe(started.set)
         assert release.wait(5)
         return result
@@ -391,8 +391,8 @@ async def test_session_delete_waits_for_existing_archive_and_does_not_rearchive_
     release = threading.Event()
     loop = asyncio.get_running_loop()
 
-    def archive(file, kind):
-        result = _archive_media(file, kind)
+    def archive(file, kind, archive_root=None):
+        result = _archive_media(file, kind, archive_root)
         loop.call_soon_threadsafe(started.set)
         assert release.wait(5)
         return result

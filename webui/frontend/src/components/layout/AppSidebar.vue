@@ -113,6 +113,7 @@ const staticNavItems: NavItem[] = [
   { route: '/sticker', label: 'nav.sticker', icon: Picture, iconUrl: null, isPlugin: false },
   { route: '/configuration', label: 'nav.configuration', icon: Tools, iconUrl: null, isPlugin: false },
   { route: '/plugin', label: 'nav.plugin', icon: SetUp, iconUrl: null, isPlugin: false },
+  { route: '/webchat', label: 'nav.webchat', icon: ChatDotRound, iconUrl: null, isPlugin: false },
   { route: '/sessions', label: 'nav.sessions', icon: ChatDotRound, iconUrl: null, isPlugin: false },
   { route: '/logs', label: 'nav.logs', icon: Document, iconUrl: null, isPlugin: false },
   { route: '/settings', label: 'nav.settings', icon: Setting, iconUrl: null, isPlugin: false },
