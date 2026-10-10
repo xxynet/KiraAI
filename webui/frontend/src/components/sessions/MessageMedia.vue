@@ -20,14 +20,15 @@
         <path d="M23 21v16m-6-6 6 6 6-6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
     </component>
-    <div v-else class="flex items-center justify-between gap-3">
+    <div v-else class="flex items-center justify-between gap-3" :class="{ 'min-h-6': element.type === 'sticker' }">
       <p class="min-w-0 break-all text-xs text-theme-subtle">{{ $t(`sessions.history.${element.type}`) }}<span v-if="element.name"> · {{ element.name }}</span><span v-if="element.size != null"> · {{ Math.ceil(element.size / 1024) }} KB</span></p>
       <a
-        v-if="url && ['image', 'sticker', 'record'].includes(element.type)"
+        v-if="(url || element.type === 'sticker') && ['image', 'sticker', 'record'].includes(element.type)"
         :href="url"
         :download="downloadName"
         :aria-label="$t('sessions.history.download')"
         :title="$t('sessions.history.download')"
+        :class="{ invisible: !url }"
         class="chat-media-link flex h-6 w-6 shrink-0 items-center justify-center rounded hover:opacity-75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
       >
         <IconDownload aria-hidden="true" class="h-4 w-4" />
@@ -36,7 +37,16 @@
     <p v-if="element.type !== 'sticker' && element.caption" class="whitespace-pre-wrap">{{ element.caption }}</p>
     <p v-if="element.type !== 'sticker' && element.description" class="whitespace-pre-wrap">{{ element.description }}</p>
     <p v-if="element.transcript" class="whitespace-pre-wrap">{{ element.transcript }}</p>
-    <p v-if="element.file_type !== 'archive'" class="text-xs text-theme-subtle">{{ $t('sessions.history.media_unavailable') }}</p>
+    <div v-if="element.type === 'sticker'" class="flex h-40 items-center justify-center" :aria-busy="loading">
+      <p v-if="element.file_type !== 'archive'" class="text-xs text-theme-subtle">{{ $t('sessions.history.media_unavailable') }}</p>
+      <div v-else-if="failed" class="space-y-2">
+        <button type="button" class="chat-media-link" @click="loadMedia">{{ $t('sessions.history.retry') }}</button>
+        <p role="alert" class="text-xs text-red-600 dark:text-red-400">{{ $t('sessions.history.media_failed') }}</p>
+      </div>
+      <p v-else-if="loading" role="status" class="text-xs text-theme-subtle">{{ $t('sessions.history.loading') }}</p>
+      <img v-else-if="url" :src="url" :alt="$t('sessions.history.sticker')" class="max-h-full max-w-full rounded object-contain" @error="failed = true" />
+    </div>
+    <p v-else-if="element.file_type !== 'archive'" class="text-xs text-theme-subtle">{{ $t('sessions.history.media_unavailable') }}</p>
     <template v-else>
       <p v-if="loading" role="status" class="text-xs text-theme-subtle">{{ $t('sessions.history.loading') }}</p>
       <button v-else-if="failed" type="button" class="chat-media-link" @click="loadMedia">
@@ -44,7 +54,7 @@
       </button>
       <p v-if="failed" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ $t('sessions.history.media_failed') }}</p>
       <template v-if="url">
-        <img v-if="element.type === 'image' || element.type === 'sticker'" :src="url" :alt="element.type === 'sticker' ? $t('sessions.history.sticker') : element.caption || element.description || element.name || $t('sessions.history.image')" class="max-w-full rounded object-contain" :class="element.type === 'sticker' ? 'mx-auto max-h-40' : 'max-h-80'" @error="failed = true" />
+        <img v-if="element.type === 'image'" :src="url" :alt="element.caption || element.description || element.name || $t('sessions.history.image')" class="max-h-80 max-w-full rounded object-contain" @error="failed = true" />
         <audio v-else-if="element.type === 'record'" :src="url" controls preload="metadata" class="max-w-full" @error="failed = true" />
         <video v-else-if="element.type === 'video'" :src="url" controls preload="metadata" class="max-h-80 max-w-full rounded" @error="failed = true" />
         <a v-if="element.type === 'video'" :href="url" :download="downloadName" class="inline-block chat-media-link">{{ $t('sessions.history.download') }}</a>

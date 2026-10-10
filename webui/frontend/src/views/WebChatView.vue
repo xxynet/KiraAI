@@ -413,13 +413,29 @@ async function send() {
 }
 function resizeComposer() {
   const textarea = composerTextarea.value?.$el as HTMLTextAreaElement | undefined
-  if (!textarea) return
-  const lineHeight = Number.parseFloat(getComputedStyle(textarea).lineHeight)
+  if (!textarea?.parentElement) return
+  const style = getComputedStyle(textarea)
+  const lineHeight = Number.parseFloat(style.lineHeight)
   const maxHeight = lineHeight * 5
   const scrollTop = textarea.scrollTop
-  textarea.style.height = '0px'
-  textarea.style.overflowY = 'hidden'
-  const contentHeight = textarea.scrollHeight
+  const measurement = textarea.cloneNode(false) as HTMLTextAreaElement
+  measurement.removeAttribute('id')
+  measurement.removeAttribute('name')
+  measurement.setAttribute('aria-hidden', 'true')
+  measurement.tabIndex = -1
+  measurement.value = textarea.value
+  Object.assign(measurement.style, {
+    position: 'fixed', top: '0', left: '0', visibility: 'hidden', pointerEvents: 'none',
+    width: style.width, height: '0px', minHeight: '0px', overflowY: 'hidden',
+  })
+  // Measure outside document flow so the chat viewport never temporarily expands.
+  textarea.parentElement.appendChild(measurement)
+  let contentHeight: number
+  try {
+    contentHeight = measurement.scrollHeight
+  } finally {
+    measurement.remove()
+  }
   textarea.style.height = `${Math.min(maxHeight, Math.max(lineHeight * 2, contentHeight))}px`
   textarea.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden'
   textarea.scrollTop = scrollTop
