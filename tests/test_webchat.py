@@ -630,3 +630,102 @@ async def test_uploaded_file_is_readable_through_normal_pipeline_after_history_d
     assert (await store.list_messages())["messages"] == []
     assert not store.media_dir.exists()
     assert await plugin.read_file(SimpleNamespace(sid=adapter.SID), "data/temp/1.txt") == content
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("configured_name", ["webchat", None, "renamed"])
+async def test_startup_preserves_configured_adapter_and_disables_conflicting_webchat(
+    tmp_path, monkeypatch, enabled, configured_name,
+):
+    import copy
+    from unittest.mock import MagicMock
+    import core.lifecycle as lifecycle_module
+    from core.utils import path_utils
+
+    class Config(dict):
+        def get_config(self, key, default=None):
+            return default
+
+    class ConfiguredAdapter:
+        def __init__(self, ctx):
+            self.info = ctx.info
+            self.stopped = asyncio.Event()
+
+        async def start(self):
+            await self.stopped.wait()
+
+        async def stop(self):
+            self.stopped.set()
+
+    config = Config({"adapters": {"webchat": {
+        "enabled": enabled, "name": configured_name, "platform": "test-configured", "config": {},
+    }}})
+    original = copy.deepcopy(config)
+    monkeypatch.setattr(path_utils, "_data_dir", tmp_path)
+    monkeypatch.setattr(lifecycle_module, "KiraConfig", lambda: config)
+    monkeypatch.setattr(lifecycle_module, "setup_logging", Mock())
+    monkeypatch.setattr(lifecycle_module, "run_migrations", AsyncMock())
+    monkeypatch.setattr(lifecycle_module, "migrate_selfie_reference_image", AsyncMock())
+    monkeypatch.setattr(lifecycle_module.event_handler_reg, "get_handlers", lambda _: [])
+    monkeypatch.setattr(AdapterManager, "scan_adapters", lambda *args: None)
+    monkeypatch.setitem(AdapterManager._registry, "test-configured", ConfiguredAdapter)
+    for name in (
+        "DatabaseManager", "DatabaseService", "TelemetryClient", "ProviderManager",
+        "FuncToolManager", "EventBus", "SessionMediaManager", "PersonaManager",
+        "StickerManager", "PromptManager", "MCPManager", "SkillsManager",
+        "MessageHistoryService", "ImageDescCache", "MessageHistoryCleanup",
+        "DefaultIMWorkflow", "MessageProcessor", "PluginContext", "PluginManager", "AsyncTempMonitor",
+    ):
+        component = MagicMock()
+        for method in ("init", "initialize", "init_tables", "init_persona", "init_mcp",
+                       "cleanup_task", "start_monitoring", "dispatch"):
+            setattr(component, method, AsyncMock())
+        monkeypatch.setattr(lifecycle_module, name, Mock(return_value=component))
+    sessions = Sessions()
+    monkeypatch.setattr(lifecycle_module, "SessionManager", Mock(return_value=sessions))
+    service_factory = Mock(wraps=WebChatService)
+    monkeypatch.setattr(lifecycle_module, "WebChatService", service_factory)
+    warning = Mock()
+    monkeypatch.setattr(lifecycle_module.logger, "warning", warning)
+
+    store = WebChatStore(tmp_path / "webchat")
+    await store.initialize()
+    await store.set_setting("profile", PROFILE)
+    await store.accept("saved-message", "Keep history", "Alice")
+    lifecycle = lifecycle_module.KiraLifecycle(Mock())
+    conflict = configured_name != "renamed"
+    try:
+        await lifecycle.init_and_run_system()
+        assert config == original
+        lifecycle.plugin_manager.init.assert_awaited_once()
+        lifecycle.event_bus.dispatch.assert_awaited_once()
+        if enabled:
+            adapter = lifecycle.adapter_manager.get_adapter(configured_name or "webchat")
+            assert isinstance(adapter, ConfiguredAdapter) and adapter.info.adapter_id == "webchat"
+        if conflict:
+            assert lifecycle.webchat is None
+            service_factory.assert_not_called()
+            warning.assert_called_once()
+            assert "Rename" in warning.call_args.args[0] and "restart" in warning.call_args.args[0]
+            assert sessions.description is None
+            assert "webchat" not in lifecycle.adapter_manager._builtin_names
+        else:
+            assert lifecycle.webchat is not None
+            assert isinstance(lifecycle.adapter_manager.get_adapter("webchat"), WebChatAdapter)
+            assert sessions.description == PROFILE["description"]
+            warning.assert_not_called()
+        app = FastAPI()
+        app.dependency_overrides[require_auth] = lambda: "admin"
+        WebChatRoutes(app, lifecycle).register()
+        async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+            response = await client.get("/api/webchat")
+            assert response.status_code == (503 if conflict else 200)
+        assert await store.get_setting("profile") == PROFILE
+        assert len((await store.list_messages())["messages"]) == 1
+    finally:
+        if lifecycle.adapter_manager is not None:
+            await lifecycle.adapter_manager.stop_adapters()
+        for task in lifecycle.tasks:
+            task.cancel()
+        await asyncio.gather(*lifecycle.tasks, return_exceptions=True)

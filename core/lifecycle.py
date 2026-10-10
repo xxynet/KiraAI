@@ -179,13 +179,20 @@ class KiraLifecycle:
         self.tool_manager = FuncToolManager(self.kira_config)
         # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(self.kira_config, event_queue)
-        webchat_store = WebChatStore(get_data_path() / "webchat")
-        await webchat_store.initialize()
-        webchat_adapter = WebChatAdapter(AdapterContext(
-            info=AdapterInfo(True, "builtin-webchat", WebChatAdapter.NAME, "webchat"),
-            event_queue=event_queue,
-        ), webchat_store)
-        await self.adapter_manager.register_builtin_adapter(webchat_adapter)
+        webchat_adapter = None
+        if any(info.name == WebChatAdapter.NAME for info in self.adapter_manager.get_adapters_info()):
+            logger.warning(
+                "Built-in WebChat is disabled because a configured adapter already uses the name "
+                "'webchat'. Rename that adapter and restart to enable WebChat; its configuration is unchanged."
+            )
+        else:
+            webchat_store = WebChatStore(get_data_path() / "webchat")
+            await webchat_store.initialize()
+            webchat_adapter = WebChatAdapter(AdapterContext(
+                info=AdapterInfo(True, "builtin-webchat", WebChatAdapter.NAME, "webchat"),
+                event_queue=event_queue,
+            ), webchat_store)
+            await self.adapter_manager.register_builtin_adapter(webchat_adapter)
         await self.adapter_manager.initialize()
 
         # ====== init event bus ======
@@ -260,8 +267,9 @@ class KiraLifecycle:
             event_bus=self.event_bus,
         ))
         self.message_processor = MessageProcessor(workflow)
-        self.webchat = WebChatService(webchat_adapter, self.session_manager)
-        await self.webchat.initialize()
+        if webchat_adapter is not None:
+            self.webchat = WebChatService(webchat_adapter, self.session_manager)
+            await self.webchat.initialize()
 
         self.tasks.append(
             asyncio.create_task(
