@@ -3,14 +3,13 @@ import time
 from core.adapter.capabilities import IMCapability
 from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.chat.message_utils import KiraIMSentResult, KiraIMMessage, KiraMessageEvent, MessageChain
-from core.chat.message_elements import Text
 from core.chat.session import User
 
 
 class WebChatIMCapability(IMCapability):
     _SUPPORTED_ELEMENTS = ["text", "image", "record", "video", "file", "sticker", "reply"]
 
-    def receive_message(self, message_id: str, text: str, profile: dict):
+    def receive_message(self, message_id: str, chain: MessageChain, profile: dict):
         """Publish a regular direct-message event; plugins own its reply strategy."""
         timestamp = int(time.time())
         self.publish(KiraMessageEvent(
@@ -18,7 +17,7 @@ class WebChatIMCapability(IMCapability):
             adapter=self.adapter.info,
             message=KiraIMMessage(
                 message_id=message_id, self_id="webchat", timestamp=timestamp,
-                sender=User("admin", profile["nickname"]), chain=MessageChain([Text(text)]),
+                sender=User("admin", profile["nickname"]), chain=chain,
                 is_mentioned=True,
             ),
         ))

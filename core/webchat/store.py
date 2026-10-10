@@ -50,28 +50,36 @@ class WebChatStore:
                 row = await cursor.fetchone()
         return {"id": row[0], "status": row[1]} if row else None
 
-    async def get_request(self, request_id: str, text: str):
+    async def get_request(self, request_id: str, text: str, chain: list[dict] | None = None):
+        chain = chain if chain is not None else [{"type": "text", "text": text}]
         async with aiosqlite.connect(self.path) as db:
-            async with db.execute("SELECT text, status FROM requests WHERE id = ?", (request_id,)) as cursor:
+            async with db.execute(
+                "SELECT requests.text, requests.status, messages.body FROM requests "
+                "JOIN messages ON messages.id = requests.id WHERE requests.id = ?", (request_id,)
+            ) as cursor:
                 row = await cursor.fetchone()
         if row is None:
             return None
-        if row[0] != text:
+        if row[0] != text or json.loads(row[2])["chain"] != chain:
             raise ValueError("request_conflict")
         return {"id": request_id, "status": row[1]}
 
-    async def accept(self, request_id: str, text: str, nickname: str):
+    async def accept(self, request_id: str, text: str, nickname: str, chain: list[dict] | None = None):
         """Persist each message once without waiting for a reply to previous input."""
+        chain = chain if chain is not None else [{"type": "text", "text": text}]
         async with self.lock, aiosqlite.connect(self.path) as db:
             await db.execute("BEGIN IMMEDIATE")
-            async with db.execute("SELECT text, status FROM requests WHERE id = ?", (request_id,)) as cursor:
+            async with db.execute(
+                "SELECT requests.text, requests.status, messages.body FROM requests "
+                "JOIN messages ON messages.id = requests.id WHERE requests.id = ?", (request_id,)
+            ) as cursor:
                 existing = await cursor.fetchone()
             if existing:
-                if existing[0] != text:
+                if existing[0] != text or json.loads(existing[2])["chain"] != chain:
                     raise ValueError("request_conflict")
                 return {"id": request_id, "status": existing[1]}, False
             await db.execute("INSERT INTO requests (id, text, status) VALUES (?, ?, 'sent')", (request_id, text))
-            record = self.message(request_id, "incoming", nickname, [{"type": "text", "text": text}])
+            record = self.message(request_id, "incoming", nickname, chain)
             await db.execute("INSERT INTO messages (id, body) VALUES (?, ?)",
                              (request_id, json.dumps(record, ensure_ascii=False)))
             await db.commit()

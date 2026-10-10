@@ -303,3 +303,95 @@ async def test_plugin_can_suppress_webchat_reply(store, processor, monkeypatch, 
     await service.submit(str(uuid.uuid4()), "still allowed")
     assert adapter.ctx.event_queue.qsize() == 1
     await service.stop()
+
+
+@pytest.mark.anyio
+async def test_upload_archives_media_and_publishes_once_through_normal_adapter(store):
+    from pathlib import Path
+    from core.chat.message_elements import File
+
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    app = FastAPI()
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    request_id = str(uuid.uuid4())
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jT1sAAAAASUVORK5CYII=")
+    data = {"request_id": request_id, "text": "See attachments", "kinds": ["image", "file"]}
+    uploads = [("files", ("photo.png", png, "image/png")), ("files", ("../hello.txt", b"hello", "text/plain"))]
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        assert (await client.post("/api/webchat/messages/upload", data=data, files=uploads)).status_code == 401
+        app.dependency_overrides[require_auth] = lambda: "admin"
+        first = await client.post("/api/webchat/messages/upload", data=data, files=uploads)
+        assert first.status_code == 200, first.text
+        assert first.json()["status"] == "sent"
+        repeated = await client.post("/api/webchat/messages/upload", data=data, files=uploads)
+        assert repeated.json() == first.json()
+        different = [uploads[0], ("files", ("hello.txt", b"changed", "text/plain"))]
+        assert (await client.post("/api/webchat/messages/upload", data=data, files=different)).status_code == 409
+        assert (await client.post("/api/webchat/messages", json={"request_id": request_id, "text": data["text"]})).status_code == 409
+        for index, content in [(1, png), (2, b"hello")]:
+            download = await client.get(f"/api/webchat/messages/{request_id}/media?element_path={index}")
+            assert download.status_code == 200 and download.content == content
+        image_only = await client.post("/api/webchat/messages/upload", data={"request_id": str(uuid.uuid4()), "kinds": "image"}, files=[uploads[0]])
+        assert image_only.status_code == 200, image_only.text
+    event = adapter.ctx.event_queue.get_nowait()
+    assert not event._is_forced and event.process_strategy == "discard"
+    assert [type(element) for element in event.message.chain] == [Text, Image, File]
+    assert event.message.chain[2].name == "hello.txt"
+    for element, content in [(event.message.chain[1], png), (event.message.chain[2], b"hello")]:
+        assert element.file_type == "path"
+        assert Path(element.file).parent == store.media_dir
+        assert Path(element.file).read_bytes() == content
+        assert element.size == len(content)
+    assert [type(element) for element in adapter.ctx.event_queue.get_nowait().message.chain] == [Image]
+    assert adapter.ctx.event_queue.empty()
+    restarted = WebChatStore(store.root)
+    await restarted.initialize()
+    history = (await restarted.list_messages())["messages"]
+    assert len(history) == 2
+    assert [element["type"] for element in history[0]["chain"]] == ["text", "image", "file"]
+    assert all(element["file_type"] == "archive" for element in history[0]["chain"][1:])
+
+
+@pytest.mark.anyio
+async def test_upload_validates_profile_attachment_type_count_and_total_size(store, monkeypatch):
+    import webui.routes.webchat as routes
+
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    data = {"request_id": str(uuid.uuid4()), "kinds": "file"}
+    uploads = [("files", ("hello.txt", b"hello", "text/plain"))]
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        response = await client.post("/api/webchat/messages/upload", data=data, files=uploads)
+        assert response.status_code == 409 and response.json()["detail"] == "setup_required"
+        await service.save_profile(PROFILE)
+        invalid_image = await client.post("/api/webchat/messages/upload", data={**data, "kinds": "image"}, files=uploads)
+        assert invalid_image.status_code == 400 and invalid_image.json()["detail"] == "invalid_image"
+        assert (await client.post("/api/webchat/messages/upload", data={**data, "kinds": "other"}, files=uploads)).status_code == 422
+        mismatch = await client.post("/api/webchat/messages/upload", data=data, files=uploads * 2)
+        assert mismatch.status_code == 400 and mismatch.json()["detail"] == "attachment_count"
+        too_many = await client.post("/api/webchat/messages/upload", data={**data, "kinds": ["file"] * 11}, files=uploads * 11)
+        assert too_many.status_code == 400 and too_many.json()["detail"] == "attachment_count"
+        monkeypatch.setattr(routes, "MAX_ATTACHMENT_BYTES", 8)
+        oversized = await client.post("/api/webchat/messages/upload", data={**data, "kinds": ["file"] * 2}, files=uploads * 2)
+        assert oversized.status_code == 413 and oversized.json()["detail"] == "attachments_too_large"
+    assert adapter.ctx.event_queue.empty()
+    assert not (await store.list_messages())["messages"]
+
+
+@pytest.mark.anyio
+async def test_failed_attachment_archive_does_not_publish_or_persist_message(store, monkeypatch):
+    import core.webchat.service as service_module
+
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    monkeypatch.setattr(service_module, "serialize_message_chain", AsyncMock(return_value=[{"type": "image", "file_type": "unavailable"}]))
+    with pytest.raises(ValueError, match="attachment_failed"):
+        await service.submit(str(uuid.uuid4()), "", [Image("data:image/png;base64,aGVsbG8=")])
+    assert adapter.ctx.event_queue.empty()
+    assert not (await store.list_messages())["messages"]

@@ -1,17 +1,23 @@
 import asyncio
+import base64
 import mimetypes
 import re
 from pathlib import PureWindowsPath
 from uuid import UUID
+from typing import Literal
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.chat.message_elements import _infer_mime_from_bytes
+from core.chat.message_elements import File as FileElement, Image, _infer_mime_from_bytes
 from core.utils.path_utils import is_within_directory
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
+
+
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+MAX_ATTACHMENTS = 10
 
 
 class WebChatProfile(BaseModel):
@@ -36,6 +42,7 @@ class WebChatRoutes(Routes):
                     ("/profile", "PUT", self.save_profile),
                     ("/messages", "GET", self.messages),
                     ("/messages", "POST", self.send),
+                    ("/messages/upload", "POST", self.send_with_attachments),
                     ("/messages/{message_id}/media", "GET", self.media),
                 ]]
 
@@ -62,6 +69,51 @@ class WebChatRoutes(Routes):
         except ValueError as exc:
             code = str(exc)
             raise HTTPException(503 if code == "unavailable" else 409, detail=code) from exc
+
+    async def send_with_attachments(
+        self,
+        request_id: UUID = Form(...),
+        text: str = Form("", max_length=16000),
+        kinds: list[Literal["image", "file"]] = Form(...),
+        files: list[UploadFile] = File(...),
+    ):
+        try:
+            service = self.service
+            if await service.store.get_setting("profile") is None:
+                raise HTTPException(409, detail="setup_required")
+            if not 1 <= len(files) <= MAX_ATTACHMENTS or len(files) != len(kinds):
+                raise HTTPException(400, detail="attachment_count")
+            total = 0
+            attachments = []
+            for upload, kind in zip(files, kinds):
+                content = await upload.read(MAX_ATTACHMENT_BYTES - total + 1)
+                total += len(content)
+                if total > MAX_ATTACHMENT_BYTES:
+                    raise HTTPException(413, detail="attachments_too_large")
+                name = PureWindowsPath(upload.filename or "attachment").name
+                if not name or name in {".", ".."} or len(name) > 255 or any(ord(char) < 32 for char in name):
+                    raise HTTPException(400, detail="invalid_attachment")
+
+                def make_element():
+                    mime = _infer_mime_from_bytes(content) if kind == "image" else "application/octet-stream"
+                    if not mime:
+                        raise ValueError("invalid_image")
+                    encoded = base64.b64encode(content).decode("ascii")
+                    element = (Image if kind == "image" else FileElement)(
+                        f"data:{mime};base64,{encoded}", name=name, mime=mime,
+                    )
+                    element.size = len(content)
+                    return element
+
+                attachments.append(await asyncio.to_thread(make_element))
+            return await service.submit(str(request_id), text.strip(), attachments)
+        except ValueError as exc:
+            code = str(exc)
+            status_code = 503 if code == "unavailable" else 409 if code == "request_conflict" else 400
+            raise HTTPException(status_code, detail=code) from exc
+        finally:
+            for upload in files:
+                await upload.close()
 
     async def messages(self, before: int | None = Query(None, ge=1), after: int = Query(0, ge=0)):
         if before is not None and after:
