@@ -27,6 +27,12 @@ class WebChatProfile(BaseModel):
     description: str = Field(default="", max_length=4000)
 
 
+class WebChatConfig(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    allow_file_tools: bool
+    allow_exec: bool
+
+
 class WebChatMessage(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     request_id: UUID
@@ -40,6 +46,7 @@ class WebChatRoutes(Routes):
                 for path, method, endpoint in [
                     ("", "GET", self.state),
                     ("/profile", "PUT", self.save_profile),
+                    ("/config", "PUT", self.save_config),
                     ("/messages", "GET", self.messages),
                     ("/messages", "DELETE", self.clear_messages),
                     ("/messages", "POST", self.send),
@@ -56,7 +63,14 @@ class WebChatRoutes(Routes):
 
     async def state(self):
         store = self.service.store
-        return {"profile": await store.get_setting("profile"), "request": await store.latest_request()}
+        return {"profile": await store.get_setting("profile"), "request": await store.latest_request(),
+                "config": dict(self.service.adapter.config)}
+
+    async def save_config(self, payload: WebChatConfig):
+        try:
+            return await self.service.save_config(payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(503, detail=str(exc)) from exc
 
     async def save_profile(self, payload: WebChatProfile):
         try:

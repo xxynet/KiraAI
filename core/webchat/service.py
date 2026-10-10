@@ -18,6 +18,9 @@ class WebChatService:
         self._closed = False
 
     async def initialize(self):
+        config = await self.store.get_setting("adapter_config")
+        if config is not None:
+            self.adapter.config.update(config)
         profile = await self.store.get_setting("profile")
         if profile is not None:
             await self._apply_profile(profile)
@@ -29,6 +32,14 @@ class WebChatService:
             title=profile["peer_nickname"],
             description=profile["description"],
         )
+
+    async def save_config(self, config):
+        async with self._lock:
+            if self._closed:
+                raise ValueError("unavailable")
+            await self.store.set_setting("adapter_config", config)
+            self.adapter.config.update(config)
+        return dict(self.adapter.config)
 
     async def save_profile(self, profile):
         async with self._lock:

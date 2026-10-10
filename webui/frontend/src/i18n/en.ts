@@ -807,6 +807,11 @@ export default {
     },
   },
   webchat: {
+    tool_permissions: 'Tool permissions',
+    allow_file_tools: 'Allow file tools',
+    allow_exec: 'Allow command execution',
+    tool_permissions_hint: 'Changes are saved automatically and take effect immediately. File path and command execution limits still apply.',
+    error_save_config: 'Failed to save tool permissions. Please try again.',
     add_attachment: 'Add attachment',
     add_image: 'Add image',
     add_file: 'Add file',

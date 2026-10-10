@@ -1,6 +1,10 @@
 import apiClient from './client'
 import type { MessageElement } from '@/types'
 
+export interface WebChatConfig {
+  allow_file_tools: boolean
+  allow_exec: boolean
+}
 export interface WebChatProfile {
   nickname: string
   peer_nickname: string
@@ -19,8 +23,9 @@ export interface WebChatMessage {
   chain: MessageElement[]
 }
 export const getWebChat = (signal?: AbortSignal) =>
-  apiClient.get<{ profile: WebChatProfile | null; request: WebChatRequest | null }>('/webchat', { signal })
+  apiClient.get<{ profile: WebChatProfile | null; request: WebChatRequest | null; config: WebChatConfig }>('/webchat', { signal })
 export const saveWebChatProfile = (profile: WebChatProfile) => apiClient.put<WebChatProfile>('/webchat/profile', profile)
+export const saveWebChatConfig = (config: WebChatConfig) => apiClient.put<WebChatConfig>('/webchat/config', config)
 export interface WebChatAttachment {
   file: File
   kind: 'image' | 'file'

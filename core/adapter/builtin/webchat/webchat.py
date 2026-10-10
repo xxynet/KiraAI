@@ -12,6 +12,8 @@ class WebChatAdapter(BaseAdapter):
 
     def __init__(self, ctx, store):
         super().__init__(ctx)
+        self.config.setdefault("allow_file_tools", True)
+        self.config.setdefault("allow_exec", False)
         self.store = store
         self._stopped = asyncio.Event()
         self.register_capability(IMCapability, WebChatIMCapability(self))

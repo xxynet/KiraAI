@@ -23,6 +23,19 @@
           <button type="submit" :disabled="saving || deleting || !form.nickname.trim() || !form.peer_nickname.trim()" class="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 transition-colors disabled:opacity-50">{{ t(saving ? 'webchat.saving' : 'webchat.save') }}</button>
           <button v-if="profile" type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="saving || deleting" @click="closeProfile">{{ t('webchat.cancel') }}</button>
         </div>
+        <div class="space-y-4 border-t border-gray-200 pt-5 dark:border-gray-700">
+          <h5 class="text-sm font-semibold text-theme-strong">{{ t('webchat.tool_permissions') }}</h5>
+          <div class="flex items-center justify-between gap-4">
+            <span id="webchat-file-tools-label" class="text-sm text-theme-body">{{ t('webchat.allow_file_tools') }}</span>
+            <ToggleSwitch :model-value="adapterConfig.allow_file_tools" :disabled="savingConfig" role="switch" :aria-checked="adapterConfig.allow_file_tools" aria-labelledby="webchat-file-tools-label" @update:model-value="saveConfig('allow_file_tools', $event)" />
+          </div>
+          <div class="flex items-center justify-between gap-4">
+            <span id="webchat-exec-label" class="text-sm text-theme-body">{{ t('webchat.allow_exec') }}</span>
+            <ToggleSwitch :model-value="adapterConfig.allow_exec" :disabled="savingConfig" role="switch" :aria-checked="adapterConfig.allow_exec" aria-labelledby="webchat-exec-label" @update:model-value="saveConfig('allow_exec', $event)" />
+          </div>
+          <p class="text-sm text-theme-subtle" role="status">{{ t(savingConfig ? 'webchat.saving' : 'webchat.tool_permissions_hint') }}</p>
+          <p v-if="configError" role="alert" class="text-sm text-red-600 dark:text-red-300">{{ configError }}</p>
+        </div>
         <div v-if="profile" class="border-t border-gray-200 pt-5 dark:border-gray-700">
           <button type="button" :disabled="deleting || saving || sending" class="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700 transition-colors disabled:opacity-50" @click="deleteConfirmModalRef?.open()">{{ t(deleting ? 'webchat.deleting' : 'webchat.delete_history') }}</button>
           <p class="mt-2 text-sm text-theme-subtle">{{ t('webchat.delete_history_hint') }}</p>
@@ -113,11 +126,12 @@ import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Setting, Plus, Picture, Document, Close } from '@element-plus/icons-vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import MessageChain from '@/components/sessions/MessageChain.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import { deleteWebChatMessages, getWebChat, getWebChatMessages, saveWebChatProfile, sendWebChatMessage } from '@/api/webchat'
-import type { WebChatMessage, WebChatProfile, WebChatAttachment } from '@/api/webchat'
+import { deleteWebChatMessages, getWebChat, getWebChatMessages, saveWebChatProfile, saveWebChatConfig, sendWebChatMessage } from '@/api/webchat'
+import type { WebChatMessage, WebChatProfile, WebChatAttachment, WebChatConfig } from '@/api/webchat'
 
 const { t, locale } = useI18n()
 const profile = ref<WebChatProfile | null>(null)
@@ -126,6 +140,10 @@ const messages = ref<WebChatMessage[]>([])
 const loaded = ref(false)
 const editing = ref(false)
 const saving = ref(false)
+const adapterConfig = ref<WebChatConfig>({ allow_file_tools: true, allow_exec: false })
+const savingConfig = ref(false)
+const configError = ref('')
+let configVersion = 0
 const deleting = ref(false)
 const deleteConfirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
 const historyDeleted = ref(false)
@@ -292,6 +310,21 @@ async function closeProfile() {
   lastScrollTop = container.scrollTop
   chatScroll = null
 }
+async function saveConfig(key: keyof WebChatConfig, value: boolean) {
+  if (savingConfig.value) return
+  savingConfig.value = true
+  configError.value = ''
+  configVersion++
+  try {
+    const { data } = await saveWebChatConfig({ ...adapterConfig.value, [key]: value })
+    if (!controller.signal.aborted) adapterConfig.value = data
+  } catch {
+    if (!controller.signal.aborted) configError.value = t('webchat.error_save_config')
+  } finally {
+    configVersion++
+    savingConfig.value = false
+  }
+}
 async function saveProfile() {
   if (saving.value || deleting.value) return
   saving.value = true
@@ -337,12 +370,14 @@ async function refresh() {
   if (refreshing || deleting.value || controller.signal.aborted) return
   refreshing = true
   const version = historyVersion
+  const permissionsVersion = configVersion
   if (timer) clearTimeout(timer)
   try {
     const { data } = await getWebChat(controller.signal)
     if (version !== historyVersion || deleting.value) return
     if (error.value === t('webchat.error')) error.value = ''
     profile.value = data.profile
+    if (permissionsVersion === configVersion && !savingConfig.value) adapterConfig.value = data.config
     loaded.value = true
     if (pending && data.request?.id === pending.id && data.request.status === 'sent') clearSubmission(pending)
     if (data.profile) {

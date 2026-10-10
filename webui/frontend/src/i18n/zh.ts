@@ -807,6 +807,11 @@ export default {
     },
   },
   webchat: {
+    tool_permissions: '工具权限',
+    allow_file_tools: '允许文件工具',
+    allow_exec: '允许命令执行',
+    tool_permissions_hint: '修改后自动保存并立即生效。文件路径和命令执行限制仍然适用。',
+    error_save_config: '保存工具权限失败，请重试。',
     add_attachment: '添加附件',
     add_image: '添加图片',
     add_file: '添加文件',

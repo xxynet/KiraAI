@@ -111,7 +111,7 @@ async def test_routes_require_auth_validate_input_and_gate_setup(store):
     app = FastAPI()
     WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
     async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
-        for method, path in [("GET", ""), ("PUT", "/profile"), ("GET", "/messages"), ("POST", "/messages"), ("GET", "/messages/id/media?element_path=0")]:
+        for method, path in [("GET", ""), ("PUT", "/profile"), ("PUT", "/config"), ("GET", "/messages"), ("POST", "/messages"), ("GET", "/messages/id/media?element_path=0")]:
             assert (await client.request(method, "/api/webchat" + path, json=PROFILE)).status_code == 401
         app.dependency_overrides[require_auth] = lambda: "admin"
         assert (await client.get("/api/webchat")).json()["profile"] is None
@@ -617,9 +617,9 @@ async def test_uploaded_file_is_readable_through_normal_pipeline_after_history_d
     assert path.read_text() == content
     assert await attachment.to_path() == str(path)
 
-    plugin = AgentPlugin(None, {"file_access": {
-        "permission_mode": "allow_list", "session_list": [adapter.SID],
-    }})
+    plugin = AgentPlugin(SimpleNamespace(
+        adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
+    ), {})
     await plugin.initialize()
     assert await plugin.read_file(SimpleNamespace(sid=adapter.SID), "data/temp/1.txt") == content
     denied = await plugin.read_file(SimpleNamespace(sid="other:dm:user"), "data/temp/1.txt")
@@ -729,3 +729,130 @@ async def test_startup_preserves_configured_adapter_and_disables_conflicting_web
         for task in lifecycle.tasks:
             task.cancel()
         await asyncio.gather(*lifecycle.tasks, return_exceptions=True)
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("adapter_kind", ["builtin", "configured", "missing"])
+@pytest.mark.parametrize("mode, sessions, listed_allowed", [
+    ("allow_list", [], False),
+    ("allow_list", [WebChatAdapter.SID], True),
+    ("deny_list", [], True),
+    ("deny_list", [WebChatAdapter.SID], False),
+])
+async def test_webchat_tool_permissions_use_adapter_config_only_for_builtin(
+    tmp_path, monkeypatch, adapter_kind, mode, sessions, listed_allowed,
+):
+    from core.plugin.builtin_plugins.agent import main as agent_main
+
+    monkeypatch.setattr(agent_main, "get_config_path", lambda: tmp_path / "config")
+    adapter = {
+        "builtin": make_adapter(None),
+        "configured": SimpleNamespace(name="webchat"),
+        "missing": None,
+    }[adapter_kind]
+    lookup = Mock(return_value=adapter)
+    cfg = {key: {"permission_mode": mode, "session_list": sessions} for key in ("file_access", "exec_access")}
+    plugin = agent_main.AgentPlugin(SimpleNamespace(
+        adapter_mgr=SimpleNamespace(get_adapter=lookup),
+    ), cfg)
+    await plugin.initialize()
+
+    expected = listed_allowed or adapter_kind == "builtin"
+    assert plugin._is_file_session_allowed(WebChatAdapter.SID) is expected
+    assert plugin._is_exec_session_allowed(WebChatAdapter.SID) is (False if adapter_kind == "builtin" else listed_allowed)
+    if adapter_kind == "builtin":
+        adapter.config.update(allow_file_tools=False, allow_exec=True)
+        assert not plugin._is_file_session_allowed(WebChatAdapter.SID)
+        assert plugin._is_exec_session_allowed(WebChatAdapter.SID)
+    assert plugin.file_sessions == sessions
+    assert plugin.plugin_cfg == cfg
+    if mode == "allow_list":
+        lookup.assert_called_with(WebChatAdapter.NAME)
+        assert not plugin._is_file_session_allowed("webchat:dm:someone_else")
+        assert not plugin._is_file_session_allowed("other:dm:admin")
+
+
+@pytest.mark.anyio
+async def test_webchat_default_file_tools_keep_path_restrictions(tmp_path, monkeypatch):
+    from core.plugin.builtin_plugins.agent import main as agent_main
+    from core.utils import path_utils
+
+    monkeypatch.setattr(path_utils, "_data_dir", tmp_path / "data")
+    monkeypatch.setattr(agent_main, "get_config_path", lambda: tmp_path / "config")
+    adapter = make_adapter(None)
+    plugin = agent_main.AgentPlugin(SimpleNamespace(
+        adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
+    ), {})
+    await plugin.initialize()
+    event = SimpleNamespace(sid=adapter.SID)
+    assert await plugin.write_file(event, "data/files/note.txt", "hello") == "File written successfully"
+    assert await plugin.read_file(event, "data/files/note.txt") == "hello"
+    assert (await plugin.edit_file(event, "data/files/note.txt", "hello", "updated")).startswith("Successfully edited file")
+    assert await plugin.read_file(event, "data/files/note.txt") == "updated"
+    for path in ["../outside.txt", "data/webchat/private.txt", "data/files/secret.txt"]:
+        assert (await plugin.read_file(event, path)).startswith("Permission denied")
+        assert (await plugin.write_file(event, path, "blocked")).startswith("Permission denied")
+    assert (await plugin.exec(event, "echo blocked")).startswith("Permission denied")
+
+@pytest.mark.anyio
+async def test_webchat_permission_switches_persist_and_take_effect_without_plugin_reload(store, tmp_path, monkeypatch):
+    from core.plugin.builtin_plugins.agent import main as agent_main
+
+    monkeypatch.setattr(agent_main, "get_config_path", lambda: tmp_path / "config")
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.initialize()
+    plugin = agent_main.AgentPlugin(SimpleNamespace(
+        adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
+    ), {})
+    await plugin.initialize()
+    event = SimpleNamespace(sid=adapter.SID)
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        assert (await client.get("/api/webchat")).json()["config"] == {
+            "allow_file_tools": True, "allow_exec": False,
+        }
+        for file_allowed, exec_allowed in [(False, True), (True, True), (False, False), (True, False)]:
+            config = {"allow_file_tools": file_allowed, "allow_exec": exec_allowed}
+            response = await client.put("/api/webchat/config", json=config)
+            assert response.status_code == 200 and response.json() == config
+            assert adapter.config == adapter.info.config == config
+            assert plugin._is_file_session_allowed(adapter.SID) is file_allowed
+            assert plugin._is_exec_session_allowed(adapter.SID) is exec_allowed
+            if not file_allowed:
+                assert (await plugin.read_file(event, "data/files/note.txt")).startswith("Permission denied")
+            if exec_allowed:
+                assert await plugin.manage_background_exec(event, "list") == "No background tasks are currently running."
+                plugin.exec_command_deny_list = ["blocked"]
+                assert (await plugin.exec(event, "blocked")).startswith("Shell command blocked by deny list")
+            else:
+                assert (await plugin.exec(event, "blocked")).startswith("Permission denied")
+                assert (await plugin.manage_background_exec(event, "list")).startswith("Permission denied")
+
+        final_config = {"allow_file_tools": False, "allow_exec": True}
+        await client.put("/api/webchat/config", json=final_config)
+        await service.save_profile(PROFILE)
+        await service.clear_messages()
+        restarted_store = WebChatStore(store.root)
+        await restarted_store.initialize()
+        restarted = WebChatService(make_adapter(restarted_store), Sessions())
+        await restarted.initialize()
+        assert restarted.adapter.config == final_config
+        assert (await client.get("/api/webchat")).json()["config"] == final_config
+        for invalid in [{}, {**final_config, "allow_exec": "true"}, {**final_config, "extra": True}]:
+            assert (await client.put("/api/webchat/config", json=invalid)).status_code == 422
+        assert adapter.config == final_config
+        await service.stop()
+        assert (await client.put("/api/webchat/config", json={"allow_file_tools": True, "allow_exec": False})).status_code == 503
+        assert await store.get_setting("adapter_config") == final_config
+
+
+@pytest.mark.anyio
+async def test_webchat_failed_config_save_does_not_change_live_permissions(store, monkeypatch):
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    monkeypatch.setattr(store, "set_setting", AsyncMock(side_effect=OSError("Storage unavailable")))
+    with pytest.raises(OSError):
+        await service.save_config({"allow_file_tools": False, "allow_exec": True})
+    assert adapter.config == {"allow_file_tools": True, "allow_exec": False}
