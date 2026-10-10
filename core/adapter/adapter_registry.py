@@ -36,6 +36,7 @@ class AdapterManager:
         self.kira_config = kira_config
         self._adapters: dict[str, BaseAdapter] = {}
         self._adapter_tasks: dict[str, asyncio.Task] = {}
+        self._builtin_names: set[str] = set()
         self.adas_config: dict = kira_config.get("adapters", {}) or {}
         self.event_queue = event_queue
 
@@ -252,6 +253,20 @@ class AdapterManager:
             if not found:
                 logger.warning(f"No adapter class found in {adapter_dir}")
 
+    async def register_builtin_adapter(self, adapter: BaseAdapter):
+        """Start an application-owned instance without exposing a catalog entry."""
+        name = adapter.info.name
+        if name in self._adapters or not self._check_name_unique(name):
+            raise ValueError(f"Adapter name '{name}' is already in use")
+        self._builtin_names.add(name)
+        self._adapters[name] = adapter
+        try:
+            await self.start_adapter(name)
+        except BaseException:
+            self._adapters.pop(name, None)
+            self._builtin_names.discard(name)
+            raise
+
     async def initialize(self):
         for adapter_id in self.adas_config.keys():
             info = self.get_adapter_info(adapter_id)
@@ -267,6 +282,8 @@ class AdapterManager:
         """Check if adapter name is unique across all adapters (including disabled).
         Returns True if name is available, False if already in use."""
         adapters_config = self.kira_config.get("adapters", {}) or {}
+        if name in getattr(self, "_builtin_names", ()):
+            return False
         for aid, entry in adapters_config.items():
             if not isinstance(entry, dict):
                 continue
@@ -537,6 +554,8 @@ class AdapterManager:
     async def register_adapter(self, info: AdapterInfo):
         platform = info.platform
         name = info.name or info.adapter_id
+        if name in getattr(self, "_builtin_names", ()):
+            raise ValueError('Cannot replace an application-owned adapter')
         if not platform:
             raise ValueError(f"Adapter {name} has no platform configured")
 

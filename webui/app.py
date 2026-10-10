@@ -29,6 +29,7 @@ from webui.routes.plugins import PluginsRoutes
 from webui.routes.plugin_store import PluginStoreRoutes
 from webui.routes.providers import ProvidersRoutes
 from webui.routes.sessions import SessionsRoutes
+from webui.routes.webchat import WebChatRoutes
 from webui.routes.config import ConfigRoutes
 from webui.routes.stickers import StickersRoutes
 from webui.routes.settings import SettingsRoutes
@@ -185,6 +186,7 @@ class KiraWebUI:
         PluginStoreRoutes(self.app, self.lifecycle).register()
         ProvidersRoutes(self.app, self.lifecycle).register()
         SessionsRoutes(self.app, self.lifecycle).register()
+        WebChatRoutes(self.app, self.lifecycle).register()
         ConfigRoutes(self.app, self.lifecycle).register()
         StickersRoutes(self.app, self.lifecycle).register()
         SkillsRoutes(self.app, self.lifecycle).register()

@@ -6,9 +6,9 @@
       <blockquote v-else-if="element.type === 'reply'" class="chat-bubble-quote my-2 first:mt-0 last:mb-0 border-l-2 pl-3 space-y-2">
         <p class="chat-bubble-quote-label text-xs">{{ $t('sessions.history.reply') }} · {{ element.message_id }}</p>
         <p v-if="element.message_content" class="whitespace-pre-wrap">{{ element.message_content }}</p>
-        <MessageChain v-if="element.chain?.length && depth < 3" :chain="element.chain" :message-id="messageId" :path="elementPath(index)" :depth="depth + 1" />
+        <MessageChain v-if="element.chain?.length && depth < 3" :chain="element.chain" :message-id="messageId" :path="elementPath(index)" :depth="depth + 1" :media-scope="mediaScope" />
       </blockquote>
-      <MessageMedia v-else-if="['image', 'sticker', 'record', 'video', 'file'].includes(element.type)" class="my-2 first:mt-0 last:mb-0" :element="element" :message-id="messageId" :element-path="elementPath(index)" />
+      <MessageMedia v-else-if="['image', 'sticker', 'record', 'video', 'file'].includes(element.type)" class="my-2 first:mt-0 last:mb-0" :element="element" :message-id="messageId" :element-path="elementPath(index)" :media-scope="mediaScope" />
       <span v-else-if="element.type === 'emoji'">{{ $t('sessions.history.emoji') }} · {{ element.emoji_desc || element.emoji_id }}</span>
       <span v-else-if="element.type === 'poke'">{{ $t('sessions.history.poke') }} · {{ element.pid }}</span>
       <details v-else class="chat-bubble-data my-2 first:mt-0 last:mb-0 rounded p-2">
@@ -28,6 +28,7 @@ const props = withDefaults(defineProps<{
   messageId: string
   path?: string
   depth?: number
+  mediaScope?: 'sessions' | 'webchat'
 }>(), { path: '', depth: 0 })
 
 function elementPath(index: number) {

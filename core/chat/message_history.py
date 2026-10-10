@@ -24,10 +24,10 @@ from core.utils.network import download_file
 logger = get_logger("message_history", "cyan")
 
 
-def _archive_media(file: str, file_type: str) -> str:
+def _archive_media(file: str, file_type: str, archive_root: Path | None = None) -> str:
     """Archive media outside memory cleanup; never persist credential-bearing URLs."""
     # Memory cleanup only visits hashed session directories, leaving archives intact.
-    root = get_data_path() / MEDIA_ROOT_NAME / "archive"
+    root = archive_root if archive_root is not None else get_data_path() / MEDIA_ROOT_NAME / "archive"
     root.mkdir(parents=True, exist_ok=True)
     if file_type == "url":
         downloaded = root / (uuid.uuid4().hex + ".download")
@@ -36,7 +36,7 @@ def _archive_media(file: str, file_type: str) -> str:
             asyncio.run(asyncio.wait_for(download_file(
                 file, str(downloaded), timeout=10.0, max_bytes=20 * 1024 * 1024,
             ), timeout=12.0))
-            return _archive_media(str(downloaded), "path")
+            return _archive_media(str(downloaded), "path", archive_root)
         finally:
             downloaded.unlink(missing_ok=True)
     temporary = root / (uuid.uuid4().hex + ".tmp")
@@ -55,12 +55,12 @@ def _archive_media(file: str, file_type: str) -> str:
                 output.write(data)
         target = root / digest.hexdigest()
         os.replace(temporary, target)
-        return target.relative_to(get_data_path()).as_posix()
+        return target.name if archive_root is not None else target.relative_to(get_data_path()).as_posix()
     finally:
         temporary.unlink(missing_ok=True)
 
 
-async def serialize_message_chain(chain, *, depth: int = 0) -> list[dict]:
+async def serialize_message_chain(chain, *, depth: int = 0, archive_root: Path | None = None) -> list[dict]:
     """Serialize declared element fields; never persist runtime objects or payloads."""
     if depth > 2:
         return [{"type": "unsupported", "reason": "nesting_limit"}]
@@ -80,7 +80,7 @@ async def serialize_message_chain(chain, *, depth: int = 0) -> list[dict]:
             file = element.file
             if file and element.file_type in {"path", "base64", "data_url", "url"}:
                 try:
-                    item["file"] = await asyncio.to_thread(_archive_media, file, element.file_type)
+                    item["file"] = await asyncio.to_thread(_archive_media, file, element.file_type, archive_root)
                     item["file_type"] = "archive"
                 except Exception as exc:
                     item["file_type"] = "unavailable"
@@ -90,7 +90,7 @@ async def serialize_message_chain(chain, *, depth: int = 0) -> list[dict]:
         elif isinstance(element, Reply):
             item.update(message_id=element.message_id, message_content=element.message_content)
             if element.chain:
-                item["chain"] = await serialize_message_chain(element.chain, depth=depth + 1)
+                item["chain"] = await serialize_message_chain(element.chain, depth=depth + 1, archive_root=archive_root)
         elif isinstance(element, Json):
             item["data"] = copy.deepcopy(element.data)
         else:

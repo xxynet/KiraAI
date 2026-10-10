@@ -53,6 +53,7 @@ const router = createRouter({
         { path: 'plugin', name: 'Plugin', component: () => import('@/views/PluginView.vue') },
         { path: 'sticker', name: 'Sticker', component: () => import('@/views/StickerView.vue') },
         { path: 'configuration', name: 'Configuration', component: () => import('@/views/ConfigView.vue') },
+        { path: 'webchat', name: 'WebChat', component: () => import('@/views/WebChatView.vue') },
         { path: 'sessions', name: 'Sessions', component: () => import('@/views/SessionView.vue') },
         { path: 'logs', name: 'Logs', component: () => import('@/views/LogsView.vue') },
         { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue') },

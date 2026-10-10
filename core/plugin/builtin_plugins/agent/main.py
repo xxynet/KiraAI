@@ -17,6 +17,7 @@ from core.chat import KiraMessageBatchEvent, MessageChain
 from core.chat.message_elements import Image, Record, Text
 from core.provider import LLMRequest
 from core.agent.tool import ToolResult
+from core.adapter.builtin.webchat.webchat import WebChatAdapter
 
 from core.utils.common_utils import desc_img, speech_to_text
 from core.utils.image_compression import compress_image_file
@@ -201,12 +202,25 @@ class AgentPlugin(BasePlugin):
         listed = str(session_id) in sessions
         return listed if mode == ALLOW_LIST else not listed
 
+    def _webchat_config(self, session_id: str) -> dict | None:
+        if session_id == WebChatAdapter.SID and self.ctx is not None:
+            adapter = self.ctx.adapter_mgr.get_adapter(WebChatAdapter.NAME)
+            if isinstance(adapter, WebChatAdapter):
+                return adapter.config
+        return None
+
     def _is_file_session_allowed(self, session_id: str) -> bool:
+        config = self._webchat_config(session_id)
+        if config is not None:
+            return config["allow_file_tools"] is True
         return self._session_allowed(
             session_id, self.file_permission_mode, self.file_sessions
         )
 
     def _is_exec_session_allowed(self, session_id: str) -> bool:
+        config = self._webchat_config(session_id)
+        if config is not None:
+            return config["allow_exec"] is True
         return self._session_allowed(
             session_id, self.exec_permission_mode, self.exec_sessions
         )
