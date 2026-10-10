@@ -57,10 +57,14 @@ class LogsRoutes(Routes):
 
         async def event_generator():
             que = log_cache_manager.add_queue()
+            server = getattr(self.lifecycle, "uvicorn_server", None)
             try:
-                while True:
+                # Uvicorn waits for active responses before running lifespan shutdown.
+                while server is None or not server.should_exit:
                     try:
-                        log_entry = await que.get()
+                        log_entry = await asyncio.wait_for(que.get(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        continue
                     except asyncio.CancelledError:
                         break
                     data = json.dumps(log_entry, ensure_ascii=False)

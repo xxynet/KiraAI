@@ -480,3 +480,61 @@ async def test_media_gc_tolerates_malformed_sessions_and_preserves_references(
     assert (tmp_path / damaged_path).is_file()
     assert history.session_manager.chat_memory["adapter:dm:damaged"] == records[malformed]
     assert (await cleaner.cleanup_once(settings()))["deleted_files"] == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("join_before_stop", [False, True])
+async def test_stop_accepts_cancelled_cleanup_task(join_before_stop):
+    cleaner = MessageHistoryCleanup(None, {"bot_config": {"message_history_cleanup": {"enabled": False}}})
+    cleaner.start()
+    task = cleaner._task
+    await asyncio.sleep(0)
+    task.cancel()
+    if join_before_stop:
+        await asyncio.gather(task, return_exceptions=True)
+
+    await cleaner.stop()
+    assert task.done()
+    if join_before_stop:
+        assert task.cancelled()
+    assert cleaner._task is None
+    await cleaner.stop()
+
+
+@pytest.mark.anyio
+async def test_stop_preserves_cancellation_of_its_caller(monkeypatch):
+    cleaner = MessageHistoryCleanup(None, {})
+    started = asyncio.Event()
+
+    async def run():
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(cleaner, "run", run)
+    cleaner.start()
+    worker = cleaner._task
+    await started.wait()
+    stopper = asyncio.create_task(cleaner.stop())
+    try:
+        await asyncio.sleep(0)
+        assert cleaner._stopping and not stopper.done()
+        stopper.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await stopper
+    finally:
+        worker.cancel()
+        await asyncio.gather(worker, stopper, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_stop_does_not_hide_cleanup_failure(monkeypatch):
+    cleaner = MessageHistoryCleanup(None, {})
+
+    async def run():
+        raise RuntimeError("cleanup worker failed")
+
+    monkeypatch.setattr(cleaner, "run", run)
+    cleaner.start()
+    await asyncio.gather(cleaner._task, return_exceptions=True)
+    with pytest.raises(RuntimeError, match="cleanup worker failed"):
+        await cleaner.stop()
