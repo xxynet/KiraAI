@@ -16,8 +16,8 @@
         <label class="block text-sm text-theme-body">{{ t('webchat.peer_nickname') }}
           <UiInput v-model="form.peer_nickname" required maxlength="80" class="mt-2 w-full rounded-lg px-3 py-2" />
         </label>
-        <label class="block text-sm text-theme-body">{{ t('webchat.description') }}
-          <UiTextarea v-model="form.description" rows="4" maxlength="4000" class="mt-2 w-full rounded-lg px-3 py-2" :placeholder="t('webchat.description_hint')" />
+        <label class="block text-sm text-theme-body">{{ t('sessions.description') }}
+          <UiTextarea v-model="form.description" rows="4" maxlength="4000" class="mt-2 w-full rounded-lg px-3 py-2" :placeholder="t('sessions.description_placeholder')" />
         </label>
         <div class="flex gap-3">
           <button type="submit" :disabled="saving || deleting || !form.nickname.trim() || !form.peer_nickname.trim()" class="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 transition-colors disabled:opacity-50">{{ t(saving ? 'webchat.saving' : 'webchat.save') }}</button>
