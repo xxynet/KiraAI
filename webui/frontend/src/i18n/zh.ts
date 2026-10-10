@@ -859,7 +859,6 @@ export default {
       video: '视频',
       file: '文件',
       media_unavailable: '此媒体未能归档。',
-      load_media: '加载媒体',
       media_failed: '媒体加载或预览失败，可能已过期或格式不受支持。',
       download: '下载',
     },

@@ -59,8 +59,10 @@
           </div>
           <div class="min-w-0 max-w-full flex flex-col" :class="message.direction === 'outgoing' ? 'items-end' : 'items-start'">
             <div
-              class="message-bubble chat-bubble min-w-0 max-w-full rounded-lg px-4 py-3 break-words"
-              :class="{ 'chat-bubble--accent': message.direction === 'outgoing' }"
+              class="message-bubble min-w-0 max-w-full rounded-lg break-words"
+              :class="message.chain.length === 1 && ['image', 'sticker', 'record', 'video', 'file'].includes(message.chain[0]?.type || '')
+                ? null
+                : ['chat-bubble px-4 py-3', { 'chat-bubble--accent': message.direction === 'outgoing' }]"
               tabindex="0"
               :aria-describedby="`message-time-${message.id}`"
             >

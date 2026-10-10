@@ -859,7 +859,6 @@ export default {
       video: 'Video',
       file: 'File',
       media_unavailable: 'This media was not archived.',
-      load_media: 'Load media',
       media_failed: 'Media could not be loaded or previewed. It may have expired or use an unsupported format.',
       download: 'Download',
     },

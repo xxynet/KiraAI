@@ -32,7 +32,9 @@
             <div class="min-w-0 max-w-[85%] flex flex-col gap-2" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
               <p class="max-w-full break-words text-xs font-medium text-theme-body">{{ message.sender_name }}</p>
               <div class="min-w-0 max-w-full flex flex-col" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
-                <div class="message-bubble chat-bubble min-w-0 max-w-full rounded-lg px-4 py-3 break-words" :class="{ 'chat-bubble--accent': message.direction === 'incoming' }" tabindex="0" :aria-describedby="`webchat-time-${message.id}`">
+                <div class="message-bubble min-w-0 max-w-full rounded-lg break-words" :class="message.chain.length === 1 && ['image', 'sticker', 'record', 'video', 'file'].includes(message.chain[0]?.type || '')
+                ? null
+                : ['chat-bubble px-4 py-3', { 'chat-bubble--accent': message.direction === 'incoming' }]" tabindex="0" :aria-describedby="`webchat-time-${message.id}`">
                   <MessageChain :chain="message.chain" :message-id="message.id" media-scope="webchat" />
                 </div>
                 <time :id="`webchat-time-${message.id}`" class="message-time mt-1 text-xs text-theme-subtle">{{ formatTime(message.timestamp) }}</time>
