@@ -24,8 +24,8 @@
       </div>
     </form>
     <template v-else>
-      <div ref="messageList" role="log" :aria-label="t('webchat.messages')" dir="ltr" class="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
-        <div dir="ltr" class="mx-auto w-full max-w-[1280px] space-y-4 px-6 py-5">
+      <div ref="messageList" @scroll="onMessageScroll" role="log" :aria-label="t('webchat.messages')" dir="ltr" class="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
+        <div ref="messageContent" dir="ltr" class="mx-auto w-full max-w-[1280px] space-y-4 px-6 py-5">
           <button v-if="hasOlder" type="button" :disabled="loadingOlder" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-sm text-blue-600 dark:text-blue-300 disabled:opacity-50" @click="loadOlder">{{ t(loadingOlder ? 'webchat.loading' : 'sessions.history.load_more') }}</button>
           <p v-if="historyLoaded && !messages.length" class="py-10 text-center text-theme-subtle">{{ t('webchat.empty') }}</p>
           <article v-for="message in messages" :key="message.id" class="flex" :class="message.direction === 'incoming' ? 'justify-end' : 'justify-start'">
@@ -54,43 +54,47 @@
             </button>
           </div>
         </div>
-        <UiTextarea v-model="draft" :aria-label="t('webchat.input')" :placeholder="t('webchat.input')" rows="2" maxlength="16000" class="block w-full resize-none rounded-3xl px-5 pt-4 pb-16" @keydown="onComposerKey" @paste="onComposerPaste" />
-        <input ref="imagePicker" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple class="hidden" @change="addAttachments($event, 'image')" />
-        <input ref="filePicker" type="file" multiple class="hidden" @change="addAttachments($event, 'file')" />
-        <div class="absolute bottom-8 left-10 flex items-center gap-2">
-          <div ref="attachmentMenu" class="relative" @focusout="onAttachmentMenuFocusOut" @keydown.esc.prevent.stop="closeAttachmentMenu(true)">
-            <button ref="attachmentTrigger" type="button" :disabled="!profile || sending" :aria-label="t('webchat.add_attachment')" :title="t('webchat.add_attachment')" aria-haspopup="menu" :aria-expanded="attachmentMenuOpen" aria-controls="webchat-attachment-menu" class="composer-settings flex h-8 w-8 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="toggleAttachmentMenu">
-              <Plus aria-hidden="true" class="h-5 w-5" />
-            </button>
-            <Transition name="attachment-menu">
-              <div v-if="attachmentMenuOpen" id="webchat-attachment-menu" role="menu" :aria-label="t('webchat.add_attachment')" class="absolute bottom-full left-0 z-40 mb-2 min-w-48 rounded-xl border border-gray-200 bg-white/95 p-1.5 text-theme-supporting shadow-lg dark:border-gray-700 dark:bg-[#1b1b1f]/95" @keydown="onAttachmentMenuKey">
-                <button type="button" role="menuitem" class="attachment-menu-item hover:bg-gray-100 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:focus-visible:bg-[#2b2b2e]" @click="chooseAttachment('image')">
-                  <Picture aria-hidden="true" class="h-5 w-5" />
-                  <span>{{ t('webchat.add_image') }}</span>
+        <div class="ui-textarea composer-input rounded-3xl px-3 pb-3 pt-4">
+          <UiTextarea ref="composerTextarea" v-model="draft" :aria-label="t('webchat.input')" :placeholder="t('webchat.input')" rows="2" maxlength="16000" class="composer-textarea block w-full resize-none overflow-y-hidden px-2 py-0 leading-6" @input="resizeComposer" @keydown="onComposerKey" @paste="onComposerPaste" />
+          <input ref="imagePicker" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" multiple class="hidden" @change="addAttachments($event, 'image')" />
+          <input ref="filePicker" type="file" multiple class="hidden" @change="addAttachments($event, 'file')" />
+          <div class="mt-3 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <div ref="attachmentMenu" class="relative" @focusout="onAttachmentMenuFocusOut" @keydown.esc.prevent.stop="closeAttachmentMenu(true)">
+                <button ref="attachmentTrigger" type="button" :disabled="!profile || sending" :aria-label="t('webchat.add_attachment')" :title="t('webchat.add_attachment')" aria-haspopup="menu" :aria-expanded="attachmentMenuOpen" aria-controls="webchat-attachment-menu" class="composer-settings flex h-8 w-8 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="toggleAttachmentMenu">
+                  <Plus aria-hidden="true" class="h-5 w-5" />
                 </button>
-                <button type="button" role="menuitem" class="attachment-menu-item hover:bg-gray-100 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:focus-visible:bg-[#2b2b2e]" @click="chooseAttachment('file')">
-                  <Document aria-hidden="true" class="h-5 w-5" />
-                  <span>{{ t('webchat.add_file') }}</span>
-                </button>
+                <Transition name="attachment-menu">
+                  <div v-if="attachmentMenuOpen" id="webchat-attachment-menu" role="menu" :aria-label="t('webchat.add_attachment')" class="absolute bottom-full left-0 z-40 mb-2 min-w-48 rounded-xl border border-gray-200 bg-white/95 p-1.5 text-theme-supporting shadow-lg dark:border-gray-700 dark:bg-[#1b1b1f]/95" @keydown="onAttachmentMenuKey">
+                    <button type="button" role="menuitem" class="attachment-menu-item hover:bg-gray-100 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:focus-visible:bg-[#2b2b2e]" @click="chooseAttachment('image')">
+                      <Picture aria-hidden="true" class="h-5 w-5" />
+                      <span>{{ t('webchat.add_image') }}</span>
+                    </button>
+                    <button type="button" role="menuitem" class="attachment-menu-item hover:bg-gray-100 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:focus-visible:bg-[#2b2b2e]" @click="chooseAttachment('file')">
+                      <Document aria-hidden="true" class="h-5 w-5" />
+                      <span>{{ t('webchat.add_file') }}</span>
+                    </button>
+                  </div>
+                </Transition>
               </div>
-            </Transition>
+              <button type="button" :disabled="!profile" :aria-label="t('webchat.settings')" :title="t('webchat.settings')" class="composer-settings flex h-8 w-8 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="editProfile">
+                <Setting aria-hidden="true" focusable="false" class="h-5 w-5" />
+              </button>
+            </div>
+            <button type="submit" :disabled="!profile || sending || (!draft.trim() && !attachments.length)" :aria-label="t(sending ? 'webchat.sending' : 'webchat.send')" :title="t(sending ? 'webchat.sending' : 'webchat.send')" :aria-busy="sending" class="composer-send flex h-8 w-8 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+                <path d="M12 19V5m-7 7 7-7 7 7" />
+              </svg>
+            </button>
           </div>
-          <button type="button" :disabled="!profile" :aria-label="t('webchat.settings')" :title="t('webchat.settings')" class="composer-settings flex h-8 w-8 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="editProfile">
-            <Setting aria-hidden="true" focusable="false" class="h-5 w-5" />
-          </button>
         </div>
-        <button type="submit" :disabled="!profile || sending || (!draft.trim() && !attachments.length)" :aria-label="t(sending ? 'webchat.sending' : 'webchat.send')" :title="t(sending ? 'webchat.sending' : 'webchat.send')" :aria-busy="sending" class="composer-send absolute bottom-8 right-10 flex h-8 w-8 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
-            <path d="M12 19V5m-7 7 7-7 7 7" />
-          </svg>
-        </button>
       </form>
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Setting, Plus, Picture, Document, Close } from '@element-plus/icons-vue'
 import MessageChain from '@/components/sessions/MessageChain.vue'
@@ -111,7 +115,13 @@ const loadingOlder = ref(false)
 const hasOlder = ref(false)
 const error = ref('')
 const draft = ref('')
+const composerTextarea = ref<InstanceType<typeof UiTextarea> | null>(null)
+let composerObserver: ResizeObserver | undefined
 const messageList = ref<HTMLElement | null>(null)
+const messageContent = ref<HTMLElement | null>(null)
+let messageObserver: ResizeObserver | undefined
+let followLatest = true
+let lastScrollTop = 0
 const controller = new AbortController()
 let timer: ReturnType<typeof setTimeout> | undefined
 let refreshing = false
@@ -217,12 +227,34 @@ function clearSubmission(submission: NonNullable<typeof pending>) {
   submission.attachments.forEach(item => removeAttachment(item.id))
   if (pending?.id === submission.id) pending = null
 }
+function scrollToLatest() {
+  const container = messageList.value
+  if (!container || !followLatest || editing.value || loadingOlder.value || controller.signal.aborted) return
+  container.scrollTop = container.scrollHeight
+  lastScrollTop = container.scrollTop
+}
+function onMessageScroll() {
+  const container = messageList.value
+  if (!container || editing.value || loadingOlder.value) return
+  const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
+  if (container.scrollTop < lastScrollTop || nearBottom) followLatest = nearBottom
+  lastScrollTop = container.scrollTop
+}
+watch([messageList, messageContent], ([container, content]) => {
+  messageObserver?.disconnect()
+  if (!container || !content) return
+  messageObserver = new ResizeObserver(scrollToLatest)
+  messageObserver.observe(container)
+  messageObserver.observe(content)
+  scrollToLatest()
+}, { flush: 'post' })
+
 function editProfile() {
   closeAttachmentMenu()
   const container = messageList.value
   chatScroll = container ? {
     top: container.scrollTop,
-    follow: container.scrollHeight - container.scrollTop - container.clientHeight < 100,
+    follow: followLatest,
   } : null
   if (profile.value) Object.assign(form, profile.value)
   editing.value = true
@@ -230,11 +262,13 @@ function editProfile() {
 }
 async function closeProfile() {
   const scroll = chatScroll
+  followLatest = !scroll || scroll.follow
   editing.value = false
   await nextTick()
   const container = messageList.value
   if (controller.signal.aborted || editing.value || !container) return
   container.scrollTop = !scroll || scroll.follow ? container.scrollHeight : scroll.top
+  lastScrollTop = container.scrollTop
   chatScroll = null
 }
 async function saveProfile() {
@@ -265,8 +299,6 @@ async function refresh() {
     loaded.value = true
     if (pending && data.request?.id === pending.id && data.request.status === 'sent') clearSubmission(pending)
     if (data.profile) {
-      const container = messageList.value
-      const follow = !editing.value && (!historyLoaded.value || (container !== null && container.scrollHeight - container.scrollTop - container.clientHeight < 100))
       let more = true
       while (more) {
         const after = historyLoaded.value ? messages.value.at(-1)?.seq || 0 : 0
@@ -277,7 +309,7 @@ async function refresh() {
         historyLoaded.value = true
       }
       await nextTick()
-      if (follow && !editing.value && container && messageList.value === container) container.scrollTop = container.scrollHeight
+      scrollToLatest()
     }
   } catch (cause) {
     if (!controller.signal.aborted) showError(cause)
@@ -289,6 +321,7 @@ async function refresh() {
 async function loadOlder() {
   if (loadingOlder.value || !messages.value.length) return
   loadingOlder.value = true
+  followLatest = false
   try {
     const page = await getWebChatMessages({ before: messages.value[0]!.seq }, controller.signal)
     const container = messageList.value
@@ -296,7 +329,10 @@ async function loadOlder() {
     mergeMessages(page.data.messages)
     hasOlder.value = page.data.has_more
     await nextTick()
-    if (container) container.scrollTop += container.scrollHeight - height
+    if (container && messageList.value === container) {
+      container.scrollTop += container.scrollHeight - height
+      lastScrollTop = container.scrollTop
+    }
   } catch (cause) { if (!controller.signal.aborted) showError(cause) }
   finally { loadingOlder.value = false }
 }
@@ -325,6 +361,35 @@ async function send() {
   } catch (cause) { showError(cause) }
   finally { sending.value = false }
 }
+function resizeComposer() {
+  const textarea = composerTextarea.value?.$el as HTMLTextAreaElement | undefined
+  if (!textarea) return
+  const lineHeight = Number.parseFloat(getComputedStyle(textarea).lineHeight)
+  const maxHeight = lineHeight * 5
+  const scrollTop = textarea.scrollTop
+  textarea.style.height = '0px'
+  textarea.style.overflowY = 'hidden'
+  const contentHeight = textarea.scrollHeight
+  textarea.style.height = `${Math.min(maxHeight, Math.max(lineHeight * 2, contentHeight))}px`
+  textarea.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden'
+  textarea.scrollTop = scrollTop
+}
+watch(draft, resizeComposer, { flush: 'post' })
+watch(composerTextarea, (component) => {
+  composerObserver?.disconnect()
+  const textarea = component?.$el as HTMLTextAreaElement | undefined
+  if (!textarea?.parentElement) return
+  resizeComposer()
+  let width = 0
+  composerObserver = new ResizeObserver(([entry]) => {
+    if (entry && entry.contentRect.width !== width) {
+      width = entry.contentRect.width
+      resizeComposer()
+    }
+  })
+  composerObserver.observe(textarea.parentElement)
+}, { flush: 'post' })
+
 function onComposerKey(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault()
@@ -336,6 +401,8 @@ onMounted(() => {
   void refresh()
 })
 onBeforeUnmount(() => {
+  messageObserver?.disconnect()
+  composerObserver?.disconnect()
   controller.abort()
   if (timer) clearTimeout(timer)
   document.removeEventListener('pointerdown', onAttachmentMenuOutsideClick)
@@ -344,6 +411,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.composer-input:focus-within { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-focus-ring); }
+.composer-textarea.ui-textarea { border: 0; border-radius: 0; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; outline: none; }
 .attachment-menu-item { display: flex; align-items: center; gap: 0.75rem; width: 100%; padding: 0.625rem 0.75rem; border-radius: 0.625rem; color: inherit; text-align: left; transition: background-color 0.15s ease; }
 .attachment-menu-enter-active,
 .attachment-menu-leave-active { transform-origin: bottom left; transition: opacity 0.16s ease, transform 0.16s ease; }
