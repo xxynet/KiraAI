@@ -18,7 +18,7 @@
           :sidebar-open="sidebarOpen"
           @toggle-sidebar="toggleSidebar"
         />
-        <PageContainer :class="{ 'flex-1 min-h-0 !p-0 !max-w-none': route.meta.pluginPage, 'flex-1 min-h-0 !pb-4': route.name === 'WebChat' }">
+        <PageContainer :class="{ 'flex-1 min-h-0 !p-0 !max-w-none': route.meta.pluginPage || route.name === 'WebChat' }">
           <router-view v-slot="{ Component, route: r }">
             <transition name="page-fade">
               <component :is="Component" :key="r.fullPath" />

@@ -1,10 +1,10 @@
 <template>
   <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
-    <div v-if="error" role="alert" class="mt-4 shrink-0 rounded-lg bg-red-50 dark:bg-red-950 p-3 text-sm text-red-600 dark:text-red-300">
+    <div v-if="error" role="alert" class="mx-6 mt-4 shrink-0 rounded-lg bg-red-50 dark:bg-red-950 p-3 text-sm text-red-600 dark:text-red-300">
       {{ error }}
       <button v-if="!loaded" type="button" class="ml-3 underline" @click="refresh">{{ t('webchat.retry') }}</button>
     </div>
-    <form v-if="loaded && (!profile || editing)" class="min-h-0 overflow-y-auto py-6 space-y-5 max-w-xl w-full mx-auto" @submit.prevent="saveProfile">
+    <form v-if="loaded && (!profile || editing)" class="min-h-0 overflow-y-auto px-6 py-6 space-y-5 max-w-xl w-full mx-auto" @submit.prevent="saveProfile">
       <div>
         <h4 class="text-lg font-semibold text-theme-strong">{{ t(profile ? 'webchat.settings' : 'webchat.setup_title') }}</h4>
         <p class="mt-2 text-sm text-theme-subtle">{{ t('webchat.setup_hint') }}</p>
@@ -24,27 +24,29 @@
       </div>
     </form>
     <template v-else>
-      <div ref="messageList" role="log" :aria-label="t('webchat.messages')" class="py-5 min-h-0 flex-1 overflow-y-auto space-y-4 [overflow-anchor:none]">
-        <button v-if="hasOlder" type="button" :disabled="loadingOlder" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-sm text-blue-600 dark:text-blue-300 disabled:opacity-50" @click="loadOlder">{{ t(loadingOlder ? 'webchat.loading' : 'sessions.history.load_more') }}</button>
-        <p v-if="historyLoaded && !messages.length" class="py-10 text-center text-theme-subtle">{{ t('webchat.empty') }}</p>
-        <article v-for="message in messages" :key="message.id" class="flex" :class="message.direction === 'incoming' ? 'justify-end' : 'justify-start'">
-          <div class="min-w-0 max-w-[85%] flex flex-col gap-2" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
-            <p class="max-w-full break-words text-xs font-medium text-theme-body">{{ message.sender_name }}</p>
-            <div class="min-w-0 max-w-full flex flex-col" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
-              <div class="message-bubble chat-bubble min-w-0 max-w-full rounded-lg px-4 py-3 break-words" :class="{ 'chat-bubble--accent': message.direction === 'incoming' }" tabindex="0" :aria-describedby="`webchat-time-${message.id}`">
-                <MessageChain :chain="message.chain" :message-id="message.id" media-scope="webchat" />
+      <div ref="messageList" role="log" :aria-label="t('webchat.messages')" dir="ltr" class="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
+        <div dir="ltr" class="mx-auto w-full max-w-[1280px] space-y-4 px-6 py-5">
+          <button v-if="hasOlder" type="button" :disabled="loadingOlder" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-sm text-blue-600 dark:text-blue-300 disabled:opacity-50" @click="loadOlder">{{ t(loadingOlder ? 'webchat.loading' : 'sessions.history.load_more') }}</button>
+          <p v-if="historyLoaded && !messages.length" class="py-10 text-center text-theme-subtle">{{ t('webchat.empty') }}</p>
+          <article v-for="message in messages" :key="message.id" class="flex" :class="message.direction === 'incoming' ? 'justify-end' : 'justify-start'">
+            <div class="min-w-0 max-w-[85%] flex flex-col gap-2" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
+              <p class="max-w-full break-words text-xs font-medium text-theme-body">{{ message.sender_name }}</p>
+              <div class="min-w-0 max-w-full flex flex-col" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
+                <div class="message-bubble chat-bubble min-w-0 max-w-full rounded-lg px-4 py-3 break-words" :class="{ 'chat-bubble--accent': message.direction === 'incoming' }" tabindex="0" :aria-describedby="`webchat-time-${message.id}`">
+                  <MessageChain :chain="message.chain" :message-id="message.id" media-scope="webchat" />
+                </div>
+                <time :id="`webchat-time-${message.id}`" class="message-time mt-1 text-xs text-theme-subtle">{{ formatTime(message.timestamp) }}</time>
               </div>
-              <time :id="`webchat-time-${message.id}`" class="message-time mt-1 text-xs text-theme-subtle">{{ formatTime(message.timestamp) }}</time>
             </div>
-          </div>
-        </article>
+          </article>
+        </div>
       </div>
-      <form class="relative mt-auto shrink-0 px-1 pb-1 pt-3" @submit.prevent="send">
+      <form class="relative mx-auto mt-auto w-full max-w-[1280px] shrink-0 px-7 pb-5 pt-3" @submit.prevent="send">
         <UiTextarea v-model="draft" :aria-label="t('webchat.input')" :placeholder="t('webchat.input')" rows="2" maxlength="16000" class="block w-full resize-none rounded-3xl px-5 pt-4 pb-16" @keydown="onComposerKey" />
-        <button type="button" :disabled="!profile" :aria-label="t('webchat.settings')" :title="t('webchat.settings')" class="composer-settings absolute bottom-4 left-4 flex h-10 w-10 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="editProfile">
+        <button type="button" :disabled="!profile" :aria-label="t('webchat.settings')" :title="t('webchat.settings')" class="composer-settings absolute bottom-8 left-10 flex h-10 w-10 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="editProfile">
           <Setting aria-hidden="true" focusable="false" class="h-6 w-6" />
         </button>
-        <button type="submit" :disabled="!profile || sending || !draft.trim()" :aria-label="t(sending ? 'webchat.sending' : 'webchat.send')" :title="t(sending ? 'webchat.sending' : 'webchat.send')" :aria-busy="sending" class="composer-send absolute bottom-4 right-4 flex h-10 w-10 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+        <button type="submit" :disabled="!profile || sending || !draft.trim()" :aria-label="t(sending ? 'webchat.sending' : 'webchat.send')" :title="t(sending ? 'webchat.sending' : 'webchat.send')" :aria-busy="sending" class="composer-send absolute bottom-8 right-10 flex h-10 w-10 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6">
             <path d="M12 19V5m-7 7 7-7 7 7" />
           </svg>
