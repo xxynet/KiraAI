@@ -1,21 +1,50 @@
 {
-  "max_memory_num": {
-    "name": "Max memory num",
+  "core_limit": {
+    "name": "Core memories per request",
     "type": "integer",
-    "default": 100,
-    "hint": "Maximum number of memories, triggers memory compression while hit this number",
+    "default": 10,
+    "hint": "Maximum number of visible core memories loaded each turn (1–20). Does not limit stored memories.",
     "locales": {
-      "zh": { "name": "最大记忆数量", "hint": "记忆条数达到此数量时触发记忆压缩" }
+      "zh": {
+        "name": "每轮核心记忆数",
+        "hint": "每轮加载的可见核心记忆上限（1–20），不限制存储条数。"
+      }
     }
   },
-  "compression_model": {
-    "name": "Compression Model",
-    "type": "model_select",
-    "model_type": "llm",
-    "default": null,
-    "hint": "Model ID used to compress memories, use default fast LLM by default",
+  "recall_limit": {
+    "name": "Retrieved memories per request",
+    "type": "integer",
+    "default": 6,
+    "hint": "Maximum number of local search candidates for automatic recall (1–20). No additional model is needed.",
     "locales": {
-      "zh": { "name": "压缩模型", "hint": "用于压缩记忆的模型 ID，默认使用快速 LLM" }
+      "zh": {
+        "name": "每轮检索记忆数",
+        "hint": "自动召回的本地检索候选上限（1–20），无需额外模型。"
+      }
+    }
+  },
+  "prompt_char_budget": {
+    "name": "Memory context character budget",
+    "type": "integer",
+    "default": 6000,
+    "hint": "Character budget for memory records injected per request (1500–20000), split between core and retrieved records.",
+    "locales": {
+      "zh": {
+        "name": "记忆上下文字符预算",
+        "hint": "每轮注入记忆记录的字符预算（1500–20000），由核心记忆和检索记忆分配。"
+      }
+    }
+  },
+  "search_char_budget": {
+    "name": "Memory search response character budget",
+    "type": "integer",
+    "default": 12000,
+    "hint": "Character budget per search response (5000–30000). Use pagination or a memory ID for more records.",
+    "locales": {
+      "zh": {
+        "name": "记忆检索返回字符预算",
+        "hint": "每次检索返回记录的字符预算（5000–30000），可通过分页或记忆 ID 获取更多内容。"
+      }
     }
   }
 }

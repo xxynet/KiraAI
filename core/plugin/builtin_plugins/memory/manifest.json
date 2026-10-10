@@ -1,16 +1,16 @@
 {
-    "display_name": "Simple Memory",
-    "plugin_id": "kira_plugin_simple_memory",
-    "uninstallable": true,
-    "version": "1.0.0",
-    "author": "KiraAI",
-    "description": "Default & simple long term memory implementation, disable it before using third party memory plugins.",
-    "repo": null,
-    "tags": ["memory"],
-    "locales": {
-        "zh": {
-            "display_name": "简单记忆",
-            "description": "默认的简单长期记忆实现，使用第三方记忆插件前请先禁用此插件"
-        }
+  "display_name": "Default Memory",
+  "plugin_id": "kira_plugin_simple_memory",
+  "uninstallable": true,
+  "version": "2.0.0",
+  "author": "KiraAI",
+  "description": "Local memory for users, groups and personas with scoped search. Old core.txt memories remain shared. Disable before using another memory plugin.",
+  "repo": null,
+  "tags": ["memory"],
+  "locales": {
+    "zh": {
+      "display_name": "默认记忆",
+      "description": "支持用户、群聊和人格归属的本地记忆与隔离检索。旧 core.txt 记忆保留共享行为；使用其他记忆插件前请禁用。"
     }
+  }
 }
