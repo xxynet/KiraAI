@@ -807,7 +807,7 @@ export default {
     },
   },
   webchat: {
-    title: '网页聊天', settings: '聊天设置', setup_title: '设置你的聊天',
+    settings: '聊天设置', setup_title: '设置你的聊天',
     setup_hint: '设置双方昵称和会话描述，之后也可以随时修改。',
     nickname: '自己的昵称', peer_nickname: '对方的昵称', description: '会话描述（选填）',
     description_hint: '例如：你们的关系、常聊的话题，或彼此的称呼习惯。',

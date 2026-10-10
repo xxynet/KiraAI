@@ -807,7 +807,7 @@ export default {
     },
   },
   webchat: {
-    title: 'WebChat', settings: 'Chat settings', setup_title: 'Set up your conversation',
+    settings: 'Chat settings', setup_title: 'Set up your conversation',
     setup_hint: 'Choose your names and describe this conversation. You can change these settings later.',
     nickname: 'Your nickname', peer_nickname: 'Their nickname', description: 'Conversation description (optional)',
     description_hint: 'For example: our relationship, preferred topics, or how we address each other.',
