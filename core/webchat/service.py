@@ -55,14 +55,6 @@ class WebChatService:
             if existing is not None:
                 return existing
             await self._apply_profile(profile)
-            for index, element in enumerate(chain):
-                if isinstance(element, BaseMediaElement):
-                    archived = await asyncio.to_thread(
-                        type(element), str(self.store.media_dir / elements[index]["file"]),
-                        mime=element.mime, name=element.name,
-                    )
-                    archived.size = element.size
-                    chain[index] = archived
             request, created = await self.store.accept(request_id, text, profile["nickname"], elements)
             if created:
                 try:

@@ -307,7 +307,6 @@ async def test_plugin_can_suppress_webchat_reply(store, processor, monkeypatch, 
 
 @pytest.mark.anyio
 async def test_upload_archives_media_and_publishes_once_through_normal_adapter(store):
-    from pathlib import Path
     from core.chat.message_elements import File
 
     adapter = make_adapter(store)
@@ -340,9 +339,8 @@ async def test_upload_archives_media_and_publishes_once_through_normal_adapter(s
     assert [type(element) for element in event.message.chain] == [Text, Image, File]
     assert event.message.chain[2].name == "hello.txt"
     for element, content in [(event.message.chain[1], png), (event.message.chain[2], b"hello")]:
-        assert element.file_type == "path"
-        assert Path(element.file).parent == store.media_dir
-        assert Path(element.file).read_bytes() == content
+        assert element.file_type == "data_url"
+        assert base64.b64decode(await element.to_base64()) == content
         assert element.size == len(content)
     assert [type(element) for element in adapter.ctx.event_queue.get_nowait().message.chain] == [Image]
     assert adapter.ctx.event_queue.empty()
@@ -572,3 +570,63 @@ async def test_delete_history_reports_media_failure_without_removing_messages(st
         assert response.status_code == 500 and response.json()["detail"] == "delete_failed"
     assert len((await store.list_messages())["messages"]) == 1
     assert await store.latest_request() is not None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("clear_before_processing", [False, True])
+async def test_uploaded_file_is_readable_through_normal_pipeline_after_history_deletion(
+    store, tmp_path, monkeypatch, clear_before_processing,
+):
+    from pathlib import Path
+    from core.plugin.builtin_plugins.agent.main import AgentPlugin
+    from core.utils import path_utils
+    from core.workflow.src.im.message_formatter import MessageFormatter
+
+    data_root = tmp_path / "data"
+    monkeypatch.setattr(path_utils, "_data_dir", data_root)
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    content = "A file sent through WebChat."
+    request_id = str(uuid.uuid4())
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/webchat/messages/upload",
+            data={"request_id": request_id, "text": "Read this file", "kinds": "file"},
+            files=[("files", ("1.txt", content.encode(), "text/plain"))],
+        )
+        assert response.status_code == 200, response.text
+        download = await client.get(f"/api/webchat/messages/{request_id}/media?element_path=1")
+        assert download.status_code == 200 and download.content == content.encode()
+        assert 'filename="1.txt"' in download.headers["content-disposition"]
+
+    event = adapter.ctx.event_queue.get_nowait()
+    assert adapter.ctx.event_queue.empty()
+    if clear_before_processing:
+        await service.clear_messages()
+
+    formatter = MessageFormatter(SimpleNamespace(get_config=lambda key, default=None: default))
+    formatted = await formatter.format_to_text(event.message.chain, adapter.SID)
+    assert "file_path: data/temp/" in formatted.replace("\\", "/")
+    attachment = event.message.chain[1]
+    path = Path(await attachment.to_path())
+    assert path.parent == data_root / "temp" and path.name == "1.txt"
+    assert path.read_text() == content
+    assert await attachment.to_path() == str(path)
+
+    plugin = AgentPlugin(None, {"file_access": {
+        "permission_mode": "allow_list", "session_list": [adapter.SID],
+    }})
+    await plugin.initialize()
+    assert await plugin.read_file(SimpleNamespace(sid=adapter.SID), "data/temp/1.txt") == content
+    denied = await plugin.read_file(SimpleNamespace(sid="other:dm:user"), "data/temp/1.txt")
+    assert denied.startswith("Permission denied")
+
+    if not clear_before_processing:
+        await service.clear_messages()
+    assert (await store.list_messages())["messages"] == []
+    assert not store.media_dir.exists()
+    assert await plugin.read_file(SimpleNamespace(sid=adapter.SID), "data/temp/1.txt") == content
