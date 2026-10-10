@@ -57,8 +57,8 @@
         <input ref="filePicker" type="file" multiple class="hidden" @change="addAttachments($event, 'file')" />
         <div class="absolute bottom-8 left-10 flex items-center gap-2">
           <div ref="attachmentMenu" class="relative" @focusout="onAttachmentMenuFocusOut" @keydown.esc.prevent.stop="closeAttachmentMenu(true)">
-            <button ref="attachmentTrigger" type="button" :disabled="!profile || sending" :aria-label="t('webchat.add_attachment')" :title="t('webchat.add_attachment')" aria-haspopup="menu" :aria-expanded="attachmentMenuOpen" aria-controls="webchat-attachment-menu" class="composer-settings flex h-10 w-10 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="toggleAttachmentMenu">
-              <Plus aria-hidden="true" class="h-6 w-6" />
+            <button ref="attachmentTrigger" type="button" :disabled="!profile || sending" :aria-label="t('webchat.add_attachment')" :title="t('webchat.add_attachment')" aria-haspopup="menu" :aria-expanded="attachmentMenuOpen" aria-controls="webchat-attachment-menu" class="composer-settings flex h-8 w-8 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="toggleAttachmentMenu">
+              <Plus aria-hidden="true" class="h-5 w-5" />
             </button>
             <Transition name="attachment-menu">
               <div v-if="attachmentMenuOpen" id="webchat-attachment-menu" role="menu" :aria-label="t('webchat.add_attachment')" class="absolute bottom-full left-0 z-40 mb-2 min-w-48 rounded-xl border border-gray-200 bg-white/95 p-1.5 text-theme-supporting shadow-lg dark:border-gray-700 dark:bg-[#1b1b1f]/95" @keydown="onAttachmentMenuKey">
@@ -73,12 +73,12 @@
               </div>
             </Transition>
           </div>
-          <button type="button" :disabled="!profile" :aria-label="t('webchat.settings')" :title="t('webchat.settings')" class="composer-settings flex h-10 w-10 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="editProfile">
-            <Setting aria-hidden="true" focusable="false" class="h-6 w-6" />
+          <button type="button" :disabled="!profile" :aria-label="t('webchat.settings')" :title="t('webchat.settings')" class="composer-settings flex h-8 w-8 items-center justify-center rounded-full text-theme-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-40" @click="editProfile">
+            <Setting aria-hidden="true" focusable="false" class="h-5 w-5" />
           </button>
         </div>
-        <button type="submit" :disabled="!profile || sending || (!draft.trim() && !attachments.length)" :aria-label="t(sending ? 'webchat.sending' : 'webchat.send')" :title="t(sending ? 'webchat.sending' : 'webchat.send')" :aria-busy="sending" class="composer-send absolute bottom-8 right-10 flex h-10 w-10 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6">
+        <button type="submit" :disabled="!profile || sending || (!draft.trim() && !attachments.length)" :aria-label="t(sending ? 'webchat.sending' : 'webchat.send')" :title="t(sending ? 'webchat.sending' : 'webchat.send')" :aria-busy="sending" class="composer-send absolute bottom-8 right-10 flex h-8 w-8 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
             <path d="M12 19V5m-7 7 7-7 7 7" />
           </svg>
         </button>

@@ -97,6 +97,21 @@ class WebChatStore:
 
     async def append_reply(self, chain, nickname: str) -> str:
         elements = await serialize_message_chain(chain, archive_root=self.media_dir)
+
+        def snapshot(quoted_chain: list[dict], depth: int = 1) -> list[dict]:
+            result = []
+            for element in quoted_chain:
+                item = {key: value for key, value in element.items() if key != "chain"}
+                if element.get("chain") and depth < 3:
+                    item["chain"] = snapshot(element["chain"], depth + 1)
+                result.append(item)
+            return result
+
+        for element in elements:
+            if element.get("type") == "reply" and not element.get("chain") and not element.get("message_content"):
+                original = await self.get_message(element["message_id"])
+                if original is not None:
+                    element["chain"] = snapshot(original["chain"])
         message_id = uuid.uuid4().hex
         record = self.message(message_id, "outgoing", nickname, elements)
         async with aiosqlite.connect(self.path) as db:

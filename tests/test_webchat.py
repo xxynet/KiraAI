@@ -395,3 +395,92 @@ async def test_failed_attachment_archive_does_not_publish_or_persist_message(sto
         await service.submit(str(uuid.uuid4()), "", [Image("data:image/png;base64,aGVsbG8=")])
     assert adapter.ctx.event_queue.empty()
     assert not (await store.list_messages())["messages"]
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("direction", ["incoming", "outgoing"])
+async def test_webchat_persists_quote_content_when_sending(store, direction):
+    import json
+    import aiosqlite
+    from core.chat.message_elements import Reply
+    from core.adapter.builtin.webchat.im import WebChatIMCapability
+
+    await store.set_setting("profile", PROFILE)
+    if direction == "incoming":
+        original_id = str(uuid.uuid4())
+        await store.accept(original_id, "Original message", "Alice")
+    else:
+        original_id = await store.append_reply(MessageChain([Text("Original message")]), "Kira")
+    adapter = make_adapter(store)
+    result = await adapter.get_capability(WebChatIMCapability).send_direct_message(
+        "admin", MessageChain([Reply(original_id), Text("Reply text")]),
+    )
+    restarted = WebChatStore(store.root)
+    await restarted.initialize()
+    page = await restarted.list_messages(limit=1)
+    assert page["has_more"] and len(page["messages"]) == 1
+    reply = page["messages"][0]
+    assert reply["id"] == result.message_id
+    assert reply["chain"][0]["chain"] == [{"type": "text", "text": "Original message"}]
+    assert reply["chain"][1] == {"type": "text", "text": "Reply text"}
+    assert (await restarted.get_message(result.message_id))["chain"] == reply["chain"]
+    assert (await restarted.list_messages(after=1))["messages"][0]["chain"] == reply["chain"]
+    async with aiosqlite.connect(store.path) as db:
+        async with db.execute("SELECT body FROM messages WHERE id = ?", (result.message_id,)) as cursor:
+            persisted = json.loads((await cursor.fetchone())[0])
+    assert persisted["chain"] == reply["chain"]
+
+
+@pytest.mark.anyio
+async def test_quoted_images_are_available_through_existing_media_route(store, tmp_path):
+    from core.chat.message_elements import Reply
+
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jT1sAAAAASUVORK5CYII=")
+    source = tmp_path / "quoted.png"
+    source.write_bytes(png)
+    original_id = await store.append_reply(MessageChain([Text("Picture"), Image(str(source))]), "Kira")
+    reply_id = await store.append_reply(MessageChain([Reply(original_id), Text("See this")]), "Kira")
+    source.unlink()
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    WebChatRoutes(app, SimpleNamespace(webchat=SimpleNamespace(store=store))).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        messages = (await client.get("/api/webchat/messages?after=1")).json()["messages"]
+        assert messages[0]["chain"][0]["chain"][1]["type"] == "image"
+        response = await client.get(f"/api/webchat/messages/{reply_id}/media?element_path=0.1")
+        assert response.status_code == 200 and response.content == png
+        assert response.headers["content-type"] == "image/png"
+
+
+@pytest.mark.anyio
+async def test_new_quotes_preserve_supplied_content_and_limit_nested_snapshots(store):
+    from core.chat.message_elements import Reply
+
+    await store.accept("a", "", "Alice", [{"type": "reply", "message_id": "b"}, {"type": "text", "text": "A"}])
+    await store.accept("b", "", "Alice", [{"type": "reply", "message_id": "a"}, {"type": "text", "text": "B"}])
+    quote_id = await store.append_reply(MessageChain([
+        Reply("a", "Supplied text"), Reply("a", chain=MessageChain([Text("Supplied chain")])),
+        Reply("missing"), Reply("a"),
+    ]), "Kira")
+    quote = (await store.get_message(quote_id))["chain"]
+    assert quote[0]["message_content"] == "Supplied text" and "chain" not in quote[0]
+    assert quote[1]["chain"] == [{"type": "text", "text": "Supplied chain"}]
+    assert quote[2]["message_id"] == "missing" and "chain" not in quote[2]
+    assert quote[3]["chain"][1]["text"] == "A"
+    assert quote[3]["chain"][0]["message_id"] == "b"
+    assert "chain" not in quote[3]["chain"][0]
+    previous = "a"
+    for _ in range(5):
+        previous = await store.append_reply(MessageChain([Reply(previous)]), "Kira")
+    chain = (await store.get_message(previous))["chain"]
+    for _ in range(3):
+        chain = chain[0]["chain"]
+    assert "chain" not in chain[0]
+
+
+@pytest.mark.anyio
+async def test_reading_id_only_quotes_does_not_fill_or_rewrite_them(store):
+    await store.accept("original", "Original text", "Alice")
+    stored_chain = [{"type": "reply", "message_id": "original"}, {"type": "text", "text": "Old reply"}]
+    await store.accept("old-reply", "Old reply", "Alice", stored_chain)
+    assert (await store.get_message("old-reply"))["chain"] == stored_chain
+    assert (await store.list_messages(limit=1))["messages"][0]["chain"] == stored_chain
