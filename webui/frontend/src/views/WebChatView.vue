@@ -4,25 +4,32 @@
       {{ error }}
       <button v-if="!loaded" type="button" class="ml-3 underline" @click="refresh">{{ t('webchat.retry') }}</button>
     </div>
-    <form v-if="loaded && (!profile || editing)" class="min-h-0 overflow-y-auto px-6 py-6 space-y-5 max-w-xl w-full mx-auto" @submit.prevent="saveProfile">
-      <div>
-        <h4 class="text-lg font-semibold text-theme-strong">{{ t(profile ? 'webchat.settings' : 'webchat.setup_title') }}</h4>
-        <p class="mt-2 text-sm text-theme-subtle">{{ t('webchat.setup_hint') }}</p>
-      </div>
-      <label class="block text-sm text-theme-body">{{ t('webchat.nickname') }}
-        <UiInput v-model="form.nickname" required maxlength="80" class="mt-2 w-full rounded-lg px-3 py-2" autocomplete="nickname" />
-      </label>
-      <label class="block text-sm text-theme-body">{{ t('webchat.peer_nickname') }}
-        <UiInput v-model="form.peer_nickname" required maxlength="80" class="mt-2 w-full rounded-lg px-3 py-2" />
-      </label>
-      <label class="block text-sm text-theme-body">{{ t('webchat.description') }}
-        <UiTextarea v-model="form.description" rows="4" maxlength="4000" class="mt-2 w-full rounded-lg px-3 py-2" :placeholder="t('webchat.description_hint')" />
-      </label>
-      <div class="flex gap-3">
-        <button type="submit" :disabled="saving || !form.nickname.trim() || !form.peer_nickname.trim()" class="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50">{{ t(saving ? 'webchat.saving' : 'webchat.save') }}</button>
-        <button v-if="profile" type="button" class="px-4 py-2 text-theme-subtle" :disabled="saving" @click="closeProfile">{{ t('webchat.cancel') }}</button>
-      </div>
-    </form>
+    <div v-if="loaded && (!profile || editing)" class="min-h-0 flex-1 overflow-y-auto">
+      <form class="mx-auto w-full max-w-xl space-y-5 px-6 py-6" @submit.prevent="saveProfile">
+        <div>
+          <h4 class="text-lg font-semibold text-theme-strong">{{ t(profile ? 'webchat.settings' : 'webchat.setup_title') }}</h4>
+          <p class="mt-2 text-sm text-theme-subtle">{{ t('webchat.setup_hint') }}</p>
+        </div>
+        <label class="block text-sm text-theme-body">{{ t('webchat.nickname') }}
+          <UiInput v-model="form.nickname" required maxlength="80" class="mt-2 w-full rounded-lg px-3 py-2" autocomplete="nickname" />
+        </label>
+        <label class="block text-sm text-theme-body">{{ t('webchat.peer_nickname') }}
+          <UiInput v-model="form.peer_nickname" required maxlength="80" class="mt-2 w-full rounded-lg px-3 py-2" />
+        </label>
+        <label class="block text-sm text-theme-body">{{ t('webchat.description') }}
+          <UiTextarea v-model="form.description" rows="4" maxlength="4000" class="mt-2 w-full rounded-lg px-3 py-2" :placeholder="t('webchat.description_hint')" />
+        </label>
+        <div class="flex gap-3">
+          <button type="submit" :disabled="saving || deleting || !form.nickname.trim() || !form.peer_nickname.trim()" class="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 transition-colors disabled:opacity-50">{{ t(saving ? 'webchat.saving' : 'webchat.save') }}</button>
+          <button v-if="profile" type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="saving || deleting" @click="closeProfile">{{ t('webchat.cancel') }}</button>
+        </div>
+        <div v-if="profile" class="border-t border-gray-200 pt-5 dark:border-gray-700">
+          <button type="button" :disabled="deleting || saving || sending" class="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700 transition-colors disabled:opacity-50" @click="deleteConfirmModalRef?.open()">{{ t(deleting ? 'webchat.deleting' : 'webchat.delete_history') }}</button>
+          <p class="mt-2 text-sm text-theme-subtle">{{ t('webchat.delete_history_hint') }}</p>
+          <p v-if="historyDeleted" role="status" class="mt-2 text-sm text-theme-subtle">{{ t('webchat.history_deleted') }}</p>
+        </div>
+      </form>
+    </div>
     <template v-else>
       <div ref="messageList" @scroll="onMessageScroll" role="log" :aria-label="t('webchat.messages')" dir="ltr" class="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
         <div ref="messageContent" dir="ltr" class="mx-auto w-full max-w-[1280px] space-y-4 px-6 py-5">
@@ -90,6 +97,14 @@
         </div>
       </form>
     </template>
+    <ConfirmModal
+      ref="deleteConfirmModalRef"
+      :title="t('webchat.delete_history')"
+      :message="t('webchat.delete_history_confirm')"
+      :confirm-text="t('webchat.delete_history')"
+      :cancel-text="t('webchat.cancel')"
+      @confirm="deleteHistory"
+    />
   </section>
 </template>
 
@@ -97,10 +112,11 @@
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Setting, Plus, Picture, Document, Close } from '@element-plus/icons-vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import MessageChain from '@/components/sessions/MessageChain.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import { getWebChat, getWebChatMessages, saveWebChatProfile, sendWebChatMessage } from '@/api/webchat'
+import { deleteWebChatMessages, getWebChat, getWebChatMessages, saveWebChatProfile, sendWebChatMessage } from '@/api/webchat'
 import type { WebChatMessage, WebChatProfile, WebChatAttachment } from '@/api/webchat'
 
 const { t, locale } = useI18n()
@@ -110,6 +126,10 @@ const messages = ref<WebChatMessage[]>([])
 const loaded = ref(false)
 const editing = ref(false)
 const saving = ref(false)
+const deleting = ref(false)
+const deleteConfirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
+const historyDeleted = ref(false)
+let historyVersion = 0
 const sending = ref(false)
 const loadingOlder = ref(false)
 const hasOlder = ref(false)
@@ -250,6 +270,7 @@ watch([messageList, messageContent], ([container, content]) => {
 }, { flush: 'post' })
 
 function editProfile() {
+  historyDeleted.value = false
   closeAttachmentMenu()
   const container = messageList.value
   chatScroll = container ? {
@@ -272,6 +293,7 @@ async function closeProfile() {
   chatScroll = null
 }
 async function saveProfile() {
+  if (saving.value || deleting.value) return
   saving.value = true
   error.value = ''
   try {
@@ -283,17 +305,42 @@ async function saveProfile() {
   } catch (cause) { showError(cause) }
   finally { saving.value = false }
 }
+async function deleteHistory() {
+  if (!profile.value || deleting.value || saving.value || sending.value) return
+  deleting.value = true
+  historyDeleted.value = false
+  historyVersion++
+  error.value = ''
+  try {
+    await deleteWebChatMessages()
+    if (controller.signal.aborted) return
+    messages.value = []
+    hasOlder.value = false
+    historyLoaded.value = false
+    pending = null
+    chatScroll = null
+    followLatest = true
+    historyDeleted.value = true
+  } catch {
+    if (!controller.signal.aborted) error.value = t('webchat.error_delete_history')
+  } finally {
+    deleting.value = false
+    if (!controller.signal.aborted) await refresh()
+  }
+}
 function mergeMessages(items: WebChatMessage[]) {
   const byId = new Map(messages.value.map(item => [item.id, item]))
   items.forEach(item => byId.set(item.id, item))
   messages.value = [...byId.values()].sort((a, b) => a.seq - b.seq)
 }
 async function refresh() {
-  if (refreshing || controller.signal.aborted) return
+  if (refreshing || deleting.value || controller.signal.aborted) return
   refreshing = true
+  const version = historyVersion
   if (timer) clearTimeout(timer)
   try {
     const { data } = await getWebChat(controller.signal)
+    if (version !== historyVersion || deleting.value) return
     if (error.value === t('webchat.error')) error.value = ''
     profile.value = data.profile
     loaded.value = true
@@ -303,6 +350,7 @@ async function refresh() {
       while (more) {
         const after = historyLoaded.value ? messages.value.at(-1)?.seq || 0 : 0
         const page = await getWebChatMessages({ after }, controller.signal)
+        if (version !== historyVersion || deleting.value) return
         if (!historyLoaded.value) hasOlder.value = page.data.has_more
         mergeMessages(page.data.messages)
         more = !!after && page.data.has_more
@@ -319,11 +367,13 @@ async function refresh() {
   }
 }
 async function loadOlder() {
-  if (loadingOlder.value || !messages.value.length) return
+  if (loadingOlder.value || deleting.value || !messages.value.length) return
   loadingOlder.value = true
+  const version = historyVersion
   followLatest = false
   try {
     const page = await getWebChatMessages({ before: messages.value[0]!.seq }, controller.signal)
+    if (version !== historyVersion || deleting.value) return
     const container = messageList.value
     const height = container?.scrollHeight || 0
     mergeMessages(page.data.messages)

@@ -38,3 +38,5 @@ export function sendWebChatMessage(request_id: string, text: string, attachments
 }
 export const getWebChatMessages = (params: { before?: number; after?: number }, signal?: AbortSignal) =>
   apiClient.get<{ messages: WebChatMessage[]; has_more: boolean }>('/webchat/messages', { params, signal })
+
+export const deleteWebChatMessages = () => apiClient.delete('/webchat/messages')

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -96,29 +97,46 @@ class WebChatStore:
                 "timestamp": int(time.time()), "chain": chain}
 
     async def append_reply(self, chain, nickname: str) -> str:
-        elements = await serialize_message_chain(chain, archive_root=self.media_dir)
+        async with self.lock:
+            elements = await serialize_message_chain(chain, archive_root=self.media_dir)
 
-        def snapshot(quoted_chain: list[dict], depth: int = 1) -> list[dict]:
-            result = []
-            for element in quoted_chain:
-                item = {key: value for key, value in element.items() if key != "chain"}
-                if element.get("chain") and depth < 3:
-                    item["chain"] = snapshot(element["chain"], depth + 1)
-                result.append(item)
-            return result
+            def snapshot(quoted_chain: list[dict], depth: int = 1) -> list[dict]:
+                result = []
+                for element in quoted_chain:
+                    item = {key: value for key, value in element.items() if key != "chain"}
+                    if element.get("chain") and depth < 3:
+                        item["chain"] = snapshot(element["chain"], depth + 1)
+                    result.append(item)
+                return result
 
-        for element in elements:
-            if element.get("type") == "reply" and not element.get("chain") and not element.get("message_content"):
-                original = await self.get_message(element["message_id"])
-                if original is not None:
-                    element["chain"] = snapshot(original["chain"])
-        message_id = uuid.uuid4().hex
-        record = self.message(message_id, "outgoing", nickname, elements)
-        async with aiosqlite.connect(self.path) as db:
-            await db.execute("INSERT INTO messages (id, body) VALUES (?, ?)",
-                             (message_id, json.dumps(record, ensure_ascii=False)))
+            for element in elements:
+                if element.get("type") == "reply" and not element.get("chain") and not element.get("message_content"):
+                    original = await self.get_message(element["message_id"])
+                    if original is not None:
+                        element["chain"] = snapshot(original["chain"])
+            message_id = uuid.uuid4().hex
+            record = self.message(message_id, "outgoing", nickname, elements)
+            async with aiosqlite.connect(self.path) as db:
+                await db.execute("INSERT INTO messages (id, body) VALUES (?, ?)",
+                                 (message_id, json.dumps(record, ensure_ascii=False)))
+                await db.commit()
+            return message_id
+
+    async def clear_messages(self):
+        def remove_media():
+            root = self.root.resolve()
+            media = self.media_dir.resolve()
+            if media != root / "media" or self.media_dir.is_symlink():
+                raise ValueError("Invalid WebChat media directory")
+            if media.exists():
+                shutil.rmtree(media)
+
+        async with self.lock, aiosqlite.connect(self.path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            await db.execute("DELETE FROM messages")
+            await db.execute("DELETE FROM requests")
+            await asyncio.to_thread(remove_media)
             await db.commit()
-        return message_id
 
     async def list_messages(self, *, before: int | None = None, after: int = 0, limit: int = 50):
         async with aiosqlite.connect(self.path) as db:

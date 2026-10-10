@@ -72,6 +72,12 @@ class WebChatService:
                     raise ValueError("unavailable") from None
             return request
 
+    async def clear_messages(self):
+        async with self._lock:
+            if self._closed:
+                raise ValueError("unavailable")
+            await self.store.clear_messages()
+
     async def stop(self):
         async with self._lock:
             self._closed = True

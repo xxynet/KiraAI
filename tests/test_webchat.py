@@ -484,3 +484,91 @@ async def test_reading_id_only_quotes_does_not_fill_or_rewrite_them(store):
     await store.accept("old-reply", "Old reply", "Alice", stored_chain)
     assert (await store.get_message("old-reply"))["chain"] == stored_chain
     assert (await store.list_messages(limit=1))["messages"][0]["chain"] == stored_chain
+
+
+@pytest.mark.anyio
+async def test_delete_history_removes_only_webchat_messages_and_media(store, tmp_path):
+    sessions = Sessions()
+    sessions.memory = [[{"role": "user", "content": "Keep context"}]]
+    service = WebChatService(make_adapter(store), sessions)
+    await service.save_profile(PROFILE)
+    await service.submit(str(uuid.uuid4()), "Incoming")
+    source = tmp_path / "source.png"
+    source.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jT1sAAAAASUVORK5CYII="))
+    reply_id = await store.append_reply(MessageChain([Image(str(source))]), "Kira")
+    old_seq = (await store.list_messages())["messages"][-1]["seq"]
+    assert any(store.media_dir.iterdir())
+    app = FastAPI()
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        assert (await client.delete("/api/webchat/messages")).status_code == 401
+        assert (await store.list_messages())["messages"]
+        app.dependency_overrides[require_auth] = lambda: "admin"
+        assert (await client.delete("/api/webchat/messages")).status_code == 200
+        assert (await client.get("/api/webchat/messages")).json() == {"messages": [], "has_more": False}
+        assert (await client.get(f"/api/webchat/messages/{reply_id}/media?element_path=0")).status_code == 404
+        assert (await client.delete("/api/webchat/messages")).status_code == 200
+    assert not store.media_dir.exists()
+    assert source.is_file()
+    assert sessions.memory == [[{"role": "user", "content": "Keep context"}]]
+    assert sessions.description == PROFILE["description"]
+    restarted = WebChatStore(store.root)
+    await restarted.initialize()
+    assert await restarted.get_setting("profile") == PROFILE
+    assert await restarted.latest_request() is None
+    assert (await restarted.list_messages())["messages"] == []
+    await service.submit(str(uuid.uuid4()), "New message")
+    await store.append_reply(MessageChain([Image(str(source))]), "Kira")
+    new_messages = (await restarted.list_messages(after=old_seq))["messages"]
+    assert len(new_messages) == 2
+    assert (store.media_dir / new_messages[-1]["chain"][0]["file"]).is_file()
+
+
+@pytest.mark.anyio
+async def test_delete_history_waits_for_reply_media_to_be_persisted(store, monkeypatch):
+    import core.webchat.store as store_module
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    serialize = store_module.serialize_message_chain
+
+    async def delayed_serialize(*args, **kwargs):
+        result = await serialize(*args, **kwargs)
+        entered.set()
+        await release.wait()
+        return result
+
+    monkeypatch.setattr(store_module, "serialize_message_chain", delayed_serialize)
+    reply = asyncio.create_task(store.append_reply(MessageChain([Image("data:image/png;base64,aGVsbG8=")]), "Kira"))
+    deletion = None
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        deletion = asyncio.create_task(store.clear_messages())
+        await asyncio.sleep(0)
+        assert not deletion.done()
+        release.set()
+        await asyncio.wait_for(asyncio.gather(reply, deletion), 2)
+        assert (await store.list_messages())["messages"] == []
+        assert not store.media_dir.exists()
+    finally:
+        release.set()
+        await asyncio.gather(reply, *([deletion] if deletion else []), return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_delete_history_reports_media_failure_without_removing_messages(store, monkeypatch):
+    import core.webchat.store as store_module
+
+    service = WebChatService(make_adapter(store), Sessions())
+    await service.save_profile(PROFILE)
+    await service.submit(str(uuid.uuid4()), "Keep if deletion fails")
+    store.media_dir.mkdir()
+    monkeypatch.setattr(store_module.shutil, "rmtree", Mock(side_effect=PermissionError("locked")))
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        response = await client.delete("/api/webchat/messages")
+        assert response.status_code == 500 and response.json()["detail"] == "delete_failed"
+    assert len((await store.list_messages())["messages"]) == 1
+    assert await store.latest_request() is not None
