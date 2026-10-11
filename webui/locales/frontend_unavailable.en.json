@@ -1,0 +1,19 @@
+{
+  "title": "WebUI is unavailable right now",
+  "description": "The server is responding, but the web interface files are not ready. Restore them to access WebUI again.",
+  "steps_title": "How to get back in",
+  "logs_title": "Check the startup logs",
+  "logs_body": "KiraAI normally downloads the interface files at startup. Check the logs for download, extraction, or file access errors.",
+  "restart_title": "Resolve the issue, then restart KiraAI",
+  "restart_body": "Check that the download source is reachable and address any file or permission errors in the logs. Restart KiraAI to check and prepare the interface files again.",
+  "refresh": "Refresh page",
+  "refresh_note": "Refresh after fixing the issue and restarting. Refreshing does not download files again.",
+  "manual_title": "Manual installation / Running from source",
+  "manual_body": "Download dist.zip for your current KiraAI version. Extract all contents, including .version, into the interface directory (data/dist by default), with index.html and assets directly inside it. If you use --data-dir or --webui-dir, follow your startup configuration. Restart KiraAI when finished.",
+  "release": "Open this version’s download page",
+  "source_body": "To build from source, run npm install and npm run build in webui/frontend. The output is in webui/static/dist. For development, run python main.py --webui-dir webui/static/dist --ignore-webui-version-check from the project root to use the local build without a version check.",
+  "visitor_note": "If you do not manage this deployment, share this page with your administrator.",
+  "language_label": "Page language",
+  "switch_to_light": "Switch to light theme",
+  "switch_to_dark": "Switch to dark theme"
+}
