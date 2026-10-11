@@ -15,7 +15,7 @@ from core.chat.message_elements import Text
 from core.chat.message_utils import (
     KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain,
 )
-from core.chat.session import Group, User
+from core.chat.session import Group, Session, User
 from core.message_manager import MessageProcessor
 from core.workflow.src.im.workflow import DefaultIMWorkflow
 from tests.im_workflow_helpers import make_workflow_context
@@ -48,7 +48,8 @@ def processor_for(adapter):
         }.get(key, default)),
         adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
         session_manager=SimpleNamespace(
-            get_session_info=lambda sid: SimpleNamespace(session_description=None),
+            update_session=AsyncMock(),
+            get_session_metadata=AsyncMock(side_effect=lambda sid, *, ensure_session=False: {"description": None, "internal_id": "sess_test"}),
         ),
     )
     processor = MessageProcessor(DefaultIMWorkflow(services))
@@ -307,7 +308,7 @@ async def test_builtin_emoji_tag_uses_capability_metadata():
     channel.publish(event)
     ctx = SimpleNamespace(
         adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
-        get_session_capabilities=lambda sid: {},
+        get_session_capabilities=AsyncMock(side_effect=lambda sid: {}),
     )
     tags = TagSet()
     event.sid = event.session.sid

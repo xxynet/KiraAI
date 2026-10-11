@@ -1,4 +1,6 @@
-import asyncio
+from __future__ import annotations
+
+from copy import deepcopy
 from dataclasses import dataclass, field
 
 
@@ -46,6 +48,27 @@ class Session:
 
     """last message timestamp"""
     timestamp: int = None
+
+    internal_id: str = None
+    created_at: int = None
+    updated_at: int = None
+
+    content: list[list[dict]] = field(default_factory=list, repr=False)
+    data: dict = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_record(cls, record: dict) -> Session:
+        """Build an independent session snapshot from a database record."""
+        parts = record["session_key"].split(":", maxsplit=2)
+        if len(parts) != 3:
+            raise ValueError("Invalid session routing key")
+        return cls(
+            adapter_name=parts[0], session_type=parts[1], session_id=parts[2],
+            session_title=record["title"], session_description=record["description"],
+            timestamp=record["updated_at"], internal_id=record["id"],
+            created_at=record["created_at"], updated_at=record["updated_at"],
+            content=deepcopy(record["content"]), data=deepcopy(record["data"]),
+        )
 
     @property
     def sid(self):

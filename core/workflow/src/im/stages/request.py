@@ -13,10 +13,10 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
 
     async def run(self, ctx: IMBatchContext) -> bool:
         services, event, sid = ctx.services, ctx.event, ctx.sid
-        # Set session title
-        if not services.session_manager.get_session_info(sid).session_title:
-            services.session_manager.update_session_info(sid, event.session.session_title)
-        session_title = services.session_manager.get_session_info(sid).session_title
+        session = await services.session_manager.get_session(sid, ensure_session=True)
+        if not session.session_title:
+            await services.session_manager.update_session(sid, title=event.session.session_title)
+        session_title = session.session_title or event.session.session_title
 
         # Build chat environment
         chat_env = {
@@ -29,7 +29,7 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
         }
 
         # Get chat history memory
-        session_memory = services.session_manager.fetch_memory(sid)
+        session_memory = [message for chunk in session.content for message in chunk]
 
         # Generate agent prompt
         agent_prompt_list = await services.prompt_manager.get_agent_prompt(chat_env)

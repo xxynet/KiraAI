@@ -111,11 +111,11 @@ class SessionPlugin(BasePlugin):
         except Exception as e:
             return f"failed to send: {e}"
 
-    def get_session_list_prompt(self) -> str:
-        session_info_list = self.ctx.session_mgr.get_session_info()
+    async def get_session_list_prompt(self) -> str:
+        sessions = await self.ctx.session_mgr.get_sessions()
         session_list = "\n".join(
-            f"{session_info.sid}(title: {session_info.session_title})"
-            for session_info in session_info_list
+            f"{session.sid}(title: {session.session_title})"
+            for session in sessions if isinstance(session.data, dict)
         )
         return (
             "以下为可用会话的完整标识；调用 session_send 时必须逐字复制其中一项。"
@@ -129,4 +129,4 @@ class SessionPlugin(BasePlugin):
             if p.name == "tools":
                 p.content += SESSION_TOOL_FEW_SHOT
             if p.name == "sessions":
-                p.content += self.get_session_list_prompt()
+                p.content += await self.get_session_list_prompt()

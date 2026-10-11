@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import base64
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -132,7 +133,7 @@ async def test_stopped_batch_does_not_persist_native_media(monkeypatch):
     services = make_workflow_context(
         config=NativeConfig(),
         session_manager=SimpleNamespace(
-            get_effective_capabilities=lambda sid, capabilities: capabilities,
+            get_effective_capabilities=AsyncMock(side_effect=lambda sid, capabilities: capabilities),
         ),
     )
     workflow = DefaultIMWorkflow(services)

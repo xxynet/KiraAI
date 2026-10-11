@@ -19,7 +19,7 @@ class PrepareBatchStage(BaseStage[IMBatchContext]):
         global_capabilities = services.config.get_config("bot_config.capabilities", {})
         if not isinstance(global_capabilities, dict):
             global_capabilities = {}
-        capabilities = services.session_manager.get_effective_capabilities(
+        capabilities = await services.session_manager.get_effective_capabilities(
             sid, global_capabilities
         ) if services.session_manager is not None else global_capabilities
         if not isinstance(capabilities, dict):

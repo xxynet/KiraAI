@@ -25,5 +25,5 @@ class FinalizeStage(BaseStage[IMBatchContext]):
                 break
 
         # Save new memory
-        services.session_manager.update_memory(sid, new_messages)
+        await services.session_manager.update_memory(sid, new_messages)
         return True

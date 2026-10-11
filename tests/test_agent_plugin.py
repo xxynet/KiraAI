@@ -120,7 +120,7 @@ def make_media_ctx(mode="vlm_description", enabled=True, stt_enabled=True, compr
         "bot_config.image_compression": compression or {"enabled": False},
     }
     return SimpleNamespace(
-        get_session_capabilities=Mock(
+        get_session_capabilities=AsyncMock(
             return_value={
                 "image_recognition": {"mode": mode, "enabled": enabled},
                 "stt": {"enabled": stt_enabled},

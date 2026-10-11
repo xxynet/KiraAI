@@ -1,6 +1,7 @@
 from typing import Any, Optional
 from contextlib import asynccontextmanager
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     create_async_engine,
@@ -53,6 +54,17 @@ class DatabaseManager:
             kwargs["connect_args"] = self.connect_args
 
         self.engine = create_async_engine(self.database_url, **kwargs)
+        if self.engine.dialect.name == "sqlite":
+            @event.listens_for(self.engine.sync_engine, "connect")
+            def configure_sqlite(dbapi_connection, _connection_record):
+                # Apply the lock timeout to every connection, including pool replacements.
+                cursor = dbapi_connection.cursor()
+                try:
+                    cursor.execute("PRAGMA busy_timeout=10000")
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                finally:
+                    cursor.close()
+
         self.session_maker = async_sessionmaker(
             self.engine,
             class_=AsyncSession,

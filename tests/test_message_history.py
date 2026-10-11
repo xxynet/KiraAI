@@ -34,7 +34,7 @@ async def history(tmp_path, monkeypatch):
     await database.init()
     db = DatabaseService(database)
     await db.init_tables()
-    memories = build_session_manager(tmp_path, [])
+    memories = await build_session_manager(tmp_path, [], db=db)
     memories.event_bus = None
     service = MessageHistoryService(db, memories)
     yield service
@@ -135,7 +135,7 @@ async def test_many_messages_link_to_exact_user_and_assistant_and_survive_prunin
         result = await instance.send_message_chain(SID, MessageChain([Text(memory.content)]),
                                                     memory_message=memory)
         emitted.append(result.history_id)
-    history.session_manager.update_memory(SID, [user, first, second])
+    await history.session_manager.update_memory(SID, [user, first, second])
     linked_inputs = (await history.get_messages_by_llm_message_id(SID, user.extra["llm_message_id"]))["messages"]
     assert {row["id"] for row in linked_inputs} == set(inbound)
     linked = (await history.get_messages_by_llm_message_id(SID, first.extra["llm_message_id"]))["messages"]
@@ -143,9 +143,9 @@ async def test_many_messages_link_to_exact_user_and_assistant_and_survive_prunin
     assert (await history.get_message(emitted[2]))["llm_message_id"] == second.extra["llm_message_id"]
     assert (await history.get_message(inbound[0]))["llm_message_id"] == user.extra["llm_message_id"]
     row = await history.get_message(emitted[0])
-    assert history.get_linked_memory(row)["content"] == "first step"
-    history.session_manager.write_memory(SID, [])
-    assert history.get_linked_memory(row) is None
+    assert (await history.get_linked_memory(row))["content"] == "first step"
+    await history.session_manager.write_memory(SID, [])
+    assert (await history.get_linked_memory(row)) is None
     assert len((await history.list_messages(SID))["messages"]) == 5
 
 
@@ -196,12 +196,12 @@ async def test_startup_preserves_database_links_and_marks_incomplete_sends_unkno
     memory = OpenAIMessage(role="user", content="saved before crash")
     memory.to_memory_dict()
     await history.link_incoming_messages(SID, memory.extra["llm_message_id"], [identity])
-    history.session_manager.update_memory(SID, [memory])
+    await history.session_manager.update_memory(SID, [memory])
     pending = await history.record_outgoing(SID, MessageChain([Text("out")]), platform="test", self_id="bot")
     restored = MessageHistoryService(history.db, history.session_manager)
     await restored.initialize()
     row = await restored.get_message(identity)
-    assert restored.get_linked_memory(row)["_extra"] == {"llm_message_id": memory.extra["llm_message_id"]}
+    assert (await restored.get_linked_memory(row))["_extra"] == {"llm_message_id": memory.extra["llm_message_id"]}
     assert (await history.get_message(identity))["llm_message_id"] == memory.extra["llm_message_id"]
     assert (await history.get_message(pending))["status"] == "unknown"
 
@@ -209,7 +209,7 @@ async def test_startup_preserves_database_links_and_marks_incomplete_sends_unkno
 @pytest.mark.anyio
 async def test_history_api_and_archive_only_sessions(history):
     identity = await history.record_incoming(incoming(), SID, "test")
-    history.session_manager.chat_memory.clear()
+    await history.db.delete_chat_session(SID)
     lifecycle = SimpleNamespace(session_manager=history.session_manager,
                                 message_history=history)
     routes = SessionsRoutes(FastAPI(), lifecycle)
@@ -266,7 +266,7 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
         session=Session("adapter", "dm", "user"), messages=[incoming("a"), incoming("b")],
     )
     await instance.im_workflow.handle_batch_event(event)
-    memory = history.session_manager.get_existing_memory_snapshot(SID)[0]
+    memory = (await history.session_manager.get_existing_memory_snapshot(SID))[0]
     assert [message["role"] for message in memory] == ["user", "assistant", "tool", "assistant"]
     assert memory[1]["_extra"]["llm_message_id"] != memory[3]["_extra"]["llm_message_id"]
     for message, count in zip(memory, [2, 2, 0, 1]):
@@ -274,8 +274,8 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
         records = (await history.get_messages_by_llm_message_id(SID, message["_extra"]["llm_message_id"]))["messages"]
         assert len(records) == count
         for record in records:
-            assert history.get_linked_memory(record) == message
-    persisted = history.session_manager._load_memory(history.session_manager.chat_memory_path)
+            assert (await history.get_linked_memory(record)) == message
+    persisted = await history.db.list_chat_sessions()
     assert "message_ids" not in json.dumps(persisted)
     assert target.send_direct_message.await_count == 3
     assert len((await history.list_messages(SID))["messages"]) == 5
@@ -302,18 +302,17 @@ async def test_stopped_or_discarded_incoming_is_recorded_before_plugin_changes(h
     assert record["llm_message_id"] is None
 
 
-def test_existing_llm_message_ids_survive_reload_and_new_roles_get_new_ids(tmp_path):
-    manager = build_session_manager(tmp_path, [[{"role": "user", "content": "legacy"}]])
-    manager._ensure_memory_format()
-    snapshot = manager.get_existing_memory_snapshot(SID)
+@pytest.mark.anyio
+async def test_existing_llm_message_ids_survive_reload_and_new_roles_get_new_ids(tmp_path, session_db):
+    manager = await build_session_manager(tmp_path, [[{"role": "user", "content": "legacy"}]], db=session_db)
+    snapshot = (await manager.get_existing_memory_snapshot(SID))
     identity = snapshot[0][0]["_extra"]["llm_message_id"]
-    manager.chat_memory = manager._load_memory(manager.chat_memory_path)
-    manager._ensure_memory_format()
-    assert manager.get_existing_memory_snapshot(SID)[0][0]["_extra"]["llm_message_id"] == identity
+    await manager.initialize()
+    assert (await manager.get_existing_memory_snapshot(SID))[0][0]["_extra"]["llm_message_id"] == identity
     edited = copy.deepcopy(snapshot)
     edited[0][0]["role"] = "assistant"
-    manager.write_memory(SID, edited)
-    assert manager.get_existing_memory_snapshot(SID)[0][0]["_extra"]["llm_message_id"] != identity
+    await manager.write_memory(SID, edited)
+    assert (await manager.get_existing_memory_snapshot(SID))[0][0]["_extra"]["llm_message_id"] != identity
 
 
 @pytest.mark.anyio
@@ -460,14 +459,14 @@ async def test_database_links_survive_memory_edits_without_reverse_links(history
     message = OpenAIMessage(role="user", content="original")
     message.to_memory_dict()
     await history.link_incoming_messages(SID, message.extra["llm_message_id"], [identity])
-    history.session_manager.update_memory(SID, [message])
-    edited = history.session_manager.get_existing_memory_snapshot(SID)
+    await history.session_manager.update_memory(SID, [message])
+    edited = (await history.session_manager.get_existing_memory_snapshot(SID))
     edited[0][0]["content"] = "edited"
     edited[0].append(copy.deepcopy(edited[0][0]))
-    history.session_manager.write_memory(SID, edited)
-    snapshot = history.session_manager.get_existing_memory_snapshot(SID)
+    await history.session_manager.write_memory(SID, edited)
+    snapshot = (await history.session_manager.get_existing_memory_snapshot(SID))
     record = await history.get_message(identity)
-    assert history.get_linked_memory(record) == snapshot[0][0]
+    assert (await history.get_linked_memory(record)) == snapshot[0][0]
     assert record["llm_message_id"] == message.extra["llm_message_id"]
     assert "message_ids" not in json.dumps(snapshot)
     copied = snapshot[0][1]["_extra"]["llm_message_id"]

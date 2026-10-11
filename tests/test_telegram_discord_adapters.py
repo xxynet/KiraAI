@@ -892,7 +892,7 @@ async def test_discord_empty_emoji_catalog_reaches_builtin_tag(adapter_factory):
     adapter = adapter_factory("Discord")
     ctx = NS(
         adapter_mgr=NS(get_adapter=lambda name: adapter),
-        get_session_capabilities=lambda sid: {},
+        get_session_capabilities=AsyncMock(side_effect=lambda sid: {}),
     )
     event = NS(supported_elements=["emoji"], adapter=adapter.info, sid="discord:dm:123")
     tags = TagSet()

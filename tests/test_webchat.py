@@ -15,6 +15,7 @@ from core.adapter.capabilities import IMCapability
 from core.adapter.context import AdapterContext
 from core.chat.message_elements import Image, Text
 from core.chat.message_utils import MessageChain
+from core.chat.session import Session
 from core.webchat.service import WebChatService
 from core.webchat.store import WebChatStore
 from core.event_bus import EventBus
@@ -26,6 +27,9 @@ PROFILE = {"nickname": "Alice", "peer_nickname": "Kira", "description": "A quiet
 
 
 class Sessions:
+    async def initialize(self):
+        pass
+
     def __init__(self):
         self.memory = None
         self.description = None
@@ -33,10 +37,10 @@ class Sessions:
     def get_existing_memory_snapshot(self, sid):
         return self.memory
 
-    def write_memory(self, sid, memory):
+    async def write_memory(self, sid, memory):
         self.memory = memory
 
-    def update_session_info(self, sid, title, description):
+    async def update_session(self, sid, title, description):
         self.description = description
 
 
@@ -207,9 +211,9 @@ async def test_normal_event_bus_buffers_batches_counts_and_delivers_webchat(stor
     workflow = instance.im_workflow
     services = workflow.ctx
     services.event_bus = bus
-    services.session_manager.get_session_info = lambda sid: SimpleNamespace(session_title="Chat", session_description="Description")
-    services.session_manager.get_existing_memory_snapshot = lambda sid: []
-    services.session_manager.update_session_info = Mock()
+    services.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: {"description": "Description", "internal_id": "sess_test"})
+    services.session_manager.get_existing_memory_snapshot = AsyncMock(side_effect=lambda sid: [])
+    services.session_manager.update_session = AsyncMock()
     services.message_delivery.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     services.message_delivery.message_history = None
     services.message_delivery.send_message_chain = MessageDeliveryService.send_message_chain.__get__(services.message_delivery)
@@ -286,7 +290,7 @@ async def test_plugin_can_suppress_webchat_reply(store, processor, monkeypatch, 
     instance, model = processor
     workflow = instance.im_workflow
     workflow.ctx.event_bus = bus
-    workflow.ctx.session_manager.get_session_info = lambda sid: SimpleNamespace(session_description="Description")
+    workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: {"description": "Description", "internal_id": "sess_test"})
 
     async def suppress(event):
         getattr(event, action)()

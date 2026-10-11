@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from sqlalchemy import Column, Integer, String, select, text
 
@@ -118,3 +120,66 @@ async def test_create_all_includes_telemetry_tables(db):
                 {"name": table_name},
             )
             assert result.scalar_one_or_none() == table_name
+
+
+@pytest.mark.anyio
+async def test_sqlite_file_connection_settings(tmp_path):
+    manager = DatabaseManager(
+        f"sqlite+aiosqlite:///{(tmp_path / 'settings.db').as_posix()}",
+        connect_args={"timeout": 0.1},
+    )
+    await manager.init()
+    try:
+        # Hold both connections so the pool must open a second physical connection.
+        async with manager.engine.connect() as first, manager.engine.connect() as second:
+            for connection in (first, second):
+                assert (await connection.execute(text("PRAGMA journal_mode"))).scalar_one() == "wal"
+                assert (await connection.execute(text("PRAGMA busy_timeout"))).scalar_one() == 10000
+        await manager.engine.dispose()
+        async with manager.engine.connect() as replacement:
+            assert (await replacement.execute(text("PRAGMA journal_mode"))).scalar_one() == "wal"
+            assert (await replacement.execute(text("PRAGMA busy_timeout"))).scalar_one() == 10000
+    finally:
+        await manager.dispose()
+
+
+@pytest.mark.anyio
+async def test_sqlite_writer_waits_while_readers_continue(tmp_path):
+    manager = DatabaseManager(f"sqlite+aiosqlite:///{(tmp_path / 'concurrent.db').as_posix()}")
+    await manager.init()
+    pending_write = None
+    write_started = asyncio.Event()
+
+    async def insert_second(connection):
+        write_started.set()
+        await connection.execute(text("INSERT INTO write_probe (id) VALUES (2)"))
+        await connection.commit()
+
+    try:
+        async with manager.engine.begin() as connection:
+            await connection.execute(text("CREATE TABLE write_probe (id INTEGER PRIMARY KEY)"))
+        async with (
+            manager.engine.connect() as first,
+            manager.engine.connect() as second,
+            manager.engine.connect() as reader,
+        ):
+            try:
+                await first.execute(text("INSERT INTO write_probe (id) VALUES (1)"))
+                pending_write = asyncio.create_task(insert_second(second))
+                await write_started.wait()
+                await asyncio.sleep(0.1)
+                assert not pending_write.done()
+                # WAL readers see committed state while another connection holds a write lock.
+                assert await asyncio.wait_for(
+                    reader.scalar(text("SELECT COUNT(*) FROM write_probe")), timeout=2,
+                ) == 0
+                await reader.rollback()
+                await first.commit()
+                await asyncio.wait_for(pending_write, timeout=3)
+                assert await reader.scalar(text("SELECT COUNT(*) FROM write_probe")) == 2
+            finally:
+                await first.rollback()
+                if pending_write is not None:
+                    await asyncio.gather(pending_write, return_exceptions=True)
+    finally:
+        await manager.dispose()

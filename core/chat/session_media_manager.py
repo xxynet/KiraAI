@@ -32,8 +32,14 @@ class SessionMediaManager:
     async def _cleanup_current_session_media(self, session: str) -> None:
         """Serialize cleanup and use the newest persisted memory for a session."""
         async with self._get_session_lock(session):
-            memory = self.session_manager.get_existing_memory_snapshot(session)
-            await asyncio.to_thread(cleanup_session_media, session, memory or [])
+            async with self.session_manager.maintenance():
+                memory = await self.session_manager.get_existing_memory_snapshot(session)
+                task = asyncio.create_task(asyncio.to_thread(cleanup_session_media, session, memory or []))
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    await task
+                    raise
 
     async def _on_memory_updated(self, event: SystemEvent) -> None:
         await self._cleanup_current_session_media(event.payload["session"])

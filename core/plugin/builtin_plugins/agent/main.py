@@ -713,7 +713,7 @@ class AgentPlugin(BasePlugin):
         if not abs_path.is_file():
             return f"[Failed to read file: file not found: {path}]"
 
-        capabilities = self.ctx.get_session_capabilities(event.sid) if self.ctx else {}
+        capabilities = await self.ctx.get_session_capabilities(event.sid) if self.ctx else {}
         image_recognition = capabilities.get("image_recognition") if isinstance(capabilities, dict) else None
         if not isinstance(image_recognition, dict):
             image_recognition = {}
@@ -804,7 +804,7 @@ class AgentPlugin(BasePlugin):
         if not abs_path.is_file():
             return f"[Failed to read file: file not found: {path}]"
 
-        capabilities = self.ctx.get_session_capabilities(event.sid) if self.ctx else {}
+        capabilities = await self.ctx.get_session_capabilities(event.sid) if self.ctx else {}
         stt_caps = capabilities.get("stt") if isinstance(capabilities, dict) else None
         if not isinstance(stt_caps, dict):
             stt_caps = {}
