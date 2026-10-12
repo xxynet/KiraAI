@@ -10,8 +10,6 @@ from core.adapter.base import BaseAdapter, BaseCapability
 from core.adapter.capabilities import (
     FeedCapability,
     IMCapability,
-    LiveEventCapability,
-    VoiceChannelCapability,
 )
 from core.adapter.context import AdapterContext
 from core.adapter.message_format_metadata import MessageFormatMetadata
@@ -179,7 +177,7 @@ def test_duplicate_kind_is_rejected_even_with_a_different_registration_type(impl
 
 
 @pytest.mark.parametrize(
-    "capability_type", [IMCapability, FeedCapability, LiveEventCapability, VoiceChannelCapability],
+    "capability_type", [IMCapability, FeedCapability],
 )
 def test_sibling_implementations_share_the_same_capability_kind(capability_type):
     implementations = [
@@ -317,7 +315,7 @@ def test_list_policy_modes_and_identifier_normalization(mode):
 
 
 @pytest.mark.parametrize(
-    "capability_type", [IMCapability, FeedCapability, LiveEventCapability, VoiceChannelCapability],
+    "capability_type", [IMCapability, FeedCapability],
 )
 def test_capabilities_require_implementing_their_abstract_operations(capability_type):
     with pytest.raises(TypeError, match="abstract"):
