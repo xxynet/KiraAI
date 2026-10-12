@@ -51,6 +51,78 @@ async def store(tmp_path):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("session_type, recipient, allowed", [
+    ("dm", "admin", True),
+    ("dm", "someone_else", False),
+    ("gm", "admin", False),
+    ("gm", "someone_else", False),
+])
+async def test_cross_session_webchat_only_allows_admin_direct_messages(session_type, recipient, allowed):
+    from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
+
+    adapter = make_adapter(None)
+    ctx = SimpleNamespace(
+        adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
+        publish_notice=AsyncMock(),
+    )
+    target = f"webchat:{session_type}:{recipient}"
+    result = await SessionPlugin(ctx, {}).session_send(SimpleNamespace(sid="qq:gm:123"), target, "Send a test message")
+    if allowed:
+        assert result == "message sent"
+        ctx.publish_notice.assert_awaited_once()
+        assert ctx.publish_notice.await_args.args[0] == adapter.SID
+    else:
+        assert result == "Permission denied: target session is not allowed by adapter webchat"
+        ctx.publish_notice.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_cross_session_notice_generates_and_delivers_webchat_reply(store, processor, monkeypatch):
+    from core.chat.message_utils import KiraMessageBatchEvent
+    from core.plugin.builtin_plugins.chat.main import DefaultChatPlugin
+    from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
+    from core.plugin.handlers import EventType, event_handler_reg
+    from core.plugin.plugin_context import PluginContext
+    from core.workflow.src.im.message_delivery import MessageDeliveryService
+
+    adapter = make_adapter(store)
+    await store.set_setting("profile", PROFILE)
+    bus = EventBus(SimpleNamespace(set_stats=Mock()), adapter.ctx.event_queue)
+    instance, model = processor
+    workflow = instance.im_workflow
+    services = workflow.ctx
+    services.event_bus = bus
+    services.message_delivery.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
+    services.message_delivery.message_history = None
+    services.message_delivery.send_message_chain = MessageDeliveryService.send_message_chain.__get__(services.message_delivery)
+    ctx = object.__new__(PluginContext)
+    ctx.adapter_mgr = services.message_delivery.adapter_mgr
+    ctx.event_bus = bus
+    chat_plugin = DefaultChatPlugin(SimpleNamespace(
+        config={"bot_config": {"bot": {"max_buffer_messages": 1}}},
+        get_buffer=services.message_buffer.get_buffer,
+    ), {})
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=chat_plugin.handle_msg)] if event_type == EventType.ON_IM_MESSAGE else []
+    ))
+    source = SimpleNamespace(sid="qq:gm:123")
+    description = "Send a cross-session test message to the admin."
+    assert await SessionPlugin(ctx, {}).session_send(source, adapter.SID, description) == "message sent"
+    notice = adapter.ctx.event_queue.get_nowait()
+    assert notice.session.sid == adapter.SID and notice.is_notice
+    assert source.sid in notice.message.chain[0].text and description in notice.message.chain[0].text
+    await workflow.handle_event(notice)
+    batch = adapter.ctx.event_queue.get_nowait()
+    assert isinstance(batch, KiraMessageBatchEvent) and batch.sid == adapter.SID
+    await workflow.handle_batch_event(batch)
+    model.chat.assert_awaited_once()
+    rows = (await store.list_messages())["messages"]
+    assert len(rows) == 1 and rows[0]["direction"] == "outgoing"
+    assert rows[0]["chain"] == [{"type": "text", "text": "reply"}]
+    assert adapter.ctx.event_queue.empty()
+
+
+@pytest.mark.anyio
 async def test_store_restart_preserves_profile_and_sent_messages(store):
     await store.set_setting("profile", PROFILE)
     request_id = str(uuid.uuid4())
