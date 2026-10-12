@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
     """Convert, receive and send messages for one personal WeChat account."""
 
-    _SUPPORTED_ELEMENTS = ["text", "image", "video", "file", "record"]
+    _SUPPORTED_ELEMENTS = ["text", "img", "video", "file", "record"]
 
     async def get_message_metadata(self) -> MessageFormatMetadata:
         return MessageFormatMetadata(self._supported_elements)

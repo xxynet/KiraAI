@@ -7,7 +7,7 @@ from core.chat.session import User
 
 
 class WebChatIMCapability(IMCapability):
-    _SUPPORTED_ELEMENTS = ["text", "image", "record", "video", "file", "sticker", "reply"]
+    _SUPPORTED_ELEMENTS = ["text", "img", "record", "video", "file", "sticker", "reply"]
 
     def receive_message(self, message_id: str, chain: MessageChain, profile: dict):
         """Publish a regular direct-message event; plugins own its reply strategy."""

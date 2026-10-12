@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
     """Receive and send Bilibili private messages using the account's resources."""
 
-    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "emoji", "share_video"]
+    _SUPPORTED_ELEMENTS = ["text", "img", "emoji"]
 
     def __init__(self, adapter: BiliBiliAdapter):
         super().__init__(adapter)
