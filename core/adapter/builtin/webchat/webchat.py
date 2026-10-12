@@ -1,5 +1,6 @@
 import asyncio
 
+from core.adapter.access import ListAccessPolicy
 from core.adapter.base import BaseAdapter
 from core.adapter.capabilities import IMCapability
 from .im import WebChatIMCapability
@@ -17,6 +18,11 @@ class WebChatAdapter(BaseAdapter):
         self.store = store
         self._stopped = asyncio.Event()
         self.register_capability(IMCapability, WebChatIMCapability(self))
+        self.access.set_policy(
+            capability_type=IMCapability,
+            permission="im.direct.receive",
+            policy=ListAccessPolicy.from_lists("allow_list", allow_list=["admin"]),
+        )
 
     async def start(self):
         await self._stopped.wait()
