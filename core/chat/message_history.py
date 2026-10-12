@@ -222,11 +222,12 @@ class MessageHistoryService:
                                         *, cursor: str | None = None, limit: int = 50) -> dict:
         return await self.list_messages(session_id, llm_message_id=llm_message_id, cursor=cursor, limit=limit)
 
-    def get_linked_memory(self, record: dict) -> dict | None:
+    async def get_linked_memory(self, record: dict) -> dict | None:
         identity = record.get("llm_message_id")
         if not identity:
             return None
-        memory = self.session_manager.get_existing_memory_snapshot(record["session_id"]) or []
+        session = await self.session_manager.get_session(record["session_id"])
+        memory = session.content if session is not None else []
         for chunk in memory:
             for message in chunk:
                 if message.get("_extra", {}).get("llm_message_id") == identity:

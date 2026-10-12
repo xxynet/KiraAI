@@ -109,3 +109,26 @@ class MessageRecord(Base):
     error_type = Column(String, nullable=True)
     llm_message_id = Column(String(32), nullable=True)
     schema_version = Column(Integer, nullable=False, default=1)
+
+
+class ChatSessionRecord(Base):
+    """One persistent LLM session, independent of its platform routing key."""
+    __tablename__ = "chat_sessions"
+
+    id = Column(String(37), primary_key=True, nullable=False)
+    session_key = Column(String, unique=True, nullable=False)
+    title = Column(Text().evaluates_none(), nullable=True, server_default="")
+    description = Column(Text().evaluates_none(), nullable=True, server_default="")
+    content = Column(JSON, nullable=False, server_default="[]")
+    created_at = Column(BigInteger, nullable=False)
+    updated_at = Column(BigInteger, nullable=False)
+    data = Column(JSON, nullable=False, server_default="{}")
+
+
+class DatabaseMigration(Base):
+    """Completed data imports, committed atomically with their imported rows."""
+    __tablename__ = "database_migrations"
+
+    name = Column(String, primary_key=True, nullable=False)
+    app_version = Column(String, nullable=False)
+    executed_at = Column(BigInteger, nullable=False)

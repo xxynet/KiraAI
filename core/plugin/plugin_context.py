@@ -101,9 +101,10 @@ class PluginContext:
     def get_buffer(self, sid: str):
         buffer = self.session_buffer_mgr.get_buffer(sid)
         return buffer
-    def get_session_capabilities(self, sid: str) -> dict:
+
+    async def get_session_capabilities(self, sid: str) -> dict:
         global_capabilities = self.config.get_config("bot_config.capabilities", {})
-        return self.session_mgr.get_effective_capabilities(sid, global_capabilities)
+        return await self.session_mgr.get_effective_capabilities(sid, global_capabilities)
 
     
     async def flush_session_messages(

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from core.chat.session_buffer import SessionBufferManager
+from core.chat.session_manager import SessionManager
 from core.workflow.src.im.context import IMWorkflowContext
 from core.workflow.src.im.message_delivery import MessageDeliveryService
 from core.workflow.src.im.message_formatter import MessageFormatter
@@ -11,7 +12,7 @@ from core.workflow.src.im.native_content import MessageMediaService
 def make_workflow_context(**overrides):
     """Build explicit services for workflow tests without a processor factory."""
     config = overrides.pop("config", SimpleNamespace(get_config=lambda key, default=None: default))
-    session_manager = overrides.pop("session_manager", Mock())
+    session_manager = overrides.pop("session_manager", Mock(spec=SessionManager))
     provider_mgr = overrides.pop("provider_mgr", Mock())
     message_history = overrides.pop("message_history", None)
     adapter_mgr = overrides.pop("adapter_mgr", Mock())

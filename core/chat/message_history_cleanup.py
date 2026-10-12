@@ -8,7 +8,7 @@ import time
 
 from core.config.default import DEFAULT_CONFIG
 from core.logging_manager import get_logger
-from core.utils.media_refs import MEDIA_ROOT_NAME, collect_media_reference_paths
+from core.utils.media_refs import MEDIA_ROOT_NAME
 from core.utils.path_utils import get_data_path, is_within_directory
 
 logger = get_logger("message_history_cleanup", "cyan")
@@ -145,32 +145,26 @@ class MessageHistoryCleanup:
             return 0, 0
         removed = freed = 0
         stale_temporary = time.time() - 86400
-        manager = self.history.session_manager
-        # Context editing cannot introduce a reference halfway through deletion.
-        # No async lock or await is involved in this worker-thread critical section.
-        with manager.memory_lock:
-            for session_data in manager.chat_memory.values():
-                retained.update(collect_media_reference_paths(session_data))
-            retained_paths = {(data_root / path).resolve() for path in retained}
-            for path in root.iterdir():
-                if path.is_symlink() or not path.is_file():
+        retained_paths = {(data_root / path).resolve() for path in retained}
+        for path in root.iterdir():
+            if path.is_symlink() or not path.is_file():
+                continue
+            resolved = path.resolve()
+            if not is_within_directory(root.resolve(), resolved) or resolved in retained_paths:
+                continue
+            is_archive = re.fullmatch(r"[0-9a-f]{64}", path.name) is not None
+            is_temporary = re.fullmatch(r"[0-9a-f]{32}\.(tmp|download)", path.name) is not None
+            if not (is_archive or is_temporary):
+                continue
+            try:
+                stat = path.stat()
+                if is_temporary and stat.st_mtime >= stale_temporary:
                     continue
-                resolved = path.resolve()
-                if not is_within_directory(root.resolve(), resolved) or resolved in retained_paths:
-                    continue
-                is_archive = re.fullmatch(r"[0-9a-f]{64}", path.name) is not None
-                is_temporary = re.fullmatch(r"[0-9a-f]{32}\.(tmp|download)", path.name) is not None
-                if not (is_archive or is_temporary):
-                    continue
-                try:
-                    stat = path.stat()
-                    if is_temporary and stat.st_mtime >= stale_temporary:
-                        continue
-                    path.unlink()
-                    removed += 1
-                    freed += stat.st_size
-                except OSError as exc:
-                    logger.warning("Unable to remove archived media (%s)", type(exc).__name__)
-                if removed >= 1000:
-                    break
+                path.unlink()
+                removed += 1
+                freed += stat.st_size
+            except OSError as exc:
+                logger.warning("Unable to remove archived media (%s)", type(exc).__name__)
+            if removed >= 1000:
+                break
         return removed, freed

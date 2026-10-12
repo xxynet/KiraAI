@@ -63,7 +63,7 @@ class DefaultPlugin(BasePlugin):
     async def inject_builtin_tags(self, event: KiraMessageBatchEvent, _, tag_set: TagSet):
         """Inject builtin tags, respecting capability toggles"""
         supported_elements = event.supported_elements
-        capabilities = self.ctx.get_session_capabilities(event.sid)
+        capabilities = await self.ctx.get_session_capabilities(event.sid)
         if "text" in supported_elements:
             tag_set.register(TextTag)
         if "at" in supported_elements:

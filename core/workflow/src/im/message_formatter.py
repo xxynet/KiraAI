@@ -43,7 +43,7 @@ class MessageFormatter:
             global_capabilities = self.kira_config.get_config("bot_config.capabilities", {})
             if not isinstance(global_capabilities, dict):
                 global_capabilities = {}
-            capabilities = self.session_manager.get_effective_capabilities(
+            capabilities = await self.session_manager.get_effective_capabilities(
                 session_id, global_capabilities
             ) if session_id and self.session_manager is not None else global_capabilities
         if not isinstance(capabilities, dict):

@@ -204,6 +204,7 @@ class KiraLifecycle:
             self.kira_config,
             event_bus=self.event_bus,
         )
+        await self.session_manager.initialize()
         self.session_media_manager = SessionMediaManager(
             self.event_bus, self.session_manager
         )

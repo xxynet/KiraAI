@@ -359,6 +359,9 @@ export interface SessionCapabilities {
 }
 
 export interface SessionItem {
+  internal_id?: string | null
+  created_at?: number | null
+  updated_at?: number | null
   history_count?: number
   id: string
   adapter_name: string

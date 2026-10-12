@@ -5,6 +5,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
+from core.chat.session import Session
 from webui.routes.sessions import SessionsRoutes
 
 
@@ -13,21 +14,36 @@ class _SessionManager:
         self.chat_memory = {}
         self.mutations = []
 
-    def write_memory(self, session_id, messages):
-        self.mutations.append(("messages", session_id, messages))
-
-    def update_session_info(self, session_id, title=None, description=None):
+    async def update_session(self, session_id, title=None, description=None):
         self.mutations.append(("info", session_id, title, description))
 
-    def update_session_capabilities(self, session_id, capabilities):
+    async def update_session_capabilities(self, session_id, capabilities):
         self.mutations.append(("capabilities", session_id, capabilities))
 
-    def get_existing_memory_snapshot(self, session_id):
-        session_data = self.chat_memory.get(session_id)
-        if session_data is None:
+    async def get_session(self, session_id):
+        if session_id not in self.chat_memory:
             return None
-        return session_data.get("memory", [])
+        value = self.chat_memory[session_id]
+        return Session.from_record({
+            "id": "sess_test", "session_key": session_id,
+            "created_at": 1, "updated_at": 1,
+            "title": value.get("title", ""), "description": value.get("description", ""),
+            "content": value.get("memory", []), "data": value,
+        })
 
+    async def get_sessions(self, *, include_content=True):
+        summaries = []
+        for sid in self.chat_memory:
+            if len(sid.split(":", 2)) != 3:
+                continue
+            session = await self.get_session(sid)
+            summaries.append(Session(
+                *sid.split(":", 2), session_title=session.session_title,
+            ))
+        return summaries
+
+    async def get_session_message_counts(self):
+        return {sid: len(value.get("memory", [])) for sid, value in self.chat_memory.items()}
 
 @pytest.mark.asyncio
 async def test_update_session_validates_capabilities_before_mutation():
@@ -81,6 +97,7 @@ async def test_get_session_returns_existing_memory():
 
     assert result["title"] == "Title"
     assert result["messages"] == [[{"role": "user", "content": "hi"}]]
+    assert result["message_count"] == 1
 
 
 @pytest.mark.asyncio
@@ -98,9 +115,8 @@ async def test_list_sessions_skips_malformed_history_ids():
     session_manager = _SessionManager()
     session_manager.chat_memory = {
         "malformed-memory-id": {},
-        "adapter:dm:existing": {"title": "Existing"},
+        "adapter:dm:existing": {"title": "Existing", "memory": [[]]},
     }
-    session_manager.get_memory_count = lambda _: 1
     history = SimpleNamespace(list_sessions=AsyncMock(return_value=[
         {"session_id": "", "message_count": 1},
         {"session_id": "invalid", "message_count": 1},
@@ -131,11 +147,11 @@ async def test_list_sessions_skips_malformed_history_ids():
     assert sessions[1]["history_count"] == 3
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("record", [42, None, "malformed"])
 @pytest.mark.parametrize("include_history", [False, True])
 async def test_session_reads_skip_malformed_records_without_changing_storage(
-    tmp_path, monkeypatch, record, include_history,
+    tmp_path, monkeypatch, record, include_history, session_db,
 ):
     import json
     from unittest.mock import Mock
@@ -149,7 +165,8 @@ async def test_session_reads_skip_malformed_records_without_changing_storage(
     }), encoding="utf-8")
     monkeypatch.setattr(session_manager_module, "CHAT_MEMORY_PATH", str(path))
     monkeypatch.setattr(session_manager_module, "logger", Mock())
-    manager = session_manager_module.SessionManager(Mock(), Mock())
+    manager = session_manager_module.SessionManager(session_db, Mock())
+    await manager.initialize()
     saved = path.read_bytes()
     history = SimpleNamespace(list_sessions=AsyncMock(return_value=[
         {"session_id": "adapter:dm:bad", "message_count": 2},
@@ -180,7 +197,7 @@ async def test_session_reads_skip_malformed_records_without_changing_storage(
     assert sessions[0]["title"] == "Good"
     assert malformed.status_code == 404
     assert healthy.status_code == 200
-    assert manager.chat_memory["adapter:dm:bad"] == record
+    assert (await session_db.get_chat_session("adapter:dm:bad"))["data"] == record
     assert path.read_bytes() == saved
 
 

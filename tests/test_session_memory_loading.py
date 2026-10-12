@@ -7,6 +7,7 @@ import core.chat.session_manager as session_manager_module
 from core.chat.session_manager import SessionManager
 
 
+@pytest.mark.anyio
 @pytest.mark.parametrize("memory, legacy", [
     (memory, legacy)
     for memory in (
@@ -19,8 +20,8 @@ from core.chat.session_manager import SessionManager
     for legacy in (False, True)
     if not legacy or isinstance(memory, list)
 ])
-def test_startup_preserves_malformed_memory_and_normalizes_other_sessions(
-    tmp_path, monkeypatch, memory, legacy,
+async def test_startup_preserves_malformed_memory_and_normalizes_other_sessions(
+    tmp_path, monkeypatch, memory, legacy, session_db,
 ):
     path = tmp_path / "chat_memory.json"
     bad_session = memory if legacy else {"title": "private-title", "memory": memory}
@@ -33,14 +34,12 @@ def test_startup_preserves_malformed_memory_and_normalizes_other_sessions(
     logger = Mock()
     monkeypatch.setattr(session_manager_module, "logger", logger)
 
-    manager = SessionManager(Mock(), Mock())
-    assert manager.chat_memory["adapter:dm:bad"]["memory"] == memory
-    saved = json.loads(path.read_text(encoding="utf-8"))
-    if not legacy:
-        assert saved["adapter:dm:bad"] == bad_session
-    else:
-        assert saved["adapter:dm:bad"]["memory"] == memory
-    good = saved["adapter:dm:good"]["memory"][0][0]
+    manager = SessionManager(session_db, Mock())
+    await manager.initialize()
+    assert (await manager.get_session("adapter:dm:bad")).content == memory
+    assert json.loads(path.read_text(encoding="utf-8")) == original
+    saved = {row.sid: row for row in await manager.get_sessions()}
+    good = saved["adapter:dm:good"].content[0][0]
     assert good["role"] == "user" and good["content"] == "hello"
     assert good["_extra"]["llm_message_id"]
     logger.warning.assert_called_once()
@@ -48,33 +47,39 @@ def test_startup_preserves_malformed_memory_and_normalizes_other_sessions(
     assert "private-title" not in str(logger.mock_calls)
 
     # Repeated startup keeps both the raw memory and valid message identities.
-    restarted = SessionManager(Mock(), Mock())
-    assert restarted.chat_memory == manager.chat_memory
+    restarted = SessionManager(session_db, Mock())
+    await restarted.initialize()
+    assert await restarted.get_sessions() == await manager.get_sessions()
 
 
+@pytest.mark.anyio
 @pytest.mark.parametrize("record", [None, 42, "private-content"])
-def test_startup_preserves_non_object_session_record(tmp_path, monkeypatch, record):
+async def test_startup_preserves_non_object_session_record(tmp_path, monkeypatch, record, session_db):
     path = tmp_path / "chat_memory.json"
     original = {"adapter:dm:bad": record, "adapter:dm:good": {"memory": []}}
     path.write_text(json.dumps(original), encoding="utf-8")
     monkeypatch.setattr(session_manager_module, "CHAT_MEMORY_PATH", str(path))
     monkeypatch.setattr(session_manager_module, "logger", Mock())
 
-    manager = SessionManager(Mock(), Mock())
-    assert manager.chat_memory == original
+    manager = SessionManager(session_db, Mock())
+    await manager.initialize()
+    assert (await session_db.get_chat_session("adapter:dm:bad"))["data"] == record
     assert json.loads(path.read_text(encoding="utf-8")) == original
 
 
-def test_explicit_memory_edit_still_rejects_invalid_roles(tmp_path, monkeypatch):
+@pytest.mark.anyio
+async def test_explicit_memory_edit_still_rejects_invalid_roles(tmp_path, monkeypatch, session_db):
     path = tmp_path / "chat_memory.json"
     monkeypatch.setattr(session_manager_module, "CHAT_MEMORY_PATH", str(path))
-    manager = SessionManager(Mock(), Mock())
-    manager.write_memory("adapter:dm:user", [[{"role": "user", "content": "original"}]])
-    saved = path.read_bytes()
+    manager = SessionManager(session_db, Mock())
+    await manager.initialize()
+    await manager.update_session("adapter:dm:user", content=[[{"role": "user", "content": "original"}]])
+    saved = await session_db.list_chat_sessions()
 
     with pytest.raises(ValueError):
-        manager.write_memory("adapter:dm:user", [[{"role": "invalid", "content": "bad"}]])
-    assert path.read_bytes() == saved
+        await manager.update_session("adapter:dm:user", content=[[{"role": "invalid", "content": "bad"}]])
+    assert await session_db.list_chat_sessions() == saved
+    assert not path.exists()
 
 
 @pytest.mark.anyio
@@ -87,7 +92,7 @@ def test_explicit_memory_edit_still_rejects_invalid_roles(tmp_path, monkeypatch)
     [[{"role": ["user"], "_extra": {"llm_message_id": "bad-id"}}]],
 ])
 @pytest.mark.parametrize("replacement", [[], [[{"role": "user", "content": "repaired"}]]])
-async def test_api_can_replace_malformed_memory(tmp_path, monkeypatch, old_memory, replacement):
+async def test_api_can_replace_malformed_memory(tmp_path, monkeypatch, old_memory, replacement, session_db):
     from types import SimpleNamespace
 
     from fastapi import FastAPI
@@ -99,7 +104,8 @@ async def test_api_can_replace_malformed_memory(tmp_path, monkeypatch, old_memor
     path.write_text(json.dumps({"adapter:dm:user": {"memory": old_memory}}), encoding="utf-8")
     monkeypatch.setattr(session_manager_module, "CHAT_MEMORY_PATH", str(path))
     monkeypatch.setattr(session_manager_module, "logger", Mock())
-    manager = SessionManager(Mock(), Mock())
+    manager = SessionManager(session_db, Mock())
+    await manager.initialize()
     app = FastAPI()
     routes = SessionsRoutes(app, SimpleNamespace(session_manager=manager))
     app.add_api_route("/api/sessions/{session_id:path}", routes.update_session, methods=["PUT"])
@@ -110,7 +116,8 @@ async def test_api_can_replace_malformed_memory(tmp_path, monkeypatch, old_memor
         response = await client.put("/api/sessions/adapter:dm:user", json={"messages": replacement})
 
     assert response.status_code == 200
-    saved = json.loads(path.read_text(encoding="utf-8"))["adapter:dm:user"]["memory"]
+    saved = (await session_db.list_chat_sessions())[0]["content"]
+    assert json.loads(path.read_text(encoding="utf-8"))["adapter:dm:user"] == {"memory": old_memory}
     assert saved == response.json()["messages"]
     if replacement:
         assert saved[0][0]["content"] == "repaired"
