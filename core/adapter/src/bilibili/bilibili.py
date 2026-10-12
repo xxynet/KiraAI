@@ -204,5 +204,8 @@ class BiliBiliAdapter(BaseAdapter):
     async def send_direct_message(
         self, user_id: AdapterTargetId, send_message_obj: MessageChain,
     ) -> KiraIMSentResult | None:
-        """Preserve the legacy adapter-level sending API."""
+        """Deprecated compatibility wrapper; use the IM capability directly.
+
+        await adapter.get_capability(IMCapability).send_direct_message(user_id, message)
+        """
         return await self.get_capability(IMCapability).send_direct_message(user_id, send_message_obj)
