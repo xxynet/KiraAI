@@ -31,13 +31,14 @@ async def test_import_restart_and_delete_keep_database_authoritative(session_db,
     path.write_text(original, encoding="utf-8")
     manager = manager_for(session_db, tmp_path)
     await manager.initialize()
-    metadata = (await manager.get_session_metadata(SID))
+    metadata = (await manager.get_session(SID, include_content=False))
     assert metadata.internal_id.startswith("sess_")
     assert metadata.updated_at == metadata.timestamp == 100
     assert metadata.sid == SID
     assert metadata.session_title == "Legacy"
     assert metadata.session_description == "Daily"
-    assert metadata.content == [] and metadata.data == {}
+    assert metadata.content == []
+    assert metadata.data == {"capabilities": {"tts": {"enabled": False}}, "custom": {"keep": True}}
     assert (await manager.get_session(SID)).internal_id == metadata.internal_id
     message_id = (await manager.get_session(SID)).content[0][0]["_extra"]["llm_message_id"]
     await manager.update_session(SID, title="New", description="Changed")
@@ -46,7 +47,7 @@ async def test_import_restart_and_delete_keep_database_authoritative(session_db,
 
     restarted = manager_for(session_db, tmp_path)
     await restarted.initialize()
-    current = (await restarted.get_session_metadata(SID))
+    current = (await restarted.get_session(SID, include_content=False))
     assert current.internal_id == metadata.internal_id
     assert current.created_at == metadata.created_at
     assert current.updated_at > 100
@@ -74,7 +75,7 @@ async def test_invalid_json_can_be_repaired_before_import(session_db, tmp_path, 
     assert await session_db.list_chat_sessions() == []
     path.write_text(json.dumps({SID: {"memory": []}}), encoding="utf-8")
     await manager.initialize()
-    assert (await manager.get_session_metadata(SID)).internal_id
+    assert (await manager.get_session(SID, include_content=False)).internal_id
     assert await session_db.is_chat_memory_imported()
 
 
@@ -84,7 +85,7 @@ async def test_failed_commit_preserves_records_metadata_and_events(session_db, t
     await manager.initialize()
     await manager.get_session(SID, ensure_session=True)
     original = await manager.get_sessions()
-    metadata = (await manager.get_session_metadata(SID))
+    metadata = (await manager.get_session(SID, include_content=False))
     async with session_db.db.engine.begin() as connection:
         await connection.execute(text(
             "CREATE TRIGGER fail_session_update BEFORE UPDATE ON chat_sessions "
@@ -93,7 +94,7 @@ async def test_failed_commit_preserves_records_metadata_and_events(session_db, t
     with pytest.raises(Exception, match="injected failure"):
         await manager.update_session(SID, content=[[{"role": "user", "content": "new"}]])
     assert await manager.get_sessions() == original
-    assert (await manager.get_session_metadata(SID)) == metadata
+    assert (await manager.get_session(SID, include_content=False)) == metadata
     assert manager.event_bus.events == []
     assert not hasattr(manager, "_pending_memory")
     assert (await session_db.list_chat_sessions())[0]["content"] == []
@@ -104,7 +105,7 @@ async def test_concurrent_writes_preserve_all_updates_and_one_identity(session_d
     manager = manager_for(session_db, tmp_path)
     await manager.initialize()
     await asyncio.gather(*(manager.get_session(SID, ensure_session=True) for _ in range(8)))
-    identity = (await manager.get_session_metadata(SID)).internal_id
+    identity = (await manager.get_session(SID, include_content=False)).internal_id
     await asyncio.gather(
         *(manager.update_memory(SID, [{"role": "user", "content": str(i)}]) for i in range(10)),
         manager.update_session(SID, title="Title"),
@@ -219,7 +220,7 @@ async def test_reads_and_edits_use_latest_database_state(session_db, tmp_path):
     assert (await manager.get_session(SID)).flatten_content() == content[0]
     assert (await manager.get_session(SID)).session_title == "External"
     assert (await manager.get_sessions())[0].session_title == "External"
-    assert (await manager.get_session_metadata(SID)).internal_id == identity
+    assert (await manager.get_session(SID, include_content=False)).internal_id == identity
     assert await manager.get_effective_capabilities(SID, {}) == {"tts": {"enabled": False}}
     snapshot = (await manager.get_session(SID)).content
     snapshot.clear()
@@ -244,14 +245,14 @@ async def test_reads_and_edits_use_latest_database_state(session_db, tmp_path):
     await session_db.delete_chat_session(SID)
     assert await manager.get_session(SID) is None
     assert await manager.get_sessions() == []
-    assert (await manager.get_session_metadata(SID)).internal_id is None
+    assert await manager.get_session(SID, include_content=False) is None
     assert await manager.get_effective_capabilities(SID, {"tts": {"enabled": True}}) == {
         "tts": {"enabled": True},
     }
 
 
 @pytest.mark.anyio
-async def test_session_listing_uses_one_database_query(session_db, tmp_path, monkeypatch):
+async def test_session_listing_uses_two_bulk_queries(session_db, tmp_path, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -263,6 +264,8 @@ async def test_session_listing_uses_one_database_query(session_db, tmp_path, mon
     for key in (SID, "adapter:dm:other"):
         await manager.get_session(key, ensure_session=True)
     listing = AsyncMock(wraps=session_db.list_chat_sessions)
+    counts = AsyncMock(wraps=session_db.get_chat_session_message_counts)
+    monkeypatch.setattr(session_db, "get_chat_session_message_counts", counts)
     monkeypatch.setattr(session_db, "list_chat_sessions", listing)
     monkeypatch.setattr(session_db, "get_chat_session", AsyncMock(
         side_effect=AssertionError("Listing must not query individual sessions"),
@@ -270,7 +273,8 @@ async def test_session_listing_uses_one_database_query(session_db, tmp_path, mon
     routes = SessionsRoutes(FastAPI(), SimpleNamespace(session_manager=manager))
     result = await routes.list_sessions()
     assert len(result["sessions"]) == 2
-    listing.assert_awaited_once()
+    listing.assert_awaited_once_with(include_content=False)
+    counts.assert_awaited_once_with()
 
 
 @pytest.mark.anyio
@@ -502,7 +506,7 @@ async def test_get_session_ensure_preserves_existing_record_without_writing(sess
     monkeypatch.setattr(session_db, "get_chat_session", query)
     monkeypatch.setattr(session_db, "save_chat_session", AsyncMock(side_effect=AssertionError("Do not rewrite")))
     assert await manager.get_session(SID, ensure_session=True) == original
-    query.assert_awaited_once_with(SID)
+    query.assert_awaited_once_with(SID, include_content=True)
 
 
 @pytest.mark.anyio
@@ -516,13 +520,14 @@ async def test_get_session_ensure_rejects_invalid_routing_key_without_creating_r
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("ensure", [False, True])
+@pytest.mark.parametrize("include_content", [False, True])
 @pytest.mark.parametrize("data", [None, 42, "malformed"])
-async def test_get_session_rejects_non_object_data_without_modifying_record(session_db, tmp_path, ensure, data):
+async def test_get_session_rejects_non_object_data_without_modifying_record(session_db, tmp_path, ensure, data, include_content):
     manager = manager_for(session_db, tmp_path)
     await manager.initialize()
     original = await session_db.save_chat_session(SID, data=data)
     with pytest.raises(ValueError, match="^Session data must be an object$"):
-        await manager.get_session(SID, ensure_session=ensure)
+        await manager.get_session(SID, ensure_session=ensure, include_content=include_content)
     assert await session_db.get_chat_session(SID) == original
 
 
@@ -530,10 +535,10 @@ async def test_get_session_rejects_non_object_data_without_modifying_record(sess
 async def test_metadata_ensure_shares_identity_with_full_session_reads(session_db, tmp_path):
     manager = manager_for(session_db, tmp_path)
     await manager.initialize()
-    assert (await manager.get_session_metadata(SID)).internal_id is None
+    assert await manager.get_session(SID, include_content=False) is None
     assert await session_db.list_chat_sessions() == []
     results = await asyncio.gather(*(
-        manager.get_session_metadata(SID, ensure_session=True) if index % 2 else
+        manager.get_session(SID, ensure_session=True, include_content=False) if index % 2 else
         manager.get_session(SID, ensure_session=True)
         for index in range(8)
     ))
@@ -541,7 +546,127 @@ async def test_metadata_ensure_shares_identity_with_full_session_reads(session_d
     assert len(identities) == 1
     assert len(await session_db.list_chat_sessions()) == 1
     await manager.update_session(SID, description="Current description")
-    metadata = await manager.get_session_metadata(SID, ensure_session=True)
+    metadata = await manager.get_session(SID, ensure_session=True, include_content=False)
     assert metadata.internal_id in identities
     assert metadata.session_description == "Current description"
     assert metadata.content == [] and metadata.data == {}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("consumer", ["prompt", "scope", "list"])
+async def test_metadata_consumers_load_data_without_message_content(session_db, tmp_path, monkeypatch, consumer):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from fastapi import FastAPI
+    from sqlalchemy import event
+    from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
+    from webui.routes.scope import ScopeRoutes
+    from webui.routes.sessions import SessionsRoutes
+
+    manager = manager_for(session_db, tmp_path)
+    await manager.initialize()
+    await session_db.save_chat_session(
+        SID, title="Visible title", content=[[{"role": "user", "content": "private history"}]] * 3,
+        data={"private": "extension payload"},
+    )
+    await session_db.save_chat_session("adapter:dm:bad", title="Hidden title", data=42)
+    await session_db.save_chat_session("invalid", title="Invalid routing")
+
+    queries = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        queries.append((statement, [column[0] for column in cursor.description]))
+
+    event.listen(session_db.db.engine.sync_engine, "after_cursor_execute", capture)
+    try:
+        lifecycle = SimpleNamespace(session_manager=manager, mcp_manager=None, skills_manager=None)
+        if consumer == "prompt":
+            result = await SessionPlugin.get_session_list_prompt(SimpleNamespace(ctx=SimpleNamespace(session_mgr=manager)))
+            assert "Visible title" in result and SID in result and "Hidden title" not in result
+        elif consumer == "scope":
+            result = await ScopeRoutes(FastAPI(), lifecycle).get_scope()
+            assert [row["id"] for row in result["sessions"]] == [SID]
+        else:
+            result = await SessionsRoutes(FastAPI(), lifecycle).list_sessions()
+            assert [row["id"] for row in result["sessions"]] == [SID]
+            assert result["sessions"][0]["message_count"] == 3
+    finally:
+        event.remove(session_db.db.engine.sync_engine, "after_cursor_execute", capture)
+    assert len(queries) == (2 if consumer == "list" else 1)
+    sql, columns = queries[0]
+    assert "content" not in columns and "data" in columns
+    assert "chat_sessions.content" not in sql
+    if consumer == "list":
+        assert "content" not in queries[1][1] and "data" not in queries[1][1]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("content", [[], [[{"role": "user", "content": "hi"}]], None, 42])
+async def test_session_counts_match_content_shape(session_db, tmp_path, content):
+    manager = manager_for(session_db, tmp_path)
+    await manager.initialize()
+    await session_db.save_chat_session(SID, content=content)
+    assert await manager.get_session_message_counts() == {SID: len(content) if isinstance(content, list) else 0}
+    await session_db.delete_chat_session(SID)
+    assert await manager.get_session_message_counts() == {}
+
+
+@pytest.mark.anyio
+async def test_detail_update_and_archive_only_responses_include_message_count(session_db, tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from fastapi import FastAPI
+    from webui.routes.sessions import SessionsRoutes
+
+    manager = manager_for(session_db, tmp_path)
+    await manager.initialize()
+    routes = SessionsRoutes(FastAPI(), SimpleNamespace(
+        session_manager=manager,
+        message_history=SimpleNamespace(list_messages=AsyncMock(return_value={"messages": [{}]})),
+    ))
+    assert (await routes.get_session(SID))["message_count"] == 0
+    messages = [[{"role": "user", "content": "hi"}], [{"role": "assistant", "content": "hello"}]]
+    assert (await routes.update_session(SID, {"messages": messages}))["message_count"] == 2
+    assert (await routes.get_session(SID))["message_count"] == 2
+    assert (await routes.update_session(SID, {"messages": []}))["message_count"] == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("single", [False, True])
+@pytest.mark.parametrize("include_content", [False, True])
+async def test_session_queries_share_content_options_and_return_session(session_db, tmp_path, single, include_content):
+    from core.chat.session import Session
+
+    manager = manager_for(session_db, tmp_path)
+    await manager.initialize()
+    content = [[{"role": "user", "content": "history"}], [{"role": "assistant", "content": "reply"}]]
+    data = {"custom": {"nested": "extension"}}
+    stored = await session_db.save_chat_session(SID, title="Title", content=content, data=data)
+    options = {"include_content": include_content}
+    if single:
+        record = await manager.get_session(SID, **options)
+    else:
+        record, = await manager.get_sessions(**options)
+    assert type(record) is Session
+    assert record.sid == SID and record.internal_id == stored["id"]
+    assert record.session_title == "Title" and isinstance(record.data, dict)
+    assert record.content == (content if include_content else [])
+    assert record.data == data
+    record.content.clear()
+    record.data.clear()
+    assert (await manager.get_session(SID)).content == content
+    assert (await manager.get_sessions())[0].data == data
+
+
+@pytest.mark.anyio
+async def test_lightweight_ensure_creates_session_without_content(session_db, tmp_path):
+    from core.chat.session import Session
+
+    manager = manager_for(session_db, tmp_path)
+    await manager.initialize()
+    assert await manager.get_session(SID, include_content=False) is None
+    record = await manager.get_session(SID, ensure_session=True, include_content=False)
+    assert type(record) is Session
+    assert await manager.get_session_message_counts() == {SID: 0}
+    assert record.content == [] and record.data == {}
+    assert (await manager.get_session(SID)).internal_id == record.internal_id

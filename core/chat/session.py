@@ -71,7 +71,7 @@ class Session:
             session_title=record["title"], session_description=record["description"],
             timestamp=record["updated_at"], internal_id=record["id"],
             created_at=record["created_at"], updated_at=record["updated_at"],
-            content=deepcopy(record["content"]), data=deepcopy(record["data"]),
+            content=deepcopy(record.get("content", [])), data=deepcopy(record["data"]),
         )
 
     @property

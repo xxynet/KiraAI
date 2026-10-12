@@ -31,8 +31,19 @@ class _SessionManager:
             "content": value.get("memory", []), "data": value,
         })
 
-    async def get_sessions(self):
-        return [await self.get_session(sid) for sid in self.chat_memory if len(sid.split(":", 2)) == 3]
+    async def get_sessions(self, *, include_content=True):
+        summaries = []
+        for sid in self.chat_memory:
+            if len(sid.split(":", 2)) != 3:
+                continue
+            session = await self.get_session(sid)
+            summaries.append(Session(
+                *sid.split(":", 2), session_title=session.session_title,
+            ))
+        return summaries
+
+    async def get_session_message_counts(self):
+        return {sid: len(value.get("memory", [])) for sid, value in self.chat_memory.items()}
 
 @pytest.mark.asyncio
 async def test_update_session_validates_capabilities_before_mutation():
@@ -86,6 +97,7 @@ async def test_get_session_returns_existing_memory():
 
     assert result["title"] == "Title"
     assert result["messages"] == [[{"role": "user", "content": "hi"}]]
+    assert result["message_count"] == 1
 
 
 @pytest.mark.asyncio

@@ -76,37 +76,58 @@ class SessionManager:
                 )
         return records
 
-    async def get_sessions(self) -> list[Session]:
-        """Query complete session snapshots without retaining them in the manager."""
-        rows = await self.db.list_chat_sessions()
+    async def get_sessions(
+        self, *, include_content: bool = True,
+    ) -> list[Session]:
+        """Query session snapshots, optionally omitting message content."""
+        rows = await self.db.list_chat_sessions(
+            include_content=include_content,
+        )
         return [Session.from_record(row) for row in rows
                 if len(row["session_key"].split(":", 2)) == 3]
 
     @overload
-    async def get_session(self, session: str, *, ensure_session: Literal[True]) -> Session: ...
+    async def get_session(
+        self, session: str, *, ensure_session: Literal[True],
+        include_content: bool = True,
+    ) -> Session: ...
 
     @overload
-    async def get_session(self, session: str, *, ensure_session: Literal[False] = False) -> Session | None: ...
+    async def get_session(
+        self, session: str, *, ensure_session: Literal[False] = False,
+        include_content: bool = True,
+    ) -> Session | None: ...
 
     @overload
-    async def get_session(self, session: str, *, ensure_session: bool) -> Session | None: ...
+    async def get_session(
+        self, session: str, *, ensure_session: bool,
+        include_content: bool = True,
+    ) -> Session | None: ...
 
-    async def get_session(self, session: str, *, ensure_session: bool = False) -> Session | None:
+    async def get_session(
+        self, session: str, *, ensure_session: bool = False,
+        include_content: bool = True,
+    ) -> Session | None:
         """Query a snapshot, optionally creating a missing session under the write lock."""
         if ensure_session:
             if len(session.split(":", 2)) != 3:
                 raise ValueError("Invalid session routing key")
             async with self._write_lock:
-                row = await self.db.get_chat_session(session)
+                row = await self.db.get_chat_session(session, include_content=include_content)
                 if row is None:
                     row = await self._save_session(session, {
                         "title": "", "description": "", "content": [], "data": {},
                     })
         else:
-            row = await self.db.get_chat_session(session)
-        if row is not None and not isinstance(row["data"], dict):
+            row = await self.db.get_chat_session(session, include_content=include_content)
+        record = Session.from_record(row) if row is not None else None
+        if record is not None and not isinstance(record.data, dict):
             raise ValueError("Session data must be an object")
-        return Session.from_record(row) if row is not None else None
+        return record
+
+    async def get_session_message_counts(self) -> dict[str, int]:
+        """Return context chunk counts keyed by routing SID in one database query."""
+        return await self.db.get_chat_session_message_counts()
 
     async def _session_data(self, session: str) -> dict:
         row = await self.db.get_chat_session(session)
@@ -139,30 +160,6 @@ class SessionManager:
         except asyncio.CancelledError:
             await task
             raise
-
-    async def get_session_metadata(self, session: str, *, ensure_session: bool = False) -> Session:
-        """Read session metadata, leaving content and extension data unloaded."""
-        parts = session.split(":", maxsplit=2)
-        if len(parts) != 3:
-            raise ValueError("Invalid session routing key")
-        if ensure_session:
-            async with self._write_lock:
-                row = await self.db.get_chat_session_metadata(session)
-                if row is None:
-                    row = await self._save_session(session, {
-                        "title": "", "description": "", "content": [], "data": {},
-                    })
-        else:
-            row = await self.db.get_chat_session_metadata(session)
-        return Session(
-            adapter_name=parts[0], session_type=parts[1], session_id=parts[2],
-            internal_id=row["id"] if row else None,
-            session_title=row["title"] if row else None,
-            session_description=row["description"] if row else None,
-            timestamp=row["updated_at"] if row else None,
-            created_at=row["created_at"] if row else None,
-            updated_at=row["updated_at"] if row else None,
-        )
 
     async def update_session(
         self, session: str, *, title=_FIELD_UNSET, description=_FIELD_UNSET,

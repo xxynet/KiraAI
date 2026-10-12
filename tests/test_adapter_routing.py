@@ -49,7 +49,7 @@ def processor_for(adapter):
         adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
         session_manager=SimpleNamespace(
             update_session=AsyncMock(),
-            get_session_metadata=AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description=None, internal_id="sess_test")),
+            get_session=AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description=None, internal_id="sess_test")),
         ),
     )
     processor = MessageProcessor(DefaultIMWorkflow(services))

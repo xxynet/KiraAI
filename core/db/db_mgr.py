@@ -61,9 +61,20 @@ class DatabaseManager:
                 cursor = dbapi_connection.cursor()
                 try:
                     cursor.execute("PRAGMA busy_timeout=10000")
-                    cursor.execute("PRAGMA journal_mode=WAL")
                 finally:
                     cursor.close()
+
+            # WAL persists in the database file; configure it before serving queries.
+            try:
+                async with self.engine.connect() as connection:
+                    mode = (await connection.exec_driver_sql("PRAGMA journal_mode")).scalar_one()
+                    if mode not in ("wal", "memory"):
+                        mode = (await connection.exec_driver_sql("PRAGMA journal_mode=WAL")).scalar_one()
+                        if mode != "wal":
+                            raise RuntimeError("Unable to enable SQLite WAL mode")
+            except BaseException:
+                await self.dispose()
+                raise
 
         self.session_maker = async_sessionmaker(
             self.engine,

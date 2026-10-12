@@ -112,7 +112,7 @@ class SessionPlugin(BasePlugin):
             return f"failed to send: {e}"
 
     async def get_session_list_prompt(self) -> str:
-        sessions = await self.ctx.session_mgr.get_sessions()
+        sessions = await self.ctx.session_mgr.get_sessions(include_content=False)
         session_list = "\n".join(
             f"{session.sid}(title: {session.session_title})"
             for session in sessions if isinstance(session.data, dict)

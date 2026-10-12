@@ -49,8 +49,7 @@ def processor(monkeypatch):
     services = make_workflow_context(
         config=config,
         session_manager=SimpleNamespace(
-            get_session_metadata=AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="", internal_id="sess_test")),
-            get_session=AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(
+            get_session=AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(
                 *sid.split(":", 2), session_title="Chat", internal_id="sess_test",
             )),
             update_session=AsyncMock(),
@@ -309,7 +308,7 @@ async def test_receive_keeps_original_buffer_sid_when_plugin_changes_session(pro
     )
     original_sid = event.session.sid
     instance.im_workflow.ctx.message_buffer = SessionBufferManager()
-    instance.im_workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="", internal_id="sess_test"))
+    instance.im_workflow.ctx.session_manager.get_session = AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="", internal_id="sess_test"))
 
     async def redirect(event):
         event.session = Session("adapter", "dm", "changed")
@@ -379,7 +378,7 @@ async def test_receive_and_trigger_use_injected_session_manager_and_event_bus(pr
     workflow = instance.im_workflow
     services = workflow.ctx
     services.session_manager = SimpleNamespace(
-        get_session_metadata=AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="injected description", internal_id="sess_test")),
+        get_session=AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="injected description", internal_id="sess_test")),
     )
     services.event_bus = SimpleNamespace(publish=AsyncMock())
     incoming = batch()
@@ -406,7 +405,7 @@ async def test_processor_preserves_injected_workflow_and_event_bus(processor):
     instance, _ = processor
     workflow = instance.im_workflow
     event_bus = workflow.ctx.event_bus
-    instance.im_workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="", internal_id="sess_test"))
+    instance.im_workflow.ctx.session_manager.get_session = AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="", internal_id="sess_test"))
     incoming = batch()
     event = KiraMessageEvent(
         supported_elements=incoming.supported_elements,
@@ -765,7 +764,8 @@ async def test_receive_keeps_event_lightweight_before_plugins(processor, session
         content=[[{"role": "user", "content": "History"}]], data={"custom": True},
     )
     services.session_manager = manager
-    monkeypatch.setattr(manager, "get_session", AsyncMock(side_effect=AssertionError("Do not load history")))
+    query = AsyncMock(wraps=manager.get_session)
+    monkeypatch.setattr(manager, "get_session", query)
     seen = []
 
     async def inspect_session(received):
@@ -782,14 +782,17 @@ async def test_receive_keeps_event_lightweight_before_plugins(processor, session
     queries = []
 
     def capture_sql(conn, cursor, statement, parameters, context, executemany):
-        queries.append(statement)
+        queries.append((statement, [column[0] for column in cursor.description]))
 
-    sqlalchemy_event.listen(session_db.db.engine.sync_engine, "before_cursor_execute", capture_sql)
+    sqlalchemy_event.listen(session_db.db.engine.sync_engine, "after_cursor_execute", capture_sql)
     try:
         assert await ReceiveStage().run(IMEventContext(services, event))
     finally:
-        sqlalchemy_event.remove(session_db.db.engine.sync_engine, "before_cursor_execute", capture_sql)
+        sqlalchemy_event.remove(session_db.db.engine.sync_engine, "after_cursor_execute", capture_sql)
     assert len(queries) == 1
-    assert "content" not in queries[0] and "chat_sessions.data" not in queries[0]
+    sql, columns = queries[0]
+    assert "chat_sessions.content" not in sql
+    assert "content" not in columns and "data" in columns
+    query.assert_awaited_once_with(original.sid, ensure_session=True, include_content=False)
     assert seen == [original]
     assert (await session_db.get_chat_session(original.sid))["title"] == stored_title

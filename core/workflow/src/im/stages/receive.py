@@ -19,7 +19,7 @@ class ReceiveStage(BaseStage[IMEventContext]):
         if services.message_history is not None:
             await services.message_history.record_incoming_safely(event.message, sid, event.adapter.platform)
 
-        metadata = await services.session_manager.get_session_metadata(sid, ensure_session=True)
+        metadata = await services.session_manager.get_session(sid, ensure_session=True, include_content=False)
         event.session.internal_id = metadata.internal_id
         event.session.session_description = metadata.session_description
 

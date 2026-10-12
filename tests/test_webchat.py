@@ -205,7 +205,7 @@ async def test_normal_event_bus_buffers_batches_counts_and_delivers_webchat(stor
     workflow = instance.im_workflow
     services = workflow.ctx
     services.event_bus = bus
-    services.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="Description", internal_id="sess_test"))
+    services.session_manager.get_session = AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="Description", internal_id="sess_test"))
     services.session_manager.update_session = AsyncMock()
     services.message_delivery.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     services.message_delivery.message_history = None
@@ -283,7 +283,7 @@ async def test_plugin_can_suppress_webchat_reply(store, processor, monkeypatch, 
     instance, model = processor
     workflow = instance.im_workflow
     workflow.ctx.event_bus = bus
-    workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="Description", internal_id="sess_test"))
+    workflow.ctx.session_manager.get_session = AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="Description", internal_id="sess_test"))
 
     async def suppress(event):
         getattr(event, action)()

@@ -4,7 +4,7 @@ from copy import deepcopy
 import time
 from uuid import uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, func, select
 
 from core.config import VERSION
 
@@ -65,27 +65,50 @@ class ChatSessionMixin:
             "updated_at": row.updated_at, "data": deepcopy(row.data),
         }
 
-    async def get_chat_session_metadata(self, session_key: str) -> dict | None:
-        """Read lightweight metadata without loading JSON context or extension data."""
+    @staticmethod
+    def _chat_session_query(*, include_content: bool):
+        """Always select metadata; load message content only when requested."""
+        columns = [
+            ChatSessionRecord.id, ChatSessionRecord.session_key,
+            ChatSessionRecord.title, ChatSessionRecord.description,
+            ChatSessionRecord.created_at, ChatSessionRecord.updated_at, ChatSessionRecord.data,
+        ]
+        if include_content:
+            columns.append(ChatSessionRecord.content)
+        return select(*columns)
+
+    async def get_chat_session(
+        self, session_key: str, *, include_content: bool = True,
+    ) -> dict | None:
+        """Read one session, optionally omitting message content."""
+        query = self._chat_session_query(
+            include_content=include_content,
+        ).where(ChatSessionRecord.session_key == session_key)
         async with self.db.get_session() as session:
-            result = await session.execute(select(
-                ChatSessionRecord.id, ChatSessionRecord.title, ChatSessionRecord.description,
-                ChatSessionRecord.created_at, ChatSessionRecord.updated_at,
-            ).where(ChatSessionRecord.session_key == session_key))
+            result = await session.execute(query)
             row = result.mappings().one_or_none()
             return dict(row) if row is not None else None
 
-    async def get_chat_session(self, session_key: str) -> dict | None:
+    async def list_chat_sessions(
+        self, *, include_content: bool = True,
+    ) -> list[dict]:
+        """Read session snapshots with optional message content."""
+        query = self._chat_session_query(
+            include_content=include_content,
+        )
         async with self.db.get_session() as session:
-            row = await session.scalar(select(ChatSessionRecord).where(
-                ChatSessionRecord.session_key == session_key,
-            ))
-            return self._chat_session_record(row) if row is not None else None
+            result = await session.execute(query)
+            return [dict(row) for row in result.mappings()]
 
-    async def list_chat_sessions(self) -> list[dict]:
+    async def get_chat_session_message_counts(self) -> dict[str, int]:
+        """Count context chunks for all sessions without returning message bodies."""
+        count = case(
+            (func.json_type(ChatSessionRecord.content) == "array", func.json_array_length(ChatSessionRecord.content)),
+            else_=0,
+        )
         async with self.db.get_session() as session:
-            rows = (await session.scalars(select(ChatSessionRecord))).all()
-            return [self._chat_session_record(row) for row in rows]
+            result = await session.execute(select(ChatSessionRecord.session_key, count))
+            return {session_key: message_count for session_key, message_count in result}
 
     async def save_chat_session(
         self, session_key: str, *, title=_FIELD_UNSET, description=_FIELD_UNSET,

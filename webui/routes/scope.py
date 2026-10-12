@@ -61,7 +61,7 @@ class ScopeRoutes(Routes):
         # Gather sessions
         sessions: List[Dict[str, Any]] = []
         if self.lifecycle.session_manager:
-            for session in await self.lifecycle.session_manager.get_sessions():
+            for session in await self.lifecycle.session_manager.get_sessions(include_content=False):
                 if not isinstance(session.data, dict):
                     continue
                 sessions.append({

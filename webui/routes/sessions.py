@@ -171,13 +171,15 @@ class SessionsRoutes(Routes):
             "description": row.session_description if row else "",
             "capabilities": row.data.get("capabilities") if row else None,
             "messages": row.content if row else [],
+            "message_count": len(row.content) if row and isinstance(row.content, list) else 0,
         }
 
     async def list_sessions(self):
         if not self.lifecycle or not self.lifecycle.session_manager:
             return {"sessions": []}
 
-        records = await self.lifecycle.session_manager.get_sessions()
+        records = await self.lifecycle.session_manager.get_sessions(include_content=False)
+        message_counts = await self.lifecycle.session_manager.get_session_message_counts()
         malformed = set()
         sessions = []
         for row in records:
@@ -188,9 +190,9 @@ class SessionsRoutes(Routes):
             if len(sid.split(":", 2)) != 3:
                 continue
             item = self._session_response(sid, row)
-            memory = item.pop("messages")
+            item.pop("messages")
             item.pop("capabilities")
-            item["message_count"] = len(memory) if isinstance(memory, list) else 0
+            item["message_count"] = message_counts.get(sid, 0)
             sessions.append(item)
         if self.message_history is not None:
             history_sessions = await self.message_history.list_sessions()
