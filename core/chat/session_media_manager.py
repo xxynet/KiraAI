@@ -33,7 +33,8 @@ class SessionMediaManager:
         """Serialize cleanup and use the newest persisted memory for a session."""
         async with self._get_session_lock(session):
             async with self.session_manager.maintenance():
-                memory = await self.session_manager.get_existing_memory_snapshot(session)
+                current = await self.session_manager.get_session(session)
+                memory = current.content if current is not None else []
                 task = asyncio.create_task(asyncio.to_thread(cleanup_session_media, session, memory or []))
                 try:
                     await asyncio.shield(task)

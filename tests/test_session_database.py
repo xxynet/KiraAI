@@ -35,7 +35,7 @@ async def test_import_restart_and_delete_keep_database_authoritative(session_db,
     assert metadata["internal_id"].startswith("sess_")
     assert metadata["updated_at"] == 100
     assert (await manager.get_session(SID)).internal_id == metadata["internal_id"]
-    message_id = (await manager.read_memory(SID))[0][0]["_extra"]["llm_message_id"]
+    message_id = (await manager.get_session(SID)).content[0][0]["_extra"]["llm_message_id"]
     await manager.update_session(SID, title="New", description="Changed")
     await manager.update_session_capabilities(SID, {"tts": {"enabled": True}})
     assert path.read_text(encoding="utf-8") == original
@@ -47,7 +47,7 @@ async def test_import_restart_and_delete_keep_database_authoritative(session_db,
     assert current["created_at"] == metadata["created_at"]
     assert current["updated_at"] > 100
     assert (await restarted.get_session(SID)).session_title == "New"
-    assert (await restarted.read_memory(SID))[0][0]["_extra"]["llm_message_id"] == message_id
+    assert (await restarted.get_session(SID)).content[0][0]["_extra"]["llm_message_id"] == message_id
     assert (await restarted.get_session(SID)).data["custom"] == {"keep": True}
     assert (await restarted.get_effective_capabilities(SID, {})) == {"tts": {"enabled": True}}
     await restarted.delete_session(SID)
@@ -112,7 +112,7 @@ async def test_concurrent_writes_preserve_all_updates_and_one_identity(session_d
     assert {chunk[0]["content"] for chunk in rows[0]["content"]} == {str(i) for i in range(10)}
     assert rows[0]["title"] == "Title"
     assert rows[0]["data"]["capabilities"] == {"tts": {"enabled": False}}
-    assert rows[0]["content"] == (await manager.read_memory(SID))
+    assert rows[0]["content"] == (await manager.get_session(SID)).content
     assert not (tmp_path / "chat_memory.json").exists()
 
 
@@ -149,8 +149,8 @@ async def test_cancellation_waits_for_commit_and_event_publication(session_db, t
         assert rows == [] and await manager.get_session(SID) is None
         assert manager.event_bus.events[0].event_type == "session_deleted"
     else:
-        assert rows[0]["content"] == (await manager.read_memory(SID))
-        assert (await manager.read_memory(SID))[0][0]["content"] == "committed"
+        assert rows[0]["content"] == (await manager.get_session(SID)).content
+        assert (await manager.get_session(SID)).content[0][0]["content"] == "committed"
         assert manager.event_bus.events[0].event_type == "session_memory_written"
     assert not hasattr(manager, "_pending_memory")
 
@@ -205,23 +205,21 @@ async def test_reads_and_edits_use_latest_database_state(session_db, tmp_path):
     await manager.initialize()
     await manager.get_session(SID, ensure_session=True)
     identity = (await manager.get_session(SID)).internal_id
-    assert await manager.read_memory(SID) == []
+    assert (await manager.get_session(SID)).content == []
     content = [[{"role": "user", "content": "external", "_extra": {"llm_message_id": "keep"}}]]
     await session_db.save_chat_session(
         SID, title="External", description="Updated outside manager", content=content,
         data={"capabilities": {"tts": {"enabled": False}}, "custom": "retained"},
     )
-    assert await manager.read_memory(SID) == content
-    assert await manager.fetch_memory(SID) == content[0]
-    assert await manager.get_existing_memory_snapshot(SID) == content
-    assert await manager.get_memory_count(SID) == 1
+    assert (await manager.get_session(SID)).content == content
+    assert (await manager.get_session(SID)).flatten_content() == content[0]
     assert (await manager.get_session(SID)).session_title == "External"
     assert (await manager.get_sessions())[0].session_title == "External"
     assert (await manager.get_session_metadata(SID))["internal_id"] == identity
     assert await manager.get_effective_capabilities(SID, {}) == {"tts": {"enabled": False}}
-    snapshot = await manager.read_memory(SID)
+    snapshot = (await manager.get_session(SID)).content
     snapshot.clear()
-    assert await manager.read_memory(SID) == content
+    assert (await manager.get_session(SID)).content == content
 
     lifecycle = SimpleNamespace(session_manager=manager, mcp_manager=None, skills_manager=None)
     routes = SessionsRoutes(FastAPI(), lifecycle)
@@ -240,10 +238,8 @@ async def test_reads_and_edits_use_latest_database_state(session_db, tmp_path):
     await wait_for_event_tasks(manager)
 
     await session_db.delete_chat_session(SID)
-    assert await manager.read_memory(SID) == []
-    assert await manager.get_existing_memory_snapshot(SID) is None
+    assert await manager.get_session(SID) is None
     assert await manager.get_sessions() == []
-    assert await manager.get_memory_count(SID) == 0
     assert (await manager.get_session_metadata(SID))["internal_id"] is None
     assert await manager.get_effective_capabilities(SID, {"tts": {"enabled": True}}) == {
         "tts": {"enabled": True},
@@ -310,6 +306,27 @@ async def test_session_queries_return_complete_independent_snapshots(session_db,
     assert await manager.get_session("adapter:dm:missing") is None
     missing = await manager.get_session("adapter:dm:missing")
     assert missing is None
+
+
+def test_flatten_content_isolates_nested_message_mutations():
+    from core.chat.session import Session
+
+    session = Session("adapter", "dm", "user", content=[
+        [{"role": "user", "content": [{"type": "text", "text": "original"}]}],
+        [],
+        [{"role": "assistant", "content": "reply"}],
+    ])
+    messages = session.flatten_content()
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+    messages[0]["content"][0]["text"] = "changed"
+    messages[0]["content"].append({"type": "text", "text": "new"})
+    messages[1]["content"] = "changed reply"
+    messages.clear()
+    assert session.content == [
+        [{"role": "user", "content": [{"type": "text", "text": "original"}]}],
+        [],
+        [{"role": "assistant", "content": "reply"}],
+    ]
 
 
 def test_session_defaults_and_record_conversion_do_not_share_mutable_data():

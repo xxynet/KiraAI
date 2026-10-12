@@ -3,6 +3,7 @@ import threading
 import time
 from copy import deepcopy
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import pytest
 
@@ -72,7 +73,7 @@ async def test_update_memory_discards_configured_count_when_memory_is_full(tmp_p
 
     await manager.update_memory("adapter:dm:user", [{"role": "user", "content": "5"}])
 
-    retained_contents = [chunk[0]["content"] for chunk in await manager.read_memory("adapter:dm:user")]
+    retained_contents = [chunk[0]["content"] for chunk in (await manager.get_session("adapter:dm:user")).content]
     assert retained_contents == ["2", "3", "4", "5"]
 
 
@@ -85,7 +86,7 @@ async def test_update_memory_discards_configured_count_after_existing_overflow(t
 
     await manager.update_memory("adapter:dm:user", [{"role": "user", "content": "7"}])
 
-    retained_contents = [chunk[0]["content"] for chunk in await manager.read_memory("adapter:dm:user")]
+    retained_contents = [chunk[0]["content"] for chunk in (await manager.get_session("adapter:dm:user")).content]
     assert retained_contents == ["4", "5", "6", "7"]
 
 
@@ -97,7 +98,7 @@ async def test_update_memory_uses_limit_lowered_at_runtime(tmp_path, session_db)
 
     await manager.update_memory("adapter:dm:user", [{"role": "user", "content": "5"}])
 
-    retained_contents = [chunk[0]["content"] for chunk in await manager.read_memory("adapter:dm:user")]
+    retained_contents = [chunk[0]["content"] for chunk in (await manager.get_session("adapter:dm:user")).content]
     assert retained_contents == ["3", "4", "5"]
 
 
@@ -118,7 +119,7 @@ async def test_update_memory_publishes_new_and_discarded_memory_after_persistenc
     assert event.event_type == "session_memory_updated"
     assert event.payload == {
         "session": "adapter:dm:user",
-        "new_chunk": (await manager.get_existing_memory_snapshot("adapter:dm:user"))[-1],
+        "new_chunk": (await manager.get_session("adapter:dm:user")).content[-1],
         "discarded_memory": [],
     }
     assert (await session_db.list_chat_sessions())[0]["content"][-1][0]["content"] == "new"
@@ -130,7 +131,7 @@ async def test_update_memory_publishes_truncated_memory_after_persistence(tmp_pa
     manager = await build_session_manager(
         tmp_path, memory, max_memory_length=5, memory_overflow_discard_count=2, db=session_db,
     )
-    memory = (await manager.get_existing_memory_snapshot("adapter:dm:user"))
+    memory = (await manager.get_session("adapter:dm:user")).content
     new_chunk = [{"role": "user", "content": "5"}]
 
     await manager.update_memory("adapter:dm:user", new_chunk)
@@ -138,7 +139,7 @@ async def test_update_memory_publishes_truncated_memory_after_persistence(tmp_pa
 
     assert manager.event_bus.events[0].payload == {
         "session": "adapter:dm:user",
-        "new_chunk": (await manager.get_existing_memory_snapshot("adapter:dm:user"))[-1],
+        "new_chunk": (await manager.get_session("adapter:dm:user")).content[-1],
         "discarded_memory": memory[:2],
     }
 
@@ -149,7 +150,7 @@ async def test_write_memory_publishes_old_and_new_memory(tmp_path, session_db):
     new_memory = [[{"role": "user", "content": "new"}]]
     manager = await build_session_manager(tmp_path, old_memory, db=session_db)
 
-    old_memory = (await manager.get_existing_memory_snapshot("adapter:dm:user"))
+    old_memory = (await manager.get_session("adapter:dm:user")).content
     await manager.write_memory("adapter:dm:user", new_memory)
     await wait_for_event_tasks(manager)
 
@@ -158,7 +159,7 @@ async def test_write_memory_publishes_old_and_new_memory(tmp_path, session_db):
     assert event.payload == {
         "session": "adapter:dm:user",
         "old_memory": old_memory,
-        "new_memory": (await manager.get_existing_memory_snapshot("adapter:dm:user")),
+        "new_memory": (await manager.get_session("adapter:dm:user")).content,
     }
 
 
@@ -167,7 +168,7 @@ async def test_delete_session_publishes_old_memory(tmp_path, session_db):
     old_memory = [[{"role": "user", "content": "old"}]]
     manager = await build_session_manager(tmp_path, old_memory, db=session_db)
 
-    old_memory = (await manager.get_existing_memory_snapshot("adapter:dm:user"))
+    old_memory = (await manager.get_session("adapter:dm:user")).content
     await manager.delete_session("adapter:dm:user")
     await wait_for_event_tasks(manager)
 
@@ -190,8 +191,8 @@ class SnapshotSessionManager:
     async def maintenance(self):
         yield
 
-    async def get_existing_memory_snapshot(self, _session):
-        return deepcopy(self.memory)
+    async def get_session(self, _session):
+        return SimpleNamespace(content=deepcopy(self.memory))
 
 
 @pytest.mark.asyncio
@@ -241,3 +242,43 @@ async def test_session_media_cleanup_uses_latest_snapshot_and_serializes_per_ses
         ("adapter:dm:user", memory),
     ]
     assert maximum_active_count == 1
+
+@pytest.mark.anyio
+async def test_delete_session_allows_malformed_data(tmp_path, session_db):
+    sid = "adapter:dm:user"
+    manager = await build_session_manager(tmp_path, [], db=session_db)
+    await session_db.save_chat_session(sid, data=42)
+
+    await manager.delete_session(sid)
+    await wait_for_event_tasks(manager)
+
+    assert await session_db.get_chat_session(sid) is None
+    assert manager.event_bus.events[0].payload == {"session": sid, "old_memory": []}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("malformed", [False, True])
+async def test_session_media_cleanup_handles_missing_and_malformed_sessions(
+    tmp_path, session_db, monkeypatch, malformed,
+):
+    sid = "adapter:dm:user"
+    manager = await build_session_manager(tmp_path, [], db=session_db)
+    if malformed:
+        await session_db.save_chat_session(sid, data=42)
+    else:
+        await session_db.delete_chat_session(sid)
+    media = SessionMediaManager(SubscriptionEventBus(), manager)
+    calls = []
+    monkeypatch.setattr(
+        "core.chat.session_media_manager.cleanup_session_media",
+        lambda session, memory: calls.append((session, memory)),
+    )
+
+    if malformed:
+        with pytest.raises(ValueError, match="Session data must be an object"):
+            await media._cleanup_current_session_media(sid)
+        assert calls == []
+    else:
+        await media._cleanup_current_session_media(sid)
+        assert calls == [(sid, [])]
+    assert not manager._write_lock.locked()

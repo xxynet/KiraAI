@@ -55,7 +55,7 @@ def processor(monkeypatch):
             )),
             update_session=AsyncMock(),
             get_effective_capabilities=AsyncMock(side_effect=lambda sid, default: default),
-            fetch_memory=AsyncMock(side_effect=lambda sid: []), update_memory=AsyncMock(),
+            update_memory=AsyncMock(),
         ),
         provider_mgr=SimpleNamespace(get_default_llm=lambda: model),
         prompt_manager=SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[])),
@@ -678,7 +678,6 @@ async def test_build_request_loads_current_session(processor, session_db, tmp_pa
     services.session_manager = manager
     query = AsyncMock(wraps=manager.get_session)
     monkeypatch.setattr(manager, "get_session", query)
-    monkeypatch.setattr(manager, "fetch_memory", AsyncMock(side_effect=AssertionError("Reuse query result")))
     ctx = IMBatchContext(services, event)
     assert await BuildRequestStage().run(ctx)
     query.assert_awaited_once_with(ctx.sid, ensure_session=True)

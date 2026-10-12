@@ -376,7 +376,7 @@ async def test_session_delete_removes_all_archive_rows_even_when_cleanup_disable
     ))
     await routes.delete_session(SID)
     await dispatch_session_events(history, session_events)
-    assert (await manager.get_existing_memory_snapshot(SID)) is None
+    assert (await manager.get_session(SID)) is None
     assert (await history.list_messages(SID))["messages"] == []
     assert await history.get_message(other) is not None
     assert all(item["id"] != SID for item in (await routes.list_sessions())["sessions"])

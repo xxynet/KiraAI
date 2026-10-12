@@ -29,7 +29,7 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
         }
 
         # Get chat history memory
-        session_memory = [message for chunk in session.content for message in chunk]
+        session_memory = session.flatten_content()
 
         # Generate agent prompt
         agent_prompt_list = await services.prompt_manager.get_agent_prompt(chat_env)
@@ -73,7 +73,7 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
                     and not services.mcp_manager.is_server_allowed(tool_server_map[t.name], sid))
         ]
 
-        request = LLMRequest(messages=session_memory[:], tool_set=tool_set)
+        request = LLMRequest(messages=session_memory, tool_set=tool_set)
         request.system_prompt.extend(agent_prompt_list)
 
         # Add received im messages

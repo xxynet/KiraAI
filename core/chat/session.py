@@ -56,6 +56,10 @@ class Session:
     content: list[list[dict]] = field(default_factory=list, repr=False)
     data: dict = field(default_factory=dict, repr=False)
 
+    def flatten_content(self) -> list[dict]:
+        """Return a deep copy of the flattened content in message order."""
+        return deepcopy([message for chunk in self.content for message in chunk])
+
     @classmethod
     def from_record(cls, record: dict) -> Session:
         """Build an independent session snapshot from a database record."""

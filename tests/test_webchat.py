@@ -34,9 +34,6 @@ class Sessions:
         self.memory = None
         self.description = None
 
-    def get_existing_memory_snapshot(self, sid):
-        return self.memory
-
     async def write_memory(self, sid, memory):
         self.memory = memory
 
@@ -177,7 +174,7 @@ async def test_profile_keeps_description_verbatim_and_context_in_session_manager
     await store.set_setting("profile", profile)
     sessions = Sessions()
     sessions.memory = [[{"role": "user", "content": "session context"}]]
-    sessions.get_existing_memory_snapshot = Mock(side_effect=AssertionError("WebChat must not read context"))
+    sessions.get_session = AsyncMock(side_effect=AssertionError("WebChat must not read context"))
     sessions.write_memory = Mock(side_effect=AssertionError("WebChat must not restore context"))
     service = WebChatService(make_adapter(store), sessions)
     await service.initialize()
@@ -192,7 +189,7 @@ async def test_profile_keeps_description_verbatim_and_context_in_session_manager
     await restarted.initialize()
     assert sessions.memory == []
     assert await store.get_setting("memory") is None
-    sessions.get_existing_memory_snapshot.assert_not_called()
+    sessions.get_session.assert_not_awaited()
     sessions.write_memory.assert_not_called()
 
 @pytest.mark.anyio
@@ -212,7 +209,6 @@ async def test_normal_event_bus_buffers_batches_counts_and_delivers_webchat(stor
     services = workflow.ctx
     services.event_bus = bus
     services.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: {"description": "Description", "internal_id": "sess_test"})
-    services.session_manager.get_existing_memory_snapshot = AsyncMock(side_effect=lambda sid: [])
     services.session_manager.update_session = AsyncMock()
     services.message_delivery.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     services.message_delivery.message_history = None

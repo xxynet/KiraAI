@@ -108,7 +108,6 @@ async def test_list_sessions_skips_malformed_history_ids():
         "malformed-memory-id": {},
         "adapter:dm:existing": {"title": "Existing", "memory": [[]]},
     }
-    session_manager.get_memory_count = AsyncMock(side_effect=lambda _: 1)
     history = SimpleNamespace(list_sessions=AsyncMock(return_value=[
         {"session_id": "", "message_count": 1},
         {"session_id": "invalid", "message_count": 1},

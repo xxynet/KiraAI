@@ -226,7 +226,8 @@ class MessageHistoryService:
         identity = record.get("llm_message_id")
         if not identity:
             return None
-        memory = await self.session_manager.get_existing_memory_snapshot(record["session_id"]) or []
+        session = await self.session_manager.get_session(record["session_id"])
+        memory = session.content if session is not None else []
         for chunk in memory:
             for message in chunk:
                 if message.get("_extra", {}).get("llm_message_id") == identity:

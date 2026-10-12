@@ -239,25 +239,6 @@ class SessionManager:
                 data["data"]["capabilities"] = copy.deepcopy(capabilities)
             await self._save_session(session, data)
 
-    async def get_memory_count(self, session: str) -> int:
-        memory = await self.get_existing_memory_snapshot(session)
-        return len(memory) if isinstance(memory, list) else 0
-
-    async def fetch_memory(self, session: str):
-        return [message for chunk in await self.read_memory(session) for message in chunk]
-
-    async def read_memory(self, session: str):
-        row = await self.db.get_chat_session(session)
-        if row is None:
-            return []
-        return row["content"] if isinstance(row["data"], dict) else None
-
-    async def get_existing_memory_snapshot(self, session: str) -> Optional[list[list[dict]]]:
-        row = await self.db.get_chat_session(session)
-        if row is None or not isinstance(row["data"], dict):
-            return None
-        return row["content"]
-
     async def write_memory(self, session: str, memory: list[list[dict]]):
         await self.update_session(session, content=memory)
         logger.info(f"Memory written for {session}")
@@ -315,7 +296,8 @@ class SessionManager:
     async def delete_session(self, session: str):
         """Delete context and notify archive/media subscribers after committing."""
         async with self._write_lock:
-            old_memory = await self.get_existing_memory_snapshot(session) or []
+            row = await self.db.get_chat_session(session)
+            old_memory = (row["content"] or []) if row is not None and isinstance(row["data"], dict) else []
 
             async def remove():
                 await self.db.delete_chat_session(session)

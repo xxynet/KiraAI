@@ -266,7 +266,7 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
         session=Session("adapter", "dm", "user"), messages=[incoming("a"), incoming("b")],
     )
     await instance.im_workflow.handle_batch_event(event)
-    memory = (await history.session_manager.get_existing_memory_snapshot(SID))[0]
+    memory = (await history.session_manager.get_session(SID)).content[0]
     assert [message["role"] for message in memory] == ["user", "assistant", "tool", "assistant"]
     assert memory[1]["_extra"]["llm_message_id"] != memory[3]["_extra"]["llm_message_id"]
     for message, count in zip(memory, [2, 2, 0, 1]):
@@ -305,14 +305,14 @@ async def test_stopped_or_discarded_incoming_is_recorded_before_plugin_changes(h
 @pytest.mark.anyio
 async def test_existing_llm_message_ids_survive_reload_and_new_roles_get_new_ids(tmp_path, session_db):
     manager = await build_session_manager(tmp_path, [[{"role": "user", "content": "legacy"}]], db=session_db)
-    snapshot = (await manager.get_existing_memory_snapshot(SID))
+    snapshot = (await manager.get_session(SID)).content
     identity = snapshot[0][0]["_extra"]["llm_message_id"]
     await manager.initialize()
-    assert (await manager.get_existing_memory_snapshot(SID))[0][0]["_extra"]["llm_message_id"] == identity
+    assert (await manager.get_session(SID)).content[0][0]["_extra"]["llm_message_id"] == identity
     edited = copy.deepcopy(snapshot)
     edited[0][0]["role"] = "assistant"
     await manager.write_memory(SID, edited)
-    assert (await manager.get_existing_memory_snapshot(SID))[0][0]["_extra"]["llm_message_id"] != identity
+    assert (await manager.get_session(SID)).content[0][0]["_extra"]["llm_message_id"] != identity
 
 
 @pytest.mark.anyio
@@ -460,11 +460,11 @@ async def test_database_links_survive_memory_edits_without_reverse_links(history
     message.to_memory_dict()
     await history.link_incoming_messages(SID, message.extra["llm_message_id"], [identity])
     await history.session_manager.update_memory(SID, [message])
-    edited = (await history.session_manager.get_existing_memory_snapshot(SID))
+    edited = (await history.session_manager.get_session(SID)).content
     edited[0][0]["content"] = "edited"
     edited[0].append(copy.deepcopy(edited[0][0]))
     await history.session_manager.write_memory(SID, edited)
-    snapshot = (await history.session_manager.get_existing_memory_snapshot(SID))
+    snapshot = (await history.session_manager.get_session(SID)).content
     record = await history.get_message(identity)
     assert (await history.get_linked_memory(record)) == snapshot[0][0]
     assert record["llm_message_id"] == message.extra["llm_message_id"]
