@@ -144,7 +144,7 @@ async def test_many_messages_link_to_exact_user_and_assistant_and_survive_prunin
     assert (await history.get_message(inbound[0]))["llm_message_id"] == user.extra["llm_message_id"]
     row = await history.get_message(emitted[0])
     assert (await history.get_linked_memory(row))["content"] == "first step"
-    await history.session_manager.write_memory(SID, [])
+    await history.session_manager.update_session(SID, content=[])
     assert (await history.get_linked_memory(row)) is None
     assert len((await history.list_messages(SID))["messages"]) == 5
 
@@ -311,7 +311,7 @@ async def test_existing_llm_message_ids_survive_reload_and_new_roles_get_new_ids
     assert (await manager.get_session(SID)).content[0][0]["_extra"]["llm_message_id"] == identity
     edited = copy.deepcopy(snapshot)
     edited[0][0]["role"] = "assistant"
-    await manager.write_memory(SID, edited)
+    await manager.update_session(SID, content=edited)
     assert (await manager.get_session(SID)).content[0][0]["_extra"]["llm_message_id"] != identity
 
 
@@ -463,7 +463,7 @@ async def test_database_links_survive_memory_edits_without_reverse_links(history
     edited = (await history.session_manager.get_session(SID)).content
     edited[0][0]["content"] = "edited"
     edited[0].append(copy.deepcopy(edited[0][0]))
-    await history.session_manager.write_memory(SID, edited)
+    await history.session_manager.update_session(SID, content=edited)
     snapshot = (await history.session_manager.get_session(SID)).content
     record = await history.get_message(identity)
     assert (await history.get_linked_memory(record)) == snapshot[0][0]

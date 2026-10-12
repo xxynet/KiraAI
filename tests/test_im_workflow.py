@@ -49,7 +49,7 @@ def processor(monkeypatch):
     services = make_workflow_context(
         config=config,
         session_manager=SimpleNamespace(
-            get_session_metadata=AsyncMock(return_value={"description": "", "internal_id": "sess_test"}),
+            get_session_metadata=AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="", internal_id="sess_test")),
             get_session=AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(
                 *sid.split(":", 2), session_title="Chat", internal_id="sess_test",
             )),
@@ -309,7 +309,7 @@ async def test_receive_keeps_original_buffer_sid_when_plugin_changes_session(pro
     )
     original_sid = event.session.sid
     instance.im_workflow.ctx.message_buffer = SessionBufferManager()
-    instance.im_workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: {"description": "", "internal_id": "sess_test"})
+    instance.im_workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="", internal_id="sess_test"))
 
     async def redirect(event):
         event.session = Session("adapter", "dm", "changed")
@@ -379,7 +379,7 @@ async def test_receive_and_trigger_use_injected_session_manager_and_event_bus(pr
     workflow = instance.im_workflow
     services = workflow.ctx
     services.session_manager = SimpleNamespace(
-        get_session_metadata=AsyncMock(side_effect=lambda sid, *, ensure_session=False: {"description": "injected description", "internal_id": "sess_test"}),
+        get_session_metadata=AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="injected description", internal_id="sess_test")),
     )
     services.event_bus = SimpleNamespace(publish=AsyncMock())
     incoming = batch()
@@ -406,7 +406,7 @@ async def test_processor_preserves_injected_workflow_and_event_bus(processor):
     instance, _ = processor
     workflow = instance.im_workflow
     event_bus = workflow.ctx.event_bus
-    instance.im_workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: {"description": "", "internal_id": "sess_test"})
+    instance.im_workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="", internal_id="sess_test"))
     incoming = batch()
     event = KiraMessageEvent(
         supported_elements=incoming.supported_elements,

@@ -362,7 +362,7 @@ async def test_session_delete_removes_all_archive_rows_even_when_cleanup_disable
 
     manager = history.session_manager
     if with_context:
-        await manager.write_memory(SID, [[{"role": "user", "content": "old"}]])
+        await manager.update_session(SID, content=[[{"role": "user", "content": "old"}]])
     else:
         await history.db.delete_chat_session(SID)
     cleaner.config["bot_config"]["message_history_cleanup"]["enabled"] = False
@@ -430,7 +430,7 @@ async def test_failed_context_delete_does_not_delete_archive(history, session_ev
 @pytest.mark.anyio
 async def test_empty_context_edit_keeps_structured_history(history):
     identity = await seed(history, 1)
-    await history.session_manager.write_memory(SID, [])
+    await history.session_manager.update_session(SID, content=[])
     assert await history.get_message(identity) is not None
 
 

@@ -5,7 +5,7 @@ import copy
 import json
 from pathlib import Path
 from contextlib import asynccontextmanager
-from typing import List, Literal, Optional, TYPE_CHECKING, overload
+from typing import Literal, Optional, TYPE_CHECKING, overload
 
 from core.logging_manager import get_logger
 from core.config import KiraConfig
@@ -140,11 +140,12 @@ class SessionManager:
             await task
             raise
 
-    async def get_session_metadata(self, session: str, *, ensure_session: bool = False) -> dict:
-        """Read event metadata without loading the session's content or extension data."""
+    async def get_session_metadata(self, session: str, *, ensure_session: bool = False) -> Session:
+        """Read session metadata, leaving content and extension data unloaded."""
+        parts = session.split(":", maxsplit=2)
+        if len(parts) != 3:
+            raise ValueError("Invalid session routing key")
         if ensure_session:
-            if len(session.split(":", 2)) != 3:
-                raise ValueError("Invalid session routing key")
             async with self._write_lock:
                 row = await self.db.get_chat_session_metadata(session)
                 if row is None:
@@ -153,31 +154,15 @@ class SessionManager:
                     })
         else:
             row = await self.db.get_chat_session_metadata(session)
-        return {
-            "internal_id": row["id"] if row else None,
-            "description": row["description"] if row else None,
-            "created_at": row["created_at"] if row else None,
-            "updated_at": row["updated_at"] if row else None,
-        }
-
-    @overload
-    async def get_session_info(self, session: None = None) -> List[Session]: ...
-
-    @overload
-    async def get_session_info(self, session: str) -> Session: ...
-
-    async def get_session_info(self, session: Optional[str] = None):
-        """Query complete sessions without creating a missing session."""
-        if session is None:
-            return [record for record in await self.get_sessions()
-                    if isinstance(record.data, dict)]
-        record = await self.get_session(session)
-        if record is None:
-            record = Session.from_record({
-                "session_key": session, "title": "", "description": "", "data": {},
-                "content": [], "id": None, "created_at": None, "updated_at": None,
-            })
-        return record
+        return Session(
+            adapter_name=parts[0], session_type=parts[1], session_id=parts[2],
+            internal_id=row["id"] if row else None,
+            session_title=row["title"] if row else None,
+            session_description=row["description"] if row else None,
+            timestamp=row["updated_at"] if row else None,
+            created_at=row["created_at"] if row else None,
+            updated_at=row["updated_at"] if row else None,
+        )
 
     async def update_session(
         self, session: str, *, title=_FIELD_UNSET, description=_FIELD_UNSET,
@@ -239,10 +224,6 @@ class SessionManager:
                 data["data"]["capabilities"] = copy.deepcopy(capabilities)
             await self._save_session(session, data)
 
-    async def write_memory(self, session: str, memory: list[list[dict]]):
-        await self.update_session(session, content=memory)
-        logger.info(f"Memory written for {session}")
-
     async def update_memory(self, session: str, new_chunk):
         from core.agent.message import OpenAIMessage
 
@@ -250,11 +231,10 @@ class SessionManager:
         async with self._write_lock:
             data = await self._session_data(session)
             data["content"].append(new_chunk)
-            max_memory_length, overflow_discard_count = self._get_memory_limits()
             discarded_memory = []
-            if len(data["content"]) > max_memory_length:
-                overflow_count = len(data["content"]) - max_memory_length
-                discard_count = overflow_count + overflow_discard_count - 1
+            if len(data["content"]) > self.max_memory_length:
+                overflow_count = len(data["content"]) - self.max_memory_length
+                discard_count = overflow_count + self.memory_overflow_discard_count - 1
                 discarded_memory = copy.deepcopy(data["content"][:discard_count])
                 data["content"] = data["content"][discard_count:]
             await self._save_session(session, data, "session_memory_updated", {
@@ -263,15 +243,17 @@ class SessionManager:
         logger.info(f"Memory updated for {session}")
         return True
 
-    def _get_memory_limits(self) -> tuple[int, int]:
-        """Read the current memory-limit settings so WebUI updates apply immediately."""
+    @property
+    def max_memory_length(self) -> int:
+        """Read the current maximum number of memory chunks."""
+        return int(self.kira_config["bot_config"].get("bot", {}).get("max_memory_length"))
+
+    @property
+    def memory_overflow_discard_count(self) -> int:
+        """Read the current discard count, bounded by the memory limit."""
         bot_config = self.kira_config["bot_config"].get("bot", {})
-        max_memory_length = int(bot_config.get("max_memory_length"))
-        configured_discard_count = int(bot_config.get("memory_overflow_discard_count", 1))
-        overflow_discard_count = max(
-            1, min(configured_discard_count, max_memory_length)
-        )
-        return max_memory_length, overflow_discard_count
+        configured_count = int(bot_config.get("memory_overflow_discard_count", 1))
+        return max(1, min(configured_count, self.max_memory_length))
 
     def _publish_session_event(self, event_type: str, payload: dict) -> None:
         """Queue a session lifecycle event after its state has been persisted."""

@@ -34,9 +34,6 @@ class Sessions:
         self.memory = None
         self.description = None
 
-    async def write_memory(self, sid, memory):
-        self.memory = memory
-
     async def update_session(self, sid, title, description):
         self.description = description
 
@@ -175,7 +172,7 @@ async def test_profile_keeps_description_verbatim_and_context_in_session_manager
     sessions = Sessions()
     sessions.memory = [[{"role": "user", "content": "session context"}]]
     sessions.get_session = AsyncMock(side_effect=AssertionError("WebChat must not read context"))
-    sessions.write_memory = Mock(side_effect=AssertionError("WebChat must not restore context"))
+    sessions.update_session = AsyncMock(wraps=sessions.update_session)
     service = WebChatService(make_adapter(store), sessions)
     await service.initialize()
     assert sessions.description == description
@@ -190,7 +187,7 @@ async def test_profile_keeps_description_verbatim_and_context_in_session_manager
     assert sessions.memory == []
     assert await store.get_setting("memory") is None
     sessions.get_session.assert_not_awaited()
-    sessions.write_memory.assert_not_called()
+    assert all("content" not in call.kwargs for call in sessions.update_session.call_args_list)
 
 @pytest.mark.anyio
 async def test_normal_event_bus_buffers_batches_counts_and_delivers_webchat(store, processor, monkeypatch):
@@ -208,7 +205,7 @@ async def test_normal_event_bus_buffers_batches_counts_and_delivers_webchat(stor
     workflow = instance.im_workflow
     services = workflow.ctx
     services.event_bus = bus
-    services.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: {"description": "Description", "internal_id": "sess_test"})
+    services.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="Description", internal_id="sess_test"))
     services.session_manager.update_session = AsyncMock()
     services.message_delivery.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     services.message_delivery.message_history = None
@@ -286,7 +283,7 @@ async def test_plugin_can_suppress_webchat_reply(store, processor, monkeypatch, 
     instance, model = processor
     workflow = instance.im_workflow
     workflow.ctx.event_bus = bus
-    workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: {"description": "Description", "internal_id": "sess_test"})
+    workflow.ctx.session_manager.get_session_metadata = AsyncMock(side_effect=lambda sid, *, ensure_session=False: Session(*sid.split(":", 2), session_description="Description", internal_id="sess_test"))
 
     async def suppress(event):
         getattr(event, action)()

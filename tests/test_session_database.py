@@ -32,9 +32,13 @@ async def test_import_restart_and_delete_keep_database_authoritative(session_db,
     manager = manager_for(session_db, tmp_path)
     await manager.initialize()
     metadata = (await manager.get_session_metadata(SID))
-    assert metadata["internal_id"].startswith("sess_")
-    assert metadata["updated_at"] == 100
-    assert (await manager.get_session(SID)).internal_id == metadata["internal_id"]
+    assert metadata.internal_id.startswith("sess_")
+    assert metadata.updated_at == metadata.timestamp == 100
+    assert metadata.sid == SID
+    assert metadata.session_title == "Legacy"
+    assert metadata.session_description == "Daily"
+    assert metadata.content == [] and metadata.data == {}
+    assert (await manager.get_session(SID)).internal_id == metadata.internal_id
     message_id = (await manager.get_session(SID)).content[0][0]["_extra"]["llm_message_id"]
     await manager.update_session(SID, title="New", description="Changed")
     await manager.update_session_capabilities(SID, {"tts": {"enabled": True}})
@@ -43,9 +47,9 @@ async def test_import_restart_and_delete_keep_database_authoritative(session_db,
     restarted = manager_for(session_db, tmp_path)
     await restarted.initialize()
     current = (await restarted.get_session_metadata(SID))
-    assert current["internal_id"] == metadata["internal_id"]
-    assert current["created_at"] == metadata["created_at"]
-    assert current["updated_at"] > 100
+    assert current.internal_id == metadata.internal_id
+    assert current.created_at == metadata.created_at
+    assert current.updated_at > 100
     assert (await restarted.get_session(SID)).session_title == "New"
     assert (await restarted.get_session(SID)).content[0][0]["_extra"]["llm_message_id"] == message_id
     assert (await restarted.get_session(SID)).data["custom"] == {"keep": True}
@@ -70,7 +74,7 @@ async def test_invalid_json_can_be_repaired_before_import(session_db, tmp_path, 
     assert await session_db.list_chat_sessions() == []
     path.write_text(json.dumps({SID: {"memory": []}}), encoding="utf-8")
     await manager.initialize()
-    assert (await manager.get_session_metadata(SID))["internal_id"]
+    assert (await manager.get_session_metadata(SID)).internal_id
     assert await session_db.is_chat_memory_imported()
 
 
@@ -87,7 +91,7 @@ async def test_failed_commit_preserves_records_metadata_and_events(session_db, t
             "BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
         ))
     with pytest.raises(Exception, match="injected failure"):
-        await manager.write_memory(SID, [[{"role": "user", "content": "new"}]])
+        await manager.update_session(SID, content=[[{"role": "user", "content": "new"}]])
     assert await manager.get_sessions() == original
     assert (await manager.get_session_metadata(SID)) == metadata
     assert manager.event_bus.events == []
@@ -100,7 +104,7 @@ async def test_concurrent_writes_preserve_all_updates_and_one_identity(session_d
     manager = manager_for(session_db, tmp_path)
     await manager.initialize()
     await asyncio.gather(*(manager.get_session(SID, ensure_session=True) for _ in range(8)))
-    identity = (await manager.get_session_metadata(SID))["internal_id"]
+    identity = (await manager.get_session_metadata(SID)).internal_id
     await asyncio.gather(
         *(manager.update_memory(SID, [{"role": "user", "content": str(i)}]) for i in range(10)),
         manager.update_session(SID, title="Title"),
@@ -132,8 +136,8 @@ async def test_cancellation_waits_for_commit_and_event_publication(session_db, t
         return await original(*args, **kwargs)
 
     monkeypatch.setattr(session_db, name, delayed)
-    operation = manager.delete_session(SID) if delete else manager.write_memory(
-        SID, [[{"role": "user", "content": "committed"}]],
+    operation = manager.delete_session(SID) if delete else manager.update_session(
+        SID, content=[[{"role": "user", "content": "committed"}]],
     )
     task = asyncio.create_task(operation)
     await asyncio.wait_for(entered.wait(), timeout=5)
@@ -215,7 +219,7 @@ async def test_reads_and_edits_use_latest_database_state(session_db, tmp_path):
     assert (await manager.get_session(SID)).flatten_content() == content[0]
     assert (await manager.get_session(SID)).session_title == "External"
     assert (await manager.get_sessions())[0].session_title == "External"
-    assert (await manager.get_session_metadata(SID))["internal_id"] == identity
+    assert (await manager.get_session_metadata(SID)).internal_id == identity
     assert await manager.get_effective_capabilities(SID, {}) == {"tts": {"enabled": False}}
     snapshot = (await manager.get_session(SID)).content
     snapshot.clear()
@@ -229,7 +233,7 @@ async def test_reads_and_edits_use_latest_database_state(session_db, tmp_path):
     scope = await ScopeRoutes(FastAPI(), lifecycle).get_scope()
     assert scope["sessions"][0]["title"] == "External"
 
-    await manager.write_memory(SID, [])
+    await manager.update_session(SID, content=[])
     persisted = await session_db.get_chat_session(SID)
     assert persisted["title"] == "External"
     assert persisted["description"] == "Updated outside manager"
@@ -240,7 +244,7 @@ async def test_reads_and_edits_use_latest_database_state(session_db, tmp_path):
     await session_db.delete_chat_session(SID)
     assert await manager.get_session(SID) is None
     assert await manager.get_sessions() == []
-    assert (await manager.get_session_metadata(SID))["internal_id"] is None
+    assert (await manager.get_session_metadata(SID)).internal_id is None
     assert await manager.get_effective_capabilities(SID, {"tts": {"enabled": True}}) == {
         "tts": {"enabled": True},
     }
@@ -526,18 +530,18 @@ async def test_get_session_rejects_non_object_data_without_modifying_record(sess
 async def test_metadata_ensure_shares_identity_with_full_session_reads(session_db, tmp_path):
     manager = manager_for(session_db, tmp_path)
     await manager.initialize()
-    assert (await manager.get_session_metadata(SID))["internal_id"] is None
+    assert (await manager.get_session_metadata(SID)).internal_id is None
     assert await session_db.list_chat_sessions() == []
     results = await asyncio.gather(*(
         manager.get_session_metadata(SID, ensure_session=True) if index % 2 else
         manager.get_session(SID, ensure_session=True)
         for index in range(8)
     ))
-    identities = {result["internal_id"] if isinstance(result, dict) else result.internal_id for result in results}
+    identities = {result.internal_id for result in results}
     assert len(identities) == 1
     assert len(await session_db.list_chat_sessions()) == 1
     await manager.update_session(SID, description="Current description")
     metadata = await manager.get_session_metadata(SID, ensure_session=True)
-    assert metadata["internal_id"] in identities
-    assert metadata["description"] == "Current description"
-    assert "content" not in metadata and "data" not in metadata
+    assert metadata.internal_id in identities
+    assert metadata.session_description == "Current description"
+    assert metadata.content == [] and metadata.data == {}

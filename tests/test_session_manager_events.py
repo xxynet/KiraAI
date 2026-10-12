@@ -30,7 +30,7 @@ async def build_session_manager(
     manager = SessionManager(db, config)
     manager.chat_memory_path = str(tmp_path / "chat_memory.json")
     await manager.initialize()
-    await manager.write_memory("adapter:dm:user", memory)
+    await manager.update_session("adapter:dm:user", content=memory)
     manager.event_bus = RecordingEventBus()
     return manager
 
@@ -145,13 +145,13 @@ async def test_update_memory_publishes_truncated_memory_after_persistence(tmp_pa
 
 
 @pytest.mark.anyio
-async def test_write_memory_publishes_old_and_new_memory(tmp_path, session_db):
+async def test_update_session_content_publishes_old_and_new_memory(tmp_path, session_db):
     old_memory = [[{"role": "user", "content": "old"}]]
     new_memory = [[{"role": "user", "content": "new"}]]
     manager = await build_session_manager(tmp_path, old_memory, db=session_db)
 
     old_memory = (await manager.get_session("adapter:dm:user")).content
-    await manager.write_memory("adapter:dm:user", new_memory)
+    await manager.update_session("adapter:dm:user", content=new_memory)
     await wait_for_event_tasks(manager)
 
     event = manager.event_bus.events[0]

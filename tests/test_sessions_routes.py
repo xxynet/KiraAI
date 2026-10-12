@@ -14,9 +14,6 @@ class _SessionManager:
         self.chat_memory = {}
         self.mutations = []
 
-    async def write_memory(self, session_id, messages):
-        self.mutations.append(("messages", session_id, messages))
-
     async def update_session(self, session_id, title=None, description=None):
         self.mutations.append(("info", session_id, title, description))
 

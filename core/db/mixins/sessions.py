@@ -69,7 +69,7 @@ class ChatSessionMixin:
         """Read lightweight metadata without loading JSON context or extension data."""
         async with self.db.get_session() as session:
             result = await session.execute(select(
-                ChatSessionRecord.id, ChatSessionRecord.description,
+                ChatSessionRecord.id, ChatSessionRecord.title, ChatSessionRecord.description,
                 ChatSessionRecord.created_at, ChatSessionRecord.updated_at,
             ).where(ChatSessionRecord.session_key == session_key))
             row = result.mappings().one_or_none()

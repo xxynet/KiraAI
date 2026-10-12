@@ -73,11 +73,11 @@ async def test_explicit_memory_edit_still_rejects_invalid_roles(tmp_path, monkey
     monkeypatch.setattr(session_manager_module, "CHAT_MEMORY_PATH", str(path))
     manager = SessionManager(session_db, Mock())
     await manager.initialize()
-    await manager.write_memory("adapter:dm:user", [[{"role": "user", "content": "original"}]])
+    await manager.update_session("adapter:dm:user", content=[[{"role": "user", "content": "original"}]])
     saved = await session_db.list_chat_sessions()
 
     with pytest.raises(ValueError):
-        await manager.write_memory("adapter:dm:user", [[{"role": "invalid", "content": "bad"}]])
+        await manager.update_session("adapter:dm:user", content=[[{"role": "invalid", "content": "bad"}]])
     assert await session_db.list_chat_sessions() == saved
     assert not path.exists()
 

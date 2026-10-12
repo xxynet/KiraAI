@@ -20,8 +20,8 @@ class ReceiveStage(BaseStage[IMEventContext]):
             await services.message_history.record_incoming_safely(event.message, sid, event.adapter.platform)
 
         metadata = await services.session_manager.get_session_metadata(sid, ensure_session=True)
-        event.session.internal_id = metadata["internal_id"]
-        event.session.session_description = metadata["description"]
+        event.session.internal_id = metadata.internal_id
+        event.session.session_description = metadata.session_description
 
         # EventType.ON_IM_MESSAGE
         im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_MESSAGE)
