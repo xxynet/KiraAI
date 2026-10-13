@@ -7,7 +7,7 @@ from deprecated import deprecated
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Union, Optional, Literal, TYPE_CHECKING
+from typing import Union, Optional, Literal, TYPE_CHECKING, Iterator, overload
 
 from core.chat.message_elements import (
     BaseMessageElement,
@@ -349,16 +349,22 @@ class KiraCustomEvent:
 
 
 class MessageChain:
-    def __init__(self, message_list: list[BaseMessageElement] = None):
-        self.message_list: list = message_list or []
+    def __init__(self, message_list: list[BaseMessageElement] | None = None) -> None:
+        self.message_list: list[BaseMessageElement] = message_list or []
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[BaseMessageElement]:
         return iter(self.message_list)
 
     def __len__(self):
         return len(self.message_list)
 
-    def __getitem__(self, index):
+    @overload
+    def __getitem__(self, index: int) -> BaseMessageElement: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[BaseMessageElement]: ...
+
+    def __getitem__(self, index: int | slice) -> BaseMessageElement | list[BaseMessageElement]:
         return self.message_list[index]
 
     def __setitem__(self, index, value):

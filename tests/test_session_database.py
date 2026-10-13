@@ -622,7 +622,7 @@ async def test_detail_update_and_archive_only_responses_include_message_count(se
     await manager.initialize()
     routes = SessionsRoutes(FastAPI(), SimpleNamespace(
         session_manager=manager,
-        message_history=SimpleNamespace(list_messages=AsyncMock(return_value={"messages": [{}]})),
+        message_history=SimpleNamespace(list_messages=AsyncMock(return_value=SimpleNamespace(messages=[object()]))),
     ))
     assert (await routes.get_session(SID))["message_count"] == 0
     messages = [[{"role": "user", "content": "hi"}], [{"role": "assistant", "content": "hello"}]]
