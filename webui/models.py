@@ -182,6 +182,7 @@ class PersonaGeneratorTurnResponse(BaseModel):
     name: Optional[str] = None
     format: Optional[str] = None
     content: Optional[str] = None
+    chat_rules: Optional[str] = None
 
 
 class PersonaResponse(PersonaBase):

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 
 SUPPORTED_PERSONA_FORMATS = frozenset({"text", "markdown", "json", "yaml"})
+PERSONA_GENERATION_MAX_TOKENS = 3200
 
 
 class PersonaGenerationError(ValueError):
@@ -28,6 +29,7 @@ class PersonaProposal:
     name: str
     format: str
     content: str
+    chat_rules: str
 
 
 @dataclass(frozen=True)
@@ -50,7 +52,7 @@ class ProposePersonaTool(BaseTool):
     """Collect one validated persona proposal from an LLM tool call."""
 
     name = "propose_persona"
-    description = "Submit the completed persona draft for the user to review and edit."
+    description = "Submit the completed persona content and global chat rules for the user to review and edit."
     parameters = {
         "type": "object",
         "properties": {
@@ -61,14 +63,18 @@ class ProposePersonaTool(BaseTool):
             "format": {
                 "type": "string",
                 "enum": sorted(SUPPORTED_PERSONA_FORMATS),
-                "description": "The format used by content.",
+                "description": "The format used by both content and chat_rules.",
             },
             "content": {
                 "type": "string",
-                "description": "The complete persona in the selected format.",
+                "description": "The complete character identity, background, personality, speaking style, interests, and relationships in the selected format. Keep global chat rules in chat_rules.",
+            },
+            "chat_rules": {
+                "type": "string",
+                "description": "Nonempty global rules for all chats in the selected format, including confirmed reply segmentation and interaction constraints. Keep character identity and background in content.",
             },
         },
-        "required": ["name", "format", "content"],
+        "required": ["name", "format", "content", "chat_rules"],
         "additionalProperties": False,
     }
 
@@ -76,12 +82,12 @@ class ProposePersonaTool(BaseTool):
         super().__init__()
         self.proposal: PersonaProposal | None = None
 
-    async def execute(self, name: str, format: str, content: str, **_kwargs) -> str:
-        if not all(isinstance(value, str) and value.strip() for value in (name, format, content)):
+    async def execute(self, name: str, format: str, content: str, chat_rules: str, **_kwargs) -> str:
+        if not all(isinstance(value, str) and value.strip() for value in (name, format, content, chat_rules)):
             raise PersonaGenerationError("Persona proposal is incomplete")
         if format not in SUPPORTED_PERSONA_FORMATS:
             raise PersonaGenerationError("Persona proposal uses an unsupported format")
-        self.proposal = PersonaProposal(name=name.strip(), format=format, content=content)
+        self.proposal = PersonaProposal(name=name.strip(), format=format, content=content, chat_rules=chat_rules)
         return "Persona proposal received."
 
 
@@ -164,7 +170,7 @@ class PersonaGenerator:
         if not messages:
             return self.get_initial_question(lang)
         request = self._build_request(messages, lang)
-        response = await self.llm_client.chat(request, max_tokens=1600)
+        response = await self.llm_client.chat(request, max_tokens=PERSONA_GENERATION_MAX_TOKENS)
         return await self._resolve_tool_calls(response.tool_calls)
 
     async def stream_respond(
@@ -180,7 +186,7 @@ class PersonaGenerator:
         tool_call_fragments: dict[int, dict] = {}
         complete_tool_calls: list[dict] = []
         emitted_text = False
-        async for chunk in self.llm_client.chat_stream(request, max_tokens=1600):
+        async for chunk in self.llm_client.chat_stream(request, max_tokens=PERSONA_GENERATION_MAX_TOKENS):
             if chunk.delta_text:
                 emitted_text = True
                 yield PersonaTextDelta(chunk.delta_text)

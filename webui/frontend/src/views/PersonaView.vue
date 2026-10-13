@@ -123,10 +123,10 @@
             :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
           >
             <div
-              class="chat-bubble max-w-[85%] rounded-lg px-4 py-3 whitespace-pre-wrap"
+              class="chat-bubble max-w-[85%] rounded-lg px-4 py-3"
               :class="{ 'chat-bubble--accent': message.role === 'user' }"
             >
-              {{ message.content }}
+              <div class="whitespace-pre-wrap">{{ message.content.trim() }}</div>
               <div v-if="message.role === 'assistant' && message.options.length" class="mt-3 flex flex-wrap gap-2">
                 <button
                   v-for="option in message.options"
@@ -614,7 +614,8 @@ function handleGeneratorStreamEvent(event: PersonaGeneratorStreamEvent) {
     resetReferenceImage()
     editMode.value = false
     editId.value = null
-    form.value = { name: event.name, format: event.format, content: event.content, chat_rules: '', private_chat_rules: '', group_chat_rules: '' }
+    form.value = { name: event.name, format: event.format, content: event.content, chat_rules: event.chat_rules, private_chat_rules: '', group_chat_rules: '' }
+    chatRulesCollapsed.value = false
     generatorVisible.value = false
     dialogVisible.value = true
     return
