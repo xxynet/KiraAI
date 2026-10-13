@@ -63,7 +63,7 @@ class ProposePersonaTool(BaseTool):
             "format": {
                 "type": "string",
                 "enum": sorted(SUPPORTED_PERSONA_FORMATS),
-                "description": "The format used by both content and chat_rules.",
+                "description": "The format used by both content and chat_rules. Use markdown by default; use text, json, or yaml only when the user explicitly requests that format.",
             },
             "content": {
                 "type": "string",

@@ -22,7 +22,7 @@ zh_persona_generator = """\
 - content 只描述人物身份、背景、外观、性格、说话风格、兴趣和关系；将确认的关系设定和关联人物的社交账号写入此字段。
 - chat_rules 描述所有私聊和群聊均应遵守的回复与互动规则；将确认的消息分段偏好、互动边界和行为约束写入此字段，不要重复人物背景或把这些规则混入 content。
 - 未提供的信息不要虚构；未确认具体规则时，基于已知人设生成简洁、适用的互动规则，不要擅自设置消息段数上限。
-- 当信息足够时，调用一次 `propose_persona` 提交草稿。`name` 应为简短的人设名称；`format` 请根据内容在 "text"、"markdown"、"json" 或 "yaml" 中选择；`content` 为使用所选格式写出的人设内容；chat_rules 为使用同一格式单独写出的全局规则。结构化人设应清晰覆盖 character、profile、personality、speech_style、interests 和 relationship 等信息。
+- 当信息足够时，调用一次 `propose_persona` 提交草稿。`name` 应为简短的人设名称；`format` 默认设为 "markdown"，仅当用户明确要求纯文本、JSON 或 YAML 时才选择对应的 "text"、"json" 或 "yaml"；`content` 为使用所选格式写出的人设内容；chat_rules 为使用同一格式单独写出的全局规则。Markdown 人设应使用清晰的标题和列表，覆盖人物身份、背景、性格、说话风格、兴趣和关系；全局规则应单独使用标题和列表组织。
 - 每轮先输出一句不超过 20 个字的进度说明，再且只能调用其中一个工具。进度说明不能复述工具问题或用户回答。
 """
 
@@ -46,7 +46,7 @@ Requirements:
 - content describes only the character's identity, background, appearance, personality, speaking style, interests, and relationships. Put confirmed relationships and associated-person social accounts in this field.
 - chat_rules describes reply and interaction rules that apply to every private and group chat. Put confirmed message-segmentation preferences, interaction boundaries, and behavioral constraints in this field. Do not repeat character background or mix these rules into content.
 - Do not invent information the user did not provide. If specific rules have not been confirmed, generate concise interaction rules appropriate to the known persona without inventing a message-segment limit.
-- When there is enough information, call `propose_persona` once to submit the draft. Its `name` must be short; choose its `format` from "text", "markdown", "json", or "yaml" based on the content; put the complete persona in the selected format in `content`. Put global rules separately in chat_rules using the same selected format. Structured persona content should clearly cover character, profile, personality, speech_style, interests, and relationship.
+- When there is enough information, call `propose_persona` once to submit the draft. Its `name` must be short; choose its `format` as "markdown" by default, and use "text", "json", or "yaml" only when the user explicitly requests that format; put the complete persona in the selected format in `content`. Put global rules separately in chat_rules using the same selected format. For Markdown drafts, use clear headings and lists to cover the character's identity, background, personality, speaking style, interests, and relationships, and to organize global rules separately.
 - Before each tool call, output one progress update of at most 20 words. It must not repeat the tool question or the user's answer. Then call exactly one of these tools.
 """
 
