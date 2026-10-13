@@ -680,12 +680,12 @@ async def test_get_message_combines_optional_filters_and_preserves_internal_id_l
     monkeypatch.setattr("core.db.mixins.messages.time.time_ns", lambda: 2_000_000)
     second = await history.record_incoming(incoming("second", bot="second-bot"), SID, "test")
     for filters, expected in [
-        ({"message_id": first}, first),
+        ({"internal_message_id": first}, first),
         ({"session_id": SID}, second),
         ({"platform_message_id": "first"}, first),
         ({"self_id": "first-bot"}, first),
         ({"direction": "incoming"}, second),
-        ({"message_id": first, "session_id": SID, "platform_message_id": "first",
+        ({"internal_message_id": first, "session_id": SID, "platform_message_id": "first",
           "self_id": "first-bot", "direction": "incoming"}, first),
     ]:
         assert (await history.get_message(**filters)).id == expected
@@ -720,13 +720,13 @@ async def test_get_messages_supports_optional_filters_and_returns_history_record
     )
     await history.finish_outgoing(outgoing, status="sent", platform_message_id="sent-id")
     for filters, expected in [
-        ({"message_id": first}, {first}),
+        ({"internal_message_id": first}, {first}),
         ({"session_id": SID}, {first, second, outgoing}),
         ({"platform_message_id": "first"}, {first}),
         ({"self_id": "first-bot"}, {first, second, outgoing}),
         ({"direction": "incoming"}, {first, second, third}),
         ({"session_id": SID, "self_id": "first-bot", "direction": "incoming"}, {first, second}),
-        ({"message_id": outgoing, "session_id": SID, "platform_message_id": "sent-id",
+        ({"internal_message_id": outgoing, "session_id": SID, "platform_message_id": "sent-id",
           "self_id": "first-bot", "direction": "outgoing"}, {outgoing}),
     ]:
         page = await history.get_messages(**filters)
@@ -741,10 +741,10 @@ async def test_get_messages_supports_optional_filters_and_returns_history_record
     for filters in [
         {"session_id": "missing:dm:user"},
         {"platform_message_id": "missing"},
-        {"message_id": first, "self_id": "other-bot"},
+        {"internal_message_id": first, "self_id": "other-bot"},
     ]:
         assert await history.get_messages(**filters) == MessageHistoryPage()
-    page = await history.get_messages(message_id=first)
+    page = await history.get_messages(internal_message_id=first)
     page.messages[0].chain[0].text = "caller mutation"
     assert (await history.get_message(first)).chain[0].text == "original"
 
@@ -852,7 +852,7 @@ async def test_history_record_restores_archived_media_paths_and_metadata(history
     message.chain = MessageChain([element])
     identity = await history.record_incoming(message, SID, "test")
     stored = await history.db.get_message_record(identity)
-    page = await history.get_messages(message_id=identity)
+    page = await history.get_messages(internal_message_id=identity)
     record = page.messages[0]
     assert isinstance(record, MessageHistoryRecord)
     restored = record.chain[0]
@@ -877,7 +877,7 @@ async def test_history_record_keeps_forward_display_and_web_json_unchanged(histo
     ])
     identity = await history.record_incoming(message, SID, "test")
     record = await history.get_message(identity)
-    page = await history.get_messages(message_id=identity)
+    page = await history.get_messages(internal_message_id=identity)
     for restored in [record, page.messages[0]]:
         assert isinstance(restored.chain[0], Forward)
         assert isinstance(restored.chain[1].chain[0], Forward)

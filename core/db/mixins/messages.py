@@ -47,14 +47,14 @@ class MessageHistoryMixin:
 
     @staticmethod
     def _message_record_conditions(
-        *, message_id: str | None = None, session_id: str | None = None,
+        *, internal_message_id: str | None = None, session_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None, llm_message_id: str | None = None,
     ) -> list:
         if direction not in {None, "incoming", "outgoing"}:
             raise ValueError("direction must be incoming or outgoing")
         filters = (
-            (MessageRecord.id, message_id),
+            (MessageRecord.id, internal_message_id),
             (MessageRecord.session_id, session_id),
             (MessageRecord.platform_message_id,
              str(platform_message_id) if platform_message_id is not None else None),
@@ -68,13 +68,13 @@ class MessageHistoryMixin:
         return conditions
 
     async def get_message_record(
-        self, message_id: str | None = None, *, session_id: str | None = None,
+        self, internal_message_id: str | None = None, *, session_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None,
     ) -> dict | None:
         """Return the most recently archived record matching all supplied filters."""
         conditions = self._message_record_conditions(
-            message_id=message_id, session_id=session_id,
+            internal_message_id=internal_message_id, session_id=session_id,
             platform_message_id=platform_message_id, self_id=self_id, direction=direction,
         )
         query = select(MessageRecord).where(*conditions).order_by(
@@ -86,7 +86,7 @@ class MessageHistoryMixin:
 
     async def list_message_records(
         self, session_id: str | None = None, *, cursor: str | None = None,
-        limit: int = 50, llm_message_id: str | None = None, message_id: str | None = None,
+        limit: int = 50, llm_message_id: str | None = None, internal_message_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None,
     ) -> dict:
@@ -94,7 +94,7 @@ class MessageHistoryMixin:
         if not 1 <= limit <= 200:
             raise ValueError("limit must be between 1 and 200")
         conditions = self._message_record_conditions(
-            message_id=message_id, session_id=session_id,
+            internal_message_id=internal_message_id, session_id=session_id,
             platform_message_id=platform_message_id, self_id=self_id, direction=direction,
             llm_message_id=llm_message_id or None,
         )

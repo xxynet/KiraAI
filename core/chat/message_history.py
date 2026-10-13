@@ -353,13 +353,13 @@ class MessageHistoryService:
                 raise
 
     async def get_message(
-        self, message_id: str | None = None, *, session_id: str | None = None,
+        self, internal_message_id: str | None = None, *, session_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None,
     ) -> MessageHistoryRecord | None:
         """Look up a locally archived message matching all supplied filters.
 
-        message_id is the internal history record ID, while platform_message_id
+        internal_message_id is the internal history record ID, while platform_message_id
         is the adapter's message ID. Supply session_id to scope platform IDs.
         At least one filter is required; None means that filter is omitted.
         Return a MessageHistoryRecord whose chain is a MessageChain,
@@ -368,7 +368,8 @@ class MessageHistoryService:
         the internal record ID to break ties in archive time.
         """
         record = await self.db.get_message_record(
-            message_id, session_id=session_id, platform_message_id=platform_message_id,
+            internal_message_id=internal_message_id, session_id=session_id,
+            platform_message_id=platform_message_id,
             self_id=self_id, direction=direction,
         )
         if record is None:
@@ -376,7 +377,7 @@ class MessageHistoryService:
         return await asyncio.to_thread(MessageHistoryRecord.from_dict, record)
 
     async def get_messages(
-        self, message_id: str | None = None, *, session_id: str | None = None,
+        self, internal_message_id: str | None = None, *, session_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None, cursor: str | None = None, limit: int = 50,
     ) -> MessageHistoryPage:
@@ -390,7 +391,7 @@ class MessageHistoryService:
         The cursor must identify a retained record matching the supplied filters.
         """
         page = await self.db.list_message_records(
-            session_id, message_id=message_id, platform_message_id=platform_message_id,
+            session_id, internal_message_id=internal_message_id, platform_message_id=platform_message_id,
             self_id=self_id, direction=direction, cursor=cursor, limit=limit,
         )
         return await self._restore_page(page)

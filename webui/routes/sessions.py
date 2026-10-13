@@ -82,7 +82,7 @@ class SessionsRoutes(Routes):
     async def get_message(self, message_id: str):
         if self.message_history is None:
             raise HTTPException(status_code=503, detail="Message history unavailable")
-        message = await self.message_history.get_message(message_id)
+        message = await self.message_history.get_message(internal_message_id=message_id)
         if message is None:
             raise HTTPException(status_code=404, detail="Message not found")
         return {"message": message.to_dict(), "memory": await self.message_history.get_linked_memory(message)}
@@ -93,7 +93,7 @@ class SessionsRoutes(Routes):
             raise HTTPException(status_code=503, detail="Message history unavailable")
         if not re.fullmatch(r"[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}", element_path):
             raise HTTPException(status_code=400, detail="Invalid element path")
-        message = await self.message_history.get_message(message_id)
+        message = await self.message_history.get_message(internal_message_id=message_id)
         if message is None:
             raise HTTPException(status_code=404, detail="Message not found")
         element = message.to_dict()

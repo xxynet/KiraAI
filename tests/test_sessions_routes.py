@@ -245,7 +245,7 @@ async def test_message_media_serves_referenced_archive(tmp_path, monkeypatch, ne
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["content-disposition"].startswith("attachment;")
-    history.get_message.assert_awaited_once_with("id")
+    history.get_message.assert_awaited_once_with(internal_message_id="id")
 
 
 @pytest.mark.asyncio
