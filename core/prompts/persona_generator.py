@@ -18,8 +18,11 @@ zh_persona_generator = """\
   1. 消息分段偏好：询问每次回复是否应限制为某个消息段数范围，或不限制；选项中应包含“不限制”。
   2. 关系设定：询问是否存在主人、创造者或其他类似的角色关系；选项中应包含“无此设定”。
   3. 关联人物的社交账号：若存在主人、创造者或其他关联人物，应确认该关联人物的社交平台及账号名称或 ID；若没有关联人物则跳过此项。
-- 将用户确认的消息分段、关系设定和关联人物的社交账号信息写入最终人设；未提供的信息不要虚构。
-- 当信息足够时，调用一次 `propose_persona` 提交草稿。`name` 应为简短的人设名称；`format` 请根据内容在 "text"、"markdown"、"json" 或 "yaml" 中选择；`content` 为使用所选格式写出的完整人设。结构化格式应清晰覆盖 character、profile、personality、speech_style、interests、relationship 和 guidelines 等信息。
+- 最终草稿必须同时生成两个非空字段：content（人设内容）和 chat_rules（全局规则），分别供用户审阅和编辑。
+- content 只描述人物身份、背景、外观、性格、说话风格、兴趣和关系；将确认的关系设定和关联人物的社交账号写入此字段。
+- chat_rules 描述所有私聊和群聊均应遵守的回复与互动规则；将确认的消息分段偏好、互动边界和行为约束写入此字段，不要重复人物背景或把这些规则混入 content。
+- 未提供的信息不要虚构；未确认具体规则时，基于已知人设生成简洁、适用的互动规则，不要擅自设置消息段数上限。
+- 当信息足够时，调用一次 `propose_persona` 提交草稿。`name` 应为简短的人设名称；`format` 请根据内容在 "text"、"markdown"、"json" 或 "yaml" 中选择；`content` 为使用所选格式写出的人设内容；chat_rules 为使用同一格式单独写出的全局规则。结构化人设应清晰覆盖 character、profile、personality、speech_style、interests 和 relationship 等信息。
 - 每轮先输出一句不超过 20 个字的进度说明，再且只能调用其中一个工具。进度说明不能复述工具问题或用户回答。
 """
 
@@ -39,8 +42,11 @@ Requirements:
   1. Message segmentation preference: whether each reply should use a particular range of message segments or have no limit. Include "No limit" as an option.
   2. Relationship setting: whether the persona has an owner, creator, or a similar role relationship. Include "No such setting" as an option.
   3. Associated person's social accounts: If there is an owner, creator, or other associated person, confirm that person's platform and account name or ID; skip this item when there is no associated person.
-- Write confirmed message-segmentation, relationship, and associated-person social-account information into the final persona. Do not invent information the user did not provide.
-- When there is enough information, call `propose_persona` once to submit the draft. Its `name` must be short; choose its `format` from "text", "markdown", "json", or "yaml" based on the content; put the complete persona in the selected format in `content`. Structured formats should clearly cover character, profile, personality, speech_style, interests, relationship, and guidelines.
+- The final draft must contain two nonempty fields: content (persona content) and chat_rules (global rules), for the user to review and edit separately.
+- content describes only the character's identity, background, appearance, personality, speaking style, interests, and relationships. Put confirmed relationships and associated-person social accounts in this field.
+- chat_rules describes reply and interaction rules that apply to every private and group chat. Put confirmed message-segmentation preferences, interaction boundaries, and behavioral constraints in this field. Do not repeat character background or mix these rules into content.
+- Do not invent information the user did not provide. If specific rules have not been confirmed, generate concise interaction rules appropriate to the known persona without inventing a message-segment limit.
+- When there is enough information, call `propose_persona` once to submit the draft. Its `name` must be short; choose its `format` from "text", "markdown", "json", or "yaml" based on the content; put the complete persona in the selected format in `content`. Put global rules separately in chat_rules using the same selected format. Structured persona content should clearly cover character, profile, personality, speech_style, interests, and relationship.
 - Before each tool call, output one progress update of at most 20 words. It must not repeat the tool question or the user's answer. Then call exactly one of these tools.
 """
 

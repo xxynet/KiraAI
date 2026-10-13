@@ -22,12 +22,13 @@ export interface PersonaGeneratorTurnResponse {
   name?: string
   format?: string
   content?: string
+  chat_rules?: string
 }
 
 export type PersonaGeneratorStreamEvent =
   | { type: 'text', content: string }
   | { type: 'question', question: string, options: string[], allow_custom: boolean }
-  | { type: 'proposal', name: string, format: string, content: string }
+  | { type: 'proposal', name: string, format: string, content: string, chat_rules: string }
   | { type: 'error', message: string }
 
 export async function streamPersonaGenerator(

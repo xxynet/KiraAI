@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import httpx
@@ -11,6 +12,7 @@ from core.db.service import DatabaseService
 from core.persona.model import PersonaInfo
 from core.persona.persona_manager import PersonaManager
 from core.prompt_manager import PromptManager
+from tests.test_persona_generator import _FakeLifecycle, _proposal_tool_call
 from tests.test_prompt_manager import CHAT_ENV, make_config
 from webui.routes.auth import require_auth
 from webui.routes.personas import PersonasRoutes
@@ -211,3 +213,45 @@ async def test_existing_global_rules_survive_scoped_column_upgrade():
         assert persona["group_chat_rules"] == "Group"
     finally:
         await database.dispose()
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("chat_type", ["DirectMessage", "GroupMessage"])
+async def test_generated_content_and_global_rules_survive_save_and_activation(rules_manager, chat_type):
+    draft = {
+        "name": "Luna", "format": "markdown",
+        "content": "# Luna\n\nA calm companion.",
+        "chat_rules": "Use 1 to 3 message segments.\nKeep {{literal}} and <emoji>1234</emoji>.",
+    }
+    lifecycle = _FakeLifecycle([_proposal_tool_call(json.dumps(draft))])
+    lifecycle.persona_manager = rules_manager
+    app = FastAPI()
+    PersonasRoutes(app, lifecycle).register()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        generated = await client.post("/api/personas/generator/turn", json={
+            "messages": [{"role": "user", "content": "Generate a calm companion with 1 to 3 reply segments."}],
+        })
+        assert generated.status_code == 200
+        proposal = generated.json()
+        assert {key: proposal[key] for key in draft} == draft
+        created = await client.post("/api/personas", json={key: proposal[key] for key in draft})
+        assert created.status_code == 201
+        persona_id = created.json()["id"]
+        assert created.json()["content"] == draft["content"]
+        assert created.json()["chat_rules"] == draft["chat_rules"]
+        assert created.json()["private_chat_rules"] == ""
+        assert created.json()["group_chat_rules"] == ""
+        activated = await client.put("/api/personas/active", json={"persona_id": persona_id})
+        assert activated.status_code == 200
+        saved = (await client.get(f"/api/personas/{persona_id}")).json()
+        assert {key: saved[key] for key in draft} == draft
+
+    prompts = await PromptManager(make_config("en"), rules_manager).get_agent_prompt({
+        **CHAT_ENV, "chat_type": chat_type,
+    })
+    persona_prompt = next(prompt for prompt in prompts if prompt.name == "persona")
+    rules_prompt = next(prompt for prompt in prompts if prompt.name == "chat_rules")
+    assert draft["content"] in persona_prompt.to_string()
+    assert draft["chat_rules"] not in persona_prompt.to_string()
+    assert rules_prompt.to_string() == draft["chat_rules"] + "\n\n"
