@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from core.adapter import AdapterManager
     from core.chat.message_history import MessageHistoryService
     from core.config.config_loader import KiraConfig
+    from core.persona import PersonaManager
 
 logger = get_logger("message", "cyan")
 
@@ -28,11 +29,13 @@ class MessageDeliveryService:
         self,
         kira_config: KiraConfig,
         adapter_mgr: AdapterManager,
+        persona_mgr: PersonaManager | None,
         message_history: MessageHistoryService | None = None,
     ):
         self.kira_config = kira_config
         self.adapter_mgr = adapter_mgr
         self.message_history = message_history
+        self.persona_mgr = persona_mgr
         self.session_locks: dict[str, asyncio.Lock] = {}
 
     def _read_delay(self, key: str, default: float) -> float:
@@ -85,6 +88,14 @@ class MessageDeliveryService:
                 sender_name = bot.nickname if bot is not None else None
                 if not isinstance(sender_name, str) or not sender_name.strip():
                     sender_name = None
+                    if self.persona_mgr is not None:
+                        try:
+                            persona = await self.persona_mgr.get_persona()
+                            name = persona.name if persona is not None else None
+                            if isinstance(name, str) and name.strip():
+                                sender_name = name
+                        except Exception as exc:
+                            logger.warning("Unable to resolve persona name (%s)", type(exc).__name__)
                 llm_message_id = None
                 if memory_message is not None:
                     llm_message_id = memory_message.to_memory_dict()["_extra"]["llm_message_id"]

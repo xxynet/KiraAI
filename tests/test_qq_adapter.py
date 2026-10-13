@@ -759,7 +759,7 @@ async def test_history_uses_logged_in_qq_nickname_without_extra_request():
     )
     history = MessageHistoryService(database, Mock())
     delivery = MessageDeliveryService(
-        Mock(), SimpleNamespace(get_adapter=lambda _: adapter), history,
+        Mock(), SimpleNamespace(get_adapter=lambda _: adapter), None, history,
     )
     result = await delivery.send_message_chain(
         "qq:dm:user", MessageChain([Text("reply")]), bot=User("99", adapter.bot.self_nickname),
