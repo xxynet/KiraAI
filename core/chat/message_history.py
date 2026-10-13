@@ -210,8 +210,44 @@ class MessageHistoryService:
             finally:
                 raise
 
-    async def get_message(self, message_id: str) -> dict | None:
-        return await self.db.get_message_record(message_id)
+    async def get_message(
+        self, message_id: str | None = None, *, session_id: str | None = None,
+        platform_message_id: str | int | None = None, self_id: str | None = None,
+        direction: str | None = None,
+    ) -> dict | None:
+        """Look up a locally archived message matching all supplied filters.
+
+        message_id is the internal history record ID, while platform_message_id
+        is the adapter's message ID. Supply session_id to scope platform IDs.
+        At least one filter is required; None means that filter is omitted.
+        Return a history record with a serialized chain (list of dictionaries),
+        or None if no retained record matches. This does not fetch the platform.
+        If multiple records match, return the most recently archived one, using
+        the internal record ID to break ties in archive time.
+        """
+        return await self.db.get_message_record(
+            message_id, session_id=session_id, platform_message_id=platform_message_id,
+            self_id=self_id, direction=direction,
+        )
+
+    async def get_messages(
+        self, message_id: str | None = None, *, session_id: str | None = None,
+        platform_message_id: str | int | None = None, self_id: str | None = None,
+        direction: str | None = None, cursor: str | None = None, limit: int = 50,
+    ) -> dict:
+        """Return a page of local history records matching all supplied filters.
+
+        Filters have the same meaning as get_message; at least one is required.
+        Records contain serialized chains and are ordered by archive time, then
+        internal ID, newest first. Return {"messages": [], "next_cursor": None}
+        when no records match. limit must be between 1 and 200.
+        Pass next_cursor as cursor with the same filters to fetch the next page.
+        The cursor must identify a retained record matching the supplied filters.
+        """
+        return await self.db.list_message_records(
+            session_id, message_id=message_id, platform_message_id=platform_message_id,
+            self_id=self_id, direction=direction, cursor=cursor, limit=limit,
+        )
 
     async def list_messages(self, session_id: str, *, cursor: str | None = None,
                             limit: int = 50, llm_message_id: str | None = None) -> dict:

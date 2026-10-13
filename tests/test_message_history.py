@@ -634,3 +634,153 @@ async def test_persona_lookup_failure_preserves_history_and_send(history):
     assert result.ok and record["status"] == "sent"
     assert record["sender_name"] is None
     target.send_direct_message.assert_awaited_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("direction", ["incoming", "outgoing"])
+async def test_lookup_history_by_platform_message_id(history, monkeypatch, direction):
+    chain = MessageChain([Text("original"), Reply(
+        "quoted", chain=MessageChain([Text("quoted text")]),
+    )])
+    if direction == "incoming":
+        message = incoming("123")
+        message.chain = chain
+        identity = await history.record_incoming(message, SID, "test")
+    else:
+        identity = await history.record_outgoing(SID, chain, platform="test", self_id="bot")
+        assert await history.get_message(session_id=SID, platform_message_id="123") is None
+        await history.finish_outgoing(identity, status="sent", platform_message_id="123")
+    list_records = AsyncMock(side_effect=AssertionError("Lookup must not paginate history"))
+    monkeypatch.setattr(history.db, "list_message_records", list_records)
+    record = await history.get_message(
+        session_id=SID, platform_message_id=123, self_id="bot", direction=direction,
+    )
+    assert record == await history.get_message(identity)
+    assert record["platform_message_id"] == "123"
+    assert record["chain"] == [
+        {"type": "text", "text": "original"},
+        {"type": "reply", "message_id": "quoted", "message_content": None,
+         "chain": [{"type": "text", "text": "quoted text"}]},
+    ]
+    assert await history.get_message("123") is None
+    assert await history.get_message(session_id="other:dm:user", platform_message_id="123") is None
+    assert await history.get_message(session_id=SID, platform_message_id="missing") is None
+    assert await history.get_message(session_id=SID, platform_message_id="123", self_id="other") is None
+    list_records.assert_not_awaited()
+    await history.delete_session_messages(SID)
+    assert await history.get_message(session_id=SID, platform_message_id="123") is None
+
+
+@pytest.mark.anyio
+async def test_get_message_combines_optional_filters_and_preserves_internal_id_lookup(history, monkeypatch):
+    monkeypatch.setattr("core.db.mixins.messages.time.time_ns", lambda: 1_000_000)
+    first = await history.record_incoming(incoming("first", bot="first-bot"), SID, "test")
+    monkeypatch.setattr("core.db.mixins.messages.time.time_ns", lambda: 2_000_000)
+    second = await history.record_incoming(incoming("second", bot="second-bot"), SID, "test")
+    for filters, expected in [
+        ({"message_id": first}, first),
+        ({"session_id": SID}, second),
+        ({"platform_message_id": "first"}, first),
+        ({"self_id": "first-bot"}, first),
+        ({"direction": "incoming"}, second),
+        ({"message_id": first, "session_id": SID, "platform_message_id": "first",
+          "self_id": "first-bot", "direction": "incoming"}, first),
+    ]:
+        assert (await history.get_message(**filters))["id"] == expected
+    assert (await history.get_message(first))["id"] == first
+    for mismatched_filter in [
+        {"session_id": "other:dm:user"},
+        {"platform_message_id": "second"},
+        {"self_id": "second-bot"},
+        {"direction": "outgoing"},
+    ]:
+        assert await history.get_message(first, **mismatched_filter) is None
+
+
+@pytest.mark.anyio
+async def test_get_message_requires_a_filter_and_validates_direction_with_internal_id(history):
+    identity = await history.record_incoming(incoming(), SID, "test")
+    with pytest.raises(ValueError, match="At least one message filter"):
+        await history.get_message()
+    with pytest.raises(ValueError, match="At least one message filter"):
+        await history.get_message(None, session_id=None, platform_message_id=None)
+    with pytest.raises(ValueError, match="direction"):
+        await history.get_message(identity, direction="invalid")
+
+
+@pytest.mark.anyio
+async def test_get_messages_supports_optional_filters_and_returns_serialized_history(history):
+    first = await history.record_incoming(incoming("first", bot="first-bot"), SID, "test")
+    second = await history.record_incoming(incoming("second", bot="first-bot"), SID, "test")
+    third = await history.record_incoming(incoming("third", bot="other-bot"), "other:dm:user", "test")
+    outgoing = await history.record_outgoing(
+        SID, MessageChain([Text("sent")]), platform="test", self_id="first-bot",
+    )
+    await history.finish_outgoing(outgoing, status="sent", platform_message_id="sent-id")
+    for filters, expected in [
+        ({"message_id": first}, {first}),
+        ({"session_id": SID}, {first, second, outgoing}),
+        ({"platform_message_id": "first"}, {first}),
+        ({"self_id": "first-bot"}, {first, second, outgoing}),
+        ({"direction": "incoming"}, {first, second, third}),
+        ({"session_id": SID, "self_id": "first-bot", "direction": "incoming"}, {first, second}),
+        ({"message_id": outgoing, "session_id": SID, "platform_message_id": "sent-id",
+          "self_id": "first-bot", "direction": "outgoing"}, {outgoing}),
+    ]:
+        page = await history.get_messages(**filters)
+        assert {record["id"] for record in page["messages"]} == expected
+        assert page["next_cursor"] is None
+        assert page["messages"][0] == await history.get_message(**filters)
+        for record in page["messages"]:
+            assert record["chain"] == [{"type": "text", "text": (
+                "sent" if record["direction"] == "outgoing" else "original"
+            )}]
+    assert (await history.get_messages(first))["messages"] == [await history.get_message(first)]
+    for filters in [
+        {"session_id": "missing:dm:user"},
+        {"platform_message_id": "missing"},
+        {"message_id": first, "self_id": "other-bot"},
+    ]:
+        assert await history.get_messages(**filters) == {"messages": [], "next_cursor": None}
+    page = await history.get_messages(message_id=first)
+    page["messages"][0]["chain"][0]["text"] = "caller mutation"
+    assert (await history.get_message(first))["chain"][0]["text"] == "original"
+
+
+@pytest.mark.anyio
+async def test_get_messages_passes_cursor_and_limit_to_filtered_query(history, monkeypatch):
+    monkeypatch.setattr("core.db.mixins.messages.time.time_ns", lambda: 1_000_000)
+    expected = {
+        await history.record_incoming(incoming(str(index)), SID, "test")
+        for index in range(5)
+    }
+    await history.record_incoming(incoming("excluded"), "other:dm:user", "test")
+    found = []
+    cursor = None
+    while True:
+        page = await history.get_messages(
+            session_id=SID, self_id="bot", direction="incoming", cursor=cursor, limit=2,
+        )
+        found.extend(record["id"] for record in page["messages"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert found == sorted(expected, reverse=True)
+    assert len(found) == len(set(found)) == 5
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("limit", [0, -1, 201])
+async def test_get_messages_rejects_invalid_page_size(history, limit):
+    with pytest.raises(ValueError, match="limit"):
+        await history.get_messages(session_id=SID, limit=limit)
+
+
+@pytest.mark.anyio
+async def test_get_messages_requires_filters_and_validates_direction(history):
+    with pytest.raises(ValueError, match="At least one message filter"):
+        await history.get_messages()
+    with pytest.raises(ValueError, match="At least one message filter"):
+        await history.get_messages(cursor="not-a-filter", limit=1)
+    with pytest.raises(ValueError, match="direction"):
+        await history.get_messages(session_id=SID, direction="invalid")

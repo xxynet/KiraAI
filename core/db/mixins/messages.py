@@ -45,22 +45,64 @@ class MessageHistoryMixin:
             await session.execute(update(MessageRecord).where(MessageRecord.id == record_id).values(
                 status=status, platform_message_id=platform_message_id, error_type=error_type))
 
-    async def get_message_record(self, message_id: str) -> dict | None:
+    @staticmethod
+    def _message_record_conditions(
+        *, message_id: str | None = None, session_id: str | None = None,
+        platform_message_id: str | int | None = None, self_id: str | None = None,
+        direction: str | None = None, llm_message_id: str | None = None,
+    ) -> list:
+        if direction not in {None, "incoming", "outgoing"}:
+            raise ValueError("direction must be incoming or outgoing")
+        filters = (
+            (MessageRecord.id, message_id),
+            (MessageRecord.session_id, session_id),
+            (MessageRecord.platform_message_id,
+             str(platform_message_id) if platform_message_id is not None else None),
+            (MessageRecord.self_id, self_id),
+            (MessageRecord.direction, direction),
+            (MessageRecord.llm_message_id, llm_message_id),
+        )
+        conditions = [column == value for column, value in filters if value is not None]
+        if not conditions:
+            raise ValueError("At least one message filter is required")
+        return conditions
+
+    async def get_message_record(
+        self, message_id: str | None = None, *, session_id: str | None = None,
+        platform_message_id: str | int | None = None, self_id: str | None = None,
+        direction: str | None = None,
+    ) -> dict | None:
+        """Return the most recently archived record matching all supplied filters."""
+        conditions = self._message_record_conditions(
+            message_id=message_id, session_id=session_id,
+            platform_message_id=platform_message_id, self_id=self_id, direction=direction,
+        )
+        query = select(MessageRecord).where(*conditions).order_by(
+            MessageRecord.created_at.desc(), MessageRecord.id.desc(),
+        ).limit(1)
         async with self.db.get_session() as session:
-            row = await session.get(MessageRecord, message_id)
+            row = await session.scalar(query)
             return self._message_record(row) if row else None
 
-    async def list_message_records(self, session_id: str, *, cursor: str | None = None,
-                                   limit: int = 50, llm_message_id: str | None = None) -> dict:
+    async def list_message_records(
+        self, session_id: str | None = None, *, cursor: str | None = None,
+        limit: int = 50, llm_message_id: str | None = None, message_id: str | None = None,
+        platform_message_id: str | int | None = None, self_id: str | None = None,
+        direction: str | None = None,
+    ) -> dict:
+        """Page through retained records matching all supplied filters."""
         if not 1 <= limit <= 200:
             raise ValueError("limit must be between 1 and 200")
-        query = select(MessageRecord).where(MessageRecord.session_id == session_id)
-        if llm_message_id:
-            query = query.where(MessageRecord.llm_message_id == llm_message_id)
+        conditions = self._message_record_conditions(
+            message_id=message_id, session_id=session_id,
+            platform_message_id=platform_message_id, self_id=self_id, direction=direction,
+            llm_message_id=llm_message_id or None,
+        )
+        query = select(MessageRecord).where(*conditions)
         async with self.db.get_session() as session:
             if cursor:
-                previous = await session.get(MessageRecord, cursor)
-                if not previous or previous.session_id != session_id:
+                previous = await session.scalar(query.where(MessageRecord.id == cursor))
+                if previous is None:
                     raise ValueError("Invalid message cursor")
                 query = query.where(or_(
                     MessageRecord.created_at < previous.created_at,
