@@ -352,7 +352,7 @@ async def test_default_policy_keeps_latest_500_without_age_limit(cleaner, histor
     assert (await cleaner.cleanup_once(defaults))["deleted_messages"] == 1
     assert await history.get_message(f"{0:032x}") is None
     assert await history.get_message(f"{1:032x}") is not None
-    assert (await history.list_sessions())[0]["message_count"] == 500
+    assert (await history.list_sessions())[0].message_count == 500
 
 
 @pytest.mark.anyio
@@ -377,7 +377,7 @@ async def test_session_delete_removes_all_archive_rows_even_when_cleanup_disable
     await routes.delete_session(SID)
     await dispatch_session_events(history, session_events)
     assert (await manager.get_session(SID)) is None
-    assert (await history.list_messages(SID))["messages"] == []
+    assert (await history.list_messages(SID)).messages == []
     assert await history.get_message(other) is not None
     assert all(item["id"] != SID for item in (await routes.list_sessions())["sessions"])
     scopes.remove_session_from_scopes.assert_called_once_with(SID)
@@ -409,9 +409,9 @@ async def test_session_delete_waits_for_existing_archive_and_does_not_rearchive_
         release.set()
         identity = await writer
         await deletion
-    assert (await history.list_messages(SID))["messages"] == []
+    assert (await history.list_messages(SID)).messages == []
     assert await history.record_incoming(message, SID, "test") == identity
-    assert (await history.list_messages(SID))["messages"] == []
+    assert (await history.list_messages(SID)).messages == []
     new_id = await history.record_incoming(incoming("new-after-delete"), SID, "test")
     assert await history.get_message(new_id) is not None
 

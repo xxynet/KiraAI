@@ -8,17 +8,23 @@ import copy
 import hashlib
 import json
 import os
+import re
 import time
 import uuid
 import weakref
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-from core.chat.message_elements import BaseMediaElement, Json, Reply
+from core.chat.message_elements import (
+    At, BaseMediaElement, BaseMessageElement, ElementType, Emoji, File, Forward,
+    Image, Json, Notice, Poke, Record, Reply, Sticker, Text, Video,
+)
+from core.chat.message_utils import MessageChain
 from core.db.service import DatabaseService
 from core.logging_manager import get_logger
 from core.utils.media_refs import MEDIA_ROOT_NAME
-from core.utils.path_utils import get_data_path
+from core.utils.path_utils import get_data_path, is_within_directory
 from core.utils.network import download_file
 
 logger = get_logger("message_history", "cyan")
@@ -98,6 +104,142 @@ async def serialize_message_chain(chain, *, depth: int = 0, archive_root: Path |
                 item[key] = getattr(element, key, None)
         result.append(item)
     return result
+
+
+@dataclass
+class ArchivedMessagePlaceholder(BaseMessageElement):
+    """Retain the type and metadata of an element whose payload is unavailable."""
+
+    type: ElementType | None
+    data: dict
+
+    @property
+    def repr(self) -> str:
+        return f"[{self.type.name}]" if self.type is not None else "[Unsupported message]"
+
+
+def _deserialize_message_chain(data: list[dict], *, depth: int = 0) -> MessageChain:
+    """Restore declared element fields without fetching media or forward contents."""
+    if depth > 2:
+        return MessageChain([ArchivedMessagePlaceholder(None, {"reason": "nesting_limit"})])
+    elements = []
+    media_types = {
+        "image": (Image, "image"), "sticker": (Sticker, "sticker"),
+        "record": (Record, "record"), "video": (Video, "file"), "file": (File, "file"),
+    }
+    for item in data:
+        element_type = item.get("type")
+        if element_type == "text":
+            element = Text(item.get("text"))
+        elif element_type == "at":
+            element = At(item.get("pid"), item.get("nickname"))
+        elif element_type == "emoji":
+            element = Emoji(item.get("emoji_id"), item.get("emoji_desc"))
+        elif element_type == "notice":
+            element = Notice(item.get("text"))
+        elif element_type == "poke":
+            element = Poke(item.get("pid"))
+        elif element_type == "json":
+            element = Json(copy.deepcopy(item.get("data", {})))
+        elif element_type == "reply":
+            nested = item.get("chain")
+            element = Reply(
+                item.get("message_id"), item.get("message_content"),
+                _deserialize_message_chain(nested, depth=depth + 1) if nested is not None else None,
+            )
+        elif element_type == "forward":
+            # Forward archives deliberately contain only a display placeholder.
+            element = Forward()
+        elif element_type in media_types:
+            element = ArchivedMessagePlaceholder(ElementType(element_type), copy.deepcopy(item))
+            file = item.get("file")
+            if (item.get("file_type") == "archive" and isinstance(file, str)
+                    and re.fullmatch(rf"{MEDIA_ROOT_NAME}/archive/[0-9a-f]{{64}}", file)):
+                try:
+                    root = get_data_path() / MEDIA_ROOT_NAME / "archive"
+                    target = (get_data_path() / file).resolve()
+                    if is_within_directory(root, target) and target.is_file():
+                        element_class, argument = media_types[element_type]
+                        element = element_class(**{argument: str(target)}, mime=item.get("mime"))
+                        for key in ("name", "mime", "size", "caption", "transcript", "description", "sticker_id"):
+                            if key in item:
+                                setattr(element, key, copy.deepcopy(item[key]))
+                except (OSError, ValueError):
+                    pass
+        else:
+            element = ArchivedMessagePlaceholder(None, copy.deepcopy(item))
+        elements.append(element)
+    return MessageChain(elements)
+
+
+@dataclass
+class MessageHistoryRecord:
+    """An archived message with runtime elements and its original JSON snapshot."""
+
+    id: str
+    session_id: str
+    self_id: str | None
+    platform: str
+    platform_message_id: str | None
+    is_notice: bool
+    is_mentioned: bool | None
+    direction: str
+    sender_id: str | None
+    sender_name: str | None
+    timestamp: int
+    created_at: int
+    chain: MessageChain
+    status: str
+    error_type: str | None
+    llm_message_id: str | None
+    schema_version: int
+    _serialized_chain: list[dict] = field(repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, record: dict) -> MessageHistoryRecord:
+        """Restore an archive record; callers should move filesystem checks off-loop."""
+        values = copy.deepcopy(record)
+        serialized = values.pop("chain")
+        return cls(
+            **values, chain=_deserialize_message_chain(serialized), _serialized_chain=serialized,
+        )
+
+    def to_dict(self) -> dict:
+        """Export the archive snapshot, preserving stored media paths and placeholders.
+
+        Runtime chain edits do not rewrite the original serialized chain.
+        """
+        return {
+            item.name: copy.deepcopy(self._serialized_chain if item.name == "chain"
+                                     else getattr(self, item.name))
+            for item in fields(self) if not item.name.startswith("_")
+        }
+
+
+@dataclass
+class MessageHistoryPage:
+    """A page of typed message history records and its continuation cursor."""
+
+    messages: list[MessageHistoryRecord] = field(default_factory=list)
+    next_cursor: str | None = None
+
+    def to_dict(self) -> dict:
+        """Export JSON-safe archive snapshots using the existing pagination format."""
+        return {
+            "messages": [record.to_dict() for record in self.messages],
+            "next_cursor": self.next_cursor,
+        }
+
+
+@dataclass
+class MessageHistorySession:
+    """The retained message count for one routed session."""
+
+    session_id: str
+    message_count: int
+
+    def to_dict(self) -> dict:
+        return {"session_id": self.session_id, "message_count": self.message_count}
 
 
 class MessageHistoryService:
@@ -214,56 +356,71 @@ class MessageHistoryService:
         self, message_id: str | None = None, *, session_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None,
-    ) -> dict | None:
+    ) -> MessageHistoryRecord | None:
         """Look up a locally archived message matching all supplied filters.
 
         message_id is the internal history record ID, while platform_message_id
         is the adapter's message ID. Supply session_id to scope platform IDs.
         At least one filter is required; None means that filter is omitted.
-        Return a history record with a serialized chain (list of dictionaries),
+        Return a MessageHistoryRecord whose chain is a MessageChain,
         or None if no retained record matches. This does not fetch the platform.
         If multiple records match, return the most recently archived one, using
         the internal record ID to break ties in archive time.
         """
-        return await self.db.get_message_record(
+        record = await self.db.get_message_record(
             message_id, session_id=session_id, platform_message_id=platform_message_id,
             self_id=self_id, direction=direction,
         )
+        if record is None:
+            return None
+        return await asyncio.to_thread(MessageHistoryRecord.from_dict, record)
 
     async def get_messages(
         self, message_id: str | None = None, *, session_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None, cursor: str | None = None, limit: int = 50,
-    ) -> dict:
+    ) -> MessageHistoryPage:
         """Return a page of local history records matching all supplied filters.
 
         Filters have the same meaning as get_message; at least one is required.
-        Records contain serialized chains and are ordered by archive time, then
-        internal ID, newest first. Return {"messages": [], "next_cursor": None}
+        messages contains MessageHistoryRecord objects ordered by archive time, then
+        internal ID, newest first. Return a page with an empty messages list
         when no records match. limit must be between 1 and 200.
         Pass next_cursor as cursor with the same filters to fetch the next page.
         The cursor must identify a retained record matching the supplied filters.
         """
-        return await self.db.list_message_records(
+        page = await self.db.list_message_records(
             session_id, message_id=message_id, platform_message_id=platform_message_id,
             self_id=self_id, direction=direction, cursor=cursor, limit=limit,
         )
+        return await self._restore_page(page)
+
+    async def _restore_page(self, page: dict) -> MessageHistoryPage:
+        if page["messages"]:
+            records = await asyncio.to_thread(
+                lambda: [MessageHistoryRecord.from_dict(record) for record in page["messages"]],
+            )
+        else:
+            records = []
+        return MessageHistoryPage(messages=records, next_cursor=page["next_cursor"])
 
     async def list_messages(self, session_id: str, *, cursor: str | None = None,
-                            limit: int = 50, llm_message_id: str | None = None) -> dict:
-        return await self.db.list_message_records(
+                            limit: int = 50, llm_message_id: str | None = None) -> MessageHistoryPage:
+        """Return typed history records for one session, optionally linked to memory."""
+        page = await self.db.list_message_records(
             session_id, cursor=cursor, limit=limit, llm_message_id=llm_message_id,
         )
+        return await self._restore_page(page)
 
     async def get_messages_by_llm_message_id(self, session_id: str, llm_message_id: str,
-                                        *, cursor: str | None = None, limit: int = 50) -> dict:
+                                        *, cursor: str | None = None, limit: int = 50) -> MessageHistoryPage:
         return await self.list_messages(session_id, llm_message_id=llm_message_id, cursor=cursor, limit=limit)
 
-    async def get_linked_memory(self, record: dict) -> dict | None:
-        identity = record.get("llm_message_id")
+    async def get_linked_memory(self, record: MessageHistoryRecord) -> dict | None:
+        identity, session_id = record.llm_message_id, record.session_id
         if not identity:
             return None
-        session = await self.session_manager.get_session(record["session_id"])
+        session = await self.session_manager.get_session(session_id)
         memory = session.content if session is not None else []
         for chunk in memory:
             for message in chunk:
@@ -271,8 +428,9 @@ class MessageHistoryService:
                     return message
         return None
 
-    async def list_sessions(self) -> list[dict]:
-        return await self.db.list_message_sessions()
+    async def list_sessions(self) -> list[MessageHistorySession]:
+        """Return typed retained-message statistics for each session."""
+        return [MessageHistorySession(**row) for row in await self.db.list_message_sessions()]
 
     async def link_incoming_messages(self, session_id: str, llm_message_id: str,
                                      message_ids: list[str]) -> None:

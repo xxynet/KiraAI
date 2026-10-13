@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from core.chat.session import Session
+from core.chat.message_history import MessageHistorySession
 from webui.routes.sessions import SessionsRoutes
 
 
@@ -117,13 +118,13 @@ async def test_list_sessions_skips_malformed_history_ids():
         "malformed-memory-id": {},
         "adapter:dm:existing": {"title": "Existing", "memory": [[]]},
     }
-    history = SimpleNamespace(list_sessions=AsyncMock(return_value=[
+    history = SimpleNamespace(list_sessions=AsyncMock(return_value=[MessageHistorySession(**item) for item in [
         {"session_id": "", "message_count": 1},
         {"session_id": "invalid", "message_count": 1},
         {"session_id": "adapter:user", "message_count": 1},
         {"session_id": "adapter:dm:existing", "message_count": 2},
         {"session_id": "adapter:dm:target:with:colons", "message_count": 3},
-    ]))
+    ]]))
     app = FastAPI()
     routes = SessionsRoutes(app, SimpleNamespace(
         session_manager=session_manager,
@@ -168,11 +169,11 @@ async def test_session_reads_skip_malformed_records_without_changing_storage(
     manager = session_manager_module.SessionManager(session_db, Mock())
     await manager.initialize()
     saved = path.read_bytes()
-    history = SimpleNamespace(list_sessions=AsyncMock(return_value=[
+    history = SimpleNamespace(list_sessions=AsyncMock(return_value=[MessageHistorySession(**item) for item in [
         {"session_id": "adapter:dm:bad", "message_count": 2},
         {"session_id": "adapter:dm:good", "message_count": 3},
         {"session_id": "adapter:dm:archive-only", "message_count": 1},
-    ])) if include_history else None
+    ]])) if include_history else None
     app = FastAPI()
     routes = SessionsRoutes(app, SimpleNamespace(
         session_manager=manager,
@@ -202,7 +203,8 @@ async def test_session_reads_skip_malformed_records_without_changing_storage(
 
 
 def _history_app(message):
-    history = SimpleNamespace(get_message=AsyncMock(return_value=message))
+    record = SimpleNamespace(to_dict=lambda: message) if message is not None else None
+    history = SimpleNamespace(get_message=AsyncMock(return_value=record))
     app = FastAPI()
     routes = SessionsRoutes(app, SimpleNamespace(
         message_history=history,
@@ -284,9 +286,9 @@ async def test_message_media_rejects_archive_symlink_escape(tmp_path, monkeypatc
         archive.symlink_to(secret)
     except OSError:
         pytest.skip("Creating symlinks requires permission on this host")
-    history = SimpleNamespace(get_message=AsyncMock(return_value={"chain": [{
+    _, history = _history_app({"chain": [{
         "type": "file", "file_type": "archive", "file": archive.relative_to(tmp_path).as_posix(),
-    }]}))
+    }]})
     routes = SessionsRoutes(FastAPI(), SimpleNamespace(message_history=history))
     with pytest.raises(HTTPException) as exc_info:
         await routes.get_message_media("id", "0")

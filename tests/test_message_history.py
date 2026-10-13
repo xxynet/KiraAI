@@ -9,8 +9,8 @@ import pytest
 from fastapi import FastAPI, HTTPException
 
 from core.agent.message import OpenAIMessage
-from core.chat.message_elements import Text, Image, At, Reply, Forward, Json, Sticker, Record, Video, File
-from core.chat.message_history import MessageHistoryService, serialize_message_chain
+from core.chat.message_elements import Text, Image, At, Reply, Forward, Json, Sticker, Record, Video, File, Emoji, Notice, Poke
+from core.chat.message_history import ArchivedMessagePlaceholder, MessageHistoryPage, MessageHistoryRecord, MessageHistoryService, MessageHistorySession, serialize_message_chain
 from core.chat.message_utils import KiraIMMessage, KiraIMSentResult, MessageChain, User
 from core.chat.memory_metadata import normalize_memory
 from core.db.db_mgr import DatabaseManager
@@ -76,12 +76,12 @@ async def test_incoming_snapshot_dedup_accounts_and_notices(history):
         notice = incoming("system_message")
         notice.is_notice = True
         await history.record_incoming(notice, SID, "test")
-    record = await history.get_message(identity)
+    record = (await history.get_message(identity)).to_dict()
     assert record["chain"] == [{"type": "text", "text": "original"}]
     assert "source" not in record
     assert "raw_message" not in record
     assert "must not persist" not in json.dumps(record)
-    assert len((await history.list_messages(SID))["messages"]) == 4
+    assert len((await history.list_messages(SID)).to_dict()["messages"]) == 4
 
 
 @pytest.mark.anyio
@@ -98,7 +98,7 @@ async def test_empty_outgoing_delivery_does_not_create_history(history, monkeypa
     finish.assert_not_awaited()
     assert result.ok
     assert result.history_id is None
-    assert (await history.list_messages(SID))["messages"] == []
+    assert (await history.list_messages(SID)).to_dict()["messages"] == []
     assert await history.list_sessions() == []
 
 
@@ -130,11 +130,11 @@ async def test_new_outgoing_messages_snapshot_account_nickname(history, chat_typ
     first_id = first.history_id
     bot.nickname = "Renamed Kira"
     second = await instance.message_delivery.send_message_chain(sid, MessageChain([Text("second")]), bot=bot)
-    assert (await history.get_message(first_id))["sender_name"] == "Kira"
-    assert (await history.get_message(second.history_id))["sender_name"] == "Renamed Kira"
+    assert (await history.get_message(first_id)).sender_name == "Kira"
+    assert (await history.get_message(second.history_id)).sender_name == "Renamed Kira"
     sender = target.send_direct_message if chat_type == "dm" else target.send_group_message
     assert sender.await_count == 2
-    records = (await history.list_messages(sid))["messages"]
+    records = (await history.list_messages(sid)).to_dict()["messages"]
     assert {row["sender_name"] for row in records} == {"Kira", "Renamed Kira"}
 
 
@@ -143,7 +143,7 @@ async def test_new_outgoing_messages_snapshot_account_nickname(history, chat_typ
 async def test_missing_or_invalid_bot_nickname_preserves_send_and_history(history, name):
     instance, target = processor(history, KiraIMSentResult("sent-id"))
     result = await instance.send_message_chain(SID, MessageChain([Text("out")]), bot=User("bot", name))
-    record = await history.get_message(result.history_id)
+    record = (await history.get_message(result.history_id)).to_dict()
     assert result.ok and record["status"] == "sent"
     assert record["sender_name"] is None
     target.send_direct_message.assert_awaited_once()
@@ -155,7 +155,7 @@ async def test_outgoing_success_failure_exception_and_proactive(history):
                              (KiraIMSentResult(ok=False), "failed"), (None, "failed")]:
         instance, _ = processor(history, result)
         response = await instance.send_message_chain(SID, MessageChain([Text("out")]))
-        row = await history.get_message(response.history_id)
+        row = (await history.get_message(response.history_id)).to_dict()
         assert row["direction"] == "outgoing"
         assert "source" not in row
         assert row["sender_id"] is None
@@ -166,7 +166,7 @@ async def test_outgoing_success_failure_exception_and_proactive(history):
     instance, _ = processor(history, error=TimeoutError("private endpoint"))
     with pytest.raises(TimeoutError):
         await instance.send_message_chain(SID, MessageChain([Text("uncertain")]))
-    rows = (await history.list_messages(SID))["messages"]
+    rows = (await history.list_messages(SID)).to_dict()["messages"]
     uncertain = next(row for row in rows if row["status"] == "unknown")
     assert uncertain["error_type"] == "TimeoutError"
     assert "private endpoint" not in json.dumps(rows)
@@ -187,17 +187,17 @@ async def test_many_messages_link_to_exact_user_and_assistant_and_survive_prunin
                                                     memory_message=memory)
         emitted.append(result.history_id)
     await history.session_manager.update_memory(SID, [user, first, second])
-    linked_inputs = (await history.get_messages_by_llm_message_id(SID, user.extra["llm_message_id"]))["messages"]
+    linked_inputs = (await history.get_messages_by_llm_message_id(SID, user.extra["llm_message_id"])).to_dict()["messages"]
     assert {row["id"] for row in linked_inputs} == set(inbound)
-    linked = (await history.get_messages_by_llm_message_id(SID, first.extra["llm_message_id"]))["messages"]
+    linked = (await history.get_messages_by_llm_message_id(SID, first.extra["llm_message_id"])).to_dict()["messages"]
     assert {row["id"] for row in linked} == set(emitted[:2])
-    assert (await history.get_message(emitted[2]))["llm_message_id"] == second.extra["llm_message_id"]
-    assert (await history.get_message(inbound[0]))["llm_message_id"] == user.extra["llm_message_id"]
+    assert (await history.get_message(emitted[2])).llm_message_id == second.extra["llm_message_id"]
+    assert (await history.get_message(inbound[0])).llm_message_id == user.extra["llm_message_id"]
     row = await history.get_message(emitted[0])
     assert (await history.get_linked_memory(row))["content"] == "first step"
     await history.session_manager.update_session(SID, content=[])
     assert (await history.get_linked_memory(row)) is None
-    assert len((await history.list_messages(SID))["messages"]) == 5
+    assert len((await history.list_messages(SID)).to_dict()["messages"]) == 5
 
 
 @pytest.mark.anyio
@@ -231,10 +231,10 @@ async def test_cursor_pagination_stable_with_identical_timestamps(history, monke
     page = await history.list_messages(SID, limit=2)
     found = []
     while True:
-        found.extend(row["id"] for row in page["messages"])
-        if not page["next_cursor"]:
+        found.extend(row.id for row in page.messages)
+        if not page.next_cursor:
             break
-        page = await history.list_messages(SID, limit=2, cursor=page["next_cursor"])
+        page = await history.list_messages(SID, limit=2, cursor=page.next_cursor)
     assert len(found) == len(set(found)) == 5
     assert set(found) == ids
     with pytest.raises(ValueError):
@@ -253,8 +253,8 @@ async def test_startup_preserves_database_links_and_marks_incomplete_sends_unkno
     await restored.initialize()
     row = await restored.get_message(identity)
     assert (await restored.get_linked_memory(row))["_extra"] == {"llm_message_id": memory.extra["llm_message_id"]}
-    assert (await history.get_message(identity))["llm_message_id"] == memory.extra["llm_message_id"]
-    assert (await history.get_message(pending))["status"] == "unknown"
+    assert (await history.get_message(identity)).llm_message_id == memory.extra["llm_message_id"]
+    assert (await history.get_message(pending)).status == "unknown"
 
 
 @pytest.mark.anyio
@@ -322,14 +322,14 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
     assert memory[1]["_extra"]["llm_message_id"] != memory[3]["_extra"]["llm_message_id"]
     for message, count in zip(memory, [2, 2, 0, 1]):
         assert set(message["_extra"]) == {"llm_message_id"}
-        records = (await history.get_messages_by_llm_message_id(SID, message["_extra"]["llm_message_id"]))["messages"]
+        records = (await history.get_messages_by_llm_message_id(SID, message["_extra"]["llm_message_id"])).messages
         assert len(records) == count
         for record in records:
             assert (await history.get_linked_memory(record)) == message
     persisted = await history.db.list_chat_sessions()
     assert "message_ids" not in json.dumps(persisted)
     assert target.send_direct_message.await_count == 3
-    assert len((await history.list_messages(SID))["messages"]) == 5
+    assert len((await history.list_messages(SID)).to_dict()["messages"]) == 5
 
 
 @pytest.mark.anyio
@@ -348,7 +348,7 @@ async def test_stopped_or_discarded_incoming_is_recorded_before_plugin_changes(h
     event = KiraMessageEvent(supported_elements=["text"], timestamp=1, message=incoming(),
                             adapter=AdapterInfo(True, "test", "adapter", "test"))
     await instance.handle_im_message(event)
-    record = (await history.list_messages(SID))["messages"][0]
+    record = (await history.list_messages(SID)).to_dict()["messages"][0]
     assert record["chain"] == [{"type": "text", "text": "original"}]
     assert record["llm_message_id"] is None
 
@@ -381,7 +381,7 @@ async def test_remote_media_never_persists_credential_urls(history, tmp_path, mo
     message = incoming()
     message.chain = MessageChain([Image("https://media.example/bot-secret/photo.png?token=private")])
     identity = await history.record_incoming(message, SID, "test")
-    record = await history.get_message(identity)
+    record = (await history.get_message(identity)).to_dict()
     assert "bot-secret" not in json.dumps(record)
     assert "token=private" not in json.dumps(record)
     image = record["chain"][0]
@@ -423,7 +423,7 @@ async def test_all_media_store_only_local_relative_paths(history, tmp_path, monk
         identity = await history.record_incoming(message, SID, "test")
     else:
         identity = await history.record_outgoing(SID, chain, platform="test", self_id="bot")
-    row = await history.get_message(identity)
+    row = (await history.get_message(identity)).to_dict()
     serialized = json.dumps(row["chain"])
     assert encoded not in serialized
     assert "https://" not in serialized
@@ -451,7 +451,7 @@ async def test_archive_survives_session_media_cleanup(history, tmp_path):
     message = incoming()
     message.chain = MessageChain([Image(str(source))])
     identity = await history.record_incoming(message, SID, "test")
-    record = await history.get_message(identity)
+    record = (await history.get_message(identity)).to_dict()
     archived = tmp_path / record["chain"][0]["file"]
 
     cleanup_session_media(SID, [])
@@ -476,10 +476,10 @@ async def test_incoming_tracking_preserves_message_fields_and_releases_reference
     assert message.__dict__ == attributes
     message.chain[0].text = "changed after persistence"
     assert await history.record_incoming(message, SID, "test") == identity
-    row = await history.get_message(identity)
+    row = (await history.get_message(identity)).to_dict()
     assert row["chain"][0]["text"] == "original"
     assert "source" not in row
-    assert len((await history.list_messages(SID))["messages"]) == 1
+    assert len((await history.list_messages(SID)).to_dict()["messages"]) == 1
     reference = weakref.ref(message)
     del message
     gc.collect()
@@ -496,9 +496,9 @@ async def test_persisted_messages_keep_full_session_identity(history):
         incoming_ids.add(identity)
         outgoing_id = await history.record_outgoing(
             sid, MessageChain([Text("reply")]), platform="test", self_id="bot")
-        assert (await history.get_message(identity))["session_id"] == sid
-        assert (await history.get_message(outgoing_id))["session_id"] == sid
-        records = (await history.list_messages(sid))["messages"]
+        assert (await history.get_message(identity)).session_id == sid
+        assert (await history.get_message(outgoing_id)).session_id == sid
+        records = (await history.list_messages(sid)).to_dict()["messages"]
         assert {row["id"] for row in records} == {identity, outgoing_id}
         assert {row["session_id"] for row in records} == {sid}
     assert len(incoming_ids) == len(sessions)
@@ -518,11 +518,11 @@ async def test_database_links_survive_memory_edits_without_reverse_links(history
     snapshot = (await history.session_manager.get_session(SID)).content
     record = await history.get_message(identity)
     assert (await history.get_linked_memory(record)) == snapshot[0][0]
-    assert record["llm_message_id"] == message.extra["llm_message_id"]
+    assert record.llm_message_id == message.extra["llm_message_id"]
     assert "message_ids" not in json.dumps(snapshot)
     copied = snapshot[0][1]["_extra"]["llm_message_id"]
     assert copied != message.extra["llm_message_id"]
-    assert (await history.get_messages_by_llm_message_id(SID, copied))["messages"] == []
+    assert (await history.get_messages_by_llm_message_id(SID, copied)).to_dict()["messages"] == []
 
 
 @pytest.mark.anyio
@@ -533,9 +533,9 @@ async def test_incoming_link_update_is_scoped_to_session_and_direction(history):
         SID, MessageChain([Text("sent")]), platform="test", self_id="bot", llm_message_id="assistant-id")
     await history.link_incoming_messages(SID, "user-id", [source, other, outgoing])
     await history.link_incoming_messages(SID, "unused", [])
-    assert (await history.get_message(source))["llm_message_id"] == "user-id"
-    assert (await history.get_message(other))["llm_message_id"] is None
-    assert (await history.get_message(outgoing))["llm_message_id"] == "assistant-id"
+    assert (await history.get_message(source)).llm_message_id == "user-id"
+    assert (await history.get_message(other)).llm_message_id is None
+    assert (await history.get_message(outgoing)).llm_message_id == "assistant-id"
 
 
 @pytest.mark.anyio
@@ -558,7 +558,7 @@ async def test_forward_placeholder_does_not_archive_contents(history, tmp_path, 
         identity = await history.record_incoming(message, SID, "test")
     else:
         identity = await history.record_outgoing(SID, chain, platform="test", self_id="bot")
-    row = await history.get_message(identity)
+    row = (await history.get_message(identity)).to_dict()
     assert row["chain"] == [
         {"type": "forward"},
         {"type": "reply", "message_id": "quoted", "message_content": None,
@@ -575,7 +575,7 @@ async def test_outgoing_history_uses_explicit_bot_identity(history):
     result = await instance.message_delivery.send_message_chain(
         SID, MessageChain([Text("out")]), bot=User("event-bot", "Event Kira"),
     )
-    record = await history.get_message(result.history_id)
+    record = (await history.get_message(result.history_id)).to_dict()
     assert record["sender_name"] == "Event Kira"
     assert record["self_id"] == "event-bot"
     assert record["sender_id"] == "event-bot"
@@ -592,8 +592,8 @@ async def test_missing_bot_nickname_snapshots_active_persona_name(history, bot):
     first_id = first.history_id
     assert await personas.set_active_persona("second")
     second = await instance.send_message_chain(SID, MessageChain([Text("second")]), bot=bot)
-    first_record = await history.get_message(first_id)
-    second_record = await history.get_message(second.history_id)
+    first_record = (await history.get_message(first_id)).to_dict()
+    second_record = (await history.get_message(second.history_id)).to_dict()
     assert first_record["sender_name"] == "First Persona"
     assert second_record["sender_name"] == "Second Persona"
     assert first_record["sender_id"] == second_record["sender_id"] == (bot.user_id if bot else None)
@@ -607,7 +607,7 @@ async def test_platform_nickname_skips_persona_lookup(history):
     personas = SimpleNamespace(get_persona=AsyncMock(side_effect=AssertionError("No fallback needed")))
     instance, _ = processor(history, KiraIMSentResult("sent-id"), persona_mgr=personas)
     result = await instance.send_message_chain(SID, MessageChain([Text("out")]), bot=User("bot", "Platform Kira"))
-    assert (await history.get_message(result.history_id))["sender_name"] == "Platform Kira"
+    assert (await history.get_message(result.history_id)).sender_name == "Platform Kira"
     personas.get_persona.assert_not_awaited()
 
 
@@ -618,7 +618,7 @@ async def test_missing_persona_name_preserves_default_label(history, persona):
     personas = SimpleNamespace(get_persona=AsyncMock(return_value=persona))
     instance, target = processor(history, KiraIMSentResult("sent-id"), persona_mgr=personas)
     result = await instance.send_message_chain(SID, MessageChain([Text("out")]), bot=User("bot"))
-    record = await history.get_message(result.history_id)
+    record = (await history.get_message(result.history_id)).to_dict()
     assert result.ok and record["status"] == "sent"
     assert record["sender_id"] == "bot"
     assert record["sender_name"] is None
@@ -630,7 +630,7 @@ async def test_persona_lookup_failure_preserves_history_and_send(history):
     personas = SimpleNamespace(get_persona=AsyncMock(side_effect=RuntimeError("Lookup failed")))
     instance, target = processor(history, KiraIMSentResult("sent-id"), persona_mgr=personas)
     result = await instance.send_message_chain(SID, MessageChain([Text("out")]), bot=User("bot"))
-    record = await history.get_message(result.history_id)
+    record = (await history.get_message(result.history_id)).to_dict()
     assert result.ok and record["status"] == "sent"
     assert record["sender_name"] is None
     target.send_direct_message.assert_awaited_once()
@@ -655,9 +655,11 @@ async def test_lookup_history_by_platform_message_id(history, monkeypatch, direc
     record = await history.get_message(
         session_id=SID, platform_message_id=123, self_id="bot", direction=direction,
     )
-    assert record == await history.get_message(identity)
-    assert record["platform_message_id"] == "123"
-    assert record["chain"] == [
+    assert record.to_dict() == (await history.get_message(identity)).to_dict()
+    assert isinstance(record, MessageHistoryRecord)
+    assert isinstance(record.chain, MessageChain)
+    assert record.platform_message_id == "123"
+    assert record.to_dict()["chain"] == [
         {"type": "text", "text": "original"},
         {"type": "reply", "message_id": "quoted", "message_content": None,
          "chain": [{"type": "text", "text": "quoted text"}]},
@@ -686,8 +688,8 @@ async def test_get_message_combines_optional_filters_and_preserves_internal_id_l
         ({"message_id": first, "session_id": SID, "platform_message_id": "first",
           "self_id": "first-bot", "direction": "incoming"}, first),
     ]:
-        assert (await history.get_message(**filters))["id"] == expected
-    assert (await history.get_message(first))["id"] == first
+        assert (await history.get_message(**filters)).id == expected
+    assert (await history.get_message(first)).id == first
     for mismatched_filter in [
         {"session_id": "other:dm:user"},
         {"platform_message_id": "second"},
@@ -709,7 +711,7 @@ async def test_get_message_requires_a_filter_and_validates_direction_with_intern
 
 
 @pytest.mark.anyio
-async def test_get_messages_supports_optional_filters_and_returns_serialized_history(history):
+async def test_get_messages_supports_optional_filters_and_returns_history_records(history):
     first = await history.record_incoming(incoming("first", bot="first-bot"), SID, "test")
     second = await history.record_incoming(incoming("second", bot="first-bot"), SID, "test")
     third = await history.record_incoming(incoming("third", bot="other-bot"), "other:dm:user", "test")
@@ -728,23 +730,23 @@ async def test_get_messages_supports_optional_filters_and_returns_serialized_his
           "self_id": "first-bot", "direction": "outgoing"}, {outgoing}),
     ]:
         page = await history.get_messages(**filters)
-        assert {record["id"] for record in page["messages"]} == expected
-        assert page["next_cursor"] is None
-        assert page["messages"][0] == await history.get_message(**filters)
-        for record in page["messages"]:
-            assert record["chain"] == [{"type": "text", "text": (
-                "sent" if record["direction"] == "outgoing" else "original"
+        assert {record.id for record in page.messages} == expected
+        assert page.next_cursor is None
+        assert page.messages[0].to_dict() == (await history.get_message(**filters)).to_dict()
+        for record in page.messages:
+            assert record.to_dict()["chain"] == [{"type": "text", "text": (
+                "sent" if record.direction == "outgoing" else "original"
             )}]
-    assert (await history.get_messages(first))["messages"] == [await history.get_message(first)]
+    assert [record.id for record in (await history.get_messages(first)).messages] == [first]
     for filters in [
         {"session_id": "missing:dm:user"},
         {"platform_message_id": "missing"},
         {"message_id": first, "self_id": "other-bot"},
     ]:
-        assert await history.get_messages(**filters) == {"messages": [], "next_cursor": None}
+        assert await history.get_messages(**filters) == MessageHistoryPage()
     page = await history.get_messages(message_id=first)
-    page["messages"][0]["chain"][0]["text"] = "caller mutation"
-    assert (await history.get_message(first))["chain"][0]["text"] == "original"
+    page.messages[0].chain[0].text = "caller mutation"
+    assert (await history.get_message(first)).chain[0].text == "original"
 
 
 @pytest.mark.anyio
@@ -761,8 +763,8 @@ async def test_get_messages_passes_cursor_and_limit_to_filtered_query(history, m
         page = await history.get_messages(
             session_id=SID, self_id="bot", direction="incoming", cursor=cursor, limit=2,
         )
-        found.extend(record["id"] for record in page["messages"])
-        cursor = page["next_cursor"]
+        found.extend(record.id for record in page.messages)
+        cursor = page.next_cursor
         if cursor is None:
             break
     assert found == sorted(expected, reverse=True)
@@ -784,3 +786,308 @@ async def test_get_messages_requires_filters_and_validates_direction(history):
         await history.get_messages(cursor="not-a-filter", limit=1)
     with pytest.raises(ValueError, match="direction"):
         await history.get_messages(session_id=SID, direction="invalid")
+
+
+@pytest.mark.anyio
+async def test_history_record_restores_element_classes_and_keeps_archive_snapshot(history):
+    from dataclasses import is_dataclass
+
+    message = incoming()
+    message.chain = MessageChain([
+        Text("hello"), At("123", "Alice"), Emoji("1", "smile"), Notice("notice"), Poke("456"),
+        Json({"nested": {"value": 1}}),
+        Reply("quoted", "preview", MessageChain([Text("quoted text")])),
+        Forward(chains=[MessageChain([Text("not archived")])], message_id="forward-id"),
+    ])
+    identity = await history.record_incoming(message, SID, "test")
+    serialized = await history.db.get_message_record(identity)
+    record = await history.get_message(session_id=SID, platform_message_id="in-1")
+    assert is_dataclass(record)
+    assert isinstance(record, MessageHistoryRecord)
+    assert isinstance(record.chain, MessageChain)
+    assert [type(element) for element in record.chain] == [
+        Text, At, Emoji, Notice, Poke, Json, Reply, Forward,
+    ]
+    assert record.id == identity
+    assert record.chain[0].text == "hello"
+    assert record.chain[1].pid == "123"
+    assert record.chain[1].nickname == "Alice"
+    assert record.chain[2].emoji_desc == "smile"
+    assert record.chain[3].text == "notice"
+    assert record.chain[4].pid == "456"
+    assert record.chain[5].data == {"nested": {"value": 1}}
+    assert record.chain[6].message_id == "quoted"
+    assert record.chain[6].message_content == "preview"
+    assert isinstance(record.chain[6].chain, MessageChain)
+    assert record.chain[6].chain[0].text == "quoted text"
+    assert record.chain[7].chains == []
+    assert record.chain[7].message_id is None
+    assert record.chain[7].repr == "[Forward]"
+    assert record.to_dict() == serialized
+    record.chain[0].text = "runtime change"
+    record.chain[5].data["nested"]["value"] = 2
+    record.chain[6].chain[0].text = "runtime quote change"
+    assert record.to_dict() == serialized
+    exported = record.to_dict()
+    exported["chain"][0]["text"] = "export mutation"
+    assert record.to_dict() == serialized
+    assert (await history.get_message(identity)).chain[5].data["nested"]["value"] == 1
+    assert await history.db.get_message_record(identity) == serialized
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("element_class", [Image, Sticker, Record, Video, File])
+async def test_history_record_restores_archived_media_paths_and_metadata(history, tmp_path, element_class):
+    payload = "data:application/octet-stream;base64,aGVsbG8="
+    element = Sticker(sticker=payload, sticker_id="sticker-1") if element_class is Sticker else element_class(payload)
+    element.name = "original.bin"
+    element.size = "5"
+    element.mime = "application/octet-stream"
+    for name, value in [
+        ("caption", "caption"), ("transcript", "transcript"), ("description", "description"),
+    ]:
+        if hasattr(element, name):
+            setattr(element, name, value)
+    message = incoming()
+    message.chain = MessageChain([element])
+    identity = await history.record_incoming(message, SID, "test")
+    stored = await history.db.get_message_record(identity)
+    page = await history.get_messages(message_id=identity)
+    record = page.messages[0]
+    assert isinstance(record, MessageHistoryRecord)
+    restored = record.chain[0]
+    assert isinstance(restored, element_class)
+    assert restored.file_type == "path"
+    assert Path(restored.file).is_absolute()
+    assert Path(restored.file).read_bytes() == b"hello"
+    assert Path(restored.file) == tmp_path / stored["chain"][0]["file"]
+    for name in ("name", "size", "mime", "caption", "transcript", "description", "sticker_id"):
+        if hasattr(element, name):
+            assert getattr(restored, name) == getattr(element, name)
+    assert record.to_dict() == stored
+    assert page.next_cursor is None
+
+
+@pytest.mark.anyio
+async def test_history_record_keeps_forward_display_and_web_json_unchanged(history):
+    message = incoming()
+    message.chain = MessageChain([
+        Forward(chains=[MessageChain([Text("private forward")])]),
+        Reply("quoted", chain=MessageChain([Forward(chains=[MessageChain([Text("private quote")])])])),
+    ])
+    identity = await history.record_incoming(message, SID, "test")
+    record = await history.get_message(identity)
+    page = await history.get_messages(message_id=identity)
+    for restored in [record, page.messages[0]]:
+        assert isinstance(restored.chain[0], Forward)
+        assert isinstance(restored.chain[1].chain[0], Forward)
+        assert restored.chain[0].repr == "[Forward]"
+        assert restored.chain[0].chains == []
+        assert restored.chain[1].chain[0].chains == []
+    routes = SessionsRoutes(FastAPI(), SimpleNamespace(message_history=history))
+    response = await routes.get_message(identity)
+    assert response["message"] == await history.db.get_message_record(identity)
+    assert response["message"]["chain"] == [
+        {"type": "forward"},
+        {"type": "reply", "message_id": "quoted", "message_content": None,
+         "chain": [{"type": "forward"}]},
+    ]
+    assert "private forward" not in json.dumps(response)
+    assert "private quote" not in json.dumps(response)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("element", [
+    {"type": "image", "file_type": "unavailable", "caption": "retained caption"},
+    {"type": "image", "file_type": "archive", "file": "session_media/archive/" + "a" * 64},
+    {"type": "file", "file_type": "archive", "file": "../../private.txt"},
+    {"type": "record", "file_type": "url", "file": "https://example.com/private"},
+    {"type": "unsupported", "reason": "nesting_limit"},
+    {"type": "future_element"},
+])
+async def test_history_record_preserves_unavailable_elements_without_fetching(history, monkeypatch, element):
+    download = AsyncMock(side_effect=AssertionError("History reads must not fetch media"))
+    monkeypatch.setattr("core.chat.message_history.download_file", download)
+    identity = await history.db.add_message_record(
+        session_id=SID, platform="test", direction="incoming",
+        timestamp=1, status="received", chain=[element],
+    )
+    record = await history.get_message(identity)
+    assert isinstance(record.chain, MessageChain)
+    assert isinstance(record.chain[0], ArchivedMessagePlaceholder)
+    assert record.chain[0].data == element
+    assert record.to_dict()["chain"] == [element]
+    download.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_history_materialization_runs_outside_event_loop(history, monkeypatch):
+    import threading
+    import core.chat.message_history as history_module
+
+    identity = await history.record_incoming(incoming(), SID, "test")
+    loop_thread = threading.get_ident()
+    restore = history_module._deserialize_message_chain
+    worker_calls = []
+
+    def checked_restore(data, **kwargs):
+        assert threading.get_ident() != loop_thread
+        worker_calls.append(data)
+        return restore(data, **kwargs)
+
+    monkeypatch.setattr(history_module, "_deserialize_message_chain", checked_restore)
+    assert (await history.get_message(identity)).id == identity
+    assert (await history.get_messages(session_id=SID)).messages[0].id == identity
+    assert len(worker_calls) == 2
+
+
+@pytest.mark.anyio
+async def test_linked_memory_accepts_typed_history_records(history):
+    identity = await history.record_incoming(incoming(), SID, "test")
+    memory = OpenAIMessage(role="user", content="linked")
+    memory.to_memory_dict()
+    await history.link_incoming_messages(SID, memory.extra["llm_message_id"], [identity])
+    await history.session_manager.update_memory(SID, [memory])
+    record = await history.get_message(identity)
+    assert (await history.get_linked_memory(record))["content"] == "linked"
+    assert await history.get_linked_memory(record) == await history.get_linked_memory((await history.list_messages(SID)).messages[0])
+
+
+@pytest.mark.anyio
+async def test_typed_history_preserves_http_json_and_nested_media_download(history, tmp_path, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+    from webui.routes.auth import require_auth
+
+    monkeypatch.setattr("webui.routes.sessions.get_data_path", lambda: tmp_path)
+    payload = b"\x89PNG\r\n\x1a\n" + b"image content"
+    source = tmp_path / "source.png"
+    source.write_bytes(payload)
+    message = incoming()
+    message.chain = MessageChain([
+        Forward(chains=[MessageChain([Text("private forwarded content")])]),
+        Reply("quoted", chain=MessageChain([Image(str(source), mime="image/png")])),
+    ])
+    identity = await history.record_incoming(message, SID, "test")
+    stored = await history.db.get_message_record(identity)
+    source.unlink()
+    app = FastAPI()
+    routes = SessionsRoutes(app, SimpleNamespace(message_history=history))
+    routes.register()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/messages/{identity}")
+        media = await client.get(f"/api/messages/{identity}/media", params={"element_path": "1.0"})
+    assert response.status_code == 200
+    assert response.json() == {"message": stored, "memory": None}
+    assert response.json()["message"]["chain"][0] == {"type": "forward"}
+    assert "_serialized_chain" not in response.text
+    assert "private forwarded content" not in response.text
+    assert str(tmp_path) not in response.text
+    assert media.status_code == 200
+    assert media.content == payload
+    assert media.headers["content-type"] == "image/png"
+
+
+@pytest.mark.anyio
+async def test_message_history_page_exports_archive_snapshots_and_preserves_pagination(history):
+    from dataclasses import is_dataclass
+
+    ids = {
+        await history.record_incoming(incoming("first"), SID, "test"),
+        await history.record_incoming(incoming("second"), SID, "test"),
+    }
+    page = await history.get_messages(session_id=SID, limit=1)
+    assert is_dataclass(page)
+    assert isinstance(page, MessageHistoryPage)
+    assert isinstance(page.messages[0], MessageHistoryRecord)
+    assert isinstance(page.messages[0].chain, MessageChain)
+    assert page.next_cursor == page.messages[0].id
+    assert page.to_dict() == await history.db.list_message_records(SID, limit=1)
+    exported = page.to_dict()
+    exported["messages"][0]["chain"][0]["text"] = "caller mutation"
+    assert page.messages[0].chain[0].text == "original"
+    assert page.to_dict()["messages"][0]["chain"][0]["text"] == "original"
+    next_page = await history.get_messages(session_id=SID, limit=1, cursor=page.next_cursor)
+    assert isinstance(next_page, MessageHistoryPage)
+    assert next_page.next_cursor is None
+    assert {page.messages[0].id, next_page.messages[0].id} == ids
+    empty = await history.get_messages(session_id="missing:dm:user")
+    assert isinstance(empty, MessageHistoryPage)
+    assert empty.messages == []
+    assert empty.next_cursor is None
+    assert empty.to_dict() == {"messages": [], "next_cursor": None}
+    other_empty = MessageHistoryPage()
+    empty.messages.append(page.messages[0])
+    assert other_empty.messages == []
+
+
+@pytest.mark.anyio
+async def test_all_history_page_queries_return_typed_records(history):
+    identities = [
+        await history.record_incoming(incoming(str(index)), SID, "test")
+        for index in range(3)
+    ]
+    await history.link_incoming_messages(SID, "memory-id", identities[:2])
+    for query, expected_ids, llm_id in [
+        (history.get_messages(session_id=SID), set(identities), None),
+        (history.list_messages(SID), set(identities), None),
+        (history.list_messages(SID, llm_message_id="memory-id"), set(identities[:2]), "memory-id"),
+        (history.get_messages_by_llm_message_id(SID, "memory-id"), set(identities[:2]), "memory-id"),
+    ]:
+        page = await query
+        assert isinstance(page, MessageHistoryPage)
+        assert {record.id for record in page.messages} == expected_ids
+        assert all(isinstance(record, MessageHistoryRecord) for record in page.messages)
+        assert all(isinstance(record.chain, MessageChain) for record in page.messages)
+        assert page.to_dict() == await history.db.list_message_records(SID, llm_message_id=llm_id)
+    first = await history.get_messages_by_llm_message_id(SID, "memory-id", limit=1)
+    second = await history.get_messages_by_llm_message_id(SID, "memory-id", limit=1, cursor=first.next_cursor)
+    assert {first.messages[0].id, second.messages[0].id} == set(identities[:2])
+    assert second.next_cursor is None
+    assert await history.list_messages("missing:dm:user") == MessageHistoryPage()
+    assert await history.get_messages_by_llm_message_id(SID, "missing") == MessageHistoryPage()
+
+
+@pytest.mark.anyio
+async def test_history_session_summaries_are_typed(history):
+    await history.record_incoming(incoming("one"), SID, "test")
+    await history.record_incoming(incoming("two"), SID, "test")
+    await history.record_incoming(incoming("three"), "other:dm:user", "test")
+    sessions = await history.list_sessions()
+    assert all(isinstance(session, MessageHistorySession) for session in sessions)
+    assert {session.session_id: session.message_count for session in sessions} == {
+        SID: 2, "other:dm:user": 1,
+    }
+    assert [session.to_dict() for session in sessions] == await history.db.list_message_sessions()
+
+
+@pytest.mark.anyio
+async def test_webui_adapts_typed_history_pages_to_existing_json(history):
+    from httpx import ASGITransport, AsyncClient
+    from webui.routes.auth import require_auth
+
+    first_id = await history.record_incoming(incoming("one"), SID, "test")
+    await history.record_incoming(incoming("two"), SID, "test")
+    await history.link_incoming_messages(SID, "memory-id", [first_id])
+    app = FastAPI()
+    routes = SessionsRoutes(app, SimpleNamespace(message_history=history))
+    routes.register()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.get("/api/messages", params={"session_id": SID, "limit": 1})
+        first_json = first.json()
+        second = await client.get("/api/messages", params={
+            "session_id": SID, "limit": 1, "cursor": first_json["next_cursor"],
+        })
+        linked = await client.get("/api/messages", params={
+            "session_id": SID, "llm_message_id": "memory-id",
+        })
+        empty = await client.get("/api/messages", params={"session_id": "missing:dm:user"})
+    assert first.status_code == second.status_code == linked.status_code == empty.status_code == 200
+    assert first_json == await history.db.list_message_records(SID, limit=1)
+    assert second.json() == await history.db.list_message_records(
+        SID, limit=1, cursor=first_json["next_cursor"],
+    )
+    assert linked.json() == await history.db.list_message_records(SID, llm_message_id="memory-id")
+    assert empty.json() == {"messages": [], "next_cursor": None}
+    assert all("_serialized_chain" not in response.text for response in [first, second, linked, empty])

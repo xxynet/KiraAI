@@ -73,8 +73,9 @@ class SessionsRoutes(Routes):
         if self.message_history is None:
             raise HTTPException(status_code=503, detail="Message history unavailable")
         try:
-            return await self.message_history.list_messages(
+            page = await self.message_history.list_messages(
                 session_id, cursor=cursor, limit=limit, llm_message_id=llm_message_id)
+            return page.to_dict()
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -84,7 +85,7 @@ class SessionsRoutes(Routes):
         message = await self.message_history.get_message(message_id)
         if message is None:
             raise HTTPException(status_code=404, detail="Message not found")
-        return {"message": message, "memory": await self.message_history.get_linked_memory(message)}
+        return {"message": message.to_dict(), "memory": await self.message_history.get_linked_memory(message)}
 
     async def get_message_media(self, message_id: str, element_path: str):
         """Serve only archived media referenced by a persisted message element."""
@@ -95,7 +96,7 @@ class SessionsRoutes(Routes):
         message = await self.message_history.get_message(message_id)
         if message is None:
             raise HTTPException(status_code=404, detail="Message not found")
-        element = message
+        element = message.to_dict()
         for part in element_path.split("."):
             chain = element.get("chain")
             index = int(part)
@@ -198,7 +199,7 @@ class SessionsRoutes(Routes):
             history_sessions = await self.message_history.list_sessions()
             by_id = {item["id"]: item for item in sessions}
             for item in history_sessions:
-                sid = item["session_id"]
+                sid = item.session_id
                 if sid in malformed or len(sid.split(":", 2)) != 3:
                     continue
                 if sid not in by_id:
@@ -208,7 +209,7 @@ class SessionsRoutes(Routes):
                     record["message_count"] = 0
                     sessions.append(record)
                     by_id[sid] = record
-                by_id[sid]["history_count"] = item["message_count"]
+                by_id[sid]["history_count"] = item.message_count
         return {"sessions": sessions}
 
     async def get_session(self, session_id: str):
@@ -223,7 +224,7 @@ class SessionsRoutes(Routes):
             raise HTTPException(status_code=404, detail="Session not found") from exc
         if row is None or row.content is None:
             history = await self.message_history.list_messages(session_id, limit=1) if self.message_history else None
-            if not history or not history["messages"]:
+            if history is None or not history.messages:
                 raise HTTPException(status_code=404, detail="Session not found")
             response = self._session_response(session_id, row)
             response["messages"] = []
