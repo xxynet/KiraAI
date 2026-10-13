@@ -82,7 +82,7 @@ class MessageDeliveryService:
 
         history = getattr(self, "message_history", None)
         record_id = None
-        if history is not None:
+        if history is not None and chain:
             try:
                 bot_id = bot.user_id if bot is not None else None
                 sender_name = bot.nickname if bot is not None else None

@@ -33,7 +33,7 @@ class PrepareBatchStage(BaseStage[IMBatchContext]):
         for message in event.messages:
             incoming_record_ids[id(message)] = (
                 await services.message_history.record_incoming_safely(message, sid, event.adapter.platform)
-                if services.message_history is not None else None
+                if services.message_history is not None and message.chain else None
             )
             for image in services.message_media.iter_images(message.chain):
                 await compress_image_element(image, compression_config)

@@ -85,6 +85,24 @@ async def test_incoming_snapshot_dedup_accounts_and_notices(history):
 
 
 @pytest.mark.anyio
+async def test_empty_outgoing_delivery_does_not_create_history(history, monkeypatch):
+    archive = AsyncMock(wraps=history.record_outgoing)
+    finish = AsyncMock(wraps=history.finish_outgoing)
+    monkeypatch.setattr(history, "record_outgoing", archive)
+    monkeypatch.setattr(history, "finish_outgoing", finish)
+    instance, target = processor(history, KiraIMSentResult(message_id="out-1"))
+    chain = MessageChain()
+    result = await instance.message_delivery.send_message_chain(SID, chain)
+    target.send_direct_message.assert_awaited_once_with("user", chain)
+    archive.assert_not_awaited()
+    finish.assert_not_awaited()
+    assert result.ok
+    assert result.history_id is None
+    assert (await history.list_messages(SID))["messages"] == []
+    assert await history.list_sessions() == []
+
+
+@pytest.mark.anyio
 async def test_nested_chain_media_survives_original_file_removal(history, tmp_path):
     source = tmp_path / "original.png"
     source.write_bytes(b"image bytes")

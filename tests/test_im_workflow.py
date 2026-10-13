@@ -399,6 +399,66 @@ async def test_receive_and_trigger_use_injected_session_manager_and_event_bus(pr
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("is_notice", [False, True])
+@pytest.mark.parametrize("populate_in_plugin", [False, True])
+async def test_receive_skips_empty_history_and_archives_plugin_content_in_batch(
+    processor, monkeypatch, is_notice, populate_in_plugin,
+):
+    from core.chat.message_utils import KiraMessageEvent
+
+    instance, _ = processor
+    workflow = instance.im_workflow
+    services = workflow.ctx
+    message = batch().messages[0]
+    message.chain = MessageChain()
+    message.is_notice = is_notice
+    event = KiraMessageEvent(
+        supported_elements=["text"], timestamp=1, message=message,
+        adapter=AdapterInfo(True, "test", "adapter", "test"),
+    )
+
+    async def populate(event):
+        event.message.chain.text("plugin content")
+        event.trigger()
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=populate)]
+        if populate_in_plugin and event_type == EventType.ON_IM_MESSAGE else []
+    ))
+    await workflow.handle_event(event)
+    services.message_history.record_incoming_safely.assert_not_awaited()
+    if populate_in_plugin:
+        published = services.event_bus.publish.await_args.args[0]
+        await workflow.handle_batch_event(published)
+        services.message_history.record_incoming_safely.assert_awaited_once_with(
+            message, event.session.sid, "test",
+        )
+        assert services.message_history.link_incoming_messages.await_args.args[2] == [message.message_id]
+    else:
+        services.event_bus.publish.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("is_notice", [False, True])
+async def test_batch_archives_only_messages_with_content(processor, is_notice):
+    instance, _ = processor
+    services = instance.im_workflow.ctx
+    event = batch()
+    nonempty = event.messages[0]
+    empty = batch("empty").messages[0]
+    empty.chain = MessageChain()
+    empty.is_notice = is_notice
+    event.messages.insert(0, empty)
+
+    await instance.im_workflow.handle_batch_event(event)
+
+    services.message_history.record_incoming_safely.assert_awaited_once_with(
+        nonempty, event.session.sid, "test",
+    )
+    assert services.message_history.link_incoming_messages.await_args.args[2] == [nonempty.message_id]
+
+
+@pytest.mark.anyio
 async def test_processor_preserves_injected_workflow_and_event_bus(processor):
     from core.chat.message_utils import KiraMessageEvent
 

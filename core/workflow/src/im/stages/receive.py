@@ -16,7 +16,7 @@ class ReceiveStage(BaseStage[IMEventContext]):
     async def run(self, ctx: IMEventContext) -> bool:
         services, event, sid = ctx.services, ctx.event, ctx.sid
         # decorating event info
-        if services.message_history is not None:
+        if services.message_history is not None and event.message.chain:
             await services.message_history.record_incoming_safely(event.message, sid, event.adapter.platform)
 
         metadata = await services.session_manager.get_session(sid, ensure_session=True, include_content=False)
