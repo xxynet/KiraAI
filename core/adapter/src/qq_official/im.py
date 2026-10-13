@@ -175,6 +175,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
                 is_mentioned=received.force_mention or is_self_quote or self._parser.is_mentioned(message, self_ids),
                 message_id=display_id or message_id,
                 self_id=robot_id or self.adapter.app_id,
+                bot=User(robot_id or self.adapter.app_id, getattr(robot, "name", None)),
                 chain=self._message_chain(message, is_group, target_id),
             ),
             timestamp=int(time.time()),

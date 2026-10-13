@@ -21,7 +21,7 @@ from core.adapter.context import AdapterContext
 from core.adapter.src.qq import qq as qq_module
 from core.adapter.src.qq.im import QQIMCapability
 from core.adapter.src.qq.napcat_client import NapCatWebSocketClient
-from core.chat import KiraIMSentResult, MessageChain
+from core.chat import KiraIMSentResult, MessageChain, User
 from core.adapter.src.qq.qq import QQAdapter
 from core.chat.message_elements import At, Emoji, File, Forward, Image, Poke, Reply, Text, Video
 
@@ -744,3 +744,44 @@ async def test_webui_stop_with_real_client_logs_one_stop_without_disconnect_warn
         assert len(stopped) == 1
     finally:
         await adapter.stop()
+
+async def test_history_uses_logged_in_qq_nickname_without_extra_request():
+    from core.chat.message_history import MessageHistoryService
+    from core.workflow.src.im.message_delivery import MessageDeliveryService
+
+    adapter = make_adapter({"self_id": "99"})
+    adapter.bot.self_nickname = "Kira"
+    adapter.bot.get_login_info = AsyncMock(side_effect=AssertionError("No extra login request"))
+    adapter.im.send_direct_message = AsyncMock(return_value=KiraIMSentResult("sent-id"))
+    database = SimpleNamespace(
+        add_message_record=AsyncMock(return_value="record-id"),
+        update_message_delivery=AsyncMock(),
+    )
+    history = MessageHistoryService(database, Mock())
+    delivery = MessageDeliveryService(
+        Mock(), SimpleNamespace(get_adapter=lambda _: adapter), None, history,
+    )
+    result = await delivery.send_message_chain(
+        "qq:dm:user", MessageChain([Text("reply")]), bot=User("99", adapter.bot.self_nickname),
+    )
+    assert result.ok and result.history_id == "record-id"
+    assert database.add_message_record.await_args.kwargs["sender_name"] == "Kira"
+    adapter.bot.get_login_info.assert_not_awaited()
+
+@pytest.mark.parametrize("group", [False, True])
+async def test_incoming_event_carries_self_account_nickname(group):
+    adapter = make_adapter({"self_id": "99", "group_allow_list": [456], "user_allow_list": [123]})
+    adapter.bot.self_nickname = "Kira"
+    adapter.bot.get_group_info = AsyncMock(return_value={"data": {"group_name": "Group"}})
+    message = {
+        "message_id": 1, "self_id": 99, "user_id": 123, "group_id": 456,
+        "message_type": "group" if group else "private",
+        "sender": {"nickname": "Alice"},
+        "message": [{"type": "text", "data": {"text": "hello"}}],
+    }
+    handler = adapter.im._on_group_message if group else adapter.im._on_private_message
+    await handler(message)
+    event = adapter.ctx.event_queue.get_nowait()
+    assert event.message.bot.user_id == "99"
+    assert event.message.bot.nickname == "Kira"
+    assert event.message.sender.nickname == "Alice"

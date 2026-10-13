@@ -391,3 +391,24 @@ def test_dataclass_fields_and_serialization_use_only_the_new_name(format_event_f
     assert "message_types" not in serialized
     assert updated.supported_elements == ["emoji"]
     assert event.supported_elements == ["text"]
+
+def test_im_message_bot_defaults_to_legacy_id_without_changing_positional_sender():
+    sender = User("user", "Alice")
+    message = KiraIMMessage("m1", "bot", MessageChain(), 0, sender)
+    assert message.bot == User("bot")
+    assert message.sender is sender
+    assert message.self_id == "bot"
+
+
+def test_im_message_explicit_bot_is_retained_and_sets_self_id():
+    identity = User("bot", "Kira", extra={"platform": "test"})
+    message = KiraIMMessage("m1", "legacy-id", MessageChain(), 0, bot=identity)
+    assert message.bot is identity
+    assert message.self_id == identity.user_id
+
+
+def test_im_message_default_bot_objects_are_independent():
+    first = KiraIMMessage("m1", "bot", MessageChain(), 0)
+    second = KiraIMMessage("m2", "bot", MessageChain(), 0)
+    first.bot.nickname = "Kira"
+    assert second.bot.nickname is None

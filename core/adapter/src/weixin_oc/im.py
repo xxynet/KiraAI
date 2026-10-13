@@ -338,6 +338,7 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
                 sender=User(user_id=from_user_id, nickname=from_user_id),
                 is_mentioned=True,
                 self_id=self.adapter.account_id or "",
+                bot=User(self.adapter.account_id or ""),
                 chain=MessageChain(components),
                 extra=msg,
             ),

@@ -227,6 +227,8 @@ async def test_service_publishes_once_without_reply_lock_or_model_gate(store):
     assert adapter.ctx.event_queue.empty()
     assert first.session.sid == "webchat:dm:admin"
     assert first.message.sender.nickname == "Alice"
+    assert first.message.bot.user_id == "webchat"
+    assert first.message.bot.nickname == "Kira"
     assert first.process_strategy == "discard" and not first._is_forced
     assert second.message.chain[0].text == "another message"
     assert first.buffer() and first.discard() and first.trigger()

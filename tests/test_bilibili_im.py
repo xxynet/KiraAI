@@ -67,6 +67,7 @@ def test_schema_exposes_translated_im_settings_and_enabled_default():
 @pytest.mark.asyncio
 async def test_incoming_permissions_and_unchanged_target(config, allowed):
     adapter = make_im_adapter(**config)
+    adapter._self_name = "Kira"
     nickname = AsyncMock(return_value="test-user")
     adapter.im._get_user_nickname = nickname
     await adapter.im._handle_incoming_event(raw_event(), "text")
@@ -78,6 +79,8 @@ async def test_incoming_permissions_and_unchanged_target(config, allowed):
         assert event.session.sid == "bili-test:dm:123"
         assert event.message.message_id == "456"
         assert event.message.self_id == "99"
+        assert event.message.bot.user_id == "99"
+        assert event.message.bot.nickname == "Kira"
         assert event.message.chain[0].text == "hello"
         assert event.message.sender.nickname == "test-user"
         assert event.timestamp == 10

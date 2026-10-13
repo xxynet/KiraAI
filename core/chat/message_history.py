@@ -173,11 +173,12 @@ class MessageHistoryService:
         return record_id
 
     async def record_outgoing(self, session_id: str, chain, *, platform: str,
-                              self_id: str | None, llm_message_id: str | None = None) -> str:
+                              self_id: str | None, llm_message_id: str | None = None,
+                              sender_name: str | None = None) -> str:
         snapshot = copy.deepcopy(chain)
         return await self._persist_chain(snapshot,
             session_id=session_id, self_id=self_id, platform=platform,
-            direction="outgoing", sender_id=self_id, sender_name=None,
+            direction="outgoing", sender_id=self_id, sender_name=sender_name,
             llm_message_id=llm_message_id,
             timestamp=int(time.time()), status="pending",
         )

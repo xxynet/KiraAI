@@ -15,6 +15,7 @@ def make_workflow_context(**overrides):
     session_manager = overrides.pop("session_manager", Mock(spec=SessionManager))
     provider_mgr = overrides.pop("provider_mgr", Mock())
     message_history = overrides.pop("message_history", None)
+    persona_mgr = overrides.pop("persona_mgr", None)
     adapter_mgr = overrides.pop("adapter_mgr", Mock())
     image_desc_cache = overrides.pop("image_desc_cache", None)
     services = dict(
@@ -23,7 +24,9 @@ def make_workflow_context(**overrides):
         provider_mgr=provider_mgr,
         message_history=message_history,
         message_formatter=MessageFormatter(config, provider_mgr, session_manager, image_desc_cache),
-        message_delivery=MessageDeliveryService(config, adapter_mgr, message_history),
+        message_delivery=MessageDeliveryService(
+            config, adapter_mgr, persona_mgr, message_history,
+        ),
         message_media=MessageMediaService(),
         message_buffer=SessionBufferManager(),
         event_bus=SimpleNamespace(publish=AsyncMock()),

@@ -16,6 +16,7 @@ from core.chat.memory_metadata import normalize_memory
 from core.db.db_mgr import DatabaseManager
 from core.db.service import DatabaseService
 from core.message_manager import MessageProcessor
+from core.persona import PersonaManager
 from core.workflow.src.im.workflow import DefaultIMWorkflow
 from tests.im_workflow_helpers import make_workflow_context
 from core.provider.llm_model import LLMRequest
@@ -48,7 +49,7 @@ def incoming(identity="in-1", bot="bot"):
     )
 
 
-def processor(history, result=None, error=None):
+def processor(history, result=None, error=None, persona_mgr=None):
     target = SimpleNamespace(
         send_direct_message=AsyncMock(return_value=result, side_effect=error),
         send_group_message=AsyncMock(return_value=result, side_effect=error),
@@ -58,6 +59,7 @@ def processor(history, result=None, error=None):
     services = make_workflow_context(
         session_manager=history.session_manager, db=history.db, message_history=history,
         adapter_mgr=SimpleNamespace(get_adapter=lambda _: adapter),
+        persona_mgr=persona_mgr,
     )
     instance = MessageProcessor(DefaultIMWorkflow(services))
     return instance, target
@@ -101,6 +103,35 @@ async def test_nested_chain_media_survives_original_file_removal(history, tmp_pa
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("chat_type", ["dm", "gm"])
+async def test_new_outgoing_messages_snapshot_account_nickname(history, chat_type):
+    sid = f"adapter:{chat_type}:user"
+    instance, target = processor(history, KiraIMSentResult("sent-id"))
+    bot = User("bot", "Kira")
+    first = await instance.message_delivery.send_message_chain(sid, MessageChain([Text("first")]), bot=bot)
+    first_id = first.history_id
+    bot.nickname = "Renamed Kira"
+    second = await instance.message_delivery.send_message_chain(sid, MessageChain([Text("second")]), bot=bot)
+    assert (await history.get_message(first_id))["sender_name"] == "Kira"
+    assert (await history.get_message(second.history_id))["sender_name"] == "Renamed Kira"
+    sender = target.send_direct_message if chat_type == "dm" else target.send_group_message
+    assert sender.await_count == 2
+    records = (await history.list_messages(sid))["messages"]
+    assert {row["sender_name"] for row in records} == {"Kira", "Renamed Kira"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name", [None, "", "  ", 123])
+async def test_missing_or_invalid_bot_nickname_preserves_send_and_history(history, name):
+    instance, target = processor(history, KiraIMSentResult("sent-id"))
+    result = await instance.send_message_chain(SID, MessageChain([Text("out")]), bot=User("bot", name))
+    record = await history.get_message(result.history_id)
+    assert result.ok and record["status"] == "sent"
+    assert record["sender_name"] is None
+    target.send_direct_message.assert_awaited_once()
+
+
+@pytest.mark.anyio
 async def test_outgoing_success_failure_exception_and_proactive(history):
     for result, expected in [(KiraIMSentResult("sent-1"), "sent"),
                              (KiraIMSentResult(ok=False), "failed"), (None, "failed")]:
@@ -109,7 +140,9 @@ async def test_outgoing_success_failure_exception_and_proactive(history):
         row = await history.get_message(response.history_id)
         assert row["direction"] == "outgoing"
         assert "source" not in row
-        assert row["sender_id"] == "bot"
+        assert row["sender_id"] is None
+        assert row["self_id"] is None
+        assert row["sender_name"] is None
         assert row["status"] == expected
         assert row["llm_message_id"] is None
     instance, _ = processor(history, error=TimeoutError("private endpoint"))
@@ -517,3 +550,69 @@ async def test_forward_placeholder_does_not_archive_contents(history, tmp_path, 
     assert not (tmp_path / "session_media").exists()
     assert forward.chains[0][0].text == "private forwarded text"
     assert len(forward.chains[0]) == 3
+
+@pytest.mark.anyio
+async def test_outgoing_history_uses_explicit_bot_identity(history):
+    instance, _ = processor(history, KiraIMSentResult("sent-id"))
+    result = await instance.message_delivery.send_message_chain(
+        SID, MessageChain([Text("out")]), bot=User("event-bot", "Event Kira"),
+    )
+    record = await history.get_message(result.history_id)
+    assert record["sender_name"] == "Event Kira"
+    assert record["self_id"] == "event-bot"
+    assert record["sender_id"] == "event-bot"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("bot", [None, User("bot"), User("bot", ""), User("bot", "  "), User("bot", 123)])
+async def test_missing_bot_nickname_snapshots_active_persona_name(history, bot):
+    personas = PersonaManager(history.db)
+    await history.db.add_persona("first", "First Persona", "first", is_active=True)
+    await history.db.add_persona("second", "Second Persona", "second")
+    instance, target = processor(history, KiraIMSentResult("sent-id"), persona_mgr=personas)
+    first = await instance.send_message_chain(SID, MessageChain([Text("first")]), bot=bot)
+    first_id = first.history_id
+    assert await personas.set_active_persona("second")
+    second = await instance.send_message_chain(SID, MessageChain([Text("second")]), bot=bot)
+    first_record = await history.get_message(first_id)
+    second_record = await history.get_message(second.history_id)
+    assert first_record["sender_name"] == "First Persona"
+    assert second_record["sender_name"] == "Second Persona"
+    assert first_record["sender_id"] == second_record["sender_id"] == (bot.user_id if bot else None)
+    assert target.send_direct_message.await_count == 2
+    if bot is not None:
+        assert bot.nickname in (None, "", "  ", 123)
+
+
+@pytest.mark.anyio
+async def test_platform_nickname_skips_persona_lookup(history):
+    personas = SimpleNamespace(get_persona=AsyncMock(side_effect=AssertionError("No fallback needed")))
+    instance, _ = processor(history, KiraIMSentResult("sent-id"), persona_mgr=personas)
+    result = await instance.send_message_chain(SID, MessageChain([Text("out")]), bot=User("bot", "Platform Kira"))
+    assert (await history.get_message(result.history_id))["sender_name"] == "Platform Kira"
+    personas.get_persona.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("persona", [None, SimpleNamespace(name=None), SimpleNamespace(name=""),
+                                    SimpleNamespace(name="  "), SimpleNamespace(name=123)])
+async def test_missing_persona_name_preserves_default_label(history, persona):
+    personas = SimpleNamespace(get_persona=AsyncMock(return_value=persona))
+    instance, target = processor(history, KiraIMSentResult("sent-id"), persona_mgr=personas)
+    result = await instance.send_message_chain(SID, MessageChain([Text("out")]), bot=User("bot"))
+    record = await history.get_message(result.history_id)
+    assert result.ok and record["status"] == "sent"
+    assert record["sender_id"] == "bot"
+    assert record["sender_name"] is None
+    target.send_direct_message.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_persona_lookup_failure_preserves_history_and_send(history):
+    personas = SimpleNamespace(get_persona=AsyncMock(side_effect=RuntimeError("Lookup failed")))
+    instance, target = processor(history, KiraIMSentResult("sent-id"), persona_mgr=personas)
+    result = await instance.send_message_chain(SID, MessageChain([Text("out")]), bot=User("bot"))
+    record = await history.get_message(result.history_id)
+    assert result.ok and record["status"] == "sent"
+    assert record["sender_name"] is None
+    target.send_direct_message.assert_awaited_once()

@@ -158,6 +158,7 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
                     is_mentioned=True,
                     message_id=str(event.msg_key),
                     self_id=self.adapter.bot_uid,
+                    bot=User(self.adapter.bot_uid, self.adapter._self_name),
                     chain=message_chain,
                 ),
                 timestamp=ts

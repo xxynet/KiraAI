@@ -9,6 +9,7 @@ from core.adapter.capabilities import IMCapability
 from core.agent.message import OpenAIMessage
 from core.chat.message_elements import BaseMessageElement
 from core.chat.message_utils import KiraIMSentResult, MessageChain
+from core.chat.session import User
 from core.logging_manager import get_logger
 
 if TYPE_CHECKING:
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from core.adapter import AdapterManager
     from core.chat.message_history import MessageHistoryService
     from core.config.config_loader import KiraConfig
+    from core.persona import PersonaManager
 
 logger = get_logger("message", "cyan")
 
@@ -27,11 +29,13 @@ class MessageDeliveryService:
         self,
         kira_config: KiraConfig,
         adapter_mgr: AdapterManager,
+        persona_mgr: PersonaManager | None,
         message_history: MessageHistoryService | None = None,
     ):
         self.kira_config = kira_config
         self.adapter_mgr = adapter_mgr
         self.message_history = message_history
+        self.persona_mgr = persona_mgr
         self.session_locks: dict[str, asyncio.Lock] = {}
 
     def _read_delay(self, key: str, default: float) -> float:
@@ -56,7 +60,7 @@ class MessageDeliveryService:
             self.session_locks[sid] = asyncio.Lock()
         return self.session_locks[sid]
 
-    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
+    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, bot: User | None = None) -> KiraIMSentResult:
         """
         Send a MessageChain to target.
 
@@ -80,15 +84,25 @@ class MessageDeliveryService:
         record_id = None
         if history is not None:
             try:
-                config = adapter.config
-                bot_id = self_id or config.get("self_id") or config.get("bot_pid") or config.get("app_id")
+                bot_id = bot.user_id if bot is not None else None
+                sender_name = bot.nickname if bot is not None else None
+                if not isinstance(sender_name, str) or not sender_name.strip():
+                    sender_name = None
+                    if self.persona_mgr is not None:
+                        try:
+                            persona = await self.persona_mgr.get_persona()
+                            name = persona.name if persona is not None else None
+                            if isinstance(name, str) and name.strip():
+                                sender_name = name
+                        except Exception as exc:
+                            logger.warning("Unable to resolve persona name (%s)", type(exc).__name__)
                 llm_message_id = None
                 if memory_message is not None:
                     llm_message_id = memory_message.to_memory_dict()["_extra"]["llm_message_id"]
                 record_id = await history.record_outgoing(
                     session, chain, platform=adapter.info.platform,
                     self_id=str(bot_id) if bot_id is not None else None,
-                    llm_message_id=llm_message_id,
+                    llm_message_id=llm_message_id, sender_name=sender_name,
                 )
             except Exception as exc:
                 logger.error("Unable to store outgoing message (%s)", type(exc).__name__)

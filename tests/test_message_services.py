@@ -24,7 +24,7 @@ from core.workflow.src.im.batching import publish_buffered_messages
 
 def test_delivery_delays_follow_config_changes():
     config = dict.__new__(KiraConfig)
-    delivery = MessageDeliveryService(config, Mock())
+    delivery = MessageDeliveryService(config, Mock(), None)
 
     assert delivery.min_message_delay == 0.8
     assert delivery.max_message_delay == 1.5
@@ -50,7 +50,7 @@ async def test_plugin_context_exposes_services_without_processor_dependency():
         message_processor=SimpleNamespace(), message_history=history,
         prompt_mgr=prompt_manager, skills_mgr=skills_manager, mcp_mgr=mcp_manager,
         image_desc_cache=cache, session_buffer_mgr=SessionBufferManager(),
-        message_delivery=MessageDeliveryService(Mock(), Mock(), history),
+        message_delivery=MessageDeliveryService(Mock(), Mock(), None, history),
     )
 
     assert context.image_desc_cache is cache
@@ -88,7 +88,11 @@ async def test_plugin_context_exposes_services_without_processor_dependency():
     result = KiraIMSentResult("sent-id")
     context.message_delivery.send_message_chain = AsyncMock(return_value=result)
     assert await context.send_message_chain(sid, first.message.chain) is result
-    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain)
+    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain, bot=None)
+    context.message_delivery.send_message_chain.reset_mock()
+    bot = User("bot", "Kira")
+    assert await context.send_message_chain(sid, first.message.chain, bot=bot) is result
+    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain, bot=bot)
 
 
 def make_event(identity="one"):
