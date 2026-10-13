@@ -848,3 +848,15 @@ async def test_real_sdk_stopping_or_reloading_one_instance_keeps_other_instance_
         await manager.stop_adapter("official-a")
         await manager.stop_adapter("official-b")
         await cleanup_sdk_gateway(sdk_gateway.records)
+
+@pytest.mark.asyncio
+async def test_received_event_carries_official_bot_nickname():
+    adapter = make_adapter()
+    adapter.client = SimpleNamespace(robot=SimpleNamespace(id="bot-id", name="Kira"))
+    await adapter.im._handle_group_message({
+        "id": "incoming", "group_openid": "group-openid", "content": "hello",
+        "author": {"member_openid": "user-openid", "username": "Alice"},
+    })
+    event = adapter.ctx.event_queue.get_nowait()
+    assert event.message.bot.user_id == "bot-id"
+    assert event.message.bot.nickname == "Kira"

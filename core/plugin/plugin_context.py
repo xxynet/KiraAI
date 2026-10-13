@@ -285,14 +285,15 @@ class PluginContext:
         )
         await self.event_bus.publish(message_obj)
     
-    async def send_message_chain(self, session: str, chain: MessageChain) -> KiraIMSentResult:
+    async def send_message_chain(self, session: str, chain: MessageChain, *, bot: User | None = None) -> KiraIMSentResult:
         """
         Send a message chain to the specified session.
         :param session: session string in the format of "adapter_name:session_type:session_id"
         :param chain: MessageChain object
+        :param bot: Bot identity to include in outgoing history.
         :return: KiraIMSentResult object
         """
-        return await self.message_delivery.send_message_chain(session, chain)
+        return await self.message_delivery.send_message_chain(session, chain, bot=bot)
 
     def get_lang(self) -> str:
         """Get the configured backend language code (e.g. 'zh', 'en').

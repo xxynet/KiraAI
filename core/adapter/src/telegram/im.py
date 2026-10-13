@@ -134,6 +134,7 @@ class TelegramIMCapability(IMCapability["TelegramAdapter"]):
                     is_mentioned=is_mentioned,
                     message_id=str(msg.id),
                     self_id=self.adapter.config["bot_pid"],
+                    bot=User(self.adapter.config["bot_pid"], self.adapter.app.bot.full_name),
                     chain=message_chain,
                 ),
                 timestamp=int(msg.date.timestamp() or time.time())
@@ -158,6 +159,7 @@ class TelegramIMCapability(IMCapability["TelegramAdapter"]):
                     is_mentioned=True,
                     message_id=str(msg.id),
                     self_id=self.adapter.config["bot_pid"],
+                    bot=User(self.adapter.config["bot_pid"], self.adapter.app.bot.full_name),
                     chain=message_chain,
                 ),
                 timestamp=int(msg.date.timestamp() or time.time())

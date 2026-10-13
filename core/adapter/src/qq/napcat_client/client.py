@@ -54,6 +54,7 @@ class NapCatWebSocketClient:
         self.ws_url = ws_url
         self.access_token = access_token
         self.self_id = None
+        self.self_nickname: str | None = None
         self.websocket = None
         self.response_futures: dict[str, asyncio.Future] = {}
         self.shutdown_event = asyncio.Event()
@@ -119,6 +120,8 @@ class NapCatWebSocketClient:
             logger.error("配置的账号与 NapCat 登录账号不一致")
             await self.close()
             return
+
+        self.self_nickname = login_info.get("data", {}).get("nickname")
 
         logger.info(f"等待账号 {bt_uin} 的登录成功事件")
         try:

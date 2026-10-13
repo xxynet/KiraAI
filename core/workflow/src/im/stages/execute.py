@@ -76,7 +76,7 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
                             if not action.is_empty():
                                 result = await delivery.send_message_chain(
                                     event.sid, action, memory_message=memory_message,
-                                    self_id=getattr(event, "self_id", None),
+                                    bot=event.bot,
                                 )
                                 if not result.ok and result.err:
                                     logger.error(result.err)

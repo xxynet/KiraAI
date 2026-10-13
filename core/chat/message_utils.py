@@ -46,6 +46,7 @@ class KiraIMMessage:
     chain: MessageChain
 
     timestamp: int
+    bot: User = field(default=None, kw_only=True)
     sender: User = None
     session: Session = None
     group: Group = None
@@ -56,6 +57,12 @@ class KiraIMMessage:
     message_str: Optional[str] = field(default=None, init=False)
     native_content: Optional[list[dict]] = field(default=None, init=False)
     message_repr: Optional[str] = field(default=None, init=False)
+
+    def __post_init__(self):
+        if self.bot is None:
+            self.bot = User(self.self_id)
+        else:
+            self.self_id = self.bot.user_id
 
     def is_group_message(self):
         return self.group is not None
@@ -245,6 +252,10 @@ class KiraMessageBatchEvent:
 
     def is_group_message(self):
         return self.messages[-1].group is not None
+
+    @property
+    def bot(self) -> User:
+        return self.messages[-1].bot
 
     @property
     def self_id(self):

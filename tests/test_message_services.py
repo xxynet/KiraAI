@@ -88,7 +88,11 @@ async def test_plugin_context_exposes_services_without_processor_dependency():
     result = KiraIMSentResult("sent-id")
     context.message_delivery.send_message_chain = AsyncMock(return_value=result)
     assert await context.send_message_chain(sid, first.message.chain) is result
-    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain)
+    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain, bot=None)
+    context.message_delivery.send_message_chain.reset_mock()
+    bot = User("bot", "Kira")
+    assert await context.send_message_chain(sid, first.message.chain, bot=bot) is result
+    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain, bot=bot)
 
 
 def make_event(identity="one"):

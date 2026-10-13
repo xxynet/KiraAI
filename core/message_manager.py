@@ -4,6 +4,7 @@ from typing import Callable, Optional
 from deprecated import deprecated
 
 from core.agent.message import OpenAIMessage
+from core.chat.session import User
 from core.chat.session_buffer import SessionBufferManager
 from core.chat.message_utils import (
     KiraIMSentResult, KiraMessageEvent,
@@ -57,9 +58,9 @@ class MessageProcessor:
         )
 
     @deprecated("Use PluginContext.send_message_chain instead")
-    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
+    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, bot: User | None = None) -> KiraIMSentResult:
         return await self.message_delivery.send_message_chain(
-            session, chain, memory_message=memory_message, self_id=self_id)
+            session, chain, memory_message=memory_message, bot=bot)
 
     @deprecated("Publish the event with await PluginContext.event_bus.publish(event) instead")
     async def handle_im_message(self, event: KiraMessageEvent):

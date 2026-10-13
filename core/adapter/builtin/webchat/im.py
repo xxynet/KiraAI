@@ -16,8 +16,12 @@ class WebChatIMCapability(IMCapability):
             supported_elements=list(self._supported_elements), timestamp=timestamp,
             adapter=self.adapter.info,
             message=KiraIMMessage(
-                message_id=message_id, self_id="webchat", timestamp=timestamp,
-                sender=User("admin", profile["nickname"]), chain=chain,
+                message_id=message_id,
+                self_id="webchat",
+                timestamp=timestamp,
+                bot=User("webchat", profile["peer_nickname"]),
+                sender=User("admin", profile["nickname"]),
+                chain=chain,
                 is_mentioned=True,
             ),
         ))

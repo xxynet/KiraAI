@@ -9,6 +9,7 @@ from core.adapter.capabilities import IMCapability
 from core.agent.message import OpenAIMessage
 from core.chat.message_elements import BaseMessageElement
 from core.chat.message_utils import KiraIMSentResult, MessageChain
+from core.chat.session import User
 from core.logging_manager import get_logger
 
 if TYPE_CHECKING:
@@ -56,7 +57,7 @@ class MessageDeliveryService:
             self.session_locks[sid] = asyncio.Lock()
         return self.session_locks[sid]
 
-    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, self_id: str | None = None) -> KiraIMSentResult:
+    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, bot: User | None = None) -> KiraIMSentResult:
         """
         Send a MessageChain to target.
 
@@ -80,15 +81,17 @@ class MessageDeliveryService:
         record_id = None
         if history is not None:
             try:
-                config = adapter.config
-                bot_id = self_id or config.get("self_id") or config.get("bot_pid") or config.get("app_id")
+                bot_id = bot.user_id if bot is not None else None
+                sender_name = bot.nickname if bot is not None else None
+                if not isinstance(sender_name, str) or not sender_name.strip():
+                    sender_name = None
                 llm_message_id = None
                 if memory_message is not None:
                     llm_message_id = memory_message.to_memory_dict()["_extra"]["llm_message_id"]
                 record_id = await history.record_outgoing(
                     session, chain, platform=adapter.info.platform,
                     self_id=str(bot_id) if bot_id is not None else None,
-                    llm_message_id=llm_message_id,
+                    llm_message_id=llm_message_id, sender_name=sender_name,
                 )
             except Exception as exc:
                 logger.error("Unable to store outgoing message (%s)", type(exc).__name__)

@@ -454,6 +454,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 is_notice=True,
                 is_mentioned=is_mentioned,
                 self_id=str(self_id),
+                bot=User(str(self_id), self.adapter.bot.self_nickname),
                 chain=message_chain,
                 raw_message=msg
             ),
@@ -517,6 +518,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 is_mentioned=is_mentioned,
                 message_id=str(msg.get("message_id")),
                 self_id=str(msg.get("self_id")),
+                bot=User(str(msg.get("self_id")), self.adapter.bot.self_nickname),
                 chain=message_chain,
                 raw_message=msg
             ),
@@ -553,6 +555,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 message_id=str(msg.get("message_id")),
                 is_mentioned=True,
                 self_id=str(msg.get("self_id")),
+                bot=User(str(msg.get("self_id")), self.adapter.bot.self_nickname),
                 chain=message_chain,
                 raw_message=msg
             ),

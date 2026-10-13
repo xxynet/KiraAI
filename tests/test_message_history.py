@@ -101,6 +101,35 @@ async def test_nested_chain_media_survives_original_file_removal(history, tmp_pa
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("chat_type", ["dm", "gm"])
+async def test_new_outgoing_messages_snapshot_account_nickname(history, chat_type):
+    sid = f"adapter:{chat_type}:user"
+    instance, target = processor(history, KiraIMSentResult("sent-id"))
+    bot = User("bot", "Kira")
+    first = await instance.message_delivery.send_message_chain(sid, MessageChain([Text("first")]), bot=bot)
+    first_id = first.history_id
+    bot.nickname = "Renamed Kira"
+    second = await instance.message_delivery.send_message_chain(sid, MessageChain([Text("second")]), bot=bot)
+    assert (await history.get_message(first_id))["sender_name"] == "Kira"
+    assert (await history.get_message(second.history_id))["sender_name"] == "Renamed Kira"
+    sender = target.send_direct_message if chat_type == "dm" else target.send_group_message
+    assert sender.await_count == 2
+    records = (await history.list_messages(sid))["messages"]
+    assert {row["sender_name"] for row in records} == {"Kira", "Renamed Kira"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name", [None, "", "  ", 123])
+async def test_missing_or_invalid_bot_nickname_preserves_send_and_history(history, name):
+    instance, target = processor(history, KiraIMSentResult("sent-id"))
+    result = await instance.send_message_chain(SID, MessageChain([Text("out")]), bot=User("bot", name))
+    record = await history.get_message(result.history_id)
+    assert result.ok and record["status"] == "sent"
+    assert record["sender_name"] is None
+    target.send_direct_message.assert_awaited_once()
+
+
+@pytest.mark.anyio
 async def test_outgoing_success_failure_exception_and_proactive(history):
     for result, expected in [(KiraIMSentResult("sent-1"), "sent"),
                              (KiraIMSentResult(ok=False), "failed"), (None, "failed")]:
@@ -109,7 +138,9 @@ async def test_outgoing_success_failure_exception_and_proactive(history):
         row = await history.get_message(response.history_id)
         assert row["direction"] == "outgoing"
         assert "source" not in row
-        assert row["sender_id"] == "bot"
+        assert row["sender_id"] is None
+        assert row["self_id"] is None
+        assert row["sender_name"] is None
         assert row["status"] == expected
         assert row["llm_message_id"] is None
     instance, _ = processor(history, error=TimeoutError("private endpoint"))
@@ -517,3 +548,14 @@ async def test_forward_placeholder_does_not_archive_contents(history, tmp_path, 
     assert not (tmp_path / "session_media").exists()
     assert forward.chains[0][0].text == "private forwarded text"
     assert len(forward.chains[0]) == 3
+
+@pytest.mark.anyio
+async def test_outgoing_history_uses_explicit_bot_identity(history):
+    instance, _ = processor(history, KiraIMSentResult("sent-id"))
+    result = await instance.message_delivery.send_message_chain(
+        SID, MessageChain([Text("out")]), bot=User("event-bot", "Event Kira"),
+    )
+    record = await history.get_message(result.history_id)
+    assert record["sender_name"] == "Event Kira"
+    assert record["self_id"] == "event-bot"
+    assert record["sender_id"] == "event-bot"

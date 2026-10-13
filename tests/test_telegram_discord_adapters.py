@@ -53,7 +53,7 @@ class FakeApplication:
 class FakeDiscordBot:
     def __init__(self, **kwargs):
         self.options = kwargs
-        self.user = NS(id=99)
+        self.user = NS(id=99, display_name="Kira")
         self.events = {}
         self.commands = {}
         self.closed = False
@@ -197,6 +197,8 @@ async def test_incoming_messages_keep_metadata_and_native_session_targets(adapte
     event = adapter.ctx.event_queue.get_nowait()
     assert event.session.sid == f"{adapter.info.name}:{'gm' if group else 'dm'}:{target}"
     assert event.message.sender.user_id == "123"
+    assert event.message.bot.user_id == event.message.self_id
+    assert event.message.bot.nickname == "Kira"
     assert event.message.message_id == "42"
     assert event.message.chain[0].text == "hello"
     assert event.supported_elements == list((await adapter.im.get_message_metadata()).supported_elements)

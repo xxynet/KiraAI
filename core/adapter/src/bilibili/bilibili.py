@@ -26,6 +26,7 @@ class BiliBiliAdapter(BaseAdapter):
         super().__init__(ctx)
         self.logger = get_logger(self.info.name, "blue")
         self.bot_uid = self.config.get("bot_uid") or self.config.get("dedeuserid")
+        self._self_name: str | None = None
         self.credential = Credential(
             sessdata=self.config.get("sessdata") or None,
             bili_jct=self.config.get("bili_jct") or None,
@@ -162,6 +163,7 @@ class BiliBiliAdapter(BaseAdapter):
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _log_login_status(self) -> None:
+        self._self_name = None
         if not self.credential.sessdata:
             self.logger.info("Bilibili login status: not logged in")
             return
@@ -174,6 +176,7 @@ class BiliBiliAdapter(BaseAdapter):
             return
         if account.get("mid"):
             self.bot_uid = str(account["mid"])
+        self._self_name = account.get("name")
         self.logger.info(
             f"Bilibili login status: logged in, nickname={account.get('name', 'unknown')}, "
             f"uid={account.get('mid', 'unknown')}"

@@ -505,6 +505,8 @@ async def test_execution_continues_after_invalid_runtime_delay_update(processor,
 async def test_execution_passes_history_provenance(processor):
     instance, _ = processor
     event = batch("channel/123")
+    event.bot.nickname = "Kira"
+    assert event.bot is event.messages[-1].bot
     chain = MessageChain([Text("reply")])
     instance.message_delivery.parse_xml.return_value = [chain]
 
@@ -512,7 +514,7 @@ async def test_execution_passes_history_provenance(processor):
 
     memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
     instance.message_delivery.send_message_chain.assert_awaited_once_with(
-        event.sid, chain, memory_message=memory[-1], self_id=event.self_id,
+        event.sid, chain, memory_message=memory[-1], bot=event.bot,
     )
     assert instance.message_delivery.send_message_chain.await_args.kwargs["memory_message"] is memory[-1]
 
