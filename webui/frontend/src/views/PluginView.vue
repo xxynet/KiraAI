@@ -8,12 +8,14 @@
     <div v-if="!updateQueueDismissed && (updateTasks.length || updateQueueLoadError)" class="relative mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
       <button
         type="button"
-        class="absolute right-3 top-3 rounded p-1 text-theme-faint text-theme-faint-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-        :aria-label="$t('plugin.close')"
-        :title="$t('plugin.close')"
-        @click="updateQueueDismissed = true"
+        class="absolute right-3 top-3 rounded p-1 text-theme-faint text-theme-faint-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 disabled:opacity-50"
+        :aria-label="$t('plugin.update_queue_close')"
+        :title="$t('plugin.update_queue_close')"
+        :disabled="clearingUpdateTasks"
+        @click="dismissUpdateQueue"
       >
-        <IconClose class="h-4 w-4" />
+        <IconSpinner v-if="clearingUpdateTasks" class="h-4 w-4 animate-spin" />
+        <IconClose v-else class="h-4 w-4" />
       </button>
       <div class="flex flex-wrap items-center gap-3 pr-8 text-sm">
         <span class="font-medium text-theme-strong">{{ $t('plugin.update_queue_title') }}</span>
@@ -1176,7 +1178,7 @@ import {
   installFromGithub, installFromUpload, startGithubInstallTask, getActivePluginInstallTask,
   getPluginInstallTask, cancelPluginInstallTask,
   reloadPlugin as apiReloadPlugin,
-  checkPluginUpdates, enqueuePluginUpdates, getPluginUpdateTasks, cancelPluginUpdateTask,
+  checkPluginUpdates, enqueuePluginUpdates, getPluginUpdateTasks, cancelPluginUpdateTask, clearFinishedPluginUpdateTasks,
 } from '@/api/plugin'
 import {
   getMcpServers, getMcpServerConfig, getMcpServerTools, createMcpServer, updateMcpServerConfig,
@@ -1246,6 +1248,7 @@ const enqueueingUpdates = ref(false)
 const refreshingUpdateTasks = ref(false)
 const updateQueueLoadError = ref(false)
 const updateQueueDismissed = ref(false)
+const clearingUpdateTasks = ref(false)
 const updateDialogVisible = ref(false)
 const updateTargetItems = ref<PluginUpdateQueueItem[]>([])
 const selectedUpdatePluginIds = ref<string[]>([])
@@ -1545,9 +1548,28 @@ function scheduleUpdatePoll(delay = 1500) {
   }, delay)
 }
 
+async function dismissUpdateQueue() {
+  if (clearingUpdateTasks.value) return
+  clearingUpdateTasks.value = true
+  const revision = ++updateQueueRevision
+  try {
+    const response = await clearFinishedPluginUpdateTasks()
+    if (!updateQueueMounted) return
+    if (revision !== updateQueueRevision) return
+    updateTasks.value = response.data
+    updateQueueLoadError.value = false
+    updateQueueDismissed.value = true
+  } catch {
+    if (updateQueueMounted) notify(t('plugin.update_queue_clear_failed'), 'error')
+  } finally {
+    clearingUpdateTasks.value = false
+    scheduleUpdatePoll(0)
+  }
+}
+
 async function refreshUpdateTasks() {
   if (!updateQueueMounted) return
-  if (refreshingUpdateTasks.value) {
+  if (refreshingUpdateTasks.value || clearingUpdateTasks.value) {
     scheduleUpdatePoll()
     return
   }

@@ -273,3 +273,68 @@ async def test_real_update_reports_stages_and_keeps_requested_commit(tmp_path, m
     assert stages == ["installing_dependencies", "loading", "reload"]
     assert calls == [{"gh_proxy": "auto", "commit_sha": "a" * 40, "target_dir": path, "expected_plugin_id": "a"}]
     assert result.warnings == ["Dependency warning"]
+
+
+@pytest.mark.asyncio
+async def test_clear_finished_records_preserves_running_and_queued_updates(routes, monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = []
+
+    async def update(plugin_id, payload, manager, on_stage=None):
+        calls.append(plugin_id)
+        if plugin_id == "b":
+            started.set()
+            await release.wait()
+        return install_result(plugin_id)
+
+    monkeypatch.setattr(routes, "_update_plugin_locked", update)
+    tasks = await routes.enqueue_plugin_updates(queue_request("a", "b", "c"))
+    worker = routes._update_worker
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        finished = routes._update_tasks[tasks[0].task_id]
+        for status in ("failed", "cancelled"):
+            record = {**finished, "task_id": status, "status": status, "stage": status}
+            routes._update_tasks[status] = record
+        remaining = await routes.clear_finished_update_tasks()
+        assert [(task.plugin_id, task.status) for task in remaining] == [("b", "running"), ("c", "queued")]
+        assert set(routes._update_tasks) == {tasks[1].task_id, tasks[2].task_id}
+        assert routes._update_worker is worker
+        assert [(task.plugin_id, task.status) for task in await routes.clear_finished_update_tasks()] == [
+            ("b", "running"), ("c", "queued"),
+        ]
+    finally:
+        release.set()
+        await asyncio.wait_for(worker, 2)
+
+    assert calls == ["a", "b", "c"]
+    assert [(task.plugin_id, task.status) for task in await routes.list_update_tasks()] == [
+        ("b", "completed"), ("c", "completed"),
+    ]
+    assert await routes.clear_finished_update_tasks() == []
+    assert await routes.clear_finished_update_tasks() == []
+
+
+@pytest.mark.asyncio
+async def test_clear_history_api_requires_auth_and_stays_cleared_after_refresh(routes):
+    routes.register()
+    created = await routes.enqueue_plugin_updates(queue_request("a"))
+    await asyncio.wait_for(routes._update_worker, 2)
+    transport = httpx.ASGITransport(app=routes.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        unauthorized = await client.delete("/api/plugins/updates/tasks")
+        assert unauthorized.status_code == 401
+        assert created[0].task_id in routes._update_tasks
+        routes.app.dependency_overrides[require_auth] = lambda: "test-user"
+        cleared = await client.delete("/api/plugins/updates/tasks")
+        assert cleared.status_code == 200
+        assert cleared.json() == []
+        assert (await client.get("/api/plugins/updates/tasks")).json() == []
+        assert (await client.delete("/api/plugins/updates/tasks")).json() == []
+        new_tasks = await routes.enqueue_plugin_updates(queue_request("a"))
+        await asyncio.wait_for(routes._update_worker, 2)
+        restored = (await client.get("/api/plugins/updates/tasks")).json()
+        assert len(restored) == 1
+        assert restored[0]["task_id"] == new_tasks[0].task_id
+        assert restored[0]["task_id"] != created[0].task_id

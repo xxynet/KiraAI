@@ -87,3 +87,7 @@ export function getPluginUpdateTasks() {
 export function cancelPluginUpdateTask(taskId: string) {
   return apiClient.post<PluginUpdateTask>('/plugins/updates/tasks/' + encodeURIComponent(taskId) + '/cancel')
 }
+
+export function clearFinishedPluginUpdateTasks() {
+  return apiClient.delete<PluginUpdateTask[]>('/plugins/updates/tasks')
+}

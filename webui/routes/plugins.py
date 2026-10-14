@@ -180,6 +180,14 @@ class PluginsRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
+                path="/api/plugins/updates/tasks",
+                methods=["DELETE"],
+                endpoint=self.clear_finished_update_tasks,
+                response_model=List[PluginUpdateTask],
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/plugins/updates/tasks/{task_id}/cancel",
                 methods=["POST"],
                 endpoint=self.cancel_update_task,
@@ -752,6 +760,16 @@ class PluginsRoutes(Routes):
 
     async def list_update_tasks(self) -> List[PluginUpdateTask]:
         return [self._serialize_update_task(task) for task in self._update_tasks.values()]
+
+    async def clear_finished_update_tasks(self) -> List[PluginUpdateTask]:
+        """Remove finished history without interrupting pending updates."""
+        finished_ids = [
+            task_id for task_id, task in self._update_tasks.items()
+            if task["status"] in {"completed", "failed", "cancelled"}
+        ]
+        for task_id in finished_ids:
+            self._update_tasks.pop(task_id, None)
+        return await self.list_update_tasks()
 
     async def enqueue_plugin_updates(self, payload: PluginUpdateQueueRequest) -> List[PluginUpdateTask]:
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):

@@ -528,6 +528,8 @@ export default {
     update_confirm: '确定要更新 {name} 吗？',
     update_batch_confirm: '确定将选中的 {count} 个插件加入更新队列吗？插件将依次更新。',
     update_queue_title: '插件更新队列',
+    update_queue_close: '关闭并清理已结束的更新记录',
+    update_queue_clear_failed: '清理更新记录失败，请重试',
     update_queue_summary: '等待 {queued} · 更新中 {running} · 成功 {completed} · 失败 {failed} · 已取消 {cancelled}',
     update_queue_details: '查看更新详情',
     update_queue_busy: '插件将依次更新。更新期间暂不能安装、启停、重载或卸载插件。',

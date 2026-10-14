@@ -528,6 +528,8 @@ export default {
     update_confirm: 'Are you sure you want to update {name}?',
     update_batch_confirm: 'Add the {count} selected plugins to the update queue? They will update one at a time.',
     update_queue_title: 'Plugin update queue',
+    update_queue_close: 'Close and clear finished update records',
+    update_queue_clear_failed: 'Unable to clear update records. Please try again',
     update_queue_summary: 'Queued {queued} · Updating {running} · Succeeded {completed} · Failed {failed} · Cancelled {cancelled}',
     update_queue_details: 'View update details',
     update_queue_busy: 'Plugins update one at a time. Installation, enabling, disabling, reloading and removal are unavailable during updates.',
