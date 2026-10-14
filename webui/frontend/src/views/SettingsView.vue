@@ -573,6 +573,7 @@ function applyBackupProgress(progress: BackupProgress) {
   if (backupLoading.value) {
     backupPollTimer = setTimeout(() => pollBackup(progress.id), 1000)
   } else if (progress.status === 'completed') {
+    backupProgress.value = null
     notify(t('settings.backup_created'), 'success')
     fetchBackupList()
   } else {
