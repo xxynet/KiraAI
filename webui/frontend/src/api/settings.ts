@@ -28,8 +28,25 @@ export function getStorageInfo() {
   return apiClient.get<StorageInfoResponse>('/settings/storage')
 }
 
+export interface BackupProgress {
+  id: string
+  status: 'queued' | 'running' | 'completed' | 'failed'
+  stage: 'queued' | 'scanning' | 'compressing' | 'finalizing' | 'completed' | 'failed'
+  percent: number
+  result: BackupItem | null
+  error: 'backup_exists' | null
+}
+
 export function createBackup() {
-  return apiClient.post('/settings/backup')
+  return apiClient.post<BackupProgress>('/settings/backup/tasks')
+}
+
+export function getActiveBackup(signal?: AbortSignal) {
+  return apiClient.get<BackupProgress | null>('/settings/backup/tasks/active', { signal })
+}
+
+export function getBackupProgress(taskId: string, signal?: AbortSignal) {
+  return apiClient.get<BackupProgress>('/settings/backup/tasks/' + taskId, { signal })
 }
 
 export function listBackups() {

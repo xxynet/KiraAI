@@ -3,14 +3,17 @@ import os
 import shutil
 import tempfile
 import zipfile
+import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from fastapi import Depends, File, HTTPException, Request, UploadFile
 
 from core.utils.path_utils import get_data_path
 from webui.models import (
     BackupCreateResponse,
+    BackupProgressResponse,
     ChangeTokenRequest,
     DirectoryEntry,
     RestoreResponse,
@@ -50,6 +53,12 @@ class SettingsRoutes(Routes):
     # and restores copy into the same data directory).
     _maintenance_lock = asyncio.Lock()
 
+    def __init__(self, app, lifecycle=None):
+        super().__init__(app, lifecycle)
+        self._backup_progress: dict[str, BackupProgressResponse] = {}
+        self._backup_task: asyncio.Task | None = None
+        self._backup_task_id: str | None = None
+
     def get_routes(self):
         return [
             RouteDefinition(
@@ -65,6 +74,30 @@ class SettingsRoutes(Routes):
                 methods=["POST"],
                 endpoint=self.create_backup,
                 response_model=BackupCreateResponse,
+                tags=["settings"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/settings/backup/tasks",
+                methods=["POST"],
+                endpoint=self.start_backup,
+                response_model=BackupProgressResponse,
+                tags=["settings"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/settings/backup/tasks/active",
+                methods=["GET"],
+                endpoint=self.get_active_backup,
+                response_model=BackupProgressResponse | None,
+                tags=["settings"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/settings/backup/tasks/{task_id}",
+                methods=["GET"],
+                endpoint=self.get_backup_progress,
+                response_model=BackupProgressResponse,
                 tags=["settings"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -155,7 +188,60 @@ class SettingsRoutes(Routes):
         async with self._maintenance_lock:
             return await asyncio.to_thread(self._create_backup_sync)
 
-    def _create_backup_sync(self) -> BackupCreateResponse:
+    async def start_backup(self):
+        if self._backup_task and not self._backup_task.done():
+            return self._backup_progress[self._backup_task_id]
+
+        # Keep a bounded history of completed tasks for polling clients.
+        while len(self._backup_progress) >= 20:
+            self._backup_progress.pop(next(iter(self._backup_progress)))
+        task_id = uuid.uuid4().hex
+        self._backup_progress[task_id] = BackupProgressResponse(id=task_id)
+        self._backup_task_id = task_id
+        self._backup_task = asyncio.create_task(self._run_backup(task_id))
+        return self._backup_progress[task_id]
+
+    async def get_active_backup(self):
+        if self._backup_task and not self._backup_task.done():
+            return self._backup_progress[self._backup_task_id]
+        return None
+
+    async def get_backup_progress(self, task_id: str):
+        progress = self._backup_progress.get(task_id)
+        if progress is None:
+            raise HTTPException(status_code=404, detail="Backup task not found")
+        return progress
+
+    def _set_backup_progress(self, task_id: str, stage: str, percent: int):
+        progress = self._backup_progress.get(task_id)
+        if progress is None or progress.status in {"completed", "failed"}:
+            return
+        self._backup_progress[task_id] = progress.model_copy(
+            update={"status": "running", "stage": stage, "percent": percent}
+        )
+
+    async def _run_backup(self, task_id: str):
+        loop = asyncio.get_running_loop()
+
+        def report(stage: str, percent: int):
+            loop.call_soon_threadsafe(self._set_backup_progress, task_id, stage, percent)
+
+        try:
+            async with self._maintenance_lock:
+                result = await asyncio.to_thread(self._create_backup_sync, report)
+            self._backup_progress[task_id] = BackupProgressResponse(
+                id=task_id, status="completed", stage="completed", percent=100, result=result
+            )
+        except Exception as exc:
+            progress = self._backup_progress[task_id]
+            error = "backup_exists" if isinstance(exc, HTTPException) and exc.status_code == 409 else None
+            self._backup_progress[task_id] = progress.model_copy(
+                update={"status": "failed", "stage": "failed", "error": error}
+            )
+
+    def _create_backup_sync(
+        self, report: Callable[[str, int], None] | None = None
+    ) -> BackupCreateResponse:
         data_path = get_data_path()
         backup_dir = _get_backup_dir()
         backup_dir.mkdir(parents=True, exist_ok=True)
@@ -163,27 +249,72 @@ class SettingsRoutes(Routes):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"backup_{timestamp}.zip"
         zip_path = backup_dir / filename
-
-        # Directories to exclude from backup (backups themselves, dist builds, transient data)
+        temporary_path = zip_path.with_suffix(".zip.part")
+        if os.path.lexists(zip_path) or os.path.lexists(temporary_path):
+            raise HTTPException(status_code=409, detail="Backup filename already exists")
         exclude_dirs = {BACKUP_DIR_NAME, "dist", "__pycache__", "updates", "temp"}
 
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for root, dirs, files in os.walk(data_path):
-                # Prune excluded directories
-                dirs[:] = [d for d in dirs if d not in exclude_dirs]
-                rel_root = Path(root).relative_to(data_path)
-                for f in files:
-                    full_path = Path(root) / f
-                    arcname = rel_root / f
-                    try:
-                        zf.write(full_path, arcname)
-                    except OSError:
-                        pass
+        if report:
+            report("scanning", 0)
+        files_to_backup = []
+        for root, dirs, files in os.walk(data_path):
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+            for filename_to_backup in files:
+                full_path = Path(root) / filename_to_backup
+                try:
+                    size = full_path.stat().st_size
+                except OSError:
+                    continue
+                files_to_backup.append((full_path, max(size, 1)))
 
-        size = zip_path.stat().st_size
+        total = sum(weight for _, weight in files_to_backup)
+        processed = 0
+        last_percent = -1
+
+        def report_compression(current: int):
+            nonlocal last_percent
+            percent = min(99, current * 99 // max(total, 1))
+            if report and percent != last_percent:
+                report("compressing", percent)
+                last_percent = percent
+
+        temporary_created = False
+        try:
+            with zipfile.ZipFile(temporary_path, "x", zipfile.ZIP_DEFLATED) as zf:
+                temporary_created = True
+                report_compression(0)
+                for full_path, weight in files_to_backup:
+                    try:
+                        info = zipfile.ZipInfo.from_file(
+                            full_path, full_path.relative_to(data_path).as_posix()
+                        )
+                        src = full_path.open("rb")
+                    except OSError:
+                        processed += weight
+                        report_compression(processed)
+                        continue
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    with src, zf.open(info, "w", force_zip64=True) as dst:
+                        written = 0
+                        while chunk := src.read(1024 * 1024):
+                            dst.write(chunk)
+                            written += len(chunk)
+                            report_compression(processed + min(written, weight))
+                    processed += weight
+                    report_compression(processed)
+                if report:
+                    report("finalizing", 99)
+            # Publish the completed archive atomically without replacing an existing backup.
+            os.link(temporary_path, zip_path)
+        except FileExistsError as exc:
+            raise HTTPException(status_code=409, detail="Backup filename already exists") from exc
+        finally:
+            if temporary_created:
+                temporary_path.unlink(missing_ok=True)
+
         return BackupCreateResponse(
             filename=filename,
-            size_bytes=size,
+            size_bytes=zip_path.stat().st_size,
             created_at=datetime.now().isoformat(),
         )
 

@@ -461,6 +461,15 @@ class BackupCreateResponse(BaseModel):
     created_at: str = ""
 
 
+class BackupProgressResponse(BaseModel):
+    id: str
+    status: Literal["queued", "running", "completed", "failed"] = "queued"
+    stage: Literal["queued", "scanning", "compressing", "finalizing", "completed", "failed"] = "queued"
+    percent: int = Field(default=0, ge=0, le=100)
+    result: Optional[BackupCreateResponse] = None
+    error: Optional[Literal["backup_exists"]] = None
+
+
 class RestoreResponse(BaseModel):
     success: bool
     message: str = ""

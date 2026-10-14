@@ -116,7 +116,7 @@
           <button
             type="button"
             class="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="backupLoading"
+            :disabled="backupLoading || backupChecking"
             @click="backupConfirmRef?.open()"
           >
             {{ backupLoading ? $t('settings.backup_creating') : $t('settings.backup_create') }}
@@ -129,6 +129,23 @@
           >
             {{ $t('settings.restore_title') }}
           </button>
+        </div>
+
+        <div v-if="backupProgress" class="mb-4" aria-live="polite">
+          <div class="flex justify-between text-sm text-theme-body mb-2">
+            <span>{{ backupProgressLabel }}</span>
+            <span>{{ backupProgress.percent }}%</span>
+          </div>
+          <div
+            class="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden"
+            role="progressbar"
+            :aria-label="$t('settings.backup_progress')"
+            :aria-valuenow="backupProgress.percent"
+            :aria-valuemin="0"
+            :aria-valuemax="100"
+          >
+            <div class="h-full bg-blue-600 rounded-full transition-all" :style="{ width: backupProgress.percent + '%' }"></div>
+          </div>
         </div>
 
         <!-- Backup List -->
@@ -397,7 +414,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import axios from 'axios'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { notify } from '@/composables/useNotification'
@@ -413,6 +431,9 @@ import { applyWebUITitle, CUSTOM_WEBUI_TITLE_KEY } from '@/utils/customWebUI'
 import {
   getStorageInfo,
   createBackup,
+  getActiveBackup,
+  getBackupProgress,
+  type BackupProgress,
   listBackups,
   deleteBackup,
   restoreBackup,
@@ -491,6 +512,17 @@ async function fetchStorageInfo() {
 // ── Backup & Restore ────────────────────────────────────────────────────
 
 const backupLoading = ref(false)
+const backupChecking = ref(true)
+const backupProgress = ref<BackupProgress | null>(null)
+const backupPollRetrying = ref(false)
+const backupProgressLabel = computed(() => {
+  if (backupPollRetrying.value) return t('settings.backup_progress_retrying')
+  if (backupProgress.value?.error === 'backup_exists') return t('settings.backup_exists')
+  return backupProgress.value ? t('settings.backup_stage_' + backupProgress.value.stage) : ''
+})
+let backupPollTimer: ReturnType<typeof setTimeout> | undefined
+const backupPollController = new AbortController()
+let disposed = false
 const restoreLoading = ref(false)
 const backupList = ref<BackupItem[]>([])
 const backupConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
@@ -533,16 +565,64 @@ async function fetchBackupList() {
   }
 }
 
-async function handleCreateBackup() {
-  backupLoading.value = true
-  try {
-    await createBackup()
+function applyBackupProgress(progress: BackupProgress) {
+  if (disposed) return
+  backupProgress.value = progress
+  backupPollRetrying.value = false
+  backupLoading.value = progress.status === 'queued' || progress.status === 'running'
+  if (backupLoading.value) {
+    backupPollTimer = setTimeout(() => pollBackup(progress.id), 1000)
+  } else if (progress.status === 'completed') {
     notify(t('settings.backup_created'), 'success')
-    await fetchBackupList()
+    fetchBackupList()
+  } else {
+    notify(t(progress.error === 'backup_exists' ? 'settings.backup_exists' : 'settings.backup_create_failed'), 'error')
+  }
+}
+
+async function pollBackup(taskId: string) {
+  try {
+    const { data } = await getBackupProgress(taskId, backupPollController.signal)
+    applyBackupProgress(data)
+  } catch (error) {
+    if (disposed) return
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      backupLoading.value = false
+      backupPollRetrying.value = false
+      backupProgress.value = null
+      notify(t('settings.backup_task_lost'), 'warning')
+      fetchBackupList()
+    } else {
+      backupPollRetrying.value = true
+      backupPollTimer = setTimeout(() => pollBackup(taskId), 3000)
+    }
+  }
+}
+
+async function resumeBackup() {
+  try {
+    const { data } = await getActiveBackup(backupPollController.signal)
+    if (data) applyBackupProgress(data)
+    else backupLoading.value = false
   } catch {
-    notify(t('settings.backup_create_failed'), 'error')
+    if (!disposed) backupLoading.value = false
   } finally {
+    if (!disposed) backupChecking.value = false
+  }
+}
+
+async function handleCreateBackup() {
+  if (backupLoading.value || backupChecking.value) return
+  backupLoading.value = true
+  backupProgress.value = null
+  backupPollRetrying.value = false
+  try {
+    const { data } = await createBackup()
+    applyBackupProgress(data)
+  } catch {
+    if (disposed) return
     backupLoading.value = false
+    notify(t('settings.backup_create_failed'), 'error')
   }
 }
 
@@ -638,6 +718,13 @@ onMounted(() => {
 
   fetchStorageInfo()
   fetchBackupList()
+  resumeBackup()
+})
+
+onUnmounted(() => {
+  disposed = true
+  clearTimeout(backupPollTimer)
+  backupPollController.abort()
 })
 
 function applyCustomCSS() {
