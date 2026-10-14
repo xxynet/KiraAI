@@ -432,7 +432,7 @@ async def test_marked_backup_is_hidden_and_blocked_after_routes_reload(backup_ro
 
 
 @pytest.mark.anyio
-async def test_completed_archive_is_visible_and_downloadable(backup_routes, backup_clock):
+async def test_completed_archive_is_visible_and_operable(backup_routes, backup_clock):
     routes, data_path = backup_routes
     (data_path / "config.json").write_text("{}")
     started = await routes.start_backup()
@@ -451,3 +451,58 @@ async def test_completed_archive_is_visible_and_downloadable(backup_routes, back
         archive_path = data_path / "backups" / completed.result.filename
         assert download.content == archive_path.read_bytes()
         assert not archive_path.with_suffix(".zip.part").exists()
+
+        (data_path / "config.json").write_text('{"changed": true}')
+        restored = await client.post(f"/api/settings/backup/{completed.result.filename}/restore")
+        assert restored.status_code == 200
+        assert restored.json()["success"]
+        assert (data_path / "config.json").read_text() == "{}"
+
+        deleted = await client.delete(f"/api/settings/backup/{completed.result.filename}")
+        assert deleted.status_code == 200
+        assert deleted.json()["success"]
+        assert not archive_path.exists()
+        assert (await client.get("/api/settings/backup/list")).json() == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("method", "path_template"),
+    [
+        ("GET", "/api/settings/backup/download/{filename}"),
+        ("DELETE", "/api/settings/backup/{filename}"),
+        ("POST", "/api/settings/backup/{filename}/restore"),
+    ],
+)
+@pytest.mark.parametrize("target_name", ["backup_20261014_123045.zip.part", "notes.txt"])
+async def test_backup_operations_reject_internal_and_non_zip_files(
+    backup_routes, method, path_template, target_name
+):
+    routes, data_path = backup_routes
+    backup_dir = data_path / "backups"
+    backup_dir.mkdir()
+    archive_path = backup_dir / "backup_20261014_123045.zip"
+    archive_path.write_bytes(b"unfinished archive")
+    marker_path = archive_path.with_suffix(".zip.part")
+    marker_path.touch()
+    target_path = backup_dir / target_name
+    if target_path != marker_path:
+        target_path.write_bytes(b"internal data")
+    original_archive = archive_path.read_bytes()
+    original_target = target_path.read_bytes()
+    routes.app.dependency_overrides[require_auth] = lambda: True
+    routes.register()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=routes.app), base_url="http://test"
+    ) as client:
+        response = await client.request(method, path_template.format(filename=target_name))
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid filename"
+        assert target_path.read_bytes() == original_target
+        assert marker_path.exists()
+        assert archive_path.read_bytes() == original_archive
+        assert (await client.get("/api/settings/backup/list")).json() == []
+        assert (
+            await client.get(f"/api/settings/backup/download/{archive_path.name}")
+        ).status_code == 409

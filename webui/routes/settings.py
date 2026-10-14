@@ -334,6 +334,8 @@ class SettingsRoutes(Routes):
         from fastapi.responses import FileResponse
 
         backup_path = _get_backup_dir() / filename
+        if backup_path.suffix != ".zip":
+            raise HTTPException(status_code=400, detail="Invalid filename")
         if not backup_path.exists() or not backup_path.is_file():
             raise HTTPException(status_code=404, detail="Backup not found")
         # Prevent path traversal
@@ -349,6 +351,8 @@ class SettingsRoutes(Routes):
 
     async def delete_backup(self, filename: str):
         backup_path = _get_backup_dir() / filename
+        if backup_path.suffix != ".zip":
+            raise HTTPException(status_code=400, detail="Invalid filename")
         if not backup_path.exists() or not backup_path.is_file():
             raise HTTPException(status_code=404, detail="Backup not found")
         if backup_path.resolve().parent != _get_backup_dir().resolve():
@@ -360,6 +364,8 @@ class SettingsRoutes(Routes):
 
     async def restore_from_backup(self, filename: str):
         backup_path = _get_backup_dir() / filename
+        if backup_path.suffix != ".zip":
+            raise HTTPException(status_code=400, detail="Invalid filename")
         if not backup_path.exists() or not backup_path.is_file():
             raise HTTPException(status_code=404, detail="Backup not found")
         if backup_path.resolve().parent != _get_backup_dir().resolve():
