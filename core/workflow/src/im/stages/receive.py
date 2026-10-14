@@ -73,7 +73,8 @@ class RouteStage(BaseStage[IMEventContext]):
 
         if event.process_strategy == "flush":
             flushed = await publish_buffered_messages(
-                services.message_buffer, services.event_bus, sid, extra_event=event)
+                services.message_buffer, services.event_bus, sid, extra_event=event,
+                filter_fn=event.flush_filter_fn)
             if not flushed:
                 logger.warning(f"No pending messages to flush for session {sid}")
             return False
