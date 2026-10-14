@@ -113,7 +113,7 @@
           :disabled="enqueueingUpdates"
           @click="openBatchUpdate"
         >
-          {{ $t('plugin.update_all', { count: availableUpdateItems.length }) }}
+          {{ $t('plugin.update_batch', { count: availableUpdateItems.length }) }}
         </button>
         <div class="relative w-full sm:ml-auto sm:w-56">
           <UiInput
@@ -880,10 +880,21 @@
         </div>
         <div class="px-6 py-5 flex-1 overflow-y-auto">
           <p class="text-sm text-theme-supporting mb-4">
-            {{ updateTargetItems.length === 1 ? $t('plugin.update_confirm', { name: updateItemName(updateTargetItems[0]!) }) : $t('plugin.update_batch_confirm', { count: updateTargetItems.length }) }}
+            {{ selectedUpdateItems.length === 1 ? $t('plugin.update_confirm', { name: updateItemName(selectedUpdateItems[0]!) }) : $t('plugin.update_batch_confirm', { count: selectedUpdateItems.length }) }}
           </p>
-          <ul class="mb-4 max-h-40 list-inside list-disc overflow-y-auto text-sm text-theme-body">
-            <li v-for="item in updateTargetItems" :key="item.plugin_id">{{ updateItemName(item) }}</li>
+          <ul class="mb-4 max-h-40 space-y-2 overflow-y-auto text-sm text-theme-body">
+            <li v-for="item in updateTargetItems" :key="item.plugin_id">
+              <label class="flex cursor-pointer items-start gap-2">
+                <input
+                  v-model="selectedUpdatePluginIds"
+                  type="checkbox"
+                  :value="item.plugin_id"
+                  :disabled="enqueueingUpdates"
+                  class="mt-0.5 shrink-0 rounded border-gray-300 text-green-600 focus:ring-green-500 dark:border-gray-600"
+                />
+                <span class="min-w-0 break-words">{{ updateItemName(item) }}</span>
+              </label>
+            </li>
           </ul>
           <div class="mb-4">
             <label class="block text-sm font-medium text-theme-body mb-2">
@@ -906,7 +917,7 @@
         </div>
         <div class="flex justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
           <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="updateDialogVisible = false">{{ $t('plugin.cancel') }}</button>
-          <button type="button" class="px-4 py-2 ml-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="enqueueingUpdates || !updateTargetItems.length" @click="confirmUpdate">{{ $t('plugin.update') }}</button>
+          <button type="button" class="px-4 py-2 ml-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="enqueueingUpdates || !selectedUpdateItems.length" @click="confirmUpdate">{{ $t('plugin.update') }}</button>
         </div>
       </div>
     </Modal>
@@ -1237,6 +1248,10 @@ const updateQueueLoadError = ref(false)
 const updateQueueDismissed = ref(false)
 const updateDialogVisible = ref(false)
 const updateTargetItems = ref<PluginUpdateQueueItem[]>([])
+const selectedUpdatePluginIds = ref<string[]>([])
+const selectedUpdateItems = computed(() =>
+  updateTargetItems.value.filter(item => selectedUpdatePluginIds.value.includes(item.plugin_id)),
+)
 let updatePollTimer: ReturnType<typeof setTimeout> | null = null
 let updatePollFailures = 0
 let updateQueueRevision = 0
@@ -1459,23 +1474,26 @@ function updateTaskName(task: PluginUpdateTask): string {
   return plugin ? localize(plugin, 'display_name', plugin.name || plugin.id) : task.name
 }
 
+function openUpdateDialog(items: PluginUpdateQueueItem[]) {
+  updateTargetItems.value = items
+  selectedUpdatePluginIds.value = items.map(item => item.plugin_id)
+  updateDialogVisible.value = items.length > 0
+}
+
 async function handleUpdatePlugin(plugin: PluginItem, commitSha?: string | null) {
   if (updatingPlugins.value.has(plugin.id)) return
-  updateTargetItems.value = [{
+  openUpdateDialog([{
     plugin_id: plugin.id,
     commit_sha: commitSha === undefined ? pluginUpdates.value.get(plugin.id)?.commit_sha ?? null : commitSha,
-  }]
-  updateDialogVisible.value = true
+  }])
 }
 
 function openBatchUpdate() {
-  updateTargetItems.value = [...availableUpdateItems.value]
-  updateDialogVisible.value = updateTargetItems.value.length > 0
+  openUpdateDialog([...availableUpdateItems.value])
 }
 
 function retryUpdateTasks(tasks: PluginUpdateTask[]) {
-  updateTargetItems.value = tasks.map(task => ({ plugin_id: task.plugin_id, commit_sha: task.commit_sha ?? null }))
-  updateDialogVisible.value = updateTargetItems.value.length > 0
+  openUpdateDialog(tasks.map(task => ({ plugin_id: task.plugin_id, commit_sha: task.commit_sha ?? null })))
 }
 
 function retryFailedUpdates() {
@@ -1489,8 +1507,8 @@ function resolveGhProxy(): string | undefined {
 }
 
 async function confirmUpdate() {
-  if (enqueueingUpdates.value || !updateTargetItems.value.length) return
-  const items = updateTargetItems.value.map(item => ({ ...item, gh_proxy: resolveGhProxy() }))
+  if (enqueueingUpdates.value || !selectedUpdateItems.value.length) return
+  const items = selectedUpdateItems.value.map(item => ({ ...item, gh_proxy: resolveGhProxy() }))
   enqueueingUpdates.value = true
   submittingUpdateIds.value = new Set(items.map(item => item.plugin_id))
   try {
