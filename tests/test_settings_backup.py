@@ -204,7 +204,7 @@ async def test_backup_task_history_is_bounded_and_unknown_task_returns_404(backu
 
 
 @pytest.mark.anyio
-async def test_http_progress_routes_and_legacy_backup_response(backup_routes, backup_clock):
+async def test_http_progress_routes(backup_routes, backup_clock):
     routes, data_path = backup_routes
     (data_path / "config.json").write_text("{}")
     routes.app.dependency_overrides[require_auth] = lambda: True
@@ -225,12 +225,8 @@ async def test_http_progress_routes_and_legacy_backup_response(backup_routes, ba
         assert completed["status"] == "completed"
         assert completed["percent"] == 100
         assert (await client.get("/api/settings/backup/tasks/active")).json() is None
-        backup_clock.advance()
-        legacy = await client.post("/api/settings/backup")
-        assert legacy.status_code == 200
-        assert set(legacy.json()) == {"filename", "size_bytes", "created_at"}
-        assert legacy.json()["filename"] != completed["result"]["filename"]
-        assert (data_path / "backups" / legacy.json()["filename"]).exists()
+        assert set(completed["result"]) == {"filename", "size_bytes", "created_at"}
+        assert (data_path / "backups" / completed["result"]["filename"]).exists()
 
 
 @pytest.mark.anyio
@@ -373,23 +369,6 @@ async def test_background_collision_returns_reason_and_can_retry_next_second(bac
     assert completed.status == "completed"
     assert completed.error is None
     assert completed.result.filename == "backup_20261014_123046.zip"
-
-
-@pytest.mark.anyio
-async def test_legacy_backup_returns_conflict_for_same_filename(backup_routes, backup_clock):
-    routes, data_path = backup_routes
-    routes.app.dependency_overrides[require_auth] = lambda: True
-    routes.register()
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=routes.app), base_url="http://test"
-    ) as client:
-        first = await client.post("/api/settings/backup")
-        assert first.status_code == 200
-        archive_path = data_path / "backups" / first.json()["filename"]
-        original_archive = archive_path.read_bytes()
-        second = await client.post("/api/settings/backup")
-        assert second.status_code == 409
-        assert archive_path.read_bytes() == original_archive
 
 
 def test_backup_succeeds_when_hard_links_are_unavailable(backup_routes, monkeypatch):

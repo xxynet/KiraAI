@@ -70,14 +70,6 @@ class SettingsRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
-                path="/api/settings/backup",
-                methods=["POST"],
-                endpoint=self.create_backup,
-                response_model=BackupCreateResponse,
-                tags=["settings"],
-                dependencies=[Depends(require_auth)],
-            ),
-            RouteDefinition(
                 path="/api/settings/backup/tasks",
                 methods=["POST"],
                 endpoint=self.start_backup,
@@ -183,10 +175,6 @@ class SettingsRoutes(Routes):
         )
 
     # ── Backup ───────────────────────────────────────────────────────────────
-
-    async def create_backup(self):
-        async with self._maintenance_lock:
-            return await asyncio.to_thread(self._create_backup_sync)
 
     async def start_backup(self):
         if self._backup_task and not self._backup_task.done():
