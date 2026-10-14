@@ -6,6 +6,8 @@ import type {
   PluginInstallResult,
   PluginInstallTask,
   PluginUpdateCheckItem,
+  PluginUpdateQueueItem,
+  PluginUpdateTask,
 } from '@/types'
 
 export function getPlugins() {
@@ -72,4 +74,16 @@ export function checkPluginUpdates() {
 
 export function updatePlugin(pluginId: string, data?: { gh_proxy?: string | null; commit_sha?: string | null }) {
   return apiClient.post<PluginInstallResult>(`/plugins/${encodeURIComponent(pluginId)}/update`, data || {})
+}
+
+export function enqueuePluginUpdates(items: PluginUpdateQueueItem[]) {
+  return apiClient.post<PluginUpdateTask[]>('/plugins/updates/tasks', { items })
+}
+
+export function getPluginUpdateTasks() {
+  return apiClient.get<PluginUpdateTask[]>('/plugins/updates/tasks')
+}
+
+export function cancelPluginUpdateTask(taskId: string) {
+  return apiClient.post<PluginUpdateTask>('/plugins/updates/tasks/' + encodeURIComponent(taskId) + '/cancel')
 }

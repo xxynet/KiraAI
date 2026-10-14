@@ -62,7 +62,8 @@
           class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
           :class="enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
           :aria-pressed="enabled ? 'true' : 'false'"
-          @click.stop="emit('toggle')"
+          :disabled="operationsBusy"
+          @click.stop="!operationsBusy && emit('toggle')"
         >
           <span
             class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
@@ -99,7 +100,7 @@
         >
           <span v-if="updating" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />
-            {{ $t('plugin.updating') }}
+            {{ queued ? $t('plugin.update_stage_queued') : $t('plugin.updating') }}
           </span>
           <span v-else>{{ $t('plugin.update') }}</span>
         </button>
@@ -118,8 +119,8 @@
           :class="reloading
             ? 'border-gray-200 text-theme-faint cursor-wait dark:border-gray-700'
             : 'border-gray-300 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800'"
-          :disabled="reloading"
-          @click.stop="!reloading && emit('reload')"
+          :disabled="reloading || operationsBusy"
+          @click.stop="!reloading && !operationsBusy && emit('reload')"
         >
           <span v-if="reloading" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />
@@ -133,8 +134,8 @@
           :class="uninstallable
             ? 'border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30'
             : 'border-gray-200 text-theme-faint cursor-not-allowed dark:border-gray-700'"
-          :disabled="!uninstallable"
-          @click.stop="uninstallable && emit('uninstall')"
+          :disabled="!uninstallable || operationsBusy"
+          @click.stop="uninstallable && !operationsBusy && emit('uninstall')"
         >
           {{ $t('plugin.uninstall') }}
         </button>
@@ -153,7 +154,7 @@
         >
           <span v-if="updating" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />
-            {{ $t('plugin.updating') }}
+            {{ queued ? $t('plugin.update_stage_queued') : $t('plugin.updating') }}
           </span>
           <span v-else>{{ $t('plugin.update') }}</span>
         </button>
@@ -164,8 +165,8 @@
           :class="installed
             ? 'border-gray-200 text-theme-faint cursor-default dark:border-gray-700'
             : 'border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/30'"
-          :disabled="installed || installing"
-          @click.stop="!installed && !installing && emit('install')"
+          :disabled="installed || installing || operationsBusy"
+          @click.stop="!installed && !installing && !operationsBusy && emit('install')"
         >
           <span v-if="installing" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />
@@ -206,6 +207,8 @@ const props = withDefaults(defineProps<{
   hasUpdate?: boolean
   latestVersion?: string | null
   updating?: boolean
+  queued?: boolean
+  operationsBusy?: boolean
   // store mode
   installed?: boolean
   installing?: boolean
@@ -227,6 +230,8 @@ const props = withDefaults(defineProps<{
   hasUpdate: false,
   latestVersion: null,
   updating: false,
+  queued: false,
+  operationsBusy: false,
   installed: false,
   installing: false,
 })

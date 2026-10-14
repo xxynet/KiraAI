@@ -5,6 +5,42 @@
       <h3 class="text-lg font-semibold text-theme-strong">{{ $t('plugin.title') }}</h3>
     </div>
 
+    <div v-if="!updateQueueDismissed && (updateTasks.length || updateQueueLoadError)" class="relative mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+      <button
+        type="button"
+        class="absolute right-3 top-3 rounded p-1 text-theme-faint text-theme-faint-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+        :aria-label="$t('plugin.close')"
+        :title="$t('plugin.close')"
+        @click="updateQueueDismissed = true"
+      >
+        <IconClose class="h-4 w-4" />
+      </button>
+      <div class="flex flex-wrap items-center gap-3 pr-8 text-sm">
+        <span class="font-medium text-theme-strong">{{ $t('plugin.update_queue_title') }}</span>
+        <span class="text-theme-supporting" role="status">{{ $t('plugin.update_queue_summary', updateQueueSummary) }}</span>
+        <button type="button" class="text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="refreshingUpdateTasks" @click="refreshUpdateTasks">{{ $t('common.refresh') }}</button>
+        <button v-if="retryableUpdateTasks.length" type="button" class="text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="enqueueingUpdates" @click="retryFailedUpdates">{{ $t('plugin.update_retry_failed') }}</button>
+      </div>
+      <p v-if="updateQueueLoadError" class="mt-2 text-sm text-red-600 dark:text-red-400">{{ $t('plugin.update_queue_status_failed') }}</p>
+      <p v-if="updatingPlugins.size" class="mt-2 text-xs text-theme-subtle">{{ $t('plugin.update_queue_busy') }}</p>
+      <details v-if="latestUpdateTasks.length" class="mt-3" :open="updatingPlugins.size > 0">
+        <summary class="cursor-pointer text-sm text-theme-body">{{ $t('plugin.update_queue_details') }}</summary>
+        <ul class="mt-2 max-h-64 space-y-2 overflow-y-auto">
+          <li v-for="task in latestUpdateTasks" :key="task.task_id" class="rounded-md bg-white p-3 text-sm dark:bg-gray-900">
+            <div class="flex items-center gap-2">
+              <IconSpinner v-if="task.status === 'running'" class="h-4 w-4 shrink-0 animate-spin text-blue-600" />
+              <span class="min-w-0 flex-1 break-words text-theme-strong">{{ updateTaskName(task) }}</span>
+              <span class="shrink-0 text-theme-subtle">{{ updateStageLabel(task.stage) }}</span>
+              <button v-if="task.status === 'queued'" type="button" class="shrink-0 text-red-600 hover:underline dark:text-red-400" @click="cancelQueuedUpdate(task)">{{ $t('plugin.cancel') }}</button>
+              <button v-if="task.status === 'failed' && !updatingPlugins.has(task.plugin_id)" type="button" class="shrink-0 text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="enqueueingUpdates" @click="retryUpdateTasks([task])">{{ $t('plugin.update_retry') }}</button>
+            </div>
+            <p v-if="task.error" class="mt-1 break-words text-red-600 dark:text-red-400">{{ task.error }}</p>
+            <p v-for="(warning, index) in task.warnings" :key="index" class="mt-1 break-words text-amber-700 dark:text-amber-400">{{ warning }}</p>
+          </li>
+        </ul>
+      </details>
+    </div>
+
     <!-- Custom Tabs -->
     <div class="flex flex-wrap gap-x-4 mb-4 border-b border-gray-200 dark:border-gray-700">
       <button
@@ -55,6 +91,7 @@
         <button
           type="button"
           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-xs font-medium text-theme-body bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          :disabled="pluginOperationsBusy"
           @click="openInstallDialog"
         >
           <span class="mr-1">+</span>
@@ -68,6 +105,15 @@
         >
           <IconRefresh class="w-4 h-4 mr-1" :class="{ 'animate-spin': refreshingPlugins }" />
           <span>{{ $t('common.refresh') }}</span>
+        </button>
+        <button
+          v-if="availableUpdateItems.length"
+          type="button"
+          class="inline-flex items-center rounded-md border border-green-300 px-3 py-1.5 text-xs font-medium text-green-600 hover:bg-green-50 disabled:opacity-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30"
+          :disabled="enqueueingUpdates"
+          @click="openBatchUpdate"
+        >
+          {{ $t('plugin.update_all', { count: availableUpdateItems.length }) }}
         </button>
         <div class="relative w-full sm:ml-auto sm:w-56">
           <UiInput
@@ -126,6 +172,8 @@
           :has-update="pluginUpdates.has(plugin.id)"
           :latest-version="pluginUpdates.get(plugin.id)?.latest_version ?? null"
           :updating="updatingPlugins.has(plugin.id)"
+          :queued="queuedPlugins.has(plugin.id)"
+          :operations-busy="pluginOperationsBusy"
           @toggle="togglePlugin(plugin)"
           @configure="openPluginConfig(plugin)"
           @uninstall="handleDeletePlugin(plugin.id)"
@@ -575,6 +623,8 @@
           :has-update="item.installed && pluginUpdates.has(item.id)"
           :latest-version="pluginUpdates.get(item.id)?.latest_version ?? null"
           :updating="updatingPlugins.has(item.id)"
+          :queued="queuedPlugins.has(item.id)"
+          :operations-busy="pluginOperationsBusy"
           @install="handleStoreInstall(item)"
           @update="handleStoreUpdate(item)"
           @details="openPluginDetails(item)"
@@ -830,8 +880,11 @@
         </div>
         <div class="px-6 py-5 flex-1 overflow-y-auto">
           <p class="text-sm text-theme-supporting mb-4">
-            {{ $t('plugin.update_confirm', { name: updateTargetPlugin?.name || updateTargetPlugin?.id }) }}
+            {{ updateTargetItems.length === 1 ? $t('plugin.update_confirm', { name: updateItemName(updateTargetItems[0]!) }) : $t('plugin.update_batch_confirm', { count: updateTargetItems.length }) }}
           </p>
+          <ul class="mb-4 max-h-40 list-inside list-disc overflow-y-auto text-sm text-theme-body">
+            <li v-for="item in updateTargetItems" :key="item.plugin_id">{{ updateItemName(item) }}</li>
+          </ul>
           <div class="mb-4">
             <label class="block text-sm font-medium text-theme-body mb-2">
               <span>{{ $t('plugin.install_gh_proxy_label') }}</span>
@@ -853,7 +906,7 @@
         </div>
         <div class="flex justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
           <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="updateDialogVisible = false">{{ $t('plugin.cancel') }}</button>
-          <button type="button" class="px-4 py-2 ml-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="updatingPlugins.has(updateTargetPlugin?.id ?? '')" @click="confirmUpdate">{{ $t('plugin.update') }}</button>
+          <button type="button" class="px-4 py-2 ml-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="enqueueingUpdates || !updateTargetItems.length" @click="confirmUpdate">{{ $t('plugin.update') }}</button>
         </div>
       </div>
     </Modal>
@@ -1112,7 +1165,7 @@ import {
   installFromGithub, installFromUpload, startGithubInstallTask, getActivePluginInstallTask,
   getPluginInstallTask, cancelPluginInstallTask,
   reloadPlugin as apiReloadPlugin,
-  checkPluginUpdates, updatePlugin as apiUpdatePlugin,
+  checkPluginUpdates, enqueuePluginUpdates, getPluginUpdateTasks, cancelPluginUpdateTask,
 } from '@/api/plugin'
 import {
   getMcpServers, getMcpServerConfig, getMcpServerTools, createMcpServer, updateMcpServerConfig,
@@ -1131,7 +1184,7 @@ import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
   IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch, IconDownload, IconTrash,
 } from '@/components/icons'
-import type { PluginItem, McpServerItem, McpToolItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem, PluginInstallTask } from '@/types'
+import type { PluginItem, McpServerItem, McpToolItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem, PluginInstallTask, PluginUpdateTask, PluginUpdateQueueItem } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
@@ -1151,10 +1204,43 @@ const reloadingPlugins = ref(new Set<string>())
 const refreshingPlugins = ref(false)
 const pluginUpdates = ref<Map<string, PluginUpdateCheckItem>>(new Map())
 const checkingUpdates = ref(false)
-const updatingPlugins = ref(new Set<string>())
+const updateTasks = ref<PluginUpdateTask[]>([])
+const submittingUpdateIds = ref(new Set<string>())
+const updatingPlugins = computed(() => new Set([
+  ...submittingUpdateIds.value,
+  ...updateTasks.value.filter(task => ['queued', 'running'].includes(task.status)).map(task => task.plugin_id),
+]))
+const queuedPlugins = computed(() => new Set(updateTasks.value.filter(task => task.status === 'queued').map(task => task.plugin_id)))
+const pluginOperationsBusy = computed(() =>
+  updatingPlugins.value.size > 0 || installing.value || storeInstallTask.value?.status === 'installing',
+)
+const availableUpdateItems = computed<PluginUpdateQueueItem[]>(() =>
+  plugins.value.filter(plugin => !plugin.builtin && plugin.repo && pluginUpdates.value.has(plugin.id) && !updatingPlugins.value.has(plugin.id))
+    .map(plugin => ({ plugin_id: plugin.id, commit_sha: pluginUpdates.value.get(plugin.id)?.commit_sha ?? null })),
+)
+const latestUpdateTasks = computed(() => {
+  const latest = new Map<string, PluginUpdateTask>()
+  for (const task of updateTasks.value) latest.set(task.plugin_id, task)
+  return [...latest.values()]
+})
+const retryableUpdateTasks = computed(() => latestUpdateTasks.value.filter(task => task.status === 'failed' && !updatingPlugins.value.has(task.plugin_id)))
+const updateQueueSummary = computed(() => ({
+  queued: latestUpdateTasks.value.filter(task => task.status === 'queued').length,
+  running: latestUpdateTasks.value.filter(task => task.status === 'running').length,
+  completed: latestUpdateTasks.value.filter(task => task.status === 'completed').length,
+  failed: latestUpdateTasks.value.filter(task => task.status === 'failed').length,
+  cancelled: latestUpdateTasks.value.filter(task => task.status === 'cancelled').length,
+}))
+const enqueueingUpdates = ref(false)
+const refreshingUpdateTasks = ref(false)
+const updateQueueLoadError = ref(false)
+const updateQueueDismissed = ref(false)
 const updateDialogVisible = ref(false)
-const updateTargetPlugin = ref<PluginItem | null>(null)
-const updateTargetCommitSha = ref<string | null>(null)
+const updateTargetItems = ref<PluginUpdateQueueItem[]>([])
+let updatePollTimer: ReturnType<typeof setTimeout> | null = null
+let updatePollFailures = 0
+let updateQueueRevision = 0
+let updateQueueMounted = true
 const pluginDetailsVisible = ref(false)
 const selectedPlugin = ref<PluginItem | PluginStoreItem | null>(null)
 const pluginReadme = ref<string | null>(null)
@@ -1363,12 +1449,37 @@ async function handleCheckUpdates(silent = false) {
   }
 }
 
+function updateItemName(item: PluginUpdateQueueItem): string {
+  const plugin = plugins.value.find(plugin => plugin.id === item.plugin_id)
+  return plugin ? localize(plugin, 'display_name', plugin.name || plugin.id) : item.plugin_id
+}
+
+function updateTaskName(task: PluginUpdateTask): string {
+  const plugin = plugins.value.find(plugin => plugin.id === task.plugin_id)
+  return plugin ? localize(plugin, 'display_name', plugin.name || plugin.id) : task.name
+}
+
 async function handleUpdatePlugin(plugin: PluginItem, commitSha?: string | null) {
-  updateTargetPlugin.value = plugin
-  updateTargetCommitSha.value = commitSha === undefined
-    ? pluginUpdates.value.get(plugin.id)?.commit_sha ?? null
-    : commitSha
+  if (updatingPlugins.value.has(plugin.id)) return
+  updateTargetItems.value = [{
+    plugin_id: plugin.id,
+    commit_sha: commitSha === undefined ? pluginUpdates.value.get(plugin.id)?.commit_sha ?? null : commitSha,
+  }]
   updateDialogVisible.value = true
+}
+
+function openBatchUpdate() {
+  updateTargetItems.value = [...availableUpdateItems.value]
+  updateDialogVisible.value = updateTargetItems.value.length > 0
+}
+
+function retryUpdateTasks(tasks: PluginUpdateTask[]) {
+  updateTargetItems.value = tasks.map(task => ({ plugin_id: task.plugin_id, commit_sha: task.commit_sha ?? null }))
+  updateDialogVisible.value = updateTargetItems.value.length > 0
+}
+
+function retryFailedUpdates() {
+  retryUpdateTasks(retryableUpdateTasks.value)
 }
 
 function resolveGhProxy(): string | undefined {
@@ -1378,24 +1489,99 @@ function resolveGhProxy(): string | undefined {
 }
 
 async function confirmUpdate() {
-  const plugin = updateTargetPlugin.value
-  if (!plugin) return
-  const commitSha = updateTargetCommitSha.value
-  updateTargetCommitSha.value = null
-  updateDialogVisible.value = false
-  updatingPlugins.value.add(plugin.id)
+  if (enqueueingUpdates.value || !updateTargetItems.value.length) return
+  const items = updateTargetItems.value.map(item => ({ ...item, gh_proxy: resolveGhProxy() }))
+  enqueueingUpdates.value = true
+  submittingUpdateIds.value = new Set(items.map(item => item.plugin_id))
   try {
-    await apiUpdatePlugin(plugin.id, {
-      gh_proxy: resolveGhProxy(),
-      commit_sha: commitSha,
-    })
-    pluginUpdates.value.delete(plugin.id)
-    notify(t('plugin.update_success'), 'success')
-    await loadPlugins()
+    const response = await enqueuePluginUpdates(items)
+    updateQueueDismissed.value = false
+    updateQueueRevision += 1
+    const tasks = new Map(updateTasks.value.map(task => [task.task_id, task]))
+    for (const task of response.data) tasks.set(task.task_id, task)
+    updateTasks.value = [...tasks.values()]
+    updateDialogVisible.value = false
+    notify(t('plugin.update_queued', { count: response.data.length }), 'success')
   } catch {
-    notify(t('plugin.update_failed'), 'error')
+    notify(t('plugin.update_enqueue_failed'), 'error')
   } finally {
-    updatingPlugins.value.delete(plugin.id)
+    submittingUpdateIds.value.clear()
+    enqueueingUpdates.value = false
+    scheduleUpdatePoll(0)
+  }
+}
+
+function updateStageLabel(stage: PluginUpdateTask['stage']): string {
+  if (['queued', 'completed', 'failed', 'cancelled'].includes(stage)) {
+    return t('plugin.update_stage_' + stage)
+  }
+  return t('pluginStore.install_stage_' + (stage === 'installing_dependencies' ? 'dependencies' : stage))
+}
+
+function scheduleUpdatePoll(delay = 1500) {
+  if (!updateQueueMounted) return
+  if (updatePollTimer) clearTimeout(updatePollTimer)
+  updatePollTimer = setTimeout(() => {
+    updatePollTimer = null
+    void refreshUpdateTasks()
+  }, delay)
+}
+
+async function refreshUpdateTasks() {
+  if (!updateQueueMounted) return
+  if (refreshingUpdateTasks.value) {
+    scheduleUpdatePoll()
+    return
+  }
+  refreshingUpdateTasks.value = true
+  try {
+    const revision = updateQueueRevision
+    const response = await getPluginUpdateTasks()
+    if (!updateQueueMounted) return
+    if (revision !== updateQueueRevision) {
+      scheduleUpdatePoll(0)
+      return
+    }
+    const previous = new Map(updateTasks.value.map(task => [task.task_id, task.status]))
+    const activeTasks = updateTasks.value.filter(task => ['queued', 'running'].includes(task.status))
+    const wasActive = activeTasks.length > 0
+    const lostTasks = activeTasks.some(task => !response.data.some(item => item.task_id === task.task_id))
+    updateTasks.value = response.data
+    updateQueueLoadError.value = false
+    updatePollFailures = 0
+    if (response.data.some(task => ['completed', 'failed'].includes(task.status) && previous.has(task.task_id) && previous.get(task.task_id) !== task.status)) {
+      void loadPlugins()
+      for (const task of response.data.filter(task => task.status === 'completed')) {
+        if (pluginUpdates.value.get(task.plugin_id)?.commit_sha === task.commit_sha) {
+          pluginUpdates.value.delete(task.plugin_id)
+        }
+      }
+    }
+    if (response.data.some(task => ['queued', 'running'].includes(task.status))) {
+      scheduleUpdatePoll()
+    } else if (wasActive) {
+      void handleCheckUpdates(true)
+      if (activeTab.value === 'pluginStore') void fetchStorePlugins()
+      notify(t(lostTasks ? 'plugin.update_queue_reset' : 'plugin.update_queue_finished'), lostTasks ? 'error' : 'success')
+    }
+  } catch {
+    updateQueueLoadError.value = true
+    updatePollFailures += 1
+    scheduleUpdatePoll(Math.min(30000, 1500 * 2 ** Math.min(updatePollFailures, 5)))
+  } finally {
+    refreshingUpdateTasks.value = false
+  }
+}
+
+async function cancelQueuedUpdate(task: PluginUpdateTask) {
+  try {
+    const response = await cancelPluginUpdateTask(task.task_id)
+    updateQueueRevision += 1
+    updateTasks.value = updateTasks.value.map(item => item.task_id === task.task_id ? response.data : item)
+  } catch {
+    notify(t('plugin.update_cancel_failed'), 'error')
+  } finally {
+    scheduleUpdatePoll(0)
   }
 }
 
@@ -1420,6 +1606,8 @@ watch(hasTransientPlugins, (hasTransient) => {
 })
 
 onUnmounted(() => {
+  updateQueueMounted = false
+  if (updatePollTimer) clearTimeout(updatePollTimer)
   if (pluginPollTimer) {
     clearInterval(pluginPollTimer)
     pluginPollTimer = null
@@ -2367,6 +2555,7 @@ async function handleStoreUpdate(item: PluginStoreItem) {
 }
 
 onMounted(async () => {
+  void refreshUpdateTasks()
   await loadPlugins()
   loadMcpServers()
   loadSkills()

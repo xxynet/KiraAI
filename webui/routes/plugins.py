@@ -2,7 +2,7 @@ import asyncio
 import shutil
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -21,7 +21,7 @@ from core.plugin.plugin_installer import (
 from core.plugin.store import PluginStore, StoreSource, extract_plugins
 from webui.models import (
     PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginInstallTask, PluginItem,
-    PluginUpdateCheckItem, PluginUpdateRequest,
+    PluginUpdateCheckItem, PluginUpdateRequest, PluginUpdateQueueRequest, PluginUpdateTask,
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -29,6 +29,8 @@ from webui.utils import schema_to_dict
 
 logger = get_logger("webui", "blue")
 MAX_RETAINED_INSTALL_TASKS = 20
+MAX_RETAINED_UPDATE_TASKS = 100
+MAX_PENDING_UPDATE_TASKS = 100
 
 
 class PluginsRoutes(Routes):
@@ -36,6 +38,8 @@ class PluginsRoutes(Routes):
         super().__init__(*args, **kwargs)
         self._install_tasks: Dict[str, Dict[str, Any]] = {}
         self._plugin_install_lock = asyncio.Lock()
+        self._update_tasks: Dict[str, Dict[str, Any]] = {}
+        self._update_worker: Optional[asyncio.Task] = None
 
     def get_routes(self):
         return [
@@ -156,6 +160,30 @@ class PluginsRoutes(Routes):
                 methods=["POST"],
                 endpoint=self.check_plugin_updates,
                 response_model=List[PluginUpdateCheckItem],
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/updates/tasks",
+                methods=["POST"],
+                endpoint=self.enqueue_plugin_updates,
+                response_model=List[PluginUpdateTask],
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/updates/tasks",
+                methods=["GET"],
+                endpoint=self.list_update_tasks,
+                response_model=List[PluginUpdateTask],
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/updates/tasks/{task_id}/cancel",
+                methods=["POST"],
+                endpoint=self.cancel_update_task,
+                response_model=PluginUpdateTask,
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -327,48 +355,50 @@ class PluginsRoutes(Routes):
             return {"readme": None}
 
     async def set_plugin_enabled(self, plugin_id: str, payload: Dict):
-        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
-            raise HTTPException(status_code=503, detail="Plugin manager not available")
-        try:
-            enabled = bool(payload.get("enabled"))
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid payload")
-        try:
-            plugin_manager = self.lifecycle.plugin_manager
-            if not plugin_manager.has_plugin(plugin_id):
-                raise HTTPException(status_code=404, detail="Plugin not found")
-            if enabled and plugin_id in plugin_manager.get_plugin_load_errors():
-                raise HTTPException(status_code=400, detail="Cannot enable a plugin that failed to load")
-            await plugin_manager.set_plugin_enabled(plugin_id, enabled)
-            return {"plugin_id": plugin_id, "enabled": enabled}
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Failed to set plugin enabled state for {plugin_id}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to update plugin state")
+        async with self._plugin_install_guard():
+            if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+                raise HTTPException(status_code=503, detail="Plugin manager not available")
+            try:
+                enabled = bool(payload.get("enabled"))
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid payload")
+            try:
+                plugin_manager = self.lifecycle.plugin_manager
+                if not plugin_manager.has_plugin(plugin_id):
+                    raise HTTPException(status_code=404, detail="Plugin not found")
+                if enabled and plugin_id in plugin_manager.get_plugin_load_errors():
+                    raise HTTPException(status_code=400, detail="Cannot enable a plugin that failed to load")
+                await plugin_manager.set_plugin_enabled(plugin_id, enabled)
+                return {"plugin_id": plugin_id, "enabled": enabled}
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to set plugin enabled state for {plugin_id}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to update plugin state")
 
     async def reload_plugin(self, plugin_id: str):
-        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
-            raise HTTPException(status_code=503, detail="Plugin manager not available")
-        try:
-            plugin_manager = self.lifecycle.plugin_manager
-            if not plugin_manager.has_plugin(plugin_id):
-                raise HTTPException(status_code=404, detail="Plugin not found")
-            if plugin_manager.is_builtin_plugin(plugin_id):
-                raise HTTPException(status_code=400, detail="Built-in plugins cannot be reloaded")
-            await plugin_manager.reload(plugin_id)
-            # Check if the plugin reloaded successfully
-            if plugin_id in plugin_manager.get_registered_plugins():
-                return {"plugin_id": plugin_id, "reloaded": True}
-            # Plugin failed to reload — get the error
-            errors = plugin_manager.get_plugin_load_errors()
-            error_msg = errors.get(plugin_id, {}).get("error", "Unknown error")
-            return {"plugin_id": plugin_id, "reloaded": False, "error": error_msg}
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Failed to reload plugin {plugin_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to reload plugin: {e}")
+        async with self._plugin_install_guard():
+            if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+                raise HTTPException(status_code=503, detail="Plugin manager not available")
+            try:
+                plugin_manager = self.lifecycle.plugin_manager
+                if not plugin_manager.has_plugin(plugin_id):
+                    raise HTTPException(status_code=404, detail="Plugin not found")
+                if plugin_manager.is_builtin_plugin(plugin_id):
+                    raise HTTPException(status_code=400, detail="Built-in plugins cannot be reloaded")
+                await plugin_manager.reload(plugin_id)
+                # Check if the plugin reloaded successfully
+                if plugin_id in plugin_manager.get_registered_plugins():
+                    return {"plugin_id": plugin_id, "reloaded": True}
+                # Plugin failed to reload — get the error
+                errors = plugin_manager.get_plugin_load_errors()
+                error_msg = errors.get(plugin_id, {}).get("error", "Unknown error")
+                return {"plugin_id": plugin_id, "reloaded": False, "error": error_msg}
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to reload plugin {plugin_id}: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to reload plugin: {e}")
 
     async def delete_plugin(
         self,
@@ -376,53 +406,54 @@ class PluginsRoutes(Routes):
         delete_config: bool = Query(False),
         delete_data: bool = Query(False),
     ):
-        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
-            raise HTTPException(status_code=503, detail="Plugin manager not available")
+        async with self._plugin_install_guard():
+            if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+                raise HTTPException(status_code=503, detail="Plugin manager not available")
 
-        plugin_manager = self.lifecycle.plugin_manager
+            plugin_manager = self.lifecycle.plugin_manager
 
-        if not plugin_manager.has_plugin(plugin_id):
-            raise HTTPException(status_code=404, detail="Plugin not found")
+            if not plugin_manager.has_plugin(plugin_id):
+                raise HTTPException(status_code=404, detail="Plugin not found")
 
-        if not plugin_manager.is_plugin_uninstallable(plugin_id):
-            raise HTTPException(status_code=400, detail="This built-in plugin cannot be deleted")
+            if not plugin_manager.is_plugin_uninstallable(plugin_id):
+                raise HTTPException(status_code=400, detail="This built-in plugin cannot be deleted")
 
-        plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)
-        if not plugin_dir:
-            # Failed plugins may not have a registered path; try the plugins directory
-            plugin_dir = plugin_manager.plugin_dir / plugin_id
-            if not plugin_dir.exists():
-                raise HTTPException(status_code=500, detail="Could not resolve plugin path")
+            plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)
+            if not plugin_dir:
+                # Failed plugins may not have a registered path; try the plugins directory
+                plugin_dir = plugin_manager.plugin_dir / plugin_id
+                if not plugin_dir.exists():
+                    raise HTTPException(status_code=500, detail="Could not resolve plugin path")
 
-        try:
-            await plugin_manager.uninstall_plugin(plugin_id)
-        except Exception as e:
-            logger.error(f"Failed to uninstall plugin {plugin_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to uninstall plugin: {e}")
-
-        try:
-            shutil.rmtree(plugin_dir)
-        except Exception as e:
-            logger.error(f"Failed to delete plugin directory {plugin_dir}: {e}")
-            raise HTTPException(status_code=500, detail=f"Plugin unregistered but directory deletion failed: {e}")
-
-        if delete_config:
-            config_file = PLUGIN_CONFIG_DIR / f"{plugin_id}.json"
             try:
-                if config_file.exists():
-                    config_file.unlink()
+                await plugin_manager.uninstall_plugin(plugin_id)
             except Exception as e:
-                logger.warning(f"Failed to delete plugin config {config_file}: {e}")
+                logger.error(f"Failed to uninstall plugin {plugin_id}: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to uninstall plugin: {e}")
 
-        if delete_data:
-            data_dir = PLUGIN_DATA_DIR / plugin_id
             try:
-                if data_dir.exists():
-                    shutil.rmtree(data_dir)
+                shutil.rmtree(plugin_dir)
             except Exception as e:
-                logger.warning(f"Failed to delete plugin data {data_dir}: {e}")
+                logger.error(f"Failed to delete plugin directory {plugin_dir}: {e}")
+                raise HTTPException(status_code=500, detail=f"Plugin unregistered but directory deletion failed: {e}")
 
-        return {"plugin_id": plugin_id, "deleted": True}
+            if delete_config:
+                config_file = PLUGIN_CONFIG_DIR / f"{plugin_id}.json"
+                try:
+                    if config_file.exists():
+                        config_file.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to delete plugin config {config_file}: {e}")
+
+            if delete_data:
+                data_dir = PLUGIN_DATA_DIR / plugin_id
+                try:
+                    if data_dir.exists():
+                        shutil.rmtree(data_dir)
+                except Exception as e:
+                    logger.warning(f"Failed to delete plugin data {data_dir}: {e}")
+
+            return {"plugin_id": plugin_id, "deleted": True}
 
     async def install_from_github(self, payload: PluginInstallGithubRequest) -> PluginInstallResult:
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
@@ -509,8 +540,8 @@ class PluginsRoutes(Routes):
         )
 
     def _ensure_plugin_install_available(self) -> None:
-        if self._plugin_install_lock.locked() or self._active_install_task():
-            raise HTTPException(status_code=409, detail="Another plugin installation is already in progress")
+        if self._plugin_install_lock.locked() or self._active_install_task() or self._pending_update_tasks():
+            raise HTTPException(status_code=409, detail="Another plugin installation or update is already in progress")
 
     @asynccontextmanager
     async def _plugin_install_guard(self):
@@ -706,6 +737,136 @@ class PluginsRoutes(Routes):
 
         return results
 
+    def _pending_update_tasks(self) -> List[Dict[str, Any]]:
+        return [
+            task for task in self._update_tasks.values()
+            if task["status"] in {"queued", "running"}
+        ]
+
+    @staticmethod
+    def _serialize_update_task(task_data: Dict[str, Any]) -> PluginUpdateTask:
+        return PluginUpdateTask(**{
+            key: value for key, value in task_data.items()
+            if key not in {"payload", "completed_at"}
+        })
+
+    async def list_update_tasks(self) -> List[PluginUpdateTask]:
+        return [self._serialize_update_task(task) for task in self._update_tasks.values()]
+
+    async def enqueue_plugin_updates(self, payload: PluginUpdateQueueRequest) -> List[PluginUpdateTask]:
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+        plugin_manager = self.lifecycle.plugin_manager
+        pending = {task["plugin_id"]: task for task in self._pending_update_tasks()}
+        new_items = {item.plugin_id: item for item in payload.items if item.plugin_id not in pending}
+        if len(pending) + len(new_items) > MAX_PENDING_UPDATE_TASKS:
+            raise HTTPException(status_code=409, detail="Plugin update queue is full")
+
+        # Validate the entire request before adding any work.
+        infos = {}
+        for plugin_id in new_items:
+            infos[plugin_id] = self._validate_plugin_update(plugin_id, plugin_manager)
+
+        created = []
+        seen = set()
+        for item in payload.items:
+            if item.plugin_id in seen:
+                continue
+            seen.add(item.plugin_id)
+            task_data = pending.get(item.plugin_id)
+            if task_data is None:
+                info = infos[item.plugin_id]
+                task_data = {
+                    "task_id": uuid4().hex,
+                    "plugin_id": item.plugin_id,
+                    "name": info.display_name or item.plugin_id,
+                    "commit_sha": item.commit_sha,
+                    "status": "queued",
+                    "stage": "queued",
+                    "error": None,
+                    "warnings": [],
+                    "payload": PluginUpdateRequest(gh_proxy=item.gh_proxy, commit_sha=item.commit_sha),
+                }
+                self._update_tasks[task_data["task_id"]] = task_data
+                pending[item.plugin_id] = task_data
+            created.append(self._serialize_update_task(task_data))
+
+        if self._update_worker is None or self._update_worker.done():
+            self._update_worker = asyncio.create_task(self._run_update_queue())
+        return created
+
+    async def cancel_update_task(self, task_id: str) -> PluginUpdateTask:
+        task_data = self._update_tasks.get(task_id)
+        if task_data is None:
+            raise HTTPException(status_code=404, detail="Plugin update task not found")
+        if task_data["status"] == "running":
+            raise HTTPException(status_code=409, detail="Only queued plugin updates can be cancelled")
+        if task_data["status"] == "queued":
+            self._finish_update_task(task_data, status="cancelled", stage="cancelled")
+        return self._serialize_update_task(task_data)
+
+    def _finish_update_task(self, task_data: Dict[str, Any], **values: Any) -> None:
+        task_data.update(values)
+        task_data["completed_at"] = time.monotonic()
+        terminal = sorted(
+            (task for task in self._update_tasks.values() if task["status"] not in {"queued", "running"}),
+            key=lambda task: task.get("completed_at", 0),
+        )
+        for task in terminal[:-MAX_RETAINED_UPDATE_TASKS]:
+            self._update_tasks.pop(task["task_id"], None)
+
+    async def _run_update_queue(self) -> None:
+        try:
+            while any(task["status"] == "queued" for task in self._update_tasks.values()):
+                # Installation and runtime mutations use the same lock.
+                async with self._plugin_install_lock:
+                    task_data = next(
+                        (task for task in self._update_tasks.values() if task["status"] == "queued"),
+                        None,
+                    )
+                    if task_data is None:
+                        break
+                    task_data.update(status="running", stage="downloading")
+                    try:
+                        result = await self._update_plugin_locked(
+                            task_data["plugin_id"], task_data["payload"], self.lifecycle.plugin_manager,
+                            on_stage=lambda stage: task_data.update(stage=stage),
+                        )
+                        if result.error or result.status == "error":
+                            self._finish_update_task(
+                                task_data, status="failed", stage="failed",
+                                error=result.error or "Plugin failed to initialize", warnings=result.warnings,
+                            )
+                        else:
+                            self._finish_update_task(
+                                task_data, status="completed", stage="completed", warnings=result.warnings,
+                            )
+                    except asyncio.CancelledError:
+                        self._finish_update_task(
+                            task_data, status="failed", stage="failed", error="Plugin update was interrupted",
+                        )
+                        raise
+                    except HTTPException as e:
+                        self._finish_update_task(task_data, status="failed", stage="failed", error=str(e.detail))
+                    except Exception as e:
+                        logger.exception("Queued plugin update failed")
+                        self._finish_update_task(task_data, status="failed", stage="failed", error=str(e))
+        finally:
+            self._update_worker = None
+
+    @staticmethod
+    def _validate_plugin_update(plugin_id: str, plugin_manager):
+        info = plugin_manager.get_plugin_info(plugin_id)
+        if not info:
+            raise HTTPException(status_code=404, detail="Plugin not found")
+        if info.builtin:
+            raise HTTPException(status_code=400, detail="Built-in plugins cannot be updated")
+        if not info.repo:
+            raise HTTPException(status_code=400, detail="Plugin has no repo URL configured")
+        if not plugin_manager.get_plugin_module_path(plugin_id):
+            raise HTTPException(status_code=500, detail="Could not resolve installed plugin directory")
+        return info
+
     async def update_plugin(self, plugin_id: str, payload: PluginUpdateRequest) -> PluginInstallResult:
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
             raise HTTPException(status_code=503, detail="Plugin manager not available")
@@ -715,16 +876,10 @@ class PluginsRoutes(Routes):
             return await self._update_plugin_locked(plugin_id, payload, plugin_manager)
 
     async def _update_plugin_locked(
-        self, plugin_id: str, payload: PluginUpdateRequest, plugin_manager
+        self, plugin_id: str, payload: PluginUpdateRequest, plugin_manager,
+        on_stage: Optional[Callable[[str], None]] = None,
     ) -> PluginInstallResult:
-        info = plugin_manager.get_plugin_info(plugin_id)
-        if not info:
-            raise HTTPException(status_code=404, detail="Plugin not found")
-        if info.builtin:
-            raise HTTPException(status_code=400, detail="Built-in plugins cannot be updated")
-        if not info.repo:
-            raise HTTPException(status_code=400, detail="Plugin has no repo URL configured")
-
+        info = self._validate_plugin_update(plugin_id, plugin_manager)
         plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)
         if not plugin_dir:
             raise HTTPException(status_code=500, detail="Could not resolve installed plugin directory")
@@ -743,8 +898,12 @@ class PluginsRoutes(Routes):
         except ConnectionError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
+        if on_stage:
+            on_stage("installing_dependencies")
         warnings = await install_requirements(plugin_dir, pypi_mirror=self._get_pypi_mirror())
 
+        if on_stage:
+            on_stage("loading")
         await plugin_manager.prepare_plugin_reload(plugin_id)
 
         new_plugin_id = await plugin_manager.load_plugin_from_dir(plugin_dir)
