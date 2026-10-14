@@ -8,6 +8,7 @@ import pytest
 
 from tests.adapter_lifecycle import start_adapter
 from telegram import Chat, Message, MessageEntity, Update, User as TelegramUser
+from telegram.ext import ExtBot
 
 from core.adapter import AdapterContext, BaseAdapter
 from core.adapter.adapter_info import AdapterInfo
@@ -25,7 +26,11 @@ class FakeApplication:
     def __init__(self):
         self.running = False
         self.handlers = []
-        self.bot = NS(id=99, username="KiraBot", full_name="Kira", get_file=AsyncMock())
+        self.bot = Mock(
+            spec_set=ExtBot,
+            bot=TelegramUser(id=99, first_name="Kira", is_bot=True, username="KiraBot"),
+            id=99, username="KiraBot", get_file=AsyncMock(),
+        )
         for method in ("send_message", "send_photo", "send_voice", "send_sticker", "send_document", "send_video"):
             setattr(self.bot, method, AsyncMock(return_value=NS(message_id=501)))
         self.updater = NS(running=False, start_polling=AsyncMock(side_effect=self._poll), stop=AsyncMock(side_effect=self._unpoll))
