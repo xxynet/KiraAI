@@ -412,3 +412,22 @@ def test_im_message_default_bot_objects_are_independent():
     second = KiraIMMessage("m2", "bot", MessageChain(), 0)
     first.bot.nickname = "Kira"
     assert second.bot.nickname is None
+
+
+def test_event_flush_replaces_filter_and_respects_force():
+    evt = _make_event()
+    first_filter = lambda event: event is evt
+    second_filter = lambda event: False
+    assert evt.flush(filter_fn=first_filter) is True
+    assert evt.flush_filter_fn is first_filter
+    assert evt.flush(filter_fn=second_filter) is True
+    assert evt.flush_filter_fn is second_filter
+    assert evt.flush() is True
+    assert evt.flush_filter_fn is None
+    assert evt.flush(True, filter_fn=first_filter) is True
+    assert evt.flush(filter_fn=second_filter) is False
+    assert evt.trigger() is False
+    assert evt.buffer() is False
+    assert evt.discard() is False
+    assert evt.process_strategy == "flush"
+    assert evt.flush_filter_fn is first_filter

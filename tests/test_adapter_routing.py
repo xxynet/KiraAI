@@ -447,3 +447,47 @@ async def test_filtered_flush_applies_predicate_to_extra_event(include_extra):
         assert batch.messages == [extra.message]
     else:
         processor.im_workflow.ctx.event_bus.publish.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("selected_ids", [None, {"0", "2"}, {"3"}, set()])
+async def test_event_flush_filters_buffered_and_current_events(monkeypatch, selected_ids):
+    adapter = make_adapter()
+    processor = processor_for(adapter)
+    events = [message_event(adapter) for _ in range(4)]
+    for index, event in enumerate(events):
+        event.message.message_id = str(index)
+        event.supported_elements = [f"custom-{index}"]
+    current = events[-1]
+    buffer = processor.session_buffer.get_buffer(current.session.sid)
+    for event in events[:-1]:
+        buffer.add(event)
+
+    def select_event(event):
+        assert buffer.lock.locked()
+        return event.message.message_id in selected_ids
+
+    async def select_flush(event):
+        event.flush(filter_fn=None if selected_ids is None else select_event)
+
+    monkeypatch.setattr(
+        "core.message_manager.event_handler_reg.get_handlers",
+        lambda **kw: [SimpleNamespace(exec_handler=select_flush)],
+    )
+    await processor.im_workflow.handle_event(current)
+
+    selected = events if selected_ids is None else [
+        event for event in events if event.message.message_id in selected_ids
+    ]
+    assert buffer.buffer == [event for event in events if event not in selected]
+    assert not buffer.lock.locked()
+    bus = processor.im_workflow.ctx.event_bus
+    if not selected:
+        bus.publish.assert_not_awaited()
+        return
+    bus.publish.assert_awaited_once()
+    batch = bus.publish.await_args.args[0]
+    assert batch.messages == [event.message for event in selected]
+    assert batch.supported_elements == selected[-1].supported_elements
+    assert batch.adapter is selected[-1].adapter
+    assert batch.session is selected[-1].session

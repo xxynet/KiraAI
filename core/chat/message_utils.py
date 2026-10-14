@@ -7,7 +7,7 @@ from deprecated import deprecated
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Union, Optional, Literal, TYPE_CHECKING, Iterator, overload
+from typing import Union, Optional, Literal, TYPE_CHECKING, Iterator, overload, Callable
 
 from core.chat.message_elements import (
     BaseMessageElement,
@@ -124,6 +124,7 @@ class KiraMessageEvent:
     message_repr: Optional[str] = field(default=None, init=False)
     _is_stopped: bool = False
     _is_forced: bool = False
+    _flush_filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = field(default=None, init=False, repr=False)
 
     @property
     @deprecated("message_types is deprecated; use supported_elements instead")
@@ -197,11 +198,25 @@ class KiraMessageEvent:
         self._is_forced = force
         return True
 
-    def flush(self, force: bool = False):
+    @property
+    def flush_filter_fn(self) -> Optional[Callable[[KiraMessageEvent], bool]]:
+        return self._flush_filter_fn
+
+    def flush(
+        self,
+        force: bool = False,
+        *,
+        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+    ):
+        """Select matching buffered events, including this event, for publication.
+
+        The predicate is synchronous; unmatched events remain buffered.
+        """
         if self._is_forced:
             return False
         self._process_strategy = "flush"
         self._is_forced = force
+        self._flush_filter_fn = filter_fn
         return True
 
     def discard(self, force: bool = False):
