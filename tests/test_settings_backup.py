@@ -2,6 +2,7 @@ import asyncio
 import threading
 import zipfile
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import httpx
 import pytest
@@ -22,6 +23,7 @@ def backup_routes(tmp_path, monkeypatch):
 def backup_clock(monkeypatch):
     class Clock:
         current = datetime(2026, 10, 14, 12, 30, 45)
+        fromtimestamp = staticmethod(datetime.fromtimestamp)
 
         @classmethod
         def now(cls):
@@ -113,6 +115,18 @@ async def test_background_backup_returns_immediately_and_reuses_active_task(back
         assert (await routes.start_backup()).id == started.id
         assert (await routes.get_active_backup()).id == started.id
         assert await routes.list_backups() == []
+        archive_path, = (data_path / "backups").glob("*.zip")
+        assert archive_path.with_suffix(".zip.part").exists()
+        reloaded_routes = settings.SettingsRoutes(FastAPI())
+        assert await reloaded_routes.list_backups() == []
+        for endpoint in (
+            routes.download_backup, routes.delete_backup, routes.restore_from_backup,
+            reloaded_routes.download_backup,
+        ):
+            with pytest.raises(HTTPException) as error:
+                await endpoint(archive_path.name)
+            assert error.value.status_code == 409
+        assert archive_path.exists()
     finally:
         release.set()
         await asyncio.wait_for(routes._backup_task, timeout=5)
@@ -291,37 +305,50 @@ def test_existing_partial_backup_is_not_overwritten_or_removed(backup_routes, ba
     assert list(backup_dir.iterdir()) == [partial]
 
 
-def test_backup_does_not_overwrite_filename_created_during_compression(backup_routes, backup_clock):
+def test_exclusive_archive_creation_rejects_filename_race(backup_routes, backup_clock, monkeypatch):
     routes, data_path = backup_routes
     (data_path / "config.json").write_text("{}")
     archive_path = data_path / "backups" / "backup_20261014_123045.zip"
+    marker_path = archive_path.with_suffix(".zip.part")
+    original_open = Path.open
+    events = []
 
-    def create_conflicting_archive(stage, percent):
-        if stage == "finalizing":
+    def create_conflicting_archive(path, mode="r", *args, **kwargs):
+        handle = original_open(path, mode, *args, **kwargs)
+        if path == marker_path and mode == "xb":
             archive_path.write_bytes(b"concurrent backup")
+        return handle
 
+    monkeypatch.setattr(Path, "open", create_conflicting_archive)
     with pytest.raises(HTTPException) as error:
-        routes._create_backup_sync(create_conflicting_archive)
+        routes._create_backup_sync(lambda stage, percent: events.append((stage, percent)))
 
     assert error.value.status_code == 409
+    assert events == []
     assert archive_path.read_bytes() == b"concurrent backup"
     assert list(archive_path.parent.iterdir()) == [archive_path]
 
 
-def test_partial_filename_race_does_not_remove_other_jobs_file(backup_routes, backup_clock):
+def test_marker_filename_race_does_not_remove_other_jobs_file(backup_routes, backup_clock, monkeypatch):
     routes, data_path = backup_routes
-    partial = data_path / "backups" / "backup_20261014_123045.zip.part"
+    marker_path = data_path / "backups" / "backup_20261014_123045.zip.part"
+    original_open = Path.open
+    events = []
 
-    def create_conflicting_partial(stage, percent):
-        if stage == "scanning":
-            partial.write_bytes(b"other job")
+    def create_conflicting_marker(path, mode="r", *args, **kwargs):
+        if path == marker_path and mode == "xb":
+            with original_open(path, "wb") as handle:
+                handle.write(b"other job")
+        return original_open(path, mode, *args, **kwargs)
 
+    monkeypatch.setattr(Path, "open", create_conflicting_marker)
     with pytest.raises(HTTPException) as error:
-        routes._create_backup_sync(create_conflicting_partial)
+        routes._create_backup_sync(lambda stage, percent: events.append((stage, percent)))
 
     assert error.value.status_code == 409
-    assert partial.read_bytes() == b"other job"
-    assert list(partial.parent.iterdir()) == [partial]
+    assert events == []
+    assert marker_path.read_bytes() == b"other job"
+    assert list(marker_path.parent.iterdir()) == [marker_path]
 
 
 @pytest.mark.anyio
@@ -363,3 +390,85 @@ async def test_legacy_backup_returns_conflict_for_same_filename(backup_routes, b
         second = await client.post("/api/settings/backup")
         assert second.status_code == 409
         assert archive_path.read_bytes() == original_archive
+
+
+def test_backup_succeeds_when_hard_links_are_unavailable(backup_routes, monkeypatch):
+    routes, data_path = backup_routes
+    (data_path / "config.json").write_text("{}")
+
+    def unsupported_link(*args, **kwargs):
+        raise OSError("Hard links are unsupported")
+
+    monkeypatch.setattr(settings.os, "link", unsupported_link)
+    result = routes._create_backup_sync()
+
+    with zipfile.ZipFile(data_path / "backups" / result.filename) as archive:
+        assert archive.read("config.json") == b"{}"
+        assert archive.testzip() is None
+    assert not list((data_path / "backups").glob("*.part"))
+
+
+def test_scan_failure_removes_only_owned_archive_and_marker(backup_routes, monkeypatch):
+    routes, data_path = backup_routes
+
+    def fail_scan(*args, **kwargs):
+        raise OSError("scan failed")
+
+    monkeypatch.setattr(settings.os, "walk", fail_scan)
+    with pytest.raises(OSError, match="scan failed"):
+        routes._create_backup_sync()
+    assert list((data_path / "backups").iterdir()) == []
+
+
+@pytest.mark.anyio
+async def test_marked_backup_is_hidden_and_blocked_after_routes_reload(backup_routes, backup_clock):
+    _, data_path = backup_routes
+    backup_dir = data_path / "backups"
+    backup_dir.mkdir()
+    archive_path = backup_dir / "backup_20261014_123045.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("config.json", "{}")
+    marker_path = archive_path.with_suffix(".zip.part")
+    marker_path.touch()
+    original_archive = archive_path.read_bytes()
+    routes = settings.SettingsRoutes(FastAPI())
+    routes.app.dependency_overrides[require_auth] = lambda: True
+    routes.register()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=routes.app), base_url="http://test"
+    ) as client:
+        assert (await client.get("/api/settings/backup/list")).json() == []
+        for method, path in (
+            ("GET", f"/api/settings/backup/download/{archive_path.name}"),
+            ("DELETE", f"/api/settings/backup/{archive_path.name}"),
+            ("POST", f"/api/settings/backup/{archive_path.name}/restore"),
+        ):
+            response = await client.request(method, path)
+            assert response.status_code == 409
+            assert response.json()["detail"] == "Backup is still being created"
+
+    assert archive_path.read_bytes() == original_archive
+    assert marker_path.exists()
+
+
+@pytest.mark.anyio
+async def test_completed_archive_is_visible_and_downloadable(backup_routes, backup_clock):
+    routes, data_path = backup_routes
+    (data_path / "config.json").write_text("{}")
+    started = await routes.start_backup()
+    await routes._backup_task
+    completed = await routes.get_backup_progress(started.id)
+    routes.app.dependency_overrides[require_auth] = lambda: True
+    routes.register()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=routes.app), base_url="http://test"
+    ) as client:
+        listed = (await client.get("/api/settings/backup/list")).json()
+        assert [item["filename"] for item in listed] == [completed.result.filename]
+        download = await client.get(f"/api/settings/backup/download/{completed.result.filename}")
+        assert download.status_code == 200
+        archive_path = data_path / "backups" / completed.result.filename
+        assert download.content == archive_path.read_bytes()
+        assert not archive_path.with_suffix(".zip.part").exists()

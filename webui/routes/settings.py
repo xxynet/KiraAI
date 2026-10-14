@@ -249,39 +249,44 @@ class SettingsRoutes(Routes):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"backup_{timestamp}.zip"
         zip_path = backup_dir / filename
-        temporary_path = zip_path.with_suffix(".zip.part")
-        if os.path.lexists(zip_path) or os.path.lexists(temporary_path):
+        marker_path = zip_path.with_suffix(".zip.part")
+        if os.path.lexists(zip_path) or os.path.lexists(marker_path):
             raise HTTPException(status_code=409, detail="Backup filename already exists")
         exclude_dirs = {BACKUP_DIR_NAME, "dist", "__pycache__", "updates", "temp"}
 
-        if report:
-            report("scanning", 0)
-        files_to_backup = []
-        for root, dirs, files in os.walk(data_path):
-            dirs[:] = [d for d in dirs if d not in exclude_dirs]
-            for filename_to_backup in files:
-                full_path = Path(root) / filename_to_backup
-                try:
-                    size = full_path.stat().st_size
-                except OSError:
-                    continue
-                files_to_backup.append((full_path, max(size, 1)))
-
-        total = sum(weight for _, weight in files_to_backup)
-        processed = 0
-        last_percent = -1
-
-        def report_compression(current: int):
-            nonlocal last_percent
-            percent = min(99, current * 99 // max(total, 1))
-            if report and percent != last_percent:
-                report("compressing", percent)
-                last_percent = percent
-
-        temporary_created = False
+        marker_created = False
+        archive_created = False
+        completed = False
         try:
-            with zipfile.ZipFile(temporary_path, "x", zipfile.ZIP_DEFLATED) as zf:
-                temporary_created = True
+            # Reserve the name before scanning and hide the archive until it is closed.
+            with marker_path.open("xb"):
+                marker_created = True
+            with zipfile.ZipFile(zip_path, "x", zipfile.ZIP_DEFLATED) as zf:
+                archive_created = True
+                if report:
+                    report("scanning", 0)
+                files_to_backup = []
+                for root, dirs, files in os.walk(data_path):
+                    dirs[:] = [d for d in dirs if d not in exclude_dirs]
+                    for filename_to_backup in files:
+                        full_path = Path(root) / filename_to_backup
+                        try:
+                            size = full_path.stat().st_size
+                        except OSError:
+                            continue
+                        files_to_backup.append((full_path, max(size, 1)))
+
+                total = sum(weight for _, weight in files_to_backup)
+                processed = 0
+                last_percent = -1
+
+                def report_compression(current: int):
+                    nonlocal last_percent
+                    percent = min(99, current * 99 // max(total, 1))
+                    if report and percent != last_percent:
+                        report("compressing", percent)
+                        last_percent = percent
+
                 report_compression(0)
                 for full_path, weight in files_to_backup:
                     try:
@@ -304,19 +309,21 @@ class SettingsRoutes(Routes):
                     report_compression(processed)
                 if report:
                     report("finalizing", 99)
-            # Publish the completed archive atomically without replacing an existing backup.
-            os.link(temporary_path, zip_path)
+
+            result = BackupCreateResponse(
+                filename=filename,
+                size_bytes=zip_path.stat().st_size,
+                created_at=datetime.now().isoformat(),
+            )
+            completed = True
+            return result
         except FileExistsError as exc:
             raise HTTPException(status_code=409, detail="Backup filename already exists") from exc
         finally:
-            if temporary_created:
-                temporary_path.unlink(missing_ok=True)
-
-        return BackupCreateResponse(
-            filename=filename,
-            size_bytes=zip_path.stat().st_size,
-            created_at=datetime.now().isoformat(),
-        )
+            if archive_created and not completed:
+                zip_path.unlink(missing_ok=True)
+            if marker_created:
+                marker_path.unlink(missing_ok=True)
 
     async def list_backups(self):
         backup_dir = _get_backup_dir()
@@ -325,6 +332,8 @@ class SettingsRoutes(Routes):
         backups = []
         for f in sorted(backup_dir.iterdir(), reverse=True):
             if f.suffix == ".zip" and f.is_file():
+                if os.path.lexists(f.with_suffix(".zip.part")):
+                    continue
                 stat = f.stat()
                 backups.append({
                     "filename": f.name,
@@ -342,6 +351,8 @@ class SettingsRoutes(Routes):
         # Prevent path traversal
         if backup_path.resolve().parent != _get_backup_dir().resolve():
             raise HTTPException(status_code=400, detail="Invalid filename")
+        if os.path.lexists(backup_path.with_name(backup_path.name + ".part")):
+            raise HTTPException(status_code=409, detail="Backup is still being created")
         return FileResponse(
             path=str(backup_path),
             filename=filename,
@@ -354,6 +365,8 @@ class SettingsRoutes(Routes):
             raise HTTPException(status_code=404, detail="Backup not found")
         if backup_path.resolve().parent != _get_backup_dir().resolve():
             raise HTTPException(status_code=400, detail="Invalid filename")
+        if os.path.lexists(backup_path.with_name(backup_path.name + ".part")):
+            raise HTTPException(status_code=409, detail="Backup is still being created")
         backup_path.unlink()
         return {"success": True}
 
@@ -363,6 +376,8 @@ class SettingsRoutes(Routes):
             raise HTTPException(status_code=404, detail="Backup not found")
         if backup_path.resolve().parent != _get_backup_dir().resolve():
             raise HTTPException(status_code=400, detail="Invalid filename")
+        if os.path.lexists(backup_path.with_name(backup_path.name + ".part")):
+            raise HTTPException(status_code=409, detail="Backup is still being created")
 
         async with self._maintenance_lock:
             return await asyncio.to_thread(self._do_restore, backup_path)
