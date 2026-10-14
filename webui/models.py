@@ -358,6 +358,27 @@ class PluginUpdateRequest(BaseModel):
         return normalized
 
 
+class PluginUpdateQueueItem(PluginUpdateRequest):
+    plugin_id: str = Field(min_length=1, max_length=200)
+
+
+class PluginUpdateQueueRequest(BaseModel):
+    items: List[PluginUpdateQueueItem] = Field(min_length=1, max_length=100)
+
+
+class PluginUpdateTask(BaseModel):
+    """An in-memory queued plugin update."""
+
+    task_id: str
+    plugin_id: str
+    name: str
+    commit_sha: Optional[str] = None
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    stage: Literal["queued", "downloading", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
+    error: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+
+
 class PluginStoreFetchRequest(BaseModel):
     url: Optional[str] = None
     source_id: Optional[str] = None

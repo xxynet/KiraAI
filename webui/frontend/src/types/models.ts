@@ -265,6 +265,23 @@ export interface PluginInstallTask {
   warnings: string[]
 }
 
+export interface PluginUpdateQueueItem {
+  plugin_id: string
+  gh_proxy?: string | null
+  commit_sha?: string | null
+}
+
+export interface PluginUpdateTask {
+  task_id: string
+  plugin_id: string
+  name: string
+  commit_sha?: string | null
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  stage: 'queued' | 'downloading' | 'installing_dependencies' | 'loading' | 'completed' | 'failed' | 'cancelled'
+  error?: string | null
+  warnings: string[]
+}
+
 export interface McpServerItem {
   id: string
   type: string

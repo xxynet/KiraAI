@@ -218,3 +218,23 @@ def test_install_rejects_oversized_zip_central_directory(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match="central directory"):
         asyncio.run(plugin_installer.install_from_zip(_plugin_archive("plugin-id"), tmp_path / "plugins"))
+
+@pytest.mark.asyncio
+async def test_requirements_timeout_kills_and_reaps_the_process(tmp_path, monkeypatch):
+    (tmp_path / "requirements.txt").write_text("example", encoding="utf-8")
+    real_create = asyncio.create_subprocess_exec
+    processes = []
+
+    async def hanging_process(*args, **kwargs):
+        proc = await real_create(
+            plugin_installer.sys.executable, "-c", "import time; time.sleep(30)", **kwargs,
+        )
+        processes.append(proc)
+        return proc
+
+    monkeypatch.setattr(plugin_installer.asyncio, "create_subprocess_exec", hanging_process)
+    monkeypatch.setattr(plugin_installer, "PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS", 0.05)
+    warnings = await asyncio.wait_for(plugin_installer.install_requirements(tmp_path), 5)
+    assert len(processes) == 1
+    assert processes[0].returncode is not None
+    assert warnings == ["Dependency installation timed out after 0.05s"]

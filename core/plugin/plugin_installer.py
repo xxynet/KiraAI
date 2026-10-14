@@ -29,6 +29,7 @@ from core.utils.path_utils import get_data_path, is_within_directory
 
 logger = get_logger("plugin_installer", "cyan")
 
+PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS = 300
 MAX_PLUGIN_ARCHIVE_BYTES = 50 * 1024 * 1024
 MAX_PLUGIN_ARCHIVE_FILE_COUNT = 10_000
 MAX_PLUGIN_ARCHIVE_COMPRESSION_RATIO = 100
@@ -218,7 +219,16 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await proc.communicate()
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                await proc.communicate()
+            return [f"Dependency installation timed out after {PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS}s"]
     except asyncio.CancelledError:
         if proc and proc.returncode is None:
             proc.terminate()
