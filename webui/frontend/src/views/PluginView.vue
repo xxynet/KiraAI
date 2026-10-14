@@ -892,7 +892,7 @@
                   type="checkbox"
                   :value="item.plugin_id"
                   :disabled="enqueueingUpdates"
-                  class="mt-0.5 shrink-0 rounded border-gray-300 text-green-600 focus:ring-green-500 dark:border-gray-600"
+                  class="ui-checkbox mt-0.5"
                 />
                 <span class="min-w-0 break-words">{{ updateItemName(item) }}</span>
               </label>
@@ -1145,11 +1145,11 @@
     >
       <div v-if="isUninstallConfirm" class="px-6 pb-2 space-y-2">
         <label class="flex items-center gap-2 text-sm text-theme-body cursor-pointer">
-          <input type="checkbox" v-model="uninstallDeleteConfig" class="rounded border-gray-300 dark:border-gray-600" />
+          <input type="checkbox" v-model="uninstallDeleteConfig" class="ui-checkbox" />
           {{ t('plugin.delete_config') }}
         </label>
         <label class="flex items-center gap-2 text-sm text-theme-body cursor-pointer">
-          <input type="checkbox" v-model="uninstallDeleteData" class="rounded border-gray-300 dark:border-gray-600" />
+          <input type="checkbox" v-model="uninstallDeleteData" class="ui-checkbox" />
           {{ t('plugin.delete_data') }}
         </label>
       </div>
