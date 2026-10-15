@@ -1461,9 +1461,10 @@ async function handleCheckUpdates(silent = false) {
   checkingUpdates.value = true
   try {
     const res = await checkPluginUpdates()
+    const installedIds = new Set(plugins.value.map(plugin => plugin.id))
     const map = new Map<string, PluginUpdateCheckItem>()
     for (const item of res.data) {
-      if (item.has_update) {
+      if (item.has_update && installedIds.has(item.plugin_id)) {
         map.set(item.plugin_id, item)
       }
     }
@@ -1712,6 +1713,11 @@ function handleDeletePlugin(id: string) {
           deleteConfig: uninstallDeleteConfig.value,
           deleteData: uninstallDeleteData.value,
         })
+        plugins.value = plugins.value.filter(plugin => plugin.id !== id)
+        pluginUpdates.value.delete(id)
+        for (const item of storePlugins.value) {
+          if (item.id === id) item.installed = false
+        }
         notify(t('plugin.uninstall_success'), 'success')
         await loadPlugins()
       } catch {
