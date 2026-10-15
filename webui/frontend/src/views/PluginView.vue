@@ -1419,6 +1419,10 @@ async function loadPlugins(): Promise<boolean> {
   try {
     const res = await getPlugins()
     plugins.value = Array.isArray(res.data) ? res.data : []
+    const installedIds = new Set(plugins.value.map(plugin => plugin.id))
+    for (const item of storePlugins.value) {
+      item.installed = installedIds.has(item.id)
+    }
     pluginsError.value = null
     return true
   } catch (e: any) {
@@ -2556,7 +2560,6 @@ async function refreshStoreInstallTask() {
     stopStoreInstallPolling()
     if (response.data.status === 'completed') {
       await loadPlugins()
-      await fetchStorePlugins()
       storeInstallVisible.value = false
       notify(t('pluginStore.install_success'), 'success')
     } else if (response.data.status === 'cancelled') {
