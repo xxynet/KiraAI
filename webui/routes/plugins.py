@@ -714,7 +714,7 @@ class PluginsRoutes(Routes):
 
         results: List[PluginUpdateCheckItem] = []
         for info in plugin_manager.list_plugins():
-            if info.builtin or info.hidden or info.status == "error":
+            if info.builtin or info.hidden:
                 continue
 
             pid = info.plugin_id

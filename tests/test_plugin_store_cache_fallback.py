@@ -191,6 +191,47 @@ async def test_update_check_falls_back_to_head_for_invalid_catalog_commit_sha(tm
     assert result[0].has_update is True
     assert result[0].commit_sha is None
 
+@pytest.mark.asyncio
+async def test_update_check_includes_plugins_with_load_errors(tmp_path, monkeypatch):
+    source = {
+        "id": "source-1",
+        "url": "https://store.example/plugins.json",
+        "cache_file": None,
+        "updated_at": 0,
+        "is_current": True,
+    }
+
+    async def fetch_store(url, timeout):
+        return {
+            "plugins": {
+                "example": {
+                    "plugin_id": "example",
+                    "version": "2.0.0",
+                },
+            },
+        }
+
+    plugin_manager = SimpleNamespace(
+        list_plugins=lambda: [SimpleNamespace(
+            builtin=False,
+            hidden=False,
+            status="error",
+            plugin_id="example",
+            version="1.0.0",
+        )],
+    )
+    monkeypatch.setattr(store_module, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(store_module, "get_json", fetch_store)
+    routes = PluginsRoutes(
+        FastAPI(),
+        SimpleNamespace(plugin_manager=plugin_manager, db_service=FakeDatabaseService(source)),
+    )
+
+    result = await routes.check_plugin_updates()
+
+    assert result[0].has_update is True
+    assert result[0].latest_version == "2.0.0"
+
 @pytest.mark.parametrize("refresh_fails", [False, True])
 def test_registered_store_routes_preserve_source_and_cache_lifecycle(tmp_path, monkeypatch, refresh_fails):
     monkeypatch.setattr(store_module, "get_data_path", lambda: tmp_path)
