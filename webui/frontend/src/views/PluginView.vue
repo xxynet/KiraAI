@@ -633,7 +633,7 @@
         />
       </div>
 
-      <div v-if="filteredStorePlugins.length > STORE_PAGE_SIZE" class="mt-6 flex items-center justify-center gap-3">
+      <nav v-if="filteredStorePlugins.length > STORE_PAGE_SIZE" :aria-label="$t('pluginStore.pagination_label')" class="mt-6 flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
           class="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 text-theme-body hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:hover:bg-gray-800"
@@ -642,9 +642,22 @@
         >
           {{ $t('pluginStore.pagination_previous') }}
         </button>
-        <span class="text-sm text-theme-subtle">
-          {{ $t('pluginStore.pagination_page', { page: storePage, total: storeTotalPages }) }}
-        </span>
+        <template v-for="page in storePageNumbers" :key="page">
+          <button
+            v-if="typeof page === 'number'"
+            type="button"
+            class="min-w-8 px-2 py-1.5 text-sm font-medium rounded-md border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            :class="page === storePage
+              ? 'border-blue-600 bg-blue-600 text-white dark:border-blue-500 dark:bg-blue-500'
+              : 'border-gray-300 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800'"
+            :aria-label="$t('pluginStore.pagination_page', { page })"
+            :aria-current="page === storePage ? 'page' : undefined"
+            @click="storePage = page"
+          >
+            {{ page }}
+          </button>
+          <span v-else class="px-1 text-sm text-theme-subtle" aria-hidden="true">…</span>
+        </template>
         <button
           type="button"
           class="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 text-theme-body hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:hover:bg-gray-800"
@@ -653,7 +666,7 @@
         >
           {{ $t('pluginStore.pagination_next') }}
         </button>
-      </div>
+      </nav>
 
       <!-- Plugin Sources Management Modal -->
       <Modal v-model="sourceManageVisible" content-class="max-w-lg">
@@ -1419,6 +1432,10 @@ async function loadPlugins(): Promise<boolean> {
   try {
     const res = await getPlugins()
     plugins.value = Array.isArray(res.data) ? res.data : []
+    const installedIds = new Set(plugins.value.map(plugin => plugin.id))
+    for (const item of storePlugins.value) {
+      item.installed = installedIds.has(item.id)
+    }
     pluginsError.value = null
     return true
   } catch (e: any) {
@@ -1444,9 +1461,10 @@ async function handleCheckUpdates(silent = false) {
   checkingUpdates.value = true
   try {
     const res = await checkPluginUpdates()
+    const installedIds = new Set(plugins.value.map(plugin => plugin.id))
     const map = new Map<string, PluginUpdateCheckItem>()
     for (const item of res.data) {
-      if (item.has_update) {
+      if (item.has_update && installedIds.has(item.plugin_id)) {
         map.set(item.plugin_id, item)
       }
     }
@@ -1695,6 +1713,11 @@ function handleDeletePlugin(id: string) {
           deleteConfig: uninstallDeleteConfig.value,
           deleteData: uninstallDeleteData.value,
         })
+        plugins.value = plugins.value.filter(plugin => plugin.id !== id)
+        pluginUpdates.value.delete(id)
+        for (const item of storePlugins.value) {
+          if (item.id === id) item.installed = false
+        }
         notify(t('plugin.uninstall_success'), 'success')
         await loadPlugins()
       } catch {
@@ -2310,6 +2333,17 @@ const filteredStorePlugins = computed(() => {
 
 const storeTotalPages = computed(() => Math.max(1, Math.ceil(filteredStorePlugins.value.length / STORE_PAGE_SIZE)))
 
+const storePageNumbers = computed<(number | string)[]>(() => {
+  const total = storeTotalPages.value
+  const current = storePage.value
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1)
+  if (current <= 4) return [1, 2, 3, 4, 5, 'end-ellipsis', total]
+  if (current >= total - 3) {
+    return [1, 'start-ellipsis', total - 4, total - 3, total - 2, total - 1, total]
+  }
+  return [1, 'start-ellipsis', current - 1, current, current + 1, 'end-ellipsis', total]
+})
+
 const paginatedStorePlugins = computed(() => {
   const start = (storePage.value - 1) * STORE_PAGE_SIZE
   return filteredStorePlugins.value.slice(start, start + STORE_PAGE_SIZE)
@@ -2556,7 +2590,6 @@ async function refreshStoreInstallTask() {
     stopStoreInstallPolling()
     if (response.data.status === 'completed') {
       await loadPlugins()
-      await fetchStorePlugins()
       storeInstallVisible.value = false
       notify(t('pluginStore.install_success'), 'success')
     } else if (response.data.status === 'cancelled') {
