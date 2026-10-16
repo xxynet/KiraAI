@@ -715,11 +715,15 @@ class PluginsRoutes(Routes):
     async def enqueue_github_install(self, payload: PluginInstallGithubRequest) -> PluginTask:
         self._require_plugin_manager()
         repo_url = payload.repo_url.strip().rstrip("/")
+        display_name = (payload.display_name or "").strip()
         for task in self._pending_plugin_tasks():
             if task["operation"] == "install" and task["repo_url"] == repo_url:
+                if display_name and task["name"] == repo_url:
+                    task["name"] = display_name
+                    task["payload"] = task["payload"].model_copy(update={"display_name": display_name})
                 return self._serialize_plugin_task(task)
         self._check_queue_capacity()
-        task = self._add_plugin_task("install", "github", repo_url, payload)
+        task = self._add_plugin_task("install", "github", display_name or repo_url, payload)
         task.update(repo_url=repo_url, commit_sha=payload.commit_sha)
         return self._serialize_plugin_task(task)
 
@@ -856,6 +860,7 @@ class PluginsRoutes(Routes):
                     try:
                         result = await task["task"]
                         task["result"] = result
+                        task.update(plugin_id=result.id, name=result.name)
                         if result.error or result.status == "error":
                             self._finish_plugin_task(task, status="failed", stage="failed",
                                                      error=result.error or "Plugin failed to initialize", warnings=result.warnings)

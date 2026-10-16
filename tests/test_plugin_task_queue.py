@@ -147,9 +147,10 @@ async def test_cancel_running_install_keeps_queue_alive_and_cleans_directory(tmp
     await asyncio.wait_for(started.wait(), 2)
     await routes.cancel_plugin_task(task.task_id)
     await routes.cancel_plugin_task(task.task_id)
-    await routes.enqueue_upload_install(upload())
     monkeypatch.setattr(routes, "_install_from_upload_locked", later)
+    next_task = await routes.enqueue_upload_install(upload())
     await asyncio.wait_for(worker, 2)
+    await asyncio.wait_for(routes._plugin_tasks[next_task.task_id]["done"].wait(), 2)
     assert not install_dir.exists()
     assert [task.status for task in await routes.list_plugin_tasks()] == ["cancelled", "completed"]
 
@@ -315,3 +316,68 @@ async def test_legacy_result_preserves_initialization_error_and_http_status(rout
     with pytest.raises(HTTPException) as error:
         await routes.install_from_github(github("other"))
     assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_install_display_name_is_available_while_queued_running_and_retrying(routes, monkeypatch):
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def fail_download(*args, **kwargs):
+        started.set()
+        await release.wait()
+        raise HTTPException(422, "Download failed")
+
+    monkeypatch.setattr(routes, "_install_from_github_locked", fail_download)
+    created = await routes.enqueue_github_install(github(display_name=" Astrbook "))
+    assert created.status == "queued" and created.name == "Astrbook"
+    worker = routes._plugin_task_worker
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        restored = (await routes.list_plugin_tasks())[0]
+        assert restored.status == "running" and restored.name == "Astrbook"
+        assert restored.plugin_id is None
+    finally:
+        release.set()
+        await asyncio.wait_for(worker, 2)
+    retried = await routes.retry_plugin_task(created.task_id)
+    assert retried.task_id != created.task_id and retried.name == "Astrbook"
+    await asyncio.wait_for(routes._plugin_task_worker, 2)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_install_can_supply_missing_name_without_changing_commit(routes):
+    async with routes._plugin_install_lock:
+        first = await routes.enqueue_github_install(github(commit_sha="a" * 40))
+        named = await routes.enqueue_github_install(github(display_name="Astrbook", commit_sha="b" * 40))
+        assert named.task_id == first.task_id and named.name == "Astrbook"
+        assert named.commit_sha == "a" * 40
+        await routes.cancel_plugin_task(first.task_id)
+        retried = await routes.retry_plugin_task(first.task_id)
+        assert retried.name == "Astrbook" and retried.commit_sha == "a" * 40
+        worker = routes._plugin_task_worker
+    await asyncio.wait_for(worker, 2)
+
+
+@pytest.mark.asyncio
+async def test_install_name_api_restores_hint_and_records_final_manifest_name(routes, monkeypatch):
+    async def install(*args, **kwargs):
+        installed = result("astrbook")
+        installed.name = "Astrbook"
+        return installed
+
+    monkeypatch.setattr(routes, "_install_from_github_locked", install)
+    routes.register()
+    routes.app.dependency_overrides[require_auth] = lambda: "test-user"
+    transport = httpx.ASGITransport(app=routes.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with routes._plugin_install_lock:
+            response = await client.post("/api/plugins/tasks/install/github", json=github(display_name="Astrbook").model_dump())
+            assert response.status_code == 200 and response.json()["name"] == "Astrbook"
+            restored = await client.get("/api/plugins/tasks")
+            assert restored.json()[0]["name"] == "Astrbook"
+            invalid = await client.post("/api/plugins/tasks/install/github", json=github().model_dump() | {"display_name": "x" * 201})
+            assert invalid.status_code == 422
+            worker = routes._plugin_task_worker
+        await asyncio.wait_for(worker, 2)
+        completed = (await client.get("/api/plugins/tasks")).json()[0]
+        assert completed["name"] == "Astrbook" and completed["plugin_id"] == "astrbook"

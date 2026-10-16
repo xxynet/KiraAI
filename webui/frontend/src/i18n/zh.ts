@@ -596,6 +596,7 @@ export default {
     install_view_progress: '查看进度',
     install_cancel: '取消安装',
     install_cancelled: '安装已取消',
+    install_stage_queued: '等待安装…',
     install_stage_downloading: '正在下载插件…',
     install_stage_dependencies: '正在安装依赖…',
     install_stage_loading: '正在加载插件…',

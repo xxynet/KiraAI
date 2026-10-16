@@ -302,6 +302,7 @@ class PluginConfigUpdateRequest(BaseModel):
 
 class PluginInstallGithubRequest(BaseModel):
     repo_url: str
+    display_name: Optional[str] = Field(default=None, max_length=200)
     proxy: Optional[str] = None
     gh_proxy: Optional[str] = None
     commit_sha: Optional[str] = None

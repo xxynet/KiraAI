@@ -596,6 +596,7 @@ export default {
     install_view_progress: 'View progress',
     install_cancel: 'Cancel installation',
     install_cancelled: 'Installation cancelled',
+    install_stage_queued: 'Waiting to install…',
     install_stage_downloading: 'Downloading plugin…',
     install_stage_dependencies: 'Installing dependencies…',
     install_stage_loading: 'Loading plugin…',

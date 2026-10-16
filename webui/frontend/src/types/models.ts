@@ -245,6 +245,7 @@ export interface PluginConfigUpdateRequest {
 
 export interface PluginInstallGithubRequest {
   repo_url: string
+  display_name?: string | null
   proxy?: string | null
   gh_proxy?: string | null
   commit_sha?: string | null

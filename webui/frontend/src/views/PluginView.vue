@@ -33,6 +33,7 @@
               <IconSpinner v-if="task.status === 'running'" class="h-4 w-4 shrink-0 animate-spin text-blue-600" />
               <span class="min-w-0 flex-1 break-words text-theme-strong">{{ $t('plugin.task_operation_' + task.operation) }} · {{ pluginTaskName(task) }}</span>
               <span class="shrink-0 text-theme-subtle">{{ taskStageLabel(task.stage) }}</span>
+              <button v-if="storeTaskItem(task)" type="button" class="shrink-0 text-blue-600 hover:underline dark:text-blue-400" @click="viewStoreInstallTask(task)">{{ $t('pluginStore.install_view_progress') }}</button>
               <button v-if="task.status === 'queued' || (task.status === 'running' && task.operation === 'install' && task.stage !== 'loading')" type="button" class="shrink-0 text-red-600 hover:underline dark:text-red-400" @click="cancelQueuedTask(task)">{{ $t('plugin.cancel') }}</button>
               <button v-if="retryablePluginTasks.some(item => item.task_id === task.task_id)" type="button" class="shrink-0 text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="enqueueingUpdates" @click="retryPluginTasks([task])">{{ $t('plugin.update_retry') }}</button>
             </div>
@@ -784,10 +785,21 @@
             <div><dt class="text-theme-subtle">{{ $t('plugin.plugin_id') }}</dt><dd class="mt-1 font-mono break-all text-theme-high">{{ storeInstallTarget.id }}</dd></div>
             <div v-if="storeInstallRepo" class="sm:col-span-2"><dt class="text-theme-subtle">{{ $t('plugin.repo_url') }}</dt><dd class="mt-1 break-all"><a :href="storeInstallRepo" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300">{{ storeInstallRepo }}</a></dd></div>
           </dl>
+          <div v-if="storeInstallTask" class="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-700">
+            <div class="flex items-center gap-2 text-theme-body"><IconSpinner v-if="storeInstallTask.status === 'running'" class="h-4 w-4 animate-spin text-blue-600" /><span>{{ storeInstallStageLabel }}</span></div>
+            <p v-if="storeInstallTask.error" class="mt-2 break-words text-red-600 dark:text-red-400">{{ storeInstallTask.error }}</p>
+          </div>
         </div>
         <div class="flex justify-end gap-3 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
-          <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body" @click="storeInstallVisible = false">{{ $t('plugin.cancel') }}</button>
-          <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg disabled:opacity-50" :disabled="installing" @click="startStoreInstall">{{ $t('pluginStore.install') }}</button>
+          <template v-if="storeInstallPending">
+            <button type="button" class="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50" :disabled="storeInstallTask?.stage === 'loading'" @click="cancelStoreInstall">{{ $t('pluginStore.install_cancel') }}</button>
+            <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="storeInstallVisible = false">{{ $t('pluginStore.install_silent') }}</button>
+          </template>
+          <button v-else-if="storeInstallTask" type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="storeInstallVisible = false">{{ $t('plugin.close') }}</button>
+          <template v-else>
+            <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" @click="storeInstallVisible = false">{{ $t('plugin.cancel') }}</button>
+            <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" :disabled="installing" @click="startStoreInstall">{{ $t('pluginStore.install') }}</button>
+          </template>
         </div>
       </div>
     </Modal>
@@ -1479,7 +1491,9 @@ function updateItemName(item: PluginUpdateQueueItem): string {
 
 function pluginTaskName(task: PluginTask): string {
   const plugin = plugins.value.find(plugin => plugin.id === task.plugin_id)
-  return plugin ? localize(plugin, 'display_name', plugin.name || plugin.id) : task.name
+  if (plugin) return localize(plugin, 'display_name', plugin.name || plugin.id)
+  const storeItem = storeTaskItem(task)
+  return storeItem ? storePluginName(storeItem) : task.name
 }
 
 function openUpdateDialog(items: PluginUpdateQueueItem[]) {
@@ -2236,6 +2250,35 @@ const storeLoading = ref(false)
 const storeError = ref<string | null>(null)
 const storeInstallVisible = ref(false)
 const storeInstallTarget = ref<PluginStoreItem | null>(null)
+const storeInstallTaskId = ref<string | null>(null)
+const storeInstallTask = computed(() => pluginTasks.value.find(task => task.task_id === storeInstallTaskId.value) || null)
+const storeInstallPending = computed(() => !!storeInstallTask.value && ['queued', 'running'].includes(storeInstallTask.value.status))
+const storeInstallStageLabel = computed(() => {
+  const stage = storeInstallTask.value?.stage
+  if (!stage) return ''
+  if (stage === 'extracting') return taskStageLabel(stage)
+  return t('pluginStore.install_stage_' + (stage === 'installing_dependencies' ? 'dependencies' : stage))
+})
+
+function storeTaskItem(task: PluginTask): PluginStoreItem | undefined {
+  if (task.operation !== 'install' || !task.repo_url) return undefined
+  const candidates = storeInstallTarget.value ? [storeInstallTarget.value, ...storePlugins.value] : storePlugins.value
+  return candidates.find(item => item.repo?.trim().replace(/\/+$/, '') === task.repo_url)
+}
+
+function viewStoreInstallTask(task: PluginTask) {
+  const item = storeTaskItem(task)
+  if (!item) return
+  storeInstallTarget.value = item
+  storeInstallTaskId.value = task.task_id
+  storeInstallVisible.value = true
+}
+
+async function cancelStoreInstall() {
+  const task = storeInstallTask.value
+  if (task) await cancelQueuedTask(task)
+}
+
 function pendingStoreInstall(item: PluginStoreItem): boolean {
   return pluginTasks.value.some(task => task.operation === 'install' && task.repo_url === item.repo
     && ['queued', 'running'].includes(task.status))
@@ -2500,21 +2543,23 @@ async function fetchStorePlugins(forceRefresh: boolean = false) {
 function handleStoreInstall(item: PluginStoreItem) {
   if (item.installed || pendingStoreInstall(item)) return
   storeInstallTarget.value = item
+  storeInstallTaskId.value = null
   storeInstallVisible.value = true
 }
 
 async function startStoreInstall() {
   const item = storeInstallTarget.value
-  if (!item?.repo || installing.value) return
+  if (!item?.repo || installing.value || storeInstallTaskId.value) return
   installing.value = true
   try {
     const response = await enqueueGithubInstall({
       repo_url: item.repo,
+      display_name: storePluginName(item),
       gh_proxy: resolveGhProxy(),
       commit_sha: item.commit_sha,
     })
     acceptPluginTasks([response.data])
-    storeInstallVisible.value = false
+    storeInstallTaskId.value = response.data.task_id
     notify(t('plugin.task_queued'), 'success')
   } catch (e: any) {
     notify(e?.response?.data?.detail || t('pluginStore.install_failed'), 'error')
