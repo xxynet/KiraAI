@@ -2280,7 +2280,8 @@ async function cancelStoreInstall() {
 }
 
 function pendingStoreInstall(item: PluginStoreItem): boolean {
-  return pluginTasks.value.some(task => task.operation === 'install' && task.repo_url === item.repo
+  const repo = item.repo?.trim().replace(/\/+$/, '')
+  return pluginTasks.value.some(task => task.operation === 'install' && task.repo_url === repo
     && ['queued', 'running'].includes(task.status))
 }
 
