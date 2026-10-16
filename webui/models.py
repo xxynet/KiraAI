@@ -302,6 +302,7 @@ class PluginConfigUpdateRequest(BaseModel):
 
 class PluginInstallGithubRequest(BaseModel):
     repo_url: str
+    display_name: Optional[str] = Field(default=None, max_length=200)
     proxy: Optional[str] = None
     gh_proxy: Optional[str] = None
     commit_sha: Optional[str] = None
@@ -375,6 +376,22 @@ class PluginUpdateTask(BaseModel):
     commit_sha: Optional[str] = None
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
     stage: Literal["queued", "downloading", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
+    error: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+
+
+class PluginTask(BaseModel):
+    """An installation or update in the shared in-memory FIFO queue."""
+
+    task_id: str
+    operation: Literal["install", "update"]
+    source: Literal["github", "upload"] = "github"
+    plugin_id: Optional[str] = None
+    name: str
+    repo_url: Optional[str] = None
+    commit_sha: Optional[str] = None
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    stage: Literal["queued", "downloading", "extracting", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
     error: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
 

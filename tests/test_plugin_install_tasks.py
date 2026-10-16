@@ -28,7 +28,7 @@ async def test_background_plugin_install_task_can_be_cancelled(tmp_path, monkeyp
     await started.wait()
 
     await routes.cancel_install_task(created.task_id)
-    await asyncio.gather(routes._install_tasks[created.task_id]["task"], return_exceptions=True)
+    await asyncio.wait_for(routes._plugin_task_worker, 2)
 
     result = await routes.get_install_task(created.task_id)
     assert result.status == "cancelled"
@@ -46,17 +46,17 @@ async def test_plugin_install_guard_rejects_concurrent_operations():
 
 def test_plugin_install_task_history_is_bounded():
     routes = PluginsRoutes(FastAPI(), SimpleNamespace())
-    for index in range(20):
-        routes._install_tasks[str(index)] = {
+    for index in range(plugin_routes.MAX_RETAINED_PLUGIN_TASKS):
+        routes._plugin_tasks[str(index)] = {
             "task_id": str(index),
             "status": "completed",
             "completed_at": index,
         }
 
-    newest_task = {"task_id": "newest", "status": "installing"}
-    routes._install_tasks["newest"] = newest_task
-    routes._finish_install_task(newest_task, status="completed", stage="completed")
+    newest_task = {"task_id": "newest", "status": "queued"}
+    routes._plugin_tasks["newest"] = newest_task
+    routes._finish_plugin_task(newest_task, status="completed", stage="completed")
 
-    assert len(routes._install_tasks) == 20
-    assert "0" not in routes._install_tasks
-    assert "newest" in routes._install_tasks
+    assert len(routes._plugin_tasks) == plugin_routes.MAX_RETAINED_PLUGIN_TASKS
+    assert "0" not in routes._plugin_tasks
+    assert "newest" in routes._plugin_tasks

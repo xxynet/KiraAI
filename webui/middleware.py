@@ -18,7 +18,7 @@ class PluginUploadSizeLimitMiddleware:
         if (
             scope["type"] != "http"
             or scope["method"] != "POST"
-            or scope["path"] != PLUGIN_UPLOAD_PATH
+            or scope["path"] not in {PLUGIN_UPLOAD_PATH, "/api/plugins/tasks/install/upload"}
         ):
             await self.app(scope, receive, send)
             return
