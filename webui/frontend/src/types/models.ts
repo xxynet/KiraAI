@@ -282,6 +282,19 @@ export interface PluginUpdateTask {
   warnings: string[]
 }
 
+export interface PluginTask {
+  task_id: string
+  operation: 'install' | 'update'
+  source: 'github' | 'upload'
+  plugin_id: string | null
+  name: string
+  repo_url: string | null
+  commit_sha?: string | null
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  stage: 'queued' | 'downloading' | 'extracting' | 'installing_dependencies' | 'loading' | 'completed' | 'failed' | 'cancelled'
+  error?: string | null
+  warnings: string[]
+}
 export interface McpServerItem {
   id: string
   type: string

@@ -7,7 +7,6 @@ from fastapi import FastAPI, HTTPException
 
 import webui.routes.plugins as plugin_routes
 from webui.models import (
-    PluginInstallGithubRequest,
     PluginInstallResult,
     PluginUpdateQueueRequest,
     PluginUpdateRequest,
@@ -70,7 +69,7 @@ async def test_fifo_deduplicates_queued_and_running_updates(routes, monkeypatch)
     await routes._plugin_install_lock.acquire()
     first = await routes.enqueue_plugin_updates(queue_request("a", "b", "a", commit_sha="a" * 40, gh_proxy="auto"))
     duplicate = await routes.enqueue_plugin_updates(queue_request("b", commit_sha="b" * 40))
-    worker = routes._update_worker
+    worker = routes._plugin_task_worker
     assert len(first) == 2
     assert duplicate[0].task_id == first[1].task_id
     assert duplicate[0].commit_sha == "a" * 40
@@ -81,7 +80,7 @@ async def test_fifo_deduplicates_queued_and_running_updates(routes, monkeypatch)
         await asyncio.wait_for(started.wait(), 2)
         duplicate = await routes.enqueue_plugin_updates(queue_request("a", "c"))
         assert duplicate[0].task_id == first[0].task_id
-        assert routes._update_tasks[first[0].task_id]["stage"] == "installing_dependencies"
+        assert routes._plugin_tasks[first[0].task_id]["stage"] == "installing_dependencies"
         assert len(calls) == 1
     finally:
         release.set()
@@ -108,13 +107,13 @@ async def test_failure_does_not_stop_queue_and_failed_item_can_be_retried(routes
 
     monkeypatch.setattr(routes, "_update_plugin_locked", update)
     first = await routes.enqueue_plugin_updates(queue_request("a", "b"))
-    await asyncio.wait_for(routes._update_worker, 2)
+    await asyncio.wait_for(routes._plugin_task_worker, 2)
     tasks = await routes.list_update_tasks()
     assert [task.status for task in tasks] == ["failed", "completed"]
     assert tasks[0].error
     retried = await routes.enqueue_plugin_updates(queue_request("a"))
     assert retried[0].task_id != first[0].task_id
-    await asyncio.wait_for(routes._update_worker, 2)
+    await asyncio.wait_for(routes._plugin_task_worker, 2)
     assert calls == ["a", "b", "a"]
     assert (await routes.list_update_tasks())[-1].status == "completed"
 
@@ -134,7 +133,7 @@ async def test_cancel_only_waiting_items_and_continue_after_cancel(routes, monke
 
     monkeypatch.setattr(routes, "_update_plugin_locked", update)
     tasks = await routes.enqueue_plugin_updates(queue_request("a", "b", "c"))
-    worker = routes._update_worker
+    worker = routes._plugin_task_worker
     try:
         await asyncio.wait_for(started.wait(), 2)
         with pytest.raises(HTTPException) as error:
@@ -156,7 +155,7 @@ async def test_cancel_only_waiting_items_and_continue_after_cancel(routes, monke
 async def test_update_waits_for_installation_and_protects_runtime_mutations(routes):
     await routes._plugin_install_lock.acquire()
     tasks = await routes.enqueue_plugin_updates(queue_request("a"))
-    worker = routes._update_worker
+    worker = routes._plugin_task_worker
     try:
         await asyncio.sleep(0)
         assert (await routes.list_update_tasks())[0].status == "queued"
@@ -164,9 +163,6 @@ async def test_update_waits_for_installation_and_protects_runtime_mutations(rout
             lambda: routes.reload_plugin("a"),
             lambda: routes.delete_plugin("a", False, False),
             lambda: routes.set_plugin_enabled("a", {"enabled": True}),
-            lambda: routes.install_from_github(PluginInstallGithubRequest(repo_url="https://github.com/example/d")),
-            lambda: routes.start_github_install_task(PluginInstallGithubRequest(repo_url="https://github.com/example/d")),
-            lambda: routes.update_plugin("a", PluginUpdateRequest()),
         ]
         for mutate in mutations:
             with pytest.raises(HTTPException) as error:
@@ -175,7 +171,7 @@ async def test_update_waits_for_installation_and_protects_runtime_mutations(rout
     finally:
         routes._plugin_install_lock.release()
         await asyncio.wait_for(worker, 2)
-    assert routes._update_tasks[tasks[0].task_id]["status"] == "completed"
+    assert routes._plugin_tasks[tasks[0].task_id]["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -183,9 +179,9 @@ async def test_batch_validation_is_atomic_and_capacity_does_not_drop_work(routes
     with pytest.raises(HTTPException) as error:
         await routes.enqueue_plugin_updates(queue_request("a", "missing"))
     assert error.value.status_code == 404
-    assert not routes._update_tasks
-    assert routes._update_worker is None
-    monkeypatch.setattr(plugin_routes, "MAX_PENDING_UPDATE_TASKS", 1)
+    assert not routes._plugin_tasks
+    assert routes._plugin_task_worker is None
+    monkeypatch.setattr(plugin_routes, "MAX_PENDING_PLUGIN_TASKS", 1)
     await routes._plugin_install_lock.acquire()
     try:
         first = await routes.enqueue_plugin_updates(queue_request("a"))
@@ -195,18 +191,18 @@ async def test_batch_validation_is_atomic_and_capacity_does_not_drop_work(routes
         assert (await routes.enqueue_plugin_updates(queue_request("a")))[0].task_id == first[0].task_id
     finally:
         routes._plugin_install_lock.release()
-        await asyncio.wait_for(routes._update_worker, 2)
+        await asyncio.wait_for(routes._plugin_task_worker, 2)
 
 
 @pytest.mark.asyncio
 async def test_history_is_bounded_without_evicting_pending_tasks(routes, monkeypatch):
-    monkeypatch.setattr(plugin_routes, "MAX_RETAINED_UPDATE_TASKS", 2)
+    monkeypatch.setattr(plugin_routes, "MAX_RETAINED_PLUGIN_TASKS", 2)
     for index in range(5):
-        routes._update_tasks[str(index)] = {"task_id": str(index), "status": "queued"}
+        routes._plugin_tasks[str(index)] = {"task_id": str(index), "status": "queued"}
     for index in range(4):
-        routes._finish_update_task(routes._update_tasks[str(index)], status="completed", stage="completed")
-    assert set(routes._update_tasks) == {"2", "3", "4"}
-    assert routes._update_tasks["4"]["status"] == "queued"
+        routes._finish_plugin_task(routes._plugin_tasks[str(index)], status="completed", stage="completed")
+    assert set(routes._plugin_tasks) == {"2", "3", "4"}
+    assert routes._plugin_tasks["4"]["status"] == "queued"
 
 
 @pytest.mark.asyncio
@@ -233,7 +229,7 @@ async def test_queue_api_returns_immediately_and_can_restore_tasks(routes):
             assert cancelled.json()["status"] == "cancelled"
     finally:
         routes._plugin_install_lock.release()
-        await asyncio.wait_for(routes._update_worker, 2)
+        await asyncio.wait_for(routes._plugin_task_worker, 2)
 
 
 @pytest.mark.asyncio
@@ -290,17 +286,17 @@ async def test_clear_finished_records_preserves_running_and_queued_updates(route
 
     monkeypatch.setattr(routes, "_update_plugin_locked", update)
     tasks = await routes.enqueue_plugin_updates(queue_request("a", "b", "c"))
-    worker = routes._update_worker
+    worker = routes._plugin_task_worker
     try:
         await asyncio.wait_for(started.wait(), 2)
-        finished = routes._update_tasks[tasks[0].task_id]
+        finished = routes._plugin_tasks[tasks[0].task_id]
         for status in ("failed", "cancelled"):
             record = {**finished, "task_id": status, "status": status, "stage": status}
-            routes._update_tasks[status] = record
+            routes._plugin_tasks[status] = record
         remaining = await routes.clear_finished_update_tasks()
         assert [(task.plugin_id, task.status) for task in remaining] == [("b", "running"), ("c", "queued")]
-        assert set(routes._update_tasks) == {tasks[1].task_id, tasks[2].task_id}
-        assert routes._update_worker is worker
+        assert set(routes._plugin_tasks) == {tasks[1].task_id, tasks[2].task_id}
+        assert routes._plugin_task_worker is worker
         assert [(task.plugin_id, task.status) for task in await routes.clear_finished_update_tasks()] == [
             ("b", "running"), ("c", "queued"),
         ]
@@ -320,12 +316,12 @@ async def test_clear_finished_records_preserves_running_and_queued_updates(route
 async def test_clear_history_api_requires_auth_and_stays_cleared_after_refresh(routes):
     routes.register()
     created = await routes.enqueue_plugin_updates(queue_request("a"))
-    await asyncio.wait_for(routes._update_worker, 2)
+    await asyncio.wait_for(routes._plugin_task_worker, 2)
     transport = httpx.ASGITransport(app=routes.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         unauthorized = await client.delete("/api/plugins/updates/tasks")
         assert unauthorized.status_code == 401
-        assert created[0].task_id in routes._update_tasks
+        assert created[0].task_id in routes._plugin_tasks
         routes.app.dependency_overrides[require_auth] = lambda: "test-user"
         cleared = await client.delete("/api/plugins/updates/tasks")
         assert cleared.status_code == 200
@@ -333,7 +329,7 @@ async def test_clear_history_api_requires_auth_and_stays_cleared_after_refresh(r
         assert (await client.get("/api/plugins/updates/tasks")).json() == []
         assert (await client.delete("/api/plugins/updates/tasks")).json() == []
         new_tasks = await routes.enqueue_plugin_updates(queue_request("a"))
-        await asyncio.wait_for(routes._update_worker, 2)
+        await asyncio.wait_for(routes._plugin_task_worker, 2)
         restored = (await client.get("/api/plugins/updates/tasks")).json()
         assert len(restored) == 1
         assert restored[0]["task_id"] == new_tasks[0].task_id

@@ -8,6 +8,7 @@ import type {
   PluginUpdateCheckItem,
   PluginUpdateQueueItem,
   PluginUpdateTask,
+  PluginTask,
 } from '@/types'
 
 export function getPlugins() {
@@ -90,4 +91,34 @@ export function cancelPluginUpdateTask(taskId: string) {
 
 export function clearFinishedPluginUpdateTasks() {
   return apiClient.delete<PluginUpdateTask[]>('/plugins/updates/tasks')
+}
+
+export function enqueueGithubInstall(data: PluginInstallGithubRequest) {
+  return apiClient.post<PluginTask>('/plugins/tasks/install/github', data)
+}
+
+export function enqueueUploadInstall(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return apiClient.post<PluginTask>('/plugins/tasks/install/upload', formData)
+}
+
+export function enqueueTaskUpdates(items: PluginUpdateQueueItem[]) {
+  return apiClient.post<PluginTask[]>('/plugins/tasks/updates', { items })
+}
+
+export function getPluginTasks() {
+  return apiClient.get<PluginTask[]>('/plugins/tasks')
+}
+
+export function cancelPluginTask(taskId: string) {
+  return apiClient.post<PluginTask>(`/plugins/tasks/${encodeURIComponent(taskId)}/cancel`)
+}
+
+export function retryPluginTask(taskId: string) {
+  return apiClient.post<PluginTask>(`/plugins/tasks/${encodeURIComponent(taskId)}/retry`)
+}
+
+export function clearFinishedPluginTasks() {
+  return apiClient.delete<PluginTask[]>('/plugins/tasks')
 }

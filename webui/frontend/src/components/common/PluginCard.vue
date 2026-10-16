@@ -165,8 +165,8 @@
           :class="installed
             ? 'border-gray-200 text-theme-faint cursor-default dark:border-gray-700'
             : 'border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/30'"
-          :disabled="installed || installing || operationsBusy"
-          @click.stop="!installed && !installing && !operationsBusy && emit('install')"
+          :disabled="installed || installing"
+          @click.stop="!installed && !installing && emit('install')"
         >
           <span v-if="installing" class="flex items-center">
             <IconSpinner class="animate-spin h-3 w-3 mr-1" />

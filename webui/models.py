@@ -379,6 +379,22 @@ class PluginUpdateTask(BaseModel):
     warnings: List[str] = Field(default_factory=list)
 
 
+class PluginTask(BaseModel):
+    """An installation or update in the shared in-memory FIFO queue."""
+
+    task_id: str
+    operation: Literal["install", "update"]
+    source: Literal["github", "upload"] = "github"
+    plugin_id: Optional[str] = None
+    name: str
+    repo_url: Optional[str] = None
+    commit_sha: Optional[str] = None
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    stage: Literal["queued", "downloading", "extracting", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
+    error: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+
+
 class PluginStoreFetchRequest(BaseModel):
     url: Optional[str] = None
     source_id: Optional[str] = None
