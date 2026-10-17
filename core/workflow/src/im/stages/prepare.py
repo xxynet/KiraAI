@@ -19,7 +19,7 @@ class PrepareBatchStage(BaseStage[IMBatchContext]):
         global_capabilities = services.config.get_config("bot_config.capabilities", {})
         if not isinstance(global_capabilities, dict):
             global_capabilities = {}
-        capabilities = services.session_manager.get_effective_capabilities(
+        capabilities = await services.session_manager.get_effective_capabilities(
             sid, global_capabilities
         ) if services.session_manager is not None else global_capabilities
         if not isinstance(capabilities, dict):
@@ -33,7 +33,7 @@ class PrepareBatchStage(BaseStage[IMBatchContext]):
         for message in event.messages:
             incoming_record_ids[id(message)] = (
                 await services.message_history.record_incoming_safely(message, sid, event.adapter.platform)
-                if services.message_history is not None else None
+                if services.message_history is not None and message.chain else None
             )
             for image in services.message_media.iter_images(message.chain):
                 await compress_image_element(image, compression_config)

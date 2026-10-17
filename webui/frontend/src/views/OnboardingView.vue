@@ -12,8 +12,8 @@
     <div class="relative z-10 w-full max-w-md">
       <div class="max-h-[calc(100vh-2rem)] flex flex-col bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 p-8 dark:bg-gray-800/70 dark:border-gray-700/30">
         <div class="text-center mb-8">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4 shadow-lg">
-            <IconLightning class="w-8 h-8 text-white" />
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-transparent border border-gray-300 dark:border-gray-600 rounded-2xl mb-4">
+            <IconLightning class="w-8 h-8 text-theme-high" />
           </div>
           <h1 class="text-3xl font-bold text-theme-high mb-2">{{ t('onboarding.title') }}</h1>
           <p class="text-theme-supporting">{{ step === 1 ? t('onboarding.description') : t('onboarding.configuration_description') }}</p>

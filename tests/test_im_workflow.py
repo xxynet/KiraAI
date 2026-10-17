@@ -49,9 +49,12 @@ def processor(monkeypatch):
     services = make_workflow_context(
         config=config,
         session_manager=SimpleNamespace(
-            get_effective_capabilities=lambda sid, default: default,
-            get_session_info=lambda sid: SimpleNamespace(session_title="Chat"),
-            fetch_memory=lambda sid: [], update_memory=Mock(),
+            get_session=AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(
+                *sid.split(":", 2), session_title="Chat", internal_id="sess_test",
+            )),
+            update_session=AsyncMock(),
+            get_effective_capabilities=AsyncMock(side_effect=lambda sid, default: default),
+            update_memory=AsyncMock(),
         ),
         provider_mgr=SimpleNamespace(get_default_llm=lambda: model),
         prompt_manager=SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[])),
@@ -162,9 +165,9 @@ async def test_tool_loop_config_fallback_preserves_execution_and_finalization(
 @pytest.mark.anyio
 async def test_request_stop_does_not_persist_native_media(processor, monkeypatch):
     instance, model = processor
-    instance.im_workflow.ctx.session_manager.get_effective_capabilities = lambda *_: {
+    instance.im_workflow.ctx.session_manager.get_effective_capabilities = AsyncMock(side_effect=lambda *_: {
         "image_recognition": {"mode": "native"}
-    }
+    })
 
     async def stop(event, *_):
         event.stop()
@@ -305,7 +308,7 @@ async def test_receive_keeps_original_buffer_sid_when_plugin_changes_session(pro
     )
     original_sid = event.session.sid
     instance.im_workflow.ctx.message_buffer = SessionBufferManager()
-    instance.im_workflow.ctx.session_manager.get_session_info = lambda sid: SimpleNamespace(session_description="")
+    instance.im_workflow.ctx.session_manager.get_session = AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="", internal_id="sess_test"))
 
     async def redirect(event):
         event.session = Session("adapter", "dm", "changed")
@@ -347,9 +350,9 @@ async def test_batch_runs_with_injected_services_without_processor(processor):
     )
     services.message_history.record_incoming_safely.return_value = "record-id"
     services.message_history.record_incoming_safely.side_effect = None
-    services.session_manager.get_effective_capabilities = lambda *_: {
+    services.session_manager.get_effective_capabilities = AsyncMock(side_effect=lambda *_: {
         "image_recognition": {"mode": "native"},
-    }
+    })
     workflow = DefaultIMWorkflow(services)
 
     await workflow.handle_batch_event(batch())
@@ -375,7 +378,7 @@ async def test_receive_and_trigger_use_injected_session_manager_and_event_bus(pr
     workflow = instance.im_workflow
     services = workflow.ctx
     services.session_manager = SimpleNamespace(
-        get_session_info=lambda sid: SimpleNamespace(session_description="injected description"),
+        get_session=AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="injected description", internal_id="sess_test")),
     )
     services.event_bus = SimpleNamespace(publish=AsyncMock())
     incoming = batch()
@@ -396,13 +399,73 @@ async def test_receive_and_trigger_use_injected_session_manager_and_event_bus(pr
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("is_notice", [False, True])
+@pytest.mark.parametrize("populate_in_plugin", [False, True])
+async def test_receive_skips_empty_history_and_archives_plugin_content_in_batch(
+    processor, monkeypatch, is_notice, populate_in_plugin,
+):
+    from core.chat.message_utils import KiraMessageEvent
+
+    instance, _ = processor
+    workflow = instance.im_workflow
+    services = workflow.ctx
+    message = batch().messages[0]
+    message.chain = MessageChain()
+    message.is_notice = is_notice
+    event = KiraMessageEvent(
+        supported_elements=["text"], timestamp=1, message=message,
+        adapter=AdapterInfo(True, "test", "adapter", "test"),
+    )
+
+    async def populate(event):
+        event.message.chain.text("plugin content")
+        event.trigger()
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=populate)]
+        if populate_in_plugin and event_type == EventType.ON_IM_MESSAGE else []
+    ))
+    await workflow.handle_event(event)
+    services.message_history.record_incoming_safely.assert_not_awaited()
+    if populate_in_plugin:
+        published = services.event_bus.publish.await_args.args[0]
+        await workflow.handle_batch_event(published)
+        services.message_history.record_incoming_safely.assert_awaited_once_with(
+            message, event.session.sid, "test",
+        )
+        assert services.message_history.link_incoming_messages.await_args.args[2] == [message.message_id]
+    else:
+        services.event_bus.publish.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("is_notice", [False, True])
+async def test_batch_archives_only_messages_with_content(processor, is_notice):
+    instance, _ = processor
+    services = instance.im_workflow.ctx
+    event = batch()
+    nonempty = event.messages[0]
+    empty = batch("empty").messages[0]
+    empty.chain = MessageChain()
+    empty.is_notice = is_notice
+    event.messages.insert(0, empty)
+
+    await instance.im_workflow.handle_batch_event(event)
+
+    services.message_history.record_incoming_safely.assert_awaited_once_with(
+        nonempty, event.session.sid, "test",
+    )
+    assert services.message_history.link_incoming_messages.await_args.args[2] == [nonempty.message_id]
+
+
+@pytest.mark.anyio
 async def test_processor_preserves_injected_workflow_and_event_bus(processor):
     from core.chat.message_utils import KiraMessageEvent
 
     instance, _ = processor
     workflow = instance.im_workflow
     event_bus = workflow.ctx.event_bus
-    instance.im_workflow.ctx.session_manager.get_session_info = lambda sid: SimpleNamespace(session_description="")
+    instance.im_workflow.ctx.session_manager.get_session = AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="", internal_id="sess_test"))
     incoming = batch()
     event = KiraMessageEvent(
         supported_elements=incoming.supported_elements,
@@ -502,6 +565,8 @@ async def test_execution_continues_after_invalid_runtime_delay_update(processor,
 async def test_execution_passes_history_provenance(processor):
     instance, _ = processor
     event = batch("channel/123")
+    event.bot.nickname = "Kira"
+    assert event.bot is event.messages[-1].bot
     chain = MessageChain([Text("reply")])
     instance.message_delivery.parse_xml.return_value = [chain]
 
@@ -509,7 +574,7 @@ async def test_execution_passes_history_provenance(processor):
 
     memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
     instance.message_delivery.send_message_chain.assert_awaited_once_with(
-        event.sid, chain, memory_message=memory[-1], self_id=event.self_id,
+        event.sid, chain, memory_message=memory[-1], bot=event.bot,
     )
     assert instance.message_delivery.send_message_chain.await_args.kwargs["memory_message"] is memory[-1]
 
@@ -649,3 +714,147 @@ async def test_stopped_response_does_not_overwrite_previous_assistant(processor,
     request = model.chat.await_args.args[0]
     assert next(message for message in request.messages if message.role == "assistant") is memory[1]
     assert "final model call" in request.messages[-1].content
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("state", ["existing", "untitled", "missing"])
+async def test_build_request_loads_current_session(processor, session_db, tmp_path, monkeypatch, state):
+    from core.chat.session_manager import SessionManager
+    from core.workflow.src.im.context import IMBatchContext
+    from core.workflow.src.im.stages.request import BuildRequestStage
+
+    instance, _ = processor
+    services = instance.im_workflow.ctx
+    manager = SessionManager(session_db, {})
+    manager.chat_memory_path = str(tmp_path / "chat_memory.json")
+    await manager.initialize()
+    event = batch()
+    event.session.session_title = "Incoming title"
+    event.session.session_description = "Plugin description"
+    if state != "missing":
+        await manager.update_session(
+            event.session.sid, title="Saved title" if state == "existing" else "",
+            content=[[{"role": "user", "content": "latest history"}]],
+        )
+    services.session_manager = manager
+    query = AsyncMock(wraps=manager.get_session)
+    monkeypatch.setattr(manager, "get_session", query)
+    ctx = IMBatchContext(services, event)
+    assert await BuildRequestStage().run(ctx)
+    query.assert_awaited_once_with(ctx.sid, ensure_session=True)
+    assert event.session.content == []
+    assert event.session.internal_id is None
+    assert [message.content for message in ctx.request.messages] == ([] if state == "missing" else ["latest history"])
+    row = await session_db.get_chat_session(ctx.sid)
+    assert row["title"] == ("Saved title" if state == "existing" else "Incoming title")
+    environment = services.prompt_manager.get_agent_prompt.await_args.args[0]
+    assert environment["session_title"] == row["title"]
+    assert environment["session_description"] == "Plugin description"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("buffered", [False, True])
+@pytest.mark.parametrize("delete_before_build", [False, True])
+async def test_event_session_identity_through_receive_batch_and_request(
+    processor, session_db, tmp_path, buffered, delete_before_build,
+):
+    from core.chat.message_utils import KiraMessageEvent
+    from core.chat.session_manager import SessionManager
+    from core.workflow.src.im.batching import publish_buffered_messages
+    from core.workflow.src.im.context import IMEventContext, IMBatchContext
+    from core.workflow.src.im.stages.receive import ReceiveStage, RouteStage
+    from core.workflow.src.im.stages.request import BuildRequestStage
+
+    instance, _ = processor
+    services = instance.im_workflow.ctx
+    manager = SessionManager(session_db, {})
+    manager.chat_memory_path = str(tmp_path / "chat_memory.json")
+    await manager.initialize()
+    services.session_manager = manager
+    incoming = batch()
+    event = KiraMessageEvent(
+        supported_elements=incoming.supported_elements, timestamp=1,
+        message=incoming.messages[0], adapter=incoming.adapter,
+    )
+    assert event.session.internal_id is None
+    ctx = IMEventContext(services, event)
+    assert await ReceiveStage().run(ctx)
+    original_id = event.session.internal_id
+    assert original_id.startswith("sess_")
+    if buffered:
+        event.buffer()
+    else:
+        event.trigger()
+    await RouteStage().run(ctx)
+    if buffered:
+        assert await publish_buffered_messages(services.message_buffer, services.event_bus, ctx.sid)
+    published = services.event_bus.publish.await_args.args[0]
+    assert published.session is event.session
+    assert published.session.internal_id == original_id
+    if delete_before_build:
+        await manager.delete_session(ctx.sid)
+        assert published.session.internal_id == original_id
+    assert await BuildRequestStage().run(IMBatchContext(services, published))
+    persisted = await manager.get_session(ctx.sid)
+    assert published.session.internal_id == original_id
+    assert (persisted.internal_id != original_id) is delete_before_build
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("stored_title", ["Saved title", ""])
+async def test_receive_keeps_event_lightweight_before_plugins(processor, session_db, tmp_path, monkeypatch, stored_title):
+    from sqlalchemy import event as sqlalchemy_event
+    from core.chat.message_utils import KiraMessageEvent
+    from core.chat.session_manager import SessionManager
+    from core.workflow.src.im.context import IMEventContext
+    from core.workflow.src.im.stages.receive import ReceiveStage
+
+    instance, _ = processor
+    services = instance.im_workflow.ctx
+    manager = SessionManager(session_db, {})
+    manager.chat_memory_path = str(tmp_path / "chat_memory.json")
+    await manager.initialize()
+    incoming = batch()
+    incoming.messages[0].sender.nickname = "Platform nickname"
+    event = KiraMessageEvent(
+        supported_elements=incoming.supported_elements, timestamp=1,
+        message=incoming.messages[0], adapter=incoming.adapter,
+    )
+    original = event.session
+    await manager.update_session(
+        original.sid, title=stored_title, description="Stored description",
+        content=[[{"role": "user", "content": "History"}]], data={"custom": True},
+    )
+    services.session_manager = manager
+    query = AsyncMock(wraps=manager.get_session)
+    monkeypatch.setattr(manager, "get_session", query)
+    seen = []
+
+    async def inspect_session(received):
+        assert received.session is original
+        assert received.session.internal_id.startswith("sess_")
+        assert received.session.session_title == "Platform nickname"
+        assert received.session.session_description == "Stored description"
+        assert received.session.content == [] and received.session.data == {}
+        seen.append(received.session)
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=inspect_session)] if event_type == EventType.ON_IM_MESSAGE else []
+    ))
+    queries = []
+
+    def capture_sql(conn, cursor, statement, parameters, context, executemany):
+        queries.append((statement, [column[0] for column in cursor.description]))
+
+    sqlalchemy_event.listen(session_db.db.engine.sync_engine, "after_cursor_execute", capture_sql)
+    try:
+        assert await ReceiveStage().run(IMEventContext(services, event))
+    finally:
+        sqlalchemy_event.remove(session_db.db.engine.sync_engine, "after_cursor_execute", capture_sql)
+    assert len(queries) == 1
+    sql, columns = queries[0]
+    assert "chat_sessions.content" not in sql
+    assert "content" not in columns and "data" in columns
+    query.assert_awaited_once_with(original.sid, ensure_session=True, include_content=False)
+    assert seen == [original]
+    assert (await session_db.get_chat_session(original.sid))["title"] == stored_title

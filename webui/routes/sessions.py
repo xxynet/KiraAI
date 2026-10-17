@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.responses import FileResponse
 
 from core.chat.message_elements import _infer_mime_from_bytes
+from core.chat.session import Session
 from core.utils.media_refs import MEDIA_ROOT_NAME
 from core.utils.path_utils import get_data_path, is_within_directory
 
@@ -72,18 +73,19 @@ class SessionsRoutes(Routes):
         if self.message_history is None:
             raise HTTPException(status_code=503, detail="Message history unavailable")
         try:
-            return await self.message_history.list_messages(
+            page = await self.message_history.list_messages(
                 session_id, cursor=cursor, limit=limit, llm_message_id=llm_message_id)
+            return page.to_dict()
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     async def get_message(self, message_id: str):
         if self.message_history is None:
             raise HTTPException(status_code=503, detail="Message history unavailable")
-        message = await self.message_history.get_message(message_id)
+        message = await self.message_history.get_message(internal_message_id=message_id)
         if message is None:
             raise HTTPException(status_code=404, detail="Message not found")
-        return {"message": message, "memory": self.message_history.get_linked_memory(message)}
+        return {"message": message.to_dict(), "memory": await self.message_history.get_linked_memory(message)}
 
     async def get_message_media(self, message_id: str, element_path: str):
         """Serve only archived media referenced by a persisted message element."""
@@ -91,10 +93,10 @@ class SessionsRoutes(Routes):
             raise HTTPException(status_code=503, detail="Message history unavailable")
         if not re.fullmatch(r"[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}", element_path):
             raise HTTPException(status_code=400, detail="Invalid element path")
-        message = await self.message_history.get_message(message_id)
+        message = await self.message_history.get_message(internal_message_id=message_id)
         if message is None:
             raise HTTPException(status_code=404, detail="Message not found")
-        element = message
+        element = message.to_dict()
         for part in element_path.split("."):
             chain = element.get("chain")
             index = int(part)
@@ -156,137 +158,112 @@ class SessionsRoutes(Routes):
             if group_name == "image_recognition" and group_config.get("mode") not in (None, "vlm_description", "native"):
                 raise HTTPException(status_code=400, detail="Invalid image recognition mode")
 
+    @staticmethod
+    def _session_response(session_id: str, row: Session | None) -> dict:
+        parts = session_id.split(":", 2)
+        adapter, kind, target = parts if len(parts) == 3 else ("", "", session_id)
+        return {
+            "id": session_id,
+            "internal_id": row.internal_id if row else None,
+            "created_at": row.created_at if row else None,
+            "updated_at": row.updated_at if row else None,
+            "adapter_name": adapter, "session_type": kind, "session_id": target,
+            "title": row.session_title if row else "",
+            "description": row.session_description if row else "",
+            "capabilities": row.data.get("capabilities") if row else None,
+            "messages": row.content if row else [],
+            "message_count": len(row.content) if row and isinstance(row.content, list) else 0,
+        }
+
     async def list_sessions(self):
         if not self.lifecycle or not self.lifecycle.session_manager:
             return {"sessions": []}
 
-        session_keys = list(self.lifecycle.session_manager.chat_memory.keys())
+        records = await self.lifecycle.session_manager.get_sessions(include_content=False)
+        message_counts = await self.lifecycle.session_manager.get_session_message_counts()
+        malformed = set()
         sessions = []
-        for session_key in session_keys:
-            parts = session_key.split(":")
-            if len(parts) < 3:
+        for row in records:
+            sid = row.sid
+            if not isinstance(row.data, dict):
+                malformed.add(sid)
                 continue
-            adapter_name, session_type, session_id = parts[0], parts[1], ":".join(parts[2:])
-            session_meta = self.lifecycle.session_manager.chat_memory.get(session_key, {})
-            if not isinstance(session_meta, dict):
+            if len(sid.split(":", 2)) != 3:
                 continue
-            title = session_meta.get("title", "")
-            description = session_meta.get("description", "")
-            sessions.append({
-                "id": session_key,
-                "adapter_name": adapter_name,
-                "session_type": session_type,
-                "session_id": session_id,
-                "title": title,
-                "description": description,
-                "message_count": self.lifecycle.session_manager.get_memory_count(session_key),
-            })
+            item = self._session_response(sid, row)
+            item.pop("messages")
+            item.pop("capabilities")
+            item["message_count"] = message_counts.get(sid, 0)
+            sessions.append(item)
         if self.message_history is not None:
             history_sessions = await self.message_history.list_sessions()
             by_id = {item["id"]: item for item in sessions}
             for item in history_sessions:
-                sid = item["session_id"]
-                if not isinstance(self.lifecycle.session_manager.chat_memory.get(sid, {}), dict):
+                sid = item.session_id
+                if sid in malformed or len(sid.split(":", 2)) != 3:
                     continue
                 if sid not in by_id:
-                    parts = sid.split(":", 2)
-                    if len(parts) < 3:
-                        continue
-                    adapter, kind, target = parts
-                    record = {"id": sid, "adapter_name": adapter, "session_type": kind,
-                              "session_id": target, "title": "", "description": "", "message_count": 0}
+                    record = self._session_response(sid, None)
+                    record.pop("messages")
+                    record.pop("capabilities")
+                    record["message_count"] = 0
                     sessions.append(record)
                     by_id[sid] = record
-                by_id[sid]["history_count"] = item["message_count"]
+                by_id[sid]["history_count"] = item.message_count
         return {"sessions": sessions}
 
     async def get_session(self, session_id: str):
         if not self.lifecycle or not self.lifecycle.session_manager:
             raise HTTPException(status_code=404, detail="Memory manager not available")
-
-        parts = session_id.split(":")
-        if len(parts) < 3:
+        if len(session_id.split(":", 2)) != 3:
             raise HTTPException(status_code=400, detail="Invalid session id format")
 
-        session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})
-        if not isinstance(session_meta, dict):
-            raise HTTPException(status_code=404, detail="Session not found")
-        memory = self.lifecycle.session_manager.get_existing_memory_snapshot(session_id)
-        if memory is None:
+        try:
+            row = await self.lifecycle.session_manager.get_session(session_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+        if row is None or row.content is None:
             history = await self.message_history.list_messages(session_id, limit=1) if self.message_history else None
-            if not history or not history["messages"]:
+            if history is None or not history.messages:
                 raise HTTPException(status_code=404, detail="Session not found")
-            memory = []
-
-        adapter_name, session_type, session_key = parts[0], parts[1], ":".join(parts[2:])
-        title = session_meta.get("title", "")
-        description = session_meta.get("description", "")
-
-        return {
-            "id": session_id,
-            "adapter_name": adapter_name,
-            "session_type": session_type,
-            "session_id": session_key,
-            "title": title,
-            "description": description,
-            "capabilities": session_meta.get("capabilities"),
-            "messages": memory,
-        }
+            response = self._session_response(session_id, row)
+            response["messages"] = []
+            return response
+        return self._session_response(session_id, row)
 
     async def update_session(self, session_id: str, payload: dict):
         if not self.lifecycle or not self.lifecycle.session_manager:
             raise HTTPException(status_code=404, detail="Memory manager not available")
 
         messages = payload.get("messages")
-        title = payload.get("title")
         capabilities_provided = "capabilities" in payload
         capabilities = payload.get("capabilities")
-        description = payload.get("description")
         if capabilities_provided:
             self._validate_capabilities_payload(capabilities)
 
+        changes = {key: payload[key] for key in ("title", "description") if key in payload}
         if messages is not None:
+            changes["content"] = messages
+        if changes:
             try:
-                self.lifecycle.session_manager.write_memory(session_id, messages)
+                await self.lifecycle.session_manager.update_session(session_id, **changes)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        if title is not None or description is not None:
-            self.lifecycle.session_manager.update_session_info(
-                session_id, title=title, description=description
-            )
         if capabilities_provided:
-            self.lifecycle.session_manager.update_session_capabilities(
+            await self.lifecycle.session_manager.update_session_capabilities(
                 session_id, capabilities
             )
 
-
-        parts = session_id.split(":")
-        if len(parts) >= 3:
-            adapter_name = parts[0]
-            session_type = parts[1]
-            session_key = ":".join(parts[2:])
-        else:
-            adapter_name = ""
-            session_type = ""
-            session_key = session_id
-
-        session_meta = self.lifecycle.session_manager.chat_memory.get(session_id, {})
-        return {
-            "id": session_id,
-            "adapter_name": adapter_name,
-            "session_type": session_type,
-            "session_id": session_key,
-            "title": title if title is not None else "",
-            "description": description if description is not None else "",
-            "capabilities": session_meta.get("capabilities"),
-            "messages": self.lifecycle.session_manager.get_existing_memory_snapshot(session_id),
-        }
+        try:
+            row = await self.lifecycle.session_manager.get_session(session_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+        return self._session_response(session_id, row)
 
     async def delete_session(self, session_id: str):
         if not self.lifecycle or not self.lifecycle.session_manager:
             raise HTTPException(status_code=404, detail="Memory manager not available")
-        self.lifecycle.session_manager.delete_session(session_id)
+        await self.lifecycle.session_manager.delete_session(session_id)
         # Clean up scope entries referencing this session
         if self.lifecycle.mcp_manager:
             self.lifecycle.mcp_manager.remove_session_from_scopes(session_id)

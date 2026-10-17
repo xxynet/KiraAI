@@ -8,6 +8,7 @@ import pytest
 
 from tests.adapter_lifecycle import start_adapter
 from telegram import Chat, Message, MessageEntity, Update, User as TelegramUser
+from telegram.ext import ExtBot
 
 from core.adapter import AdapterContext, BaseAdapter
 from core.adapter.adapter_info import AdapterInfo
@@ -25,7 +26,11 @@ class FakeApplication:
     def __init__(self):
         self.running = False
         self.handlers = []
-        self.bot = NS(id=99, username="KiraBot", full_name="Kira", get_file=AsyncMock())
+        self.bot = Mock(
+            spec_set=ExtBot,
+            bot=TelegramUser(id=99, first_name="Kira", is_bot=True, username="KiraBot"),
+            id=99, username="KiraBot", get_file=AsyncMock(),
+        )
         for method in ("send_message", "send_photo", "send_voice", "send_sticker", "send_document", "send_video"):
             setattr(self.bot, method, AsyncMock(return_value=NS(message_id=501)))
         self.updater = NS(running=False, start_polling=AsyncMock(side_effect=self._poll), stop=AsyncMock(side_effect=self._unpoll))
@@ -53,7 +58,7 @@ class FakeApplication:
 class FakeDiscordBot:
     def __init__(self, **kwargs):
         self.options = kwargs
-        self.user = NS(id=99)
+        self.user = NS(id=99, display_name="Kira")
         self.events = {}
         self.commands = {}
         self.closed = False
@@ -197,6 +202,8 @@ async def test_incoming_messages_keep_metadata_and_native_session_targets(adapte
     event = adapter.ctx.event_queue.get_nowait()
     assert event.session.sid == f"{adapter.info.name}:{'gm' if group else 'dm'}:{target}"
     assert event.message.sender.user_id == "123"
+    assert event.message.bot.user_id == event.message.self_id
+    assert event.message.bot.nickname == "Kira"
     assert event.message.message_id == "42"
     assert event.message.chain[0].text == "hello"
     assert event.supported_elements == list((await adapter.im.get_message_metadata()).supported_elements)
@@ -892,7 +899,7 @@ async def test_discord_empty_emoji_catalog_reaches_builtin_tag(adapter_factory):
     adapter = adapter_factory("Discord")
     ctx = NS(
         adapter_mgr=NS(get_adapter=lambda name: adapter),
-        get_session_capabilities=lambda sid: {},
+        get_session_capabilities=AsyncMock(side_effect=lambda sid: {}),
     )
     event = NS(supported_elements=["emoji"], adapter=adapter.info, sid="discord:dm:123")
     tags = TagSet()

@@ -202,6 +202,7 @@ async def test_start_without_listener_verifies_account_and_keeps_sdk_client_shar
     await asyncio.sleep(0)
     assert not task.done()
     assert adapter.bot_uid == "123"
+    assert adapter._self_name == "test-name"
     assert isinstance(adapter.get_client(), client_module.BiliBiliClient)
     assert sdk_client.get_wrapped_session().headers["Accept-Encoding"] == "gzip, deflate"
     assert adapter.listening_task is None

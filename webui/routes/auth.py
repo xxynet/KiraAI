@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from core.config.default import VERSION
+from webui.frontend_unavailable import frontend_unavailable_response
 from webui.models import (
     LoginResponse,
     OnboardingCompleteRequest,
@@ -229,10 +230,7 @@ class AuthRoutes(Routes):
                 spa_index = dist_dir / "index.html"
                 if spa_index.exists():
                     return FileResponse(spa_index, media_type="text/html", headers=no_cache_headers)
-                return HTMLResponse(
-                    content="<h1>Frontend not built. Run <code>npm install &amp;&amp; npm run build</code> inside <code>webui/frontend/</code>.</h1>",
-                    status_code=503,
-                )
+                return frontend_unavailable_response()
 
         self.app.add_middleware(SPAStaticFallbackMiddleware)
 
@@ -247,8 +245,7 @@ class AuthRoutes(Routes):
         index.html is served for every browser navigation; vue-router then takes
         over client-side. Root-level files present in the dist (favicon.ico,
         robots.txt, etc.) are served directly so they are not hijacked by the
-        HTML fallback. If the build is missing, returns a 503 hint pointing at
-        the build command.
+        HTML fallback. If the build is missing, returns a 503 recovery page.
         """
         # Don't serve SPA for paths handled by dedicated mounts.
         if full_path.startswith(("api/", "assets/", "monacoeditorwork/", "page/")):
@@ -286,10 +283,7 @@ class AuthRoutes(Routes):
         spa_index = self.dist_dir / "index.html"
         if spa_index.exists():
             return FileResponse(spa_index, media_type="text/html", headers=no_cache_headers)
-        return HTMLResponse(
-            content="<h1>Frontend not built. Run <code>npm install &amp;&amp; npm run build</code> inside <code>webui/frontend/</code>.</h1>",
-            status_code=503,
-        )
+        return frontend_unavailable_response()
 
     async def get_auth_config(self):
         return {"auth_enabled": not self.disable_auth}

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
     """Receive and send Bilibili private messages using the account's resources."""
 
-    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "emoji", "share_video"]
+    _SUPPORTED_ELEMENTS = ["text", "img", "emoji"]
 
     def __init__(self, adapter: BiliBiliAdapter):
         super().__init__(adapter)
@@ -158,6 +158,7 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
                     is_mentioned=True,
                     message_id=str(event.msg_key),
                     self_id=self.adapter.bot_uid,
+                    bot=User(self.adapter.bot_uid, self.adapter._self_name),
                     chain=message_chain,
                 ),
                 timestamp=ts

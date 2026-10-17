@@ -1,0 +1,19 @@
+{
+  "title": "WebUI 暂时无法打开",
+  "description": "服务已响应，但网页界面文件尚未就绪。完成恢复后，就可以继续使用 WebUI。",
+  "steps_title": "可以这样恢复",
+  "logs_title": "先查看启动日志",
+  "logs_body": "KiraAI 通常会在启动时自动下载界面文件。请查看日志，确认是否出现下载失败、解压失败或文件访问错误。",
+  "restart_title": "处理问题后，重启 KiraAI",
+  "restart_body": "确认网络能够访问下载源，并根据日志处理文件或权限问题，然后重启，让程序重新检查并准备界面文件。",
+  "refresh": "刷新页面",
+  "refresh_note": "修复并重启后再刷新；刷新页面不会重新下载文件。",
+  "manual_title": "手动安装 / 从源码运行",
+  "manual_body": "下载与当前 KiraAI 版本一致的 dist.zip，将完整内容解压到界面目录，保留 .version，并确保 index.html 和 assets 直接位于该目录下。默认目录是 data/dist；使用了 --data-dir 或 --webui-dir 时，以启动配置为准。完成后重启 KiraAI。",
+  "release": "前往当前版本下载页",
+  "source_body": "从源码构建：在 webui/frontend 中执行 npm install 和 npm run build，产物位于 webui/static/dist。开发时可从项目根目录运行 python main.py --webui-dir webui/static/dist --ignore-webui-version-check，使用本地构建并跳过版本检查。",
+  "visitor_note": "如果你不是部署者，请将此页面反馈给管理员。",
+  "language_label": "页面语言",
+  "switch_to_light": "切换到浅色主题",
+  "switch_to_dark": "切换到深色主题"
+}

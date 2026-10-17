@@ -182,6 +182,7 @@ class PersonaGeneratorTurnResponse(BaseModel):
     name: Optional[str] = None
     format: Optional[str] = None
     content: Optional[str] = None
+    chat_rules: Optional[str] = None
 
 
 class PersonaResponse(PersonaBase):
@@ -301,6 +302,7 @@ class PluginConfigUpdateRequest(BaseModel):
 
 class PluginInstallGithubRequest(BaseModel):
     repo_url: str
+    display_name: Optional[str] = Field(default=None, max_length=200)
     proxy: Optional[str] = None
     gh_proxy: Optional[str] = None
     commit_sha: Optional[str] = None
@@ -355,6 +357,43 @@ class PluginUpdateRequest(BaseModel):
         if len(normalized) != 40 or any(char not in "0123456789abcdef" for char in normalized):
             raise ValueError("commit_sha must be a full 40-character Git commit SHA")
         return normalized
+
+
+class PluginUpdateQueueItem(PluginUpdateRequest):
+    plugin_id: str = Field(min_length=1, max_length=200)
+
+
+class PluginUpdateQueueRequest(BaseModel):
+    items: List[PluginUpdateQueueItem] = Field(min_length=1, max_length=100)
+
+
+class PluginUpdateTask(BaseModel):
+    """An in-memory queued plugin update."""
+
+    task_id: str
+    plugin_id: str
+    name: str
+    commit_sha: Optional[str] = None
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    stage: Literal["queued", "downloading", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
+    error: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+
+
+class PluginTask(BaseModel):
+    """An installation or update in the shared in-memory FIFO queue."""
+
+    task_id: str
+    operation: Literal["install", "update"]
+    source: Literal["github", "upload"] = "github"
+    plugin_id: Optional[str] = None
+    name: str
+    repo_url: Optional[str] = None
+    commit_sha: Optional[str] = None
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    stage: Literal["queued", "downloading", "extracting", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
+    error: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
 
 
 class PluginStoreFetchRequest(BaseModel):
@@ -458,6 +497,15 @@ class BackupCreateResponse(BaseModel):
     filename: str
     size_bytes: int = 0
     created_at: str = ""
+
+
+class BackupProgressResponse(BaseModel):
+    id: str
+    status: Literal["queued", "running", "completed", "failed"] = "queued"
+    stage: Literal["queued", "scanning", "compressing", "finalizing", "completed", "failed"] = "queued"
+    percent: int = Field(default=0, ge=0, le=100)
+    result: Optional[BackupCreateResponse] = None
+    error: Optional[Literal["backup_exists"]] = None
 
 
 class RestoreResponse(BaseModel):

@@ -1,6 +1,7 @@
 import asyncio
 import importlib
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -181,3 +182,44 @@ async def test_legacy_adapter_elements_are_live_and_synchronized_with_metadata(f
     snapshot = await first.im.get_message_metadata()
     snapshot.supported_elements.append("snapshot-custom")
     assert "snapshot-custom" not in replacement
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", ["weixin_oc", "webchat", "bilibili"])
+@pytest.mark.parametrize("image_enabled", [True, False])
+async def test_im_output_metadata_controls_builtin_image_and_reply_tags(platform, image_enabled):
+    from core.adapter import AdapterContext, IMCapability
+    from core.adapter.adapter_info import AdapterInfo
+    from core.adapter.builtin.webchat.webchat import WebChatAdapter
+    from core.tag import TagSet
+
+    if platform == "weixin_oc":
+        adapter = make_weixin()
+    elif platform == "webchat":
+        adapter = WebChatAdapter(AdapterContext(
+            AdapterInfo(True, "webchat", "webchat", "webchat"), asyncio.Queue(),
+        ), None)
+    else:
+        adapter = make_bilibili()
+    metadata = await adapter.get_capability(IMCapability).get_message_metadata()
+    event = SimpleNamespace(
+        supported_elements=metadata.supported_elements,
+        sid=f"{adapter.info.name}:dm:123", adapter=adapter.info,
+    )
+    ctx = SimpleNamespace(
+        adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
+        get_session_capabilities=AsyncMock(return_value={
+            "image_generation": {"enabled": image_enabled},
+        }),
+    )
+    main = importlib.import_module("core.plugin.builtin_plugins.kira-ai.main")
+    tags = TagSet()
+    await main.DefaultPlugin(ctx, {}).inject_builtin_tags(event, None, tags)
+
+    assert ("img" in tags) is image_enabled
+    assert ("selfie" in tags) is image_enabled
+    assert "text" in tags
+    if platform == "bilibili":
+        assert "emoji" in tags
+        assert "at" not in tags
+        assert "reply" not in tags

@@ -15,6 +15,7 @@ from core.adapter.capabilities import IMCapability
 from core.adapter.context import AdapterContext
 from core.chat.message_elements import Image, Text
 from core.chat.message_utils import MessageChain
+from core.chat.session import Session
 from core.webchat.service import WebChatService
 from core.webchat.store import WebChatStore
 from core.event_bus import EventBus
@@ -26,17 +27,14 @@ PROFILE = {"nickname": "Alice", "peer_nickname": "Kira", "description": "A quiet
 
 
 class Sessions:
+    async def initialize(self):
+        pass
+
     def __init__(self):
         self.memory = None
         self.description = None
 
-    def get_existing_memory_snapshot(self, sid):
-        return self.memory
-
-    def write_memory(self, sid, memory):
-        self.memory = memory
-
-    def update_session_info(self, sid, title, description):
+    async def update_session(self, sid, title, description):
         self.description = description
 
 
@@ -50,6 +48,78 @@ async def store(tmp_path):
     result = WebChatStore(tmp_path / "webchat")
     await result.initialize()
     return result
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("session_type, recipient, allowed", [
+    ("dm", "admin", True),
+    ("dm", "someone_else", False),
+    ("gm", "admin", False),
+    ("gm", "someone_else", False),
+])
+async def test_cross_session_webchat_only_allows_admin_direct_messages(session_type, recipient, allowed):
+    from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
+
+    adapter = make_adapter(None)
+    ctx = SimpleNamespace(
+        adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
+        publish_notice=AsyncMock(),
+    )
+    target = f"webchat:{session_type}:{recipient}"
+    result = await SessionPlugin(ctx, {}).session_send(SimpleNamespace(sid="qq:gm:123"), target, "Send a test message")
+    if allowed:
+        assert result == "message sent"
+        ctx.publish_notice.assert_awaited_once()
+        assert ctx.publish_notice.await_args.args[0] == adapter.SID
+    else:
+        assert result == "Permission denied: target session is not allowed by adapter webchat"
+        ctx.publish_notice.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_cross_session_notice_generates_and_delivers_webchat_reply(store, processor, monkeypatch):
+    from core.chat.message_utils import KiraMessageBatchEvent
+    from core.plugin.builtin_plugins.chat.main import DefaultChatPlugin
+    from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
+    from core.plugin.handlers import EventType, event_handler_reg
+    from core.plugin.plugin_context import PluginContext
+    from core.workflow.src.im.message_delivery import MessageDeliveryService
+
+    adapter = make_adapter(store)
+    await store.set_setting("profile", PROFILE)
+    bus = EventBus(SimpleNamespace(set_stats=Mock()), adapter.ctx.event_queue)
+    instance, model = processor
+    workflow = instance.im_workflow
+    services = workflow.ctx
+    services.event_bus = bus
+    services.message_delivery.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
+    services.message_delivery.message_history = None
+    services.message_delivery.send_message_chain = MessageDeliveryService.send_message_chain.__get__(services.message_delivery)
+    ctx = object.__new__(PluginContext)
+    ctx.adapter_mgr = services.message_delivery.adapter_mgr
+    ctx.event_bus = bus
+    chat_plugin = DefaultChatPlugin(SimpleNamespace(
+        config={"bot_config": {"bot": {"max_buffer_messages": 1}}},
+        get_buffer=services.message_buffer.get_buffer,
+    ), {})
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=chat_plugin.handle_msg)] if event_type == EventType.ON_IM_MESSAGE else []
+    ))
+    source = SimpleNamespace(sid="qq:gm:123")
+    description = "Send a cross-session test message to the admin."
+    assert await SessionPlugin(ctx, {}).session_send(source, adapter.SID, description) == "message sent"
+    notice = adapter.ctx.event_queue.get_nowait()
+    assert notice.session.sid == adapter.SID and notice.is_notice
+    assert source.sid in notice.message.chain[0].text and description in notice.message.chain[0].text
+    await workflow.handle_event(notice)
+    batch = adapter.ctx.event_queue.get_nowait()
+    assert isinstance(batch, KiraMessageBatchEvent) and batch.sid == adapter.SID
+    await workflow.handle_batch_event(batch)
+    model.chat.assert_awaited_once()
+    rows = (await store.list_messages())["messages"]
+    assert len(rows) == 1 and rows[0]["direction"] == "outgoing"
+    assert rows[0]["chain"] == [{"type": "text", "text": "reply"}]
+    assert adapter.ctx.event_queue.empty()
 
 
 @pytest.mark.anyio
@@ -157,6 +227,8 @@ async def test_service_publishes_once_without_reply_lock_or_model_gate(store):
     assert adapter.ctx.event_queue.empty()
     assert first.session.sid == "webchat:dm:admin"
     assert first.message.sender.nickname == "Alice"
+    assert first.message.bot.user_id == "webchat"
+    assert first.message.bot.nickname == "Kira"
     assert first.process_strategy == "discard" and not first._is_forced
     assert second.message.chain[0].text == "another message"
     assert first.buffer() and first.discard() and first.trigger()
@@ -173,8 +245,8 @@ async def test_profile_keeps_description_verbatim_and_context_in_session_manager
     await store.set_setting("profile", profile)
     sessions = Sessions()
     sessions.memory = [[{"role": "user", "content": "session context"}]]
-    sessions.get_existing_memory_snapshot = Mock(side_effect=AssertionError("WebChat must not read context"))
-    sessions.write_memory = Mock(side_effect=AssertionError("WebChat must not restore context"))
+    sessions.get_session = AsyncMock(side_effect=AssertionError("WebChat must not read context"))
+    sessions.update_session = AsyncMock(wraps=sessions.update_session)
     service = WebChatService(make_adapter(store), sessions)
     await service.initialize()
     assert sessions.description == description
@@ -188,8 +260,8 @@ async def test_profile_keeps_description_verbatim_and_context_in_session_manager
     await restarted.initialize()
     assert sessions.memory == []
     assert await store.get_setting("memory") is None
-    sessions.get_existing_memory_snapshot.assert_not_called()
-    sessions.write_memory.assert_not_called()
+    sessions.get_session.assert_not_awaited()
+    assert all("content" not in call.kwargs for call in sessions.update_session.call_args_list)
 
 @pytest.mark.anyio
 async def test_normal_event_bus_buffers_batches_counts_and_delivers_webchat(store, processor, monkeypatch):
@@ -207,9 +279,8 @@ async def test_normal_event_bus_buffers_batches_counts_and_delivers_webchat(stor
     workflow = instance.im_workflow
     services = workflow.ctx
     services.event_bus = bus
-    services.session_manager.get_session_info = lambda sid: SimpleNamespace(session_title="Chat", session_description="Description")
-    services.session_manager.get_existing_memory_snapshot = lambda sid: []
-    services.session_manager.update_session_info = Mock()
+    services.session_manager.get_session = AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="Description", internal_id="sess_test"))
+    services.session_manager.update_session = AsyncMock()
     services.message_delivery.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     services.message_delivery.message_history = None
     services.message_delivery.send_message_chain = MessageDeliveryService.send_message_chain.__get__(services.message_delivery)
@@ -286,7 +357,7 @@ async def test_plugin_can_suppress_webchat_reply(store, processor, monkeypatch, 
     instance, model = processor
     workflow = instance.im_workflow
     workflow.ctx.event_bus = bus
-    workflow.ctx.session_manager.get_session_info = lambda sid: SimpleNamespace(session_description="Description")
+    workflow.ctx.session_manager.get_session = AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description="Description", internal_id="sess_test"))
 
     async def suppress(event):
         getattr(event, action)()

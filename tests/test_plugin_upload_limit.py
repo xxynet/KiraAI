@@ -4,7 +4,8 @@ from webui.middleware import PLUGIN_UPLOAD_PATH, PluginUploadSizeLimitMiddleware
 
 
 @pytest.mark.anyio
-async def test_plugin_upload_limit_rejects_oversized_content_length():
+@pytest.mark.parametrize("path", [PLUGIN_UPLOAD_PATH, "/api/plugins/tasks/install/upload"])
+async def test_plugin_upload_limit_rejects_oversized_content_length(path):
     app_called = False
     messages = []
 
@@ -23,7 +24,7 @@ async def test_plugin_upload_limit_rejects_oversized_content_length():
         {
             "type": "http",
             "method": "POST",
-            "path": PLUGIN_UPLOAD_PATH,
+            "path": path,
             "headers": [(b"content-length", b"6")],
         },
         receive,
@@ -35,7 +36,8 @@ async def test_plugin_upload_limit_rejects_oversized_content_length():
 
 
 @pytest.mark.anyio
-async def test_plugin_upload_limit_rejects_stream_without_content_length():
+@pytest.mark.parametrize("path", [PLUGIN_UPLOAD_PATH, "/api/plugins/tasks/install/upload"])
+async def test_plugin_upload_limit_rejects_stream_without_content_length(path):
     messages = []
     chunks = iter([b"123", b"456"])
 
@@ -54,7 +56,7 @@ async def test_plugin_upload_limit_rejects_stream_without_content_length():
 
     middleware = PluginUploadSizeLimitMiddleware(app, max_bytes=5)
     await middleware(
-        {"type": "http", "method": "POST", "path": PLUGIN_UPLOAD_PATH, "headers": []},
+        {"type": "http", "method": "POST", "path": path, "headers": []},
         receive,
         send,
     )

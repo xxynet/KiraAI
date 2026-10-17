@@ -170,9 +170,17 @@ class QQAdapter(BaseAdapter):
     async def send_group_message(
         self, group_id: AdapterTargetId, send_message_obj: MessageChain,
     ) -> KiraIMSentResult:
+        """Deprecated compatibility wrapper; use the IM capability directly.
+
+        await adapter.get_capability(IMCapability).send_group_message(group_id, message)
+        """
         return await self.im.send_group_message(group_id, send_message_obj)
 
     async def send_direct_message(
         self, user_id: AdapterTargetId, send_message_obj: MessageChain,
     ) -> KiraIMSentResult:
+        """Deprecated compatibility wrapper; use the IM capability directly.
+
+        await adapter.get_capability(IMCapability).send_direct_message(user_id, message)
+        """
         return await self.im.send_direct_message(user_id, send_message_obj)

@@ -251,6 +251,7 @@ class PersonasRoutes(Routes):
             name=result.name,
             format=result.format,
             content=result.content,
+            chat_rules=result.chat_rules,
         )
 
     async def persona_generator_stream(self, payload: PersonaGeneratorTurnRequest):
@@ -282,6 +283,7 @@ class PersonasRoutes(Routes):
                             "name": result.name,
                             "format": result.format,
                             "content": result.content,
+                            "chat_rules": result.chat_rules,
                         })
             except PersonaGenerationError as exc:
                 logger.warning("Persona generator returned an invalid streamed result: %s", exc)

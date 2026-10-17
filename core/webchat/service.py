@@ -26,8 +26,7 @@ class WebChatService:
             await self._apply_profile(profile)
 
     async def _apply_profile(self, profile):
-        await asyncio.to_thread(
-            self.sessions.update_session_info,
+        await self.sessions.update_session(
             self.adapter.SID,
             title=profile["peer_nickname"],
             description=profile["description"],

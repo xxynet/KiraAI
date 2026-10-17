@@ -16,10 +16,12 @@ class ReceiveStage(BaseStage[IMEventContext]):
     async def run(self, ctx: IMEventContext) -> bool:
         services, event, sid = ctx.services, ctx.event, ctx.sid
         # decorating event info
-        if services.message_history is not None:
+        if services.message_history is not None and event.message.chain:
             await services.message_history.record_incoming_safely(event.message, sid, event.adapter.platform)
 
-        event.session.session_description = services.session_manager.get_session_info(sid).session_description
+        metadata = await services.session_manager.get_session(sid, ensure_session=True, include_content=False)
+        event.session.internal_id = metadata.internal_id
+        event.session.session_description = metadata.session_description
 
         # EventType.ON_IM_MESSAGE
         im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_IM_MESSAGE)
@@ -71,7 +73,8 @@ class RouteStage(BaseStage[IMEventContext]):
 
         if event.process_strategy == "flush":
             flushed = await publish_buffered_messages(
-                services.message_buffer, services.event_bus, sid, extra_event=event)
+                services.message_buffer, services.event_bus, sid, extra_event=event,
+                filter_fn=event.flush_filter_fn)
             if not flushed:
                 logger.warning(f"No pending messages to flush for session {sid}")
             return False

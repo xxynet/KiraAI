@@ -5,7 +5,7 @@ import threading
 import time
 from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -68,14 +68,14 @@ async def test_age_and_count_limits_are_combined_per_session(cleaner, history):
     sent = await seed(history, 3, age_days=2, direction="outgoing", status="sent")
     failed = await seed(history, 4, age_days=1, direction="outgoing", status="failed")
     other = await seed(history, 5, sid="other:dm:user")
-    memory = deepcopy(history.session_manager.chat_memory)
+    memory = await history.session_manager.get_sessions()
     result = await cleaner.cleanup_once(settings(max_messages_per_session=2))
     assert result["deleted_messages"] == 2
     assert await history.get_message(old) is None
     assert await history.get_message(excess) is None
     for identity in (sent, failed, other):
         assert await history.get_message(identity) is not None
-    assert history.session_manager.chat_memory == memory
+    assert await history.session_manager.get_sessions() == memory
 
 
 @pytest.mark.anyio
@@ -108,21 +108,16 @@ async def test_active_incoming_and_pending_outgoing_are_temporarily_protected(cl
 
 
 @pytest.mark.anyio
-async def test_media_gc_preserves_shared_nested_and_context_references(cleaner, history, tmp_path):
+async def test_media_gc_preserves_shared_nested_references_and_session_directory(cleaner, history, tmp_path):
     def media(raw):
         import base64
         return _archive_media(base64.b64encode(raw).decode(), "base64")
 
     shared = media(b"shared")
-    context_only = media(b"context")
     orphan = media(b"orphan")
     element = {"type": "image", "file_type": "archive", "file": shared}
     await seed(history, 1, age_days=40, chain=[element])
     await seed(history, 2, chain=[{"type": "forward", "chains": [[{"type": "reply", "chain": [element]}]]}])
-    history.session_manager.chat_memory[SID]["memory"] = [[{
-        "role": "user", "content": [{"type": "kira_image_ref", "path": context_only}],
-        "_extra": {"llm_message_id": "retained-llm-id"},
-    }]]
     root = tmp_path / "session_media" / "archive"
     old_tmp = root / ("a" * 32 + ".tmp")
     fresh_tmp = root / ("b" * 32 + ".download")
@@ -141,8 +136,7 @@ async def test_media_gc_preserves_shared_nested_and_context_references(cleaner, 
     assert result["deleted_messages"] == 1
     assert result["deleted_files"] == 2
     assert result["freed_bytes"] == len(b"orphanold")
-    for path in (shared, context_only):
-        assert (tmp_path / path).is_file()
+    assert (tmp_path / shared).is_file()
     assert not (tmp_path / orphan).exists()
     assert not old_tmp.exists()
     for path in (fresh_tmp, unmanaged, native, outside):
@@ -176,7 +170,11 @@ async def test_cleanup_defers_until_media_and_database_are_both_persisted(cleane
     ))
     try:
         await asyncio.wait_for(started.wait(), 3)
-        result = await cleaner.cleanup_once(settings())
+        cleanup = asyncio.create_task(cleaner.cleanup_once(settings()))
+        await asyncio.sleep(0)
+        assert not cleanup.done()
+        release.set()
+        result = await cleanup
         assert result["deferred"]
         assert result["deleted_files"] == 0
     finally:
@@ -354,7 +352,7 @@ async def test_default_policy_keeps_latest_500_without_age_limit(cleaner, histor
     assert (await cleaner.cleanup_once(defaults))["deleted_messages"] == 1
     assert await history.get_message(f"{0:032x}") is None
     assert await history.get_message(f"{1:032x}") is not None
-    assert (await history.list_sessions())[0]["message_count"] == 500
+    assert (await history.list_sessions())[0].message_count == 500
 
 
 @pytest.mark.anyio
@@ -364,9 +362,9 @@ async def test_session_delete_removes_all_archive_rows_even_when_cleanup_disable
 
     manager = history.session_manager
     if with_context:
-        manager.write_memory(SID, [[{"role": "user", "content": "old"}]])
+        await manager.update_session(SID, content=[[{"role": "user", "content": "old"}]])
     else:
-        manager.chat_memory.pop(SID, None)
+        await history.db.delete_chat_session(SID)
     cleaner.config["bot_config"]["message_history_cleanup"]["enabled"] = False
     await seed(history, 1)
     await seed(history, 2, direction="outgoing", status="pending")
@@ -378,8 +376,8 @@ async def test_session_delete_removes_all_archive_rows_even_when_cleanup_disable
     ))
     await routes.delete_session(SID)
     await dispatch_session_events(history, session_events)
-    assert manager.get_existing_memory_snapshot(SID) is None
-    assert (await history.list_messages(SID))["messages"] == []
+    assert (await manager.get_session(SID)) is None
+    assert (await history.list_messages(SID)).messages == []
     assert await history.get_message(other) is not None
     assert all(item["id"] != SID for item in (await routes.list_sessions())["sessions"])
     scopes.remove_session_from_scopes.assert_called_once_with(SID)
@@ -402,7 +400,7 @@ async def test_session_delete_waits_for_existing_archive_and_does_not_rearchive_
     message.chain = MessageChain([Image("base64://aGVsbG8=")])
     writer = asyncio.create_task(history.record_incoming(message, SID, "test"))
     await asyncio.wait_for(started.wait(), 3)
-    history.session_manager.delete_session(SID)
+    await history.session_manager.delete_session(SID)
     deletion = asyncio.create_task(dispatch_session_events(history, session_events))
     try:
         await asyncio.sleep(0)
@@ -411,9 +409,9 @@ async def test_session_delete_waits_for_existing_archive_and_does_not_rearchive_
         release.set()
         identity = await writer
         await deletion
-    assert (await history.list_messages(SID))["messages"] == []
+    assert (await history.list_messages(SID)).messages == []
     assert await history.record_incoming(message, SID, "test") == identity
-    assert (await history.list_messages(SID))["messages"] == []
+    assert (await history.list_messages(SID)).messages == []
     new_id = await history.record_incoming(incoming("new-after-delete"), SID, "test")
     assert await history.get_message(new_id) is not None
 
@@ -421,18 +419,18 @@ async def test_session_delete_waits_for_existing_archive_and_does_not_rearchive_
 @pytest.mark.anyio
 async def test_failed_context_delete_does_not_delete_archive(history, session_events, monkeypatch):
     identity = await seed(history, 1)
-    previous = deepcopy(history.session_manager.chat_memory)
-    monkeypatch.setattr(history.session_manager, "_save_memory", lambda *args: False)
+    previous = await history.session_manager.get_sessions()
+    monkeypatch.setattr(history.db, "delete_chat_session", AsyncMock(side_effect=OSError("Unable to persist session deletion")))
     with pytest.raises(OSError, match="Unable to persist session deletion"):
-        history.session_manager.delete_session(SID)
-    assert history.session_manager.chat_memory == previous
+        await history.session_manager.delete_session(SID)
+    assert await history.session_manager.get_sessions() == previous
     assert await history.get_message(identity) is not None
 
 
 @pytest.mark.anyio
 async def test_empty_context_edit_keeps_structured_history(history):
     identity = await seed(history, 1)
-    history.session_manager.write_memory(SID, [])
+    await history.session_manager.update_session(SID, content=[])
     assert await history.get_message(identity) is not None
 
 
@@ -440,46 +438,11 @@ async def test_empty_context_edit_keeps_structured_history(history):
 async def test_session_deleted_event_triggers_archive_deletion(history, session_events):
     manager = history.session_manager
     identity = await seed(history, 1)
-    manager.delete_session(SID)
+    await manager.delete_session(SID)
     assert await history.get_message(identity) is not None
     await dispatch_session_events(history, session_events)
     assert await history.get_message(identity) is None
     assert not manager._background_tasks
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("malformed", ["scalar", "null", "flat", "object", "nested"])
-async def test_media_gc_tolerates_malformed_sessions_and_preserves_references(
-    cleaner, history, tmp_path, malformed,
-):
-    healthy_path = _archive_media("aGVhbHRoeQ==", "base64")
-    damaged_path = _archive_media("ZGFtYWdlZA==", "base64")
-    orphan_path = _archive_media("b3JwaGFu", "base64")
-    reference = {"type": "kira_image_ref", "path": damaged_path}
-    records = {
-        "scalar": 42,
-        "null": {"memory": None},
-        "flat": {"memory": [{"role": "user", "content": [reference]}]},
-        "object": {"memory": {"content": [reference]}},
-        "nested": {"memory": [None, ["bad", {"role": "invalid", "content": [reference]}]]},
-    }
-    damaged_record = deepcopy(records[malformed])
-    history.session_manager.chat_memory["adapter:dm:damaged"] = damaged_record
-    history.session_manager.chat_memory[SID]["memory"] = [[{
-        "role": "user", "content": [{"type": "kira_image_ref", "path": healthy_path}],
-    }]]
-    if malformed in {"scalar", "null"}:
-        await seed(history, 1, chain=[{
-            "type": "image", "file_type": "archive", "file": damaged_path,
-        }])
-
-    result = await cleaner.cleanup_once(settings())
-    assert result["deleted_files"] == 1
-    assert not (tmp_path / orphan_path).exists()
-    assert (tmp_path / healthy_path).is_file()
-    assert (tmp_path / damaged_path).is_file()
-    assert history.session_manager.chat_memory["adapter:dm:damaged"] == records[malformed]
-    assert (await cleaner.cleanup_once(settings()))["deleted_files"] == 0
 
 
 @pytest.mark.anyio

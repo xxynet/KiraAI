@@ -160,7 +160,7 @@ async def test_persona_generator_returns_follow_up_tool_question():
 @pytest.mark.asyncio
 async def test_persona_generator_returns_tool_proposal():
     client = _FakeClient([_proposal_tool_call(
-        '{"name":"Luna","format":"markdown","content":"# Luna"}'
+        '{"name":"Luna","format":"markdown","content":"# Luna","chat_rules":"Use short replies."}'
     )])
 
     result = await PersonaGenerator(client).respond(
@@ -171,6 +171,7 @@ async def test_persona_generator_returns_tool_proposal():
     assert result.name == "Luna"
     assert result.format == "markdown"
     assert result.content == "# Luna"
+    assert result.chat_rules == "Use short replies."
 
 
 @pytest.mark.asyncio
@@ -246,7 +247,7 @@ async def test_persona_generator_stream_endpoint_emits_proposal_event():
             "type": "function",
             "function": {
                 "name": "propose_persona",
-                "arguments": '{"name":"Luna","format":"markdown","content":"# Luna"}',
+                "arguments": '{"name":"Luna","format":"markdown","content":"# Luna","chat_rules":"Use short replies."}',
             },
         }]),
     ])
@@ -254,7 +255,10 @@ async def test_persona_generator_stream_endpoint_emits_proposal_event():
 
     events = await _stream_events(route)
 
-    assert events == [{"type": "proposal", "name": "Luna", "format": "markdown", "content": "# Luna"}]
+    assert events == [{
+        "type": "proposal", "name": "Luna", "format": "markdown",
+        "content": "# Luna", "chat_rules": "Use short replies.",
+    }]
 
 
 @pytest.mark.asyncio
@@ -282,7 +286,7 @@ async def test_persona_generator_stream_endpoint_emits_error_event(stream_chunks
 @pytest.mark.asyncio
 async def test_persona_generator_turn_returns_model_draft():
     lifecycle = _FakeLifecycle([_proposal_tool_call(
-        '{"name":"Luna","format":"markdown","content":"# Luna"}'
+        '{"name":"Luna","format":"markdown","content":"# Luna","chat_rules":"Use short replies."}'
     )])
     route = PersonasRoutes(None, lifecycle)
 
@@ -294,6 +298,7 @@ async def test_persona_generator_turn_returns_model_draft():
     assert result.name == "Luna"
     assert result.format == "markdown"
     assert result.content == "# Luna"
+    assert result.chat_rules == "Use short replies."
     assert lifecycle.provider_manager.fast_client.request is not None
     assert lifecycle.provider_manager.client.request is None
 
@@ -304,7 +309,7 @@ async def test_persona_generator_prefers_proposal_when_both_tools_are_called():
         _question_tool_call(
             '{"question":"What tone should the persona use?","options":["Warm","Playful"],"allow_custom":true}'
         ),
-        _proposal_tool_call('{"name":"Luna","format":"markdown","content":"# Luna"}'),
+        _proposal_tool_call('{"name":"Luna","format":"markdown","content":"# Luna","chat_rules":"Use short replies."}'),
     ])
 
     result = await PersonaGenerator(client).respond(
@@ -318,7 +323,7 @@ async def test_persona_generator_prefers_proposal_when_both_tools_are_called():
 @pytest.mark.asyncio
 async def test_persona_generator_turn_falls_back_to_default_llm():
     lifecycle = _FakeLifecycle([_proposal_tool_call(
-        '{"name":"Luna","format":"markdown","content":"# Luna"}'
+        '{"name":"Luna","format":"markdown","content":"# Luna","chat_rules":"Use short replies."}'
     )], has_fast_llm=False)
     route = PersonasRoutes(None, lifecycle)
 
@@ -333,7 +338,7 @@ async def test_persona_generator_turn_falls_back_to_default_llm():
 @pytest.mark.asyncio
 async def test_persona_generator_turn_falls_back_when_fast_provider_is_missing():
     lifecycle = _FakeLifecycle([_proposal_tool_call(
-        '{"name":"Luna","format":"markdown","content":"# Luna"}'
+        '{"name":"Luna","format":"markdown","content":"# Luna","chat_rules":"Use short replies."}'
     )], fast_llm_error=AttributeError("provider is not registered"))
     route = PersonasRoutes(None, lifecycle)
 
@@ -355,3 +360,57 @@ async def test_persona_generator_turn_rejects_invalid_model_response():
         ]))
 
     assert exc_info.value.status_code == 502
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rules", [None, "", " \n\t ", 1, [], {}])
+async def test_persona_generator_rejects_invalid_global_rules(rules):
+    arguments = {"name": "Luna", "format": "markdown", "content": "# Luna", "chat_rules": rules}
+    client = _FakeClient([_proposal_tool_call(json.dumps(arguments))])
+
+    with pytest.raises(PersonaGenerationError, match="invalid tool call"):
+        await PersonaGenerator(client).respond(
+            [OpenAIMessage(role="user", content="A calm companion")], "en",
+        )
+
+
+@pytest.mark.asyncio
+async def test_persona_generator_endpoints_reject_proposal_without_global_rules():
+    arguments = json.dumps({"name": "Luna", "format": "markdown", "content": "# Luna"})
+    tool_call = _proposal_tool_call(arguments)
+    lifecycle = _FakeLifecycle([tool_call], stream_chunks=[
+        LLMStreamChunk(tool_calls_delta=[tool_call]),
+    ])
+    route = PersonasRoutes(None, lifecycle)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await route.persona_generator_turn(PersonaGeneratorTurnRequest(messages=[
+            PersonaGeneratorMessage(role="user", content="A calm companion"),
+        ]))
+    assert exc_info.value.status_code == 502
+    assert await _stream_events(route) == [{
+        "type": "error", "message": "Persona generator returned an invalid response",
+    }]
+
+
+@pytest.mark.asyncio
+async def test_persona_generator_stream_preserves_separate_fields_in_fragmented_proposal():
+    draft = {
+        "name": "月亮", "format": "markdown",
+        "content": "# 月亮\n\n温柔的伙伴。",
+        "chat_rules": "每次回复 1 至 3 段。\n保留 {{literal}} 和 <emoji>1234</emoji>。",
+    }
+    arguments = json.dumps(draft, ensure_ascii=False)
+    split = arguments.index("chat_rules") + 6
+    lifecycle = _FakeLifecycle([], stream_chunks=[
+        LLMStreamChunk(tool_calls_delta=[{
+            "index": 0, "id": "proposal-1", "type": "function",
+            "function": {"name": "propose_persona", "arguments": arguments[:split]},
+        }]),
+        LLMStreamChunk(tool_calls_delta=[{
+            "index": 0, "function": {"arguments": arguments[split:]},
+        }], is_final=True),
+    ])
+
+    events = await _stream_events(PersonasRoutes(None, lifecycle))
+
+    assert events == [{"type": "proposal", **draft}]

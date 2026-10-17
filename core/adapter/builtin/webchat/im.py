@@ -7,7 +7,7 @@ from core.chat.session import User
 
 
 class WebChatIMCapability(IMCapability):
-    _SUPPORTED_ELEMENTS = ["text", "image", "record", "video", "file", "sticker", "reply"]
+    _SUPPORTED_ELEMENTS = ["text", "img", "record", "video", "file", "sticker", "reply"]
 
     def receive_message(self, message_id: str, chain: MessageChain, profile: dict):
         """Publish a regular direct-message event; plugins own its reply strategy."""
@@ -16,8 +16,12 @@ class WebChatIMCapability(IMCapability):
             supported_elements=list(self._supported_elements), timestamp=timestamp,
             adapter=self.adapter.info,
             message=KiraIMMessage(
-                message_id=message_id, self_id="webchat", timestamp=timestamp,
-                sender=User("admin", profile["nickname"]), chain=chain,
+                message_id=message_id,
+                self_id="webchat",
+                timestamp=timestamp,
+                bot=User("webchat", profile["peer_nickname"]),
+                sender=User("admin", profile["nickname"]),
+                chain=chain,
                 is_mentioned=True,
             ),
         ))

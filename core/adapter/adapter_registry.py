@@ -491,7 +491,6 @@ class AdapterManager:
         if not info:
             logger.error(f"Failed to read adapter info after updating {adapter_id}")
             return None
-        logger.info(f"Adapter configuration saved for {name_for_runtime}")
         return info
 
     def _handle_adapter_run_failure(

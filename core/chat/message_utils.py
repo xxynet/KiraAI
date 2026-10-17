@@ -7,7 +7,7 @@ from deprecated import deprecated
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Union, Optional, Literal, TYPE_CHECKING
+from typing import Union, Optional, Literal, TYPE_CHECKING, Iterator, overload, Callable
 
 from core.chat.message_elements import (
     BaseMessageElement,
@@ -46,6 +46,7 @@ class KiraIMMessage:
     chain: MessageChain
 
     timestamp: int
+    bot: User = field(default=None, kw_only=True)
     sender: User = None
     session: Session = None
     group: Group = None
@@ -56,6 +57,12 @@ class KiraIMMessage:
     message_str: Optional[str] = field(default=None, init=False)
     native_content: Optional[list[dict]] = field(default=None, init=False)
     message_repr: Optional[str] = field(default=None, init=False)
+
+    def __post_init__(self):
+        if self.bot is None:
+            self.bot = User(self.self_id)
+        else:
+            self.self_id = self.bot.user_id
 
     def is_group_message(self):
         return self.group is not None
@@ -117,6 +124,7 @@ class KiraMessageEvent:
     message_repr: Optional[str] = field(default=None, init=False)
     _is_stopped: bool = False
     _is_forced: bool = False
+    _flush_filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = field(default=None, init=False, repr=False)
 
     @property
     @deprecated("message_types is deprecated; use supported_elements instead")
@@ -190,11 +198,25 @@ class KiraMessageEvent:
         self._is_forced = force
         return True
 
-    def flush(self, force: bool = False):
+    @property
+    def flush_filter_fn(self) -> Optional[Callable[[KiraMessageEvent], bool]]:
+        return self._flush_filter_fn
+
+    def flush(
+        self,
+        force: bool = False,
+        *,
+        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+    ):
+        """Select matching buffered events, including this event, for publication.
+
+        The predicate is synchronous; unmatched events remain buffered.
+        """
         if self._is_forced:
             return False
         self._process_strategy = "flush"
         self._is_forced = force
+        self._flush_filter_fn = filter_fn
         return True
 
     def discard(self, force: bool = False):
@@ -245,6 +267,10 @@ class KiraMessageBatchEvent:
 
     def is_group_message(self):
         return self.messages[-1].group is not None
+
+    @property
+    def bot(self) -> User:
+        return self.messages[-1].bot
 
     @property
     def self_id(self):
@@ -338,16 +364,22 @@ class KiraCustomEvent:
 
 
 class MessageChain:
-    def __init__(self, message_list: list[BaseMessageElement] = None):
-        self.message_list: list = message_list or []
+    def __init__(self, message_list: list[BaseMessageElement] | None = None) -> None:
+        self.message_list: list[BaseMessageElement] = message_list or []
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[BaseMessageElement]:
         return iter(self.message_list)
 
     def __len__(self):
         return len(self.message_list)
 
-    def __getitem__(self, index):
+    @overload
+    def __getitem__(self, index: int) -> BaseMessageElement: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[BaseMessageElement]: ...
+
+    def __getitem__(self, index: int | slice) -> BaseMessageElement | list[BaseMessageElement]:
         return self.message_list[index]
 
     def __setitem__(self, index, value):

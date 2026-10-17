@@ -60,21 +60,16 @@ class ScopeRoutes(Routes):
 
         # Gather sessions
         sessions: List[Dict[str, Any]] = []
-        if self.lifecycle.session_manager and self.lifecycle.session_manager.chat_memory:
-            for session_key, session_meta in self.lifecycle.session_manager.chat_memory.items():
-                parts = session_key.split(":")
-                if len(parts) < 3:
+        if self.lifecycle.session_manager:
+            for session in await self.lifecycle.session_manager.get_sessions(include_content=False):
+                if not isinstance(session.data, dict):
                     continue
-                adapter_name = parts[0]
-                session_type = parts[1]
-                session_id = ":".join(parts[2:])
-                title = session_meta.get("title", "")
                 sessions.append({
-                    "id": session_key,
-                    "adapter": adapter_name,
-                    "type": session_type,
-                    "session_id": session_id,
-                    "title": title,
+                    "id": session.sid,
+                    "adapter": session.adapter_name,
+                    "type": session.session_type,
+                    "session_id": session.session_id,
+                    "title": session.session_title,
                 })
 
         return {

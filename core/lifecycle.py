@@ -204,6 +204,7 @@ class KiraLifecycle:
             self.kira_config,
             event_bus=self.event_bus,
         )
+        await self.session_manager.initialize()
         self.session_media_manager = SessionMediaManager(
             self.event_bus, self.session_manager
         )
@@ -245,7 +246,7 @@ class KiraLifecycle:
             max_count=int(self.kira_config.get_config("bot_config.bot.max_buffer_messages", 3)),
         )
         message_delivery = MessageDeliveryService(
-            self.kira_config, self.adapter_manager, self.message_history,
+            self.kira_config, self.adapter_manager, self.persona_manager, self.message_history,
         )
         message_formatter = MessageFormatter(
             self.kira_config, self.provider_manager, self.session_manager, self.image_desc_cache,

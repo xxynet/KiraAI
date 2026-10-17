@@ -8,7 +8,7 @@ from .message_format_metadata import MessageFormatMetadata
 from .feed import FeedItem, FeedPage, FeedPost, FeedQuery, FeedRef, FeedSearchQuery
 
 if TYPE_CHECKING:
-    from core.chat.message_elements import Record
+    # from core.chat.message_elements import Record
     from core.chat.message_utils import KiraIMSentResult, MessageChain
 
 
@@ -74,34 +74,35 @@ class FeedCapability(BaseCapability[AdapterT]):
         ...
 
 
-class LiveEventCapability(BaseCapability[AdapterT]):
-    """Live-event subscriptions."""
+# Reserved interfaces awaiting concrete adapter implementations and event routing.
+# class LiveEventCapability(BaseCapability[AdapterT]):
+#     """Live-event subscriptions."""
 
-    @abstractmethod
-    async def watch_live_events(self, room_id: AdapterTargetId) -> None: ...
+#     @abstractmethod
+#     async def watch_live_events(self, room_id: AdapterTargetId) -> None: ...
 
-    @abstractmethod
-    async def unwatch_live_events(self, room_id: AdapterTargetId) -> None: ...
+#     @abstractmethod
+#     async def unwatch_live_events(self, room_id: AdapterTargetId) -> None: ...
 
 
-class VoiceChannelCapability(BaseCapability[AdapterT]):
-    """Voice-channel membership and audio transmission."""
+# class VoiceChannelCapability(BaseCapability[AdapterT]):
+#     """Voice-channel membership and audio transmission."""
 
-    @abstractmethod
-    async def join_voice_channel(self, channel_id: AdapterTargetId) -> None: ...
+#     @abstractmethod
+#     async def join_voice_channel(self, channel_id: AdapterTargetId) -> None: ...
 
-    @abstractmethod
-    async def leave_voice_channel(self, channel_id: AdapterTargetId) -> None: ...
+#     @abstractmethod
+#     async def leave_voice_channel(self, channel_id: AdapterTargetId) -> None: ...
 
-    @abstractmethod
-    async def send_voice(
-        self, channel_id: AdapterTargetId, audio: Record | bytes,
-    ) -> Any: ...
+#     @abstractmethod
+#     async def send_voice(
+#         self, channel_id: AdapterTargetId, audio: Record | bytes,
+#     ) -> Any: ...
 
 
 __all__ = [
     "FeedCapability",
     "IMCapability",
-    "LiveEventCapability",
-    "VoiceChannelCapability",
+    # "LiveEventCapability",
+    # "VoiceChannelCapability",
 ]

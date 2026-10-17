@@ -245,6 +245,7 @@ export interface PluginConfigUpdateRequest {
 
 export interface PluginInstallGithubRequest {
   repo_url: string
+  display_name?: string | null
   proxy?: string | null
   gh_proxy?: string | null
   commit_sha?: string | null
@@ -265,6 +266,36 @@ export interface PluginInstallTask {
   warnings: string[]
 }
 
+export interface PluginUpdateQueueItem {
+  plugin_id: string
+  gh_proxy?: string | null
+  commit_sha?: string | null
+}
+
+export interface PluginUpdateTask {
+  task_id: string
+  plugin_id: string
+  name: string
+  commit_sha?: string | null
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  stage: 'queued' | 'downloading' | 'installing_dependencies' | 'loading' | 'completed' | 'failed' | 'cancelled'
+  error?: string | null
+  warnings: string[]
+}
+
+export interface PluginTask {
+  task_id: string
+  operation: 'install' | 'update'
+  source: 'github' | 'upload'
+  plugin_id: string | null
+  name: string
+  repo_url: string | null
+  commit_sha?: string | null
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  stage: 'queued' | 'downloading' | 'extracting' | 'installing_dependencies' | 'loading' | 'completed' | 'failed' | 'cancelled'
+  error?: string | null
+  warnings: string[]
+}
 export interface McpServerItem {
   id: string
   type: string
@@ -359,6 +390,9 @@ export interface SessionCapabilities {
 }
 
 export interface SessionItem {
+  internal_id?: string | null
+  created_at?: number | null
+  updated_at?: number | null
   history_count?: number
   id: string
   adapter_name: string

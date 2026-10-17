@@ -648,8 +648,9 @@ async def test_run_reaches_ready_and_stays_alive_until_close(
     runner = asyncio.create_task(client.run("10000", "ws://fake"))
     await wait_until(lambda: bool(ws.actions))  # get_login_info request written
     echo = ws.actions[0]["echo"]
-    ws.push(json.dumps({"status": "ok", "retcode": 0, "data": {"user_id": 10000}, "echo": echo}))
+    ws.push(json.dumps({"status": "ok", "retcode": 0, "data": {"user_id": 10000, "nickname": "Kira"}, "echo": echo}))
     await asyncio.sleep(0.05)
+    assert client.self_nickname == "Kira"
 
     assert len(calls) == 1
     assert not runner.done()  # ready clients stay alive until closed
