@@ -17,6 +17,7 @@ from core.utils.system_info import collect_system_profile, get_anonymous_machine
 from core.statistics import Statistics
 from core.db.service import DatabaseService
 
+from .geolocation import fetch_country_code
 from .models import TelemetryEvent, TelemetryEventType
 
 logger = get_logger("telemetry", "green")
@@ -96,7 +97,7 @@ class TelemetryClient:
                 await self._request_uuid()
 
             if self.client_uuid and self.secret_key:
-                self.country_code = await self._fetch_country_code()
+                self.country_code = await fetch_country_code()
                 self.send_system_startup()
                 if post_event:
                     self.send_event(post_event, {
@@ -387,27 +388,6 @@ class TelemetryClient:
                     logger.warning(f"Telemetry server returned {e.response.status_code}: {e}")
             except Exception as e:
                 logger.warning(f"Failed to send telemetry event: {type(e).__name__}: {e}")
-
-    # ------------------------------------------------------------------
-    # Geo lookup
-    # ------------------------------------------------------------------
-    async def _fetch_country_code(self) -> Optional[str]:
-        """
-        Fetch country code from public IP via ip-api.com.
-        Uses a dedicated client with proxy explicitly disabled.
-        """
-        transport = httpx.AsyncHTTPTransport(proxy=None)
-        try:
-            async with httpx.AsyncClient(timeout=5.0, transport=transport) as client:
-                resp = await client.get("http://ip-api.com/json/?fields=countryCode")
-                resp.raise_for_status()
-                code = resp.json().get("countryCode")
-                if code:
-                    logger.debug(f"Country code detected: {code}")
-                    return code
-        except Exception as e:
-            logger.warning(f"Failed to fetch country code: {e}")
-        return None
 
     # ------------------------------------------------------------------
     # Convenience helpers for common events
