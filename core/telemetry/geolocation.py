@@ -65,8 +65,8 @@ _PROVIDERS: tuple[CountryCodeProvider, ...] = (
 async def fetch_country_code() -> Optional[str]:
     """Try providers directly in order, with a 3-second budget for each lookup."""
     failures = []
-    transport = httpx.AsyncHTTPTransport(proxy=None)
     try:
+        transport = httpx.AsyncHTTPTransport(proxy=None)
         async with httpx.AsyncClient(timeout=3.0, transport=transport, trust_env=False) as client:
             for provider in _PROVIDERS:
                 try:
