@@ -319,7 +319,8 @@ class PersonasRoutes(Routes):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if path is None:
             raise HTTPException(status_code=404, detail="Reference image not found")
-        return FileResponse(path, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+        media_type = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}[path.suffix.lower()]
+        return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     async def remove_reference_image(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -333,19 +334,27 @@ class PersonasRoutes(Routes):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     async def upload_reference_image(self, persona_id: str, file: UploadFile = File(...)):
-        if not self.lifecycle or not self.lifecycle.persona_manager:
-            raise HTTPException(status_code=404, detail="Persona manager not available")
         try:
+            if not self.lifecycle or not self.lifecycle.persona_manager:
+                raise HTTPException(status_code=404, detail="Persona manager not available")
             if not file.filename:
                 raise HTTPException(status_code=400, detail="Reference image file is required")
             file_bytes = await file.read(MAX_REFERENCE_IMAGE_BYTES + 1)
             if len(file_bytes) > MAX_REFERENCE_IMAGE_BYTES:
                 raise HTTPException(status_code=413, detail="Reference image exceeds the 10 MB limit")
             path = await self.lifecycle.persona_manager.set_reference_image(persona_id, file_bytes, file.filename)
+        except HTTPException as exc:
+            logger.warning("Persona reference image upload rejected (HTTP %s): %s", exc.status_code, exc.detail)
+            raise
         except LookupError as exc:
+            logger.warning("Persona reference image upload rejected: persona not found")
             raise HTTPException(status_code=404, detail="Persona not found") from exc
         except ValueError as exc:
+            logger.warning("Persona reference image upload rejected: %s", exc)
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.error("Failed to upload persona reference image (%s)", type(exc).__name__)
+            raise HTTPException(status_code=500, detail="Failed to upload reference image") from exc
         finally:
             await file.close()
         return {"filename": path.name}

@@ -3,11 +3,11 @@ import json
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, UploadFile
 from PIL import Image
 from sqlalchemy import text
 
@@ -99,7 +99,6 @@ async def test_missing_persona_image_cannot_be_saved(image_manager):
     ("image.png", image_bytes("GIF")),
     ("image.webp", image_bytes("GIF")),
     ("image.png", b"not an image"),
-    ("image.jpg", image_bytes()),
     ("image.png", b""),
 ])
 async def test_invalid_upload_keeps_existing_image(image_manager, filename, content):
@@ -214,8 +213,9 @@ async def test_reference_image_missing_file_has_no_directory_fallback(image_mana
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("extension,image_format", [(".png", "PNG"), (".jpg", "JPEG")])
-async def test_reference_image_failed_database_update_restores_old_file(image_manager, monkeypatch, extension, image_format):
-    path = await image_manager.set_reference_image("p1", image_bytes(), "old.png")
+@pytest.mark.parametrize("old_extension", [".png", ".PNG"])
+async def test_reference_image_failed_database_update_restores_old_file(image_manager, monkeypatch, extension, image_format, old_extension):
+    path = await image_manager.set_reference_image("p1", image_bytes(), "old" + old_extension)
 
     async def fail_update(*args, **kwargs):
         raise RuntimeError("Simulated database failure")
@@ -225,7 +225,7 @@ async def test_reference_image_failed_database_update_restores_old_file(image_ma
         await image_manager.set_reference_image("p1", image_bytes(image_format, "blue"), "new" + extension)
     assert path.read_bytes() == image_bytes()
     assert list(path.parent.iterdir()) == [path]
-    assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1.png"
+    assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1" + old_extension
 
 
 @pytest.mark.parametrize("stored_path", ["../outside.png", "selfie_refs/p2.png", "selfie_refs/p1.txt", "selfie_refs/../p1.png", "selfie_refs/p1.gif", "selfie_refs/p1.GIF"])
@@ -615,3 +615,99 @@ async def test_gif_reference_path_is_rejected_for_remove_or_replace(image_manage
         else:
             await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
     assert path.exists()
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("filename,image_format,extension", [
+    ("portrait.jpg", "PNG", ".png"),
+    ("portrait.webp", "PNG", ".png"),
+    ("portrait.png", "JPEG", ".jpg"),
+    ("portrait.webp", "JPEG", ".jpg"),
+    ("portrait.png", "WEBP", ".webp"),
+    ("portrait.jpeg", "WEBP", ".webp"),
+    ("portrait.txt", "PNG", ".png"),
+    ("portrait", "JPEG", ".jpg"),
+])
+async def test_reference_image_api_corrects_extension_from_content(image_manager, filename, image_format, extension):
+    original = await image_manager.set_reference_image("p1", image_bytes(), "original.PNG")
+    data = image_bytes(image_format, "blue")
+    app = FastAPI()
+    PersonasRoutes(app, SimpleNamespace(persona_manager=image_manager)).register()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        endpoint = "/api/personas/p1/reference-image"
+        response = await client.put(endpoint, files={"file": (filename, data, "application/octet-stream")})
+        assert response.status_code == 200
+        assert response.json() == {"filename": "p1" + extension}
+        preview = await client.get(endpoint)
+        assert preview.content == data
+        assert preview.headers["content-type"] == Image.MIME[image_format]
+    path = await image_manager.get_reference_image("p1")
+    assert path.name == "p1" + extension
+    assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1" + extension
+    assert list(path.parent.iterdir()) == [path]
+    if original != path:
+        assert not original.exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure,status_code,reason", [
+    ("unavailable", 404, "Persona manager not available"),
+    ("filename", 400, "Reference image file is required"),
+    ("oversized", 413, "Reference image exceeds the 10 MB limit"),
+    ("missing", 404, "persona not found"),
+    ("invalid", 400, "Invalid reference image"),
+    ("unsupported", 400, "Supported reference image formats"),
+])
+async def test_reference_image_upload_logs_rejections(image_manager, monkeypatch, failure, status_code, reason):
+    log = Mock()
+    monkeypatch.setattr("webui.routes.personas.logger", log)
+    lifecycle = None if failure == "unavailable" else SimpleNamespace(persona_manager=image_manager)
+    route = PersonasRoutes(None, lifecycle)
+    data = b"invalid" if failure == "invalid" else image_bytes("GIF" if failure == "unsupported" else "PNG")
+    upload = UploadFile(filename=None if failure == "filename" else "private-filename.png", file=BytesIO(data))
+    if failure == "oversized":
+        monkeypatch.setattr("webui.routes.personas.MAX_REFERENCE_IMAGE_BYTES", 4)
+    with pytest.raises(HTTPException) as error:
+        await route.upload_reference_image("missing" if failure == "missing" else "p1", upload)
+    assert error.value.status_code == status_code
+    log.warning.assert_called_once()
+    args = log.warning.call_args.args
+    message = args[0] % args[1:]
+    assert reason in message
+    assert "private-filename" not in message
+    log.error.assert_not_called()
+    assert upload.file.closed
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure,error_type", [
+    ("read", OSError),
+    ("write", OSError),
+    ("database", RuntimeError),
+])
+async def test_reference_image_upload_logs_unexpected_failures(image_manager, monkeypatch, failure, error_type):
+    original = await image_manager.set_reference_image("p1", image_bytes(), "original.png")
+    log = Mock()
+    monkeypatch.setattr("webui.routes.personas.logger", log)
+    upload = UploadFile(filename="private-filename.jpg", file=BytesIO(image_bytes("JPEG")))
+    error = error_type("private exception details")
+    if failure == "read":
+        monkeypatch.setattr(upload, "read", AsyncMock(side_effect=error))
+    elif failure == "write":
+        monkeypatch.setattr(reference_image.os, "replace", Mock(side_effect=error))
+    else:
+        monkeypatch.setattr(image_manager.db, "update_persona", AsyncMock(side_effect=error))
+    route = PersonasRoutes(None, SimpleNamespace(persona_manager=image_manager))
+    with pytest.raises(HTTPException) as result:
+        await route.upload_reference_image("p1", upload)
+    assert result.value.status_code == 500
+    assert result.value.detail == "Failed to upload reference image"
+    log.error.assert_called_once()
+    args = log.error.call_args.args
+    message = args[0] % args[1:]
+    assert error_type.__name__ in message
+    assert "private" not in message
+    assert upload.file.closed
+    assert original.read_bytes() == image_bytes()
+    assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1.png"
+    assert list(original.parent.iterdir()) == [original]

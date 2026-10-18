@@ -13,6 +13,7 @@ from core.utils.path_utils import get_data_path, is_within_directory
 
 REFERENCE_IMAGE_DIRECTORY = "selfie_refs"
 MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024
+_FORMAT_EXTENSIONS = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}
 _IMAGE_FORMATS = {
     ".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG",
     ".webp": "WEBP",
@@ -53,21 +54,22 @@ def get_reference_image_path(persona_id: str, stored_path: str | None, *, requir
 def save_reference_image(persona_id: str, file_bytes: bytes, filename: str) -> Path:
     directory = _image_directory(persona_id)
     extension = Path(filename).suffix
-    expected_format = _IMAGE_FORMATS.get(extension.lower())
-    if expected_format is None:
-        raise ValueError("Supported reference image formats: PNG, JPEG, WebP")
     if not file_bytes or len(file_bytes) > MAX_REFERENCE_IMAGE_BYTES:
         raise ValueError("Reference image must be nonempty and at most 10 MB")
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(BytesIO(file_bytes)) as image:
-                if image.format != expected_format:
-                    raise ValueError("Image content does not match its extension")
+                image_format = image.format
+                if image_format not in _FORMAT_EXTENSIONS:
+                    raise ValueError("Supported reference image formats: PNG, JPEG, WebP")
                 image.verify()
     except (OSError, UnidentifiedImageError, Image.DecompressionBombError,
             Image.DecompressionBombWarning) as exc:
         raise ValueError("Invalid reference image") from exc
+
+    if _IMAGE_FORMATS.get(extension.lower()) != image_format:
+        extension = _FORMAT_EXTENSIONS[image_format]
 
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / f"{persona_id}{extension}"
