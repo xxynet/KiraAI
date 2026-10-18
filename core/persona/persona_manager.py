@@ -125,16 +125,17 @@ class PersonaManager:
             previous_bytes = await asyncio.to_thread(previous_path.read_bytes) if previous_path else None
             path = await asyncio.to_thread(save_reference_image, persona_id, file_bytes, filename)
             stored_path = f"{REFERENCE_IMAGE_DIRECTORY}/{path.name}"
+            same_file = previous_path is not None and await asyncio.to_thread(previous_path.samefile, path)
             try:
                 if not await self.db.update_persona(persona_id, reference_image_path=stored_path):
                     raise LookupError("Persona not found")
             except Exception:
-                if previous_path == path and previous_bytes is not None:
+                if same_file and previous_bytes is not None:
                     await asyncio.to_thread(save_reference_image, persona_id, previous_bytes, previous_path.name)
                 else:
                     await asyncio.to_thread(delete_reference_image, persona_id, stored_path)
                 raise
-            if previous_path and previous_path != path:
+            if previous_path and not same_file:
                 await asyncio.to_thread(delete_reference_image, persona_id, persona.reference_image_path)
             return path
 

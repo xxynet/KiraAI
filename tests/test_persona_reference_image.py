@@ -228,6 +228,43 @@ async def test_reference_image_failed_database_update_restores_old_file(image_ma
     assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1" + old_extension
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("database_result", ["success", "exception", "missing"])
+async def test_reference_image_alias_preserves_image_on_replace_and_rollback(image_manager, monkeypatch, database_result):
+    original_bytes = image_bytes()
+    original = await image_manager.set_reference_image("p1", original_bytes, "original.png")
+    save_image = reference_image.save_reference_image
+
+    def save_with_alias(*args):
+        path = save_image(*args)
+        # Use real filesystem aliases to exercise identity independently of path equality.
+        alias = path.parent / ".." / path.parent.name / path.name
+        assert alias != path
+        assert alias.samefile(path)
+        return alias
+
+    monkeypatch.setattr("core.persona.persona_manager.save_reference_image", save_with_alias)
+    if database_result == "exception":
+        monkeypatch.setattr(image_manager.db, "update_persona", AsyncMock(side_effect=RuntimeError("Simulated database failure")))
+    elif database_result == "missing":
+        monkeypatch.setattr(image_manager.db, "update_persona", AsyncMock(return_value=False))
+
+    replacement_bytes = image_bytes(color="blue")
+    if database_result == "success":
+        await image_manager.set_reference_image("p1", replacement_bytes, "mismatched.jpg")
+        expected_bytes = replacement_bytes
+    else:
+        error_type = RuntimeError if database_result == "exception" else LookupError
+        with pytest.raises(error_type):
+            await image_manager.set_reference_image("p1", replacement_bytes, "mismatched.jpg")
+        expected_bytes = original_bytes
+
+    assert original.read_bytes() == expected_bytes
+    assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1.png"
+    assert await image_manager.get_reference_image("p1") == original
+    assert list(original.parent.iterdir()) == [original]
+
+
 @pytest.mark.parametrize("stored_path", ["../outside.png", "selfie_refs/p2.png", "selfie_refs/p1.txt", "selfie_refs/../p1.png", "selfie_refs/p1.gif", "selfie_refs/p1.GIF"])
 def test_recorded_reference_image_path_rejects_invalid_locations(stored_path):
     with pytest.raises(ValueError):
@@ -645,8 +682,8 @@ async def test_reference_image_api_corrects_extension_from_content(image_manager
     assert path.name == "p1" + extension
     assert (await image_manager.get_persona("p1")).reference_image_path == "selfie_refs/p1" + extension
     assert list(path.parent.iterdir()) == [path]
-    if original != path:
-        assert not original.exists()
+    if original.exists():
+        assert original.samefile(path)
 
 
 @pytest.mark.anyio
