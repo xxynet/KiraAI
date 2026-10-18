@@ -146,18 +146,10 @@ function findScrollAncestor(el: HTMLElement | null): HTMLElement | null {
 
 const hasValue = computed(() => props.modelValue.length > 0)
 
-/**
- * Selected entries as {value, label} pairs: known options keep their label and
- * the option-list order, while values absent from `options` (typed by the user
- * when allowCustom is set) are appended and labelled by their raw value.
- */
+/** Preserve saved insertion order for both selected options and custom values. */
 const selectedOptions = computed(() => {
-  const knownOptions = props.options.filter(opt => props.modelValue.includes(opt.value))
-  const knownValues = new Set(props.options.map(opt => opt.value))
-  const customOptions = props.modelValue
-    .filter(value => !knownValues.has(value))
-    .map(value => ({ value, label: value }))
-  return [...knownOptions, ...customOptions]
+  const optionsByValue = new Map(props.options.map(option => [option.value, option]))
+  return props.modelValue.map(value => optionsByValue.get(value) || { value, label: value })
 })
 
 function isSelected(value: string): boolean {
