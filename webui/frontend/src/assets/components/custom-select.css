@@ -123,6 +123,7 @@
 
 .custom-select-options::-webkit-scrollbar-track {
   background: var(--color-scrollbar-track-subtle);
+  border-radius: 999px;
 }
 
 .custom-select-options::-webkit-scrollbar-thumb {
@@ -143,7 +144,7 @@
 @supports not selector(::-webkit-scrollbar) {
   .custom-select-options {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-scrollbar-thumb-subtle) transparent;
+    scrollbar-color: var(--color-scrollbar-thumb-subtle) var(--color-scrollbar-track-subtle);
   }
 }
 

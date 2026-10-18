@@ -218,11 +218,11 @@ button,
 }
 
 /* ==================== Custom Scrollbar ==================== */
-/* Overlay scrollbars: the track stays invisible and the thumb renders as a slim
-   inset pill, so long panels keep their full width while staying easy to grab.
-   The inset comes from a transparent border plus background-clip: the border
-   area shows the surface underneath, which keeps the thumb visually detached
-   from the panel edge on rounded, glassy surfaces. */
+/* Translucent scrollbar: a faint rounded rail carries an inset pill thumb, both
+   tinted from the slate family so the bar sits on white cards, glass panels and
+   the page background alike. The inset comes from a transparent border plus
+   background-clip: the border area shows the rail underneath, which keeps the
+   thumb slim without touching the panel edge. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -230,6 +230,7 @@ button,
 
 ::-webkit-scrollbar-track {
   background: var(--color-scrollbar-track);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -256,7 +257,7 @@ button,
 @supports not selector(::-webkit-scrollbar) {
   :root {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-scrollbar-thumb) transparent;
+    scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
   }
 }
 

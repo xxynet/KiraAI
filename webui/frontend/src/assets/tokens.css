@@ -62,12 +62,12 @@
   --color-danger-focus-ring: rgba(239, 68, 68, 0.5);
   --color-selection: rgba(59, 130, 246, 0.25);
 
-  /* Scrollbars are translucent overlays: no painted track, a soft thumb that
-     blends into any surface and deepens slightly on hover. */
-  --color-scrollbar-track: transparent;
+  /* Scrollbars are translucent overlays: a faint rail with an inset pill thumb,
+     both tinted from the same slate so they sit on any surface. */
+  --color-scrollbar-track: rgba(100, 116, 139, 0.1);
   --color-scrollbar-thumb: rgba(100, 116, 139, 0.42);
   --color-scrollbar-thumb-hover: rgba(71, 85, 105, 0.68);
-  --color-scrollbar-track-subtle: transparent;
+  --color-scrollbar-track-subtle: rgba(100, 116, 139, 0.08);
   --color-scrollbar-thumb-subtle: rgba(100, 116, 139, 0.32);
   --color-scrollbar-thumb-subtle-hover: rgba(71, 85, 105, 0.55);
   --color-log-divider: rgba(107, 114, 128, 0.2);
@@ -147,10 +147,10 @@
   --color-danger-focus-ring: rgba(239, 68, 68, 0.5);
   --color-selection: rgba(59, 130, 246, 0.45);
 
-  --color-scrollbar-track: transparent;
+  --color-scrollbar-track: rgba(148, 163, 184, 0.12);
   --color-scrollbar-thumb: rgba(148, 163, 184, 0.34);
   --color-scrollbar-thumb-hover: rgba(203, 213, 225, 0.62);
-  --color-scrollbar-track-subtle: transparent;
+  --color-scrollbar-track-subtle: rgba(148, 163, 184, 0.1);
   --color-scrollbar-thumb-subtle: rgba(148, 163, 184, 0.28);
   --color-scrollbar-thumb-subtle-hover: rgba(203, 213, 225, 0.55);
   --color-log-divider: rgba(107, 114, 128, 0.2);
