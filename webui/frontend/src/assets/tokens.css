@@ -62,12 +62,14 @@
   --color-danger-focus-ring: rgba(239, 68, 68, 0.5);
   --color-selection: rgba(59, 130, 246, 0.25);
 
-  --color-scrollbar-track: #f1f1f1;
-  --color-scrollbar-thumb: #888888;
-  --color-scrollbar-thumb-hover: #555555;
-  --color-scrollbar-track-subtle: rgba(229, 231, 235, 0.3);
-  --color-scrollbar-thumb-subtle: rgba(156, 163, 175, 0.5);
-  --color-scrollbar-thumb-subtle-hover: rgba(107, 114, 128, 0.7);
+  /* Scrollbars are translucent overlays: a faint rail with an inset pill thumb,
+     both tinted from the same slate so they sit on any surface. */
+  --color-scrollbar-track: rgba(100, 116, 139, 0.1);
+  --color-scrollbar-thumb: rgba(100, 116, 139, 0.42);
+  --color-scrollbar-thumb-hover: rgba(71, 85, 105, 0.68);
+  --color-scrollbar-track-subtle: rgba(100, 116, 139, 0.08);
+  --color-scrollbar-thumb-subtle: rgba(100, 116, 139, 0.32);
+  --color-scrollbar-thumb-subtle-hover: rgba(71, 85, 105, 0.55);
   --color-log-divider: rgba(107, 114, 128, 0.2);
   --color-log-hover: rgba(0, 0, 0, 0.03);
   --color-log-surface: #f9fafb;
@@ -145,12 +147,12 @@
   --color-danger-focus-ring: rgba(239, 68, 68, 0.5);
   --color-selection: rgba(59, 130, 246, 0.45);
 
-  --color-scrollbar-track: #374151;
-  --color-scrollbar-thumb: #6b7280;
-  --color-scrollbar-thumb-hover: #9ca3af;
-  --color-scrollbar-track-subtle: rgba(75, 85, 99, 0.3);
-  --color-scrollbar-thumb-subtle: rgba(107, 114, 128, 0.5);
-  --color-scrollbar-thumb-subtle-hover: rgba(156, 163, 175, 0.7);
+  --color-scrollbar-track: rgba(148, 163, 184, 0.12);
+  --color-scrollbar-thumb: rgba(148, 163, 184, 0.34);
+  --color-scrollbar-thumb-hover: rgba(203, 213, 225, 0.62);
+  --color-scrollbar-track-subtle: rgba(148, 163, 184, 0.1);
+  --color-scrollbar-thumb-subtle: rgba(148, 163, 184, 0.28);
+  --color-scrollbar-thumb-subtle-hover: rgba(203, 213, 225, 0.55);
   --color-log-divider: rgba(107, 114, 128, 0.2);
   --color-log-hover: rgba(255, 255, 255, 0.05);
   --color-log-surface: rgba(31, 41, 55, 0.8);
