@@ -115,22 +115,36 @@
   color: var(--color-text-accent);
 }
 
+/* Compact variant of the global overlay scrollbar for the dropdown panel. */
 .custom-select-options::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 .custom-select-options::-webkit-scrollbar-track {
   background: var(--color-scrollbar-track-subtle);
-  border-radius: 3px;
 }
 
 .custom-select-options::-webkit-scrollbar-thumb {
-  background: var(--color-scrollbar-thumb-subtle);
-  border-radius: 3px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: var(--color-scrollbar-thumb-subtle);
+  background-clip: padding-box;
 }
 
 .custom-select-options::-webkit-scrollbar-thumb:hover {
-  background: var(--color-scrollbar-thumb-subtle-hover);
+  background-color: var(--color-scrollbar-thumb-subtle-hover);
+}
+
+.custom-select-options::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .custom-select-options {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb-subtle) transparent;
+  }
 }
 
 .custom-select-trigger:focus {

@@ -218,9 +218,14 @@ button,
 }
 
 /* ==================== Custom Scrollbar ==================== */
+/* Overlay scrollbars: the track stays invisible and the thumb renders as a slim
+   inset pill, so long panels keep their full width while staying easy to grab.
+   The inset comes from a transparent border plus background-clip: the border
+   area shows the surface underneath, which keeps the thumb visually detached
+   from the panel edge on rounded, glassy surfaces. */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -228,12 +233,31 @@ button,
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-scrollbar-thumb);
-  border-radius: 4px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: var(--color-scrollbar-thumb);
+  background-clip: padding-box;
 }
 
+/* Dragging keeps the hover shade: no accent tint while the thumb is held. */
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-scrollbar-thumb-hover);
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+
+/* Keep the junction of two intersecting scrollbars free of stray squares. */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox exposes no ::-webkit-scrollbar, so give it the closest equivalent.
+   The check keeps Blink/WebKit on the pseudo-element styling above: modern
+   Chromium disables ::-webkit-scrollbar as soon as scrollbar-color is not
+   `auto`, and both of these properties are inherited. */
+@supports not selector(::-webkit-scrollbar) {
+  :root {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb) transparent;
+  }
 }
 
 /* ==================== Text Selection ==================== */
