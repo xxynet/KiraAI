@@ -8,6 +8,7 @@ import uuid
 import sys
 import types
 from pathlib import Path
+from functools import cached_property
 from typing import Optional, Dict, Type
 
 from deprecated import deprecated
@@ -42,6 +43,12 @@ class AdapterManager:
 
         src_dir = os.path.join(os.path.dirname(__file__), "src")
         self.scan_adapters(src_dir)
+
+    @cached_property
+    def capability_registry(self):
+        """Own capability bindings and shared native/extension lifecycles."""
+        from .capability_registry import AdapterCapabilityRegistry
+        return AdapterCapabilityRegistry(self)
 
     @classmethod
     def get_adapter_class(cls, platform: str) -> Optional[Type[BaseAdapter]]:
@@ -259,12 +266,15 @@ class AdapterManager:
         if name in self._adapters or not self._check_name_unique(name):
             raise ValueError(f"Adapter name '{name}' is already in use")
         self._builtin_names.add(name)
-        self._adapters[name] = adapter
         try:
+            await self.capability_registry.attach(adapter)
+            self._adapters[name] = adapter
             await self.start_adapter(name)
         except BaseException:
-            self._adapters.pop(name, None)
-            self._builtin_names.discard(name)
+            try:
+                await self._cleanup_failed_adapter(name, adapter)
+            finally:
+                self._builtin_names.discard(name)
             raise
 
     async def initialize(self):
@@ -553,7 +563,8 @@ class AdapterManager:
     async def register_adapter(self, info: AdapterInfo):
         platform = info.platform
         name = info.name or info.adapter_id
-        if name in getattr(self, "_builtin_names", ()):
+        builtin_names = getattr(self, "_builtin_names", ())
+        if name in builtin_names:
             raise ValueError('Cannot replace an application-owned adapter')
         if not platform:
             raise ValueError(f"Adapter {name} has no platform configured")
@@ -570,11 +581,16 @@ class AdapterManager:
         except Exception as e:
             raise RuntimeError(f"Failed to instantiate adapter {name}") from e
 
-        self._adapters[name] = instance
+        if name in self._adapters:
+            await self.stop_adapter(name)
         try:
+            await self.capability_registry.attach(instance)
+            if name in builtin_names:
+                raise ValueError("Cannot replace an application-owned adapter")
+            self._adapters[name] = instance
             await self.start_adapter(name)
-        except Exception:
-            self._adapters.pop(name, None)
+        except BaseException:
+            await self._cleanup_failed_adapter(name, instance)
             raise
 
     async def start_adapter(self, name: str):
@@ -586,17 +602,39 @@ class AdapterManager:
         existing = self._adapter_tasks.get(name)
         if existing and not existing.done():
             return
-        task = asyncio.create_task(adapter.start(), name=f"adapter:{name}")
+        task = asyncio.create_task(self._run_adapter(adapter), name=f"adapter:{name}")
         self._adapter_tasks[name] = task
         task.add_done_callback(
             lambda completed_task: self._handle_adapter_run_completion(
                 name, adapter, completed_task
             )
         )
-        await asyncio.sleep(0)
-        if task.done():
-            self._handle_adapter_run_completion(name, adapter, task)
-            task.result()
+        try:
+            await asyncio.sleep(0)
+            if task.done():
+                self._handle_adapter_run_completion(name, adapter, task)
+                task.result()
+        except BaseException:
+            if task.done():
+                await self.capability_registry.detach(adapter)
+            raise
+
+    async def _cleanup_failed_adapter(self, name: str, adapter: BaseAdapter):
+        if self._adapters.get(name) is adapter:
+            await self.stop_adapter(name)
+            return
+        await self.capability_registry.detach(adapter)
+        try:
+            await asyncio.wait_for(adapter.stop(), timeout=ADAPTER_STOP_TIMEOUT)
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.error(f"Adapter {name} startup cleanup failed ({type(exc).__name__})")
+
+    async def _run_adapter(self, adapter: BaseAdapter):
+        try:
+            await self.capability_registry.initialize_native(adapter)
+            await adapter.start()
+        finally:
+            await self.capability_registry.detach(adapter)
 
     async def stop_adapter(self, name: str):
         """Cancel and join the run before stopping any remaining owned resources."""
@@ -629,7 +667,9 @@ class AdapterManager:
             except Exception as exc:
                 logger.error(f"Adapter {name} failed while stopping: {exc}")
             finally:
-                self._adapters.pop(name, None)
+                await self.capability_registry.detach(adapter)
+                if self._adapters.get(name) is adapter:
+                    self._adapters.pop(name, None)
             logger.info(f"Stopped adapter {name}")
 
     async def delete_adapter(self, adapter_id: str) -> bool:

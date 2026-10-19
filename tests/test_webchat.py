@@ -8,6 +8,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from core.adapter.base import BaseAdapter
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.adapter_registry import AdapterManager
 from core.adapter.builtin.webchat.webchat import WebChatAdapter
@@ -718,9 +719,9 @@ async def test_startup_preserves_configured_adapter_and_disables_conflicting_web
         def get_config(self, key, default=None):
             return default
 
-    class ConfiguredAdapter:
+    class ConfiguredAdapter(BaseAdapter):
         def __init__(self, ctx):
-            self.info = ctx.info
+            super().__init__(ctx)
             self.stopped = asyncio.Event()
 
         async def start(self):
@@ -728,6 +729,9 @@ async def test_startup_preserves_configured_adapter_and_disables_conflicting_web
 
         async def stop(self):
             self.stopped.set()
+
+        def get_client(self):
+            return None
 
     config = Config({"adapters": {"webchat": {
         "enabled": enabled, "name": configured_name, "platform": "test-configured", "config": {},

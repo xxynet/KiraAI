@@ -27,9 +27,12 @@ class PluginComponents:
 
     providers: Dict[str, dict] = field(default_factory=dict)
     adapters: Dict[str, dict] = field(default_factory=dict)
+    adapter_capabilities: set[tuple[str, type]] = field(default_factory=set)
+
     def has_any(self) -> bool:
         return bool(self.tools or self.tags or self.hooks or self.pages
-                    or self.api_routes or self.ws_routes or self.static_dirs or self.widgets or self.providers or self.adapters)
+                    or self.api_routes or self.ws_routes or self.static_dirs or self.widgets
+                    or self.providers or self.adapters or self.adapter_capabilities)
 
     def register_tool(self, name: str, description: str, params: dict, func: Callable):
         self.tools[name] = {

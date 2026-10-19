@@ -8,7 +8,7 @@ from typing import Optional, TYPE_CHECKING, Literal, Callable
 
 from ..provider import ProviderManager, ModelType, LLMModelClient, EmbeddingModelClient
 from core.chat.session_manager import SessionManager
-from ..adapter import AdapterManager, IMCapability
+from ..adapter import AdapterManager, BaseAdapter, BaseCapability, IMCapability
 from core.event_bus import EventBus
 from core.agent.func_tool_manager import FuncToolManager
 from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group, KiraIMSentResult
@@ -199,6 +199,46 @@ class PluginContext:
         if not plugin_id:
             raise RuntimeError("Plugin context is not associated with a loaded plugin")
         return await self.plugin_mgr.unregister_plugin_adapter(plugin_id, platform)
+
+    async def register_adapter_capability(
+        self, *, platform: str, capability_type: type[BaseCapability],
+        factory: Callable[[BaseAdapter], BaseCapability],
+    ) -> None:
+        """Attach a plugin-owned capability to existing and future platform accounts.
+
+        The synchronous factory receives one adapter and returns a fresh capability.
+        Optional async initialize/terminate hooks may own resources and requests.
+        Registration is atomic across current instances; duplicates never replace
+        native capabilities. Hooks must not mutate capability registrations.
+        """
+        frame = inspect.currentframe().f_back
+        plugin_id = None
+        if frame and self.plugin_mgr:
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(
+                frame.f_globals.get("__name__", ""),
+            )
+        if not plugin_id:
+            raise RuntimeError("Plugin context is not associated with a loaded plugin")
+        await self.plugin_mgr.register_plugin_adapter_capability(
+            plugin_id, platform, capability_type, factory,
+        )
+
+    async def unregister_adapter_capability(
+        self, *, platform: str, capability_type: type[BaseCapability],
+    ) -> bool:
+        """Withdraw only the calling plugin's binding and close its instances."""
+        frame = inspect.currentframe().f_back
+        plugin_id = None
+        if frame and self.plugin_mgr:
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(
+                frame.f_globals.get("__name__", ""),
+            )
+        if not plugin_id:
+            raise RuntimeError("Plugin context is not associated with a loaded plugin")
+        return await self.plugin_mgr.unregister_plugin_adapter_capability(
+            plugin_id, platform, capability_type,
+        )
+
     def get_default_embedding_client(self) -> Optional[EmbeddingModelClient]:
         client = self.provider_mgr.get_default_embedding()
         if isinstance(client, EmbeddingModelClient):
