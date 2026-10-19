@@ -17,6 +17,9 @@ from .search import normalize, terms
 KINDS = {"semantic", "episodic", "procedural"}
 STATUSES = {"active", "completed", "cancelled", "superseded"}
 MAX_TEXT = 4000
+# Administrative listings address memories by stable ID, not by conversation
+# scope: the WebUI is an operator view over the whole store.
+MAX_PAGE_SIZE = 100
 
 
 def validate(text, kind, importance, core, expires_at=None, status="active"):
@@ -266,3 +269,159 @@ class MemoryStore:
         async with self.connection() as db:
             async with db.execute(sql, [*params, limit, offset]) as cursor:
                 return [dict(row) for row in await cursor.fetchall()]
+
+    # ------------------------------------------------------------------
+    # Administrative views backing the WebUI maintenance page.
+    #
+    # These read the store without a conversation scope because the page is an
+    # operator surface over all personas and sessions. Callers must still go
+    # through the authenticated plugin API; nothing here widens what the model
+    # tools can see, which keeps using the scoped paths above.
+    # ------------------------------------------------------------------
+
+    async def overview(self) -> dict:
+        """Aggregate counters plus per-bucket breakdowns for the dashboard."""
+        now = time.time()
+        async with self.connection() as db:
+            async def count(where="", params=()):
+                async with db.execute(f"SELECT COUNT(*) FROM memories WHERE 1=1 {where}", params) as cursor:
+                    return (await cursor.fetchone())[0]
+
+            def breakdown(column, where="", params=()):
+                return db.execute(
+                    f"SELECT {column} AS k, COUNT(*) AS n FROM memories WHERE 1=1 {where} "
+                    f"GROUP BY {column} ORDER BY n DESC", params,
+                )
+
+            async def collect(column, where="", params=()):
+                async with breakdown(column, where, params) as cursor:
+                    return {row[0]: row[1] for row in await cursor.fetchall()}
+
+            total = await count()
+            active = await count(
+                " AND status='active' AND (expires_at IS NULL OR expires_at>?)", (now,),
+            )
+            statuses = await collect("status")
+            kinds = await collect("kind")
+            owners = await collect("owner_type")
+            origins = await collect("origin")
+            async with db.execute(
+                "SELECT COUNT(*) FROM memories WHERE status='active' "
+                "AND (expires_at IS NULL OR expires_at>?) AND core=1", (now,),
+            ) as cursor:
+                core = (await cursor.fetchone())[0]
+            async with db.execute(
+                "SELECT COUNT(*) FROM memories WHERE status='active' AND expires_at>?", (now,),
+            ) as cursor:
+                expiring = (await cursor.fetchone())[0]
+            async with db.execute(
+                "SELECT MAX(updated_at), MAX(created_at) FROM memories") as cursor:
+                last_updated, last_created = await cursor.fetchone()
+        return {
+            "total": total,
+            "active": active,
+            "inactive": total - active,
+            "core": core,
+            "expiring": expiring,
+            "statuses": statuses,
+            "kinds": kinds,
+            "owners": owners,
+            "origins": origins,
+            "last_updated": last_updated,
+            "last_created": last_created,
+        }
+
+    async def admin_list(self, *, query="", owner_type=None, kind=None, status=None, origin=None,
+                         core=None, page=1, size=20) -> dict:
+        """Filtered, paginated listing ordered like the search results."""
+        if not isinstance(query, str) or len(query) > 512:
+            raise MemoryInputError("invalid_query")
+        if type(page) is not int or page < 1 or page > 100000:
+            raise MemoryInputError("invalid_limit")
+        if type(size) is not int or not 1 <= size <= MAX_PAGE_SIZE:
+            raise MemoryInputError("invalid_limit")
+        for name, value, allowed in (
+            ("kind", kind, KINDS),
+            ("status", status, STATUSES),
+            ("owner_type", owner_type, {"user", "group", "self", "legacy"}),
+            ("origin", origin, {"conversation", "legacy"}),
+        ):
+            if value is not None and value not in allowed:
+                raise MemoryInputError("invalid_category")
+        if core is not None and type(core) is not bool:
+            raise MemoryInputError("invalid_priority")
+
+        where, params = "1=1", []
+        for column, value in (("kind", kind), ("status", status), ("owner_type", owner_type),
+                              ("origin", origin)):
+            if value is not None:
+                where += f" AND m.{column}=?"
+                params.append(value)
+        if core is not None:
+            where += " AND m.core=?"
+            params.append(int(core))
+        query_terms = list(terms(query, query=True).items())[:256]
+        if query.strip() and not query_terms:
+            return {"items": [], "total": 0, "page": page, "size": size}
+
+        async with self.connection() as db:
+            if query_terms:
+                values = ",".join("(?,?)" for _ in query_terms)
+                ranked = (
+                    f"WITH q(term,weight) AS (VALUES {values}), ranked AS ("
+                    "SELECT m.id, SUM(q.weight) / (1.0 + 0.02*m.term_count) AS score "
+                    "FROM q JOIN memory_terms t ON t.term=q.term "
+                    "JOIN memories m ON m.id=t.memory_id "
+                    f"WHERE {where} GROUP BY m.id) "
+                )
+                query_params = [value for pair in query_terms for value in pair] + params
+                async with db.execute(ranked + "SELECT COUNT(*) FROM ranked", query_params) as cursor:
+                    total = (await cursor.fetchone())[0]
+                # Rank and paginate in SQLite's worker thread; only load the requested page.
+                async with db.execute(
+                    ranked + "SELECT m.*, ranked.score FROM ranked JOIN memories m ON m.id=ranked.id "
+                    "ORDER BY ranked.score DESC,m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?",
+                    [*query_params, size, (page - 1) * size],
+                ) as cursor:
+                    rows = [dict(row) for row in await cursor.fetchall()]
+            else:
+                async with db.execute(f"SELECT COUNT(*) FROM memories m WHERE {where}", params) as cursor:
+                    total = (await cursor.fetchone())[0]
+                async with db.execute(
+                    f"SELECT m.* FROM memories m WHERE {where} "
+                    "ORDER BY m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?",
+                    [*params, size, (page - 1) * size],
+                ) as cursor:
+                    rows = [dict(row) for row in await cursor.fetchall()]
+        return {"items": rows, "total": total, "page": page, "size": size}
+
+    async def admin_get(self, memory_id: str):
+        """Single record by stable ID, including its indexed terms."""
+        if not isinstance(memory_id, str) or not memory_id:
+            raise MemoryInputError("not_found")
+        async with self.connection() as db:
+            async with db.execute("SELECT * FROM memories WHERE id=?", (memory_id,)) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                return None
+            async with db.execute(
+                "SELECT term FROM memory_terms WHERE memory_id=? ORDER BY term", (memory_id,),
+            ) as cursor:
+                indexed = [r[0] for r in await cursor.fetchall()]
+        record = dict(row)
+        record["terms"] = len(indexed)
+        return record
+
+    async def facets(self) -> dict:
+        """Distinct personas/namespaces/sessions for the filter selectors."""
+        async with self.connection() as db:
+            async def distinct(column):
+                async with db.execute(
+                    f"SELECT DISTINCT {column} FROM memories WHERE {column}!='' ORDER BY {column} LIMIT 200"
+                ) as cursor:
+                    return [row[0] for row in await cursor.fetchall()]
+            return {
+                "personas": await distinct("persona_id"),
+                "namespaces": await distinct("namespace"),
+                "sessions": await distinct("session_id"),
+            }

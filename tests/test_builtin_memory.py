@@ -361,3 +361,264 @@ async def test_database_failure_does_not_abort_chat_or_echo_content(tmp_path, mo
     assert result["ok"] is False
     assert "private-memory-content" not in str(logger.mock_calls)
     assert "private-memory-content" not in str(result)
+
+
+# ---------------------------------------------------------------------------
+# Maintenance page (WebUI)
+# ---------------------------------------------------------------------------
+
+
+def test_maintenance_page_and_api_are_registered():
+    from core.plugin import registry
+
+    component = registry._plugin_components["kira_plugin_simple_memory"]
+    pages = [(page["route"], page["menu"].label) for page in component.pages]
+    # A non-empty sub-path keeps the host's page cleanup able to unmount it.
+    assert pages == [("/dashboard", {"zh": "记忆管理", "en": "Memory"})]
+    assert {route["path"] for route in component.api_routes} == {
+        "/memory/overview", "/memory/records", "/memory/records/{memory_id}",
+        "/memory/facets", "/memory/config",
+    }
+    assert all(route["auth"] for route in component.api_routes)
+
+
+def test_page_assets_are_present_and_reference_each_other():
+    root = Path(__file__).parents[1] / "core/plugin/builtin_plugins/memory/web"
+    html = (root / "index.html").read_text(encoding="utf-8")
+    assert "./theme.css" in html and "./i18n.js" in html
+    assert "/plugin-bridge.js" in html
+    for name in ("theme.css", "i18n.js"):
+        assert (root / name).stat().st_size > 0
+
+
+def test_page_strings_cover_both_locales():
+    import re
+
+    root = Path(__file__).parents[1] / "core/plugin/builtin_plugins/memory/web"
+    script = (root / "i18n.js").read_text(encoding="utf-8")
+    blocks = {}
+    for locale in ("zh", "en"):
+        start = script.index("    %s: {" % locale)
+        end = script.index("\n    },", start)
+        blocks[locale] = dict(re.findall(r"'([\w.]+)': '((?:[^'\\]|\\.)*)'", script[start:end]))
+    assert blocks["zh"].keys() == blocks["en"].keys()
+    assert blocks["zh"]["app.title"] != blocks["en"]["app.title"]
+
+
+def test_page_references_only_defined_keys():
+    import re
+
+    root = Path(__file__).parents[1] / "core/plugin/builtin_plugins/memory/web"
+    script = (root / "i18n.js").read_text(encoding="utf-8")
+    known = set(re.findall(r"'([\w.]+)': '", script))
+    # Machine-value keys are built at runtime as "<group>.<value>".
+    known |= {"kind." + k for k in ("semantic", "episodic", "procedural")}
+    known |= {"status." + k for k in ("active", "completed", "cancelled", "superseded")}
+    known |= {"owner." + k for k in ("user", "group", "self", "legacy")}
+    known |= {"origin." + k for k in ("conversation", "legacy")}
+    html = (root / "index.html").read_text(encoding="utf-8")
+    # I18N.value("kind", value) takes a group name, not a key; the concrete
+    # "<group>.<value>" keys it resolves to are listed above.
+    groups = {"kind", "status", "owner", "origin"}
+    used = set(re.findall(r'I18N\.(?:t|value)\(\s*"([\w.]+)"', html)) - groups
+    assert used <= known, used - known
+
+
+@pytest.mark.anyio
+async def test_admin_listing_filters_and_paginates(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    for i in range(5):
+        await plugin.memory_add(event(), text=f"coffee note {i}", core=(i == 0))
+    await plugin.memory_add(event(target="bob", users=("bob",)), text="zebra stripes", importance=5)
+
+    page = await plugin.store.admin_list(size=2, page=1)
+    assert page["total"] == 6 and len(page["items"]) == 2
+    second = await plugin.store.admin_list(size=2, page=3)
+    assert len(second["items"]) == 2 and not {r["id"] for r in page["items"]} & {r["id"] for r in second["items"]}
+
+    assert (await plugin.store.admin_list(core=True))["total"] == 1
+    assert (await plugin.store.admin_list(kind="semantic"))["total"] == 6
+    assert (await plugin.store.admin_list(status="completed"))["total"] == 0
+    assert (await plugin.store.admin_list(query="coffee"))["total"] == 5
+    # A content query and an attribute filter combine (AND), not replace each other.
+    # "zebra" shares no word or character gram with "coffee note", so it really
+    # discriminates the way a user expects from a filtered search.
+    assert (await plugin.store.admin_list(query="coffee", core=True))["total"] == 1
+    assert (await plugin.store.admin_list(query="zebra"))["total"] == 1
+    assert (await plugin.store.admin_list(query="zebra", owner_type="group"))["total"] == 0
+    assert (await plugin.store.admin_list(query="zzzqqq"))["total"] == 0
+
+
+@pytest.mark.anyio
+async def test_admin_listing_rejects_bad_input(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    from core.plugin.builtin_plugins.memory import webui
+
+    for kwargs in ({"size": 0}, {"size": 101}, {"page": 0}, {"page": True}):
+        with pytest.raises(MemoryInputError):
+            await plugin.store.admin_list(**kwargs)
+    with pytest.raises(MemoryInputError):
+        await plugin.store.admin_list(kind="nonsense")
+    with pytest.raises(MemoryInputError):
+        await plugin.store.admin_list(status="nonsense")
+    with pytest.raises(MemoryInputError):
+        await plugin.store.admin_list(origin="nonsense")
+    with pytest.raises(MemoryInputError):
+        await plugin.store.admin_list(core="yes")
+    with pytest.raises(MemoryInputError):
+        webui.parse_filters({"kind": "nonsense"})
+    with pytest.raises(MemoryInputError):
+        webui.parse_page("abc", 1, 1, 100)
+    assert webui.parse_page(None, 20, 1, 100) == 20
+    assert webui.parse_page("9999", 20, 1, 100) == 100
+
+
+@pytest.mark.anyio
+async def test_admin_detail_and_facets(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    added = json.loads(await plugin.memory_add(event(), text="likes coffee", core=True))
+    record = await plugin.store.admin_get(added["memory_id"])
+    assert record["text"] == "likes coffee" and record["terms"] > 0
+    assert await plugin.store.admin_get("missing") is None
+
+    from core.plugin.builtin_plugins.memory import webui
+
+    payload = webui.serialize(record)
+    # Internal search artefacts never leave the server.
+    assert "normalized" not in payload and "term_count" not in payload
+    assert payload["core"] is True and payload["owner_type"] == "user"
+    assert payload["subject"] == "alice" and payload["platform"] == "test-platform"
+
+    facets = await plugin.store.facets()
+    assert facets["personas"] == ["persona-one"]
+    assert facets["sessions"] == ["test:dm:alice"]
+
+
+@pytest.mark.anyio
+async def test_overview_counts(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    await plugin.memory_add(event(), text="core fact", core=True)
+    await plugin.memory_add(event(), text="plain fact")
+    row = json.loads(await plugin.memory_add(event(), text="removable fact"))
+    # Removal is physical, so the totals drop rather than gaining a "deleted" bucket.
+    await plugin.memory_remove(event(), row["memory_id"], row["revision"])
+
+    data = await plugin.store.overview()
+    assert data["total"] == 2 and data["active"] == 2 and data["core"] == 1
+    assert data["statuses"] == {"active": 2}
+    assert data["kinds"] == {"semantic": 2}
+    assert data["owners"] == {"user": 2}
+    assert data["origins"] == {"conversation": 2}
+    assert data["last_updated"] is not None
+
+    from core.plugin.builtin_plugins.memory import webui
+
+    payload = webui.overview_payload(data, max_core=10, max_recall=6)
+    assert payload["limits"] == {"core": 10, "recall": 6}
+
+
+@pytest.mark.anyio
+async def test_admin_search_paginates_before_loading_results(tmp_path, monkeypatch):
+    store, _ = await store_at(tmp_path)
+    for index in range(24):
+        await store.add(
+            scope(), text=f"coffee preference {index}", importance=index % 5 + 1,
+            core=index % 2 == 0, kind="episodic" if index % 3 == 0 else "semantic",
+            expires_at=1 if index % 4 == 0 else None,
+        )
+    await store.add(
+        scope(session="gm", target="group"), text="coffee group rule",
+        owner_type="group", core=True,
+    )
+    await store.add(scope(), text="tea only", core=True)
+    expected = await store.search(
+        scope(), "coffee", kind="semantic", core_only=True, include_inactive=True, limit=50,
+    )
+    assert len(expected) == 8
+
+    batch_sizes = []
+    original_fetchall = aiosqlite.Cursor.fetchall
+
+    async def tracked_fetchall(cursor):
+        batch = await original_fetchall(cursor)
+        batch_sizes.append(len(batch))
+        return batch
+
+    monkeypatch.setattr(aiosqlite.Cursor, "fetchall", tracked_fetchall)
+    records = []
+    for page in range(1, 5):
+        result = await store.admin_list(
+            query="coffee", kind="semantic", owner_type="user", origin="conversation",
+            core=True, page=page, size=3,
+        )
+        assert result["total"] == len(expected)
+        assert result["page"] == page and result["size"] == 3
+        records.extend(result["items"])
+    assert [row["id"] for row in records] == [row["id"] for row in expected]
+    assert [row["score"] for row in records] == pytest.approx([row["score"] for row in expected])
+    assert batch_sizes and max(batch_sizes) <= 3
+
+
+@pytest.mark.anyio
+async def test_memory_records_api_returns_bad_request_for_invalid_parameters(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from core.plugin import registry
+    from webui.plugin_bindings import PluginWebBindings
+    from webui.routes.auth import require_auth
+
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    await plugin.memory_add(event(), text="coffee fact")
+    plugin_id = "kira_plugin_simple_memory"
+    manager = SimpleNamespace(
+        get_plugin_components=lambda: {plugin_id: registry._plugin_components[plugin_id]},
+        get_plugin_inst=lambda _: plugin,
+        is_plugin_enabled=lambda _: True,
+    )
+    app = FastAPI()
+    PluginWebBindings(manager, app).register_apis(plugin_id)
+    path = f"/api/plugin/{plugin_id}/memory/records"
+    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
+                           base_url="http://test") as client:
+        assert (await client.get(path)).status_code == 401
+        app.dependency_overrides[require_auth] = lambda: {"sub": "test-user"}
+        response = await client.get(path, params={"q": "coffee", "page": "1", "size": "1"})
+        assert response.status_code == 200
+        assert response.json()["total"] == 1 and len(response.json()["items"]) == 1
+        for params, code in (
+            ({"kind": "nonsense"}, "invalid_category"),
+            ({"status": "nonsense"}, "invalid_category"),
+            ({"owner_type": "nonsense"}, "invalid_category"),
+            ({"origin": "nonsense"}, "invalid_category"),
+            ({"core": "yes"}, "invalid_priority"),
+            ({"page": "abc"}, "invalid_limit"),
+            ({"size": "abc"}, "invalid_limit"),
+            ({"q": "x" * 513}, "invalid_query"),
+        ):
+            response = await client.get(path, params=params)
+            assert response.status_code == 400, (params, response.text)
+            assert response.json() == {"detail": code}
+        plugin._ready = False
+        assert (await client.get(path)).status_code == 503
+
+
+@pytest.mark.anyio
+async def test_overview_active_counts_match_recall_expiry(tmp_path, monkeypatch):
+    import core.plugin.builtin_plugins.memory.store as module
+
+    monkeypatch.setattr(module, "time", SimpleNamespace(time=lambda: 1000.0))
+    store, _ = await store_at(tmp_path)
+    for index, expiry in enumerate((None, 999, 1000, 1001)):
+        await store.add(scope(), text=f"active fact {index}", core=True, expires_at=expiry)
+    for status in ("completed", "cancelled", "superseded"):
+        row, _ = await store.add(scope(), text=f"{status} fact", core=True, expires_at=1001)
+        await store.update(scope(), row["id"], 1, text=row["text"], status=status)
+
+    data = await store.overview()
+    assert data["total"] == 7
+    assert data["active"] == len(await store.search(scope())) == 2
+    assert data["inactive"] == 5
+    assert data["core"] == len(await store.search(scope(), core_only=True)) == 2
+    assert data["expiring"] == 1
+    assert data["statuses"] == {"active": 4, "completed": 1, "cancelled": 1, "superseded": 1}

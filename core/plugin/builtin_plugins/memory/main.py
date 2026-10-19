@@ -3,10 +3,11 @@
 from functools import wraps
 import json
 
-from core.plugin import BasePlugin, logger, on, register
+from core.plugin import BasePlugin, PageMenu, PluginPage, logger, on, register
 from core.provider import LLMRequest
 from core.utils.path_utils import get_data_path
 
+from . import webui
 from .prompts import MESSAGES
 from .scope import MemoryInputError, MemoryScope
 from .store import MemoryStore
@@ -294,3 +295,109 @@ class MemoryPlugin(BasePlugin):
             return
         except Exception as exc:
             logger.warning("Memory recall unavailable (%s)", type(exc).__name__)
+
+    # ------------------------------------------------------------------
+    # Maintenance page (WebUI) and its read-only API.
+    #
+    # The page is mounted on a non-empty sub-path: a root mount is stored by
+    # Starlette without a trailing slash, which the host's page cleanup cannot
+    # match after a hot reload, leaving a stale mount that shadows the
+    # re-registered route.
+    # ------------------------------------------------------------------
+
+    @register.page(
+        "/dashboard",
+        menu=PageMenu(
+            label={"zh": "记忆管理", "en": "Memory"},
+            icon="Coin",
+            order=85,
+        ),
+    )
+    def memory_page(self):
+        return PluginPage.from_folder("./web")
+
+    async def _admin(self, call):
+        """Run a store call, mapping typed input failures onto HTTP 400.
+
+        The error code is a stable identifier the page translates; no memory
+        content ever appears in the detail.
+        """
+        from fastapi import HTTPException
+
+        if not self._ready:
+            raise HTTPException(status_code=503, detail="memory_unavailable")
+        try:
+            return await call()
+        except MemoryInputError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @register.api(method="GET", path="/memory/overview")
+    async def api_overview(self):
+        async def load():
+            data = await self.store.overview()
+            return webui.overview_payload(
+                data,
+                max_core=self.setting("core_limit", 10, 1, 20),
+                max_recall=self.setting("recall_limit", 6, 1, 20),
+            )
+
+        return await self._admin(load)
+
+    @register.api(method="GET", path="/memory/records")
+    async def api_records(self, q: str = "", kind: str = "", status: str = "", owner_type: str = "",
+                          origin: str = "", core: str = "", page: str = "", size: str = ""):
+        async def load():
+            filters = webui.parse_filters({
+                "q": q, "kind": kind, "status": status, "owner_type": owner_type,
+                "origin": origin, "core": core,
+            })
+            page_number = webui.parse_page(page, 1, 1, 100000)
+            page_size = webui.parse_page(size, 20, 1, 100)
+            result = await self.store.admin_list(page=page_number, size=page_size, **filters)
+            return {
+                "items": [webui.serialize(row) for row in result["items"]],
+                "total": result["total"],
+                "page": result["page"],
+                "size": result["size"],
+            }
+
+        return await self._admin(load)
+
+    @register.api(method="GET", path="/memory/records/{memory_id}")
+    async def api_record_detail(self, memory_id: str):
+        async def load():
+            row = await self.store.admin_get(memory_id)
+            if row is None:
+                raise MemoryInputError("not_found")
+            return webui.serialize(row) | {"terms": row.get("terms", 0)}
+
+        return await self._admin(load)
+
+    @register.api(method="GET", path="/memory/facets")
+    async def api_facets(self):
+        return await self._admin(self.store.facets)
+
+    @register.api(method="GET", path="/memory/config")
+    async def api_config(self):
+        """Effective settings for the page.
+
+        The editable fields themselves are rendered by the host plugin
+        configuration form from ``schema.json``; this endpoint only exposes the
+        clamped runtime values actually in force.
+        """
+        return {
+            "values": {
+                "core_limit": self.setting("core_limit", 10, 1, 20),
+                "recall_limit": self.setting("recall_limit", 6, 1, 20),
+                "prompt_char_budget": self.setting("prompt_char_budget", 6000, 1500, 20000),
+                "search_char_budget": self.setting("search_char_budget", 12000, 5000, 30000),
+            },
+            "defaults": {
+                "core_limit": 10,
+                "recall_limit": 6,
+                "prompt_char_budget": 6000,
+                "search_char_budget": 12000,
+            },
+            "ready": self._ready,
+            "database": str(self.store.path),
+        }
