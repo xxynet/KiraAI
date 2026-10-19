@@ -1058,5 +1058,8 @@ async def test_cancellation_resistant_hook_does_not_block_registry(
         await asyncio.gather(operation, *tasks, return_exceptions=True)
         if contender is not None:
             await asyncio.gather(contender, return_exceptions=True)
+        await asyncio.sleep(0)
+        await asyncio.gather(*capabilities._cleanup_tasks, return_exceptions=True)
     await asyncio.sleep(0)
     assert not capabilities._hook_tasks
+    assert not capabilities._pending_cleanup

@@ -26,6 +26,8 @@ class _Attachment:
     original_policies: dict[str, AccessPolicy]
     applied_policies: dict[str, AccessPolicy] = field(default_factory=dict)
     unregister_on_cleanup: bool = True
+    initialize_task: asyncio.Task | None = None
+    terminate_task: asyncio.Task | None = None
 
 
 @dataclass
@@ -43,6 +45,8 @@ class AdapterCapabilityRegistry:
     Factories are synchronous resource-free constructors. Lifecycle hooks are
     asynchronous and must not mutate this registry, directly or through tasks.
     Read-only adapter and capability lookups remain available from hooks.
+    Overdue hooks retain their attachment until deferred cleanup completes.
+    Only the affected adapter and capability kind are reserved in the meantime.
     """
 
     def __init__(self, manager):
@@ -52,6 +56,8 @@ class AdapterCapabilityRegistry:
         self._blocked_owners: set[str] = set()
         self._lock = asyncio.Lock()
         self._hook_tasks: set[asyncio.Task] = set()
+        self._pending_cleanup: set[_Attachment] = set()
+        self._cleanup_tasks: set[asyncio.Task] = set()
 
     def _check_reentrancy(self):
         if _active_registry.get() is self:
@@ -78,7 +84,24 @@ class AdapterCapabilityRegistry:
             raise TypeError("capability_type must be a BaseCapability subclass")
         return platform.strip()
 
+    @staticmethod
+    def _kinds_overlap(first, second):
+        first_kinds = {cls for cls in first.__mro__ if BaseCapability in cls.__bases__}
+        second_kinds = {cls for cls in second.__mro__ if BaseCapability in cls.__bases__}
+        return first is second or bool(
+            (first_kinds or {BaseCapability}) & (second_kinds or {BaseCapability})
+        )
+
+    def _check_pending_cleanup(self, adapter, kind):
+        for attachment in self._pending_cleanup:
+            if attachment.adapter is adapter and (
+                self._kinds_overlap(attachment.kind, kind)
+                or self._kinds_overlap(type(attachment.capability), kind)
+            ):
+                raise RuntimeError("Capability cleanup is still pending for this adapter and kind")
+
     async def _prepare(self, binding, adapter, prepared):
+        self._check_pending_cleanup(adapter, binding.kind)
         token = _active_registry.set(self)
         try:
             original_policies = adapter.access.get_policies(binding.kind)
@@ -89,6 +112,7 @@ class AdapterCapabilityRegistry:
                         capability.close()
                     raise TypeError("Capability factory must return an instance synchronously")
                 adapter._validate_capability_registration(binding.kind, capability)
+                self._check_pending_cleanup(adapter, type(capability))
             except BaseException:
                 adapter.access.restore_policies(
                     binding.kind, original_policies, adapter.access.get_policies(binding.kind),
@@ -106,6 +130,7 @@ class AdapterCapabilityRegistry:
         self, adapter, kind, capability, prepared, *, unregister_on_cleanup=True,
         original_policies=None,
     ):
+        self._check_pending_cleanup(adapter, kind)
         if original_policies is None:
             original_policies = adapter.access.get_policies(kind)
         attachment = _Attachment(
@@ -114,17 +139,31 @@ class AdapterCapabilityRegistry:
         )
         prepared.append(attachment)
         try:
-            await self._call_hook(capability, "initialize")
+            await self._call_hook(attachment, "initialize")
         finally:
             attachment.applied_policies = adapter.access.get_policies(kind)
         return attachment
 
-    async def _call_hook(self, capability, name):
-        hook = getattr(capability, name)
+    async def _call_hook(self, attachment, name):
+        hook = getattr(attachment.capability, name)
         # Optional inherited no-ops need no task or scheduling point.
         if getattr(hook, "__func__", None) is getattr(BaseCapability, name):
             return
-        task = asyncio.create_task(hook())
+
+        async def invoke():
+            try:
+                await hook()
+            finally:
+                if name == "initialize":
+                    attachment.applied_policies = attachment.adapter.access.get_policies(
+                        attachment.kind,
+                    )
+
+        task = asyncio.create_task(invoke())
+        if name == "initialize":
+            attachment.initialize_task = task
+        else:
+            attachment.terminate_task = task
         self._hook_tasks.add(task)
         task.add_done_callback(self._hook_done)
         try:
@@ -178,6 +217,38 @@ class AdapterCapabilityRegistry:
                 await self._cleanup(prepared)
                 raise
 
+    def _restore_policies(self, attachment):
+        registered = attachment.adapter.capabilities.get(attachment.kind)
+        if registered is None or (
+            not attachment.unregister_on_cleanup and registered is attachment.capability
+        ):
+            attachment.adapter.access.restore_policies(
+                attachment.kind, attachment.original_policies, attachment.applied_policies,
+            )
+
+    def _defer_cleanup(self, attachment, task):
+        if attachment in self._pending_cleanup:
+            return
+        self._pending_cleanup.add(attachment)
+        task.add_done_callback(lambda completed: self._schedule_cleanup(attachment))
+
+    def _schedule_cleanup(self, attachment):
+        task = asyncio.create_task(self._finish_deferred_cleanup(attachment))
+        self._cleanup_tasks.add(task)
+        task.add_done_callback(self._cleanup_done)
+
+    def _cleanup_done(self, task):
+        self._cleanup_tasks.discard(task)
+        if not task.cancelled():
+            exc = task.exception()
+            if exc is not None:
+                logger.error(f"Deferred capability cleanup failed ({type(exc).__name__})")
+
+    async def _finish_deferred_cleanup(self, attachment):
+        async with self._lock:
+            self._pending_cleanup.discard(attachment)
+            await self._cleanup([attachment])
+
     async def _dispose(self, attachments):
         token = _active_registry.set(self)
         try:
@@ -186,23 +257,25 @@ class AdapterCapabilityRegistry:
                 if attachment.unregister_on_cleanup:
                     attachment.adapter.unregister_capability(attachment.kind, attachment.capability)
             for attachment in reversed(attachments):
-                try:
-                    await self._call_hook(attachment.capability, "terminate")
-                except (Exception, asyncio.CancelledError) as exc:
-                    # Never log exception text from platform clients or credentials.
-                    logger.error(
-                        f"Capability cleanup failed ({type(exc).__name__}) "
-                        f"for adapter {attachment.adapter.info.name}"
-                    )
-                finally:
-                    registered = attachment.adapter.capabilities.get(attachment.kind)
-                    if registered is None or (
-                        not attachment.unregister_on_cleanup and registered is attachment.capability
-                    ):
-                        attachment.adapter.access.restore_policies(
-                            attachment.kind, attachment.original_policies,
-                            attachment.applied_policies,
+                initializing = attachment.initialize_task
+                if initializing is not None and not initializing.done():
+                    # Keep ownership until initialization can no longer create resources.
+                    self._defer_cleanup(attachment, initializing)
+                    continue
+                if attachment.terminate_task is None:
+                    try:
+                        await self._call_hook(attachment, "terminate")
+                    except (Exception, asyncio.CancelledError) as exc:
+                        # Never log exception text from platform clients or credentials.
+                        logger.error(
+                            f"Capability cleanup failed ({type(exc).__name__}) "
+                            f"for adapter {attachment.adapter.info.name}"
                         )
+                terminating = attachment.terminate_task
+                if terminating is not None and not terminating.done():
+                    self._defer_cleanup(attachment, terminating)
+                    continue
+                self._restore_policies(attachment)
         finally:
             _active_registry.reset(token)
 
@@ -210,12 +283,18 @@ class AdapterCapabilityRegistry:
         if not attachments:
             return
         task = asyncio.create_task(self._dispose(attachments))
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            # A cancelled registration/unload must still finish owned cleanup.
-            await asyncio.shield(task)
-            raise
+        cancelled = None
+        while True:
+            try:
+                await asyncio.shield(task)
+                break
+            except asyncio.CancelledError as exc:
+                if task.cancelled():
+                    raise
+                # Repeated caller cancellations must not release the registry lock early.
+                cancelled = exc
+        if cancelled is not None:
+            raise cancelled
 
     async def register(self, owner, platform, capability_type, factory) -> None:
         self._check_reentrancy()
@@ -228,15 +307,9 @@ class AdapterCapabilityRegistry:
         key = (platform, capability_type)
         async with self._lock:
             self._check_owner(owner)
-            kinds = {
-                cls for cls in capability_type.__mro__ if BaseCapability in cls.__bases__
-            } or {BaseCapability}
             for existing in self._bindings.values():
-                existing_kinds = {
-                    cls for cls in existing.kind.__mro__ if BaseCapability in cls.__bases__
-                } or {BaseCapability}
-                if existing.platform == platform and (
-                    existing.kind is capability_type or kinds & existing_kinds
+                if existing.platform == platform and self._kinds_overlap(
+                    existing.kind, capability_type,
                 ):
                     raise ValueError("A capability of this kind is already registered for this platform")
             prepared = []
