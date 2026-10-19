@@ -610,7 +610,8 @@ class AdapterManager:
                 self._handle_adapter_run_completion(name, adapter, task)
                 task.result()
         except BaseException:
-            await self.capability_registry.detach(adapter)
+            if task.done():
+                await self.capability_registry.detach(adapter)
             raise
 
     async def _cleanup_failed_adapter(self, name: str, adapter: BaseAdapter):

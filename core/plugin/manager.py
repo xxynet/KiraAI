@@ -586,13 +586,34 @@ class PluginManager:
         if self._web_app is not None:
             self._get_web_bindings().remove_routes(plugin_id)
 
-    async def _cleanup_plugin_runtime_components(self, plugin_id: str) -> None:
+    def _block_plugin_capability_registrations(self, plugin_id: str) -> bool:
+        """Block new bindings without aborting unrelated plugin cleanup on error."""
         extensions = self._adapter_capability_registry()
         if extensions is not None:
-            extensions.block_owner(plugin_id)
-            await extensions.unregister_owner(plugin_id)
+            try:
+                extensions.block_owner(plugin_id)
+            except Exception as exc:
+                logger.error(
+                    f"Failed to block adapter capabilities for plugin {plugin_id} "
+                    f"({type(exc).__name__})"
+                )
+                return False
+        return True
+
+    async def _cleanup_plugin_runtime_components(self, plugin_id: str) -> None:
+        extensions = self._adapter_capability_registry()
+        capabilities_cleaned = self._block_plugin_capability_registrations(plugin_id)
+        if extensions is not None and capabilities_cleaned:
+            try:
+                await extensions.unregister_owner(plugin_id)
+            except Exception as exc:
+                capabilities_cleaned = False
+                logger.error(
+                    f"Failed to clean up adapter capabilities for plugin {plugin_id} "
+                    f"({type(exc).__name__})"
+                )
         comp = registry._plugin_components.get(plugin_id)
-        if comp is not None:
+        if comp is not None and capabilities_cleaned:
             comp.adapter_capabilities.clear()
         if not comp:
             return
@@ -615,6 +636,24 @@ class PluginManager:
             except Exception as e:
                 logger.error(
                     f"Failed to clean up Provider format {provider_format} for plugin {plugin_id}: {e}"
+                )
+
+    async def _cleanup_plugin_components(self, plugin_id: str) -> None:
+        """Isolate runtime errors and always attempt registration cleanup."""
+        try:
+            await self._cleanup_plugin_runtime_components(plugin_id)
+        except Exception as exc:
+            logger.error(
+                f"Failed to clean up runtime components for plugin {plugin_id} "
+                f"({type(exc).__name__})"
+            )
+        finally:
+            try:
+                self._cleanup_plugin_registration(plugin_id)
+            except Exception as exc:
+                logger.error(
+                    f"Failed to clean up registrations for plugin {plugin_id} "
+                    f"({type(exc).__name__})"
                 )
 
     def _cleanup_plugin_registration(self, plugin_id: str) -> None:
@@ -827,9 +866,7 @@ class PluginManager:
     async def terminate(self, plugin_id: Optional[str] = None):
         """Terminate a specific plugin if plugin_id is given, terminate all if not given"""
         if plugin_id:
-            extensions = self._adapter_capability_registry()
-            if extensions is not None:
-                extensions.block_owner(plugin_id)
+            self._block_plugin_capability_registrations(plugin_id)
             try:
                 plugin_instance = self.plugin_instances.get(plugin_id)
                 if plugin_instance:
@@ -840,14 +877,11 @@ class PluginManager:
             finally:
                 self.plugin_instances.pop(plugin_id, None)
                 self.plugin_configs.pop(plugin_id, None)
-                await self._cleanup_plugin_runtime_components(plugin_id)
-                self._cleanup_plugin_registration(plugin_id)
+                await self._cleanup_plugin_components(plugin_id)
             return
 
-        extensions = self._adapter_capability_registry()
-        if extensions is not None:
-            for owner in set(self.plugin_instances) | set(registry._plugin_components):
-                extensions.block_owner(owner)
+        for owner in set(self.plugin_instances) | set(registry._plugin_components):
+            self._block_plugin_capability_registrations(owner)
         try:
             for plug_id, plugin_instance in list(self.plugin_instances.items()):
                 try:
@@ -858,8 +892,7 @@ class PluginManager:
             self.plugin_instances.clear()
             self.plugin_configs.clear()
             for name in list(registry._plugin_components.keys()):
-                await self._cleanup_plugin_runtime_components(name)
-                self._cleanup_plugin_registration(name)
+                await self._cleanup_plugin_components(name)
 
     async def uninstall_plugin(self, plugin_id: str) -> None:
         """

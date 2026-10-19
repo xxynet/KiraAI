@@ -737,3 +737,157 @@ async def test_failed_attachment_bounds_native_cleanup_without_masking_registrat
     assert manager.get_adapter("failure") is None
     assert "failure" not in manager._builtin_names
     assert not manager._adapter_tasks
+
+
+@pytest.mark.asyncio
+async def test_cancelling_start_caller_keeps_capabilities_on_live_runner(manager):
+    """Cancelling a scheduling caller must not withdraw a live runner's features."""
+    from core.adapter import AdapterContext
+    adapter = ExampleAdapter(AdapterContext(
+        AdapterInfo(True, "caller-cancel", "caller-cancel", "qq"), asyncio.Queue(),
+    ))
+    await manager.capability_registry.register("plugin", "qq", FeedCapability, ExtensionFeed)
+    await manager.capability_registry.attach(adapter)
+    manager._adapters[adapter.info.name] = adapter
+    feed = adapter.get_capability(FeedCapability)
+    starting = asyncio.create_task(manager.start_adapter(adapter.info.name))
+    await asyncio.sleep(0)
+    starting.cancel()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await starting
+        assert not manager._adapter_tasks[adapter.info.name].done()
+        assert adapter.get_capability(FeedCapability) is feed
+        assert not feed.closed
+    finally:
+        await manager.stop_adapter(adapter.info.name)
+    assert feed.closed and feed.close_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("all_plugins", [False, True])
+@pytest.mark.parametrize("failure_phase", ["block", "unregister"])
+async def test_capability_cleanup_failure_preserves_retry_and_other_plugin_cleanup(
+    plugin_context, manager, monkeypatch, all_plugins, failure_phase,
+):
+    """Registry failures leave retry metadata without stranding other components."""
+    from unittest.mock import Mock
+    plugins = plugin_context.plugin_mgr
+    adapter = await account(manager)
+    await plugins.register_plugin_adapter_capability(
+        "first", "qq", FeedCapability, ExtensionFeed,
+    )
+    feed = adapter.get_capability(FeedCapability)
+    for owner in ("first", "second"):
+        comp = registry._ensure_components(owner)
+        comp.register_tool(owner + "_tool", "cleanup test", {}, lambda: None)
+        plugins.plugin_instances[owner] = SimpleNamespace(terminate=AsyncMock())
+    first = registry._plugin_components["first"]
+    first.adapters["test-platform"] = {}
+    first.providers["test-format"] = {}
+    plugin_context.tool_mgr = Mock()
+    errors = []
+    extensions = manager.capability_registry
+    original_block = extensions.block_owner
+    original_unregister = extensions.unregister_owner
+
+    def block(owner):
+        if owner == "first" and failure_phase == "block":
+            raise RuntimeError("private-token")
+        original_block(owner)
+
+    async def unregister(owner):
+        if owner == "first" and failure_phase == "unregister":
+            raise RuntimeError("private-token")
+        await original_unregister(owner)
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(extensions, "block_owner", block)
+            patch.setattr(extensions, "unregister_owner", unregister)
+            patch.setattr(plugin_manager_module.logger, "error", errors.append)
+            unregister_adapter = AsyncMock(return_value=True)
+            unregister_provider = AsyncMock(return_value=True)
+            patch.setattr(plugins, "unregister_plugin_adapter", unregister_adapter)
+            patch.setattr(plugins, "unregister_plugin_provider", unregister_provider)
+            await plugins.terminate(None if all_plugins else "first")
+            unregister_adapter.assert_awaited_once_with("first", "test-platform")
+            unregister_provider.assert_awaited_once_with("first", "test-format")
+
+        plugin_context.tool_mgr.unregister_tool.assert_any_call("first_tool")
+        if all_plugins:
+            plugin_context.tool_mgr.unregister_tool.assert_any_call("second_tool")
+            assert not plugins.plugin_instances
+        assert errors and "private-token" not in str(errors)
+        assert first.adapter_capabilities == {("qq", FeedCapability)}
+        assert adapter.get_capability(FeedCapability) is feed and not feed.closed
+
+        # A later cleanup can retry after the registry error has cleared.
+        first.adapters.clear()
+        first.providers.clear()
+        await plugins._cleanup_plugin_runtime_components("first")
+        assert feed.closed and not first.adapter_capabilities
+    finally:
+        first.adapters.clear()
+        first.providers.clear()
+        await plugins.terminate()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("all_plugins", [False, True])
+async def test_registration_cleanup_survives_unexpected_runtime_cleanup_failure(
+    plugin_context, monkeypatch, all_plugins,
+):
+    """Registration cleanup and later plugins survive unexpected cleanup errors."""
+    from unittest.mock import Mock
+    plugins = plugin_context.plugin_mgr
+    plugin_context.tool_mgr = Mock()
+    for owner in ("first", "second"):
+        registry._ensure_components(owner).register_tool(owner, "test", {}, lambda: None)
+        plugins.plugin_instances[owner] = SimpleNamespace(terminate=AsyncMock())
+
+    original = plugins._cleanup_plugin_runtime_components
+
+    async def cleanup(owner):
+        if owner == "first":
+            raise RuntimeError("private-token")
+        await original(owner)
+
+    errors = []
+    with monkeypatch.context() as patch:
+        patch.setattr(plugins, "_cleanup_plugin_runtime_components", cleanup)
+        patch.setattr(plugin_manager_module.logger, "error", errors.append)
+        await plugins.terminate(None if all_plugins else "first")
+    plugin_context.tool_mgr.unregister_tool.assert_any_call("first")
+    if all_plugins:
+        plugin_context.tool_mgr.unregister_tool.assert_any_call("second")
+    assert errors and "private-token" not in str(errors)
+    await plugins.terminate()
+
+
+@pytest.mark.asyncio
+async def test_capability_cleanup_cancellation_propagates_after_registration_cleanup(
+    plugin_context, manager, monkeypatch,
+):
+    """Cancellation remains observable while non-runtime registrations are removed."""
+    from unittest.mock import Mock
+    plugins = plugin_context.plugin_mgr
+    plugin_context.tool_mgr = Mock()
+    await account(manager)
+    await plugins.register_plugin_adapter_capability(
+        "owner", "qq", FeedCapability, ExtensionFeed,
+    )
+    comp = registry._plugin_components["owner"]
+    comp.register_tool("owner_tool", "test", {}, lambda: None)
+    plugins.plugin_instances["owner"] = SimpleNamespace(terminate=AsyncMock())
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            manager.capability_registry, "unregister_owner",
+            AsyncMock(side_effect=asyncio.CancelledError),
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await plugins.terminate("owner")
+    plugin_context.tool_mgr.unregister_tool.assert_called_once_with("owner_tool")
+    assert comp.adapter_capabilities == {("qq", FeedCapability)}
+    await plugins.terminate("owner")
+    assert not comp.adapter_capabilities
