@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from core.adapter import AdapterContext, BaseAdapter
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.adapter_registry import AdapterManager
 
@@ -49,15 +50,18 @@ class _SavingConfig(dict):
         self.save_count += 1
 
 
-class _DelayedFailingAdapter:
+class _DelayedFailingAdapter(BaseAdapter):
     def __init__(self, info):
-        self.info = info
+        super().__init__(AdapterContext(info, asyncio.Queue()))
 
     async def start(self):
         await asyncio.sleep(0)
         raise RuntimeError("startup failed")
 
     async def stop(self):
+        return None
+
+    def get_client(self):
         return None
 
 

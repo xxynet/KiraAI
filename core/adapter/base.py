@@ -22,7 +22,8 @@ class BaseAdapter(ABC):
     """Own one object per capability kind and their shared lifecycle.
 
     Subclasses decide which objects to register from their own configuration.
-    Resources used by capabilities are started and stopped by the adapter.
+    The manager drives optional capability hooks around the adapter lifetime.
+    Shared client resources remain owned by the adapter.
     """
 
     def __init__(self, ctx: AdapterContext):
@@ -72,6 +73,28 @@ class BaseAdapter(ABC):
 
         The registered type also scopes this object's access policies.
         """
+        self._validate_capability_registration(capability_type, capability)
+        capability._capability_type = capability_type
+        self._capabilities[capability_type] = capability
+        return capability
+
+    def unregister_capability(
+        self, capability_type: type[CapabilityT], capability: CapabilityT,
+    ) -> bool:
+        """Remove only the exact registered instance; resource cleanup is separate."""
+        if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
+            raise TypeError("capability_type must be a BaseCapability subclass")
+        if not isinstance(capability, BaseCapability):
+            raise TypeError("capability must be a BaseCapability instance")
+        if self._capabilities.get(capability_type) is not capability:
+            return False
+        del self._capabilities[capability_type]
+        capability._capability_type = None
+        return True
+
+    def _validate_capability_registration(
+        self, capability_type: type[CapabilityT], capability: CapabilityT,
+    ) -> None:
         if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
             raise TypeError("capability_type must be a BaseCapability subclass")
         if not isinstance(capability, BaseCapability):
@@ -88,9 +111,6 @@ class BaseAdapter(ABC):
         for registered in self._capabilities.values():
             if kinds & self._capability_kinds(registered):
                 raise ValueError("a capability of this kind is already registered")
-        capability._capability_type = capability_type
-        self._capabilities[capability_type] = capability
-        return capability
 
     def get_capability(
         self, capability_type: type[CapabilityT],
@@ -169,6 +189,25 @@ class BaseCapability(Generic[AdapterT], ABC):
     def __init__(self, adapter: AdapterT):
         self._adapter = adapter
         self._capability_type: type[BaseCapability[Any]] | None = None
+
+    async def initialize(self) -> None:
+        """Optional startup hook for native and plugin-provided capabilities.
+
+        The default is a no-op; overriding this hook is not required. Native
+        capabilities initialize before the adapter runner starts. Plugin-provided
+        capabilities initialize before publication, so their capability_type is
+        not available yet. Hooks must not wait for the adapter connection or
+        mutate capability bindings.
+        """
+
+    async def terminate(self) -> None:
+        """Optional cleanup hook; it may be implemented without initialize.
+
+        The default is a no-op. The manager invokes this once per lifecycle,
+        including partially failed initialization. Close only owned resources
+        and settle owned requests and tasks. Native capabilities stay registered;
+        plugin-provided capabilities are withdrawn before cleanup.
+        """
 
     @property
     def adapter(self) -> AdapterT:

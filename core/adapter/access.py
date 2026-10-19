@@ -73,6 +73,31 @@ class AccessController:
         policy = self._policies.get(self._key(capability_type, permission))
         return policy.allows(target_id) if policy is not None else False
 
+    def get_policies(self, capability_type: type[BaseCapability[Any]]) -> dict[str, AccessPolicy]:
+        """Snapshot one capability scope without exposing the mutable registry."""
+        self._key(capability_type, "snapshot")
+        return {
+            permission: policy for (kind, permission), policy in self._policies.items()
+            if kind is capability_type
+        }
+
+    def restore_policies(
+        self, capability_type: type[BaseCapability[Any]],
+        original: dict[str, AccessPolicy], applied: dict[str, AccessPolicy],
+    ) -> None:
+        """Undo scoped changes only while their installed values still match."""
+        self._key(capability_type, "restore")
+        for permission in original.keys() | applied.keys():
+            previous = original.get(permission)
+            installed = applied.get(permission)
+            key = (capability_type, permission)
+            if previous is installed or self._policies.get(key) is not installed:
+                continue
+            if previous is None:
+                self._policies.pop(key, None)
+            else:
+                self._policies[key] = previous
+
     @staticmethod
     def _key(
         capability_type: type[BaseCapability[Any]], permission: str,
