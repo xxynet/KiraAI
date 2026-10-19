@@ -9,7 +9,7 @@ from core.utils.path_utils import get_data_path
 
 from . import webui
 from .prompts import MESSAGES
-from .scope import MemoryInputError, MemoryScope
+from .scope import MemoryInputError, MemoryScope, identity
 from .store import MemoryStore
 
 
@@ -267,21 +267,35 @@ class MemoryPlugin(BasePlugin):
             used += len(cls.encode(record)) + 2
         return records
 
+    async def recall(self, scope, messages):
+        """Build the same bounded memory payload for chat and operator previews."""
+        core_limit = self.setting("core_limit", 4, 1, 20)
+        recall_limit = self.setting("recall_limit", 6, 1, 20)
+        budget = self.setting("prompt_char_budget", 6000, 1500, 20000)
+        core = await self.store.search(scope, core_only=True, limit=core_limit)
+        query = " ".join(str(message or "")[:160] for message in messages[-3:])[:512]
+        recalled = await self.store.search(scope, query, limit=recall_limit) if query.strip() else []
+        core_records = self.pack(core, budget // 2)
+        core_ids = {record["id"] for record in core_records}
+        recalled_records = self.pack([row for row in recalled if row["id"] not in core_ids], budget // 2)
+        return {
+            "query": query,
+            "core": core_records,
+            "recalled": recalled_records,
+            "prompt_chars": len(self.encode(core_records + recalled_records)),
+            "limits": {"core": core_limit, "recall": recall_limit, "prompt_chars": budget},
+        }
+
     @on.llm_request()
     async def inject_memory(self, event, req: LLMRequest, *_):
         try:
             persona_id = next((p.kwargs.get("persona_id") for p in req.system_prompt if p.name == "memory"), None)
             scope = await self.scope(event, persona_id)
-            core = await self.store.search(scope, core_only=True, limit=self.setting("core_limit", 4, 1, 20))
-            query = " ".join(
-                str(getattr(message, "message_str", "") or "")[:160]
+            recalled = await self.recall(scope, [
+                getattr(message, "message_str", "")
                 for message in event.messages[-3:] if not getattr(message, "is_notice", False)
-            )[:512]
-            recalled = await self.store.search(scope, query, limit=self.setting("recall_limit", 6, 1, 20)) if query.strip() else []
-            budget = self.setting("prompt_char_budget", 6000, 1500, 20000)
-            core_records = self.pack(core, budget // 2)
-            core_ids = {record["id"] for record in core_records}
-            records = core_records + self.pack([row for row in recalled if row["id"] not in core_ids], budget // 2)
+            ])
+            records = recalled["core"] + recalled["recalled"]
             context = {"persona_id": scope.persona_id, "session_id": scope.session_id,
                        "sources": [{"source_message_id": mid, "user_id": uid} for mid, uid in scope.sources[-30:]]}
             for prompt in req.system_prompt:
@@ -376,6 +390,72 @@ class MemoryPlugin(BasePlugin):
     @register.api(method="GET", path="/memory/facets")
     async def api_facets(self):
         return await self._admin(self.store.facets)
+
+    @register.api(method="GET", path="/memory/recall-options")
+    async def api_recall_options(self):
+        async def load():
+            stored = await self.store.facets()
+            personas = {item.id: {"id": item.id, "name": item.name or item.id}
+                        for item in await self.ctx.persona_mgr.list_personas()}
+            for persona_id in stored["personas"]:
+                personas.setdefault(persona_id, {"id": persona_id, "name": persona_id})
+            active = await self.ctx.persona_mgr.get_persona()
+            if active:
+                personas.setdefault(active.id, {"id": active.id, "name": active.name or active.id})
+            sessions = {item.sid: {"id": item.sid, "name": item.session_title or item.sid}
+                        for item in await self.ctx.session_mgr.get_sessions(include_content=False)}
+            for item in await self.ctx.message_history.list_sessions():
+                sessions.setdefault(item.session_id, {"id": item.session_id, "name": item.session_id})
+            for item in stored["contexts"]:
+                sid = item["session_id"]
+                sessions.setdefault(sid, {"id": sid, "name": sid})
+            return {
+                "personas": list(personas.values()),
+                "active_persona": active.id if active else None,
+                "sessions": [item for sid, item in sessions.items()
+                             if len(sid.split(":", 2)) == 3 and sid.split(":", 2)[1] in {"dm", "gm"}],
+            }
+        return await self._admin(load)
+
+    @register.api(method="GET", path="/memory/recall-context")
+    async def api_recall_context(self, session_id: str):
+        async def load():
+            parts = session_id.split(":", 2)
+            if len(session_id) > 512 or len(parts) != 3 or parts[1] not in {"dm", "gm"} or not parts[0] or not parts[2]:
+                raise MemoryInputError("invalid_recall")
+            page = await self.ctx.message_history.get_messages(session_id=session_id, direction="incoming", limit=50)
+            messages = [message for message in page.messages
+                        if not message.is_notice and message.self_id is not None
+                        and str(message.self_id) and message.platform]
+            if messages:
+                latest = messages[0]
+                namespace = identity(latest.platform, parts[0], str(latest.self_id))
+            else:
+                namespace = await self.store.recall_context(session_id)
+            if not namespace:
+                raise MemoryInputError("recall_context_unavailable")
+            speakers = {}
+            for message in messages:
+                if (identity(message.platform, parts[0], str(message.self_id)) == namespace
+                        and message.sender_id and message.sender_id != "unknown"):
+                    uid = str(message.sender_id)
+                    speakers.setdefault(uid, {"id": uid, "name": message.sender_name or uid})
+            for uid in await self.store.recall_users(session_id, namespace):
+                speakers.setdefault(uid, {"id": uid, "name": uid})
+            return {
+                "session_id": session_id, "namespace": namespace, "group": parts[1] == "gm",
+                "speakers": list(speakers.values()) if parts[1] == "gm" else [],
+                "default_user_ids": ([parts[2]] if parts[1] == "dm" else list(speakers)[:1]),
+            }
+        return await self._admin(load)
+
+    @register.api(method="POST", path="/memory/recall")
+    async def api_recall(self, payload: dict):
+        async def load():
+            scope, messages = webui.parse_recall(payload)
+            return await self.recall(scope, messages)
+
+        return await self._admin(load)
 
     @register.api(method="GET", path="/memory/config")
     async def api_config(self):

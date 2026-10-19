@@ -412,6 +412,36 @@ class MemoryStore:
         record["terms"] = len(indexed)
         return record
 
+    async def recall_context(self, session_id):
+        """Find the most recently used memory namespace for a session."""
+        async with self.connection() as db:
+            async with db.execute(
+                "SELECT namespace FROM memories WHERE session_id=? AND origin='conversation' "
+                "GROUP BY namespace ORDER BY MAX(updated_at) DESC, namespace LIMIT 1", (session_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else None
+
+    async def recall_users(self, session_id, namespace):
+        """List known user owners without loading memory text."""
+        async with self.connection() as db:
+            async with db.execute(
+                "SELECT owner_id FROM memories WHERE session_id=? AND namespace=? "
+                "AND owner_type='user' AND origin='conversation' "
+                "GROUP BY owner_id ORDER BY MAX(updated_at) DESC, owner_id LIMIT 200",
+                (session_id, namespace),
+            ) as cursor:
+                owners = [row[0] for row in await cursor.fetchall()]
+        users = []
+        for owner in owners:
+            try:
+                parts = json.loads(owner)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(parts, list) and len(parts) == 4 and isinstance(parts[3], str):
+                users.append(parts[3])
+        return users
+
     async def facets(self) -> dict:
         """Distinct personas/namespaces/sessions for the filter selectors."""
         async with self.connection() as db:
@@ -420,7 +450,13 @@ class MemoryStore:
                     f"SELECT DISTINCT {column} FROM memories WHERE {column}!='' ORDER BY {column} LIMIT 200"
                 ) as cursor:
                     return [row[0] for row in await cursor.fetchall()]
+            async with db.execute(
+                "SELECT DISTINCT persona_id, namespace, session_id FROM memories "
+                "WHERE origin='conversation' ORDER BY persona_id, namespace, session_id LIMIT 200"
+            ) as cursor:
+                contexts = [dict(row) for row in await cursor.fetchall()]
             return {
+                "contexts": contexts,
                 "personas": await distinct("persona_id"),
                 "namespaces": await distinct("namespace"),
                 "sessions": await distinct("session_id"),

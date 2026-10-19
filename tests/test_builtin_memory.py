@@ -218,8 +218,11 @@ async def plugin_at(tmp_path, monkeypatch, lang="en", cfg=None):
     import core.plugin.builtin_plugins.memory.main as module
     monkeypatch.setattr(module, "get_data_path", lambda: tmp_path)
     ctx = SimpleNamespace(get_lang=lambda: lang, persona_mgr=SimpleNamespace(
-        get_persona=AsyncMock(return_value=SimpleNamespace(id="persona-one")),
-    ))
+        get_persona=AsyncMock(return_value=SimpleNamespace(id="persona-one", name="Kira")),
+        list_personas=AsyncMock(return_value=[SimpleNamespace(id="persona-one", name="Kira")]),
+    ), session_mgr=SimpleNamespace(get_sessions=AsyncMock(return_value=[])),
+        message_history=SimpleNamespace(list_sessions=AsyncMock(return_value=[]),
+                                        get_messages=AsyncMock(return_value=SimpleNamespace(messages=[]))))
     plugin = MemoryPlugin(ctx, cfg or {})
     await plugin.initialize()
     return plugin
@@ -377,7 +380,8 @@ def test_maintenance_page_and_api_are_registered():
     assert pages == [("/dashboard", {"zh": "记忆管理", "en": "Memory"})]
     assert {route["path"] for route in component.api_routes} == {
         "/memory/overview", "/memory/records", "/memory/records/{memory_id}",
-        "/memory/facets", "/memory/config",
+        "/memory/facets", "/memory/config", "/memory/recall",
+        "/memory/recall-options", "/memory/recall-context",
     }
     assert all(route["auth"] for route in component.api_routes)
 
@@ -622,3 +626,205 @@ async def test_overview_active_counts_match_recall_expiry(tmp_path, monkeypatch)
     assert data["core"] == len(await store.search(scope(), core_only=True)) == 2
     assert data["expiring"] == 1
     assert data["statuses"] == {"active": 4, "completed": 1, "cancelled": 1, "superseded": 1}
+
+@pytest.mark.anyio
+async def test_recall_preview_matches_chat_payload_without_writes(tmp_path, monkeypatch):
+    memory_dir = tmp_path / "memory"
+    memory_dir.mkdir()
+    (memory_dir / "core.txt").write_text("legacy coffee", encoding="utf-8")
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    await plugin.memory_add(event(), text="daily routine", core=True)
+    added = json.loads(await plugin.memory_add(event(), text="likes coffee"))
+    await plugin.memory_add(event(), text="expired coffee", expires_at=1)
+    await plugin.memory_add(event(target="bob", users=("bob",)), text="bob coffee")
+    await plugin.memory_add(event(account="other-bot"), text="other account coffee")
+    plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-two")
+    await plugin.memory_add(event(), text="other persona coffee")
+    plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-one")
+    current = scope()
+    payload = {"persona_id": current.persona_id, "namespace": current.namespace,
+               "session_id": current.session_id, "messages": ["coffee 咖啡"]}
+    before = plugin.store.path.read_bytes()
+    result = await plugin.api_recall(payload)
+    assert {row["text"] for row in result["core"]} == {"daily routine", "legacy coffee"}
+    assert [row["id"] for row in result["recalled"]] == [added["memory_id"]]
+    assert len({row["id"] for row in result["core"] + result["recalled"]}) == 3
+    request = LLMRequest(system_prompt=[Prompt("base", name="memory", persona_id="persona-one")])
+    await plugin.inject_memory(event(), request)
+    assert json.loads(request.system_prompt[0].content.rsplit("\n", 1)[1]) == result["core"] + result["recalled"]
+    legacy_only = await plugin.api_recall(payload | {"persona_id": "new-persona"})
+    assert [row["text"] for row in legacy_only["core"]] == ["legacy coffee"]
+    assert legacy_only["recalled"] == []
+    assert plugin.store.path.read_bytes() == before
+    assert (memory_dir / "core.txt").read_text(encoding="utf-8") == "legacy coffee"
+
+
+@pytest.mark.anyio
+async def test_recall_preview_group_speaker_visibility(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    turn = event(session="gm", target="group-one", users=("alice", "bob"))
+    for user, source in (("alice", "msg-0"), ("bob", "msg-1")):
+        result = json.loads(await plugin.memory_add(
+            turn, text=f"{user} coffee", user_id=user, source_message_id=source,
+        ))
+        assert result["ok"]
+    for owner in ("group", "self"):
+        result = json.loads(await plugin.memory_add(
+            turn, text=f"{owner} coffee", owner_type=owner, source_message_id="msg-0",
+        ))
+        assert result["ok"]
+    context = scope(session="gm", target="group-one", users=("alice", "bob"))
+    payload = {"persona_id": context.persona_id, "namespace": context.namespace,
+               "session_id": context.session_id, "messages": ["coffee"]}
+    for users, expected in (([], {"group coffee", "self coffee"}),
+                            (["alice"], {"group coffee", "self coffee", "alice coffee"}),
+                            (["alice", "bob"], {"group coffee", "self coffee", "alice coffee", "bob coffee"})):
+        result = await plugin.api_recall(payload | {"user_ids": users})
+        assert {row["text"] for row in result["recalled"]} == expected
+    result = await plugin.api_recall(payload | {"persona_id": "other-persona", "user_ids": ["alice"]})
+    assert result["core"] == result["recalled"] == []
+
+
+@pytest.mark.anyio
+async def test_recall_preview_query_and_budget_match_runtime(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={
+        "core_limit": 1, "recall_limit": 1, "prompt_char_budget": 1500,
+    })
+    await plugin.memory_add(event(), text="x" * 3000, core=True)
+    await plugin.memory_add(event(), text="coffee" * 500)
+    context = scope()
+    payload = {"persona_id": context.persona_id, "namespace": context.namespace,
+               "session_id": context.session_id,
+               "messages": ["a" * 200, "coffee " + "b" * 200, "c" * 200]}
+    result = await plugin.api_recall(payload)
+    assert result["query"] == " ".join(message[:160] for message in payload["messages"])
+    assert len(result["core"]) == len(result["recalled"]) == 1
+    assert all(row["truncated"] for row in result["core"] + result["recalled"])
+    assert result["prompt_chars"] == len(plugin.encode(result["core"] + result["recalled"])) <= 1500
+    assert result["limits"] == {"core": 1, "recall": 1, "prompt_chars": 1500}
+    empty = await plugin.api_recall(payload | {"messages": []})
+    assert empty["query"] == "" and empty["recalled"] == [] and len(empty["core"]) == 1
+
+
+@pytest.mark.anyio
+async def test_recall_api_auth_validation_and_contexts(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from core.plugin import registry
+    from webui.plugin_bindings import PluginWebBindings
+    from webui.routes.auth import require_auth
+
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    await plugin.memory_add(event(), text="coffee fact")
+    await plugin.memory_add(event(), text="another fact")
+    await plugin.memory_add(event(account="second-bot"), text="second account fact")
+    plugin_id = "kira_plugin_simple_memory"
+    manager = SimpleNamespace(
+        get_plugin_components=lambda: {plugin_id: registry._plugin_components[plugin_id]},
+        get_plugin_inst=lambda _: plugin, is_plugin_enabled=lambda _: True,
+    )
+    app = FastAPI()
+    PluginWebBindings(manager, app).register_apis(plugin_id)
+    path = f"/api/plugin/{plugin_id}/memory/recall"
+    context = scope()
+    payload = {"persona_id": context.persona_id, "namespace": context.namespace,
+               "session_id": context.session_id, "messages": ["coffee"]}
+    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
+                           base_url="http://test") as client:
+        assert (await client.post(path, json=payload)).status_code == 401
+        assert (await client.get(f"/api/plugin/{plugin_id}/memory/recall-options")).status_code == 401
+        assert (await client.get(f"/api/plugin/{plugin_id}/memory/recall-context",
+                                 params={"session_id": context.session_id})).status_code == 401
+        app.dependency_overrides[require_auth] = lambda: {"sub": "operator"}
+        response = await client.post(path, json=payload)
+        assert response.status_code == 200
+        assert [row["text"] for row in response.json()["recalled"]] == ["coffee fact"]
+        for invalid in (
+            {"persona_id": ""}, {"namespace": "not-json"}, {"namespace": "{}"},
+            {"namespace": '["test", null, "bot"]'}, {"session_id": "wrong:dm:alice"},
+            {"session_id": "test:other:alice"}, {"user_ids": "alice"},
+            {"user_ids": ["bob"]}, {"user_ids": [None]}, {"messages": "coffee"},
+            {"messages": ["coffee"] * 4}, {"messages": ["x" * 4001]},
+        ):
+            response = await client.post(path, json=payload | invalid)
+            assert response.status_code == 400, (invalid, response.text)
+            assert response.json() == {"detail": "invalid_recall"}
+        response = await client.get(f"/api/plugin/{plugin_id}/memory/facets")
+        contexts = response.json()["contexts"]
+        assert len(contexts) == 2
+        assert {row["namespace"] for row in contexts} == {scope().namespace, scope(account="second-bot").namespace}
+        plugin._ready = False
+        assert (await client.post(path, json=payload)).status_code == 503
+
+@pytest.mark.anyio
+async def test_recall_options_include_real_sessions_and_named_personas(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    plugin.ctx.persona_mgr.list_personas.return_value.append(SimpleNamespace(id="persona-two", name="Other"))
+    plugin.ctx.session_mgr.get_sessions.return_value = [
+        Session("test", "dm", "alice", session_title="Alice"),
+        Session("test", "unsupported", "skip"),
+    ]
+    plugin.ctx.message_history.list_sessions.return_value = [
+        SimpleNamespace(session_id="test:gm:group"), SimpleNamespace(session_id="test:dm:alice"),
+    ]
+    result = await plugin.api_recall_options()
+    assert result["personas"] == [{"id": "persona-one", "name": "Kira"}, {"id": "persona-two", "name": "Other"}]
+    assert result["active_persona"] == "persona-one"
+    assert result["sessions"] == [{"id": "test:dm:alice", "name": "Alice"},
+                                   {"id": "test:gm:group", "name": "test:gm:group"}]
+    plugin.ctx.session_mgr.get_sessions.assert_awaited_once_with(include_content=False)
+
+
+@pytest.mark.anyio
+async def test_recall_context_detects_latest_account_and_named_speakers(tmp_path, monkeypatch):
+    from core.plugin.builtin_plugins.memory.scope import identity
+
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    def message(user, name, account="bot", notice=False):
+        return SimpleNamespace(self_id=account, platform="test-platform", sender_id=user,
+                               sender_name=name, is_notice=notice)
+    plugin.ctx.message_history.get_messages.return_value.messages = [
+        message("ignored", "Notice", notice=True), message("alice", "Alice"),
+        message("bob", "Bob"), message("wrong", "Old account", account="old-bot"),
+    ]
+    before = plugin.store.path.read_bytes()
+    result = await plugin.api_recall_context("test:gm:group")
+    assert result["namespace"] == identity("test-platform", "test", "bot")
+    assert result["speakers"] == [{"id": "alice", "name": "Alice"}, {"id": "bob", "name": "Bob"}]
+    assert result["default_user_ids"] == ["alice"] and result["group"] is True
+    plugin.ctx.message_history.get_messages.assert_awaited_once_with(
+        session_id="test:gm:group", direction="incoming", limit=50,
+    )
+    dm = await plugin.api_recall_context("test:dm:alice")
+    assert dm["speakers"] == [] and dm["default_user_ids"] == ["alice"] and dm["group"] is False
+    assert plugin.store.path.read_bytes() == before
+
+
+@pytest.mark.anyio
+async def test_recall_context_uses_existing_memory_when_history_is_empty(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    await plugin.memory_add(event(), text="coffee")
+    result = await plugin.api_recall_context("test:dm:alice")
+    assert result["namespace"] == scope().namespace
+    assert result["default_user_ids"] == ["alice"]
+    group = event(session="gm", target="group", users=("alice", "bob"))
+    await plugin.memory_add(group, text="alice tea", user_id="alice", source_message_id="msg-0")
+    await plugin.memory_add(group, text="bob coffee", user_id="bob", source_message_id="msg-1")
+    result = await plugin.api_recall_context("test:gm:group")
+    assert {item["id"] for item in result["speakers"]} == {"alice", "bob"}
+    assert result["default_user_ids"] == [result["speakers"][0]["id"]]
+
+
+@pytest.mark.anyio
+async def test_recall_context_without_account_requires_real_message(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    with pytest.raises(HTTPException) as unavailable:
+        await plugin.api_recall_context("test:dm:alice")
+    assert unavailable.value.status_code == 400
+    assert unavailable.value.detail == "recall_context_unavailable"
+    with pytest.raises(HTTPException) as invalid:
+        await plugin.api_recall_context("malformed-session")
+    assert invalid.value.status_code == 400 and invalid.value.detail == "invalid_recall"

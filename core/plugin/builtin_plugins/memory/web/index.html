@@ -72,6 +72,39 @@
       <div id="overview-body"></div>
     </div>
   </section>
+
+  <section id="panel-recall" role="tabpanel" hidden>
+    <form class="card recall-form" id="recall-form">
+      <h2 id="recall-title"></h2>
+      <p class="hint" id="recall-note"></p>
+      <div class="recall-context-row">
+        <div class="field">
+          <label for="r-persona" id="l-r-persona"></label>
+          <select id="r-persona" required disabled></select>
+        </div>
+        <div class="field">
+          <label for="r-context" id="l-r-context"></label>
+          <select id="r-context" required disabled></select>
+        </div>
+      </div>
+      <div id="recall-context-state" class="hint" aria-live="polite"></div>
+      <div class="field" id="recall-users-field" hidden>
+        <label id="l-r-users"></label>
+        <div id="r-users" class="recall-speakers" role="group" aria-labelledby="l-r-users"></div>
+        <p class="hint" id="recall-users-hint"></p>
+      </div>
+      <div class="field">
+        <label for="r-messages" id="l-r-messages"></label>
+        <textarea id="r-messages" rows="3" maxlength="12000"></textarea>
+        <p class="hint" id="recall-messages-hint"></p>
+      </div>
+      <div class="card-row">
+        <button type="submit" class="btn" id="b-recall" disabled></button>
+        <button type="button" class="btn ghost" id="b-recall-contexts"></button>
+      </div>
+    </form>
+    <div class="card" id="recall-body" aria-live="polite"></div>
+  </section>
 </div>
 
 <div class="modal-mask hidden" id="modal-mask">
@@ -103,6 +136,12 @@ var state = {
   size: 20,
   total: 0,
   requestId: 0,
+  recallRequestId: 0,
+  recallLoading: false,
+  recallContexts: null,
+  recallContext: null,
+  recallUsers: [],
+  contextRequestId: 0,
   renderers: { records: null, overview: null, detail: null },
 };
 
@@ -124,7 +163,7 @@ function fail(message) {
   throw error;
 }
 
-function request(path, params) {
+function request(path, params, body) {
   var url = apiUrl(path);
   if (params) {
     var query = new URLSearchParams();
@@ -135,7 +174,13 @@ function request(path, params) {
     var text = query.toString();
     if (text) url += "?" + text;
   }
-  return fetch(url, { credentials: "same-origin", headers: { Accept: "application/json" } })
+  var options = { credentials: "same-origin", headers: { Accept: "application/json" } };
+  if (body !== undefined) {
+    options.method = "POST";
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  return fetch(url, options)
     .then(function (response) {
       if (response.status === 401) fail("session_expired");
       return response.json().then(function (body) {
@@ -255,7 +300,7 @@ function renderChrome(filters) {
 
   /* Tabs */
   clear(el.tabs);
-  [["records", "tab.records"], ["overview", "tab.overview"]].forEach(function (pair) {
+  [["records", "tab.records"], ["overview", "tab.overview"], ["recall", "tab.recall"]].forEach(function (pair) {
     var button = node("button", {
       type: "button",
       class: "tab",
@@ -268,6 +313,7 @@ function renderChrome(filters) {
   });
   el.panelRecords.hidden = state.tab !== "records";
   el.panelOverview.hidden = state.tab !== "overview";
+  $("panel-recall").hidden = state.tab !== "recall";
 
   /* Filters */
   $("l-q").textContent = I18N.t("filter.q");
@@ -298,6 +344,17 @@ function renderChrome(filters) {
   $("overview-title").textContent = I18N.t("overview.title");
   $("modal-title").textContent = I18N.t("detail.title");
   $("modal-close").textContent = I18N.t("common.close");
+  $("recall-title").textContent = I18N.t("recall.title");
+  $("recall-note").textContent = I18N.t("recall.note");
+  $("l-r-context").textContent = I18N.t("recall.session");
+  $("l-r-persona").textContent = I18N.t("recall.persona");
+  $("l-r-users").textContent = I18N.t("recall.users");
+  $("recall-users-hint").textContent = I18N.t("recall.users_hint");
+  $("l-r-messages").textContent = I18N.t("recall.messages");
+  $("r-messages").placeholder = I18N.t("recall.messages_placeholder");
+  $("recall-messages-hint").textContent = I18N.t("recall.messages_hint");
+  $("b-recall").textContent = I18N.t("recall.run");
+  $("b-recall-contexts").textContent = I18N.t("recall.refresh_contexts");
 }
 
 function selectTab(name) {
@@ -305,7 +362,8 @@ function selectTab(name) {
   state.tab = name;
   renderChrome();
   if (name === "overview") loadOverview();
-  else loadRecords();
+  else if (name === "records") loadRecords();
+  else if (state.recallContexts === null) loadRecallContexts();
 }
 
 /* ------------------------------------------------------------------ */
@@ -527,6 +585,175 @@ function loadOverview() {
 /*  Wiring                                                             */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/*  Recall simulation                                                  */
+/* ------------------------------------------------------------------ */
+
+function resetRecallResult() {
+  ++state.recallRequestId;
+  state.recallLoading = false;
+  renderView("recall", function () {
+    clear($("recall-body"));
+    $("recall-body").appendChild(node("p", { class: "muted", text: I18N.t("recall.idle") }));
+  });
+}
+
+function updateRecallButton() {
+  $("b-recall").disabled = state.recallLoading || !state.recallContext || !$("r-persona").value;
+}
+
+function renderRecallSpeakers() {
+  var context = state.recallContext;
+  $("recall-users-field").hidden = !context || !context.group;
+  clear($("r-users"));
+  if (!context || !context.group) return;
+  context.speakers.forEach(function (speaker) {
+    var checkbox = node("input", { type: "checkbox", value: speaker.id });
+    checkbox.checked = state.recallUsers.indexOf(speaker.id) !== -1;
+    checkbox.addEventListener("change", function () {
+      state.recallUsers = Array.from($("r-users").querySelectorAll("input:checked"))
+        .map(function (input) { return input.value; });
+    });
+    $("r-users").appendChild(node("label", { class: "recall-speaker" }, [
+      checkbox, speaker.name === speaker.id ? speaker.name : speaker.name + " (" + speaker.id + ")",
+    ]));
+  });
+}
+
+function loadRecallSession() {
+  resetRecallResult();
+  var session = $("r-context").value;
+  var requestId = ++state.contextRequestId;
+  state.recallContext = null;
+  state.recallUsers = [];
+  updateRecallButton();
+  renderRecallSpeakers();
+  if (!session) return;
+  renderView("recallContext", function () {
+    clear($("recall-context-state"));
+    $("recall-context-state").appendChild(loadingState());
+  });
+  request("/memory/recall-context", { session_id: session }).then(function (data) {
+    if (requestId !== state.contextRequestId) return;
+    state.recallContext = data;
+    state.recallUsers = data.default_user_ids;
+    renderView("recallContext", function () {
+      clear($("recall-context-state"));
+      $("recall-context-state").textContent = I18N.t("recall.context_hint");
+      renderRecallSpeakers();
+      updateRecallButton();
+    });
+  }).catch(function (error) {
+    if (requestId !== state.contextRequestId) return;
+    renderView("recallContext", function () {
+      clear($("recall-context-state"));
+      $("recall-context-state").appendChild(errorState(error.message, loadRecallSession));
+    });
+  });
+}
+
+function loadRecallContexts() {
+  ++state.contextRequestId;
+  state.recallContext = null;
+  renderRecallSpeakers();
+  $("r-context").disabled = true;
+  $("r-persona").disabled = true;
+  $("b-recall").disabled = true;
+  renderView("recallContext", function () {
+    clear($("recall-context-state"));
+    $("recall-context-state").appendChild(loadingState());
+  });
+  request("/memory/recall-options").then(function (data) {
+    state.recallContexts = data;
+    renderView("recallContexts", function () {
+      [["r-persona", data.personas, data.active_persona], ["r-context", data.sessions, null]]
+        .forEach(function (item) {
+          var select = $(item[0]);
+          var previous = select.value || item[2];
+          clear(select);
+          item[1].forEach(function (option) {
+            select.appendChild(node("option", { value: option.id,
+              text: option.name === option.id ? option.name : option.name + " · " + option.id }));
+          });
+          if (item[1].some(function (option) { return option.id === previous; })) select.value = previous;
+          select.disabled = !item[1].length;
+        });
+      updateRecallButton();
+    });
+    if (data.sessions.length) loadRecallSession();
+    else {
+      state.recallContext = null;
+      renderView("recallContext", function () {
+        clear($("recall-context-state"));
+        $("recall-context-state").textContent = I18N.t("recall.no_contexts");
+        renderRecallSpeakers();
+        updateRecallButton();
+      });
+    }
+  }).catch(function (error) {
+    state.recallContexts = null;
+    renderView("recallContext", function () {
+      clear($("recall-context-state"));
+      $("recall-context-state").appendChild(errorState(error.message, loadRecallContexts));
+    });
+  });
+}
+
+function renderRecall(data) {
+  var target = $("recall-body");
+  clear(target);
+  target.appendChild(node("p", { class: "hint", text: I18N.t("recall.budget", {
+    used: data.prompt_chars, budget: data.limits.prompt_chars,
+  }) }));
+  target.appendChild(node("p", null, [I18N.t("recall.query") + ": ",
+    node("code", { text: data.query || I18N.t("common.none") })]));
+  [["core", "recall.core"], ["recalled", "recall.retrieved"]].forEach(function (group) {
+    var records = data[group[0]];
+    var section = node("section", { class: "recall-group" }, [
+      node("h3", { text: I18N.t(group[1]) + " · " + records.length }),
+    ]);
+    if (!records.length) section.appendChild(node("p", { class: "muted", text: I18N.t("common.none") }));
+    records.forEach(function (record) {
+      section.appendChild(node("article", { class: "recall-record" }, [
+        node("div", { class: "card-row" }, [
+          badge(I18N.value("kind", record.kind), tone("kind", record.kind)),
+          badge(I18N.value("owner", record.owner_type), tone("owner", record.owner_type)),
+          record.truncated ? badge(I18N.t("recall.truncated"), "yellow") : null,
+          node("button", { type: "button", class: "btn link sm", text: I18N.t("recall.details"),
+            onclick: function () { openDetail(record.id); } }),
+        ]),
+        node("div", { class: "block", text: record.text }),
+        node("div", { class: "mono muted", text: record.id }),
+      ]));
+    });
+    target.appendChild(section);
+  });
+}
+
+function runRecall(payload) {
+  var requestId = ++state.recallRequestId;
+  state.recallLoading = true;
+  $("b-recall").disabled = true;
+  renderView("recall", function () {
+    clear($("recall-body"));
+    $("recall-body").appendChild(loadingState());
+  });
+  request("/memory/recall", null, payload).then(function (data) {
+    if (requestId !== state.recallRequestId) return;
+    state.recallLoading = false;
+    updateRecallButton();
+    renderView("recall", function () { renderRecall(data); });
+  }).catch(function (error) {
+    if (requestId !== state.recallRequestId) return;
+    state.recallLoading = false;
+    updateRecallButton();
+    renderView("recall", function () {
+      clear($("recall-body"));
+      $("recall-body").appendChild(errorState(error.message, function () { runRecall(payload); }));
+    });
+  });
+}
+
 function currentFilters() {
   return {
     q: $("f-q").value,
@@ -583,6 +810,20 @@ function bind() {
     loadRecords();
   });
 
+  $("r-context").addEventListener("change", loadRecallSession);
+  $("r-persona").addEventListener("change", function () {
+    resetRecallResult();
+    updateRecallButton();
+  });
+  $("b-recall-contexts").addEventListener("click", loadRecallContexts);
+  $("recall-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (!state.recallContext || !$("r-persona").value) return;
+    var payload = { persona_id: $("r-persona").value, namespace: state.recallContext.namespace,
+      session_id: state.recallContext.session_id, user_ids: state.recallUsers.slice() };
+    payload.messages = $("r-messages").value.split(/\r?\n/).slice(-3);
+    runRecall(payload);
+  });
   $("modal-close").addEventListener("click", closeModal);
   el.modalMask.addEventListener("click", function (event) {
     if (event.target === el.modalMask) closeModal();
@@ -606,6 +847,10 @@ function applyLocale(locale) {
 function start() {
   bind();
   renderChrome();
+  renderView("recall", function () {
+    clear($("recall-body"));
+    $("recall-body").appendChild(node("p", { class: "muted", text: I18N.t("recall.idle") }));
+  });
 
   if (bridge && typeof bridge.ready === "function") {
     bridge.ready().then(function (context) {

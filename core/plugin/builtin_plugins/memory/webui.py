@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .scope import MemoryInputError
+from .scope import MemoryInputError, MemoryScope
 
 # Display column kept from the raw row. ``normalized`` and the ``term_count``
 # bookkeeping are internal search artefacts and never leave the server.
@@ -118,3 +118,42 @@ def overview_payload(overview: dict, max_core: int, max_recall: int) -> dict:
         **overview,
         "limits": {"core": max_core, "recall": max_recall},
     }
+
+
+def parse_recall(payload: dict) -> tuple[MemoryScope, list[str]]:
+    """Validate an operator-supplied conversation context without enabling writes."""
+    def identifier(value):
+        if not isinstance(value, str) or not value.strip() or len(value) > 512:
+            raise MemoryInputError("invalid_recall")
+        return value.strip()
+
+    persona_id = identifier(payload.get("persona_id"))
+    namespace = identifier(payload.get("namespace"))
+    session_id = identifier(payload.get("session_id"))
+    try:
+        coordinates = _loads(namespace)
+    except (ValueError, TypeError) as exc:
+        raise MemoryInputError("invalid_recall") from exc
+    if not isinstance(coordinates, list) or len(coordinates) != 3:
+        raise MemoryInputError("invalid_recall")
+    platform, adapter, account = [identifier(part) for part in coordinates]
+    parts = session_id.split(":", 2)
+    if len(parts) != 3 or parts[0] != adapter or parts[1] not in {"dm", "gm"} or not parts[2]:
+        raise MemoryInputError("invalid_recall")
+    users = payload.get("user_ids", [])
+    messages = payload.get("messages", [])
+    if not isinstance(users, list) or len(users) > 30:
+        raise MemoryInputError("invalid_recall")
+    users = tuple(sorted({identifier(user) for user in users}))
+    if parts[1] == "dm":
+        if users and users != (parts[2],):
+            raise MemoryInputError("invalid_recall")
+        users = (parts[2],)
+    if not isinstance(messages, list) or len(messages) > 3 or any(
+        not isinstance(message, str) or len(message) > 4000 for message in messages
+    ):
+        raise MemoryInputError("invalid_recall")
+    return MemoryScope(
+        persona_id, session_id, adapter, platform, account, users,
+        parts[2] if parts[1] == "gm" else None, (),
+    ), messages

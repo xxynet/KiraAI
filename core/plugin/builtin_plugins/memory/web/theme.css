@@ -532,3 +532,19 @@ tbody tr[data-id]:hover { background-color: var(--color-item-hover); }
   .spinner { animation: none; }
   .btn, .tab { transition: none; }
 }
+
+/* ---------- Recall simulation ---------- */
+.recall-form { display: flex; flex-direction: column; gap: 16px; }
+.recall-form h2, .recall-form p { margin: 0; }
+.recall-group { margin-top: 22px; }
+.recall-group h3 { font-size: 15px; color: var(--color-text-strong); }
+.recall-record { padding: 14px 0; border-bottom: 1px solid var(--color-border-subtle); }
+.recall-record:last-child { border-bottom: 0; }
+.recall-record .block { margin: 10px 0; }
+#recall-body code { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+
+.recall-context-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.recall-speakers { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+.recall-speaker { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-body); }
+#recall-users-field[hidden] { display: none; }
