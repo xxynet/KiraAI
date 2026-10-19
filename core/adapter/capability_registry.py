@@ -14,6 +14,7 @@ from .base import BaseAdapter, BaseCapability
 
 logger = get_logger("adapter_capabilities", "blue")
 CAPABILITY_LIFECYCLE_TIMEOUT = 15.0
+CAPABILITY_CANCELLATION_GRACE = 1.0
 _active_registry: ContextVar[object | None] = ContextVar("active_capability_registry", default=None)
 
 
@@ -50,6 +51,7 @@ class AdapterCapabilityRegistry:
         self._native_instances: dict[BaseAdapter, list[_Attachment]] = {}
         self._blocked_owners: set[str] = set()
         self._lock = asyncio.Lock()
+        self._hook_tasks: set[asyncio.Task] = set()
 
     def _check_reentrancy(self):
         if _active_registry.get() is self:
@@ -79,14 +81,21 @@ class AdapterCapabilityRegistry:
     async def _prepare(self, binding, adapter, prepared):
         token = _active_registry.set(self)
         try:
-            capability = binding.factory(adapter)
-            if inspect.isawaitable(capability):
-                if inspect.iscoroutine(capability):
-                    capability.close()
-                raise TypeError("Capability factory must return an instance synchronously")
-            adapter._validate_capability_registration(binding.kind, capability)
+            original_policies = adapter.access.get_policies(binding.kind)
+            try:
+                capability = binding.factory(adapter)
+                if inspect.isawaitable(capability):
+                    if inspect.iscoroutine(capability):
+                        capability.close()
+                    raise TypeError("Capability factory must return an instance synchronously")
+                adapter._validate_capability_registration(binding.kind, capability)
+            except BaseException:
+                adapter.access.restore_policies(
+                    binding.kind, original_policies, adapter.access.get_policies(binding.kind),
+                )
+                raise
             attachment = await self._initialize(
-                adapter, binding.kind, capability, prepared,
+                adapter, binding.kind, capability, prepared, original_policies=original_policies,
             )
             self._check_owner(binding.owner)
             return attachment
@@ -95,9 +104,12 @@ class AdapterCapabilityRegistry:
 
     async def _initialize(
         self, adapter, kind, capability, prepared, *, unregister_on_cleanup=True,
+        original_policies=None,
     ):
+        if original_policies is None:
+            original_policies = adapter.access.get_policies(kind)
         attachment = _Attachment(
-            adapter, kind, capability, adapter.access.get_policies(kind),
+            adapter, kind, capability, original_policies,
             unregister_on_cleanup=unregister_on_cleanup,
         )
         prepared.append(attachment)
@@ -107,13 +119,14 @@ class AdapterCapabilityRegistry:
             attachment.applied_policies = adapter.access.get_policies(kind)
         return attachment
 
-    @staticmethod
-    async def _call_hook(capability, name):
+    async def _call_hook(self, capability, name):
         hook = getattr(capability, name)
         # Optional inherited no-ops need no task or scheduling point.
         if getattr(hook, "__func__", None) is getattr(BaseCapability, name):
             return
         task = asyncio.create_task(hook())
+        self._hook_tasks.add(task)
+        task.add_done_callback(self._hook_done)
         try:
             done, _ = await asyncio.wait({task}, timeout=CAPABILITY_LIFECYCLE_TIMEOUT)
             if not done:
@@ -122,9 +135,19 @@ class AdapterCapabilityRegistry:
         finally:
             if not task.done():
                 task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
-            elif not task.cancelled():
-                task.exception()
+                # Cancellation is cooperative; a hook must not hold the registry forever.
+                done, _ = await asyncio.wait({task}, timeout=CAPABILITY_CANCELLATION_GRACE)
+                if not done:
+                    logger.warning(
+                        f"Capability {name} hook did not stop after cancellation; "
+                        "task remains tracked until completion"
+                    )
+
+    def _hook_done(self, task):
+        self._hook_tasks.discard(task)
+        if not task.cancelled():
+            # Also observe failures from hooks that outlive their cancellation grace.
+            task.exception()
 
     async def _prepare_native(self, adapter, prepared):
         token = _active_registry.set(self)

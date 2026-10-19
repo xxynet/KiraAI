@@ -891,3 +891,172 @@ async def test_capability_cleanup_cancellation_propagates_after_registration_cle
     assert comp.adapter_capabilities == {("qq", FeedCapability)}
     await plugins.terminate("owner")
     assert not comp.adapter_capabilities
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", [
+    "unload", "initialize_error", "factory_error", "invalid_result",
+    "foreign_instance", "duplicate", "awaitable",
+])
+async def test_constructor_policy_changes_are_rolled_back(manager, outcome):
+    adapter = await account(manager, enable_qzone=outcome == "duplicate")
+    other = await account(manager, "other") if outcome == "foreign_instance" else None
+    original = ListAccessPolicy("allow_list", frozenset({"owner"}))
+    permissive = ListAccessPolicy("deny_list", frozenset())
+    adapter.access.set_policy(capability_type=FeedCapability, permission="post", policy=original)
+    adapter.access.set_policy(capability_type=IMCapability, permission="receive", policy=original)
+    native = adapter.capabilities.get(FeedCapability)
+    created = []
+
+    class PolicyFeed(ExtensionFeed):
+        async def initialize(self):
+            if outcome == "initialize_error":
+                raise RuntimeError("initialization failed")
+            await super().initialize()
+
+    async def asynchronous_result():
+        return None
+
+    def factory(target):
+        target.access.set_policy(
+            capability_type=FeedCapability, permission="post", policy=permissive,
+        )
+        target.access.set_policy(
+            capability_type=FeedCapability, permission="comment", policy=permissive,
+        )
+        if outcome == "factory_error":
+            raise RuntimeError("factory failed")
+        if outcome == "invalid_result":
+            return object()
+        if outcome == "awaitable":
+            return asynchronous_result()
+        feed = PolicyFeed(other if outcome == "foreign_instance" else target)
+        created.append(feed)
+        return feed
+
+    capabilities = manager.capability_registry
+    if outcome == "unload":
+        await capabilities.register("plugin", "qq", FeedCapability, factory)
+        assert adapter.access.is_allowed(
+            "stranger", capability_type=FeedCapability, permission="post",
+        )
+        await capabilities.unregister_owner("plugin")
+    else:
+        error = {
+            "initialize_error": RuntimeError, "factory_error": RuntimeError,
+            "invalid_result": TypeError, "foreign_instance": ValueError,
+            "duplicate": ValueError, "awaitable": TypeError,
+        }[outcome]
+        with pytest.raises(error):
+            await capabilities.register("plugin", "qq", FeedCapability, factory)
+
+    assert adapter.access.get_policies(FeedCapability) == {"post": original}
+    assert adapter.access.get_policies(IMCapability) == {"receive": original}
+    assert adapter.capabilities.get(FeedCapability) is native
+    assert not capabilities._bindings
+    if outcome in {"unload", "initialize_error"}:
+        assert created[0].close_count == 1
+    elif created:
+        assert created[0].close_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("future_account", [False, True])
+async def test_constructor_policy_rollback_preserves_later_replacements(manager, future_account):
+    original = ListAccessPolicy("allow_list", frozenset({"owner"}))
+    later = ListAccessPolicy("allow_list", frozenset({"replacement"}))
+
+    class PolicyFeed(ExtensionFeed):
+        def __init__(self, adapter):
+            super().__init__(adapter)
+            adapter.access.set_policy(
+                capability_type=FeedCapability, permission="post",
+                policy=ListAccessPolicy("deny_list", frozenset()),
+            )
+            adapter.access.set_policy(
+                capability_type=FeedCapability, permission="comment",
+                policy=ListAccessPolicy("deny_list", frozenset()),
+            )
+
+    adapter = None if future_account else await account(manager)
+    if adapter is not None:
+        adapter.access.set_policy(
+            capability_type=FeedCapability, permission="post", policy=original,
+        )
+    await manager.capability_registry.register("plugin", "qq", FeedCapability, PolicyFeed)
+    if future_account:
+        adapter = await account(manager)
+    adapter.access.set_policy(
+        capability_type=FeedCapability, permission="comment", policy=later,
+    )
+    await manager.capability_registry.unregister_owner("plugin")
+    expected = {"comment": later}
+    if not future_account:
+        expected["post"] = original
+    assert adapter.access.get_policies(FeedCapability) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hook_name", ["initialize", "terminate"])
+@pytest.mark.parametrize("cancel_caller", [False, True])
+async def test_cancellation_resistant_hook_does_not_block_registry(
+    manager, monkeypatch, hook_name, cancel_caller,
+):
+    from core.adapter import capability_registry as module
+
+    monkeypatch.setattr(module, "CAPABILITY_LIFECYCLE_TIMEOUT", 0.02)
+    monkeypatch.setattr(module, "CAPABILITY_CANCELLATION_GRACE", 0.02)
+    adapter = await account(manager)
+    entered, cancelled, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    tasks = []
+    capabilities = manager.capability_registry
+
+    class StubbornFeed(ExtensionFeed):
+        async def stubborn_hook(self):
+            tasks.append(asyncio.current_task())
+            entered.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                await release.wait()
+            raise RuntimeError("late hook failure")
+
+    setattr(StubbornFeed, hook_name, StubbornFeed.stubborn_hook)
+    if hook_name == "terminate":
+        await capabilities.register("plugin", "qq", FeedCapability, StubbornFeed)
+        operation = asyncio.create_task(capabilities.unregister_owner("plugin"))
+    else:
+        operation = asyncio.create_task(capabilities.register(
+            "plugin", "qq", FeedCapability, StubbornFeed,
+        ))
+    contender = None
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        if cancel_caller:
+            operation.cancel()
+        await asyncio.wait_for(cancelled.wait(), 1)
+        contender = asyncio.create_task(capabilities.register(
+            "other-plugin", "other-platform", FeedCapability, ExtensionFeed,
+        ))
+        done, _ = await asyncio.wait({operation, contender}, timeout=0.5)
+        assert operation in done and contender in done
+        if cancel_caller:
+            with pytest.raises(asyncio.CancelledError):
+                await operation
+        elif hook_name == "initialize":
+            with pytest.raises(asyncio.TimeoutError):
+                await operation
+        else:
+            await operation
+        await contender
+        assert FeedCapability not in adapter.capabilities
+        assert ("qq", FeedCapability) not in capabilities._bindings
+        assert tasks[0] in capabilities._hook_tasks and not tasks[0].done()
+    finally:
+        release.set()
+        await asyncio.gather(operation, *tasks, return_exceptions=True)
+        if contender is not None:
+            await asyncio.gather(contender, return_exceptions=True)
+    await asyncio.sleep(0)
+    assert not capabilities._hook_tasks
