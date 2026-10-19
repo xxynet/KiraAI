@@ -648,3 +648,124 @@ async def test_deferred_initialization_and_termination_finish_one_lifecycle(
     assert not capabilities._hook_tasks
     assert not capabilities._cleanup_tasks
     assert not capabilities._pending_cleanup
+
+
+@pytest.mark.asyncio
+async def test_builtin_reserves_name_before_native_initialization(manager):
+    entered, release = asyncio.Event(), asyncio.Event()
+    started = []
+
+    class SlowCapability(BaseCapability):
+        async def initialize(self):
+            entered.set()
+            await release.wait()
+
+    class BuiltinAdapter(ExampleAdapter):
+        async def start(self):
+            started.append(self)
+            await super().start()
+
+    info = AdapterInfo(True, "reserved", "reserved", "qq")
+    first = BuiltinAdapter(AdapterContext(info, asyncio.Queue()))
+    second = BuiltinAdapter(AdapterContext(info, asyncio.Queue()))
+    first.register_capability(SlowCapability, SlowCapability(first))
+    pending = asyncio.create_task(manager.register_builtin_adapter(first))
+    contender = None
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        contender = asyncio.create_task(manager.register_builtin_adapter(second))
+        done, _ = await asyncio.wait({contender}, timeout=0.1)
+        assert contender in done
+        with pytest.raises(ValueError, match="already in use"):
+            await contender
+        assert manager.get_adapter("reserved") is None
+        release.set()
+        await pending
+        assert manager.get_adapter("reserved") is first
+        assert started == [first]
+        assert second not in manager.capability_registry._native_instances
+    finally:
+        release.set()
+        await asyncio.gather(
+            pending, *([contender] if contender is not None else []), return_exceptions=True,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_failed_builtin_registration_releases_reserved_name(manager, cancel):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class FailingCapability(BaseCapability):
+        async def initialize(self):
+            entered.set()
+            await release.wait()
+            raise RuntimeError("initialization failed")
+
+    info = AdapterInfo(True, "reserved", "reserved", "qq")
+    first = ExampleAdapter(AdapterContext(info, asyncio.Queue()))
+    first.register_capability(FailingCapability, FailingCapability(first))
+    pending = asyncio.create_task(manager.register_builtin_adapter(first))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        assert "reserved" in manager._builtin_names
+        if cancel:
+            pending.cancel()
+        else:
+            release.set()
+        with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
+            await pending
+        assert "reserved" not in manager._builtin_names
+        replacement = ExampleAdapter(AdapterContext(info, asyncio.Queue()))
+        await manager.register_builtin_adapter(replacement)
+        assert manager.get_adapter("reserved") is replacement
+    finally:
+        release.set()
+        await asyncio.gather(pending, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_builtin_reservation_wins_over_unpublished_configured_adapter(manager):
+    entered, release = asyncio.Event(), asyncio.Event()
+    started = []
+
+    class SlowCapability(BaseCapability):
+        async def initialize(self):
+            entered.set()
+            await release.wait()
+
+    class SlowAdapter(ExampleAdapter):
+        def __init__(self, ctx):
+            super().__init__(ctx)
+            self.register_capability(SlowCapability, SlowCapability(self))
+
+        async def start(self):
+            started.append(self)
+            await super().start()
+
+    manager._registry["qq"] = SlowAdapter
+    info = AdapterInfo(True, "reserved", "reserved", "qq")
+    builtin = ExampleAdapter(AdapterContext(info, asyncio.Queue()))
+    configured = asyncio.create_task(manager.register_adapter(info))
+    contender = None
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        contender = asyncio.create_task(manager.register_builtin_adapter(builtin))
+        await asyncio.sleep(0)
+        assert "reserved" in manager._builtin_names
+        release.set()
+        results = await asyncio.wait_for(
+            asyncio.gather(configured, contender, return_exceptions=True), 1,
+        )
+        assert isinstance(results[0], ValueError)
+        assert results[1] is None
+        assert manager.get_adapter("reserved") is builtin
+        assert not started
+        assert "reserved" in manager._builtin_names
+        assert builtin in manager.capability_registry._native_instances
+        assert len(manager.capability_registry._native_instances) == 1
+    finally:
+        release.set()
+        await asyncio.gather(
+            configured, *([contender] if contender is not None else []), return_exceptions=True,
+        )

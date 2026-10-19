@@ -265,14 +265,16 @@ class AdapterManager:
         name = adapter.info.name
         if name in self._adapters or not self._check_name_unique(name):
             raise ValueError(f"Adapter name '{name}' is already in use")
+        self._builtin_names.add(name)
         try:
             await self.capability_registry.attach(adapter)
-            self._builtin_names.add(name)
             self._adapters[name] = adapter
             await self.start_adapter(name)
         except BaseException:
-            await self._cleanup_failed_adapter(name, adapter)
-            self._builtin_names.discard(name)
+            try:
+                await self._cleanup_failed_adapter(name, adapter)
+            finally:
+                self._builtin_names.discard(name)
             raise
 
     async def initialize(self):
@@ -561,7 +563,8 @@ class AdapterManager:
     async def register_adapter(self, info: AdapterInfo):
         platform = info.platform
         name = info.name or info.adapter_id
-        if name in getattr(self, "_builtin_names", ()):
+        builtin_names = getattr(self, "_builtin_names", ())
+        if name in builtin_names:
             raise ValueError('Cannot replace an application-owned adapter')
         if not platform:
             raise ValueError(f"Adapter {name} has no platform configured")
@@ -582,6 +585,8 @@ class AdapterManager:
             await self.stop_adapter(name)
         try:
             await self.capability_registry.attach(instance)
+            if name in builtin_names:
+                raise ValueError("Cannot replace an application-owned adapter")
             self._adapters[name] = instance
             await self.start_adapter(name)
         except BaseException:

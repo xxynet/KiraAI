@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from core.logging_manager import get_logger
-from .access import AccessPolicy
+from .access import PolicyChanges
 from .base import BaseAdapter, BaseCapability
 
 logger = get_logger("adapter_capabilities", "blue")
@@ -23,8 +23,7 @@ class _Attachment:
     adapter: BaseAdapter
     kind: type[BaseCapability]
     capability: BaseCapability
-    original_policies: dict[str, AccessPolicy]
-    applied_policies: dict[str, AccessPolicy] = field(default_factory=dict)
+    policies: PolicyChanges
     unregister_on_cleanup: bool = True
     initialize_task: asyncio.Task | None = None
     terminate_task: asyncio.Task | None = None
@@ -104,9 +103,10 @@ class AdapterCapabilityRegistry:
         self._check_pending_cleanup(adapter, binding.kind)
         token = _active_registry.set(self)
         try:
-            original_policies = adapter.access.get_policies(binding.kind)
+            policies = adapter.access.track_policies(binding.kind)
             try:
-                capability = binding.factory(adapter)
+                with policies.record():
+                    capability = binding.factory(adapter)
                 if inspect.isawaitable(capability):
                     if inspect.iscoroutine(capability):
                         capability.close()
@@ -114,12 +114,10 @@ class AdapterCapabilityRegistry:
                 adapter._validate_capability_registration(binding.kind, capability)
                 self._check_pending_cleanup(adapter, type(capability))
             except BaseException:
-                adapter.access.restore_policies(
-                    binding.kind, original_policies, adapter.access.get_policies(binding.kind),
-                )
+                policies.restore()
                 raise
             attachment = await self._initialize(
-                adapter, binding.kind, capability, prepared, original_policies=original_policies,
+                adapter, binding.kind, capability, prepared, policies=policies,
             )
             self._check_owner(binding.owner)
             return attachment
@@ -128,20 +126,15 @@ class AdapterCapabilityRegistry:
 
     async def _initialize(
         self, adapter, kind, capability, prepared, *, unregister_on_cleanup=True,
-        original_policies=None,
+        policies=None,
     ):
         self._check_pending_cleanup(adapter, kind)
-        if original_policies is None:
-            original_policies = adapter.access.get_policies(kind)
         attachment = _Attachment(
-            adapter, kind, capability, original_policies,
+            adapter, kind, capability, policies or adapter.access.track_policies(kind),
             unregister_on_cleanup=unregister_on_cleanup,
         )
         prepared.append(attachment)
-        try:
-            await self._call_hook(attachment, "initialize")
-        finally:
-            attachment.applied_policies = adapter.access.get_policies(kind)
+        await self._call_hook(attachment, "initialize")
         return attachment
 
     async def _call_hook(self, attachment, name):
@@ -151,13 +144,8 @@ class AdapterCapabilityRegistry:
             return
 
         async def invoke():
-            try:
+            with attachment.policies.record():
                 await hook()
-            finally:
-                if name == "initialize":
-                    attachment.applied_policies = attachment.adapter.access.get_policies(
-                        attachment.kind,
-                    )
 
         task = asyncio.create_task(invoke())
         if name == "initialize":
@@ -222,9 +210,9 @@ class AdapterCapabilityRegistry:
         if registered is None or (
             not attachment.unregister_on_cleanup and registered is attachment.capability
         ):
-            attachment.adapter.access.restore_policies(
-                attachment.kind, attachment.original_policies, attachment.applied_policies,
-            )
+            attachment.policies.restore()
+        else:
+            attachment.policies.close()
 
     def _defer_cleanup(self, attachment, task):
         if attachment in self._pending_cleanup:
