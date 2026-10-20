@@ -278,7 +278,7 @@ body {
 .stat .note { margin-top: 4px; font-size: 12px; color: var(--color-text-faint); }
 
 /* ---------- Form controls (host ui-input recipe) ---------- */
-input[type="text"], input[type="search"], input[type="number"], select, textarea {
+input[type="text"], input[type="search"], input[type="number"], input[type="datetime-local"], select, textarea {
   width: 100%;
   padding: 8px 12px;
   border-radius: var(--radius-sm);
@@ -292,7 +292,7 @@ input[type="text"], input[type="search"], input[type="number"], select, textarea
 }
 
 textarea { min-height: 120px; line-height: 1.6; resize: vertical; font-family: var(--font-sans); }
-#r-messages:focus-visible { outline: none; }
+#r-messages:focus-visible, #e-text:focus-visible { outline: none; }
 
 input::placeholder, textarea::placeholder { color: var(--color-text-muted); }
 input:hover, select:hover, textarea:hover { border-color: var(--color-accent); }
@@ -532,11 +532,23 @@ tbody tr[data-id]:hover { background-color: var(--color-item-hover); }
 .modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 .modal .block { margin-top: 10px; }
 
+/* ---------- Memory editor ---------- */
+#memory-editor { display: flex; flex-direction: column; gap: 16px; }
+#memory-editor[hidden] { display: none; }
+.edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.edit-error { color: var(--fg-red); font-size: 13px; }
+.modal-actions { flex-wrap: wrap; }
+.modal-actions > [hidden] { display: none; }
+#memory-editor .field { min-width: 0; }
+.modal .hint { color: var(--color-text-subtle); font-size: 13px; }
+#memory-editor .hint { margin: 0; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 720px) {
   body { padding: 16px 14px 32px; }
   .page-head h1 { font-size: 20px; }
   .field, .field.grow { min-width: 100%; }
+  .edit-grid { grid-template-columns: 1fr; }
   .kv { grid-template-columns: 1fr; gap: 2px; }
   .kv dd { margin-bottom: 8px; }
 }

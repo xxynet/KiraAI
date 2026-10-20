@@ -983,3 +983,115 @@ async def test_owner_serialization_and_speaker_lookup_use_adapter_keys(tmp_path,
     assert payload["subject"] == "alice" and payload["adapter"] == "test"
     assert "account" not in payload and "platform" not in payload
     assert await plugin.store.recall_users("test:dm:alice", scope().namespace) == ["alice"]
+
+
+@pytest.mark.anyio
+async def test_operator_update_preserves_scope_and_source_and_reindexes(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    context = scope(persona="other", adapter="other", target="bob", users=("bob",))
+    row, _ = await plugin.store.add(context, text="coffee", expires_at=2000000000)
+    original = await plugin.store.admin_get(row["id"])
+    changed = await plugin.api_record_update(row["id"], {
+        "revision": 1, "text": "  Jasmine tea  ", "kind": "episodic",
+        "status": "completed", "importance": 5, "core": True, "expires_at": None,
+    })
+    assert changed["revision"] == 2 and changed["text"] == "Jasmine tea"
+    assert changed["kind"] == "episodic" and changed["status"] == "completed"
+    assert changed["importance"] == 5 and changed["core"] is True
+    assert changed["expires_at"] is None and changed["terms"] > 0
+    for key in ("id", "owner_type", "owner_id", "persona_id", "namespace", "session_id",
+                "source_message_id", "created_at", "origin", "legacy_line"):
+        assert changed[key] == original[key], key
+    assert not await plugin.store.search(context, "coffee", include_inactive=True)
+    assert (await plugin.store.search(context, "jasmine", include_inactive=True))[0]["id"] == row["id"]
+    assert not await plugin.store.search(context, "jasmine")
+    assert not await plugin.store.search(scope(), "jasmine", include_inactive=True)
+    await plugin.api_record_update(row["id"], {"revision": 2, "text": "Jasmine tea",
+                                              "status": "active", "expires_at": 2100000000})
+    assert (await plugin.store.search(context, "jasmine"))[0]["expires_at"] == 2100000000
+    # Conversation writes must still require a real incoming source.
+    with pytest.raises(MemoryInputError, match="source_required"):
+        await plugin.store.update(
+            MemoryScope(context.persona_id, context.session_id, context.adapter, context.users,
+                        context.group_id, ()),
+            row["id"], 3, text="forged",
+        )
+
+
+@pytest.mark.anyio
+async def test_operator_update_legacy_and_concurrent_edits(tmp_path, monkeypatch):
+    (tmp_path / "memory").mkdir()
+    (tmp_path / "memory" / "core.txt").write_text("legacy coffee", encoding="utf-8")
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    legacy = (await plugin.store.admin_list())["items"][0]
+    changed = await plugin.api_record_update(legacy["id"], {"revision": 1, "text": "legacy tea"})
+    assert changed["origin"] == "legacy" and changed["owner_id"] == "shared"
+    assert changed["source_message_id"] is None and changed["legacy_line"] == legacy["legacy_line"]
+    assert (await plugin.store.search(scope(), "tea"))[0]["id"] == legacy["id"]
+    row, _ = await plugin.store.add(scope(), text="original")
+    results = await asyncio.gather(
+        plugin.store.admin_update(row["id"], 1, text="operator tea"),
+        plugin.store.update(scope(), row["id"], 1, text="conversation water"),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(result, MemoryInputError) for result in results) == 1
+    assert str(next(result for result in results if isinstance(result, MemoryInputError))) == "conflict"
+    assert (await plugin.store.admin_get(row["id"]))["revision"] == 2
+
+
+@pytest.mark.anyio
+async def test_memory_update_api_auth_validation_and_conflict(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from core.plugin import registry
+    from webui.plugin_bindings import PluginWebBindings
+    from webui.routes.auth import require_auth
+
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    row, _ = await plugin.store.add(scope(), text="original coffee")
+    plugin_id = "kira_plugin_simple_memory"
+    enabled = True
+    manager = SimpleNamespace(
+        get_plugin_components=lambda: {plugin_id: registry._plugin_components[plugin_id]},
+        get_plugin_inst=lambda _: plugin, is_plugin_enabled=lambda _: enabled,
+    )
+    app = FastAPI()
+    PluginWebBindings(manager, app).register_apis(plugin_id)
+    path = f"/api/plugin/{plugin_id}/memory/records/{row['id']}"
+    payload = {"revision": 1, "text": "updated tea"}
+    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
+                           base_url="http://test") as client:
+        assert (await client.post(path, json=payload)).status_code == 401
+        app.dependency_overrides[require_auth] = lambda: {"sub": "operator"}
+        for invalid, code in (
+            ({"revision": True}, "invalid_revision"), ({"revision": 0}, "invalid_revision"),
+            ({"revision": "1"}, "invalid_revision"), ({"text": ""}, "invalid_text"),
+            ({"text": "x" * 4001}, "invalid_text"), ({"text": "\x00"}, "invalid_text"),
+            ({"text": None}, "invalid_text"), ({"kind": []}, "invalid_category"),
+            ({"kind": None}, "invalid_category"), ({"status": "bad"}, "invalid_category"),
+            ({"core": 1}, "invalid_priority"), ({"importance": True}, "invalid_priority"),
+            ({"importance": 6}, "invalid_priority"), ({"expires_at": -1}, "invalid_expiry"),
+            ({"expires_at": "tomorrow"}, "invalid_expiry"),
+            ({"owner_id": "other"}, "invalid_update"), ({"persona_id": "other"}, "invalid_update"),
+            ({"namespace": "other"}, "invalid_update"), ({"session_id": "other"}, "invalid_update"),
+            ({"source_message_id": "forged"}, "invalid_update"),
+            ({"origin": "legacy"}, "invalid_update"),
+        ):
+            response = await client.post(path, json=payload | invalid)
+            assert response.status_code == 400, (invalid, response.text)
+            assert response.json() == {"detail": code}
+            assert (await plugin.store.admin_get(row["id"]))["revision"] == 1
+        assert (await client.post(path, json={"revision": 1})).json() == {"detail": "invalid_text"}
+        response = await client.post(path, json=payload)
+        assert response.status_code == 200 and response.json()["revision"] == 2
+        assert (await client.post(path, json=payload)).json() == {"detail": "conflict"}
+        assert (await plugin.store.admin_get(row["id"]))["text"] == "updated tea"
+        assert not await plugin.store.search(scope(), "coffee")
+        assert (await plugin.store.search(scope(), "tea"))[0]["id"] == row["id"]
+        missing = await client.post(path.rsplit("/", 1)[0] + "/missing", json=payload)
+        assert missing.status_code == 400 and missing.json() == {"detail": "not_found"}
+        plugin._ready = False
+        assert (await client.post(path, json=payload)).status_code == 503
+        enabled = False
+        assert (await client.post(path, json=payload)).status_code == 404

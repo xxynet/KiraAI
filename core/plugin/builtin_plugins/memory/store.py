@@ -198,20 +198,52 @@ class MemoryStore:
             source_owner = row["owner_type"] if row["owner_type"] == "user" else "self"
             source_user = json.loads(row["owner_id"])[-1] if source_owner == "user" else None
             source_id = scope.source(source_owner, source_user, source_message_id)
-            kind = row["kind"] if kind is None else kind
-            importance = row["importance"] if importance is None else importance
-            core = bool(row["core"]) if core is None else core
-            status = row["status"] if status is None else status
-            expiry = None if clear_expiry else (row["expires_at"] if expires_at is None else expires_at)
-            validate(text, kind, importance, core, expiry, status)
-            await db.execute(
-                "UPDATE memories SET text=?,normalized=?,kind=?,importance=?,core=?,status=?,expires_at=?,"
-                "source_message_id=?,updated_at=?,revision=revision+1 WHERE id=?",
-                (text.strip(), normalize(text), kind, importance, int(core), status, expiry,
-                 source_id, time.time(), memory_id),
+            await self._write_update(
+                db, row, text=text, kind=kind, importance=importance, core=core, status=status,
+                expires_at=expires_at, clear_expiry=clear_expiry, source_message_id=source_id,
             )
-            await self._index(db, memory_id, text)
         return revision + 1
+
+    async def _write_update(self, db, row, *, text, kind=None, importance=None, core=None,
+                            status=None, expires_at=None, clear_expiry=False, source_message_id=None):
+        """Apply validated content changes and rebuild the index in the caller's transaction."""
+        kind = row["kind"] if kind is None else kind
+        importance = row["importance"] if importance is None else importance
+        core = bool(row["core"]) if core is None else core
+        status = row["status"] if status is None else status
+        expiry = None if clear_expiry else (row["expires_at"] if expires_at is None else expires_at)
+        validate(text, kind, importance, core, expiry, status)
+        text = text.strip()
+        await db.execute(
+            "UPDATE memories SET text=?,normalized=?,kind=?,importance=?,core=?,status=?,expires_at=?,"
+            "source_message_id=?,updated_at=?,revision=revision+1 WHERE id=?",
+            (text, normalize(text), kind, importance, int(core), status, expiry,
+             source_message_id, time.time(), row["id"]),
+        )
+        await self._index(db, row["id"], text)
+
+    async def admin_update(self, memory_id, revision, *, text, kind=None, importance=None,
+                           core=None, status=None, expires_at=None, clear_expiry=False):
+        """Update an operator-selected record without changing its ownership or provenance."""
+        if type(revision) is not int or revision < 1:
+            raise MemoryInputError("invalid_revision")
+        async with self.connection(write=True) as db:
+            async with db.execute("SELECT * FROM memories WHERE id=?", (memory_id,)) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                raise MemoryInputError("not_found")
+            if row["revision"] != revision:
+                raise MemoryInputError("conflict")
+            await self._write_update(
+                db, row, text=text, kind=kind, importance=importance, core=core, status=status,
+                expires_at=expires_at, clear_expiry=clear_expiry,
+                source_message_id=row["source_message_id"],
+            )
+            async with db.execute(
+                "SELECT m.*, (SELECT COUNT(*) FROM memory_terms WHERE memory_id=m.id) AS terms "
+                "FROM memories m WHERE id=?", (memory_id,),
+            ) as cursor:
+                return dict(await cursor.fetchone())
 
     async def remove(self, scope, memory_id, revision, source_message_id=None):
         if type(revision) is not int or revision < 1:

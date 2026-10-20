@@ -315,7 +315,7 @@ class MemoryPlugin(BasePlugin):
             logger.warning("Memory recall unavailable (%s)", type(exc).__name__)
 
     # ------------------------------------------------------------------
-    # Maintenance page (WebUI) and its read-only API.
+    # Maintenance page (WebUI) and its authenticated operator API.
     #
     # The page is mounted on a non-empty sub-path: a root mount is stored by
     # Starlette without a trailing slash, which the host's page cleanup cannot
@@ -390,6 +390,14 @@ class MemoryPlugin(BasePlugin):
             return webui.serialize(row) | {"terms": row.get("terms", 0)}
 
         return await self._admin(load)
+
+    @register.api(method="POST", path="/memory/records/{memory_id}")
+    async def api_record_update(self, memory_id: str, payload: dict):
+        async def save():
+            row = await self.store.admin_update(memory_id, **webui.parse_update(payload))
+            return webui.serialize(row) | {"terms": row["terms"]}
+
+        return await self._admin(save)
 
     @register.api(method="GET", path="/memory/facets")
     async def api_facets(self):

@@ -104,10 +104,33 @@
 </div>
 
 <div class="modal-mask hidden" id="modal-mask">
-  <div class="modal" role="dialog" aria-modal="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <h3 id="modal-title"></h3>
     <div id="modal-body"></div>
+    <form id="memory-editor" hidden>
+      <div class="field">
+        <label for="e-text" id="l-e-text"></label>
+        <textarea id="e-text" rows="5" required aria-describedby="edit-text-hint"></textarea>
+        <p class="hint" id="edit-text-hint"></p>
+      </div>
+      <div class="edit-grid">
+        <div class="field"><label for="e-kind" id="l-e-kind"></label><select id="e-kind"></select></div>
+        <div class="field"><label for="e-status" id="l-e-status"></label><select id="e-status"></select></div>
+        <div class="field"><label for="e-importance" id="l-e-importance"></label><select id="e-importance"></select></div>
+        <div class="field"><label for="e-core" id="l-e-core"></label><select id="e-core"></select></div>
+      </div>
+      <div class="field">
+        <label for="e-expires" id="l-e-expires"></label>
+        <input type="datetime-local" step="1" id="e-expires" aria-describedby="edit-expiry-hint">
+        <p class="hint" id="edit-expiry-hint"></p>
+      </div>
+    </form>
+    <div id="edit-feedback" role="status" aria-live="polite"></div>
     <div class="modal-actions">
+      <button type="button" class="btn ghost" id="edit-reload" hidden></button>
+      <button type="button" class="btn ghost" id="edit-cancel" hidden></button>
+      <button type="submit" form="memory-editor" class="btn" id="edit-save" hidden></button>
+      <button type="button" class="btn" id="edit-start" hidden></button>
       <button type="button" class="btn ghost" id="modal-close"></button>
     </div>
   </div>
@@ -137,6 +160,12 @@ var state = {
   recallLoading: false,
   recallContexts: null,
   contextRequestId: 0,
+  detailRequestId: 0,
+  detailItem: null,
+  editDraft: null,
+  editSaving: false,
+  editError: null,
+  editSaved: false,
   renderers: { records: null, overview: null, detail: null },
 };
 
@@ -456,6 +485,7 @@ function describeRow(label, value) {
 }
 
 function renderDetail(item) {
+  renderEditor();
   var ownerText = I18N.value("owner", item.owner_type);
   var pairs = [];
   pairs = pairs.concat(describeRow(I18N.t("detail.text"), node("div", { class: "block", text: item.text })));
@@ -489,24 +519,154 @@ function renderDetail(item) {
   $("modal-title").textContent = I18N.t("detail.title");
 }
 
+function expiryInput(epoch) {
+  if (!epoch) return "";
+  var date = new Date(Number(epoch) * 1000);
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) +
+    "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
+}
+
+function editorOptions(id, values, group, selected) {
+  var select = $(id);
+  clear(select);
+  values.forEach(function (value) {
+    select.appendChild(node("option", { value: value,
+      text: group ? I18N.value(group, value) : String(value) }));
+  });
+  select.value = selected;
+}
+
+function renderEditor() {
+  var draft = state.editDraft;
+  var editing = !!draft;
+  $("memory-editor").hidden = !editing;
+  el.modalBody.hidden = editing;
+  $("edit-start").hidden = !state.detailItem || editing;
+  $("edit-start").textContent = I18N.t("edit.start");
+  $("edit-cancel").hidden = !editing;
+  $("edit-cancel").textContent = I18N.t("edit.cancel");
+  $("edit-save").hidden = !editing;
+  $("edit-save").textContent = I18N.t(state.editSaving ? "edit.saving" : "edit.save");
+  $("edit-reload").hidden = state.editError !== "conflict";
+  $("edit-reload").textContent = I18N.t("edit.reload");
+  ["modal-close", "edit-cancel", "edit-save", "edit-reload"].forEach(function (id) {
+    $(id).disabled = state.editSaving;
+  });
+  clear($("edit-feedback"));
+  if (state.editError) $("edit-feedback").appendChild(node("p", {
+    class: "edit-error", text: describeError(state.editError),
+  }));
+  else if (state.editSaved) $("edit-feedback").appendChild(node("p", {
+    class: "hint", text: I18N.t("edit.saved"),
+  }));
+  if (!draft) return;
+  ["text", "kind", "status", "importance", "core", "expires"].forEach(function (key) {
+    var labels = { text: "detail.text", kind: "detail.kind", status: "detail.status",
+      importance: "detail.importance", core: "detail.core", expires: "detail.expires" };
+    $("l-e-" + key).textContent = I18N.t(labels[key]);
+    $("e-" + key).disabled = state.editSaving;
+  });
+  $("edit-text-hint").textContent = I18N.t("edit.text_hint");
+  $("edit-expiry-hint").textContent = I18N.t("edit.expiry_hint");
+  $("e-text").value = draft.text;
+  $("e-expires").value = draft.expires;
+  editorOptions("e-kind", KINDS, "kind", draft.kind);
+  editorOptions("e-status", STATUSES, "status", draft.status);
+  editorOptions("e-importance", [1, 2, 3, 4, 5], null, String(draft.importance));
+  editorOptions("e-core", ["1", "0"], null, draft.core ? "1" : "0");
+  $("e-core").options[0].textContent = I18N.t("common.yes");
+  $("e-core").options[1].textContent = I18N.t("common.no");
+  MemorySelect.syncAll();
+}
+
+function startEditing() {
+  var item = state.detailItem;
+  if (!item || state.editSaving) return;
+  state.editDraft = { text: item.text, kind: item.kind, status: item.status,
+    importance: item.importance, core: item.core, expires: expiryInput(item.expires_at) };
+  state.editError = null;
+  state.editSaved = false;
+  renderEditor();
+  $("e-text").focus();
+}
+
+function saveEditing(event) {
+  event.preventDefault();
+  if (!state.editDraft || state.editSaving) return;
+  var draft = state.editDraft;
+  var item = state.detailItem;
+  var expiry = draft.expires === expiryInput(item.expires_at) ? item.expires_at :
+    (draft.expires ? new Date(draft.expires).getTime() / 1000 : null);
+  state.editError = null;
+  if (!draft.text.trim() || Array.from(draft.text).length > 4000 || draft.text.indexOf("\0") !== -1) {
+    state.editError = "invalid_text";
+  } else if (expiry !== null && (!Number.isFinite(expiry) || expiry <= 0)) {
+    state.editError = "invalid_expiry";
+  }
+  if (state.editError) { renderEditor(); return; }
+  state.editSaving = true;
+  renderEditor();
+  var requestId = state.detailRequestId;
+  request("/memory/records/" + encodeURIComponent(item.id), null, {
+    revision: item.revision, text: draft.text, kind: draft.kind, status: draft.status,
+    importance: draft.importance, core: draft.core, expires_at: expiry,
+  }).then(function (updated) {
+    if (requestId !== state.detailRequestId) return;
+    state.editSaving = false;
+    state.editDraft = null;
+    state.detailItem = updated;
+    state.editSaved = true;
+    renderDetail(updated);
+    loadRecords();
+    if (state.renderers.overview) loadOverview();
+    resetRecallResult();
+  }).catch(function (error) {
+    if (requestId !== state.detailRequestId) return;
+    state.editSaving = false;
+    state.editError = error.message;
+    renderEditor();
+  });
+}
+
 function openDetail(id) {
+  if (state.editSaving) return;
+  var requestId = ++state.detailRequestId;
+  state.detailItem = null;
+  state.editDraft = null;
+  state.editError = null;
+  state.editSaved = false;
   el.modalMask.classList.remove("hidden");
   renderView("detail", function () {
+    if (state.detailItem) { renderDetail(state.detailItem); return; }
+    renderEditor();
     clear(el.modalBody);
     el.modalBody.appendChild(loadingState());
     $("modal-title").textContent = I18N.t("detail.title");
   });
   request("/memory/records/" + encodeURIComponent(id)).then(function (item) {
-    renderView("detail", function () { renderDetail(item); });
+    if (requestId !== state.detailRequestId) return;
+    state.detailItem = item;
+    renderDetail(item);
   }).catch(function (error) {
+    if (requestId !== state.detailRequestId) return;
     renderView("detail", function () {
+      renderEditor();
       clear(el.modalBody);
       el.modalBody.appendChild(errorState(error.message, function () { openDetail(id); }));
     });
   });
 }
 
-function closeModal() { el.modalMask.classList.add("hidden"); }
+function closeModal() {
+  if (state.editSaving) return;
+  ++state.detailRequestId;
+  state.editDraft = null;
+  state.detailItem = null;
+  state.editError = null;
+  state.editSaved = false;
+  state.renderers.detail = null;
+  el.modalMask.classList.add("hidden");
+}
 
 /* ------------------------------------------------------------------ */
 /*  Overview tab                                                       */
@@ -764,12 +924,28 @@ function bind() {
     payload.messages = $("r-messages").value.split(/\r?\n/).slice(-3);
     runRecall(payload);
   });
+  $("edit-start").addEventListener("click", startEditing);
+  $("edit-cancel").addEventListener("click", function () {
+    if (state.editSaving) return;
+    state.editDraft = null;
+    state.editError = null;
+    renderDetail(state.detailItem);
+  });
+  $("edit-reload").addEventListener("click", function () { openDetail(state.detailItem.id); });
+  $("memory-editor").addEventListener("submit", saveEditing);
+  ["text", "kind", "status", "importance", "core", "expires"].forEach(function (key) {
+    $("e-" + key).addEventListener("input", function () {
+      if (!state.editDraft) return;
+      var value = $("e-" + key).value;
+      state.editDraft[key] = key === "core" ? value === "1" : (key === "importance" ? Number(value) : value);
+    });
+  });
   $("modal-close").addEventListener("click", closeModal);
   el.modalMask.addEventListener("click", function (event) {
     if (event.target === el.modalMask) closeModal();
   });
   document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape" && !el.modalMask.classList.contains("hidden")) closeModal();
+    if (event.key === "Escape" && !event.defaultPrevented && !el.modalMask.classList.contains("hidden")) closeModal();
   });
 }
 

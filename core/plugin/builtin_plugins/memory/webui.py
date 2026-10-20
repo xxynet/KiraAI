@@ -183,3 +183,26 @@ def parse_recall_preview(payload: dict) -> tuple[dict, list[str]]:
     ):
         raise MemoryInputError("invalid_recall")
     return filters, messages
+
+
+def parse_update(payload: dict) -> dict:
+    """Only content fields are writable; scope and source attribution stay immutable."""
+    allowed = {"revision", "text", "kind", "importance", "core", "status", "expires_at"}
+    if set(payload) - allowed:
+        raise MemoryInputError("invalid_update")
+    revision = payload.get("revision")
+    if type(revision) is not int or revision < 1:
+        raise MemoryInputError("invalid_revision")
+    if "text" not in payload:
+        raise MemoryInputError("invalid_text")
+    changes = dict(payload)
+    for key in ("kind", "status"):
+        if key in payload and (not isinstance(payload[key], str) or payload[key] not in _allowed(key)):
+            raise MemoryInputError("invalid_category")
+    if "importance" in payload and (type(payload["importance"]) is not int or not 1 <= payload["importance"] <= 5):
+        raise MemoryInputError("invalid_priority")
+    if "core" in payload and type(payload["core"]) is not bool:
+        raise MemoryInputError("invalid_priority")
+    if "expires_at" in payload and payload["expires_at"] is None:
+        changes["clear_expiry"] = True
+    return changes
