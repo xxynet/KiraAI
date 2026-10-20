@@ -1001,7 +1001,7 @@ async def test_operator_update_preserves_scope_and_source_and_reindexes(tmp_path
     assert changed["importance"] == 5 and changed["core"] is True
     assert changed["expires_at"] is None and changed["terms"] > 0
     for key in ("id", "owner_type", "owner_id", "persona_id", "namespace", "session_id",
-                "source_message_id", "created_at", "origin", "legacy_line"):
+                "source_message_id", "created_at", "origin"):
         assert changed[key] == original[key], key
     assert not await plugin.store.search(context, "coffee", include_inactive=True)
     assert (await plugin.store.search(context, "jasmine", include_inactive=True))[0]["id"] == row["id"]
@@ -1027,7 +1027,7 @@ async def test_operator_update_legacy_and_concurrent_edits(tmp_path, monkeypatch
     legacy = (await plugin.store.admin_list())["items"][0]
     changed = await plugin.api_record_update(legacy["id"], {"revision": 1, "text": "legacy tea"})
     assert changed["origin"] == "legacy" and changed["owner_id"] == "shared"
-    assert changed["source_message_id"] is None and changed["legacy_line"] == legacy["legacy_line"]
+    assert changed["source_message_id"] is None
     assert (await plugin.store.search(scope(), "tea"))[0]["id"] == legacy["id"]
     row, _ = await plugin.store.add(scope(), text="original")
     results = await asyncio.gather(

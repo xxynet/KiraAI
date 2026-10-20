@@ -87,7 +87,7 @@ class MemoryStore:
                     core INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
                     expires_at REAL, created_at REAL NOT NULL, updated_at REAL NOT NULL,
                     revision INTEGER NOT NULL DEFAULT 1, origin TEXT NOT NULL DEFAULT 'conversation',
-                    term_count INTEGER NOT NULL DEFAULT 1, legacy_line INTEGER
+                    term_count INTEGER NOT NULL DEFAULT 1
                 );
                 CREATE INDEX IF NOT EXISTS memory_scope ON memories(persona_id, namespace, session_id);
                 CREATE INDEX IF NOT EXISTS memory_origin ON memories(origin);
@@ -111,16 +111,16 @@ class MemoryStore:
             async with db.execute("SELECT 1 FROM memory_meta WHERE key = 'core_txt_migration'") as cursor:
                 if await cursor.fetchone():
                     return 0
-            for index, line in enumerate(content.splitlines()):
+            for line in content.splitlines():
                 if not line.strip():
                     continue
                 now = time.time()
                 memory_id = uuid.uuid4().hex
                 await db.execute(
                     "INSERT INTO memories (id,text,normalized,kind,owner_type,owner_id,persona_id,"
-                    "namespace,session_id,core,created_at,updated_at,origin,legacy_line) "
-                    "VALUES (?,?,?,'semantic','legacy','shared','','','',1,?,?,'legacy',?)",
-                    (memory_id, line, normalize(line), now, now, index),
+                    "namespace,session_id,core,created_at,updated_at,origin) "
+                    "VALUES (?,?,?,'semantic','legacy','shared','','','',1,?,?,'legacy')",
+                    (memory_id, line, normalize(line), now, now),
                 )
                 await self._index(db, memory_id, line)
                 count += 1

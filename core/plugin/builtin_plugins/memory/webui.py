@@ -17,7 +17,7 @@ from .scope import MemoryInputError, MemoryScope
 PUBLIC_FIELDS = (
     "id", "revision", "text", "kind", "owner_type", "owner_id", "persona_id",
     "namespace", "session_id", "source_message_id", "importance", "core", "status",
-    "expires_at", "created_at", "updated_at", "origin", "legacy_line",
+    "expires_at", "created_at", "updated_at", "origin",
 )
 
 FILTERS = ("kind", "status", "owner_type", "origin")

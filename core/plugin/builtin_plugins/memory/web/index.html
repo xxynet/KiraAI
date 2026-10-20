@@ -528,9 +528,6 @@ function renderDetail(item) {
     pairs = pairs.concat(describeRow(I18N.t("detail.source_message"), node("span", { class: "mono", text: item.source_message_id })));
   }
   pairs = pairs.concat(describeRow(I18N.t("detail.origin"), badge(I18N.value("origin", item.origin), "gray")));
-  if (item.legacy_line !== null && item.legacy_line !== undefined) {
-    pairs = pairs.concat(describeRow(I18N.t("detail.legacy_line"), String(item.legacy_line)));
-  }
   pairs = pairs.concat(describeRow(I18N.t("detail.created"), formatTime(item.created_at)));
   pairs = pairs.concat(describeRow(I18N.t("detail.updated"), formatTime(item.updated_at)));
   pairs = pairs.concat(describeRow(I18N.t("detail.expires"), item.expires_at
