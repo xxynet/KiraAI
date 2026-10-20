@@ -432,16 +432,6 @@ class MemoryStore:
         record["terms"] = len(indexed)
         return record
 
-    async def recall_context(self, session_id):
-        """Find the most recently used memory namespace for a session."""
-        async with self.connection() as db:
-            async with db.execute(
-                "SELECT namespace FROM memories WHERE session_id=? AND origin='conversation' "
-                "GROUP BY namespace ORDER BY MAX(updated_at) DESC, namespace LIMIT 1", (session_id,),
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else None
-
     async def recall_users(self, session_id, namespace):
         """List known user owners without loading memory text."""
         async with self.connection() as db:
@@ -458,8 +448,8 @@ class MemoryStore:
                 parts = json.loads(owner)
             except (TypeError, ValueError):
                 continue
-            if isinstance(parts, list) and len(parts) == 4 and isinstance(parts[3], str):
-                users.append(parts[3])
+            if isinstance(parts, list) and len(parts) == 2 and isinstance(parts[1], str):
+                users.append(parts[1])
         return users
 
     async def facets(self) -> dict:

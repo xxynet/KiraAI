@@ -27,23 +27,23 @@ def _owner_labels(owner_type: str, owner_id: str) -> dict:
     """Split an ownership key into readable parts.
 
     ``scope.identity`` stores the owning coordinates as a JSON array
-    (``[platform, adapter, account, user|group]``); ``self`` owners store the
+    (``[adapter, user|group]``); ``self`` owners store the
     bare persona ID and legacy rows store ``"shared"``.
     """
     if owner_type in ("self", "legacy"):
-        return {"owner_id": owner_id, "platform": None, "adapter": None,
-                "account": None, "subject": None}
+        return {"owner_id": owner_id, "adapter": None,
+                "subject": None}
     try:
         parts = _loads(owner_id)
     except (ValueError, TypeError):
-        return {"owner_id": owner_id, "platform": None, "adapter": None,
-                "account": None, "subject": None}
-    if not isinstance(parts, list) or len(parts) < 4:
-        return {"owner_id": owner_id, "platform": None, "adapter": None,
-                "account": None, "subject": None}
-    platform, adapter, account, subject = (str(part) for part in parts[:4])
-    return {"owner_id": owner_id, "platform": platform, "adapter": adapter,
-            "account": account, "subject": subject}
+        return {"owner_id": owner_id, "adapter": None,
+                "subject": None}
+    if not isinstance(parts, list) or len(parts) != 2:
+        return {"owner_id": owner_id, "adapter": None,
+                "subject": None}
+    adapter, subject = (str(part) for part in parts)
+    return {"owner_id": owner_id, "adapter": adapter,
+            "subject": subject}
 
 
 def _loads(value: str):
@@ -134,9 +134,9 @@ def parse_recall(payload: dict) -> tuple[MemoryScope, list[str]]:
         coordinates = _loads(namespace)
     except (ValueError, TypeError) as exc:
         raise MemoryInputError("invalid_recall") from exc
-    if not isinstance(coordinates, list) or len(coordinates) != 3:
+    if not isinstance(coordinates, list) or len(coordinates) != 1:
         raise MemoryInputError("invalid_recall")
-    platform, adapter, account = [identifier(part) for part in coordinates]
+    adapter = identifier(coordinates[0])
     parts = session_id.split(":", 2)
     if len(parts) != 3 or parts[0] != adapter or parts[1] not in {"dm", "gm"} or not parts[2]:
         raise MemoryInputError("invalid_recall")
@@ -154,7 +154,7 @@ def parse_recall(payload: dict) -> tuple[MemoryScope, list[str]]:
     ):
         raise MemoryInputError("invalid_recall")
     return MemoryScope(
-        persona_id, session_id, adapter, platform, account, users,
+        persona_id, session_id, adapter, users,
         parts[2] if parts[1] == "gm" else None, (),
     ), messages
 

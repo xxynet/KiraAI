@@ -428,20 +428,11 @@ class MemoryPlugin(BasePlugin):
             if len(session_id) > 512 or len(parts) != 3 or parts[1] not in {"dm", "gm"} or not parts[0] or not parts[2]:
                 raise MemoryInputError("invalid_recall")
             page = await self.ctx.message_history.get_messages(session_id=session_id, direction="incoming", limit=50)
-            messages = [message for message in page.messages
-                        if not message.is_notice and message.self_id is not None
-                        and str(message.self_id) and message.platform]
-            if messages:
-                latest = messages[0]
-                namespace = identity(latest.platform, parts[0], str(latest.self_id))
-            else:
-                namespace = await self.store.recall_context(session_id)
-            if not namespace:
-                raise MemoryInputError("recall_context_unavailable")
+            messages = [message for message in page.messages if not message.is_notice]
+            namespace = identity(parts[0])
             speakers = {}
             for message in messages:
-                if (identity(message.platform, parts[0], str(message.self_id)) == namespace
-                        and message.sender_id and message.sender_id != "unknown"):
+                if message.sender_id and message.sender_id != "unknown":
                     uid = str(message.sender_id)
                     speakers.setdefault(uid, {"id": uid, "name": message.sender_name or uid})
             for uid in await self.store.recall_users(session_id, namespace):

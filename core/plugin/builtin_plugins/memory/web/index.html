@@ -394,10 +394,10 @@ function renderRecords(data) {
       badge(I18N.value("owner", item.owner_type), tone("owner", item.owner_type)),
     ]);
     if (item.subject) owner.appendChild(node("div", { class: "cell-sub", text: item.subject }));
-    if (item.platform) owner.appendChild(node("div", { class: "cell-sub", text: item.platform }));
+    if (item.adapter) owner.appendChild(node("div", { class: "cell-sub", text: item.adapter }));
 
     var content = node("div", { class: "cell-text", text: item.text });
-    var metaText = item.platform ? item.platform + " · " + item.session_id : item.session_id;
+    var metaText = item.adapter ? item.adapter + " · " + item.session_id : item.session_id;
     var meta = node("div", { class: "cell-sub", text: metaText });
 
     return node("tr", { "data-id": item.id, onclick: function () { openDetail(item.id); } }, [
@@ -465,7 +465,7 @@ function renderDetail(item) {
   pairs = pairs.concat(describeRow(I18N.t("detail.core"), item.core ? I18N.t("common.yes") : I18N.t("common.no")));
   pairs = pairs.concat(describeRow(I18N.t("detail.owner"), ownerText));
   if (item.subject) pairs = pairs.concat(describeRow(I18N.t("detail.owner_key"), node("span", { class: "mono", text: item.owner_id })));
-  if (item.platform) pairs = pairs.concat(describeRow("platform", node("span", { class: "mono", text: item.platform })));
+  if (item.adapter) pairs = pairs.concat(describeRow(I18N.t("detail.adapter"), node("span", { class: "mono", text: item.adapter })));
   pairs = pairs.concat(describeRow(I18N.t("detail.persona"), node("span", { class: "mono", text: item.persona_id || "—" })));
   pairs = pairs.concat(describeRow(I18N.t("detail.namespace"), node("span", { class: "mono", text: item.namespace || "—" })));
   pairs = pairs.concat(describeRow(I18N.t("detail.session"), node("span", { class: "mono", text: item.session_id || "—" })));

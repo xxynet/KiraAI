@@ -17,8 +17,6 @@ class MemoryScope:
     persona_id: str
     session_id: str
     adapter: str
-    platform: str
-    account: str
     users: tuple[str, ...]
     group_id: str | None
     sources: tuple[tuple[str, str], ...]
@@ -33,9 +31,6 @@ class MemoryScope:
             raise MemoryInputError("context_unavailable")
         messages = getattr(event, "messages", ())
         if not messages:
-            raise MemoryInputError("context_unavailable")
-        accounts = {str(m.self_id) for m in messages if m.self_id is not None}
-        if len(accounts) != 1:
             raise MemoryInputError("context_unavailable")
         sources = []
         for message in messages:
@@ -52,26 +47,26 @@ class MemoryScope:
                 raise MemoryInputError("context_unavailable")
             sources.append((str(message.message_id), user_id))
         return cls(
-            str(persona_id), session.sid, adapter.name, adapter.platform,
-            next(iter(accounts)), tuple(sorted({user for _, user in sources})),
+            str(persona_id), session.sid, adapter.name,
+            tuple(sorted({user for _, user in sources})),
             str(session.session_id) if session.session_type == "gm" else None,
             tuple(sources),
         )
 
     @property
     def namespace(self) -> str:
-        return identity(self.platform, self.adapter, self.account)
+        return identity(self.adapter)
 
     def owner(self, owner_type: str, user_id: str | None = None) -> str:
         if owner_type == "self":
             return self.persona_id
         if owner_type == "group" and self.group_id:
-            return identity(self.platform, self.adapter, self.account, self.group_id)
+            return identity(self.adapter, self.group_id)
         if owner_type == "user":
             if user_id is None and len(self.users) == 1:
                 user_id = self.users[0]
             if user_id in self.users:
-                return identity(self.platform, self.adapter, self.account, user_id)
+                return identity(self.adapter, user_id)
         raise MemoryInputError("invalid_owner")
 
     def source(self, owner_type: str, user_id: str | None, message_id: str | None) -> str:
