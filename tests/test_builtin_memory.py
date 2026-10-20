@@ -391,7 +391,8 @@ def test_page_assets_are_present_and_reference_each_other():
     html = (root / "index.html").read_text(encoding="utf-8")
     assert "./theme.css" in html and "./i18n.js" in html
     assert "/plugin-bridge.js" in html
-    for name in ("theme.css", "i18n.js"):
+    for name in ("theme.css", "i18n.js", "custom-select.css", "custom-select.js"):
+        assert f"./{name}" in html
         assert (root / name).stat().st_size > 0
 
 

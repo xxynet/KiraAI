@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memory</title>
 <link rel="stylesheet" href="./theme.css">
+<link rel="stylesheet" href="./custom-select.css">
 </head>
 <body>
 <div class="shell">
@@ -118,6 +119,7 @@
 </div>
 
 <script src="./i18n.js"></script>
+<script src="./custom-select.js"></script>
 <script src="/plugin-bridge.js"></script>
 <script>
 "use strict";
@@ -841,12 +843,15 @@ function applyLocale(locale) {
       var render = state.renderers[name];
       if (render) render();
     });
+    MemorySelect.syncAll();
+
   }
 }
 
 function start() {
   bind();
   renderChrome();
+  MemorySelect.mountAll();
   renderView("recall", function () {
     clear($("recall-body"));
     $("recall-body").appendChild(node("p", { class: "muted", text: I18N.t("recall.idle") }));
