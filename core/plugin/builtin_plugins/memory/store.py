@@ -12,7 +12,7 @@ import uuid
 import aiosqlite
 
 from .scope import MemoryInputError, MemoryScope
-from .search import MAX_CANDIDATES, normalize, terms
+from .search import MAX_CANDIDATES, bm25, normalize, term_frequencies, terms
 
 KINDS = {"semantic", "episodic", "procedural"}
 STATUSES = {"active", "completed", "cancelled", "superseded"}
@@ -59,6 +59,7 @@ class MemoryStore:
     async def connection(self, *, write=False):
         async with aiosqlite.connect(self.path, timeout=10) as db:
             db.row_factory = aiosqlite.Row
+            await db.create_function("memory_bm25", 5, bm25, deterministic=True)
             await db.execute("PRAGMA foreign_keys = ON")
             if write:
                 await db.execute("BEGIN IMMEDIATE")
@@ -93,7 +94,7 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS memory_origin ON memories(origin);
                 CREATE TABLE IF NOT EXISTS memory_terms (
                     memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-                    term TEXT NOT NULL, PRIMARY KEY(memory_id, term)
+                    term TEXT NOT NULL, frequency INTEGER NOT NULL CHECK(frequency > 0), PRIMARY KEY(memory_id, term)
                 );
                 CREATE INDEX IF NOT EXISTS memory_term_lookup ON memory_terms(term, memory_id);
                 CREATE TABLE IF NOT EXISTS memory_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -130,12 +131,13 @@ class MemoryStore:
     @staticmethod
     async def _index(db, memory_id, text):
         # Legacy lines may exceed the new write limit; index their complete content off-loop.
-        indexed = await asyncio.to_thread(terms, text)
+        indexed = await asyncio.to_thread(term_frequencies, text)
         await db.execute("DELETE FROM memory_terms WHERE memory_id = ?", (memory_id,))
         await db.executemany(
-            "INSERT INTO memory_terms VALUES (?, ?)", ((memory_id, term) for term in indexed),
+            "INSERT INTO memory_terms(memory_id,term,frequency) VALUES (?, ?, ?)",
+            ((memory_id, term, frequency) for term, frequency in indexed.items()),
         )
-        await db.execute("UPDATE memories SET term_count = ? WHERE id = ?", (max(1, len(indexed)), memory_id))
+        await db.execute("UPDATE memories SET term_count = ? WHERE id = ?", (max(1, sum(indexed.values())), memory_id))
 
     @staticmethod
     def _visible(scope):
@@ -319,6 +321,27 @@ class MemoryStore:
             predicate += " AND m.core=1"
         return predicate, params
 
+    @staticmethod
+    def _ranked_query(predicate, params, query_terms):
+        """Compute BM25 statistics over eligible memories, without loading texts into Python."""
+        values = ",".join("(?,?)" for _ in query_terms)
+        sql = (
+            f"WITH q(term,weight) AS (VALUES {values}), corpus AS ("
+            f"SELECT m.id,m.term_count FROM memories m WHERE {predicate}"
+            "), corpus_stats AS ("
+            "SELECT COUNT(*) AS documents, AVG(term_count) AS average_length FROM corpus"
+            "), query_stats AS ("
+            "SELECT q.term,q.weight,COUNT(*) AS document_frequency FROM q "
+            "JOIN memory_terms t ON t.term=q.term JOIN corpus c ON c.id=t.memory_id "
+            "GROUP BY q.term,q.weight"
+            "), ranked AS ("
+            "SELECT c.id,SUM(q.weight * memory_bm25(t.frequency,c.term_count,"
+            "s.average_length,s.documents,q.document_frequency)) AS score "
+            "FROM query_stats q JOIN memory_terms t ON t.term=q.term "
+            "JOIN corpus c ON c.id=t.memory_id CROSS JOIN corpus_stats s GROUP BY c.id) "
+        )
+        return sql, [value for pair in query_terms for value in pair] + list(params)
+
     async def _search(self, predicate, params, query="", *, limit=8, kind=None, owner_type=None,
                       core_only=False, include_inactive=False, offset=0, candidate_pool=False):
         if not isinstance(query, str) or len(query) > 512:
@@ -333,15 +356,11 @@ class MemoryStore:
         if query.strip() and not query_terms:
             return []
         if query_terms:
-            values = ",".join("(?,?)" for _ in query_terms)
+            ranked, params = self._ranked_query(predicate, params, query_terms)
             sql = (
-                f"WITH q(term,weight) AS (VALUES {values}) "
-                f"SELECT m.*, SUM(q.weight) / (1.0 + 0.02*m.term_count) AS score "
-                f"FROM q JOIN memory_terms t ON t.term=q.term JOIN memories m ON m.id=t.memory_id "
-                f"WHERE {predicate} GROUP BY m.id "
-                "ORDER BY score DESC,m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?"
+                ranked + "SELECT m.*,ranked.score FROM ranked JOIN memories m ON m.id=ranked.id "
+                "ORDER BY ranked.score DESC,m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?"
             )
-            params = [value for pair in query_terms for value in pair] + params
         else:
             sql = f"SELECT m.* FROM memories m WHERE {predicate} ORDER BY m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?"
         async with self.connection() as db:
@@ -444,15 +463,7 @@ class MemoryStore:
 
         async with self.connection() as db:
             if query_terms:
-                values = ",".join("(?,?)" for _ in query_terms)
-                ranked = (
-                    f"WITH q(term,weight) AS (VALUES {values}), ranked AS ("
-                    "SELECT m.id, SUM(q.weight) / (1.0 + 0.02*m.term_count) AS score "
-                    "FROM q JOIN memory_terms t ON t.term=q.term "
-                    "JOIN memories m ON m.id=t.memory_id "
-                    f"WHERE {where} GROUP BY m.id) "
-                )
-                query_params = [value for pair in query_terms for value in pair] + params
+                ranked, query_params = self._ranked_query(where, params, query_terms)
                 async with db.execute(ranked + "SELECT COUNT(*) FROM ranked", query_params) as cursor:
                     total = (await cursor.fetchone())[0]
                 # Rank and paginate in SQLite's worker thread; only load the requested page.

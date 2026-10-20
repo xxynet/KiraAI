@@ -1,5 +1,7 @@
 """Language-neutral lexical indexing for the built-in memory store."""
 
+from collections import Counter
+import math
 import unicodedata
 
 # Cover the largest supported result page: offset 10000 plus 50 records.
@@ -10,8 +12,8 @@ def normalize(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
 
 
-def terms(text: str, *, query: bool = False) -> dict[str, float]:
-    """Combine whole words and character grams without language packages."""
+def _tokens(text: str, *, query: bool = False):
+    """Preserve whole-word and character-gram matching, including repeated occurrences."""
     words = []
     current = []
     for char in normalize(text):
@@ -22,17 +24,32 @@ def terms(text: str, *, query: bool = False) -> dict[str, float]:
             current = []
     if current:
         words.append("".join(current))
-    result = {}
     for word in words:
         if len(word) <= 128:
-            result["w:" + word] = 3.0
-        for size, weight in ((2, 1.0), (3, 1.5)):
+            yield "w:" + word
+        for size in (2, 3):
             for i in range(len(word) - size + 1):
-                result[f"g{size}:" + word[i:i + size]] = weight
+                yield f"g{size}:" + word[i:i + size]
         if not query or len(word) == 1:
             for char in word:
-                result["g1:" + char] = 0.25
-    return result
+                yield "g1:" + char
+
+
+def terms(text: str, *, query: bool = False) -> dict[str, float]:
+    """Keep the existing weights and deduplicate query terms."""
+    weights = {"w": 3.0, "g2": 1.0, "g3": 1.5, "g1": 0.25}
+    return {term: weights[term.split(":", 1)[0]] for term in _tokens(text, query=query)}
+
+
+def term_frequencies(text: str) -> dict[str, int]:
+    return dict(Counter(_tokens(text)))
+
+
+def bm25(frequency, length, average_length, documents, document_frequency):
+    """Score one term with positive Robertson IDF, k1=1.2 and b=0.75."""
+    idf = math.log1p((documents - document_frequency + 0.5) / (document_frequency + 0.5))
+    norm = 1.2 * (0.25 + 0.75 * length / average_length)
+    return idf * frequency * 2.2 / (frequency + norm)
 
 
 def fuse(lexical, semantic):
