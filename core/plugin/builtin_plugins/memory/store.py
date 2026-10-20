@@ -82,14 +82,14 @@ class MemoryStore:
                 CREATE TABLE IF NOT EXISTS memories (
                     id TEXT PRIMARY KEY, text TEXT NOT NULL, normalized TEXT NOT NULL,
                     kind TEXT NOT NULL, owner_type TEXT NOT NULL, owner_id TEXT NOT NULL,
-                    persona_id TEXT NOT NULL, namespace TEXT NOT NULL, session_id TEXT NOT NULL,
+                    persona_id TEXT NOT NULL, session_id TEXT NOT NULL,
                     source_message_id TEXT, importance INTEGER NOT NULL DEFAULT 3,
                     core INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
                     expires_at REAL, created_at REAL NOT NULL, updated_at REAL NOT NULL,
                     revision INTEGER NOT NULL DEFAULT 1, origin TEXT NOT NULL DEFAULT 'conversation',
                     term_count INTEGER NOT NULL DEFAULT 1
                 );
-                CREATE INDEX IF NOT EXISTS memory_scope ON memories(persona_id, namespace, session_id);
+                CREATE INDEX IF NOT EXISTS memory_scope ON memories(persona_id, session_id);
                 CREATE INDEX IF NOT EXISTS memory_origin ON memories(origin);
                 CREATE TABLE IF NOT EXISTS memory_terms (
                     memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
@@ -118,8 +118,8 @@ class MemoryStore:
                 memory_id = uuid.uuid4().hex
                 await db.execute(
                     "INSERT INTO memories (id,text,normalized,kind,owner_type,owner_id,persona_id,"
-                    "namespace,session_id,core,created_at,updated_at,origin) "
-                    "VALUES (?,?,?,'semantic','legacy','shared','','','',1,?,?,'legacy')",
+                    "session_id,core,created_at,updated_at,origin) "
+                    "VALUES (?,?,?,'semantic','legacy','shared','','',1,?,?,'legacy')",
                     (memory_id, line, normalize(line), now, now),
                 )
                 await self._index(db, memory_id, line)
@@ -151,10 +151,10 @@ class MemoryStore:
         now = time.time()
         async with self.connection(write=True) as db:
             async with db.execute(
-                "SELECT * FROM memories WHERE persona_id=? AND namespace=? AND session_id=? "
+                "SELECT * FROM memories WHERE persona_id=? AND session_id=? "
                 "AND owner_type=? AND owner_id=? AND normalized=? AND kind=? AND status='active' "
                 "AND (expires_at IS NULL OR expires_at>?) AND origin='conversation'",
-                (scope.persona_id, scope.namespace, scope.session_id, owner_type, owner_id,
+                (scope.persona_id, scope.session_id, owner_type, owner_id,
                  normalize(text), kind, now),
             ) as cursor:
                 existing = await cursor.fetchone()
@@ -163,10 +163,10 @@ class MemoryStore:
             memory_id = uuid.uuid4().hex
             await db.execute(
                 "INSERT INTO memories (id,text,normalized,kind,owner_type,owner_id,persona_id,"
-                "namespace,session_id,source_message_id,importance,core,expires_at,created_at,updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "session_id,source_message_id,importance,core,expires_at,created_at,updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (memory_id, text, normalize(text), kind, owner_type, owner_id, scope.persona_id,
-                 scope.namespace, scope.session_id, source_id, importance, int(core), expires_at, now, now),
+                 scope.session_id, source_id, importance, int(core), expires_at, now, now),
             )
             await self._index(db, memory_id, text)
             async with db.execute("SELECT * FROM memories WHERE id=?", (memory_id,)) as cursor:
@@ -477,14 +477,14 @@ class MemoryStore:
         record["terms"] = len(indexed)
         return record
 
-    async def recall_users(self, session_id, namespace):
+    async def recall_users(self, session_id):
         """List known user owners without loading memory text."""
         async with self.connection() as db:
             async with db.execute(
-                "SELECT owner_id FROM memories WHERE session_id=? AND namespace=? "
+                "SELECT owner_id FROM memories WHERE session_id=? "
                 "AND owner_type='user' AND origin='conversation' "
                 "GROUP BY owner_id ORDER BY MAX(updated_at) DESC, owner_id LIMIT 200",
-                (session_id, namespace),
+                (session_id,),
             ) as cursor:
                 owners = [row[0] for row in await cursor.fetchall()]
         users = []
@@ -498,7 +498,7 @@ class MemoryStore:
         return users
 
     async def facets(self) -> dict:
-        """Distinct personas/namespaces/sessions for the filter selectors."""
+        """Distinct personas/sessions for the filter selectors."""
         async with self.connection() as db:
             async def distinct(column):
                 async with db.execute(
@@ -506,13 +506,12 @@ class MemoryStore:
                 ) as cursor:
                     return [row[0] for row in await cursor.fetchall()]
             async with db.execute(
-                "SELECT DISTINCT persona_id, namespace, session_id FROM memories "
-                "WHERE origin='conversation' ORDER BY persona_id, namespace, session_id LIMIT 200"
+                "SELECT DISTINCT persona_id, session_id FROM memories "
+                "WHERE origin='conversation' ORDER BY persona_id, session_id LIMIT 200"
             ) as cursor:
                 contexts = [dict(row) for row in await cursor.fetchall()]
             return {
                 "contexts": contexts,
                 "personas": await distinct("persona_id"),
-                "namespaces": await distinct("namespace"),
                 "sessions": await distinct("session_id"),
             }

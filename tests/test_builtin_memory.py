@@ -116,6 +116,7 @@ async def test_scoped_ownership_and_legacy_exception(tmp_path):
     for other in (scope(persona="other"), scope(adapter="other"),
                   scope(target="bob", users=("bob",))):
         assert await store.get(other, private["id"]) is None
+        assert await store.get(other, own["id"]) is None
         assert len(await store.search(other)) == 1
         with pytest.raises(MemoryInputError, match="not_found"):
             await store.update(other, private["id"], 1, text="stolen")
@@ -646,7 +647,7 @@ async def test_recall_preview_matches_chat_payload_without_writes(tmp_path, monk
     await plugin.memory_add(event(), text="other persona coffee")
     plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-one")
     current = scope()
-    payload = {"persona_id": current.persona_id, "namespace": current.namespace,
+    payload = {"persona_id": current.persona_id, "adapter": current.adapter,
                "session_id": current.session_id, "messages": ["coffee 咖啡"]}
     before = plugin.store.path.read_bytes()
     result = await plugin.api_recall(payload)
@@ -678,7 +679,7 @@ async def test_recall_preview_group_speaker_visibility(tmp_path, monkeypatch):
         ))
         assert result["ok"]
     context = scope(session="gm", target="group-one", users=("alice", "bob"))
-    payload = {"persona_id": context.persona_id, "namespace": context.namespace,
+    payload = {"persona_id": context.persona_id, "adapter": context.adapter,
                "session_id": context.session_id, "messages": ["coffee"]}
     for users, expected in (([], {"group coffee", "self coffee"}),
                             (["alice"], {"group coffee", "self coffee", "alice coffee"}),
@@ -697,7 +698,7 @@ async def test_recall_preview_query_and_budget_match_runtime(tmp_path, monkeypat
     await plugin.memory_add(event(), text="x" * 3000, core=True)
     await plugin.memory_add(event(), text="coffee" * 500)
     context = scope()
-    payload = {"persona_id": context.persona_id, "namespace": context.namespace,
+    payload = {"persona_id": context.persona_id, "adapter": context.adapter,
                "session_id": context.session_id,
                "messages": ["a" * 200, "coffee " + "b" * 200, "c" * 200]}
     result = await plugin.api_recall(payload)
@@ -732,7 +733,7 @@ async def test_recall_api_auth_validation_and_contexts(tmp_path, monkeypatch):
     PluginWebBindings(manager, app).register_apis(plugin_id)
     path = f"/api/plugin/{plugin_id}/memory/recall"
     context = scope()
-    payload = {"persona_id": context.persona_id, "namespace": context.namespace,
+    payload = {"persona_id": context.persona_id, "adapter": context.adapter,
                "session_id": context.session_id, "messages": ["coffee"]}
     async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
                            base_url="http://test") as client:
@@ -749,9 +750,8 @@ async def test_recall_api_auth_validation_and_contexts(tmp_path, monkeypatch):
         assert broad.status_code == 200
         assert len(broad.json()["recalled"]) == 3
         for invalid in (
-            {"persona_id": ""}, {"namespace": "not-json"}, {"namespace": "{}"},
-            {"namespace": '[null]'}, {"namespace": '["test-platform", "test"]'},
-            {"namespace": '["test-platform","test","bot"]'},
+            {"persona_id": ""}, {"adapter": None}, {"adapter": []},
+            {"adapter": ""}, {"adapter": "wrong"}, {"adapter": "test:dm"},
             {"session_id": "wrong:dm:alice"},
             {"session_id": "test:other:alice"}, {"user_ids": "alice"},
             {"user_ids": ["bob"]}, {"user_ids": [None]}, {"messages": "coffee"},
@@ -763,7 +763,7 @@ async def test_recall_api_auth_validation_and_contexts(tmp_path, monkeypatch):
         response = await client.get(f"/api/plugin/{plugin_id}/memory/facets")
         contexts = response.json()["contexts"]
         assert len(contexts) == 1
-        assert {row["namespace"] for row in contexts} == {scope().namespace}
+        assert {row["session_id"] for row in contexts} == {scope().session_id}
         plugin._ready = False
         assert (await client.post(path, json=payload)).status_code == 503
 
@@ -788,8 +788,6 @@ async def test_recall_options_include_real_sessions_and_named_personas(tmp_path,
 
 @pytest.mark.anyio
 async def test_recall_context_includes_speakers_across_bot_accounts(tmp_path, monkeypatch):
-    from core.plugin.builtin_plugins.memory.scope import identity
-
     plugin = await plugin_at(tmp_path, monkeypatch)
     def message(user, name, account="bot", notice=False):
         return SimpleNamespace(self_id=account, platform="test-platform", sender_id=user,
@@ -800,7 +798,7 @@ async def test_recall_context_includes_speakers_across_bot_accounts(tmp_path, mo
     ]
     before = plugin.store.path.read_bytes()
     result = await plugin.api_recall_context("test:gm:group")
-    assert result["namespace"] == identity("test")
+    assert result["adapter"] == "test"
     assert result["speakers"] == [{"id": "alice", "name": "Alice"}, {"id": "bob", "name": "Bob"},
                                   {"id": "wrong", "name": "Old account"}]
     assert result["default_user_ids"] == ["alice"] and result["group"] is True
@@ -817,7 +815,7 @@ async def test_recall_context_uses_stored_speakers_when_history_is_empty(tmp_pat
     plugin = await plugin_at(tmp_path, monkeypatch)
     await plugin.memory_add(event(), text="coffee")
     result = await plugin.api_recall_context("test:dm:alice")
-    assert result["namespace"] == scope().namespace
+    assert result["adapter"] == scope().adapter
     assert result["default_user_ids"] == ["alice"]
     group = event(session="gm", target="group", users=("alice", "bob"))
     await plugin.memory_add(group, text="alice tea", user_id="alice", source_message_id="msg-0")
@@ -833,11 +831,11 @@ async def test_recall_context_without_history_needs_no_platform_or_adapter_looku
 
     plugin = await plugin_at(tmp_path, monkeypatch)
     result = await plugin.api_recall_context("test:dm:alice")
-    assert result["namespace"] == scope().namespace
+    assert result["adapter"] == scope().adapter
     assert result["default_user_ids"] == ["alice"]
     plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
     group = await plugin.api_recall_context("test:gm:no-history")
-    assert group["namespace"] == scope().namespace and group["speakers"] == []
+    assert group["adapter"] == scope().adapter and group["speakers"] == []
     with pytest.raises(HTTPException) as invalid:
         await plugin.api_recall_context("malformed-session")
     assert invalid.value.status_code == 400 and invalid.value.detail == "invalid_recall"
@@ -946,7 +944,7 @@ async def test_transport_metadata_changes_preserve_memory_crud_and_deduplication
     original = scope(account="old-bot", **options)
     changed = scope(account="new-bot", platform="renamed-platform", **options)
     missing = scope(account=None, platform=None, **options)
-    assert original.namespace == changed.namespace == missing.namespace == '["test"]'
+    assert original.adapter == changed.adapter == missing.adapter == "test"
     assert original.owner(owner_type) == changed.owner(owner_type) == missing.owner(owner_type)
     if owner_type != "self":
         assert json.loads(original.owner(owner_type)) == ["test", "group" if owner_type == "group" else "alice"]
@@ -967,7 +965,7 @@ def test_scope_needs_no_platform_or_bot_account_fields():
     turn.messages[1].self_id = "another-bot"
     del turn.adapter.platform
     current = MemoryScope.from_event(turn, "persona-one")
-    assert current.namespace == '["test"]'
+    assert current.adapter == "test"
     assert current.users == ("alice", "bob")
     assert current.sources == (("msg-0", "alice"), ("msg-1", "bob"))
 
@@ -979,11 +977,11 @@ async def test_owner_serialization_and_speaker_lookup_use_adapter_keys(tmp_path,
     plugin = await plugin_at(tmp_path, monkeypatch)
     added = json.loads(await plugin.memory_add(event(), text="coffee"))
     payload = webui.serialize(await plugin.store.admin_get(added["memory_id"]))
-    assert json.loads(payload["namespace"]) == ["test"]
+    assert "namespace" not in payload
     assert json.loads(payload["owner_id"]) == ["test", "alice"]
     assert payload["subject"] == "alice" and payload["adapter"] == "test"
     assert "account" not in payload and "platform" not in payload
-    assert await plugin.store.recall_users("test:dm:alice", scope().namespace) == ["alice"]
+    assert await plugin.store.recall_users("test:dm:alice") == ["alice"]
 
 
 @pytest.mark.anyio
@@ -1000,7 +998,7 @@ async def test_operator_update_preserves_scope_and_source_and_reindexes(tmp_path
     assert changed["kind"] == "episodic" and changed["status"] == "completed"
     assert changed["importance"] == 5 and changed["core"] is True
     assert changed["expires_at"] is None and changed["terms"] > 0
-    for key in ("id", "owner_type", "owner_id", "persona_id", "namespace", "session_id",
+    for key in ("id", "owner_type", "owner_id", "persona_id", "session_id",
                 "source_message_id", "created_at", "origin"):
         assert changed[key] == original[key], key
     assert not await plugin.store.search(context, "coffee", include_inactive=True)
@@ -1075,7 +1073,7 @@ async def test_memory_update_api_auth_validation_and_conflict(tmp_path, monkeypa
             ({"importance": 6}, "invalid_priority"), ({"expires_at": -1}, "invalid_expiry"),
             ({"expires_at": "tomorrow"}, "invalid_expiry"),
             ({"owner_id": "other"}, "invalid_update"), ({"persona_id": "other"}, "invalid_update"),
-            ({"namespace": "other"}, "invalid_update"), ({"session_id": "other"}, "invalid_update"),
+            ({"adapter": "other"}, "invalid_update"), ({"session_id": "other"}, "invalid_update"),
             ({"source_message_id": "forged"}, "invalid_update"),
             ({"origin": "legacy"}, "invalid_update"),
         ):

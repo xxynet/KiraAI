@@ -522,7 +522,6 @@ function renderDetail(item) {
   if (item.subject) pairs = pairs.concat(describeRow(I18N.t("detail.owner_key"), node("span", { class: "mono", text: item.owner_id })));
   if (item.adapter) pairs = pairs.concat(describeRow(I18N.t("detail.adapter"), node("span", { class: "mono", text: item.adapter })));
   pairs = pairs.concat(describeRow(I18N.t("detail.persona"), node("span", { class: "mono", text: item.persona_id || "—" })));
-  pairs = pairs.concat(describeRow(I18N.t("detail.namespace"), node("span", { class: "mono", text: item.namespace || "—" })));
   pairs = pairs.concat(describeRow(I18N.t("detail.session"), node("span", { class: "mono", text: item.session_id || "—" })));
   if (item.source_message_id) {
     pairs = pairs.concat(describeRow(I18N.t("detail.source_message"), node("span", { class: "mono", text: item.source_message_id })));

@@ -53,10 +53,6 @@ class MemoryScope:
             tuple(sources),
         )
 
-    @property
-    def namespace(self) -> str:
-        return identity(self.adapter)
-
     def owner(self, owner_type: str, user_id: str | None = None) -> str:
         if owner_type == "self":
             return self.persona_id
@@ -90,7 +86,7 @@ class MemoryScope:
         owners.extend(("user", self.owner("user", uid)) for uid in self.users)
         clause = " OR ".join(f"({alias}.owner_type = ? AND {alias}.owner_id = ?)" for _ in owners)
         return (
-            f"{alias}.persona_id = ? AND {alias}.namespace = ? AND {alias}.session_id = ? "
+            f"{alias}.persona_id = ? AND {alias}.session_id = ? "
             f"AND ({clause})",
-            [self.persona_id, self.namespace, self.session_id, *[value for pair in owners for value in pair]],
+            [self.persona_id, self.session_id, *[value for pair in owners for value in pair]],
         )

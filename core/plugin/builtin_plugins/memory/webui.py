@@ -16,7 +16,7 @@ from .scope import MemoryInputError, MemoryScope
 # bookkeeping are internal search artefacts and never leave the server.
 PUBLIC_FIELDS = (
     "id", "revision", "text", "kind", "owner_type", "owner_id", "persona_id",
-    "namespace", "session_id", "source_message_id", "importance", "core", "status",
+    "session_id", "source_message_id", "importance", "core", "status",
     "expires_at", "created_at", "updated_at", "origin",
 )
 
@@ -31,19 +31,15 @@ def _owner_labels(owner_type: str, owner_id: str) -> dict:
     bare persona ID and legacy rows store ``"shared"``.
     """
     if owner_type in ("self", "legacy"):
-        return {"owner_id": owner_id, "adapter": None,
-                "subject": None}
+        return {"owner_id": owner_id, "subject": None}
     try:
         parts = _loads(owner_id)
     except (ValueError, TypeError):
-        return {"owner_id": owner_id, "adapter": None,
-                "subject": None}
+        return {"owner_id": owner_id, "subject": None}
     if not isinstance(parts, list) or len(parts) != 2:
-        return {"owner_id": owner_id, "adapter": None,
-                "subject": None}
-    adapter, subject = (str(part) for part in parts)
-    return {"owner_id": owner_id, "adapter": adapter,
-            "subject": subject}
+        return {"owner_id": owner_id, "subject": None}
+    subject = str(parts[1])
+    return {"owner_id": owner_id, "subject": subject}
 
 
 def _loads(value: str):
@@ -57,6 +53,7 @@ def serialize(row: dict) -> dict:
     record = {key: row.get(key) for key in PUBLIC_FIELDS}
     record["core"] = bool(record["core"])
     record.update(_owner_labels(str(record["owner_type"]), str(record["owner_id"])))
+    record["adapter"] = record["session_id"].split(":", 1)[0] or None
     return record
 
 
@@ -128,15 +125,8 @@ def parse_recall(payload: dict) -> tuple[MemoryScope, list[str]]:
         return value.strip()
 
     persona_id = identifier(payload.get("persona_id"))
-    namespace = identifier(payload.get("namespace"))
+    adapter = identifier(payload.get("adapter"))
     session_id = identifier(payload.get("session_id"))
-    try:
-        coordinates = _loads(namespace)
-    except (ValueError, TypeError) as exc:
-        raise MemoryInputError("invalid_recall") from exc
-    if not isinstance(coordinates, list) or len(coordinates) != 1:
-        raise MemoryInputError("invalid_recall")
-    adapter = identifier(coordinates[0])
     parts = session_id.split(":", 2)
     if len(parts) != 3 or parts[0] != adapter or parts[1] not in {"dm", "gm"} or not parts[2]:
         raise MemoryInputError("invalid_recall")

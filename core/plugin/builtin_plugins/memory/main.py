@@ -10,7 +10,7 @@ from core.utils.path_utils import get_data_path
 
 from . import webui
 from .prompts import MESSAGES
-from .scope import MemoryInputError, MemoryScope, identity
+from .scope import MemoryInputError, MemoryScope
 from .store import MemoryStore
 from .search import MAX_CANDIDATES, fuse
 from .vector import VectorMemory
@@ -475,16 +475,15 @@ class MemoryPlugin(BasePlugin):
                 raise MemoryInputError("invalid_recall")
             page = await self.ctx.message_history.get_messages(session_id=session_id, direction="incoming", limit=50)
             messages = [message for message in page.messages if not message.is_notice]
-            namespace = identity(parts[0])
             speakers = {}
             for message in messages:
                 if message.sender_id and message.sender_id != "unknown":
                     uid = str(message.sender_id)
                     speakers.setdefault(uid, {"id": uid, "name": message.sender_name or uid})
-            for uid in await self.store.recall_users(session_id, namespace):
+            for uid in await self.store.recall_users(session_id):
                 speakers.setdefault(uid, {"id": uid, "name": uid})
             return {
-                "session_id": session_id, "namespace": namespace, "group": parts[1] == "gm",
+                "session_id": session_id, "adapter": parts[0], "group": parts[1] == "gm",
                 "speakers": list(speakers.values()) if parts[1] == "gm" else [],
                 "default_user_ids": ([parts[2]] if parts[1] == "dm" else list(speakers)[:1]),
             }
@@ -493,7 +492,7 @@ class MemoryPlugin(BasePlugin):
     @register.api(method="POST", path="/memory/recall")
     async def api_recall(self, payload: dict):
         async def load():
-            if "namespace" in payload:
+            if "adapter" in payload:
                 scope, messages = webui.parse_recall(payload)
                 return await self.recall(scope, messages)
             filters, messages = webui.parse_recall_preview(payload)
