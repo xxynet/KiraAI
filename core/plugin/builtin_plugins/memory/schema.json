@@ -15,11 +15,11 @@
     "name": "Retrieved memories per request",
     "type": "integer",
     "default": 6,
-    "hint": "Maximum number of local search candidates for automatic recall (1–20). No additional model is needed.",
+    "hint": "Maximum candidates for automatic recall (1–20). Vector retrieval is optional; keyword mode needs no model calls.",
     "locales": {
       "zh": {
         "name": "每轮检索记忆数",
-        "hint": "自动召回的本地检索候选上限（1–20），无需额外模型。"
+        "hint": "自动召回的候选上限（1–20）。向量检索可选，关键词模式无需模型调用。"
       }
     }
   },
@@ -44,6 +44,55 @@
       "zh": {
         "name": "记忆检索返回字符预算",
         "hint": "每次检索返回记录的字符预算（5000–30000），可通过分页或记忆 ID 获取更多内容。"
+      }
+    }
+  },
+  "vector_enabled": {
+    "default": false,
+    "name": "Vector retrieval",
+    "type": "switch",
+    "hint": "Optional remote Embedding API for hybrid recall. Disabled by default. Enabling sends memory text to the selected provider and builds a background index; install dependencies from the memory dashboard if needed.",
+    "locales": {
+      "zh": {
+        "name": "向量检索",
+        "hint": "默认关闭。开启后通过远程 Embedding API 增强召回，会将记忆正文发送给所选服务商，并在后台构建索引；缺少依赖时请在记忆管理页安装。"
+      }
+    }
+  },
+  "embedding_model": {
+    "hint": "Select an existing remote Embedding model. Leave empty to use the default Embedding model. Reuse requires the same underlying model, even if names differ between channels. Only vector dimensions are checked. Changing models requires a manual WebUI rebuild, which may incur significant API costs. Dimension mismatches never trigger automatic rebuilds.",
+    "default": null,
+    "name": "Memory embedding model",
+    "locales": {
+      "zh": {
+        "name": "记忆 Embedding 模型",
+        "hint": "选择已有的远程 Embedding 模型，留空使用默认 Embedding 模型。请使用相同底层模型，渠道名称可不同；系统只检查向量维度。换模型需到 WebUI 手动重建，可能产生较多 API 费用；维度不一致时不会自动重建。"
+      }
+    },
+    "type": "model_select",
+    "model_type": "embedding"
+  },
+  "embedding_timeout": {
+    "default": 10,
+    "name": "Embedding timeout",
+    "type": "integer",
+    "hint": "Maximum seconds per Embedding request (1–30), including concurrency wait. Failures fall back to keyword retrieval.",
+    "locales": {
+      "zh": {
+        "name": "Embedding 请求超时",
+        "hint": "每次请求的最长等待秒数（1–30），包含并发排队时间。失败时回退到关键词检索。"
+      }
+    }
+  },
+  "vector_min_similarity": {
+    "default": 0.35,
+    "name": "Minimum vector similarity",
+    "type": "float",
+    "hint": "Minimum cosine similarity for semantic candidates (0–1). Tune using recall preview for the selected model.",
+    "locales": {
+      "zh": {
+        "name": "最低向量相似度",
+        "hint": "语义候选的最低余弦相似度（0–1），可根据所选模型在模拟召回中调整。"
       }
     }
   }

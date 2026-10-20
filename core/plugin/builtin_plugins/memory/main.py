@@ -1,5 +1,6 @@
-"""Scoped long-term memory with local multilingual lexical retrieval."""
+"""Scoped memory with lexical search and optional remote semantic retrieval."""
 
+import asyncio
 from functools import partial, wraps
 import json
 
@@ -11,6 +12,8 @@ from . import webui
 from .prompts import MESSAGES
 from .scope import MemoryInputError, MemoryScope, identity
 from .store import MemoryStore
+from .search import MAX_CANDIDATES, fuse
+from .vector import VectorMemory
 
 
 def guarded(func):
@@ -47,6 +50,7 @@ class MemoryPlugin(BasePlugin):
         super().__init__(ctx, cfg)
         self.store = MemoryStore(get_data_path() / "memory" / "memories.db")
         self._ready = False
+        self.vectors = VectorMemory(self.store, ctx, cfg)
 
     @property
     def messages(self):
@@ -64,11 +68,13 @@ class MemoryPlugin(BasePlugin):
     async def initialize(self):
         count = await self.store.initialize(get_data_path() / "memory" / "core.txt")
         self._ready = True
+        self.vectors.start()
         if count:
             logger.info("Imported %d legacy memories with shared visibility; original and backup retained", count)
 
     async def terminate(self):
         self._ready = False
+        await self.vectors.close()
 
     async def scope(self, event, persona_id=None):
         if not self._ready:
@@ -119,6 +125,8 @@ class MemoryPlugin(BasePlugin):
             await self.scope(event), text=text, owner_type=owner_type, user_id=user_id,
             source_message_id=source_message_id, kind=kind, importance=importance, core=core, expires_at=expires_at,
         )
+        if added:
+            self.vectors.changed()
         return self.result(True, "ok" if added else "duplicate", memory_id=row["id"], revision=row["revision"])
 
     @register.tool(
@@ -172,8 +180,8 @@ class MemoryPlugin(BasePlugin):
                 raise MemoryInputError("not_found")
             rows = [row]
         else:
-            rows = await self.store.search(scope, query, limit=limit, kind=kind, owner_type=owner_type,
-                                           include_inactive=include_inactive, offset=offset)
+            rows = await self.search(scope, query, limit=limit, kind=kind, owner_type=owner_type,
+                                     include_inactive=include_inactive, offset=offset)
         records = self.pack(rows, self.setting("search_char_budget", 12000, 5000, 30000))
         return self.result(True, records=records, next_offset=offset + len(records) if records and memory_id is None else None)
 
@@ -216,6 +224,7 @@ class MemoryPlugin(BasePlugin):
             core=core, status=status, expires_at=expires_at, clear_expiry=clear_expiry,
             source_message_id=source_message_id,
         )
+        self.vectors.changed()
         return self.result(True, memory_id=memory_id, revision=version)
 
     @register.tool(
@@ -236,6 +245,7 @@ class MemoryPlugin(BasePlugin):
     @guarded
     async def memory_remove(self, event, memory_id, revision, source_message_id=None):
         await self.store.remove(await self.scope(event), memory_id, revision, source_message_id)
+        self.vectors.changed()
         return self.result(True, memory_id=memory_id)
 
     @staticmethod
@@ -267,13 +277,38 @@ class MemoryPlugin(BasePlugin):
             used += len(cls.encode(record)) + 2
         return records
 
+    async def search(self, scope, query="", **options):
+        return await self._hybrid_search(*self.store._visible(scope), query=query, **options)
+
+    async def search_preview(self, query="", *, persona_id=None, session_id=None, **options):
+        return await self._hybrid_search(
+            *self.store.preview_predicate(persona_id, session_id), query=query, **options,
+        )
+
+    async def _hybrid_search(self, predicate, params, query="", *, limit=8, offset=0, **options):
+        lexical = await self.store._search(
+            predicate, params, query, limit=limit, offset=offset, **options,
+        )
+        if not query.strip() or options.get("core_only") or not self.vectors.enabled:
+            return lexical
+        filtered, values = self.store.search_filter(predicate, params, **options)
+        semantic = await self.vectors.search(query, filtered, values)
+        if semantic is None or not semantic:
+            return lexical
+        # A fixed candidate pool keeps paging stable and applies scope before ranking.
+        candidates = await self.store._search(
+            predicate, params, query, limit=MAX_CANDIDATES, candidate_pool=True, **options,
+        )
+        combined = await asyncio.to_thread(fuse, candidates, semantic)
+        return combined[offset:offset + limit]
+
     async def recall(self, scope, messages):
         """Build the scoped memory payload used by actual conversations."""
-        return await self._recall(partial(self.store.search, scope), messages)
+        return await self._recall(partial(self.search, scope), messages)
 
     async def _recall(self, search, messages):
         """Share ranking, deduplication and budgets across recall entry points."""
-        core_limit = self.setting("core_limit", 4, 1, 20)
+        core_limit = self.setting("core_limit", 10, 1, 20)
         recall_limit = self.setting("recall_limit", 6, 1, 20)
         budget = self.setting("prompt_char_budget", 6000, 1500, 20000)
         core = await search(core_only=True, limit=core_limit)
@@ -284,6 +319,8 @@ class MemoryPlugin(BasePlugin):
         recalled_records = self.pack([row for row in recalled if row["id"] not in core_ids], budget // 2)
         return {
             "query": query,
+            "retrieval": {"mode": "hybrid" if self.vectors.enabled and self.vectors.ready else "keyword",
+                          "phase": self.vectors.phase, "reason": self.vectors.reason},
             "core": core_records,
             "recalled": recalled_records,
             "prompt_chars": len(self.encode(core_records + recalled_records)),
@@ -395,6 +432,7 @@ class MemoryPlugin(BasePlugin):
     async def api_record_update(self, memory_id: str, payload: dict):
         async def save():
             row = await self.store.admin_update(memory_id, **webui.parse_update(payload))
+            self.vectors.changed()
             return webui.serialize(row) | {"terms": row["terms"]}
 
         return await self._admin(save)
@@ -459,9 +497,21 @@ class MemoryPlugin(BasePlugin):
                 scope, messages = webui.parse_recall(payload)
                 return await self.recall(scope, messages)
             filters, messages = webui.parse_recall_preview(payload)
-            return await self._recall(partial(self.store.search_preview, **filters), messages)
+            return await self._recall(partial(self.search_preview, **filters), messages)
 
         return await self._admin(load)
+
+    @register.api(method="GET", path="/memory/vector/status")
+    async def api_vector_status(self):
+        return await self._admin(self.vectors.status)
+
+    @register.api(method="POST", path="/memory/vector/install")
+    async def api_vector_install(self):
+        return await self._admin(self.vectors.install)
+
+    @register.api(method="POST", path="/memory/vector/rebuild")
+    async def api_vector_rebuild(self):
+        return await self._admin(self.vectors.rebuild)
 
     @register.api(method="GET", path="/memory/config")
     async def api_config(self):

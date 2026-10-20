@@ -30,6 +30,8 @@ from core.utils.path_utils import get_data_path, is_within_directory
 logger = get_logger("plugin_installer", "cyan")
 
 PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS = 300
+# Runtime install entry points share one event loop and Python environment.
+_requirements_install_lock = asyncio.Lock()
 MAX_PLUGIN_ARCHIVE_BYTES = 50 * 1024 * 1024
 MAX_PLUGIN_ARCHIVE_FILE_COUNT = 10_000
 MAX_PLUGIN_ARCHIVE_COMPRESSION_RATIO = 100
@@ -198,46 +200,47 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
     Install dependencies listed in the plugin's requirements.txt using pip.
 
     Returns a list of warning strings (empty if everything succeeded).
-    Does NOT raise; failures are returned as warnings so the caller can
-    decide whether to abort or proceed with loading the plugin.
+    All runtime callers serialize pip execution through the same lock.
+    Queue time does not consume the pip timeout. Failures return warnings;
+    cancellation propagates after the subprocess has been stopped and reaped.
     """
+    if not (plugin_dir / "requirements.txt").exists():
+        return []
+    async with _requirements_install_lock:
+        return await _install_requirements(plugin_dir, pypi_mirror)
+
+
+async def _install_requirements(plugin_dir: Path, pypi_mirror: Optional[str]) -> List[str]:
+    """Run one pip operation while the public entry point holds the install lock."""
     req_file = plugin_dir / "requirements.txt"
     if not req_file.exists():
         return []
 
-    logger.info(f"Installing requirements for plugin at {plugin_dir}")
+    logger.info(f"Installing requirements from {req_file}")
     pip_cmd = [sys.executable, "-m", "pip", "install", "-r", str(req_file)]
     if pypi_mirror:
         if pypi_mirror.startswith(("http://", "https://")):
             pip_cmd.extend(["-i", pypi_mirror])
         else:
             logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {pypi_mirror}")
-    proc = None
+    spawn_task = asyncio.create_task(asyncio.create_subprocess_exec(
+        *pip_cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    ))
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *pip_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        # Cancellation during process creation must not leave an untracked pip.
+        proc = await asyncio.shield(spawn_task)
         try:
             _, stderr = await asyncio.wait_for(proc.communicate(), PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
-            if proc.returncode is None:
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
-                await proc.communicate()
+            await _stop_requirements_process(spawn_task)
             return [f"Dependency installation timed out after {PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS}s"]
     except asyncio.CancelledError:
-        if proc and proc.returncode is None:
-            proc.terminate()
-            try:
-                await proc.wait()
-            except ProcessLookupError:
-                pass
+        await _stop_requirements_process(spawn_task)
         raise
     except Exception as e:
+        await _stop_requirements_process(spawn_task)
         return [f"Failed to run pip: {e}"]
 
     if proc.returncode != 0:
@@ -247,6 +250,32 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
 
     logger.info(f"Requirements installed for plugin '{plugin_dir.name}'")
     return []
+
+
+async def _stop_requirements_process(spawn_task):
+    """Keep the install slot until process creation and cleanup settle, even if cancelled again."""
+    async def stop():
+        try:
+            proc = await spawn_task
+        except Exception:
+            return
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        await proc.communicate()
+
+    cleanup = asyncio.create_task(stop())
+    cancelled = False
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            cancelled = True
+    cleanup.result()
+    if cancelled:
+        raise asyncio.CancelledError()
 
 
 # ---------------------------------------------------------------------------

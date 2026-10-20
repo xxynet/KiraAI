@@ -12,7 +12,7 @@ import uuid
 import aiosqlite
 
 from .scope import MemoryInputError, MemoryScope
-from .search import normalize, terms
+from .search import MAX_CANDIDATES, normalize, terms
 
 KINDS = {"semantic", "episodic", "procedural"}
 STATUSES = {"active", "completed", "cancelled", "superseded"}
@@ -271,6 +271,12 @@ class MemoryStore:
         )
 
     async def search_preview(self, query="", *, persona_id=None, session_id=None, **options):
+        return await self._search(
+            *self.preview_predicate(persona_id, session_id), query=query, **options,
+        )
+
+    @staticmethod
+    def preview_predicate(persona_id=None, session_id=None):
         """Search operator-selected scopes without widening conversation visibility."""
         clauses, params = [], []
         for column, value in (("persona_id", persona_id), ("session_id", session_id)):
@@ -280,16 +286,11 @@ class MemoryStore:
                 clauses.append(f"m.{column}=?")
                 params.append(value)
         predicate = " AND ".join(clauses) or "1=1"
-        return await self._search(
-            f"(({predicate}) OR m.origin='legacy')", params, query=query, **options,
-        )
+        return f"(({predicate}) OR m.origin='legacy')", params
 
-    async def _search(self, predicate, params, query="", *, limit=8, kind=None, owner_type=None,
-                      core_only=False, include_inactive=False, offset=0):
-        if not isinstance(query, str) or len(query) > 512:
-            raise MemoryInputError("invalid_query")
-        if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or not 0 <= offset <= 10000:
-            raise MemoryInputError("invalid_limit")
+    @staticmethod
+    def search_filter(predicate, params, *, kind=None, owner_type=None, core_only=False, include_inactive=False):
+        params = list(params)
         if kind is not None and kind not in KINDS:
             raise MemoryInputError("invalid_category")
         if owner_type is not None and owner_type not in {"user", "group", "self", "legacy"}:
@@ -303,6 +304,18 @@ class MemoryStore:
                 params.append(value)
         if core_only:
             predicate += " AND m.core=1"
+        return predicate, params
+
+    async def _search(self, predicate, params, query="", *, limit=8, kind=None, owner_type=None,
+                      core_only=False, include_inactive=False, offset=0, candidate_pool=False):
+        if not isinstance(query, str) or len(query) > 512:
+            raise MemoryInputError("invalid_query")
+        if type(limit) is not int or not 1 <= limit <= (MAX_CANDIDATES if candidate_pool else 50) or type(offset) is not int or not 0 <= offset <= 10000:
+            raise MemoryInputError("invalid_limit")
+        predicate, params = self.search_filter(
+            predicate, params, kind=kind, owner_type=owner_type, core_only=core_only,
+            include_inactive=include_inactive,
+        )
         query_terms = list(terms(query, query=True).items())[:256]
         if query.strip() and not query_terms:
             return []

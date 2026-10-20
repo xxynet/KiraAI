@@ -570,3 +570,14 @@ tbody tr[data-id]:hover { background-color: var(--color-item-hover); }
 
 
 .recall-context-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+
+.vector-actions > [hidden] { display: none; }
+
+#vector-model-warning {
+  padding: 10px 12px;
+  border-left: 3px solid var(--fg-yellow);
+  border-radius: 8px;
+  background: var(--tint-yellow);
+  color: var(--color-text-body);
+  line-height: 1.65;
+}

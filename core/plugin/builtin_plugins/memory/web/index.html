@@ -72,6 +72,19 @@
       </div>
       <div id="overview-body"></div>
     </div>
+    <div class="card">
+      <div class="card-row between">
+        <h2 id="vector-title"></h2>
+        <button type="button" class="btn ghost sm" id="vector-refresh"></button>
+      </div>
+      <p class="hint" id="vector-note"></p>
+      <p class="hint" id="vector-model-warning"></p>
+      <div id="vector-body" aria-live="polite"></div>
+      <div class="card-row vector-actions">
+        <button type="button" class="btn" id="vector-install" hidden></button>
+        <button type="button" class="btn ghost" id="vector-rebuild" hidden></button>
+      </div>
+    </div>
   </section>
 
   <section id="panel-recall" role="tabpanel" hidden>
@@ -160,6 +173,11 @@ var state = {
   recallLoading: false,
   recallContexts: null,
   contextRequestId: 0,
+  vectorStatus: null,
+  vectorRequestId: 0,
+  vectorTimer: null,
+  vectorBusy: false,
+  vectorError: null,
   detailRequestId: 0,
   detailItem: null,
   editDraft: null,
@@ -366,6 +384,12 @@ function renderChrome(filters) {
   $("b-next").textContent = I18N.t("records.next");
   $("records-title").textContent = I18N.t("records.title");
   $("overview-title").textContent = I18N.t("overview.title");
+  $("vector-title").textContent = I18N.t("vector.title");
+  $("vector-note").textContent = I18N.t("vector.note");
+  $("vector-model-warning").textContent = I18N.t("vector.model_warning");
+  $("vector-refresh").textContent = I18N.t("common.refresh");
+  $("vector-install").textContent = I18N.t("vector.install");
+  $("vector-rebuild").textContent = I18N.t("vector.rebuild");
   $("modal-title").textContent = I18N.t("detail.title");
   $("modal-close").textContent = I18N.t("common.close");
   $("recall-title").textContent = I18N.t("recall.title");
@@ -386,6 +410,7 @@ function selectTab(name) {
   if (state.tab === name) return;
   state.tab = name;
   renderChrome();
+  clearTimeout(state.vectorTimer);
   if (name === "overview") loadOverview();
   else if (name === "records") loadRecords();
   else if (state.recallContexts === null) loadRecallContexts();
@@ -672,6 +697,77 @@ function closeModal() {
 /*  Overview tab                                                       */
 /* ------------------------------------------------------------------ */
 
+function renderVectorStatus(data) {
+  var target = $("vector-body");
+  clear(target);
+  var phaseKey = "vector.phase." + data.phase;
+  target.appendChild(node("p", { text: I18N.t(phaseKey) }));
+  if (data.enabled && data.dependency_available) {
+    target.appendChild(node("p", { class: "hint",
+      text: I18N.t("vector.progress", { indexed: data.indexed, total: data.total }) }));
+  }
+  if (data.phase === "rebuild_required") {
+    target.appendChild(node("p", { class: "hint", text: I18N.t("vector.dimensions", {
+      expected: data.index_dimensions, actual: data.received_dimensions,
+    }) }));
+  }
+  if (data.reason) {
+    var reasonKey = "vector.reason." + data.reason;
+    target.appendChild(node("p", { class: "edit-error", text: I18N.t(reasonKey) }));
+  }
+  if (state.vectorError) target.appendChild(errorState(state.vectorError, loadVectorStatus));
+  $("vector-install").hidden = !data.enabled || data.dependency_available;
+  $("vector-rebuild").hidden = !data.enabled || !data.dependency_available;
+  $("vector-install").disabled = state.vectorBusy || data.phase === "installing";
+  $("vector-rebuild").disabled = state.vectorBusy ||
+    ["installing", "building", "starting", "model_missing"].indexOf(data.phase) !== -1;
+}
+
+function showVectorStatus(data) {
+  state.vectorStatus = data;
+  renderView("vector", function () { renderVectorStatus(state.vectorStatus); });
+  clearTimeout(state.vectorTimer);
+  if (state.tab === "overview" && !document.hidden &&
+      ["installing", "building", "starting"].indexOf(data.phase) !== -1) {
+    state.vectorTimer = setTimeout(loadVectorStatus, 3000);
+  }
+}
+
+function loadVectorStatus() {
+  if (state.vectorBusy) return;
+  clearTimeout(state.vectorTimer);
+  var requestId = ++state.vectorRequestId;
+  request("/memory/vector/status").then(function (data) {
+    if (requestId !== state.vectorRequestId) return;
+    showVectorStatus(data);
+  }).catch(function (error) {
+    if (requestId !== state.vectorRequestId) return;
+    renderView("vector", function () {
+      clear($("vector-body"));
+      $("vector-body").appendChild(errorState(error.message, loadVectorStatus));
+    });
+  });
+}
+
+function vectorAction(action) {
+  if (state.vectorBusy) return;
+  clearTimeout(state.vectorTimer);
+  var requestId = ++state.vectorRequestId;
+  state.vectorBusy = true;
+  state.vectorError = null;
+  if (state.vectorStatus) renderVectorStatus(state.vectorStatus);
+  request("/memory/vector/" + action, null, {}).then(function (data) {
+    if (requestId !== state.vectorRequestId) return;
+    state.vectorBusy = false;
+    showVectorStatus(data);
+  }).catch(function (error) {
+    if (requestId !== state.vectorRequestId) return;
+    state.vectorBusy = false;
+    state.vectorError = error.message;
+    if (state.vectorStatus) renderVectorStatus(state.vectorStatus);
+  });
+}
+
 function statCard(label, value, note) {
   return node("div", { class: "stat" }, [
     node("div", { class: "label", text: label }),
@@ -723,6 +819,7 @@ function renderOverview(data) {
 }
 
 function loadOverview() {
+  loadVectorStatus();
   renderView("overview", function () {
     clear(el.overviewBody);
     el.overviewBody.appendChild(loadingState());
@@ -805,6 +902,13 @@ function renderRecall(data) {
   }) }));
   target.appendChild(node("p", null, [I18N.t("recall.query") + ": ",
     node("code", { text: data.query || I18N.t("common.none") })]));
+  if (data.retrieval) {
+    var modeKey = data.retrieval.mode === "hybrid" ? "vector.used_hybrid" : "vector.used_keyword";
+    target.appendChild(node("p", { class: "hint", text: I18N.t(modeKey) }));
+    if (data.retrieval.phase === "rebuild_required") {
+      target.appendChild(node("p", { class: "edit-error", text: I18N.t("vector.phase.rebuild_required") }));
+    }
+  }
   [["core", "recall.core"], ["recalled", "recall.retrieved"]].forEach(function (group) {
     var records = data[group[0]];
     var section = node("section", { class: "recall-group" }, [
@@ -900,6 +1004,14 @@ function bind() {
 
   $("b-refresh").addEventListener("click", loadRecords);
   $("b-refresh-overview").addEventListener("click", loadOverview);
+  $("vector-refresh").addEventListener("click", loadVectorStatus);
+  $("vector-install").addEventListener("click", function () { vectorAction("install"); });
+  $("vector-rebuild").addEventListener("click", function () { vectorAction("rebuild"); });
+  document.addEventListener("visibilitychange", function () {
+    clearTimeout(state.vectorTimer);
+    if (!document.hidden && state.tab === "overview") loadVectorStatus();
+  });
+  window.addEventListener("pagehide", function () { clearTimeout(state.vectorTimer); });
   $("b-prev").addEventListener("click", function () {
     if (state.page > 1) { state.page -= 1; loadRecords(); }
   });

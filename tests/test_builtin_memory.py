@@ -358,7 +358,7 @@ async def test_database_failure_does_not_abort_chat_or_echo_content(tmp_path, mo
     plugin = await plugin_at(tmp_path, monkeypatch)
     logger = Mock()
     monkeypatch.setattr(module, "logger", logger)
-    monkeypatch.setattr(plugin.store, "search", AsyncMock(side_effect=OSError("private-memory-content")))
+    monkeypatch.setattr(plugin.store, "_search", AsyncMock(side_effect=OSError("private-memory-content")))
     request = LLMRequest(system_prompt=[Prompt("base", name="memory")])
     await plugin.inject_memory(event(), request)
     assert request.system_prompt[0].content == "base"
@@ -384,6 +384,7 @@ def test_maintenance_page_and_api_are_registered():
         "/memory/overview", "/memory/records", "/memory/records/{memory_id}",
         "/memory/facets", "/memory/config", "/memory/recall",
         "/memory/recall-options", "/memory/recall-context",
+        "/memory/vector/status", "/memory/vector/install", "/memory/vector/rebuild",
     }
     assert all(route["auth"] for route in component.api_routes)
 

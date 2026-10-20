@@ -2,6 +2,9 @@
 
 import unicodedata
 
+# Cover the largest supported result page: offset 10000 plus 50 records.
+MAX_CANDIDATES = 10050
+
 
 def normalize(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
@@ -30,3 +33,15 @@ def terms(text: str, *, query: bool = False) -> dict[str, float]:
             for char in word:
                 result["g1:" + char] = 0.25
     return result
+
+
+def fuse(lexical, semantic):
+    """Fuse incomparable lexical and cosine scores by reciprocal rank."""
+    records, scores = {}, {}
+    for channel in (lexical, semantic):
+        for rank, row in enumerate(channel):
+            records.setdefault(row["id"], row)
+            scores[row["id"]] = scores.get(row["id"], 0.0) + 1.0 / (60 + rank + 1)
+    return sorted(records.values(), key=lambda row: (
+        scores[row["id"]], row["importance"], row["updated_at"], row["id"],
+    ), reverse=True)
