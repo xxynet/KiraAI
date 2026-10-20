@@ -558,6 +558,3 @@ tbody tr[data-id]:hover { background-color: var(--color-item-hover); }
 
 
 .recall-context-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.recall-speakers { display: flex; flex-wrap: wrap; gap: 10px 16px; }
-.recall-speaker { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-body); }
-#recall-users-field[hidden] { display: none; }

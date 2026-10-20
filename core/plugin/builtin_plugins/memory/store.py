@@ -233,6 +233,27 @@ class MemoryStore:
 
     async def search(self, scope, query="", *, limit=8, kind=None, owner_type=None, core_only=False,
                      include_inactive=False, offset=0):
+        return await self._search(
+            *self._visible(scope), query=query, limit=limit, kind=kind, owner_type=owner_type,
+            core_only=core_only, include_inactive=include_inactive, offset=offset,
+        )
+
+    async def search_preview(self, query="", *, persona_id=None, session_id=None, **options):
+        """Search operator-selected scopes without widening conversation visibility."""
+        clauses, params = [], []
+        for column, value in (("persona_id", persona_id), ("session_id", session_id)):
+            if value is not None:
+                if not isinstance(value, str) or not value.strip() or len(value) > 512:
+                    raise MemoryInputError("invalid_recall")
+                clauses.append(f"m.{column}=?")
+                params.append(value)
+        predicate = " AND ".join(clauses) or "1=1"
+        return await self._search(
+            f"(({predicate}) OR m.origin='legacy')", params, query=query, **options,
+        )
+
+    async def _search(self, predicate, params, query="", *, limit=8, kind=None, owner_type=None,
+                      core_only=False, include_inactive=False, offset=0):
         if not isinstance(query, str) or len(query) > 512:
             raise MemoryInputError("invalid_query")
         if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or not 0 <= offset <= 10000:
@@ -241,7 +262,6 @@ class MemoryStore:
             raise MemoryInputError("invalid_category")
         if owner_type is not None and owner_type not in {"user", "group", "self", "legacy"}:
             raise MemoryInputError("invalid_owner")
-        predicate, params = self._visible(scope)
         if not include_inactive:
             predicate += " AND m.status='active' AND (m.expires_at IS NULL OR m.expires_at>?)"
             params.append(time.time())

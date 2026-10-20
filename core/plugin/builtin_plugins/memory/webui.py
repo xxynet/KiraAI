@@ -157,3 +157,29 @@ def parse_recall(payload: dict) -> tuple[MemoryScope, list[str]]:
         persona_id, session_id, adapter, platform, account, users,
         parts[2] if parts[1] == "gm" else None, (),
     ), messages
+
+
+def parse_recall_preview(payload: dict) -> tuple[dict, list[str]]:
+    """Validate optional operator filters without requiring a live conversation."""
+    filters = {}
+    for key in ("persona_id", "session_id"):
+        value = payload.get(key)
+        if value is None or value == "":
+            filters[key] = None
+        elif isinstance(value, str) and value.strip() and len(value) <= 512:
+            filters[key] = value.strip()
+        else:
+            raise MemoryInputError("invalid_recall")
+    session_id = filters["session_id"]
+    if session_id:
+        parts = session_id.split(":", 2)
+        if len(parts) != 3 or not parts[0] or parts[1] not in {"dm", "gm"} or not parts[2]:
+            raise MemoryInputError("invalid_recall")
+    if "user_ids" in payload:
+        raise MemoryInputError("invalid_recall")
+    messages = payload.get("messages", [])
+    if not isinstance(messages, list) or len(messages) > 3 or any(
+        not isinstance(message, str) or len(message) > 4000 for message in messages
+    ):
+        raise MemoryInputError("invalid_recall")
+    return filters, messages

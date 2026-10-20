@@ -734,6 +734,7 @@ async def test_recall_api_auth_validation_and_contexts(tmp_path, monkeypatch):
     async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
                            base_url="http://test") as client:
         assert (await client.post(path, json=payload)).status_code == 401
+        assert (await client.post(path, json={"messages": ["coffee"]})).status_code == 401
         assert (await client.get(f"/api/plugin/{plugin_id}/memory/recall-options")).status_code == 401
         assert (await client.get(f"/api/plugin/{plugin_id}/memory/recall-context",
                                  params={"session_id": context.session_id})).status_code == 401
@@ -741,6 +742,9 @@ async def test_recall_api_auth_validation_and_contexts(tmp_path, monkeypatch):
         response = await client.post(path, json=payload)
         assert response.status_code == 200
         assert [row["text"] for row in response.json()["recalled"]] == ["coffee fact"]
+        broad = await client.post(path, json={"messages": ["fact"]})
+        assert broad.status_code == 200
+        assert len(broad.json()["recalled"]) == 3
         for invalid in (
             {"persona_id": ""}, {"namespace": "not-json"}, {"namespace": "{}"},
             {"namespace": '["test", null, "bot"]'}, {"session_id": "wrong:dm:alice"},
@@ -829,3 +833,98 @@ async def test_recall_context_without_account_requires_real_message(tmp_path, mo
     with pytest.raises(HTTPException) as invalid:
         await plugin.api_recall_context("malformed-session")
     assert invalid.value.status_code == 400 and invalid.value.detail == "invalid_recall"
+
+
+@pytest.mark.anyio
+async def test_operator_recall_needs_no_account_or_message_history(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    await plugin.memory_add(event(), text="alice coffee")
+    await plugin.memory_add(event(account="other-bot"), text="other bot coffee")
+    await plugin.memory_add(event(target="bob", users=("bob",)), text="bob coffee")
+    plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-two")
+    await plugin.memory_add(event(), text="other persona coffee")
+    plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-one")
+    await plugin.memory_add(event(), text="expired coffee", expires_at=1)
+    done = json.loads(await plugin.memory_add(event(), text="completed coffee"))
+    await plugin.memory_update(event(), done["memory_id"], done["revision"],
+                               text="completed coffee", status="completed")
+    before = plugin.store.path.read_bytes()
+    result = await plugin.api_recall({"messages": ["coffee"]})
+    assert {row["text"] for row in result["recalled"]} == {
+        "alice coffee", "other bot coffee", "bob coffee", "other persona coffee",
+    }
+    plugin.ctx.message_history.get_messages.assert_not_awaited()
+    assert plugin.store.path.read_bytes() == before
+    # Runtime tools still enforce account, persona and session isolation.
+    assert {row["text"] for row in await plugin.store.search(scope(), "coffee")} == {"alice coffee"}
+
+
+@pytest.mark.anyio
+async def test_operator_recall_optional_filters_and_legacy_visibility(tmp_path, monkeypatch):
+    memory_dir = tmp_path / "memory"
+    memory_dir.mkdir()
+    (memory_dir / "core.txt").write_text("legacy coffee", encoding="utf-8")
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    await plugin.memory_add(event(), text="alice coffee")
+    await plugin.memory_add(event(account="other-bot"), text="other bot coffee")
+    await plugin.memory_add(event(target="bob", users=("bob",)), text="bob coffee")
+    plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-two")
+    await plugin.memory_add(event(), text="other persona coffee")
+    before = plugin.store.path.read_bytes()
+    cases = [
+        ({}, {"alice coffee", "other bot coffee", "bob coffee", "other persona coffee"}),
+        ({"persona_id": "persona-one"}, {"alice coffee", "other bot coffee", "bob coffee"}),
+        ({"session_id": "test:dm:alice"}, {"alice coffee", "other bot coffee", "other persona coffee"}),
+        ({"persona_id": "persona-one", "session_id": "test:dm:alice"}, {"alice coffee", "other bot coffee"}),
+        ({"persona_id": "missing"}, set()),
+        ({"session_id": "test:dm:no-history"}, set()),
+        ({"persona_id": "", "session_id": None}, {"alice coffee", "other bot coffee", "bob coffee", "other persona coffee"}),
+    ]
+    for filters, expected in cases:
+        result = await plugin.api_recall({"messages": ["coffee"]} | filters)
+        assert {row["text"] for row in result["recalled"]} == expected
+        assert [row["text"] for row in result["core"]] == ["legacy coffee"]
+    assert plugin.store.path.read_bytes() == before
+
+
+@pytest.mark.anyio
+async def test_operator_recall_group_includes_all_speakers(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    turn = event(session="gm", target="group", users=("alice", "bob"))
+    for user, mid in (("alice", "msg-0"), ("bob", "msg-1")):
+        await plugin.memory_add(turn, text=f"{user} coffee", user_id=user, source_message_id=mid)
+    result = await plugin.api_recall({"session_id": "test:gm:group", "messages": ["coffee"]})
+    assert {row["text"] for row in result["recalled"]} == {"alice coffee", "bob coffee"}
+
+
+@pytest.mark.anyio
+async def test_operator_recall_uses_shared_query_and_budget(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={
+        "core_limit": 1, "recall_limit": 1, "prompt_char_budget": 1500,
+    })
+    await plugin.memory_add(event(), text="x" * 3000, core=True)
+    await plugin.memory_add(event(), text="coffee" * 500)
+    messages = ["a" * 200, "coffee " + "b" * 200, "c" * 200]
+    broad = await plugin.api_recall({"messages": messages})
+    scoped = await plugin.recall(scope(), messages)
+    assert broad == scoped
+    assert broad["prompt_chars"] <= 1500
+    empty = await plugin.api_recall({})
+    assert empty["query"] == "" and empty["recalled"] == []
+    assert len(empty["core"]) == 1
+
+
+@pytest.mark.anyio
+async def test_operator_recall_rejects_invalid_optional_filters(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    for payload in (
+        {"persona_id": 0}, {"persona_id": " "}, {"persona_id": "x" * 513},
+        {"session_id": []}, {"session_id": "broken"}, {"session_id": "test:other:user"},
+        {"session_id": "test:dm:"}, {"messages": "coffee"}, {"messages": [None]},
+        {"messages": ["coffee"] * 4}, {"messages": ["x" * 4001]}, {"user_ids": ["alice"]},
+    ):
+        with pytest.raises(HTTPException) as error:
+            await plugin.api_recall(payload)
+        assert error.value.status_code == 400 and error.value.detail == "invalid_recall"

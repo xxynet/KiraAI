@@ -81,26 +81,21 @@
       <div class="recall-context-row">
         <div class="field">
           <label for="r-persona" id="l-r-persona"></label>
-          <select id="r-persona" required disabled></select>
+          <select id="r-persona"><option value=""></option></select>
         </div>
         <div class="field">
           <label for="r-context" id="l-r-context"></label>
-          <select id="r-context" required disabled></select>
+          <select id="r-context"><option value=""></option></select>
         </div>
       </div>
       <div id="recall-context-state" class="hint" aria-live="polite"></div>
-      <div class="field" id="recall-users-field" hidden>
-        <label id="l-r-users"></label>
-        <div id="r-users" class="recall-speakers" role="group" aria-labelledby="l-r-users"></div>
-        <p class="hint" id="recall-users-hint"></p>
-      </div>
       <div class="field">
         <label for="r-messages" id="l-r-messages"></label>
         <textarea id="r-messages" rows="3" maxlength="12000"></textarea>
         <p class="hint" id="recall-messages-hint"></p>
       </div>
       <div class="card-row">
-        <button type="submit" class="btn" id="b-recall" disabled></button>
+        <button type="submit" class="btn" id="b-recall"></button>
         <button type="button" class="btn ghost" id="b-recall-contexts"></button>
       </div>
     </form>
@@ -141,8 +136,6 @@ var state = {
   recallRequestId: 0,
   recallLoading: false,
   recallContexts: null,
-  recallContext: null,
-  recallUsers: [],
   contextRequestId: 0,
   renderers: { records: null, overview: null, detail: null },
 };
@@ -350,8 +343,9 @@ function renderChrome(filters) {
   $("recall-note").textContent = I18N.t("recall.note");
   $("l-r-context").textContent = I18N.t("recall.session");
   $("l-r-persona").textContent = I18N.t("recall.persona");
-  $("l-r-users").textContent = I18N.t("recall.users");
-  $("recall-users-hint").textContent = I18N.t("recall.users_hint");
+  ["r-persona", "r-context"].forEach(function (id) {
+    $(id).options[0].textContent = I18N.t("common.all");
+  });
   $("l-r-messages").textContent = I18N.t("recall.messages");
   $("r-messages").placeholder = I18N.t("recall.messages_placeholder");
   $("recall-messages-hint").textContent = I18N.t("recall.messages_hint");
@@ -601,98 +595,40 @@ function resetRecallResult() {
 }
 
 function updateRecallButton() {
-  $("b-recall").disabled = state.recallLoading || !state.recallContext || !$("r-persona").value;
-}
-
-function renderRecallSpeakers() {
-  var context = state.recallContext;
-  $("recall-users-field").hidden = !context || !context.group;
-  clear($("r-users"));
-  if (!context || !context.group) return;
-  context.speakers.forEach(function (speaker) {
-    var checkbox = node("input", { type: "checkbox", value: speaker.id });
-    checkbox.checked = state.recallUsers.indexOf(speaker.id) !== -1;
-    checkbox.addEventListener("change", function () {
-      state.recallUsers = Array.from($("r-users").querySelectorAll("input:checked"))
-        .map(function (input) { return input.value; });
-    });
-    $("r-users").appendChild(node("label", { class: "recall-speaker" }, [
-      checkbox, speaker.name === speaker.id ? speaker.name : speaker.name + " (" + speaker.id + ")",
-    ]));
-  });
-}
-
-function loadRecallSession() {
-  resetRecallResult();
-  var session = $("r-context").value;
-  var requestId = ++state.contextRequestId;
-  state.recallContext = null;
-  state.recallUsers = [];
-  updateRecallButton();
-  renderRecallSpeakers();
-  if (!session) return;
-  renderView("recallContext", function () {
-    clear($("recall-context-state"));
-    $("recall-context-state").appendChild(loadingState());
-  });
-  request("/memory/recall-context", { session_id: session }).then(function (data) {
-    if (requestId !== state.contextRequestId) return;
-    state.recallContext = data;
-    state.recallUsers = data.default_user_ids;
-    renderView("recallContext", function () {
-      clear($("recall-context-state"));
-      $("recall-context-state").textContent = I18N.t("recall.context_hint");
-      renderRecallSpeakers();
-      updateRecallButton();
-    });
-  }).catch(function (error) {
-    if (requestId !== state.contextRequestId) return;
-    renderView("recallContext", function () {
-      clear($("recall-context-state"));
-      $("recall-context-state").appendChild(errorState(error.message, loadRecallSession));
-    });
-  });
+  $("b-recall").disabled = state.recallLoading;
 }
 
 function loadRecallContexts() {
-  ++state.contextRequestId;
-  state.recallContext = null;
-  renderRecallSpeakers();
-  $("r-context").disabled = true;
-  $("r-persona").disabled = true;
-  $("b-recall").disabled = true;
+  var requestId = ++state.contextRequestId;
   renderView("recallContext", function () {
     clear($("recall-context-state"));
     $("recall-context-state").appendChild(loadingState());
   });
   request("/memory/recall-options").then(function (data) {
+    if (requestId !== state.contextRequestId) return;
     state.recallContexts = data;
     renderView("recallContexts", function () {
-      [["r-persona", data.personas, data.active_persona], ["r-context", data.sessions, null]]
-        .forEach(function (item) {
-          var select = $(item[0]);
-          var previous = select.value || item[2];
-          clear(select);
-          item[1].forEach(function (option) {
-            select.appendChild(node("option", { value: option.id,
-              text: option.name === option.id ? option.name : option.name + " · " + option.id }));
-          });
-          if (item[1].some(function (option) { return option.id === previous; })) select.value = previous;
-          select.disabled = !item[1].length;
+      var removedFilter = false;
+      [["r-persona", data.personas], ["r-context", data.sessions]].forEach(function (item) {
+        var select = $(item[0]);
+        var previous = select.value;
+        clear(select);
+        select.appendChild(node("option", { value: "", text: I18N.t("common.all") }));
+        item[1].forEach(function (option) {
+          select.appendChild(node("option", { value: option.id,
+            text: option.name === option.id ? option.name : option.name + " · " + option.id }));
         });
+        select.value = item[1].some(function (option) { return option.id === previous; }) ? previous : "";
+        if (select.value !== previous) removedFilter = true;
+      });
+      if (removedFilter) resetRecallResult();
       updateRecallButton();
     });
-    if (data.sessions.length) loadRecallSession();
-    else {
-      state.recallContext = null;
-      renderView("recallContext", function () {
-        clear($("recall-context-state"));
-        $("recall-context-state").textContent = I18N.t("recall.no_contexts");
-        renderRecallSpeakers();
-        updateRecallButton();
-      });
-    }
+    renderView("recallContext", function () {
+      $("recall-context-state").textContent = I18N.t("recall.context_hint");
+    });
   }).catch(function (error) {
+    if (requestId !== state.contextRequestId) return;
     state.recallContexts = null;
     renderView("recallContext", function () {
       clear($("recall-context-state"));
@@ -812,7 +748,10 @@ function bind() {
     loadRecords();
   });
 
-  $("r-context").addEventListener("change", loadRecallSession);
+  $("r-context").addEventListener("change", function () {
+    resetRecallResult();
+    updateRecallButton();
+  });
   $("r-persona").addEventListener("change", function () {
     resetRecallResult();
     updateRecallButton();
@@ -820,9 +759,8 @@ function bind() {
   $("b-recall-contexts").addEventListener("click", loadRecallContexts);
   $("recall-form").addEventListener("submit", function (event) {
     event.preventDefault();
-    if (!state.recallContext || !$("r-persona").value) return;
-    var payload = { persona_id: $("r-persona").value, namespace: state.recallContext.namespace,
-      session_id: state.recallContext.session_id, user_ids: state.recallUsers.slice() };
+    if (state.recallLoading) return;
+    var payload = { persona_id: $("r-persona").value, session_id: $("r-context").value };
     payload.messages = $("r-messages").value.split(/\r?\n/).slice(-3);
     runRecall(payload);
   });

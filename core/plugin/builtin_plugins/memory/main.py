@@ -1,6 +1,6 @@
 """Scoped long-term memory with local multilingual lexical retrieval."""
 
-from functools import wraps
+from functools import partial, wraps
 import json
 
 from core.plugin import BasePlugin, PageMenu, PluginPage, logger, on, register
@@ -268,13 +268,17 @@ class MemoryPlugin(BasePlugin):
         return records
 
     async def recall(self, scope, messages):
-        """Build the same bounded memory payload for chat and operator previews."""
+        """Build the scoped memory payload used by actual conversations."""
+        return await self._recall(partial(self.store.search, scope), messages)
+
+    async def _recall(self, search, messages):
+        """Share ranking, deduplication and budgets across recall entry points."""
         core_limit = self.setting("core_limit", 4, 1, 20)
         recall_limit = self.setting("recall_limit", 6, 1, 20)
         budget = self.setting("prompt_char_budget", 6000, 1500, 20000)
-        core = await self.store.search(scope, core_only=True, limit=core_limit)
+        core = await search(core_only=True, limit=core_limit)
         query = " ".join(str(message or "")[:160] for message in messages[-3:])[:512]
-        recalled = await self.store.search(scope, query, limit=recall_limit) if query.strip() else []
+        recalled = await search(query, limit=recall_limit) if query.strip() else []
         core_records = self.pack(core, budget // 2)
         core_ids = {record["id"] for record in core_records}
         recalled_records = self.pack([row for row in recalled if row["id"] not in core_ids], budget // 2)
@@ -452,8 +456,11 @@ class MemoryPlugin(BasePlugin):
     @register.api(method="POST", path="/memory/recall")
     async def api_recall(self, payload: dict):
         async def load():
-            scope, messages = webui.parse_recall(payload)
-            return await self.recall(scope, messages)
+            if "namespace" in payload:
+                scope, messages = webui.parse_recall(payload)
+                return await self.recall(scope, messages)
+            filters, messages = webui.parse_recall_preview(payload)
+            return await self._recall(partial(self.store.search_preview, **filters), messages)
 
         return await self._admin(load)
 
