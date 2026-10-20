@@ -245,6 +245,19 @@ class MemoryStore:
             ) as cursor:
                 return dict(await cursor.fetchone())
 
+    async def admin_remove(self, memory_id, revision):
+        """Delete the operator-confirmed revision and its derived indexes atomically."""
+        if type(revision) is not int or revision < 1:
+            raise MemoryInputError("invalid_revision")
+        async with self.connection(write=True) as db:
+            async with db.execute("SELECT revision FROM memories WHERE id=?", (memory_id,)) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                raise MemoryInputError("not_found")
+            if row["revision"] != revision:
+                raise MemoryInputError("conflict")
+            await db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
+
     async def remove(self, scope, memory_id, revision, source_message_id=None):
         if type(revision) is not int or revision < 1:
             raise MemoryInputError("invalid_revision")

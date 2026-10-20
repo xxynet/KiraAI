@@ -565,3 +565,24 @@ async def test_pending_batch_cannot_publish_after_manual_index_reset(tmp_path, m
     release.set()
     await task
     assert (await plugin.vectors.store.progress()) == {"indexed": 0, "total": 2}
+
+
+@pytest.mark.anyio
+async def test_operator_delete_cascades_vectors_without_reembedding_other_memories(tmp_path, monkeypatch, np):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    removed, _ = await plugin.store.add(scope(), text="coffee to delete")
+    kept, _ = await plugin.store.add(scope(persona="other"), text="keep vehicle")
+    await plugin.vectors._sync()
+    calls = client.embed.await_count
+    index_id = plugin.vectors.index_id
+    await plugin.api_record_remove(removed["id"], 1)
+    async with plugin.store.connection() as db:
+        async with db.execute("SELECT memory_id FROM memory_vectors") as cursor:
+            assert {row[0] for row in await cursor.fetchall()} == {kept["id"]}
+    await plugin.vectors._sync()
+    assert plugin.vectors.index_id == index_id
+    assert plugin.vectors.indexed == 1 and plugin.vectors.ready
+    assert client.embed.await_count == calls
+    assert not await plugin.search(scope(), "latte")
+    assert (await plugin.search(scope(persona="other"), "car"))[0]["id"] == kept["id"]
+    await plugin.terminate()

@@ -118,7 +118,8 @@
 
 <div class="modal-mask hidden" id="modal-mask">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <h3 id="modal-title"></h3>
+    <header class="modal-head"><h3 id="modal-title"></h3></header>
+    <div class="modal-scroll" id="modal-scroll">
     <div id="modal-body"></div>
     <form id="memory-editor" hidden>
       <div class="field">
@@ -139,12 +140,34 @@
       </div>
     </form>
     <div id="edit-feedback" role="status" aria-live="polite"></div>
+    </div>
     <div class="modal-actions">
+      <button type="button" class="btn danger" id="memory-delete" hidden></button>
       <button type="button" class="btn ghost" id="edit-reload" hidden></button>
-      <button type="button" class="btn ghost" id="edit-cancel" hidden></button>
       <button type="submit" form="memory-editor" class="btn" id="edit-save" hidden></button>
       <button type="button" class="btn" id="edit-start" hidden></button>
       <button type="button" class="btn ghost" id="modal-close"></button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask confirm-mask hidden" id="delete-confirm-mask">
+  <div class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-message">
+    <div class="confirm-content">
+      <div class="confirm-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.3 3.9 1.8 18.1A2 2 0 0 0 3.5 21h17a2 2 0 0 0 1.7-2.9L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+          <path d="M12 9v4m0 4h.01"/>
+        </svg>
+      </div>
+      <div>
+        <h3 id="delete-confirm-title"></h3>
+        <p id="delete-confirm-message"></p>
+      </div>
+    </div>
+    <div class="confirm-actions">
+      <button type="button" class="btn ghost" id="delete-cancel"></button>
+      <button type="button" class="btn danger" id="delete-confirm"></button>
     </div>
   </div>
 </div>
@@ -184,6 +207,10 @@ var state = {
   editSaving: false,
   editError: null,
   editSaved: false,
+  deletePending: false,
+  deleting: false,
+  deleteError: null,
+  deleteResolve: null,
   renderers: { records: null, overview: null, detail: null },
 };
 
@@ -205,7 +232,7 @@ function fail(message) {
   throw error;
 }
 
-function request(path, params, body) {
+function request(path, params, body, method) {
   var url = apiUrl(path);
   if (params) {
     var query = new URLSearchParams();
@@ -222,6 +249,7 @@ function request(path, params, body) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
+  if (method) options.method = method;
   return fetch(url, options)
     .then(function (response) {
       if (response.status === 401) fail("session_expired");
@@ -490,6 +518,8 @@ function loadRecords() {
   var params = Object.assign({}, state.filters, { page: state.page, size: state.size });
   request("/memory/records", params).then(function (data) {
     if (requestId !== state.requestId) return;
+    var pages = Math.max(1, Math.ceil(data.total / data.size));
+    if (state.page > pages) { state.page = pages; loadRecords(); return; }
     state.total = data.total;
     renderView("records", function () { renderRecords(data); });
   }).catch(function (error) {
@@ -557,6 +587,8 @@ function editorOptions(id, values, group, selected) {
   select.value = selected;
 }
 
+function detailBusy() { return state.editSaving || state.deletePending || state.deleting; }
+
 function renderEditor() {
   var draft = state.editDraft;
   var editing = !!draft;
@@ -564,17 +596,21 @@ function renderEditor() {
   el.modalBody.hidden = editing;
   $("edit-start").hidden = !state.detailItem || editing;
   $("edit-start").textContent = I18N.t("edit.start");
-  $("edit-cancel").hidden = !editing;
-  $("edit-cancel").textContent = I18N.t("edit.cancel");
+  $("memory-delete").hidden = !state.detailItem || editing;
+  $("memory-delete").textContent = I18N.t(state.deleting ? "delete.deleting" : "delete.start");
+  $("modal-close").textContent = I18N.t(editing ? "edit.cancel" : "common.close");
   $("edit-save").hidden = !editing;
   $("edit-save").textContent = I18N.t(state.editSaving ? "edit.saving" : "edit.save");
-  $("edit-reload").hidden = state.editError !== "conflict";
+  $("edit-reload").hidden = state.editError !== "conflict" && state.deleteError !== "conflict";
   $("edit-reload").textContent = I18N.t("edit.reload");
-  ["modal-close", "edit-cancel", "edit-save", "edit-reload"].forEach(function (id) {
-    $(id).disabled = state.editSaving;
+  ["modal-close", "edit-start", "edit-save", "edit-reload", "memory-delete"].forEach(function (id) {
+    $(id).disabled = detailBusy();
   });
   clear($("edit-feedback"));
-  if (state.editError) $("edit-feedback").appendChild(node("p", {
+  if (state.deleteError) $("edit-feedback").appendChild(node("p", {
+    class: "edit-error", text: state.deleteError === "conflict" ? I18N.t("delete.conflict") : describeError(state.deleteError),
+  }));
+  else if (state.editError) $("edit-feedback").appendChild(node("p", {
     class: "edit-error", text: describeError(state.editError),
   }));
   else if (state.editSaved) $("edit-feedback").appendChild(node("p", {
@@ -602,11 +638,12 @@ function renderEditor() {
 
 function startEditing() {
   var item = state.detailItem;
-  if (!item || state.editSaving) return;
+  if (!item || detailBusy()) return;
   state.editDraft = { text: item.text, kind: item.kind, status: item.status,
     importance: item.importance, core: item.core, expires: expiryInput(item.expires_at) };
   state.editError = null;
   state.editSaved = false;
+  state.deleteError = null;
   renderEditor();
   $("e-text").focus();
 }
@@ -649,13 +686,76 @@ function saveEditing(event) {
   });
 }
 
+function renderDeleteConfirmation() {
+  $("delete-confirm-title").textContent = I18N.t("delete.title");
+  $("delete-confirm-message").textContent = I18N.t("delete.message");
+  $("delete-cancel").textContent = I18N.t("edit.cancel");
+  $("delete-confirm").textContent = I18N.t("delete.start");
+}
+
+function confirmDelete() {
+  return new Promise(function (resolve) {
+    state.deleteResolve = resolve;
+    renderView("deleteConfirm", renderDeleteConfirmation);
+    $("delete-confirm-mask").classList.remove("hidden");
+    el.modalMask.inert = true;
+    el.modalMask.setAttribute("aria-hidden", "true");
+    $("delete-cancel").focus();
+  });
+}
+
+function finishDeleteConfirmation(confirmed) {
+  var resolve = state.deleteResolve;
+  if (!resolve) return;
+  state.deleteResolve = null;
+  state.renderers.deleteConfirm = null;
+  $("delete-confirm-mask").classList.add("hidden");
+  el.modalMask.inert = false;
+  el.modalMask.removeAttribute("aria-hidden");
+  resolve(confirmed);
+}
+
+async function deleteMemory() {
+  var item = state.detailItem;
+  if (!item || state.editDraft || detailBusy()) return;
+  var requestId = state.detailRequestId;
+  state.deletePending = true;
+  state.deleteError = null;
+  state.editSaved = false;
+  renderEditor();
+  try {
+    var confirmed = await confirmDelete();
+    if (!confirmed || requestId !== state.detailRequestId) return;
+    state.deletePending = false;
+    state.deleting = true;
+    renderEditor();
+    await request("/memory/records/" + encodeURIComponent(item.id), { revision: item.revision }, undefined, "DELETE");
+    state.deleting = false;
+    closeModal();
+    loadRecords();
+    if (state.renderers.overview) loadOverview();
+    resetRecallResult();
+  } catch (error) {
+    if (requestId === state.detailRequestId) state.deleteError = error.message;
+  } finally {
+    state.deletePending = false;
+    state.deleting = false;
+    if (state.detailItem) {
+      renderEditor();
+      $("memory-delete").focus();
+    }
+  }
+}
+
 function openDetail(id) {
-  if (state.editSaving) return;
+  if (detailBusy()) return;
   var requestId = ++state.detailRequestId;
   state.detailItem = null;
   state.editDraft = null;
   state.editError = null;
   state.editSaved = false;
+  state.deleteError = null;
+  $("modal-scroll").scrollTop = 0;
   el.modalMask.classList.remove("hidden");
   renderView("detail", function () {
     if (state.detailItem) { renderDetail(state.detailItem); return; }
@@ -679,12 +779,20 @@ function openDetail(id) {
 }
 
 function closeModal() {
-  if (state.editSaving) return;
+  if (detailBusy()) return;
+  if (state.editDraft) {
+    state.editDraft = null;
+    state.editError = null;
+    renderDetail(state.detailItem);
+    $("modal-scroll").scrollTop = 0;
+    return;
+  }
   ++state.detailRequestId;
   state.editDraft = null;
   state.detailItem = null;
   state.editError = null;
   state.editSaved = false;
+  state.deleteError = null;
   state.renderers.detail = null;
   el.modalMask.classList.add("hidden");
 }
@@ -1032,13 +1140,17 @@ function bind() {
     payload.messages = $("r-messages").value.split(/\r?\n/).slice(-3);
     runRecall(payload);
   });
-  $("edit-start").addEventListener("click", startEditing);
-  $("edit-cancel").addEventListener("click", function () {
-    if (state.editSaving) return;
-    state.editDraft = null;
-    state.editError = null;
-    renderDetail(state.detailItem);
+  $("delete-cancel").addEventListener("click", function () { finishDeleteConfirmation(false); });
+  $("delete-confirm").addEventListener("click", function () { finishDeleteConfirmation(true); });
+  var confirmMask = $("delete-confirm-mask");
+  var confirmOutside = false;
+  confirmMask.addEventListener("mousedown", function (event) { confirmOutside = event.target === confirmMask; });
+  confirmMask.addEventListener("mouseup", function (event) {
+    if (confirmOutside && event.target === confirmMask) finishDeleteConfirmation(false);
+    confirmOutside = false;
   });
+  $("memory-delete").addEventListener("click", deleteMemory);
+  $("edit-start").addEventListener("click", startEditing);
   $("edit-reload").addEventListener("click", function () { openDetail(state.detailItem.id); });
   $("memory-editor").addEventListener("submit", saveEditing);
   ["text", "kind", "status", "importance", "core", "expires"].forEach(function (key) {
@@ -1053,6 +1165,20 @@ function bind() {
     if (event.target === el.modalMask) closeModal();
   });
   document.addEventListener("keydown", function (event) {
+    if (state.deleteResolve) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finishDeleteConfirmation(false);
+      } else if (event.key === "Tab") {
+        var cancel = $("delete-cancel"), confirm = $("delete-confirm");
+        if (event.shiftKey && document.activeElement === cancel) {
+          event.preventDefault(); confirm.focus();
+        } else if (!event.shiftKey && document.activeElement === confirm) {
+          event.preventDefault(); cancel.focus();
+        }
+      }
+      return;
+    }
     if (event.key === "Escape" && !event.defaultPrevented && !el.modalMask.classList.contains("hidden")) closeModal();
   });
 }

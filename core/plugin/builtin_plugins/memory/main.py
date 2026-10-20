@@ -437,6 +437,15 @@ class MemoryPlugin(BasePlugin):
 
         return await self._admin(save)
 
+    @register.api(method="DELETE", path="/memory/records/{memory_id}")
+    async def api_record_remove(self, memory_id: str, revision: int):
+        async def remove():
+            await self.store.admin_remove(memory_id, revision)
+            self.vectors.changed()
+            return {"ok": True, "memory_id": memory_id}
+
+        return await self._admin(remove)
+
     @register.api(method="GET", path="/memory/facets")
     async def api_facets(self):
         return await self._admin(self.store.facets)

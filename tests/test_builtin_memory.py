@@ -1094,3 +1094,74 @@ async def test_memory_update_api_auth_validation_and_conflict(tmp_path, monkeypa
         assert (await client.post(path, json=payload)).status_code == 503
         enabled = False
         assert (await client.post(path, json=payload)).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_memory_delete_api_auth_revision_and_keyword_cleanup(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from core.plugin import registry
+    from webui.plugin_bindings import PluginWebBindings
+    from webui.routes.auth import require_auth
+
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    row, _ = await plugin.store.add(scope(), text="coffee to delete")
+    kept, _ = await plugin.store.add(scope(), text="tea to keep")
+    await plugin.store.admin_update(row["id"], 1, text="updated coffee")
+    changed = Mock()
+    monkeypatch.setattr(plugin.vectors, "changed", changed)
+    plugin_id = "kira_plugin_simple_memory"
+    enabled = True
+    manager = SimpleNamespace(
+        get_plugin_components=lambda: {plugin_id: registry._plugin_components[plugin_id]},
+        get_plugin_inst=lambda _: plugin, is_plugin_enabled=lambda _: enabled,
+    )
+    app = FastAPI()
+    PluginWebBindings(manager, app).register_apis(plugin_id)
+    path = f"/api/plugin/{plugin_id}/memory/records/{row['id']}"
+    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
+                           base_url="http://test") as client:
+        assert (await client.delete(path, params={"revision": 2})).status_code == 401
+        app.dependency_overrides[require_auth] = lambda: {"sub": "operator"}
+        assert (await client.delete(path)).status_code == 422
+        assert (await client.delete(path, params={"revision": "invalid"})).status_code == 422
+        for revision, code in ((0, "invalid_revision"), (-1, "invalid_revision"), (1, "conflict")):
+            response = await client.delete(path, params={"revision": revision})
+            assert response.status_code == 400 and response.json() == {"detail": code}
+        assert (await plugin.store.admin_get(row["id"]))["revision"] == 2
+        changed.assert_not_called()
+        plugin._ready = False
+        assert (await client.delete(path, params={"revision": 2})).status_code == 503
+        plugin._ready = True
+        enabled = False
+        assert (await client.delete(path, params={"revision": 2})).status_code == 404
+        enabled = True
+        response = await client.delete(path, params={"revision": 2})
+        assert response.status_code == 200 and response.json() == {"ok": True, "memory_id": row["id"]}
+        changed.assert_called_once_with()
+        missing = await client.delete(path, params={"revision": 2})
+        assert missing.status_code == 400 and missing.json() == {"detail": "not_found"}
+    assert await plugin.store.admin_get(row["id"]) is None
+    assert (await plugin.store.admin_get(kept["id"]))["text"] == "tea to keep"
+    assert all(item["id"] != row["id"] for item in await plugin.store.search(scope(), "coffee"))
+    async with plugin.store.connection() as db:
+        async with db.execute("SELECT COUNT(*) FROM memory_terms WHERE memory_id=?", (row["id"],)) as cursor:
+            assert (await cursor.fetchone())[0] == 0
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_operator_delete_legacy_memory_keeps_other_records(tmp_path, monkeypatch):
+    (tmp_path / "memory").mkdir()
+    (tmp_path / "memory/core.txt").write_text("legacy coffee", encoding="utf-8")
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    legacy = (await plugin.store.admin_list())["items"][0]
+    kept, _ = await plugin.store.add(scope(persona="other"), text="keep coffee")
+    for invalid in (True, "1", 0):
+        with pytest.raises(MemoryInputError, match="invalid_revision"):
+            await plugin.store.admin_remove(legacy["id"], invalid)
+    await plugin.api_record_remove(legacy["id"], 1)
+    assert await plugin.store.admin_get(legacy["id"]) is None
+    assert (await plugin.store.admin_get(kept["id"]))["text"] == "keep coffee"
+    await plugin.terminate()

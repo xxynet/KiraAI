@@ -119,6 +119,11 @@
       'records.next': '下一页',
 
       // detail
+      'delete.start': '删除',
+      'delete.deleting': '删除中…',
+      'delete.title': '删除记忆',
+      'delete.message': '确定要删除这条记忆吗？正文及关联的关键词、向量索引会一并删除，此操作无法撤销。',
+      'delete.conflict': '这条记忆已被更新，未执行删除。请重新加载最新版本，确认后再删除。',
       'edit.start': '编辑',
       'edit.cancel': '取消',
       'edit.save': '保存',
@@ -291,6 +296,11 @@
       'records.prev': 'Previous',
       'records.next': 'Next',
 
+      'delete.start': 'Delete',
+      'delete.deleting': 'Deleting…',
+      'delete.title': 'Delete memory',
+      'delete.message': 'Delete this memory? Its text and associated keyword and vector indexes will be permanently removed. This action cannot be undone.',
+      'delete.conflict': 'This memory was updated and has not been deleted. Reload the latest version and review it before deleting.',
       'edit.start': 'Edit',
       'edit.cancel': 'Cancel',
       'edit.save': 'Save',
