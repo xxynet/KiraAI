@@ -67,6 +67,11 @@ class MemoryPlugin(BasePlugin):
             return default
         return max(minimum, min(maximum, value))
 
+    @property
+    def recall_query_char_limit(self):
+        value = self.plugin_cfg.get("recall_query_char_limit", 0)
+        return max(0, value) if type(value) is int else 0
+
     async def initialize(self):
         count = await self.store.initialize(get_data_path() / "memory" / "core.txt")
         self._ready = True
@@ -141,7 +146,6 @@ class MemoryPlugin(BasePlugin):
             {
                 "query": {
                     "type": "string",
-                    "maxLength": 512,
                 },
                 "memory_id": ID,
                 "kind": KIND,
@@ -328,7 +332,9 @@ class MemoryPlugin(BasePlugin):
         recall_limit = self.setting("recall_limit", 6, 1, 20)
         budget = self.setting("prompt_char_budget", 6000, 1500, 20000)
         core = await search(core_only=True, limit=core_limit)
-        query = " ".join(str(message or "")[:160] for message in messages[-3:])[:512]
+        query = " ".join(str(message or "") for message in messages[-3:])
+        if self.recall_query_char_limit:
+            query = query[:self.recall_query_char_limit]
         rerank_report = self.reranker.report("disabled" if not self.reranker.enabled else "skipped")
         recalled = await search(query, limit=recall_limit, rerank_report=rerank_report) if query.strip() else []
         core_records = self.pack(core, budget // 2)
@@ -552,12 +558,14 @@ class MemoryPlugin(BasePlugin):
                 "recall_limit": self.setting("recall_limit", 6, 1, 20),
                 "prompt_char_budget": self.setting("prompt_char_budget", 6000, 1500, 20000),
                 "search_char_budget": self.setting("search_char_budget", 12000, 5000, 30000),
+                "recall_query_char_limit": self.recall_query_char_limit,
             },
             "defaults": {
                 "core_limit": 10,
                 "recall_limit": 6,
                 "prompt_char_budget": 6000,
                 "search_char_budget": 12000,
+                "recall_query_char_limit": 0,
             },
             "ready": self._ready,
             "database": str(self.store.path),

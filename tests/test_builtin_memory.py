@@ -603,7 +603,6 @@ async def test_memory_records_api_returns_bad_request_for_invalid_parameters(tmp
             ({"core": "yes"}, "invalid_priority"),
             ({"page": "abc"}, "invalid_limit"),
             ({"size": "abc"}, "invalid_limit"),
-            ({"q": "x" * 513}, "invalid_query"),
         ):
             response = await client.get(path, params=params)
             assert response.status_code == 400, (params, response.text)
@@ -702,7 +701,7 @@ async def test_recall_preview_query_and_budget_match_runtime(tmp_path, monkeypat
                "session_id": context.session_id,
                "messages": ["a" * 200, "coffee " + "b" * 200, "c" * 200]}
     result = await plugin.api_recall(payload)
-    assert result["query"] == " ".join(message[:160] for message in payload["messages"])
+    assert result["query"] == " ".join(payload["messages"])
     assert len(result["core"]) == len(result["recalled"]) == 1
     assert all(row["truncated"] for row in result["core"] + result["recalled"])
     assert result["prompt_chars"] == len(plugin.encode(result["core"] + result["recalled"])) <= 1500
@@ -755,7 +754,7 @@ async def test_recall_api_auth_validation_and_contexts(tmp_path, monkeypatch):
             {"session_id": "wrong:dm:alice"},
             {"session_id": "test:other:alice"}, {"user_ids": "alice"},
             {"user_ids": ["bob"]}, {"user_ids": [None]}, {"messages": "coffee"},
-            {"messages": ["coffee"] * 4}, {"messages": ["x" * 4001]},
+            {"messages": ["coffee"] * 4},
         ):
             response = await client.post(path, json=payload | invalid)
             assert response.status_code == 400, (invalid, response.text)
@@ -929,7 +928,7 @@ async def test_operator_recall_rejects_invalid_optional_filters(tmp_path, monkey
         {"persona_id": 0}, {"persona_id": " "}, {"persona_id": "x" * 513},
         {"session_id": []}, {"session_id": "broken"}, {"session_id": "test:other:user"},
         {"session_id": "test:dm:"}, {"messages": "coffee"}, {"messages": [None]},
-        {"messages": ["coffee"] * 4}, {"messages": ["x" * 4001]}, {"user_ids": ["alice"]},
+        {"messages": ["coffee"] * 4}, {"user_ids": ["alice"]},
     ):
         with pytest.raises(HTTPException) as error:
             await plugin.api_recall(payload)

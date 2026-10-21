@@ -140,7 +140,7 @@ def parse_recall(payload: dict) -> tuple[MemoryScope, list[str]]:
             raise MemoryInputError("invalid_recall")
         users = (parts[2],)
     if not isinstance(messages, list) or len(messages) > 3 or any(
-        not isinstance(message, str) or len(message) > 4000 for message in messages
+        not isinstance(message, str) for message in messages
     ):
         raise MemoryInputError("invalid_recall")
     return MemoryScope(
@@ -169,7 +169,7 @@ def parse_recall_preview(payload: dict) -> tuple[dict, list[str]]:
         raise MemoryInputError("invalid_recall")
     messages = payload.get("messages", [])
     if not isinstance(messages, list) or len(messages) > 3 or any(
-        not isinstance(message, str) or len(message) > 4000 for message in messages
+        not isinstance(message, str) for message in messages
     ):
         raise MemoryInputError("invalid_recall")
     return filters, messages

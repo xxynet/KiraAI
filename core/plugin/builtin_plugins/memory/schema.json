@@ -23,6 +23,18 @@
       }
     }
   },
+  "recall_query_char_limit": {
+    "name": "Recall query character limit",
+    "type": "integer",
+    "default": 0,
+    "hint": "Maximum characters in the combined recall query from the latest three messages. Default 0 means unlimited. A positive integer keeps only the first N characters. Applies equally to conversations and recall preview; the selected Embedding or Rerank service may have its own input limits.",
+    "locales": {
+      "zh": {
+        "name": "召回查询字符上限",
+        "hint": "最近三条消息合并后的召回查询字符上限，默认 0 表示不限制。设置正整数后仅保留前 N 个字符，对真实对话和模拟召回同时生效；所选 Embedding 或 Rerank 服务可能另有输入限制。"
+      }
+    }
+  },
   "prompt_char_budget": {
     "name": "Memory context character budget",
     "type": "integer",

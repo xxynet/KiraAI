@@ -328,9 +328,11 @@ class MemoryStore:
     @staticmethod
     def _ranked_query(predicate, params, query_terms):
         """Compute BM25 statistics over eligible memories, without loading texts into Python."""
-        values = ",".join("(?,?)" for _ in query_terms)
+        # A single bound JSON value avoids SQLite variable limits for long queries.
         sql = (
-            f"WITH q(term,weight) AS (VALUES {values}), corpus AS ("
+            "WITH q(term,weight) AS ("
+            "SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?)"
+            "), corpus AS ("
             f"SELECT m.id,m.term_count FROM memories m WHERE {predicate}"
             "), corpus_stats AS ("
             "SELECT COUNT(*) AS documents, AVG(term_count) AS average_length FROM corpus"
@@ -344,11 +346,11 @@ class MemoryStore:
             "FROM query_stats q JOIN memory_terms t ON t.term=q.term "
             "JOIN corpus c ON c.id=t.memory_id CROSS JOIN corpus_stats s GROUP BY c.id) "
         )
-        return sql, [value for pair in query_terms for value in pair] + list(params)
+        return sql, [json.dumps(query_terms, ensure_ascii=False), *params]
 
     async def _search(self, predicate, params, query="", *, limit=8, kind=None, owner_type=None,
                       core_only=False, include_inactive=False, offset=0, candidate_pool=False):
-        if not isinstance(query, str) or len(query) > 512:
+        if not isinstance(query, str):
             raise MemoryInputError("invalid_query")
         if type(limit) is not int or not 1 <= limit <= (MAX_CANDIDATES if candidate_pool else 50) or type(offset) is not int or not 0 <= offset <= 10000:
             raise MemoryInputError("invalid_limit")
@@ -356,7 +358,7 @@ class MemoryStore:
             predicate, params, kind=kind, owner_type=owner_type, core_only=core_only,
             include_inactive=include_inactive,
         )
-        query_terms = list(terms(query, query=True).items())[:256]
+        query_terms = list((await asyncio.to_thread(terms, query, query=True)).items())
         if query.strip() and not query_terms:
             return []
         if query_terms:
@@ -435,7 +437,7 @@ class MemoryStore:
     async def admin_list(self, *, query="", owner_type=None, kind=None, status=None, origin=None,
                          core=None, page=1, size=20) -> dict:
         """Filtered, paginated listing ordered like the search results."""
-        if not isinstance(query, str) or len(query) > 512:
+        if not isinstance(query, str):
             raise MemoryInputError("invalid_query")
         if type(page) is not int or page < 1 or page > 100000:
             raise MemoryInputError("invalid_limit")
@@ -461,7 +463,7 @@ class MemoryStore:
         if core is not None:
             where += " AND m.core=?"
             params.append(int(core))
-        query_terms = list(terms(query, query=True).items())[:256]
+        query_terms = list((await asyncio.to_thread(terms, query, query=True)).items())
         if query.strip() and not query_terms:
             return {"items": [], "total": 0, "page": page, "size": size}
 
