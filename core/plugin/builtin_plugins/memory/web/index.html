@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory</title>
+<link rel="stylesheet" href="./theme.css">
+<link rel="stylesheet" href="./custom-select.css">
+</head>
+<body>
+<div class="shell">
+  <header class="page-head">
+    <h1 id="title"></h1>
+    <div class="sub" id="subtitle"></div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+
+  <section id="panel-records" role="tabpanel">
+    <form class="card" id="filters" autocomplete="off">
+      <div class="filters">
+        <div class="field grow">
+          <label for="f-q" id="l-q"></label>
+          <input type="search" id="f-q">
+        </div>
+        <div class="field">
+          <label for="f-kind" id="l-kind"></label>
+          <select id="f-kind"></select>
+        </div>
+        <div class="field">
+          <label for="f-status" id="l-status"></label>
+          <select id="f-status"></select>
+        </div>
+        <div class="field">
+          <label for="f-owner" id="l-owner"></label>
+          <select id="f-owner"></select>
+        </div>
+        <div class="field">
+          <label for="f-origin" id="l-origin"></label>
+          <select id="f-origin"></select>
+        </div>
+        <div class="field">
+          <label for="f-core" id="l-core"></label>
+          <select id="f-core"></select>
+        </div>
+        <div class="field actions">
+          <button type="submit" class="btn" id="b-search"></button>
+          <button type="button" class="btn ghost" id="b-reset"></button>
+        </div>
+      </div>
+    </form>
+
+    <div class="card">
+      <div class="card-row between">
+        <h2 id="records-title"></h2>
+        <button type="button" class="btn ghost sm" id="b-refresh"></button>
+      </div>
+      <div id="records-body"></div>
+      <div class="pager" id="records-pager" hidden>
+        <span class="spacer" id="pager-info"></span>
+        <button type="button" class="btn ghost sm" id="b-prev"></button>
+        <button type="button" class="btn ghost sm" id="b-next"></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel-overview" role="tabpanel" hidden>
+    <div class="card">
+      <div class="card-row between">
+        <h2 id="overview-title"></h2>
+        <button type="button" class="btn ghost sm" id="b-refresh-overview"></button>
+      </div>
+      <div id="overview-body"></div>
+    </div>
+    <div class="card">
+      <div class="card-row between">
+        <h2 id="vector-title"></h2>
+        <button type="button" class="btn ghost sm" id="vector-refresh"></button>
+      </div>
+      <p class="hint" id="vector-note"></p>
+      <p class="hint" id="vector-model-warning"></p>
+      <div id="vector-body" aria-live="polite"></div>
+      <div class="card-row vector-actions">
+        <button type="button" class="btn" id="vector-install" hidden></button>
+        <button type="button" class="btn ghost" id="vector-rebuild" hidden></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel-recall" role="tabpanel" hidden>
+    <form class="card recall-form" id="recall-form">
+      <h2 id="recall-title"></h2>
+      <p class="hint" id="recall-note"></p>
+      <div class="recall-context-row">
+        <div class="field">
+          <label for="r-persona" id="l-r-persona"></label>
+          <select id="r-persona"><option value=""></option></select>
+        </div>
+        <div class="field">
+          <label for="r-context" id="l-r-context"></label>
+          <select id="r-context"><option value=""></option></select>
+        </div>
+      </div>
+      <div id="recall-context-state" class="hint" aria-live="polite"></div>
+      <div class="field">
+        <label for="r-messages" id="l-r-messages"></label>
+        <textarea id="r-messages" rows="3"></textarea>
+        <p class="hint" id="recall-messages-hint"></p>
+      </div>
+      <div class="card-row">
+        <button type="submit" class="btn" id="b-recall"></button>
+        <button type="button" class="btn ghost" id="b-recall-contexts"></button>
+      </div>
+    </form>
+    <div class="card" id="recall-body" aria-live="polite"></div>
+  </section>
+</div>
+
+<div class="modal-mask hidden" id="modal-mask">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <header class="modal-head"><h3 id="modal-title"></h3></header>
+    <div class="modal-scroll" id="modal-scroll">
+    <div id="modal-body"></div>
+    <form id="memory-editor" hidden>
+      <div class="field">
+        <label for="e-text" id="l-e-text"></label>
+        <textarea id="e-text" rows="5" required aria-describedby="edit-text-hint"></textarea>
+        <p class="hint" id="edit-text-hint"></p>
+      </div>
+      <div class="edit-grid">
+        <div class="field"><label for="e-kind" id="l-e-kind"></label><select id="e-kind"></select></div>
+        <div class="field"><label for="e-status" id="l-e-status"></label><select id="e-status"></select></div>
+        <div class="field"><label for="e-importance" id="l-e-importance"></label><select id="e-importance"></select></div>
+        <div class="field"><label for="e-core" id="l-e-core"></label><select id="e-core"></select></div>
+      </div>
+      <div class="field">
+        <label for="e-expires" id="l-e-expires"></label>
+        <input type="datetime-local" step="1" id="e-expires" aria-describedby="edit-expiry-hint">
+        <p class="hint" id="edit-expiry-hint"></p>
+      </div>
+    </form>
+    <div id="edit-feedback" role="status" aria-live="polite"></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn danger" id="memory-delete" hidden></button>
+      <button type="button" class="btn ghost" id="edit-reload" hidden></button>
+      <button type="submit" form="memory-editor" class="btn" id="edit-save" hidden></button>
+      <button type="button" class="btn" id="edit-start" hidden></button>
+      <button type="button" class="btn ghost" id="modal-close"></button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask confirm-mask hidden" id="delete-confirm-mask">
+  <div class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-message">
+    <div class="confirm-content">
+      <div class="confirm-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.3 3.9 1.8 18.1A2 2 0 0 0 3.5 21h17a2 2 0 0 0 1.7-2.9L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+          <path d="M12 9v4m0 4h.01"/>
+        </svg>
+      </div>
+      <div>
+        <h3 id="delete-confirm-title"></h3>
+        <p id="delete-confirm-message"></p>
+      </div>
+    </div>
+    <div class="confirm-actions">
+      <button type="button" class="btn ghost" id="delete-cancel"></button>
+      <button type="button" class="btn danger" id="delete-confirm"></button>
+    </div>
+  </div>
+</div>
+
+<script src="./i18n.js"></script>
+<script src="./custom-select.js"></script>
+<script src="/plugin-bridge.js"></script>
+<script>
+"use strict";
+
+var PLUGIN_ID = "kira_plugin_simple_memory";
+var KINDS = ["semantic", "episodic", "procedural"];
+var STATUSES = ["active", "completed", "cancelled", "superseded"];
+var OWNERS = ["user", "group", "self", "legacy"];
+var ORIGINS = ["conversation", "legacy"];
+
+var state = {
+  locale: I18N.locale,
+  tab: "records",
+  filters: { q: "", kind: "", status: "", owner_type: "", origin: "", core: "" },
+  page: 1,
+  size: 20,
+  total: 0,
+  requestId: 0,
+  recallRequestId: 0,
+  recallLoading: false,
+  recallContexts: null,
+  contextRequestId: 0,
+  vectorStatus: null,
+  vectorRequestId: 0,
+  vectorTimer: null,
+  vectorBusy: false,
+  vectorError: null,
+  detailRequestId: 0,
+  detailItem: null,
+  editDraft: null,
+  editSaving: false,
+  editError: null,
+  editSaved: false,
+  deletePending: false,
+  deleting: false,
+  deleteError: null,
+  deleteResolve: null,
+  renderers: { records: null, overview: null, detail: null },
+};
+
+var el = {};
+var bridge = window.PluginPageContext || null;
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function $(id) { return document.getElementById(id); }
+
+function apiUrl(path) {
+  return "/api/plugin/" + encodeURIComponent(PLUGIN_ID) + path;
+}
+
+function fail(message) {
+  var error = new Error(message);
+  throw error;
+}
+
+function request(path, params, body, method) {
+  var url = apiUrl(path);
+  if (params) {
+    var query = new URLSearchParams();
+    Object.keys(params).forEach(function (key) {
+      var value = params[key];
+      if (value !== "" && value !== null && value !== undefined) query.append(key, value);
+    });
+    var text = query.toString();
+    if (text) url += "?" + text;
+  }
+  var options = { credentials: "same-origin", headers: { Accept: "application/json" } };
+  if (body !== undefined) {
+    options.method = "POST";
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  if (method) options.method = method;
+  return fetch(url, options)
+    .then(function (response) {
+      if (response.status === 401) fail("session_expired");
+      return response.json().then(function (body) {
+        if (!response.ok) {
+          var detail = body && body.detail !== undefined ? body.detail : response.status;
+          fail(detail);
+        }
+        return body;
+      });
+    });
+}
+
+/** Translate a backend error code; anything unrecognised falls back to the raw detail. */
+function describeError(detail) {
+  if (detail === "session_expired") return I18N.t("common.expired");
+  if (typeof detail === "string" && /^[a-z_]+$/.test(detail)) {
+    var key = "error." + detail;
+    var table = PLUGIN_STRINGS[state.locale] || PLUGIN_STRINGS.en;
+    if (table[key] !== undefined || PLUGIN_STRINGS.en[key] !== undefined) return I18N.t(key);
+  }
+  return I18N.t("error.unknown", { msg: detail });
+}
+
+function node(tag, attrs, children) {
+  var element = document.createElement(tag);
+  if (attrs) {
+    Object.keys(attrs).forEach(function (key) {
+      if (key === "class") element.className = attrs[key];
+      else if (key === "text") element.textContent = attrs[key];
+      else if (key.indexOf("on") === 0) element.addEventListener(key.slice(2), attrs[key]);
+      else if (attrs[key] !== null && attrs[key] !== undefined) element.setAttribute(key, attrs[key]);
+    });
+  }
+  (children || []).forEach(function (child) {
+    if (child === null || child === undefined || child === false) return;
+    element.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  });
+  return element;
+}
+
+function clear(target) { while (target.firstChild) target.removeChild(target.firstChild); }
+
+function renderView(name, render) {
+  state.renderers[name] = render;
+  render();
+}
+
+function badge(text, tone) { return node("span", { class: "badge " + (tone || "gray"), text: text }); }
+
+function tone(group, value) {
+  if (group === "status") {
+    return { active: "green", completed: "blue", cancelled: "gray", superseded: "yellow" }[value] || "gray";
+  }
+  if (group === "kind") {
+    return { semantic: "blue", episodic: "purple", procedural: "yellow" }[value] || "gray";
+  }
+  if (group === "owner") {
+    return { user: "blue", group: "purple", self: "green", legacy: "gray" }[value] || "gray";
+  }
+  return "gray";
+}
+
+function pad(number) { return String(number).padStart(2, "0"); }
+
+/** Epoch seconds from the API, rendered in the browser's local time. */
+function formatTime(seconds) {
+  if (seconds === null || seconds === undefined || seconds === "") return "—";
+  var date = new Date(Number(seconds) * 1000);
+  if (isNaN(date.getTime())) return "—";
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) +
+    " " + pad(date.getHours()) + ":" + pad(date.getMinutes());
+}
+
+function importanceMeter(value) {
+  var meter = node("span", { class: "importance", title: I18N.t("records.importance_value", { value: value }) });
+  for (var i = 1; i <= 5; i += 1) meter.appendChild(node("i", { class: i <= value ? "on" : "" }));
+  return meter;
+}
+
+function loadingState() {
+  return node("div", { class: "state" }, [node("div", { class: "spinner" }), I18N.t("common.loading")]);
+}
+
+function errorState(detail, retry) {
+  var box = node("div", { class: "state error" }, [describeError(detail)]);
+  if (retry) box.appendChild(node("button", { type: "button", class: "btn ghost sm", onclick: retry, text: I18N.t("common.retry") }));
+  return box;
+}
+
+function emptyState() {
+  return node("div", { class: "state" }, [
+    node("div", null, [I18N.t("records.empty")]),
+    node("div", { class: "faint", text: I18N.t("records.empty_hint") }),
+  ]);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Static chrome                                                      */
+/* ------------------------------------------------------------------ */
+
+function fillSelect(select, label, values, current, translate) {
+  clear(select);
+  select.appendChild(node("option", { value: "", text: I18N.t("common.all") }));
+  values.forEach(function (value) {
+    var text = translate ? I18N.value(translate, value) : value;
+    select.appendChild(node("option", { value: value, text: text }));
+  });
+  select.value = values.indexOf(current) === -1 ? "" : current;
+  select.setAttribute("aria-label", label);
+}
+
+function renderChrome(filters) {
+  filters = filters || state.filters;
+  document.title = I18N.t("app.title") + " · KiraAI";
+  el.title.textContent = I18N.t("app.title");
+  el.subtitle.textContent = I18N.t("app.subtitle");
+
+  /* Tabs */
+  clear(el.tabs);
+  [["records", "tab.records"], ["overview", "tab.overview"], ["recall", "tab.recall"]].forEach(function (pair) {
+    var button = node("button", {
+      type: "button",
+      class: "tab",
+      role: "tab",
+      text: I18N.t(pair[1]),
+      "aria-selected": String(state.tab === pair[0]),
+      onclick: function () { selectTab(pair[0]); },
+    });
+    el.tabs.appendChild(button);
+  });
+  el.panelRecords.hidden = state.tab !== "records";
+  el.panelOverview.hidden = state.tab !== "overview";
+  $("panel-recall").hidden = state.tab !== "recall";
+
+  /* Filters */
+  $("l-q").textContent = I18N.t("filter.q");
+  $("f-q").placeholder = I18N.t("filter.q_placeholder");
+  $("l-kind").textContent = I18N.t("filter.kind");
+  $("l-status").textContent = I18N.t("filter.status");
+  $("l-owner").textContent = I18N.t("filter.owner_type");
+  $("l-origin").textContent = I18N.t("filter.origin");
+  $("l-core").textContent = I18N.t("filter.core");
+  fillSelect($("f-kind"), I18N.t("filter.kind"), KINDS, filters.kind, "kind");
+  fillSelect($("f-status"), I18N.t("filter.status"), STATUSES, filters.status, "status");
+  fillSelect($("f-owner"), I18N.t("filter.owner_type"), OWNERS, filters.owner_type, "owner");
+  fillSelect($("f-origin"), I18N.t("filter.origin"), ORIGINS, filters.origin, "origin");
+  clear($("f-core"));
+  $("f-core").appendChild(node("option", { value: "", text: I18N.t("common.all") }));
+  $("f-core").appendChild(node("option", { value: "1", text: I18N.t("common.yes_option") }));
+  $("f-core").appendChild(node("option", { value: "0", text: I18N.t("common.no_option") }));
+  $("f-core").value = filters.core;
+  $("f-q").value = filters.q;
+
+  $("b-search").textContent = I18N.t("common.search");
+  $("b-reset").textContent = I18N.t("common.reset");
+  $("b-refresh").textContent = I18N.t("common.refresh");
+  $("b-refresh-overview").textContent = I18N.t("common.refresh");
+  $("b-prev").textContent = I18N.t("records.prev");
+  $("b-next").textContent = I18N.t("records.next");
+  $("records-title").textContent = I18N.t("records.title");
+  $("overview-title").textContent = I18N.t("overview.title");
+  $("vector-title").textContent = I18N.t("vector.title");
+  $("vector-note").textContent = I18N.t("vector.note");
+  $("vector-model-warning").textContent = I18N.t("vector.model_warning");
+  $("vector-refresh").textContent = I18N.t("common.refresh");
+  $("vector-install").textContent = I18N.t("vector.install");
+  $("vector-rebuild").textContent = I18N.t("vector.rebuild");
+  $("modal-title").textContent = I18N.t("detail.title");
+  $("modal-close").textContent = I18N.t("common.close");
+  $("recall-title").textContent = I18N.t("recall.title");
+  $("recall-note").textContent = I18N.t("recall.note");
+  $("l-r-context").textContent = I18N.t("recall.session");
+  $("l-r-persona").textContent = I18N.t("recall.persona");
+  ["r-persona", "r-context"].forEach(function (id) {
+    $(id).options[0].textContent = I18N.t("common.all");
+  });
+  $("l-r-messages").textContent = I18N.t("recall.messages");
+  $("r-messages").placeholder = I18N.t("recall.messages_placeholder");
+  $("recall-messages-hint").textContent = I18N.t("recall.messages_hint");
+  $("b-recall").textContent = I18N.t("recall.run");
+  $("b-recall-contexts").textContent = I18N.t("recall.refresh_contexts");
+}
+
+function selectTab(name) {
+  if (state.tab === name) return;
+  state.tab = name;
+  renderChrome();
+  clearTimeout(state.vectorTimer);
+  if (name === "overview") loadOverview();
+  else if (name === "records") loadRecords();
+  else if (state.recallContexts === null) loadRecallContexts();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Records tab                                                        */
+/* ------------------------------------------------------------------ */
+
+function recordsHeader() {
+  return ["col.text", "col.kind", "col.owner", "col.importance", "col.status", "col.updated"];
+}
+
+function renderRecords(data) {
+  clear(el.recordsBody);
+  $("records-title").textContent = I18N.t("records.title");
+  el.pagerInfo.textContent = I18N.t("common.page_of", {
+    total: data.total,
+    page: data.page,
+    pages: Math.max(1, Math.ceil(data.total / data.size)),
+  });
+
+  if (!data.items.length) {
+    el.recordsBody.appendChild(emptyState());
+    el.pager.hidden = true;
+    return;
+  }
+
+  var head = node("tr", null, recordsHeader().map(function (key) {
+    return node("th", { text: I18N.t(key) });
+  }));
+
+  var rows = data.items.map(function (item) {
+    var owner = node("div", null, [
+      badge(I18N.value("owner", item.owner_type), tone("owner", item.owner_type)),
+    ]);
+    if (item.subject) owner.appendChild(node("div", { class: "cell-sub", text: item.subject }));
+    if (item.adapter) owner.appendChild(node("div", { class: "cell-sub", text: item.adapter }));
+
+    var content = node("div", { class: "cell-text", text: item.text });
+    var metaText = item.adapter ? item.adapter + " · " + item.session_id : item.session_id;
+    var meta = node("div", { class: "cell-sub", text: metaText });
+
+    return node("tr", { "data-id": item.id, onclick: function () { openDetail(item.id); } }, [
+      node("td", null, [
+        content,
+        meta,
+        item.core ? badge(I18N.t("records.core_tag"), "yellow") : null,
+      ]),
+      node("td", null, [badge(I18N.value("kind", item.kind), tone("kind", item.kind))]),
+      node("td", null, [owner]),
+      node("td", { class: "nowrap" }, [importanceMeter(item.importance)]),
+      node("td", null, [badge(I18N.value("status", item.status), tone("status", item.status))]),
+      node("td", { class: "nowrap" }, [formatTime(item.updated_at)]),
+    ]);
+  });
+
+  el.recordsBody.appendChild(node("div", { class: "table-wrap" }, [
+    node("table", null, [node("thead", null, [head]), node("tbody", null, rows)]),
+  ]));
+
+  var pages = Math.max(1, Math.ceil(data.total / data.size));
+  el.pager.hidden = pages <= 1;
+  $("b-prev").disabled = data.page <= 1;
+  $("b-next").disabled = data.page >= pages;
+}
+
+function loadRecords() {
+  var requestId = ++state.requestId;
+  renderView("records", function () {
+    clear(el.recordsBody);
+    el.recordsBody.appendChild(loadingState());
+    el.pager.hidden = true;
+    $("records-title").textContent = I18N.t("records.title");
+  });
+
+  var params = Object.assign({}, state.filters, { page: state.page, size: state.size });
+  request("/memory/records", params).then(function (data) {
+    if (requestId !== state.requestId) return;
+    var pages = Math.max(1, Math.ceil(data.total / data.size));
+    if (state.page > pages) { state.page = pages; loadRecords(); return; }
+    state.total = data.total;
+    renderView("records", function () { renderRecords(data); });
+  }).catch(function (error) {
+    if (requestId !== state.requestId) return;
+    renderView("records", function () {
+      clear(el.recordsBody);
+      el.recordsBody.appendChild(errorState(error.message, loadRecords));
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Detail modal                                                       */
+/* ------------------------------------------------------------------ */
+
+function describeRow(label, value) {
+  return [node("dt", { text: label }), node("dd", null, Array.isArray(value) ? value : [value])];
+}
+
+function renderDetail(item) {
+  renderEditor();
+  var ownerText = I18N.value("owner", item.owner_type);
+  var pairs = [];
+  pairs = pairs.concat(describeRow(I18N.t("detail.text"), node("div", { class: "block", text: item.text })));
+  pairs = pairs.concat(describeRow(I18N.t("detail.kind"), badge(I18N.value("kind", item.kind), tone("kind", item.kind))));
+  pairs = pairs.concat(describeRow(I18N.t("detail.status"), badge(I18N.value("status", item.status), tone("status", item.status))));
+  pairs = pairs.concat(describeRow(I18N.t("detail.importance"), importanceMeter(item.importance)));
+  pairs = pairs.concat(describeRow(I18N.t("detail.core"), item.core ? I18N.t("common.yes") : I18N.t("common.no")));
+  pairs = pairs.concat(describeRow(I18N.t("detail.owner"), ownerText));
+  if (item.subject) pairs = pairs.concat(describeRow(I18N.t("detail.owner_key"), node("span", { class: "mono", text: item.owner_id })));
+  if (item.adapter) pairs = pairs.concat(describeRow(I18N.t("detail.adapter"), node("span", { class: "mono", text: item.adapter })));
+  pairs = pairs.concat(describeRow(I18N.t("detail.persona"), node("span", { class: "mono", text: item.persona_id || "—" })));
+  pairs = pairs.concat(describeRow(I18N.t("detail.session"), node("span", { class: "mono", text: item.session_id || "—" })));
+  if (item.source_message_id) {
+    pairs = pairs.concat(describeRow(I18N.t("detail.source_message"), node("span", { class: "mono", text: item.source_message_id })));
+  }
+  pairs = pairs.concat(describeRow(I18N.t("detail.origin"), badge(I18N.value("origin", item.origin), "gray")));
+  pairs = pairs.concat(describeRow(I18N.t("detail.created"), formatTime(item.created_at)));
+  pairs = pairs.concat(describeRow(I18N.t("detail.updated"), formatTime(item.updated_at)));
+  pairs = pairs.concat(describeRow(I18N.t("detail.expires"), item.expires_at
+    ? (Number(item.expires_at) * 1000 < Date.now() ? I18N.t("detail.expires_expired") : formatTime(item.expires_at))
+    : I18N.t("detail.expires_never")));
+  if (item.terms !== undefined) pairs = pairs.concat(describeRow(I18N.t("detail.terms"), String(item.terms)));
+  pairs = pairs.concat(describeRow(I18N.t("detail.revision"), String(item.revision)));
+
+  clear(el.modalBody);
+  el.modalBody.appendChild(node("dl", { class: "kv" }, pairs));
+  $("modal-title").textContent = I18N.t("detail.title");
+}
+
+function expiryInput(epoch) {
+  if (!epoch) return "";
+  var date = new Date(Number(epoch) * 1000);
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) +
+    "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
+}
+
+function editorOptions(id, values, group, selected) {
+  var select = $(id);
+  clear(select);
+  values.forEach(function (value) {
+    select.appendChild(node("option", { value: value,
+      text: group ? I18N.value(group, value) : String(value) }));
+  });
+  select.value = selected;
+}
+
+function detailBusy() { return state.editSaving || state.deletePending || state.deleting; }
+
+function renderEditor() {
+  var draft = state.editDraft;
+  var editing = !!draft;
+  $("memory-editor").hidden = !editing;
+  el.modalBody.hidden = editing;
+  $("edit-start").hidden = !state.detailItem || editing;
+  $("edit-start").textContent = I18N.t("edit.start");
+  $("memory-delete").hidden = !state.detailItem || editing;
+  $("memory-delete").textContent = I18N.t(state.deleting ? "delete.deleting" : "delete.start");
+  $("modal-close").textContent = I18N.t(editing ? "edit.cancel" : "common.close");
+  $("edit-save").hidden = !editing;
+  $("edit-save").textContent = I18N.t(state.editSaving ? "edit.saving" : "edit.save");
+  $("edit-reload").hidden = state.editError !== "conflict" && state.deleteError !== "conflict";
+  $("edit-reload").textContent = I18N.t("edit.reload");
+  ["modal-close", "edit-start", "edit-save", "edit-reload", "memory-delete"].forEach(function (id) {
+    $(id).disabled = detailBusy();
+  });
+  clear($("edit-feedback"));
+  if (state.deleteError) $("edit-feedback").appendChild(node("p", {
+    class: "edit-error", text: state.deleteError === "conflict" ? I18N.t("delete.conflict") : describeError(state.deleteError),
+  }));
+  else if (state.editError) $("edit-feedback").appendChild(node("p", {
+    class: "edit-error", text: describeError(state.editError),
+  }));
+  else if (state.editSaved) $("edit-feedback").appendChild(node("p", {
+    class: "hint", text: I18N.t("edit.saved"),
+  }));
+  if (!draft) return;
+  ["text", "kind", "status", "importance", "core", "expires"].forEach(function (key) {
+    var labels = { text: "detail.text", kind: "detail.kind", status: "detail.status",
+      importance: "detail.importance", core: "detail.core", expires: "detail.expires" };
+    $("l-e-" + key).textContent = I18N.t(labels[key]);
+    $("e-" + key).disabled = state.editSaving;
+  });
+  $("edit-text-hint").textContent = I18N.t("edit.text_hint");
+  $("edit-expiry-hint").textContent = I18N.t("edit.expiry_hint");
+  $("e-text").value = draft.text;
+  $("e-expires").value = draft.expires;
+  editorOptions("e-kind", KINDS, "kind", draft.kind);
+  editorOptions("e-status", STATUSES, "status", draft.status);
+  editorOptions("e-importance", [1, 2, 3, 4, 5], null, String(draft.importance));
+  editorOptions("e-core", ["1", "0"], null, draft.core ? "1" : "0");
+  $("e-core").options[0].textContent = I18N.t("common.yes");
+  $("e-core").options[1].textContent = I18N.t("common.no");
+  MemorySelect.syncAll();
+}
+
+function startEditing() {
+  var item = state.detailItem;
+  if (!item || detailBusy()) return;
+  state.editDraft = { text: item.text, kind: item.kind, status: item.status,
+    importance: item.importance, core: item.core, expires: expiryInput(item.expires_at) };
+  state.editError = null;
+  state.editSaved = false;
+  state.deleteError = null;
+  renderEditor();
+  $("e-text").focus();
+}
+
+function saveEditing(event) {
+  event.preventDefault();
+  if (!state.editDraft || state.editSaving) return;
+  var draft = state.editDraft;
+  var item = state.detailItem;
+  var expiry = draft.expires === expiryInput(item.expires_at) ? item.expires_at :
+    (draft.expires ? new Date(draft.expires).getTime() / 1000 : null);
+  state.editError = null;
+  if (!draft.text.trim() || Array.from(draft.text).length > 4000 || draft.text.indexOf("\0") !== -1) {
+    state.editError = "invalid_text";
+  } else if (expiry !== null && (!Number.isFinite(expiry) || expiry <= 0)) {
+    state.editError = "invalid_expiry";
+  }
+  if (state.editError) { renderEditor(); return; }
+  state.editSaving = true;
+  renderEditor();
+  var requestId = state.detailRequestId;
+  request("/memory/records/" + encodeURIComponent(item.id), null, {
+    revision: item.revision, text: draft.text, kind: draft.kind, status: draft.status,
+    importance: draft.importance, core: draft.core, expires_at: expiry,
+  }).then(function (updated) {
+    if (requestId !== state.detailRequestId) return;
+    state.editSaving = false;
+    state.editDraft = null;
+    state.detailItem = updated;
+    state.editSaved = true;
+    renderDetail(updated);
+    loadRecords();
+    if (state.renderers.overview) loadOverview();
+    resetRecallResult();
+  }).catch(function (error) {
+    if (requestId !== state.detailRequestId) return;
+    state.editSaving = false;
+    state.editError = error.message;
+    renderEditor();
+  });
+}
+
+function renderDeleteConfirmation() {
+  $("delete-confirm-title").textContent = I18N.t("delete.title");
+  $("delete-confirm-message").textContent = I18N.t("delete.message");
+  $("delete-cancel").textContent = I18N.t("edit.cancel");
+  $("delete-confirm").textContent = I18N.t("delete.start");
+}
+
+function confirmDelete() {
+  return new Promise(function (resolve) {
+    state.deleteResolve = resolve;
+    renderView("deleteConfirm", renderDeleteConfirmation);
+    $("delete-confirm-mask").classList.remove("hidden");
+    el.modalMask.inert = true;
+    el.modalMask.setAttribute("aria-hidden", "true");
+    $("delete-cancel").focus();
+  });
+}
+
+function finishDeleteConfirmation(confirmed) {
+  var resolve = state.deleteResolve;
+  if (!resolve) return;
+  state.deleteResolve = null;
+  state.renderers.deleteConfirm = null;
+  $("delete-confirm-mask").classList.add("hidden");
+  el.modalMask.inert = false;
+  el.modalMask.removeAttribute("aria-hidden");
+  resolve(confirmed);
+}
+
+async function deleteMemory() {
+  var item = state.detailItem;
+  if (!item || state.editDraft || detailBusy()) return;
+  var requestId = state.detailRequestId;
+  state.deletePending = true;
+  state.deleteError = null;
+  state.editSaved = false;
+  renderEditor();
+  try {
+    var confirmed = await confirmDelete();
+    if (!confirmed || requestId !== state.detailRequestId) return;
+    state.deletePending = false;
+    state.deleting = true;
+    renderEditor();
+    await request("/memory/records/" + encodeURIComponent(item.id), { revision: item.revision }, undefined, "DELETE");
+    state.deleting = false;
+    closeModal();
+    loadRecords();
+    if (state.renderers.overview) loadOverview();
+    resetRecallResult();
+  } catch (error) {
+    if (requestId === state.detailRequestId) state.deleteError = error.message;
+  } finally {
+    state.deletePending = false;
+    state.deleting = false;
+    if (state.detailItem) {
+      renderEditor();
+      $("memory-delete").focus();
+    }
+  }
+}
+
+function openDetail(id) {
+  if (detailBusy()) return;
+  var requestId = ++state.detailRequestId;
+  state.detailItem = null;
+  state.editDraft = null;
+  state.editError = null;
+  state.editSaved = false;
+  state.deleteError = null;
+  $("modal-scroll").scrollTop = 0;
+  el.modalMask.classList.remove("hidden");
+  renderView("detail", function () {
+    if (state.detailItem) { renderDetail(state.detailItem); return; }
+    renderEditor();
+    clear(el.modalBody);
+    el.modalBody.appendChild(loadingState());
+    $("modal-title").textContent = I18N.t("detail.title");
+  });
+  request("/memory/records/" + encodeURIComponent(id)).then(function (item) {
+    if (requestId !== state.detailRequestId) return;
+    state.detailItem = item;
+    renderDetail(item);
+  }).catch(function (error) {
+    if (requestId !== state.detailRequestId) return;
+    renderView("detail", function () {
+      renderEditor();
+      clear(el.modalBody);
+      el.modalBody.appendChild(errorState(error.message, function () { openDetail(id); }));
+    });
+  });
+}
+
+function closeModal() {
+  if (detailBusy()) return;
+  if (state.editDraft) {
+    state.editDraft = null;
+    state.editError = null;
+    renderDetail(state.detailItem);
+    $("modal-scroll").scrollTop = 0;
+    return;
+  }
+  ++state.detailRequestId;
+  state.editDraft = null;
+  state.detailItem = null;
+  state.editError = null;
+  state.editSaved = false;
+  state.deleteError = null;
+  state.renderers.detail = null;
+  el.modalMask.classList.add("hidden");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Overview tab                                                       */
+/* ------------------------------------------------------------------ */
+
+function renderVectorStatus(data) {
+  var target = $("vector-body");
+  clear(target);
+  var phaseKey = "vector.phase." + data.phase;
+  target.appendChild(node("p", { text: I18N.t(phaseKey) }));
+  if (data.enabled && data.dependency_available) {
+    target.appendChild(node("p", { class: "hint",
+      text: I18N.t("vector.progress", { indexed: data.indexed, total: data.total }) }));
+  }
+  if (data.phase === "rebuild_required") {
+    target.appendChild(node("p", { class: "hint", text: I18N.t("vector.dimensions", {
+      expected: data.index_dimensions, actual: data.received_dimensions,
+    }) }));
+  }
+  if (data.reason) {
+    var reasonKey = "vector.reason." + data.reason;
+    target.appendChild(node("p", { class: "edit-error", text: I18N.t(reasonKey) }));
+  }
+  if (state.vectorError) target.appendChild(errorState(state.vectorError, loadVectorStatus));
+  $("vector-install").hidden = !data.enabled || data.dependency_available;
+  $("vector-rebuild").hidden = !data.enabled || !data.dependency_available;
+  $("vector-install").disabled = state.vectorBusy || data.phase === "installing";
+  $("vector-rebuild").disabled = state.vectorBusy ||
+    ["installing", "building", "starting", "model_missing"].indexOf(data.phase) !== -1;
+}
+
+function showVectorStatus(data) {
+  state.vectorStatus = data;
+  renderView("vector", function () { renderVectorStatus(state.vectorStatus); });
+  clearTimeout(state.vectorTimer);
+  if (state.tab === "overview" && !document.hidden &&
+      ["installing", "building", "starting"].indexOf(data.phase) !== -1) {
+    state.vectorTimer = setTimeout(loadVectorStatus, 3000);
+  }
+}
+
+function loadVectorStatus() {
+  if (state.vectorBusy) return;
+  clearTimeout(state.vectorTimer);
+  var requestId = ++state.vectorRequestId;
+  request("/memory/vector/status").then(function (data) {
+    if (requestId !== state.vectorRequestId) return;
+    showVectorStatus(data);
+  }).catch(function (error) {
+    if (requestId !== state.vectorRequestId) return;
+    renderView("vector", function () {
+      clear($("vector-body"));
+      $("vector-body").appendChild(errorState(error.message, loadVectorStatus));
+    });
+  });
+}
+
+function vectorAction(action) {
+  if (state.vectorBusy) return;
+  clearTimeout(state.vectorTimer);
+  var requestId = ++state.vectorRequestId;
+  state.vectorBusy = true;
+  state.vectorError = null;
+  if (state.vectorStatus) renderVectorStatus(state.vectorStatus);
+  request("/memory/vector/" + action, null, {}).then(function (data) {
+    if (requestId !== state.vectorRequestId) return;
+    state.vectorBusy = false;
+    showVectorStatus(data);
+  }).catch(function (error) {
+    if (requestId !== state.vectorRequestId) return;
+    state.vectorBusy = false;
+    state.vectorError = error.message;
+    if (state.vectorStatus) renderVectorStatus(state.vectorStatus);
+  });
+}
+
+function statCard(label, value, note) {
+  return node("div", { class: "stat" }, [
+    node("div", { class: "label", text: label }),
+    node("div", { class: "value", text: String(value) }),
+    note ? node("div", { class: "note", text: note }) : null,
+  ]);
+}
+
+function distribution(title, mapping, group) {
+  var entries = Object.keys(mapping);
+  var body = entries.length
+    ? node("div", { class: "card-row" }, entries.map(function (key) {
+        return badge(I18N.value(group, key) + " · " + mapping[key], tone(group, key));
+      }))
+    : node("div", { class: "muted", text: I18N.t("common.none") });
+  return node("div", null, [
+    node("div", { class: "hint", text: title }),
+    body,
+  ]);
+}
+
+function renderOverview(data) {
+  clear(el.overviewBody);
+
+  el.overviewBody.appendChild(node("div", { class: "stats" }, [
+    statCard(I18N.t("overview.total"), data.total),
+    statCard(I18N.t("overview.active"), data.active),
+    statCard(I18N.t("overview.inactive"), data.inactive),
+    statCard(I18N.t("overview.core"), data.core),
+    statCard(I18N.t("overview.expiring"), data.expiring),
+    statCard(I18N.t("overview.last_updated"), formatTime(data.last_updated)),
+  ]));
+
+  var grid = node("div", { class: "stats", style: "margin-top:16px" }, [
+    node("div", { class: "stat" }, [distribution(I18N.t("overview.by_status"), data.statuses, "status")]),
+    node("div", { class: "stat" }, [distribution(I18N.t("overview.by_kind"), data.kinds, "kind")]),
+    node("div", { class: "stat" }, [distribution(I18N.t("overview.by_owner"), data.owners, "owner")]),
+    node("div", { class: "stat" }, [distribution(I18N.t("overview.by_origin"), data.origins, "origin")]),
+  ]);
+  el.overviewBody.appendChild(grid);
+
+  var limits = data.limits || {};
+  el.overviewBody.appendChild(node("div", { style: "margin-top:18px" }, [
+    node("div", { class: "hint", text: I18N.t("overview.limits") }),
+    node("dl", { class: "kv" }, describeRow(I18N.t("overview.limit_core"), String(limits.core ?? "—"))
+      .concat(describeRow(I18N.t("overview.limit_recall"), String(limits.recall ?? "—")))),
+    node("div", { class: "hint", style: "margin-top:12px", text: I18N.t("overview.limit_note") }),
+  ]));
+}
+
+function loadOverview() {
+  loadVectorStatus();
+  renderView("overview", function () {
+    clear(el.overviewBody);
+    el.overviewBody.appendChild(loadingState());
+  });
+  request("/memory/overview").then(function (data) {
+    renderView("overview", function () { renderOverview(data); });
+  }).catch(function (error) {
+    renderView("overview", function () {
+      clear(el.overviewBody);
+      el.overviewBody.appendChild(errorState(error.message, loadOverview));
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Wiring                                                             */
+/* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/*  Recall simulation                                                  */
+/* ------------------------------------------------------------------ */
+
+function resetRecallResult() {
+  ++state.recallRequestId;
+  state.recallLoading = false;
+  renderView("recall", function () {
+    clear($("recall-body"));
+    $("recall-body").appendChild(node("p", { class: "muted", text: I18N.t("recall.idle") }));
+  });
+}
+
+function updateRecallButton() {
+  $("b-recall").disabled = state.recallLoading;
+}
+
+function loadRecallContexts() {
+  var requestId = ++state.contextRequestId;
+  renderView("recallContext", function () {
+    clear($("recall-context-state"));
+    $("recall-context-state").appendChild(loadingState());
+  });
+  request("/memory/recall-options").then(function (data) {
+    if (requestId !== state.contextRequestId) return;
+    state.recallContexts = data;
+    renderView("recallContexts", function () {
+      var removedFilter = false;
+      [["r-persona", data.personas], ["r-context", data.sessions]].forEach(function (item) {
+        var select = $(item[0]);
+        var previous = select.value;
+        clear(select);
+        select.appendChild(node("option", { value: "", text: I18N.t("common.all") }));
+        item[1].forEach(function (option) {
+          select.appendChild(node("option", { value: option.id,
+            text: option.name === option.id ? option.name : option.name + " · " + option.id }));
+        });
+        select.value = item[1].some(function (option) { return option.id === previous; }) ? previous : "";
+        if (select.value !== previous) removedFilter = true;
+      });
+      if (removedFilter) resetRecallResult();
+      updateRecallButton();
+    });
+    renderView("recallContext", function () {
+      $("recall-context-state").textContent = I18N.t("recall.context_hint");
+    });
+  }).catch(function (error) {
+    if (requestId !== state.contextRequestId) return;
+    state.recallContexts = null;
+    renderView("recallContext", function () {
+      clear($("recall-context-state"));
+      $("recall-context-state").appendChild(errorState(error.message, loadRecallContexts));
+    });
+  });
+}
+
+function renderRecall(data) {
+  var target = $("recall-body");
+  clear(target);
+  target.appendChild(node("p", { class: "hint", text: I18N.t("recall.budget", {
+    used: data.prompt_chars, budget: data.limits.prompt_chars,
+  }) }));
+  target.appendChild(node("p", null, [I18N.t("recall.query") + ": ",
+    node("code", { text: data.query || I18N.t("common.none") })]));
+  if (data.retrieval) {
+    if (data.retrieval.timed_out) {
+      target.appendChild(node("p", { class: "hint", text: I18N.t("recall.timeout", {
+        seconds: data.retrieval.timeout_seconds,
+      }) }));
+    }
+    var modeKey = data.retrieval.mode === "hybrid" ? "vector.used_hybrid" : "vector.used_keyword";
+    target.appendChild(node("p", { class: "hint", text: I18N.t(modeKey) }));
+    var rerank = data.retrieval.rerank;
+    if (rerank) {
+      var rerankPhaseKey = "rerank.phase." + rerank.phase;
+      target.appendChild(node("p", { class: "hint", text: I18N.t(rerankPhaseKey, {
+        count: rerank.candidates, ms: rerank.elapsed_ms,
+      }) }));
+      if (rerank.reason) {
+        var rerankReasonKey = "rerank.reason." + rerank.reason;
+        target.appendChild(node("p", { class: "hint", text: I18N.t(rerankReasonKey) }));
+      }
+    }
+    if (data.retrieval.phase === "rebuild_required") {
+      target.appendChild(node("p", { class: "edit-error", text: I18N.t("vector.phase.rebuild_required") }));
+    }
+  }
+  [["core", "recall.core"], ["recalled", "recall.retrieved"]].forEach(function (group) {
+    var records = data[group[0]];
+    var section = node("section", { class: "recall-group" }, [
+      node("h3", { text: I18N.t(group[1]) + " · " + records.length }),
+    ]);
+    if (!records.length) section.appendChild(node("p", { class: "muted", text: I18N.t("common.none") }));
+    records.forEach(function (record) {
+      section.appendChild(node("article", { class: "recall-record" }, [
+        node("div", { class: "card-row" }, [
+          badge(I18N.value("kind", record.kind), tone("kind", record.kind)),
+          badge(I18N.value("owner", record.owner_type), tone("owner", record.owner_type)),
+          record.truncated ? badge(I18N.t("recall.truncated"), "yellow") : null,
+          node("button", { type: "button", class: "btn link sm", text: I18N.t("recall.details"),
+            onclick: function () { openDetail(record.id); } }),
+        ]),
+        node("div", { class: "block", text: record.text }),
+        node("div", { class: "mono muted", text: record.id }),
+      ]));
+    });
+    target.appendChild(section);
+  });
+}
+
+function runRecall(payload) {
+  var requestId = ++state.recallRequestId;
+  state.recallLoading = true;
+  $("b-recall").disabled = true;
+  renderView("recall", function () {
+    clear($("recall-body"));
+    $("recall-body").appendChild(loadingState());
+  });
+  request("/memory/recall", null, payload).then(function (data) {
+    if (requestId !== state.recallRequestId) return;
+    state.recallLoading = false;
+    updateRecallButton();
+    renderView("recall", function () { renderRecall(data); });
+  }).catch(function (error) {
+    if (requestId !== state.recallRequestId) return;
+    state.recallLoading = false;
+    updateRecallButton();
+    renderView("recall", function () {
+      clear($("recall-body"));
+      $("recall-body").appendChild(errorState(error.message, function () { runRecall(payload); }));
+    });
+  });
+}
+
+function currentFilters() {
+  return {
+    q: $("f-q").value,
+    kind: $("f-kind").value,
+    status: $("f-status").value,
+    owner_type: $("f-owner").value,
+    origin: $("f-origin").value,
+    core: $("f-core").value,
+  };
+}
+
+function readFilters() {
+  state.filters = currentFilters();
+  state.filters.q = state.filters.q.trim();
+  state.page = 1;
+}
+
+function bind() {
+  el = {
+    title: $("title"),
+    subtitle: $("subtitle"),
+    tabs: $("tabs"),
+    panelRecords: $("panel-records"),
+    panelOverview: $("panel-overview"),
+    recordsBody: $("records-body"),
+    recordsTitle: $("records-title"),
+    pager: $("records-pager"),
+    pagerInfo: $("pager-info"),
+    overviewBody: $("overview-body"),
+    modalMask: $("modal-mask"),
+    modalBody: $("modal-body"),
+  };
+
+  $("filters").addEventListener("submit", function (event) {
+    event.preventDefault();
+    readFilters();
+    loadRecords();
+  });
+
+  $("b-reset").addEventListener("click", function () {
+    state.filters = { q: "", kind: "", status: "", owner_type: "", origin: "", core: "" };
+    state.page = 1;
+    renderChrome();
+    loadRecords();
+  });
+
+  $("b-refresh").addEventListener("click", loadRecords);
+  $("b-refresh-overview").addEventListener("click", loadOverview);
+  $("vector-refresh").addEventListener("click", loadVectorStatus);
+  $("vector-install").addEventListener("click", function () { vectorAction("install"); });
+  $("vector-rebuild").addEventListener("click", function () { vectorAction("rebuild"); });
+  document.addEventListener("visibilitychange", function () {
+    clearTimeout(state.vectorTimer);
+    if (!document.hidden && state.tab === "overview") loadVectorStatus();
+  });
+  window.addEventListener("pagehide", function () { clearTimeout(state.vectorTimer); });
+  $("b-prev").addEventListener("click", function () {
+    if (state.page > 1) { state.page -= 1; loadRecords(); }
+  });
+  $("b-next").addEventListener("click", function () {
+    state.page += 1;
+    loadRecords();
+  });
+
+  $("r-context").addEventListener("change", function () {
+    resetRecallResult();
+    updateRecallButton();
+  });
+  $("r-persona").addEventListener("change", function () {
+    resetRecallResult();
+    updateRecallButton();
+  });
+  $("b-recall-contexts").addEventListener("click", loadRecallContexts);
+  $("recall-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (state.recallLoading) return;
+    var payload = { persona_id: $("r-persona").value, session_id: $("r-context").value };
+    payload.messages = $("r-messages").value.split(/\r?\n/).slice(-3);
+    runRecall(payload);
+  });
+  $("delete-cancel").addEventListener("click", function () { finishDeleteConfirmation(false); });
+  $("delete-confirm").addEventListener("click", function () { finishDeleteConfirmation(true); });
+  var confirmMask = $("delete-confirm-mask");
+  var confirmOutside = false;
+  confirmMask.addEventListener("mousedown", function (event) { confirmOutside = event.target === confirmMask; });
+  confirmMask.addEventListener("mouseup", function (event) {
+    if (confirmOutside && event.target === confirmMask) finishDeleteConfirmation(false);
+    confirmOutside = false;
+  });
+  $("memory-delete").addEventListener("click", deleteMemory);
+  $("edit-start").addEventListener("click", startEditing);
+  $("edit-reload").addEventListener("click", function () { openDetail(state.detailItem.id); });
+  $("memory-editor").addEventListener("submit", saveEditing);
+  ["text", "kind", "status", "importance", "core", "expires"].forEach(function (key) {
+    $("e-" + key).addEventListener("input", function () {
+      if (!state.editDraft) return;
+      var value = $("e-" + key).value;
+      state.editDraft[key] = key === "core" ? value === "1" : (key === "importance" ? Number(value) : value);
+    });
+  });
+  $("modal-close").addEventListener("click", closeModal);
+  el.modalMask.addEventListener("click", function (event) {
+    if (event.target === el.modalMask) closeModal();
+  });
+  document.addEventListener("keydown", function (event) {
+    if (state.deleteResolve) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finishDeleteConfirmation(false);
+      } else if (event.key === "Tab") {
+        var cancel = $("delete-cancel"), confirm = $("delete-confirm");
+        if (event.shiftKey && document.activeElement === cancel) {
+          event.preventDefault(); confirm.focus();
+        } else if (!event.shiftKey && document.activeElement === confirm) {
+          event.preventDefault(); cancel.focus();
+        }
+      }
+      return;
+    }
+    if (event.key === "Escape" && !event.defaultPrevented && !el.modalMask.classList.contains("hidden")) closeModal();
+  });
+}
+
+function applyLocale(locale) {
+  if (I18N.setLocale(locale)) {
+    state.locale = I18N.locale;
+    renderChrome(currentFilters());
+    Object.keys(state.renderers).forEach(function (name) {
+      var render = state.renderers[name];
+      if (render) render();
+    });
+    MemorySelect.syncAll();
+
+  }
+}
+
+function start() {
+  bind();
+  renderChrome();
+  MemorySelect.mountAll();
+  renderView("recall", function () {
+    clear($("recall-body"));
+    $("recall-body").appendChild(node("p", { class: "muted", text: I18N.t("recall.idle") }));
+  });
+
+  if (bridge && typeof bridge.ready === "function") {
+    bridge.ready().then(function (context) {
+      if (context && context.locale) applyLocale(context.locale);
+    }).catch(function () { /* host unavailable: keep the browser locale */ });
+    if (typeof bridge.onContext === "function") {
+      bridge.onContext(function (context) {
+        if (context && context.locale) applyLocale(context.locale);
+      });
+    }
+  }
+
+  loadRecords();
+}
+
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+else start();
+</script>
+</body>
+</html>

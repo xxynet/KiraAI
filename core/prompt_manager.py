@@ -95,7 +95,7 @@ class PromptManager:
             Prompt(templates["accounts"], name="accounts", source="system", render_template=True, accounts=self.ada_config_prompt),
             Prompt(templates["sessions"], name="sessions", source="system"),
             Prompt(templates["chat_env"], name="chat_env", source="system", render_template=True, chat_env=chat_env),
-            Prompt(templates["memory"], name="memory", source="system"),
+            Prompt(templates["memory"], name="memory", source="system", persona_id=persona.id),
             Prompt(templates["tools"], name="tools", source="system"),
             Prompt(templates["time"], name="time", source="system", render_template=True, time_str=formatted_time)
         ]
