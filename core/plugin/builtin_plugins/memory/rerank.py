@@ -17,7 +17,7 @@ class MemoryReranker:
 
     @property
     def enabled(self):
-        return self.config.get("rerank_enabled") is True
+        return self.config.get("enabled") is True
 
     def setting(self, key, default, minimum, maximum):
         value = self.config.get(key, default)
@@ -25,14 +25,14 @@ class MemoryReranker:
 
     @property
     def candidate_limit(self):
-        return self.setting("rerank_candidates", 30, 2, 100)
+        return self.setting("candidates", 30, 2, 100)
 
     def report(self, phase, reason=None, started=None, candidates=0):
         return {"phase": phase, "reason": reason, "candidates": candidates,
                 "elapsed_ms": round((time.monotonic() - started) * 1000) if started is not None else 0}
 
     def client(self):
-        selected = self.config.get("rerank_model")
+        selected = self.config.get("model")
         manager = self.ctx.provider_mgr
         if selected:
             provider_id, model_id = selected.split(":", 1)
@@ -70,7 +70,7 @@ class MemoryReranker:
 
             reason = "request_failed"
             results = await asyncio.wait_for(
-                call(), timeout=self.setting("rerank_timeout", 10, 1, 30),
+                call(), timeout=self.setting("timeout", 10, 1, 30),
             )
             if results is cooldown:
                 return rows, self.report("fallback", "cooldown", started)

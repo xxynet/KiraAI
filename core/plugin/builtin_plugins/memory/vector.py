@@ -10,6 +10,7 @@ import time
 from packaging.version import Version
 
 from .vector_store import VectorStore
+from .search import MAX_CANDIDATES
 
 
 def dependency_available():
@@ -44,7 +45,7 @@ class VectorMemory:
         self.store = VectorStore(store)
         self.ctx = ctx
         self.config = config
-        self.enabled = config.get("vector_enabled") is True
+        self.enabled = config.get("enabled") is True
         self.np = None
         self.index_id = None
         self.dimension = None
@@ -64,6 +65,11 @@ class VectorMemory:
     def number(self, key, default, minimum, maximum):
         value = self.config.get(key, default)
         return max(minimum, min(maximum, value)) if type(value) in (float, int) else default
+
+    @property
+    def candidate_limit(self):
+        value = self.config.get("candidates", 50)
+        return max(1, min(1000, value)) if type(value) is int else 50
 
     def start(self):
         if self.enabled and (self._task is None or self._task.done()):
@@ -98,7 +104,7 @@ class VectorMemory:
         self.ready = False
 
     def client(self):
-        selected = self.config.get("embedding_model")
+        selected = self.config.get("model")
         client = self.ctx.get_embedding_client(selected or "", default=not selected)
         if client is None:
             raise ValueError("Embedding model unavailable")
@@ -109,7 +115,7 @@ class VectorMemory:
             async with self._slots:
                 return await client.embed(texts)
         return await asyncio.wait_for(
-            call(), timeout=self.number("embedding_timeout", 10, 1, 30),
+            call(), timeout=self.number("timeout", 10, 1, 30),
         )
 
     def _index_state(self, state):
@@ -196,7 +202,7 @@ class VectorMemory:
             except asyncio.TimeoutError:
                 pass
 
-    async def search(self, query, predicate, params):
+    async def search(self, query, predicate, params, *, limit=MAX_CANDIDATES):
         if not self.enabled or not self.ready or not self.total:
             return None
         try:
@@ -212,7 +218,7 @@ class VectorMemory:
                 return None
             results = await self.store.search(
                 self.np, matrix[0], predicate, params,
-                self.number("vector_min_similarity", 0.35, 0, 1),
+                self.number("min_similarity", 0.35, 0, 1), limit=limit,
             )
             if not self.ready or self.index_id != index_id:
                 return None

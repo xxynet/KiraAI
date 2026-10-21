@@ -60,7 +60,7 @@ async def test_default_disabled_preserves_order_without_resolving_or_calling_pro
 
 @pytest.mark.anyio
 async def test_keyword_rerank_is_shared_by_tools_chat_and_both_preview_entries(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True, "recall_limit": 2})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True}, "recall_limit": 2})
     client = attach_client(plugin)
     original = await populate(plugin)
     expected = [row["id"] for row in reversed(original)]
@@ -88,7 +88,7 @@ async def test_keyword_rerank_is_shared_by_tools_chat_and_both_preview_entries(t
 
 @pytest.mark.anyio
 async def test_selected_model_uses_host_typed_interface_and_preserves_colons(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True, "rerank_model": "p:model:alias"})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True, "model": "p:model:alias"}})
     client = attach_client(plugin)
     await populate(plugin)
     await plugin.search(scope(), "coffee")
@@ -99,7 +99,7 @@ async def test_selected_model_uses_host_typed_interface_and_preserves_colons(tmp
 
 @pytest.mark.anyio
 async def test_prefix_is_ranked_before_pagination_and_tail_keeps_its_original_order(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True, "rerank_candidates": 4})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True, "candidates": 4}})
     client = attach_client(plugin)
     original = await populate(plugin, 9)
     expected = list(reversed(original[:4])) + original[4:]
@@ -116,7 +116,7 @@ async def test_prefix_is_ranked_before_pagination_and_tail_keeps_its_original_or
 
 @pytest.mark.anyio
 async def test_empty_query_single_candidate_core_and_id_lookup_skip_rerank(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True}})
     client = attach_client(plugin)
     row, _ = await plugin.store.add(scope(), text="coffee core", core=True)
     await plugin.search(scope(), "coffee")
@@ -132,7 +132,7 @@ async def test_empty_query_single_candidate_core_and_id_lookup_skip_rerank(tmp_p
 
 @pytest.mark.anyio
 async def test_rerank_cannot_receive_records_outside_visibility_status_and_filters(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True}})
     client = attach_client(plugin)
     original = await populate(plugin, 3)
     for context in (scope(persona="other"), scope(adapter="other"),
@@ -151,7 +151,7 @@ async def test_rerank_cannot_receive_records_outside_visibility_status_and_filte
 @pytest.mark.parametrize("failure", ["exception", "empty", "partial", "duplicate", "negative", "out_of_range",
                                       "nan", "infinite", "bool_index", "bool_score", "string_score", "object", "none"])
 async def test_remote_failure_preserves_exact_order_and_cools_down(tmp_path, monkeypatch, failure):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True}})
     client = attach_client(plugin)
     original = await populate(plugin, 3)
     valid = FakeRerank.reverse("coffee", [row["text"] for row in original], 3)
@@ -183,7 +183,7 @@ async def test_remote_failure_preserves_exact_order_and_cools_down(tmp_path, mon
 @pytest.mark.anyio
 @pytest.mark.parametrize("selected,wrong_type", [(None, False), (None, True), ("missing", False)])
 async def test_missing_or_wrong_model_falls_back(tmp_path, monkeypatch, selected, wrong_type):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True, "rerank_model": selected})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True, "model": selected}})
     client = attach_client(plugin)
     plugin.ctx.provider_mgr.get_default_rerank.return_value = object() if wrong_type else None
     original = await populate(plugin)
@@ -195,7 +195,7 @@ async def test_missing_or_wrong_model_falls_back(tmp_path, monkeypatch, selected
 
 @pytest.mark.anyio
 async def test_timeout_including_concurrency_wait_retains_original_order_and_releases_slot(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True, "rerank_timeout": 1})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True, "timeout": 1}})
     client = attach_client(plugin)
     original = await populate(plugin)
     plugin.reranker._slots = asyncio.Semaphore(0)
@@ -220,7 +220,7 @@ async def test_timeout_including_concurrency_wait_retains_original_order_and_rel
 
 @pytest.mark.anyio
 async def test_external_cancellation_propagates_and_releases_slot(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True}})
     client = attach_client(plugin)
     await populate(plugin)
     started = asyncio.Event()
@@ -242,7 +242,7 @@ async def test_external_cancellation_propagates_and_releases_slot(tmp_path, monk
 async def test_document_budget_and_stable_ties_preserve_original_records():
     client = FakeRerank()
     ctx = SimpleNamespace(provider_mgr=SimpleNamespace(get_default_rerank=lambda: client))
-    reranker = MemoryReranker(ctx, {"rerank_enabled": True, "rerank_candidates": 100})
+    reranker = MemoryReranker(ctx, {"enabled": True, "candidates": 100})
     rows = [{"id": str(index), "text": "x" * 10000} for index in range(101)]
     client.rerank.side_effect = lambda query, documents, top_n: [
         RerankResult(i, 0.5, "ignored") for i in reversed(range(len(documents)))
@@ -259,15 +259,15 @@ async def test_document_budget_and_stable_ties_preserve_original_records():
 
 @pytest.mark.anyio
 async def test_hybrid_reranks_fused_candidates_and_preserves_hybrid_order_on_failure(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True}})
     client = attach_client(plugin)
     original = await populate(plugin)
     semantic, _ = await plugin.store.add(scope(), text="semantic candidate with no lexical match")
     plugin.vectors.enabled = True
     plugin.vectors.search = AsyncMock(return_value=[semantic, original[-1]])
-    plugin.plugin_cfg["rerank_enabled"] = False
+    plugin.plugin_cfg["rerank"]["enabled"] = False
     fused = await plugin.search(scope(), "coffee")
-    plugin.plugin_cfg["rerank_enabled"] = True
+    plugin.plugin_cfg["rerank"]["enabled"] = True
     assert await plugin.search(scope(), "coffee") == list(reversed(fused))
     assert semantic["text"] in client.rerank.await_args.kwargs["documents"]
     client.rerank.side_effect = RuntimeError("failed")
@@ -276,7 +276,7 @@ async def test_hybrid_reranks_fused_candidates_and_preserves_hybrid_order_on_fai
 
 @pytest.mark.anyio
 async def test_recall_diagnostics_are_per_request_under_concurrency(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True}})
     client = attach_client(plugin)
     await populate(plugin)
     started, release = asyncio.Event(), asyncio.Event()
@@ -303,7 +303,7 @@ async def test_rerank_api_requires_auth_before_any_paid_request(tmp_path, monkey
     from webui.plugin_bindings import PluginWebBindings
     from webui.routes.auth import require_auth
 
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True}})
     client = attach_client(plugin)
     await populate(plugin)
     plugin_id = "kira_plugin_simple_memory"
@@ -330,7 +330,7 @@ async def test_rerank_api_requires_auth_before_any_paid_request(tmp_path, monkey
 async def test_concurrent_requests_are_bounded_to_two_calls():
     client = FakeRerank()
     reranker = MemoryReranker(SimpleNamespace(provider_mgr=SimpleNamespace(get_default_rerank=lambda: client)),
-                              {"rerank_enabled": True})
+                              {"enabled": True})
     active, peak = 0, 0
     started, release = asyncio.Event(), asyncio.Event()
     async def blocked(query, documents, top_n):
@@ -363,7 +363,7 @@ async def test_concurrent_requests_are_bounded_to_two_calls():
 
 @pytest.mark.anyio
 async def test_failure_preserves_paginated_result_and_core_context(tmp_path, monkeypatch):
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank_enabled": True, "rerank_candidates": 4})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"rerank": {"enabled": True, "candidates": 4}})
     client = attach_client(plugin)
     original = await populate(plugin, 9)
     client.rerank.side_effect = RuntimeError("failed")
@@ -377,5 +377,29 @@ async def test_failure_preserves_paginated_result_and_core_context(tmp_path, mon
 
 @pytest.mark.parametrize("value,expected", [(None, 30), (True, 30), ("50", 30), (-1, 2), (10000, 100), (20, 20)])
 def test_candidate_setting_is_bounded_and_rejects_non_integers(value, expected):
-    reranker = MemoryReranker(None, {"rerank_candidates": value})
+    reranker = MemoryReranker(None, {"candidates": value})
     assert reranker.candidate_limit == expected
+
+
+@pytest.mark.anyio
+async def test_keyword_recall_respects_pool_limit_without_restricting_core_or_tool_pages(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={
+        "bm25_candidates": 1, "recall_limit": 6, "core_limit": 3,
+        "rerank": {"enabled": True, "candidates": 100},
+    })
+    client = attach_client(plugin)
+    ordinary = await populate(plugin, 8)
+    core = []
+    for index in range(3):
+        row, _ = await plugin.store.add(scope(), text=f"core invariant {index}", core=True)
+        core.append(row)
+    for result in (await plugin.recall(scope(), ["coffee"]),
+                   await plugin.api_recall({"messages": ["coffee"]})):
+        assert [row["id"] for row in result["recalled"]] == [ordinary[0]["id"]]
+        assert {row["id"] for row in result["core"]} == {row["id"] for row in core}
+        assert result["retrieval"]["rerank"]["phase"] == "skipped"
+    client.rerank.assert_not_awaited()
+    page = json.loads(await plugin.memory_search(event(), query="coffee", limit=3, offset=5))
+    assert page["ok"] and len(page["records"]) == 3
+    assert client.rerank.await_count == 1
+    await plugin.terminate()

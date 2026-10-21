@@ -49,8 +49,8 @@ async def vector_plugin(tmp_path, monkeypatch, np, **config):
     plugin = await plugin_at(tmp_path, monkeypatch)
     client = FakeEmbedding()
     plugin.ctx.get_embedding_client = Mock(return_value=client)
-    plugin.plugin_cfg.update({"vector_enabled": True, **config})
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.plugin_cfg["embedding"] = {"enabled": True, **config}
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     plugin.vectors.np = np
     return plugin, client
 
@@ -83,8 +83,8 @@ async def test_disabled_memory_never_imports_numeric_dependency_or_calls_model(t
 @pytest.mark.anyio
 async def test_missing_dependency_sync_falls_back_without_repeated_installs(tmp_path, monkeypatch):
     plugin = await plugin_at(tmp_path, monkeypatch)
-    plugin.plugin_cfg["vector_enabled"] = True
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.plugin_cfg.setdefault("embedding", {})["enabled"] = True
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     monkeypatch.setattr(module, "load_numpy", Mock(side_effect=ModuleNotFoundError("numpy")))
     installer = AsyncMock()
     monkeypatch.setattr("core.plugin.plugin_installer.install_requirements", installer)
@@ -97,7 +97,7 @@ async def test_missing_dependency_sync_falls_back_without_repeated_installs(tmp_
 
 @pytest.mark.anyio
 async def test_missing_model_falls_back_and_uses_existing_model_selection(tmp_path, monkeypatch, np):
-    plugin, client = await vector_plugin(tmp_path, monkeypatch, np, embedding_model="remote:model")
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np, model="remote:model")
     plugin.ctx.get_embedding_client.return_value = None
     await plugin.vectors._sync()
     assert plugin.vectors.phase == "model_missing"
@@ -224,7 +224,7 @@ async def test_dimension_mismatch_blocks_until_explicit_manual_rebuild(tmp_path,
     assert "synthetic-secret" not in json.dumps(status)
     # The pause survives settings changes, reloads and additional memory writes.
     await plugin.store.add(scope(), text="another 汽车")
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     plugin.vectors.np = np
     await plugin.vectors._sync()
     assert plugin.vectors.phase == "rebuild_required" and client.embed.await_count == calls
@@ -309,8 +309,8 @@ async def test_index_batches_are_bounded_and_shutdown_cancels_remote_request(tmp
 @pytest.mark.anyio
 async def test_manual_dependency_install_is_deduplicated_and_restarts_worker(tmp_path, monkeypatch):
     plugin = await plugin_at(tmp_path, monkeypatch)
-    plugin.plugin_cfg["vector_enabled"] = True
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.plugin_cfg.setdefault("embedding", {})["enabled"] = True
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     available = False
     monkeypatch.setattr(module, "dependency_available", lambda: available)
     entered, release = asyncio.Event(), asyncio.Event()
@@ -424,7 +424,7 @@ async def test_background_start_and_resume_reuse_existing_vectors(tmp_path, monk
     await asyncio.wait_for(ready(), 2)
     assert client.embed.await_count == 1
     await plugin.vectors.close()
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     plugin.vectors.np = np
     await plugin.vectors._sync()
     assert plugin.vectors.ready and client.embed.await_count == 1
@@ -456,8 +456,8 @@ async def test_same_model_uses_new_provider_without_reembedding_memory(tmp_path,
     assert [call.args[0] for call in second.embed.await_args_list] == [["车子"]]
     # Saving a new provider selection recreates the plugin, but persisted vectors remain reusable.
     await plugin.vectors.close()
-    plugin.plugin_cfg["embedding_model"] = "another-provider:another-local-model-id"
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.plugin_cfg["embedding"]["model"] = "another-provider:another-local-model-id"
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     plugin.vectors.np = np
     await plugin.vectors._sync()
     assert plugin.vectors.ready and plugin.vectors.index_id == index_id
@@ -534,7 +534,7 @@ async def test_existing_vectors_are_adopted_without_model_signature_rebuild(tmp_
     async with plugin.store.connection(write=True) as db:
         await db.execute("DELETE FROM memory_meta WHERE key=?", (INDEX_STATE_KEY,))
         await db.execute("UPDATE memory_vectors SET fingerprint='unrelated-model-signature'")
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     plugin.vectors.np = np
     client.model.model_name = "another-name-for-the-same-model"
     await plugin.vectors._sync()
@@ -729,12 +729,12 @@ async def test_cached_vector_stays_current_while_feature_is_disabled(tmp_path, m
     row, _ = await plugin.store.add(scope(), text="coffee preference")
     await plugin.vectors._sync()
     original = await indexed_vector(plugin, row["id"])
-    plugin.plugin_cfg["vector_enabled"] = False
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.plugin_cfg["embedding"]["enabled"] = False
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     await plugin.api_record_update(row["id"], {"revision": 1, "text": row["text"], "core": True})
     assert await indexed_vector(plugin, row["id"]) == {**original, "revision": 2}
-    plugin.plugin_cfg["vector_enabled"] = True
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.plugin_cfg.setdefault("embedding", {})["enabled"] = True
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     plugin.vectors.np = np
     await plugin.vectors._sync()
     assert plugin.vectors.ready and client.embed.await_count == 1
@@ -823,8 +823,8 @@ async def wait_vector_phase(vectors, phase):
 async def test_startup_auto_installs_missing_numpy_and_resumes_indexing(tmp_path, monkeypatch, np):
     plugin = await plugin_at(tmp_path, monkeypatch)
     row, _ = await plugin.store.add(scope(), text="coffee preference")
-    plugin.plugin_cfg["vector_enabled"] = True
-    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.plugin_cfg.setdefault("embedding", {})["enabled"] = True
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg["embedding"])
     client = FakeEmbedding()
     plugin.ctx.get_embedding_client = Mock(return_value=client)
     plugin.ctx.config = {"network": {"pypi_mirror": "https://mirror.example/simple"}}
@@ -876,7 +876,7 @@ async def test_startup_uses_existing_numpy_without_installing(tmp_path, monkeypa
     monkeypatch.setattr(module, "load_numpy", lambda: np)
     installer = AsyncMock()
     monkeypatch.setattr("core.plugin.plugin_installer.install_requirements", installer)
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"vector_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"embedding": {"enabled": True}})
     plugin.ctx.get_embedding_client = Mock(return_value=FakeEmbedding())
     try:
         await wait_vector_phase(plugin.vectors, "ready")
@@ -904,7 +904,7 @@ async def test_startup_install_failure_preserves_keyword_recall_and_allows_manua
         return_value=["synthetic-secret"] if failure == "warnings" else [],
     )
     monkeypatch.setattr("core.plugin.plugin_installer.install_requirements", installer)
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"vector_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"embedding": {"enabled": True}})
     plugin.ctx.get_embedding_client = Mock(return_value=FakeEmbedding())
     try:
         await wait_vector_phase(plugin.vectors, "dependency_missing")
@@ -945,7 +945,7 @@ async def test_shutdown_cancels_and_reaps_startup_dependency_install(tmp_path, m
 
     installer = AsyncMock(side_effect=install)
     monkeypatch.setattr("core.plugin.plugin_installer.install_requirements", installer)
-    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"vector_enabled": True})
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"embedding": {"enabled": True}})
     try:
         await asyncio.wait_for(entered.wait(), 2)
     finally:
@@ -954,3 +954,85 @@ async def test_shutdown_cancels_and_reaps_startup_dependency_install(tmp_path, m
     assert plugin.vectors._task.done() and plugin.vectors._install_task.done()
     assert not plugin.vectors.ready
     installer.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_recall_channel_limits_are_independent_of_rerank_and_tool_pagination(tmp_path, monkeypatch, np):
+    from core.plugin.builtin_plugins.memory.rerank import MemoryReranker
+    from core.prompt_manager import Prompt
+    from core.provider import LLMRequest
+    from tests.test_builtin_memory_rerank import attach_client
+
+    plugin, embedding = await vector_plugin(tmp_path, monkeypatch, np, candidates=3)
+    plugin.plugin_cfg.update({"bm25_candidates": 2, "recall_limit": 20,
+                              "rerank": {"enabled": True, "candidates": 100}})
+    plugin.reranker = MemoryReranker(plugin.ctx, plugin.plugin_cfg["rerank"])
+    rerank = attach_client(plugin)
+    for index in range(8):
+        await plugin.store.add(scope(), text=f"coffee preference {index}")
+    for index in range(8):
+        await plugin.store.add(scope(), text=f"latte preference {index}")
+    await plugin.store.add(scope(target="bob", users=("bob",)), text="hidden latte")
+    await plugin.store.add(scope(), text="expired latte", expires_at=1)
+    await plugin.vectors._sync()
+    lexical = await plugin.store.search(scope(), "coffee", limit=2)
+    visible, params = plugin.store.search_filter(*plugin.store._visible(scope()))
+    semantic = await plugin.vectors.search("coffee", visible, params, limit=3)
+    expected = {row["id"] for row in lexical + semantic}
+    assert len(expected) == 5
+    try:
+        for result in (
+            await plugin.recall(scope(), ["coffee"]),
+            await plugin.api_recall({"persona_id": scope().persona_id, "session_id": scope().session_id,
+                                     "messages": ["coffee"]}),
+            await plugin.api_recall({"adapter": scope().adapter, "persona_id": scope().persona_id,
+                                     "session_id": scope().session_id, "messages": ["coffee"]}),
+        ):
+            assert {row["id"] for row in result["recalled"]} == expected
+            assert result["retrieval"]["rerank"]["candidates"] == 5
+            assert len(rerank.rerank.await_args.kwargs["documents"]) == 5
+
+        turn = event()
+        turn.messages[0].message_str = "coffee"
+        request = LLMRequest(system_prompt=[Prompt("base", name="memory")])
+        await plugin.inject_memory(turn, request)
+        injected = json.loads(request.system_prompt[0].content.rsplit("\n", 1)[1])
+        assert {row["id"] for row in injected} == expected
+
+        # Tools must still reach records beyond both small automatic recall pools.
+        full = await plugin.search(scope(), "coffee", limit=50)
+        assert len(full) == 16
+        pages = []
+        for offset in range(0, 16, 3):
+            page = json.loads(await plugin.memory_search(event(), query="coffee", limit=3, offset=offset))
+            assert page["ok"]
+            pages.extend(row["id"] for row in page["records"])
+        assert pages == [row["id"] for row in full]
+        assert len(set(pages)) == 16
+
+        embedding.embed.side_effect = RuntimeError("synthetic embedding failure")
+        result = await plugin.recall(scope(), ["coffee"])
+        assert {row["id"] for row in result["recalled"]} == {row["id"] for row in lexical}
+        assert result["retrieval"]["rerank"]["candidates"] == 2
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("value,expected", [(None, 50), (True, 50), ("50", 50), (-1, 1), (0, 1),
+                                            (10000, 1000), (19, 19)])
+async def test_recall_candidate_limits_validate_each_channel(tmp_path, monkeypatch, value, expected):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={
+        "bm25_candidates": value, "embedding": {"candidates": value},
+    })
+    config = await plugin.api_config()
+    assert config["values"]["bm25_candidates"] == expected
+    assert config["values"]["embedding_candidates"] == expected
+    assert config["defaults"]["bm25_candidates"] == config["defaults"]["embedding_candidates"] == 50
+    assert plugin.vectors.candidate_limit == expected
+    search = AsyncMock(wraps=plugin.store._search)
+    monkeypatch.setattr(plugin.store, "_search", search)
+    await plugin.recall(scope(), ["coffee"])
+    assert search.await_args.kwargs["limit"] == expected
+    assert search.await_args.kwargs["candidate_pool"] is True
+    await plugin.terminate()

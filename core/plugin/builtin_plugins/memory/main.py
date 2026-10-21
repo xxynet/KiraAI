@@ -51,8 +51,8 @@ class MemoryPlugin(BasePlugin):
         super().__init__(ctx, cfg)
         self.store = MemoryStore(get_data_path() / "memory" / "memories.db")
         self._ready = False
-        self.vectors = VectorMemory(self.store, ctx, cfg)
-        self.reranker = MemoryReranker(ctx, cfg)
+        self.vectors = VectorMemory(self.store, ctx, cfg.get("embedding", {}))
+        self.reranker = MemoryReranker(ctx, cfg.get("rerank", {}))
 
     @property
     def messages(self):
@@ -292,25 +292,31 @@ class MemoryPlugin(BasePlugin):
         )
 
     async def _hybrid_search(self, predicate, params, query="", *, limit=8, offset=0,
-                             rerank_report=None, **options):
+                             rerank_report=None, automatic=False, **options):
+        use_pool = automatic and isinstance(query, str) and bool(query.strip()) and not options.get("core_only")
         lexical = await self.store._search(
-            predicate, params, query, limit=limit, offset=offset, **options,
+            predicate, params, query,
+            limit=self.setting("bm25_candidates", 50, 1, 1000) if use_pool else limit,
+            offset=0 if use_pool else offset, candidate_pool=bool(use_pool), **options,
         )
         if rerank_report is not None:
             rerank_report.update(self.reranker.report("disabled" if not self.reranker.enabled else "skipped"))
         if not query.strip() or options.get("core_only"):
             return lexical
-        combined = None
+        combined = lexical if use_pool else None
         if self.vectors.enabled:
             filtered, values = self.store.search_filter(predicate, params, **options)
-            semantic = await self.vectors.search(query, filtered, values)
+            semantic = await self.vectors.search(
+                query, filtered, values,
+                limit=self.vectors.candidate_limit if use_pool else MAX_CANDIDATES,
+            )
             if semantic:
-                # A fixed candidate pool keeps paging stable and applies scope before ranking.
-                candidates = await self.store._search(
+                # Tool pagination uses a fixed full pool; automatic recall has independent bounds.
+                candidates = lexical if use_pool else await self.store._search(
                     predicate, params, query, limit=MAX_CANDIDATES, candidate_pool=True, **options,
                 )
                 combined = await asyncio.to_thread(fuse, candidates, semantic)
-        # Rerank only a fixed prefix, so pagination never reranks individual pages independently.
+        # Rerank a fixed prefix before slicing either recall results or tool pages.
         if self.reranker.enabled and offset < self.reranker.candidate_limit:
             if combined is None:
                 combined = await self.store._search(
@@ -336,7 +342,7 @@ class MemoryPlugin(BasePlugin):
         if self.recall_query_char_limit:
             query = query[:self.recall_query_char_limit]
         rerank_report = self.reranker.report("disabled" if not self.reranker.enabled else "skipped")
-        recalled = await search(query, limit=recall_limit, rerank_report=rerank_report) if query.strip() else []
+        recalled = await search(query, limit=recall_limit, rerank_report=rerank_report, automatic=True) if query.strip() else []
         core_records = self.pack(core, budget // 2)
         core_ids = {record["id"] for record in core_records}
         recalled_records = self.pack([row for row in recalled if row["id"] not in core_ids], budget // 2)
@@ -559,6 +565,8 @@ class MemoryPlugin(BasePlugin):
                 "prompt_char_budget": self.setting("prompt_char_budget", 6000, 1500, 20000),
                 "search_char_budget": self.setting("search_char_budget", 12000, 5000, 30000),
                 "recall_query_char_limit": self.recall_query_char_limit,
+                "bm25_candidates": self.setting("bm25_candidates", 50, 1, 1000),
+                "embedding_candidates": self.vectors.candidate_limit,
             },
             "defaults": {
                 "core_limit": 10,
@@ -566,6 +574,8 @@ class MemoryPlugin(BasePlugin):
                 "prompt_char_budget": 6000,
                 "search_char_budget": 12000,
                 "recall_query_char_limit": 0,
+                "bm25_candidates": 50,
+                "embedding_candidates": 50,
             },
             "ready": self._ready,
             "database": str(self.store.path),

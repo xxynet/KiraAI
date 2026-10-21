@@ -291,9 +291,13 @@ def test_locales_and_configuration_match():
     assert MESSAGES["zh"].keys() == MESSAGES["en"].keys()
     path = Path(__file__).parents[1] / "core/plugin/builtin_plugins/memory/schema.json"
     fields = json.loads(path.read_text(encoding="utf-8-sig"))
-    for field in fields.values():
-        assert field["name"] and field["hint"]
-        assert field["locales"]["zh"]["name"] and field["locales"]["zh"]["hint"]
+    def check_fields(items):
+        for field in items.values():
+            assert field["name"] and field["hint"]
+            assert field["locales"]["zh"]["name"] and field["locales"]["zh"]["hint"]
+            if field["type"] == "section":
+                check_fields(field["fields"])
+    check_fields(fields)
 
 
 @pytest.mark.anyio
@@ -1164,3 +1168,19 @@ async def test_operator_delete_legacy_memory_keeps_other_records(tmp_path, monke
     assert await plugin.store.admin_get(legacy["id"]) is None
     assert (await plugin.store.admin_get(kept["id"]))["text"] == "keep coffee"
     await plugin.terminate()
+
+
+def test_memory_schema_exposes_nested_embedding_and_rerank_settings():
+    from core.config.config_field import build_fields
+
+    path = Path(__file__).parents[1] / "core/plugin/builtin_plugins/memory/schema.json"
+    schema = json.loads(path.read_text(encoding="utf-8-sig"))
+    fields = {field.key: field.to_dict() for field in build_fields(schema)}
+    assert fields["embedding"]["type"] == fields["rerank"]["type"] == "section"
+    assert set(fields["embedding"]["fields"]) == {"enabled", "model", "timeout", "min_similarity", "candidates"}
+    assert set(fields["rerank"]["fields"]) == {"enabled", "model", "timeout", "candidates"}
+    assert fields["embedding"]["fields"]["model"]["model_type"] == "embedding"
+    assert fields["rerank"]["fields"]["model"]["model_type"] == "rerank"
+    assert not fields["embedding"]["fields"]["enabled"]["default"]
+    assert not fields["rerank"]["fields"]["enabled"]["default"]
+    assert fields["bm25_candidates"]["default"] == fields["embedding"]["fields"]["candidates"]["default"] == 50
