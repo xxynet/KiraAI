@@ -1,4 +1,4 @@
-"""Scoped memory with lexical search and optional remote semantic retrieval."""
+"""Scoped memory with lexical search, optional remote embeddings and reranking."""
 
 import asyncio
 from functools import partial, wraps
@@ -14,6 +14,7 @@ from .scope import MemoryInputError, MemoryScope
 from .store import MemoryStore
 from .search import MAX_CANDIDATES, fuse
 from .vector import VectorMemory
+from .rerank import MemoryReranker
 
 
 def guarded(func):
@@ -51,6 +52,7 @@ class MemoryPlugin(BasePlugin):
         self.store = MemoryStore(get_data_path() / "memory" / "memories.db")
         self._ready = False
         self.vectors = VectorMemory(self.store, ctx, cfg)
+        self.reranker = MemoryReranker(ctx, cfg)
 
     @property
     def messages(self):
@@ -285,22 +287,36 @@ class MemoryPlugin(BasePlugin):
             *self.store.preview_predicate(persona_id, session_id), query=query, **options,
         )
 
-    async def _hybrid_search(self, predicate, params, query="", *, limit=8, offset=0, **options):
+    async def _hybrid_search(self, predicate, params, query="", *, limit=8, offset=0,
+                             rerank_report=None, **options):
         lexical = await self.store._search(
             predicate, params, query, limit=limit, offset=offset, **options,
         )
-        if not query.strip() or options.get("core_only") or not self.vectors.enabled:
+        if rerank_report is not None:
+            rerank_report.update(self.reranker.report("disabled" if not self.reranker.enabled else "skipped"))
+        if not query.strip() or options.get("core_only"):
             return lexical
-        filtered, values = self.store.search_filter(predicate, params, **options)
-        semantic = await self.vectors.search(query, filtered, values)
-        if semantic is None or not semantic:
-            return lexical
-        # A fixed candidate pool keeps paging stable and applies scope before ranking.
-        candidates = await self.store._search(
-            predicate, params, query, limit=MAX_CANDIDATES, candidate_pool=True, **options,
-        )
-        combined = await asyncio.to_thread(fuse, candidates, semantic)
-        return combined[offset:offset + limit]
+        combined = None
+        if self.vectors.enabled:
+            filtered, values = self.store.search_filter(predicate, params, **options)
+            semantic = await self.vectors.search(query, filtered, values)
+            if semantic:
+                # A fixed candidate pool keeps paging stable and applies scope before ranking.
+                candidates = await self.store._search(
+                    predicate, params, query, limit=MAX_CANDIDATES, candidate_pool=True, **options,
+                )
+                combined = await asyncio.to_thread(fuse, candidates, semantic)
+        # Rerank only a fixed prefix, so pagination never reranks individual pages independently.
+        if self.reranker.enabled and offset < self.reranker.candidate_limit:
+            if combined is None:
+                combined = await self.store._search(
+                    predicate, params, query, limit=max(self.reranker.candidate_limit, offset + limit),
+                    candidate_pool=True, **options,
+                )
+            combined, report = await self.reranker.rank(query, combined)
+            if rerank_report is not None:
+                rerank_report.update(report)
+        return combined[offset:offset + limit] if combined is not None else lexical
 
     async def recall(self, scope, messages):
         """Build the scoped memory payload used by actual conversations."""
@@ -313,14 +329,15 @@ class MemoryPlugin(BasePlugin):
         budget = self.setting("prompt_char_budget", 6000, 1500, 20000)
         core = await search(core_only=True, limit=core_limit)
         query = " ".join(str(message or "")[:160] for message in messages[-3:])[:512]
-        recalled = await search(query, limit=recall_limit) if query.strip() else []
+        rerank_report = self.reranker.report("disabled" if not self.reranker.enabled else "skipped")
+        recalled = await search(query, limit=recall_limit, rerank_report=rerank_report) if query.strip() else []
         core_records = self.pack(core, budget // 2)
         core_ids = {record["id"] for record in core_records}
         recalled_records = self.pack([row for row in recalled if row["id"] not in core_ids], budget // 2)
         return {
             "query": query,
             "retrieval": {"mode": "hybrid" if self.vectors.enabled and self.vectors.ready else "keyword",
-                          "phase": self.vectors.phase, "reason": self.vectors.reason},
+                          "phase": self.vectors.phase, "reason": self.vectors.reason, "rerank": rerank_report},
             "core": core_records,
             "recalled": recalled_records,
             "prompt_chars": len(self.encode(core_records + recalled_records)),

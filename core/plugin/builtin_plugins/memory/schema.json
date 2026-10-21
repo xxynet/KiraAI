@@ -15,11 +15,11 @@
     "name": "Retrieved memories per request",
     "type": "integer",
     "default": 6,
-    "hint": "Maximum candidates for automatic recall (1–20). Vector retrieval is optional; keyword mode needs no model calls.",
+    "hint": "Maximum candidates for automatic recall (1–20). Vector retrieval and reranking are optional; keyword search alone needs no model calls.",
     "locales": {
       "zh": {
         "name": "每轮检索记忆数",
-        "hint": "自动召回的候选上限（1–20）。向量检索可选，关键词模式无需模型调用。"
+        "hint": "自动召回的候选上限（1–20）。向量检索和重排序均可选，仅关键词检索无需模型调用。"
       }
     }
   },
@@ -95,5 +95,54 @@
         "hint": "语义候选的最低余弦相似度（0–1），可根据所选模型在模拟召回中调整。"
       }
     }
+  },
+  "rerank_enabled": {
+    "type": "switch",
+    "default": false,
+    "locales": {
+      "zh": {
+        "name": "Rerank 重排序",
+        "hint": "默认关闭，可独立于向量检索使用。将检索词和候选记忆正文发送给所选服务商，会增加延迟和 API 费用；失败时保留原始排序。"
+      }
+    },
+    "hint": "Optional remote reranking of retrieved candidates. Disabled by default and independent of vector retrieval. Sends the query and candidate memory text to the selected provider, adding latency and API costs. Failures retain the original order.",
+    "name": "Rerank"
+  },
+  "rerank_model": {
+    "name": "Memory rerank model",
+    "hint": "Select an existing rerank model. Leave empty to use the default rerank model. No index rebuild is needed when changing this model.",
+    "model_type": "rerank",
+    "default": null,
+    "type": "model_select",
+    "locales": {
+      "zh": {
+        "name": "记忆 Rerank 模型",
+        "hint": "选择已有的重排序模型，留空使用本体默认重排序模型。更换此模型无需重建索引。"
+      }
+    }
+  },
+  "rerank_candidates": {
+    "type": "integer",
+    "default": 30,
+    "locales": {
+      "zh": {
+        "name": "Rerank 候选数",
+        "hint": "选取最终结果前，对前 2–100 条候选重排序（默认 30）。每次最多发送 60000 字符的候选正文，每条最多 4000 字符；窗口外的候选保留原始顺序。"
+      }
+    },
+    "hint": "Rerank the first 2–100 retrieved candidates before selecting the final results (default 30). Each request sends at most 60,000 document characters, with at most 4,000 per memory. Candidates beyond this window retain their original order.",
+    "name": "Rerank candidate count"
+  },
+  "rerank_timeout": {
+    "type": "integer",
+    "default": 10,
+    "locales": {
+      "zh": {
+        "name": "Rerank 请求超时",
+        "hint": "每次请求的最长等待秒数（1–30），包含并发排队时间。失败时保留原始排序，并暂停重试 30 秒。"
+      }
+    },
+    "hint": "Maximum seconds per rerank request (1–30), including concurrency wait. Failures retain the original order and pause retries for 30 seconds.",
+    "name": "Rerank timeout"
   }
 }

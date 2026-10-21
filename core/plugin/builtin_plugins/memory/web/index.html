@@ -1009,6 +1009,17 @@ function renderRecall(data) {
   if (data.retrieval) {
     var modeKey = data.retrieval.mode === "hybrid" ? "vector.used_hybrid" : "vector.used_keyword";
     target.appendChild(node("p", { class: "hint", text: I18N.t(modeKey) }));
+    var rerank = data.retrieval.rerank;
+    if (rerank) {
+      var rerankPhaseKey = "rerank.phase." + rerank.phase;
+      target.appendChild(node("p", { class: "hint", text: I18N.t(rerankPhaseKey, {
+        count: rerank.candidates, ms: rerank.elapsed_ms,
+      }) }));
+      if (rerank.reason) {
+        var rerankReasonKey = "rerank.reason." + rerank.reason;
+        target.appendChild(node("p", { class: "hint", text: I18N.t(rerankReasonKey) }));
+      }
+    }
     if (data.retrieval.phase === "rebuild_required") {
       target.appendChild(node("p", { class: "edit-error", text: I18N.t("vector.phase.rebuild_required") }));
     }
