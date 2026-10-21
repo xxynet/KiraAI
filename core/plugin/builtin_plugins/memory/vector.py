@@ -176,6 +176,11 @@ class VectorMemory:
             await asyncio.sleep(0)
 
     async def _run(self):
+        # Check once per worker startup; failed installs can be retried from the dashboard.
+        if self.np is None:
+            await self.install()
+            if self._install_task is not None:
+                await self._install_task
         while True:
             self._wake.clear()
             try:

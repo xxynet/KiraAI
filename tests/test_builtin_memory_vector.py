@@ -81,7 +81,7 @@ async def test_disabled_memory_never_imports_numeric_dependency_or_calls_model(t
 
 
 @pytest.mark.anyio
-async def test_missing_dependency_does_not_auto_install_or_break_memory(tmp_path, monkeypatch):
+async def test_missing_dependency_sync_falls_back_without_repeated_installs(tmp_path, monkeypatch):
     plugin = await plugin_at(tmp_path, monkeypatch)
     plugin.plugin_cfg["vector_enabled"] = True
     plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
@@ -307,7 +307,7 @@ async def test_index_batches_are_bounded_and_shutdown_cancels_remote_request(tmp
 
 
 @pytest.mark.anyio
-async def test_dependency_install_is_explicit_deduplicated_and_restarts_worker(tmp_path, monkeypatch):
+async def test_manual_dependency_install_is_deduplicated_and_restarts_worker(tmp_path, monkeypatch):
     plugin = await plugin_at(tmp_path, monkeypatch)
     plugin.plugin_cfg["vector_enabled"] = True
     plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
@@ -808,3 +808,149 @@ async def test_metadata_edit_preserves_dimension_mismatch_pause_and_requires_man
     assert (await indexed_vector(plugin, row["id"]))["revision"] == 2
     assert client.embed.await_count == calls
     await plugin.terminate()
+
+
+async def wait_vector_phase(vectors, phase):
+    async def wait():
+        while vectors.phase != phase:
+            if vectors._task.done():
+                vectors._task.result()
+            await asyncio.sleep(0.01)
+    await asyncio.wait_for(wait(), 3)
+
+
+@pytest.mark.anyio
+async def test_startup_auto_installs_missing_numpy_and_resumes_indexing(tmp_path, monkeypatch, np):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+    plugin.plugin_cfg["vector_enabled"] = True
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    client = FakeEmbedding()
+    plugin.ctx.get_embedding_client = Mock(return_value=client)
+    plugin.ctx.config = {"network": {"pypi_mirror": "https://mirror.example/simple"}}
+    available = False
+    entered, release = asyncio.Event(), asyncio.Event()
+    monkeypatch.setattr(module, "dependency_available", lambda: available)
+
+    def load():
+        if not available:
+            raise ModuleNotFoundError("numpy")
+        return np
+
+    monkeypatch.setattr(module, "load_numpy", load)
+
+    async def install(directory, pypi_mirror=None):
+        nonlocal available
+        assert directory.name == "vector_dependencies"
+        assert pypi_mirror == "https://mirror.example/simple"
+        entered.set()
+        await release.wait()
+        available = True
+        return []
+
+    installer = AsyncMock(side_effect=install)
+    monkeypatch.setattr("core.plugin.plugin_installer.install_requirements", installer)
+    try:
+        await plugin.initialize()
+        await asyncio.wait_for(entered.wait(), 2)
+        assert (await plugin.api_vector_status())["phase"] == "installing"
+        # A manual request and repeated starts must share the startup installation.
+        await plugin.api_vector_install()
+        plugin.vectors.start()
+        installer.assert_awaited_once()
+        assert (await plugin.recall(scope(), ["coffee"]))["recalled"][0]["id"] == row["id"]
+        client.embed.assert_not_awaited()
+        release.set()
+        await wait_vector_phase(plugin.vectors, "ready")
+        assert plugin.vectors.ready and plugin.vectors.indexed == 1
+        assert plugin.vectors._install_task.done()
+        installer.assert_awaited_once()
+        assert (await plugin.search(scope(), "latte"))[0]["id"] == row["id"]
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_startup_uses_existing_numpy_without_installing(tmp_path, monkeypatch, np):
+    monkeypatch.setattr(module, "dependency_available", lambda: True)
+    monkeypatch.setattr(module, "load_numpy", lambda: np)
+    installer = AsyncMock()
+    monkeypatch.setattr("core.plugin.plugin_installer.install_requirements", installer)
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"vector_enabled": True})
+    plugin.ctx.get_embedding_client = Mock(return_value=FakeEmbedding())
+    try:
+        await wait_vector_phase(plugin.vectors, "ready")
+        installer.assert_not_awaited()
+        assert plugin.vectors._install_task is None
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["warnings", "exception", "still_missing"])
+async def test_startup_install_failure_preserves_keyword_recall_and_allows_manual_retry(
+        tmp_path, monkeypatch, np, failure):
+    available = False
+    monkeypatch.setattr(module, "dependency_available", lambda: available)
+
+    def load():
+        if not available:
+            raise ModuleNotFoundError("numpy")
+        return np
+
+    monkeypatch.setattr(module, "load_numpy", load)
+    installer = AsyncMock(
+        side_effect=RuntimeError("synthetic-secret") if failure == "exception" else None,
+        return_value=["synthetic-secret"] if failure == "warnings" else [],
+    )
+    monkeypatch.setattr("core.plugin.plugin_installer.install_requirements", installer)
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"vector_enabled": True})
+    plugin.ctx.get_embedding_client = Mock(return_value=FakeEmbedding())
+    try:
+        await wait_vector_phase(plugin.vectors, "dependency_missing")
+        status = await plugin.api_vector_status()
+        assert status["reason"] == "install_failed"
+        assert "synthetic-secret" not in json.dumps(status)
+        row, _ = await plugin.store.add(scope(), text="coffee preference")
+        assert (await plugin.recall(scope(), ["coffee"]))["recalled"][0]["id"] == row["id"]
+        # Normal worker wakeups must not create an installation retry loop.
+        await plugin.vectors._sync()
+        installer.assert_awaited_once()
+
+        async def succeed(*args, **kwargs):
+            nonlocal available
+            available = True
+            return []
+
+        installer.side_effect = succeed
+        await plugin.api_vector_install()
+        await plugin.vectors._install_task
+        await wait_vector_phase(plugin.vectors, "ready")
+        assert installer.await_count == 2 and plugin.vectors.reason is None
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_shutdown_cancels_and_reaps_startup_dependency_install(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "dependency_available", lambda: False)
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def install(*args, **kwargs):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    installer = AsyncMock(side_effect=install)
+    monkeypatch.setattr("core.plugin.plugin_installer.install_requirements", installer)
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"vector_enabled": True})
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+    finally:
+        await asyncio.wait_for(plugin.terminate(), 2)
+    assert cancelled.is_set()
+    assert plugin.vectors._task.done() and plugin.vectors._install_task.done()
+    assert not plugin.vectors.ready
+    installer.assert_awaited_once()

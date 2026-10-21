@@ -63,11 +63,11 @@
     "default": false,
     "name": "Vector retrieval",
     "type": "switch",
-    "hint": "Optional remote Embedding API for hybrid recall. Disabled by default. Enabling sends memory text to the selected provider and builds a background index; install dependencies from the memory dashboard if needed.",
+    "hint": "Optional remote Embedding API for hybrid recall. Disabled by default. Enabling sends memory text to the selected provider and builds a background index. Missing NumPy dependencies are installed automatically at plugin startup; failed installs can be retried from the memory dashboard.",
     "locales": {
       "zh": {
         "name": "向量检索",
-        "hint": "默认关闭。开启后通过远程 Embedding API 增强召回，会将记忆正文发送给所选服务商，并在后台构建索引；缺少依赖时请在记忆管理页安装。"
+        "hint": "默认关闭。开启后通过远程 Embedding API 增强召回，会将记忆正文发送给所选服务商，并在后台构建索引；插件启动时自动安装缺失的 NumPy 依赖，安装失败可在记忆管理页重试。"
       }
     }
   },
