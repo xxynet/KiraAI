@@ -164,7 +164,7 @@ async def test_concurrent_deduplication_and_revision_conflicts(tmp_path):
     assert not await store.search(scope(), "Coffee")
     await store.remove(scope(), row["id"], 2)
     async with aiosqlite.connect(store.path) as db:
-        async with db.execute("SELECT COUNT(*) FROM memory_terms") as cursor:
+        async with db.execute("SELECT COUNT(*) FROM memory_fts") as cursor:
             assert (await cursor.fetchone())[0] == 0
 
 
@@ -1149,7 +1149,7 @@ async def test_memory_delete_api_auth_revision_and_keyword_cleanup(tmp_path, mon
     assert (await plugin.store.admin_get(kept["id"]))["text"] == "tea to keep"
     assert all(item["id"] != row["id"] for item in await plugin.store.search(scope(), "coffee"))
     async with plugin.store.connection() as db:
-        async with db.execute("SELECT COUNT(*) FROM memory_terms WHERE memory_id=?", (row["id"],)) as cursor:
+        async with db.execute("SELECT COUNT(*) FROM memory_fts WHERE memory_id=?", (row["id"],)) as cursor:
             assert (await cursor.fetchone())[0] == 0
     await plugin.terminate()
 

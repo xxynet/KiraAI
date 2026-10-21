@@ -1,11 +1,10 @@
-"""Language-neutral lexical indexing for the built-in memory store."""
+"""Language-neutral N-gram preprocessing for SQLite FTS5 retrieval."""
 
-from collections import Counter
-import math
 import unicodedata
 
 # Cover the largest supported result page: offset 10000 plus 50 records.
 MAX_CANDIDATES = 10050
+FTS_COLUMNS = ("w", "g1", "g2", "g3")
 
 
 def normalize(text: str) -> str:
@@ -35,21 +34,28 @@ def _tokens(text: str, *, query: bool = False):
                 yield "g1:" + char
 
 
-def terms(text: str, *, query: bool = False) -> dict[str, float]:
-    """Keep the existing weights and deduplicate query terms."""
-    weights = {"w": 3.0, "g2": 1.0, "g3": 1.5, "g1": 0.25}
-    return {term: weights[term.split(":", 1)[0]] for term in _tokens(text, query=query)}
+def index_columns(text: str) -> tuple[str, ...]:
+    """Encode complete tokens so FTS cannot split grams or alter Unicode distinctions."""
+    columns = {name: [] for name in FTS_COLUMNS}
+    for term in _tokens(text):
+        name, value = term.split(":", 1)
+        columns[name].append(value.encode("utf-8").hex())
+    return tuple(" ".join(columns[name]) for name in FTS_COLUMNS)
 
 
-def term_frequencies(text: str) -> dict[str, int]:
-    return dict(Counter(_tokens(text)))
+def match_query(text: str) -> str:
+    """Build an OR query from every distinct gram, without accepting FTS operators."""
+    return " OR ".join(
+        f'{name}:"{value.encode("utf-8").hex()}"'
+        for name, value in (
+            term.split(":", 1) for term in dict.fromkeys(_tokens(text, query=True))
+        )
+    )
 
 
-def bm25(frequency, length, average_length, documents, document_frequency):
-    """Score one term with positive Robertson IDF, k1=1.2 and b=0.75."""
-    idf = math.log1p((documents - document_frequency + 0.5) / (document_frequency + 0.5))
-    norm = 1.2 * (0.25 + 0.75 * length / average_length)
-    return idf * frequency * 2.2 / (frequency + norm)
+def indexed_term_count(text: str) -> int:
+    """Count distinct terms for the administrative detail view."""
+    return len(set(_tokens(text)))
 
 
 def fuse(lexical, semantic):

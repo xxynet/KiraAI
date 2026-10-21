@@ -13,7 +13,7 @@ import aiosqlite
 
 from .scope import MemoryInputError, MemoryScope
 from .vector_store import VectorStore
-from .search import MAX_CANDIDATES, bm25, normalize, term_frequencies, terms
+from .search import MAX_CANDIDATES, index_columns, indexed_term_count, match_query, normalize
 
 KINDS = {"semantic", "episodic", "procedural"}
 STATUSES = {"active", "completed", "cancelled", "superseded"}
@@ -21,6 +21,16 @@ MAX_TEXT = 4000
 # Administrative listings address memories by stable ID, not by conversation
 # scope: the WebUI is an operator view over the whole store.
 MAX_PAGE_SIZE = 100
+
+FTS_SCHEMA = """
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+        memory_id UNINDEXED, w, g1, g2, g3, tokenize='ascii'
+    );
+    INSERT INTO memory_fts(memory_fts, rank) VALUES('rank', 'bm25(0.0, 3.0, 0.25, 1.0, 1.5)');
+    CREATE TRIGGER IF NOT EXISTS memory_fts_delete AFTER DELETE ON memories BEGIN
+        DELETE FROM memory_fts WHERE memory_id=old.id;
+    END;
+"""
 
 
 def validate(text, kind, importance, core, expires_at=None, status="active"):
@@ -60,7 +70,6 @@ class MemoryStore:
     async def connection(self, *, write=False):
         async with aiosqlite.connect(self.path, timeout=10) as db:
             db.row_factory = aiosqlite.Row
-            await db.create_function("memory_bm25", 5, bm25, deterministic=True)
             await db.execute("PRAGMA foreign_keys = ON")
             if write:
                 await db.execute("BEGIN IMMEDIATE")
@@ -78,7 +87,7 @@ class MemoryStore:
         async with self.connection() as db:
             async with db.execute("PRAGMA user_version") as cursor:
                 version = (await cursor.fetchone())[0]
-            if version not in (0, 1):
+            if version not in (0, 2):
                 raise RuntimeError("Unsupported memory database version")
             await db.executescript("""
                 CREATE TABLE IF NOT EXISTS memories (
@@ -88,19 +97,14 @@ class MemoryStore:
                     source_message_id TEXT, importance INTEGER NOT NULL DEFAULT 3,
                     core INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
                     expires_at REAL, created_at REAL NOT NULL, updated_at REAL NOT NULL,
-                    revision INTEGER NOT NULL DEFAULT 1, origin TEXT NOT NULL DEFAULT 'conversation',
-                    term_count INTEGER NOT NULL DEFAULT 1
+                    revision INTEGER NOT NULL DEFAULT 1, origin TEXT NOT NULL DEFAULT 'conversation'
                 );
                 CREATE INDEX IF NOT EXISTS memory_scope ON memories(persona_id, session_id);
                 CREATE INDEX IF NOT EXISTS memory_origin ON memories(origin);
-                CREATE TABLE IF NOT EXISTS memory_terms (
-                    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-                    term TEXT NOT NULL, frequency INTEGER NOT NULL CHECK(frequency > 0), PRIMARY KEY(memory_id, term)
-                );
-                CREATE INDEX IF NOT EXISTS memory_term_lookup ON memory_terms(term, memory_id);
                 CREATE TABLE IF NOT EXISTS memory_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-                PRAGMA user_version = 1;
+                PRAGMA user_version = 2;
             """)
+            await db.executescript(FTS_SCHEMA)
             async with db.execute("SELECT 1 FROM memory_meta WHERE key = 'core_txt_migration'") as cursor:
                 if await cursor.fetchone():
                     return 0
@@ -132,13 +136,12 @@ class MemoryStore:
     @staticmethod
     async def _index(db, memory_id, text):
         # Legacy lines may exceed the new write limit; index their complete content off-loop.
-        indexed = await asyncio.to_thread(term_frequencies, text)
-        await db.execute("DELETE FROM memory_terms WHERE memory_id = ?", (memory_id,))
-        await db.executemany(
-            "INSERT INTO memory_terms(memory_id,term,frequency) VALUES (?, ?, ?)",
-            ((memory_id, term, frequency) for term, frequency in indexed.items()),
+        columns = await asyncio.to_thread(index_columns, text)
+        await db.execute("DELETE FROM memory_fts WHERE memory_id = ?", (memory_id,))
+        await db.execute(
+            "INSERT INTO memory_fts(memory_id,w,g1,g2,g3) VALUES (?, ?, ?, ?, ?)",
+            (memory_id, *columns),
         )
-        await db.execute("UPDATE memories SET term_count = ? WHERE id = ?", (max(1, sum(indexed.values())), memory_id))
 
     @staticmethod
     def _visible(scope):
@@ -246,10 +249,11 @@ class MemoryStore:
                 source_message_id=row["source_message_id"],
             )
             async with db.execute(
-                "SELECT m.*, (SELECT COUNT(*) FROM memory_terms WHERE memory_id=m.id) AS terms "
-                "FROM memories m WHERE id=?", (memory_id,),
+                "SELECT * FROM memories WHERE id=?", (memory_id,),
             ) as cursor:
-                return dict(await cursor.fetchone())
+                record = dict(await cursor.fetchone())
+        record["terms"] = await asyncio.to_thread(indexed_term_count, record["text"])
+        return record
 
     async def admin_remove(self, memory_id, revision):
         """Delete the operator-confirmed revision and its derived indexes atomically."""
@@ -326,27 +330,13 @@ class MemoryStore:
         return predicate, params
 
     @staticmethod
-    def _ranked_query(predicate, params, query_terms):
-        """Compute BM25 statistics over eligible memories, without loading texts into Python."""
-        # A single bound JSON value avoids SQLite variable limits for long queries.
+    def _matched_query(predicate, params, match):
+        """Apply visibility and eligibility filters before ranking and pagination."""
         sql = (
-            "WITH q(term,weight) AS ("
-            "SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?)"
-            "), corpus AS ("
-            f"SELECT m.id,m.term_count FROM memories m WHERE {predicate}"
-            "), corpus_stats AS ("
-            "SELECT COUNT(*) AS documents, AVG(term_count) AS average_length FROM corpus"
-            "), query_stats AS ("
-            "SELECT q.term,q.weight,COUNT(*) AS document_frequency FROM q "
-            "JOIN memory_terms t ON t.term=q.term JOIN corpus c ON c.id=t.memory_id "
-            "GROUP BY q.term,q.weight"
-            "), ranked AS ("
-            "SELECT c.id,SUM(q.weight * memory_bm25(t.frequency,c.term_count,"
-            "s.average_length,s.documents,q.document_frequency)) AS score "
-            "FROM query_stats q JOIN memory_terms t ON t.term=q.term "
-            "JOIN corpus c ON c.id=t.memory_id CROSS JOIN corpus_stats s GROUP BY c.id) "
+            "FROM memory_fts JOIN memories m ON m.id=memory_fts.memory_id "
+            f"WHERE memory_fts MATCH ? AND {predicate} "
         )
-        return sql, [json.dumps(query_terms, ensure_ascii=False), *params]
+        return sql, [match, *params]
 
     async def _search(self, predicate, params, query="", *, limit=8, kind=None, owner_type=None,
                       core_only=False, include_inactive=False, offset=0, candidate_pool=False):
@@ -358,14 +348,14 @@ class MemoryStore:
             predicate, params, kind=kind, owner_type=owner_type, core_only=core_only,
             include_inactive=include_inactive,
         )
-        query_terms = list((await asyncio.to_thread(terms, query, query=True)).items())
-        if query.strip() and not query_terms:
+        match = await asyncio.to_thread(match_query, query)
+        if query.strip() and not match:
             return []
-        if query_terms:
-            ranked, params = self._ranked_query(predicate, params, query_terms)
+        if match:
+            matched, params = self._matched_query(predicate, params, match)
             sql = (
-                ranked + "SELECT m.*,ranked.score FROM ranked JOIN memories m ON m.id=ranked.id "
-                "ORDER BY ranked.score DESC,m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?"
+                "SELECT m.*,memory_fts.rank AS score " + matched +
+                "ORDER BY memory_fts.rank,m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?"
             )
         else:
             sql = f"SELECT m.* FROM memories m WHERE {predicate} ORDER BY m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?"
@@ -463,19 +453,19 @@ class MemoryStore:
         if core is not None:
             where += " AND m.core=?"
             params.append(int(core))
-        query_terms = list((await asyncio.to_thread(terms, query, query=True)).items())
-        if query.strip() and not query_terms:
+        match = await asyncio.to_thread(match_query, query)
+        if query.strip() and not match:
             return {"items": [], "total": 0, "page": page, "size": size}
 
         async with self.connection() as db:
-            if query_terms:
-                ranked, query_params = self._ranked_query(where, params, query_terms)
-                async with db.execute(ranked + "SELECT COUNT(*) FROM ranked", query_params) as cursor:
+            if match:
+                matched, query_params = self._matched_query(where, params, match)
+                async with db.execute("SELECT COUNT(*) " + matched, query_params) as cursor:
                     total = (await cursor.fetchone())[0]
                 # Rank and paginate in SQLite's worker thread; only load the requested page.
                 async with db.execute(
-                    ranked + "SELECT m.*, ranked.score FROM ranked JOIN memories m ON m.id=ranked.id "
-                    "ORDER BY ranked.score DESC,m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?",
+                    "SELECT m.*,memory_fts.rank AS score " + matched +
+                    "ORDER BY memory_fts.rank,m.importance DESC,m.updated_at DESC,m.id LIMIT ? OFFSET ?",
                     [*query_params, size, (page - 1) * size],
                 ) as cursor:
                     rows = [dict(row) for row in await cursor.fetchall()]
@@ -491,7 +481,7 @@ class MemoryStore:
         return {"items": rows, "total": total, "page": page, "size": size}
 
     async def admin_get(self, memory_id: str):
-        """Single record by stable ID, including its indexed terms."""
+        """Single record by stable ID, including its distinct indexed term count."""
         if not isinstance(memory_id, str) or not memory_id:
             raise MemoryInputError("not_found")
         async with self.connection() as db:
@@ -499,12 +489,8 @@ class MemoryStore:
                 row = await cursor.fetchone()
             if row is None:
                 return None
-            async with db.execute(
-                "SELECT term FROM memory_terms WHERE memory_id=? ORDER BY term", (memory_id,),
-            ) as cursor:
-                indexed = [r[0] for r in await cursor.fetchall()]
         record = dict(row)
-        record["terms"] = len(indexed)
+        record["terms"] = await asyncio.to_thread(indexed_term_count, record["text"])
         return record
 
     async def recall_users(self, session_id):

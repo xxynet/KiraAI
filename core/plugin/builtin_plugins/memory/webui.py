@@ -12,8 +12,8 @@ from typing import Any
 
 from .scope import MemoryInputError, MemoryScope
 
-# Display column kept from the raw row. ``normalized`` and the ``term_count``
-# bookkeeping are internal search artefacts and never leave the server.
+# Display columns kept from the raw row. The normalized text is an internal
+# search artefact and never leaves the server.
 PUBLIC_FIELDS = (
     "id", "revision", "text", "kind", "owner_type", "owner_id", "persona_id",
     "session_id", "source_message_id", "importance", "core", "status",
