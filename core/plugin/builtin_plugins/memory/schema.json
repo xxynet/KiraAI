@@ -47,6 +47,18 @@
       }
     }
   },
+  "recall_timeout": {
+    "type": "integer",
+    "default": 5,
+    "name": "Total recall timeout",
+    "hint": "Total retrieval budget for conversations and recall preview (1–30 seconds, default 5), including core memory loading, BM25, Embedding, reranking and queue waits. Cancels unfinished work and uses results already obtained when the budget expires. Tool pagination keeps its per-request model timeouts.",
+    "locales": {
+      "zh": {
+        "name": "召回总超时",
+        "hint": "真实对话和模拟召回的检索总预算（1–30 秒，默认 5），包含核心记忆读取、BM25、Embedding、重排序及排队等待；到期取消未完成任务，使用已取得的结果。工具分页仍使用各模型请求的独立超时。"
+      }
+    }
+  },
   "prompt_char_budget": {
     "name": "Memory context character budget",
     "type": "integer",

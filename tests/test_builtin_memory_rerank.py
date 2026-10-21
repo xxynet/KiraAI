@@ -403,3 +403,139 @@ async def test_keyword_recall_respects_pool_limit_without_restricting_core_or_to
     assert page["ok"] and len(page["records"]) == 3
     assert client.rerank.await_count == 1
     await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("entry", ["runtime", "broad", "scoped"])
+async def test_total_recall_budget_preserves_fusion_and_cancels_rerank(tmp_path, monkeypatch, entry):
+    from core.plugin.builtin_plugins.memory.search import fuse
+    from tests.test_builtin_memory_vector import vector_plugin
+
+    np = pytest.importorskip("numpy")
+    plugin, embedding = await vector_plugin(tmp_path, monkeypatch, np, timeout=30)
+    plugin.plugin_cfg.update({"recall_timeout": 1, "rerank": {"enabled": True, "timeout": 30}})
+    plugin.reranker = MemoryReranker(plugin.ctx, plugin.plugin_cfg["rerank"])
+    client = attach_client(plugin)
+    lexical = await populate(plugin, 3)
+    semantic, _ = await plugin.store.add(scope(), text="latte semantic-only")
+    core, _ = await plugin.store.add(scope(), text="core invariant", core=True)
+    await plugin.vectors._sync()
+    visible, params = plugin.store.search_filter(*plugin.store._visible(scope()))
+    expected = fuse(lexical, await plugin.vectors.search("coffee", visible, params))
+    assert semantic["id"] in {row["id"] for row in expected}
+    cancelled = asyncio.Event()
+    entered_at = []
+
+    async def delayed_embedding(texts):
+        await asyncio.sleep(0.6)
+        return embedding.vectors(texts)
+
+    async def blocked_rerank(*args, **kwargs):
+        entered_at.append(asyncio.get_running_loop().time())
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    embedding.embed.side_effect = delayed_embedding
+    client.rerank.side_effect = blocked_rerank
+    started = asyncio.get_running_loop().time()
+    try:
+        if entry == "runtime":
+            result = await plugin.recall(scope(), ["coffee"])
+        else:
+            payload = {"messages": ["coffee"], "persona_id": scope().persona_id,
+                       "session_id": scope().session_id}
+            if entry == "scoped":
+                payload["adapter"] = scope().adapter
+            result = await plugin.api_recall(payload)
+        elapsed = asyncio.get_running_loop().time() - started
+        assert result["retrieval"]["timed_out"] and result["retrieval"]["timeout_seconds"] == 1
+        assert [row["id"] for row in result["recalled"]] == [row["id"] for row in expected]
+        assert [row["id"] for row in result["core"]] == [core["id"]]
+        assert result["retrieval"]["rerank"]["reason"] == "recall_timeout"
+        assert elapsed < 1.6 and entered_at and asyncio.get_running_loop().time() - entered_at[0] < 0.8
+        assert cancelled.is_set() and plugin.reranker._slots._value == 2
+        assert plugin.vectors.ready and plugin.vectors._slots._value == 2
+        assert plugin.reranker._retry_at == plugin.vectors._retry_at == 0
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("external_cancel", [False, True])
+async def test_recall_cancellation_reaps_embedding_and_preserves_existing_index(tmp_path, monkeypatch, external_cancel):
+    from tests.test_builtin_memory_vector import vector_plugin
+
+    plugin, embedding = await vector_plugin(tmp_path, monkeypatch, pytest.importorskip("numpy"), timeout=30)
+    plugin.plugin_cfg.update({"recall_timeout": 1, "rerank": {"enabled": True}})
+    plugin.reranker = MemoryReranker(plugin.ctx, plugin.plugin_cfg["rerank"])
+    client = attach_client(plugin)
+    expected = await populate(plugin, 3)
+    core, _ = await plugin.store.add(scope(), text="core invariant", core=True)
+    await plugin.vectors._sync()
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def blocked(texts):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    embedding.embed.side_effect = blocked
+    pending = asyncio.create_task(plugin.recall(scope(), ["coffee"]))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        if external_cancel:
+            pending.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+        else:
+            result = await asyncio.wait_for(pending, 2)
+            assert result["retrieval"]["timed_out"]
+            assert [row["id"] for row in result["recalled"]] == [row["id"] for row in expected]
+            assert [row["id"] for row in result["core"]] == [core["id"]]
+        assert cancelled.is_set() and plugin.vectors._slots._value == 2
+        assert plugin.vectors.ready and plugin.vectors._retry_at == 0
+        client.rerank.assert_not_awaited()
+    finally:
+        if not pending.done():
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("blocked_stage", ["core", "keyword"])
+async def test_total_budget_also_covers_local_retrieval(tmp_path, monkeypatch, blocked_stage):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"recall_timeout": 1})
+    core, _ = await plugin.store.add(scope(), text="core invariant", core=True)
+    search = plugin.store._search
+    cancelled = asyncio.Event()
+
+    async def blocked(*args, **kwargs):
+        is_core = kwargs.get("core_only", False)
+        if is_core == (blocked_stage == "core"):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        return await search(*args, **kwargs)
+
+    monkeypatch.setattr(plugin.store, "_search", blocked)
+    result = await asyncio.wait_for(plugin.recall(scope(), ["coffee"]), 2)
+    assert result["retrieval"]["timed_out"] and cancelled.is_set()
+    assert [row["id"] for row in result["core"]] == ([core["id"]] if blocked_stage == "keyword" else [])
+    assert result["recalled"] == []
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("value,expected", [(None, 5), (True, 5), ("10", 5), (0, 1), (-1, 1), (100, 30), (9, 9)])
+async def test_total_recall_timeout_configuration(tmp_path, monkeypatch, value, expected):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={"recall_timeout": value})
+    config = await plugin.api_config()
+    assert config["values"]["recall_timeout"] == expected
+    assert config["defaults"]["recall_timeout"] == 5
+    await plugin.terminate()

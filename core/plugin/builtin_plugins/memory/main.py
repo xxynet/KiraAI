@@ -3,6 +3,7 @@
 import asyncio
 from functools import partial, wraps
 import json
+import time
 
 from core.plugin import BasePlugin, PageMenu, PluginPage, logger, on, register
 from core.provider import LLMRequest
@@ -292,13 +293,15 @@ class MemoryPlugin(BasePlugin):
         )
 
     async def _hybrid_search(self, predicate, params, query="", *, limit=8, offset=0,
-                             rerank_report=None, automatic=False, **options):
+                             rerank_report=None, automatic=False, recall_state=None, **options):
         use_pool = automatic and isinstance(query, str) and bool(query.strip()) and not options.get("core_only")
         lexical = await self.store._search(
             predicate, params, query,
             limit=self.setting("bm25_candidates", 50, 1, 1000) if use_pool else limit,
             offset=0 if use_pool else offset, candidate_pool=bool(use_pool), **options,
         )
+        if recall_state is not None:
+            recall_state.update(rows=lexical[:limit], stage="keyword")
         if rerank_report is not None:
             rerank_report.update(self.reranker.report("disabled" if not self.reranker.enabled else "skipped"))
         if not query.strip() or options.get("core_only"):
@@ -306,6 +309,8 @@ class MemoryPlugin(BasePlugin):
         combined = lexical if use_pool else None
         if self.vectors.enabled:
             filtered, values = self.store.search_filter(predicate, params, **options)
+            if recall_state is not None:
+                recall_state["stage"] = "vector"
             semantic = await self.vectors.search(
                 query, filtered, values,
                 limit=self.vectors.candidate_limit if use_pool else MAX_CANDIDATES,
@@ -316,6 +321,8 @@ class MemoryPlugin(BasePlugin):
                     predicate, params, query, limit=MAX_CANDIDATES, candidate_pool=True, **options,
                 )
                 combined = await asyncio.to_thread(fuse, candidates, semantic)
+                if recall_state is not None:
+                    recall_state["rows"] = combined[:limit]
         # Rerank a fixed prefix before slicing either recall results or tool pages.
         if self.reranker.enabled and offset < self.reranker.candidate_limit:
             if combined is None:
@@ -323,6 +330,9 @@ class MemoryPlugin(BasePlugin):
                     predicate, params, query, limit=max(self.reranker.candidate_limit, offset + limit),
                     candidate_pool=True, **options,
                 )
+            if recall_state is not None:
+                recall_state.update(stage="rerank", rerank_started=time.monotonic(),
+                                    rerank_candidates=min(len(combined), self.reranker.candidate_limit))
             combined, report = await self.reranker.rank(query, combined)
             if rerank_report is not None:
                 rerank_report.update(report)
@@ -334,22 +344,45 @@ class MemoryPlugin(BasePlugin):
 
     async def _recall(self, search, messages):
         """Share ranking, deduplication and budgets across recall entry points."""
+        started = asyncio.get_running_loop().time()
+        timeout = self.setting("recall_timeout", 5, 1, 30)
         core_limit = self.setting("core_limit", 10, 1, 20)
         recall_limit = self.setting("recall_limit", 6, 1, 20)
         budget = self.setting("prompt_char_budget", 6000, 1500, 20000)
-        core = await search(core_only=True, limit=core_limit)
         query = " ".join(str(message or "") for message in messages[-3:])
         if self.recall_query_char_limit:
             query = query[:self.recall_query_char_limit]
         rerank_report = self.reranker.report("disabled" if not self.reranker.enabled else "skipped")
-        recalled = await search(query, limit=recall_limit, rerank_report=rerank_report, automatic=True) if query.strip() else []
+        core, recalled = [], []
+        checkpoint = {}
+        timed_out = False
+
+        async def retrieve():
+            nonlocal core, recalled
+            core = await search(core_only=True, limit=core_limit)
+            if query.strip():
+                recalled = await search(query, limit=recall_limit, rerank_report=rerank_report,
+                                        automatic=True, recall_state=checkpoint)
+
+        try:
+            remaining = max(0, started + timeout - asyncio.get_running_loop().time())
+            await asyncio.wait_for(retrieve(), timeout=remaining)
+        except asyncio.TimeoutError:
+            timed_out = True
+            recalled = checkpoint.get("rows", [])
+            if checkpoint.get("stage") == "rerank":
+                rerank_report.update(self.reranker.report(
+                    "fallback", "recall_timeout", started=checkpoint["rerank_started"],
+                    candidates=checkpoint["rerank_candidates"],
+                ))
         core_records = self.pack(core, budget // 2)
         core_ids = {record["id"] for record in core_records}
         recalled_records = self.pack([row for row in recalled if row["id"] not in core_ids], budget // 2)
         return {
             "query": query,
             "retrieval": {"mode": "hybrid" if self.vectors.enabled and self.vectors.ready else "keyword",
-                          "phase": self.vectors.phase, "reason": self.vectors.reason, "rerank": rerank_report},
+                          "phase": self.vectors.phase, "reason": self.vectors.reason, "rerank": rerank_report,
+                          "timed_out": timed_out, "timeout_seconds": timeout},
             "core": core_records,
             "recalled": recalled_records,
             "prompt_chars": len(self.encode(core_records + recalled_records)),
@@ -565,6 +598,7 @@ class MemoryPlugin(BasePlugin):
                 "prompt_char_budget": self.setting("prompt_char_budget", 6000, 1500, 20000),
                 "search_char_budget": self.setting("search_char_budget", 12000, 5000, 30000),
                 "recall_query_char_limit": self.recall_query_char_limit,
+                "recall_timeout": self.setting("recall_timeout", 5, 1, 30),
                 "bm25_candidates": self.setting("bm25_candidates", 50, 1, 1000),
                 "embedding_candidates": self.vectors.candidate_limit,
             },
@@ -574,6 +608,7 @@ class MemoryPlugin(BasePlugin):
                 "prompt_char_budget": 6000,
                 "search_char_budget": 12000,
                 "recall_query_char_limit": 0,
+                "recall_timeout": 5,
                 "bm25_candidates": 50,
                 "embedding_candidates": 50,
             },

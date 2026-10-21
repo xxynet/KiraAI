@@ -1007,6 +1007,11 @@ function renderRecall(data) {
   target.appendChild(node("p", null, [I18N.t("recall.query") + ": ",
     node("code", { text: data.query || I18N.t("common.none") })]));
   if (data.retrieval) {
+    if (data.retrieval.timed_out) {
+      target.appendChild(node("p", { class: "hint", text: I18N.t("recall.timeout", {
+        seconds: data.retrieval.timeout_seconds,
+      }) }));
+    }
     var modeKey = data.retrieval.mode === "hybrid" ? "vector.used_hybrid" : "vector.used_keyword";
     target.appendChild(node("p", { class: "hint", text: I18N.t(modeKey) }));
     var rerank = data.retrieval.rerank;

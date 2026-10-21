@@ -168,7 +168,8 @@ async def test_stale_vectors_are_excluded_and_edit_delete_refresh_index(tmp_path
     await plugin.vectors._sync()
     assert (await plugin.search(scope(), "latte"))[0]["id"] == row["id"]
     await plugin.api_record_update(row["id"], {"revision": 2, "text": "汽车"})
-    assert not plugin.vectors.ready
+    assert plugin.vectors.ready
+    assert not await plugin.search(scope(), "latte")
     await plugin.vectors._sync()
     assert (await plugin.search(scope(), "车子"))[0]["id"] == row["id"]
     await plugin.store.remove(scope(), row["id"], 3)
@@ -678,7 +679,7 @@ async def test_metadata_edit_never_promotes_a_vector_for_previous_text(tmp_path,
     await plugin.api_record_update(row["id"], {"revision": 2, "text": "coffee", "importance": 5})
     assert await indexed_vector(plugin, row["id"]) == old_vector
     assert (await plugin.vectors.store.progress()) == {"indexed": 0, "total": 1}
-    assert not plugin.vectors.ready
+    assert plugin.vectors.ready
     await plugin.vectors._sync()
     assert client.embed.await_count == 2
     current = await indexed_vector(plugin, row["id"])
@@ -749,7 +750,7 @@ async def test_optional_index_check_failure_does_not_fail_committed_metadata_edi
     monkeypatch.setattr(plugin.vectors.store, "is_current", AsyncMock(side_effect=OSError("synthetic index check failure")))
     updated = await plugin.api_record_update(row["id"], {"revision": 1, "text": row["text"], "importance": 5})
     assert updated["revision"] == 2 and updated["importance"] == 5
-    assert not plugin.vectors.ready
+    assert plugin.vectors.ready
     await plugin.vectors._sync()
     assert plugin.vectors.ready and client.embed.await_count == 1
     await plugin.terminate()
@@ -764,7 +765,7 @@ async def test_actual_text_changes_reembed_even_when_normalized_text_matches(tmp
     updated = await plugin.api_record_update(row["id"], {"revision": 1, "text": text})
     assert updated["text"] == text
     assert (await plugin.store.admin_get(row["id"]))["normalized"] == row["normalized"]
-    assert not plugin.vectors.ready
+    assert plugin.vectors.ready
     await plugin.vectors._sync()
     assert client.embed.await_count == 2
     assert (await indexed_vector(plugin, row["id"]))["revision"] == 2
@@ -1036,3 +1037,96 @@ async def test_recall_candidate_limits_validate_each_channel(tmp_path, monkeypat
     assert search.await_args.kwargs["limit"] == expected
     assert search.await_args.kwargs["candidate_pool"] is True
     await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_incremental_indexing_keeps_current_vectors_and_excludes_edits_and_deletes(tmp_path, monkeypatch, np):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    kept, _ = await plugin.store.add(scope(), text="汽车 current")
+    edited, _ = await plugin.store.add(scope(), text="汽车 edited")
+    removed, _ = await plugin.store.add(scope(), text="汽车 removed")
+    await plugin.vectors._sync()
+    await plugin.api_record_update(edited["id"], {"revision": 1, "text": "coffee updated"})
+    await plugin.api_record_remove(removed["id"], revision=1)
+    added = json.loads(await plugin.memory_add(event(), text="coffee added"))
+    assert plugin.vectors.ready
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def embed(texts):
+        if any(text.startswith("coffee") for text in texts):
+            entered.set()
+            await release.wait()
+        return client.vectors(texts)
+
+    client.embed.side_effect = embed
+    plugin.vectors.start()
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        status = await plugin.api_vector_status()
+        assert status["phase"] == "building" and status["ready"]
+        assert status["indexed"] == 1 and status["total"] == 3
+        assert [row["id"] for row in await plugin.search(scope(), "车子")] == [kept["id"]]
+        result = await plugin.recall(scope(), ["车子"])
+        assert [row["id"] for row in result["recalled"]] == [kept["id"]]
+        release.set()
+        await wait_vector_phase(plugin.vectors, "ready")
+        assert {row["id"] for row in await plugin.search(scope(), "latte")} == {
+            edited["id"], added["memory_id"],
+        }
+        assert await plugin.store.admin_get(removed["id"]) is None
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_completed_batches_are_searchable_before_initial_index_finishes(tmp_path, monkeypatch, np):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    for index in range(20):
+        await plugin.store.add(scope(), text=f"汽车 {index}")
+    entered, release = asyncio.Event(), asyncio.Event()
+    batches = 0
+
+    async def embed(texts):
+        nonlocal batches
+        if texts != ["车子"]:
+            batches += 1
+            if batches == 2:
+                entered.set()
+                await release.wait()
+        return client.vectors(texts)
+
+    client.embed.side_effect = embed
+    plugin.vectors.start()
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        assert plugin.vectors.ready and plugin.vectors.phase == "building"
+        assert len(await plugin.search(scope(), "车子", limit=50)) == 16
+        release.set()
+        await wait_vector_phase(plugin.vectors, "ready")
+        assert len(await plugin.search(scope(), "车子", limit=50)) == 20
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_failed_incremental_batch_keeps_existing_vectors_searchable(tmp_path, monkeypatch, np):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    kept, _ = await plugin.store.add(scope(), text="汽车 current")
+    await plugin.vectors._sync()
+    await plugin.store.add(scope(), text="coffee pending")
+    plugin.vectors.changed()
+
+    async def embed(texts):
+        if any(text.startswith("coffee") for text in texts):
+            raise RuntimeError("synthetic batch failure")
+        return client.vectors(texts)
+
+    client.embed.side_effect = embed
+    plugin.vectors.start()
+    try:
+        await wait_vector_phase(plugin.vectors, "degraded")
+        assert plugin.vectors.ready
+        assert [row["id"] for row in await plugin.search(scope(), "车子")] == [kept["id"]]
+        assert (await plugin.api_vector_status())["reason"] == "embedding_failed"
+    finally:
+        await plugin.terminate()

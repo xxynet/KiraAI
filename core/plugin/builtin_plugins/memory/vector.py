@@ -77,7 +77,6 @@ class VectorMemory:
 
     def changed(self):
         if self.enabled:
-            self.ready = False
             if (self.np is not None and self.index_id is not None
                     and self.phase != "rebuild_required" and time.monotonic() >= self._retry_at):
                 self.phase = "building"
@@ -119,6 +118,8 @@ class VectorMemory:
         )
 
     def _index_state(self, state):
+        if self.index_id != state["id"]:
+            self.ready = False
         self.index_id = state["id"]
         self.dimension = state["dimensions"]
         self.received_dimension = state["received_dimensions"]
@@ -160,11 +161,12 @@ class VectorMemory:
                 return
             progress = await self.store.progress()
             self.indexed, self.total = progress["indexed"], progress["total"]
+            # Existing current vectors remain searchable while missing or stale rows are indexed.
+            self.ready = self.indexed > 0 and self.dimension is not None and not self._rebuild
             rows = await self.store.pending()
             if not rows:
                 self.ready, self.phase = True, "ready"
                 return
-            self.ready = False
             values = await self._embed(self.client(), [row["text"][:4000] for row in rows])
             matrix = await asyncio.to_thread(normalize_vectors, self.np, values, len(rows))
             if self.dimension is not None and self.dimension != matrix.shape[1]:
@@ -195,7 +197,7 @@ class VectorMemory:
                 raise
             except Exception:
                 if self.phase != "rebuild_required":
-                    self.phase, self.reason, self.ready = "degraded", "embedding_failed", False
+                    self.phase, self.reason = "degraded", "embedding_failed"
                     self._retry_at = time.monotonic() + 30
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=60 if self.phase == "degraded" else 30)
@@ -222,7 +224,6 @@ class VectorMemory:
             )
             if not self.ready or self.index_id != index_id:
                 return None
-            self.reason = None
             return results
         except asyncio.CancelledError:
             raise
