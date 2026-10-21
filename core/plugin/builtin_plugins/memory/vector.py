@@ -77,6 +77,18 @@ class VectorMemory:
                 self.phase = "building"
             self._wake.set()
 
+    async def updated(self, memory_id):
+        """Keep retrieval ready when an edit has preserved the record's current vector."""
+        if not self.enabled:
+            return
+        try:
+            current = self.index_id is not None and await self.store.is_current(memory_id)
+        except Exception:
+            # An optional index check must not fail an already committed memory edit.
+            current = False
+        if not current:
+            self.changed()
+
     async def close(self):
         tasks = [task for task in (self._task, self._install_task) if task is not None]
         for task in tasks:

@@ -586,3 +586,225 @@ async def test_operator_delete_cascades_vectors_without_reembedding_other_memori
     assert not await plugin.search(scope(), "latte")
     assert (await plugin.search(scope(persona="other"), "car"))[0]["id"] == kept["id"]
     await plugin.terminate()
+
+
+async def indexed_vector(plugin, memory_id):
+    async with plugin.store.connection() as db:
+        async with db.execute("SELECT * FROM memory_vectors WHERE memory_id=?", (memory_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("entry", ["tool", "webui"])
+@pytest.mark.parametrize("changes", [
+    {"importance": 5}, {"core": True}, {"kind": "episodic"}, {"status": "completed"},
+    {"expires_at": 2100000000}, {"expires_at": None}, {}, {"text": "  coffee preference \n"},
+])
+async def test_metadata_edits_reuse_current_vector_and_keep_retrieval_ready(tmp_path, monkeypatch, np, entry, changes):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="coffee preference", expires_at=2000000000)
+    await plugin.vectors._sync()
+    before = await indexed_vector(plugin, row["id"])
+    payload = {"revision": 1, "text": row["text"], **changes}
+    if entry == "webui":
+        updated = await plugin.api_record_update(row["id"], payload)
+        assert updated["revision"] == 2
+    else:
+        if payload.get("expires_at", 1) is None:
+            payload["clear_expiry"] = True
+        result = json.loads(await plugin.memory_update(event(), row["id"], **payload))
+        assert result["ok"] and result["revision"] == 2
+    assert plugin.vectors.ready and plugin.vectors.phase == "ready"
+    after = await indexed_vector(plugin, row["id"])
+    assert after == {**before, "revision": 2}
+    assert await plugin.vectors.store.pending() == []
+    await plugin.vectors._sync()
+    assert client.embed.await_count == 1
+    assert plugin.vectors.index_id == before["fingerprint"]
+    assert (await plugin.store.admin_get(row["id"]))["text"] == row["text"]
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_source_message_change_does_not_reembed_unchanged_text(tmp_path, monkeypatch, np):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+    await plugin.vectors._sync()
+    turn = event()
+    turn.messages[0].message_id = "new-source"
+    result = json.loads(await plugin.memory_update(turn, row["id"], 1, row["text"]))
+    assert result["ok"]
+    assert (await plugin.store.admin_get(row["id"]))["source_message_id"] == "new-source"
+    assert plugin.vectors.ready
+    await plugin.vectors._sync()
+    assert client.embed.await_count == 1
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("entry", ["tool", "webui"])
+async def test_metadata_edits_during_embedding_publish_latest_revision_without_another_call(tmp_path, monkeypatch, np, entry):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+
+    async def edit_metadata(texts):
+        for revision, changes in ((1, {"core": True}), (2, {"importance": 5})):
+            payload = {"revision": revision, "text": row["text"], **changes}
+            if entry == "webui":
+                await plugin.api_record_update(row["id"], payload)
+            else:
+                result = json.loads(await plugin.memory_update(event(), row["id"], **payload))
+                assert result["ok"]
+        return client.vectors(texts)
+
+    client.embed.side_effect = edit_metadata
+    await plugin.vectors._sync()
+    assert client.embed.await_count == 1
+    assert plugin.vectors.ready and await plugin.vectors.store.pending() == []
+    assert (await indexed_vector(plugin, row["id"]))["revision"] == 3
+    current = await plugin.store.admin_get(row["id"])
+    assert current["revision"] == 3 and current["core"] == 1 and current["importance"] == 5
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_metadata_edit_never_promotes_a_vector_for_previous_text(tmp_path, monkeypatch, np):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="汽车")
+    await plugin.vectors._sync()
+    old_vector = await indexed_vector(plugin, row["id"])
+    await plugin.api_record_update(row["id"], {"revision": 1, "text": "coffee"})
+    await plugin.api_record_update(row["id"], {"revision": 2, "text": "coffee", "importance": 5})
+    assert await indexed_vector(plugin, row["id"]) == old_vector
+    assert (await plugin.vectors.store.progress()) == {"indexed": 0, "total": 1}
+    assert not plugin.vectors.ready
+    await plugin.vectors._sync()
+    assert client.embed.await_count == 2
+    current = await indexed_vector(plugin, row["id"])
+    assert current["revision"] == 3 and current["vector"] != old_vector["vector"]
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_metadata_update_and_vector_revision_roll_back_together(tmp_path, monkeypatch, np):
+    from core.plugin.builtin_plugins.memory.vector_store import VectorStore
+
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+    await plugin.vectors._sync()
+    old_vector = await indexed_vector(plugin, row["id"])
+    advance = VectorStore.advance_revision
+
+    async def fail_after_advancing(db, memory_id, revision):
+        await advance(db, memory_id, revision)
+        raise RuntimeError("synthetic rollback")
+
+    monkeypatch.setattr(VectorStore, "advance_revision", staticmethod(fail_after_advancing))
+    with pytest.raises(RuntimeError, match="synthetic rollback"):
+        await plugin.store.admin_update(row["id"], 1, text=row["text"], importance=5)
+    current = await plugin.store.admin_get(row["id"])
+    assert current["revision"] == 1 and current["importance"] == 3
+    assert await indexed_vector(plugin, row["id"]) == old_vector
+    assert client.embed.await_count == 1
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_metadata_edit_without_vector_table_keeps_optional_feature_uninitialized(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch)
+    plugin.ctx.get_embedding_client = Mock(side_effect=AssertionError("Embedding must remain disabled"))
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+    await plugin.api_record_update(row["id"], {"revision": 1, "text": row["text"], "core": True})
+    async with plugin.store.connection() as db:
+        async with db.execute("SELECT name FROM sqlite_master WHERE name='memory_vectors'") as cursor:
+            assert await cursor.fetchone() is None
+    plugin.ctx.get_embedding_client.assert_not_called()
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_cached_vector_stays_current_while_feature_is_disabled(tmp_path, monkeypatch, np):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+    await plugin.vectors._sync()
+    original = await indexed_vector(plugin, row["id"])
+    plugin.plugin_cfg["vector_enabled"] = False
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    await plugin.api_record_update(row["id"], {"revision": 1, "text": row["text"], "core": True})
+    assert await indexed_vector(plugin, row["id"]) == {**original, "revision": 2}
+    plugin.plugin_cfg["vector_enabled"] = True
+    plugin.vectors = VectorMemory(plugin.store, plugin.ctx, plugin.plugin_cfg)
+    plugin.vectors.np = np
+    await plugin.vectors._sync()
+    assert plugin.vectors.ready and client.embed.await_count == 1
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_optional_index_check_failure_does_not_fail_committed_metadata_edit(tmp_path, monkeypatch, np):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+    await plugin.vectors._sync()
+    monkeypatch.setattr(plugin.vectors.store, "is_current", AsyncMock(side_effect=OSError("synthetic index check failure")))
+    updated = await plugin.api_record_update(row["id"], {"revision": 1, "text": row["text"], "importance": 5})
+    assert updated["revision"] == 2 and updated["importance"] == 5
+    assert not plugin.vectors.ready
+    await plugin.vectors._sync()
+    assert plugin.vectors.ready and client.embed.await_count == 1
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("text", ["COFFEE preference", "coffee  preference"])
+async def test_actual_text_changes_reembed_even_when_normalized_text_matches(tmp_path, monkeypatch, np, text):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+    await plugin.vectors._sync()
+    updated = await plugin.api_record_update(row["id"], {"revision": 1, "text": text})
+    assert updated["text"] == text
+    assert (await plugin.store.admin_get(row["id"]))["normalized"] == row["normalized"]
+    assert not plugin.vectors.ready
+    await plugin.vectors._sync()
+    assert client.embed.await_count == 2
+    assert (await indexed_vector(plugin, row["id"]))["revision"] == 2
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_metadata_edit_still_rejects_outdated_revisions(tmp_path, monkeypatch, np):
+    from fastapi import HTTPException
+
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+    await plugin.vectors._sync()
+    await plugin.api_record_update(row["id"], {"revision": 1, "text": row["text"], "core": True})
+    with pytest.raises(HTTPException) as conflict:
+        await plugin.api_record_update(row["id"], {"revision": 1, "text": row["text"], "importance": 5})
+    assert conflict.value.status_code == 400 and conflict.value.detail == "conflict"
+    result = json.loads(await plugin.memory_update(event(), row["id"], 1, row["text"], importance=5))
+    assert result["ok"] is False
+    current = await plugin.store.admin_get(row["id"])
+    assert current["revision"] == 2 and current["importance"] == 3
+    assert (await indexed_vector(plugin, row["id"]))["revision"] == 2
+    assert plugin.vectors.ready and client.embed.await_count == 1
+    await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_metadata_edit_preserves_dimension_mismatch_pause_and_requires_manual_rebuild(tmp_path, monkeypatch, np):
+    plugin, client = await vector_plugin(tmp_path, monkeypatch, np)
+    row, _ = await plugin.store.add(scope(), text="coffee preference")
+    await plugin.vectors._sync()
+    index_id = plugin.vectors.index_id
+    client.embed.side_effect = lambda texts: [[1, 0] for _ in texts]
+    await plugin.search(scope(), "latte")
+    assert plugin.vectors.phase == "rebuild_required"
+    calls = client.embed.await_count
+    await plugin.api_record_update(row["id"], {"revision": 1, "text": row["text"], "core": True})
+    await plugin.vectors._sync()
+    assert plugin.vectors.phase == "rebuild_required" and not plugin.vectors.ready
+    assert not plugin.vectors._rebuild and plugin.vectors.index_id == index_id
+    assert (await indexed_vector(plugin, row["id"]))["revision"] == 2
+    assert client.embed.await_count == calls
+    await plugin.terminate()

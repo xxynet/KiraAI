@@ -224,7 +224,7 @@ class MemoryPlugin(BasePlugin):
             core=core, status=status, expires_at=expires_at, clear_expiry=clear_expiry,
             source_message_id=source_message_id,
         )
-        self.vectors.changed()
+        await self.vectors.updated(memory_id)
         return self.result(True, memory_id=memory_id, revision=version)
 
     @register.tool(
@@ -432,7 +432,7 @@ class MemoryPlugin(BasePlugin):
     async def api_record_update(self, memory_id: str, payload: dict):
         async def save():
             row = await self.store.admin_update(memory_id, **webui.parse_update(payload))
-            self.vectors.changed()
+            await self.vectors.updated(memory_id)
             return webui.serialize(row) | {"terms": row["terms"]}
 
         return await self._admin(save)

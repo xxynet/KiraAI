@@ -12,6 +12,7 @@ import uuid
 import aiosqlite
 
 from .scope import MemoryInputError, MemoryScope
+from .vector_store import VectorStore
 from .search import MAX_CANDIDATES, bm25, normalize, term_frequencies, terms
 
 KINDS = {"semantic", "episodic", "procedural"}
@@ -208,7 +209,7 @@ class MemoryStore:
 
     async def _write_update(self, db, row, *, text, kind=None, importance=None, core=None,
                             status=None, expires_at=None, clear_expiry=False, source_message_id=None):
-        """Apply validated content changes and rebuild the index in the caller's transaction."""
+        """Apply validated edits and reuse derived indexes while the stored text is unchanged."""
         kind = row["kind"] if kind is None else kind
         importance = row["importance"] if importance is None else importance
         core = bool(row["core"]) if core is None else core
@@ -222,7 +223,10 @@ class MemoryStore:
             (text, normalize(text), kind, importance, int(core), status, expiry,
              source_message_id, time.time(), row["id"]),
         )
-        await self._index(db, row["id"], text)
+        if text != row["text"]:
+            await self._index(db, row["id"], text)
+        else:
+            await VectorStore.advance_revision(db, row["id"], row["revision"])
 
     async def admin_update(self, memory_id, revision, *, text, kind=None, importance=None,
                            core=None, status=None, expires_at=None, clear_expiry=False):
