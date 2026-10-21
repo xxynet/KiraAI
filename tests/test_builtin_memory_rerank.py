@@ -539,3 +539,32 @@ async def test_total_recall_timeout_configuration(tmp_path, monkeypatch, value, 
     assert config["values"]["recall_timeout"] == expected
     assert config["defaults"]["recall_timeout"] == 5
     await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("timeout", [False, True])
+async def test_core_matches_do_not_enter_rerank_or_timeout_fallback(tmp_path, monkeypatch, timeout):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={
+        "core_limit": 2, "recall_limit": 2, "bm25_candidates": 2,
+        "recall_timeout": 1, "rerank": {"enabled": True, "timeout": 30},
+    })
+    client = attach_client(plugin)
+    try:
+        core = [await plugin.store.add(scope(), text=f"coffee {i}", core=True, importance=5)
+                for i in range(2)]
+        await populate(plugin, 2)
+        core_ids = {row["id"] for row, _ in core}
+        ordinary = [row for row in await plugin.store.search(scope(), "coffee", limit=50)
+                    if row["id"] not in core_ids]
+        if timeout:
+            async def blocked(**kwargs):
+                await asyncio.Event().wait()
+            client.rerank.side_effect = blocked
+        result = await plugin.recall(scope(), ["coffee"])
+        assert {row["id"] for row in result["core"]} == {row["id"] for row, _ in core}
+        expected = ordinary if timeout else list(reversed(ordinary))
+        assert [row["id"] for row in result["recalled"]] == [row["id"] for row in expected]
+        assert client.rerank.await_args.kwargs["documents"] == [row["text"] for row in ordinary]
+        assert result["retrieval"]["timed_out"] is timeout
+    finally:
+        await plugin.terminate()

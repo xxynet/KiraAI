@@ -1130,3 +1130,19 @@ async def test_failed_incremental_batch_keeps_existing_vectors_searchable(tmp_pa
         assert (await plugin.api_vector_status())["reason"] == "embedding_failed"
     finally:
         await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_core_is_excluded_before_vector_candidate_limit(tmp_path, monkeypatch, np):
+    plugin, _ = await vector_plugin(tmp_path, monkeypatch, np, candidates=1)
+    plugin.plugin_cfg.update({"core_limit": 1, "recall_limit": 1, "bm25_candidates": 1})
+    try:
+        core, _ = await plugin.store.add(scope(), text="coffee core", core=True, importance=5)
+        ordinary, _ = await plugin.store.add(scope(), text="latte ordinary")
+        await plugin.vectors._sync()
+        for result in (await plugin.recall(scope(), ["coffee"]),
+                       await plugin.api_recall({"messages": ["coffee"]})):
+            assert [row["id"] for row in result["core"]] == [core["id"]]
+            assert [row["id"] for row in result["recalled"]] == [ordinary["id"]]
+    finally:
+        await plugin.terminate()

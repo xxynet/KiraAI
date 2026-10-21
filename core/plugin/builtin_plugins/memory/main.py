@@ -284,6 +284,18 @@ class MemoryPlugin(BasePlugin):
             used += len(cls.encode(record)) + 2
         return records
 
+    @classmethod
+    def pack_recall(cls, core, recalled, budget):
+        """Reserve space for both groups and share unused space within one JSON budget."""
+        def remaining(records):
+            return budget - (len(cls.encode(records)) if records else 0)
+
+        core_records = cls.pack(core, budget // 2)
+        recalled_records = cls.pack(recalled, remaining(core_records))
+        core_records = cls.pack(core, remaining(recalled_records))
+        recalled_records = cls.pack(recalled, remaining(core_records))
+        return core_records, recalled_records
+
     async def search(self, scope, query="", **options):
         return await self._hybrid_search(*self.store._visible(scope), query=query, **options)
 
@@ -293,7 +305,11 @@ class MemoryPlugin(BasePlugin):
         )
 
     async def _hybrid_search(self, predicate, params, query="", *, limit=8, offset=0,
-                             rerank_report=None, automatic=False, recall_state=None, **options):
+                             rerank_report=None, automatic=False, recall_state=None, exclude_ids=(), **options):
+        if exclude_ids:
+            placeholders = ",".join("?" for _ in exclude_ids)
+            predicate = f"({predicate}) AND m.id NOT IN ({placeholders})"
+            params = [*params, *exclude_ids]
         use_pool = automatic and isinstance(query, str) and bool(query.strip()) and not options.get("core_only")
         lexical = await self.store._search(
             predicate, params, query,
@@ -362,7 +378,8 @@ class MemoryPlugin(BasePlugin):
             core = await search(core_only=True, limit=core_limit)
             if query.strip():
                 recalled = await search(query, limit=recall_limit, rerank_report=rerank_report,
-                                        automatic=True, recall_state=checkpoint)
+                                        automatic=True, recall_state=checkpoint,
+                                        exclude_ids=tuple(row["id"] for row in core))
 
         try:
             remaining = max(0, started + timeout - asyncio.get_running_loop().time())
@@ -375,9 +392,7 @@ class MemoryPlugin(BasePlugin):
                     "fallback", "recall_timeout", started=checkpoint["rerank_started"],
                     candidates=checkpoint["rerank_candidates"],
                 ))
-        core_records = self.pack(core, budget // 2)
-        core_ids = {record["id"] for record in core_records}
-        recalled_records = self.pack([row for row in recalled if row["id"] not in core_ids], budget // 2)
+        core_records, recalled_records = self.pack_recall(core, recalled, budget)
         return {
             "query": query,
             "retrieval": {"mode": "hybrid" if self.vectors.enabled and self.vectors.ready else "keyword",

@@ -1184,3 +1184,77 @@ def test_memory_schema_exposes_nested_embedding_and_rerank_settings():
     assert not fields["embedding"]["fields"]["enabled"]["default"]
     assert not fields["rerank"]["fields"]["enabled"]["default"]
     assert fields["bm25_candidates"]["default"] == fields["embedding"]["fields"]["candidates"]["default"] == 50
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("entry", ["runtime", "scoped_preview", "operator_preview"])
+async def test_core_matches_do_not_consume_ordinary_recall_candidates(tmp_path, monkeypatch, entry):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={
+        "core_limit": 6, "recall_limit": 6, "bm25_candidates": 6,
+    })
+    try:
+        core = [await plugin.store.add(scope(), text=f"coffee {i}", core=True, importance=5)
+                for i in range(6)]
+        ordinary = [await plugin.store.add(scope(), text=f"coffee ordinary reminder {i}")
+                    for i in range(6)]
+        core_ids = {row["id"] for row, _ in core}
+        ordinary_ids = {row["id"] for row, _ in ordinary}
+        assert {row["id"] for row in await plugin.store.search(scope(), "coffee", limit=6)} == core_ids
+        if entry == "runtime":
+            result = await plugin.recall(scope(), ["coffee"])
+        else:
+            payload = {"messages": ["coffee"]}
+            if entry == "scoped_preview":
+                payload.update(adapter=scope().adapter, persona_id=scope().persona_id,
+                               session_id=scope().session_id)
+            result = await plugin.api_recall(payload)
+        assert {row["id"] for row in result["core"]} == core_ids
+        assert {row["id"] for row in result["recalled"]} == ordinary_ids
+        assert len({row["id"] for row in result["core"] + result["recalled"]}) == 12
+        assert result["prompt_chars"] <= 6000
+        tool = json.loads(await plugin.memory_search(event(), query="coffee", limit=6))
+        assert {row["id"] for row in tool["records"]} == core_ids
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+async def test_core_beyond_selected_core_limit_remains_retrievable(tmp_path, monkeypatch):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={
+        "core_limit": 1, "recall_limit": 1, "bm25_candidates": 1,
+    })
+    try:
+        selected, _ = await plugin.store.add(scope(), text="coffee priority", core=True, importance=5)
+        extra, _ = await plugin.store.add(scope(), text="coffee extra", core=True)
+        result = await plugin.recall(scope(), ["coffee"])
+        assert [row["id"] for row in result["core"]] == [selected["id"]]
+        assert [row["id"] for row in result["recalled"]] == [extra["id"]]
+    finally:
+        await plugin.terminate()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("large_core", [False, True])
+@pytest.mark.parametrize("with_other", [False, True])
+async def test_recall_shares_unused_character_budget_in_both_directions(
+        tmp_path, monkeypatch, large_core, with_other):
+    plugin = await plugin_at(tmp_path, monkeypatch, cfg={
+        "core_limit": 1, "recall_limit": 1, "prompt_char_budget": 6000,
+    })
+    try:
+        text = "coffee " + "猫" * 3500
+        large, _ = await plugin.store.add(scope(), text=text, core=large_core)
+        if with_other:
+            await plugin.store.add(scope(), text="coffee small record", core=not large_core)
+        result = await plugin.recall(scope(), ["coffee"])
+        assert await plugin.api_recall({"messages": ["coffee"]}) == result
+        records = result["core"] + result["recalled"]
+        saved = next(row for row in records if row["id"] == large["id"])
+        assert saved["text"] == text and not saved.get("truncated")
+        assert len(records) == 1 + with_other
+        assert 3000 < result["prompt_chars"] == len(plugin.encode(records)) <= 6000
+        request = LLMRequest(system_prompt=[Prompt("", name="memory")])
+        await plugin.inject_memory(event(), request)
+        assert json.loads(request.system_prompt[0].content.rsplit("\n", 1)[1]) == records
+    finally:
+        await plugin.terminate()
