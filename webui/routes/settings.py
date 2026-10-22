@@ -240,7 +240,7 @@ class SettingsRoutes(Routes):
         marker_path = zip_path.with_suffix(".zip.part")
         if os.path.lexists(zip_path) or os.path.lexists(marker_path):
             raise HTTPException(status_code=409, detail="Backup filename already exists")
-        exclude_dirs = {BACKUP_DIR_NAME, "dist", "__pycache__", "updates", "temp"}
+        exclude_root_dirs = {BACKUP_DIR_NAME, "dist", "updates", "temp"}
 
         marker_created = False
         archive_created = False
@@ -255,7 +255,12 @@ class SettingsRoutes(Routes):
                     report("scanning", 0)
                 files_to_backup = []
                 for root, dirs, files in os.walk(data_path):
-                    dirs[:] = [d for d in dirs if d not in exclude_dirs]
+                    # Scope application-owned exclusions to the data root.
+                    is_data_root = Path(root) == data_path
+                    dirs[:] = [
+                        d for d in dirs
+                        if d != "__pycache__" and (not is_data_root or d not in exclude_root_dirs)
+                    ]
                     for filename_to_backup in files:
                         full_path = Path(root) / filename_to_backup
                         try:
