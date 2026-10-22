@@ -67,6 +67,40 @@ def test_backup_reports_progress_within_large_file_and_preserves_contents(backup
     assert not list((data_path / "backups").glob("*.part"))
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("parent", ["plugins/example", "plugin_data/example"])
+@pytest.mark.parametrize("name", ["backups", "dist", "updates", "temp"])
+async def test_backup_preserves_nested_application_directory_names_on_restore(
+    backup_routes, parent, name
+):
+    routes, data_path = backup_routes
+    root_directory = data_path / name
+    root_directory.mkdir()
+    excluded_file = root_directory / "excluded.txt"
+    excluded_file.write_bytes(b"application-owned data")
+    nested_file = data_path / parent / name / "nested" / "content.bin"
+    nested_file.parent.mkdir(parents=True)
+    original = b"persistent plugin data\x00\xff"
+    nested_file.write_bytes(original)
+    cache_file = data_path / parent / "__pycache__" / "module.pyc"
+    cache_file.parent.mkdir(parents=True)
+    cache_file.write_bytes(b"disposable bytecode")
+
+    result = routes._create_backup_sync()
+
+    with zipfile.ZipFile(data_path / "backups" / result.filename) as archive:
+        assert archive.namelist() == [nested_file.relative_to(data_path).as_posix()]
+        assert archive.read(archive.namelist()[0]) == original
+        assert archive.testzip() is None
+
+    nested_file.write_bytes(b"changed after backup")
+    restored = await routes.restore_from_backup(result.filename)
+
+    assert restored.success
+    assert nested_file.read_bytes() == original
+    assert excluded_file.read_bytes() == b"application-owned data"
+
+
 def test_empty_backup_is_valid(backup_routes):
     routes, data_path = backup_routes
     result = routes._create_backup_sync()
