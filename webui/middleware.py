@@ -111,6 +111,9 @@ class PluginBridgeInjectionMiddleware(BaseHTTPMiddleware):
                 headers=dict(response.headers),
             )
 
+        # Quoted greater-than signs belong to attribute values, not tag boundaries.
+        tag_attributes = r"""(?:[^"'>]|"[^"]*"|'[^']*')*"""
+        html_tag = re.compile(r"<html\b(" + tag_attributes + r")>", re.IGNORECASE)
         bootstrap = ""
         theme = request.query_params.get("theme")
         locale = request.query_params.get("locale")
@@ -132,28 +135,26 @@ class PluginBridgeInjectionMiddleware(BaseHTTPMiddleware):
 
             def set_html_attributes(match):
                 attrs = re.sub(
-                    r"""\s+(?:data-theme|lang)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)""",
-                    "", match.group(1), flags=re.IGNORECASE,
+                    r"""\s+([^\s=/>"']+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+))?""",
+                    lambda attr: "" if attr.group(1).lower() in {"data-theme", "lang"} else attr.group(0),
+                    match.group(1),
                 )
                 return f'<html{attrs} data-theme="{theme}" lang="{locale}">'
 
-            html = re.sub(
-                r"<html\b([^>]*)>", set_html_attributes, html,
-                count=1, flags=re.IGNORECASE,
-            )
+            html = html_tag.sub(set_html_attributes, html, count=1)
 
         bridge_present = re.search(
-            r"""<script\b[^>]*\ssrc\s*=\s*["']?/plugin-bridge\.js(?=["'?\s>])""",
+            r"<script\b" + tag_attributes + r"""\ssrc\s*=\s*["']?/plugin-bridge\.js(?=["'?\s>])""",
             html, flags=re.IGNORECASE,
         )
         if not bridge_present:
             bootstrap += '<script src="/plugin-bridge.js"></script>'
         if bootstrap:
-            head = re.search(r"<head\b[^>]*>", html, re.IGNORECASE)
+            head = re.search(r"<head\b" + tag_attributes + ">", html, re.IGNORECASE)
             if head:
                 html = html[:head.end()] + bootstrap + html[head.end():]
             else:
-                root = re.search(r"<html\b[^>]*>", html, re.IGNORECASE)
+                root = html_tag.search(html)
                 if root:
                     html = html[:root.end()] + bootstrap + html[root.end():]
                 else:

@@ -2,6 +2,7 @@
 
 import json
 import re
+from html.parser import HTMLParser
 from urllib.parse import quote
 
 import pytest
@@ -182,3 +183,76 @@ def test_data_src_does_not_count_as_a_loaded_bridge(page_client):
 
     assert read_context(response)["locale"] == "zh"
     assert '<script src="/plugin-bridge.js"></script>' in response.text
+
+
+class PageStartTags(HTMLParser):
+    """Inspect response markup using HTML attribute parsing rules."""
+
+    def __init__(self, html):
+        """Collect start tags and their parsed attributes."""
+        super().__init__()
+        self.tags = []
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        """Keep attributes as pairs so duplicate attributes remain detectable."""
+        self.tags.append((tag, attrs))
+
+
+@pytest.mark.parametrize("attributes,expected", [
+    ('data-config="a>b" lang="en" data-theme="light"', {"data-config": "a>b"}),
+    ("data-config='a>b' lang='en' data-theme='light'", {"data-config": "a>b"}),
+    ('data-config="a > b" class="plugin" lang=en DATA-THEME=light',
+     {"data-config": "a > b", "class": "plugin"}),
+    ("""data-config='text lang="en" data-theme="light" > end' lang=en data-theme=light""",
+     {"data-config": 'text lang="en" data-theme="light" > end'}),
+    ('data-config="first>\nsecond" lang="en" data-theme="light"',
+     {"data-config": "first>\nsecond"}),
+])
+def test_quoted_root_attributes_are_preserved(page_client, attributes, expected):
+    """Theme injection must not truncate or modify other quoted attribute values."""
+    page_client.app.state.page_html = (
+        f"<html {attributes}><head><title>Plugin</title></head><body>Plugin</body></html>"
+    )
+    response = page_client.get("/page/plugin/demo/dashboard?theme=dark&locale=zh")
+    tags = PageStartTags(response.text).tags
+    roots = [attrs for tag, attrs in tags if tag == "html"]
+
+    assert len(roots) == 1
+    assert dict(roots[0]) == {**expected, "data-theme": "dark", "lang": "zh"}
+    assert len(roots[0]) == len(expected) + 2
+    assert any(tag == "script" and dict(attrs).get("id") == "kira-plugin-page-context"
+               for tag, attrs in tags)
+    assert read_context(response)["isDark"] is True
+
+
+@pytest.mark.parametrize("head", ['<head data-note="a>b">', ""])
+def test_quoted_tag_attributes_do_not_swallow_bootstrap(page_client, head):
+    """Both head and root insertion points must follow the complete opening tag."""
+    content = "<title>Plugin</title></head>" if head else ""
+    page_client.app.state.page_html = (
+        f'<html data-config="a>b">{head}{content}<body>Plugin</body></html>'
+    )
+    response = page_client.get("/page/plugin/demo/dashboard?theme=dark&locale=zh")
+    tags = PageStartTags(response.text).tags
+
+    assert dict(next(attrs for tag, attrs in tags if tag == "html"))["data-config"] == "a>b"
+    if head:
+        assert dict(next(attrs for tag, attrs in tags if tag == "head")) == {"data-note": "a>b"}
+    scripts = [dict(attrs) for tag, attrs in tags if tag == "script"]
+    assert scripts == [
+        {"id": "kira-plugin-page-context", "type": "application/json"},
+        {"src": "/plugin-bridge.js"},
+    ]
+
+
+def test_quoted_bridge_attributes_do_not_cause_duplicate_sdk(page_client):
+    """An unrelated quoted greater-than sign must not hide an existing SDK source."""
+    bridge = '<script data-note="a>b" src="/plugin-bridge.js"></script>'
+    page_client.app.state.page_html = f"<html><head>{bridge}</head><body>Plugin</body></html>"
+    response = page_client.get("/page/plugin/demo/dashboard?theme=dark&locale=zh")
+    scripts = [dict(attrs) for tag, attrs in PageStartTags(response.text).tags if tag == "script"]
+    sdk = [attrs for attrs in scripts if attrs.get("src") == "/plugin-bridge.js"]
+
+    assert sdk == [{"data-note": "a>b", "src": "/plugin-bridge.js"}]
+    assert scripts[0]["id"] == "kira-plugin-page-context"
