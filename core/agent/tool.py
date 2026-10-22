@@ -9,6 +9,34 @@ from core.utils.path_utils import get_data_path
 from core.chat.message_elements import Image, Record, File
 
 
+def truncate_tool_output(text: str, max_tokens: int) -> str:
+    """Bound tool text using an approximate token budget of four UTF-8 bytes each."""
+    if max_tokens == 0:
+        return text
+
+    max_bytes = max_tokens * 4
+    # Each Unicode character occupies at most four UTF-8 bytes.
+    if len(text) <= max_tokens:
+        return text
+    encoded = text.encode("utf-8", errors="replace")
+    if len(encoded) <= max_bytes:
+        return text
+
+    marker = (
+        f"\n[Tool output truncated; original size: {len(encoded)} UTF-8 bytes. "
+        "Narrow the query or request a smaller range.]\n"
+    )
+    if len(marker.encode("utf-8")) > max_bytes:
+        marker = "[truncated]" if max_bytes >= 11 else "[..]"
+
+    remaining = max_bytes - len(marker.encode("utf-8"))
+    head_bytes = (remaining + 1) // 2
+    tail_bytes = remaining // 2
+    head = encoded[:head_bytes].decode("utf-8", errors="ignore")
+    tail = encoded[-tail_bytes:].decode("utf-8", errors="ignore") if tail_bytes else ""
+    return head + marker + tail
+
+
 @dataclass
 class ToolSet:
     """A set of tools"""

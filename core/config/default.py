@@ -15,7 +15,8 @@ DEFAULT_CONFIG = {
         "agent": {
             "max_tool_loop": 5,
             "max_tool_calls_per_turn": 5,
-            "tool_call_timeout": 60
+            "tool_call_timeout": 60,
+            "max_tool_output_tokens": 10000
         },
         "cache": {
             "max_size_mb": 50,
