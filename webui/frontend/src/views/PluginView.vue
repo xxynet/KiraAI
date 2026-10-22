@@ -932,7 +932,7 @@
       </div>
     </Modal>
 
-    <!-- Plugin Config Dialog -->
+    <!-- Plugin Details Dialog -->
     <Modal v-model="pluginDetailsVisible" content-class="max-w-4xl">
       <div v-if="selectedPlugin" class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col overflow-hidden" style="max-height: 90vh;">
         <div class="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -990,7 +990,38 @@
             </div>
           </div>
 
-          <PluginReadme :readme="pluginReadme" :loading="pluginReadmeLoading" :repo-url="pluginDetailsRepo" />
+          <div>
+            <div role="tablist" :aria-label="$t('plugin.details_title')" class="flex gap-4 border-b border-gray-200 dark:border-gray-700" @keydown="onPluginDetailsTabKeydown">
+              <button
+                v-for="tab in pluginDetailsTabs"
+                :id="`plugin-details-tab-${tab}`"
+                :key="tab"
+                type="button"
+                role="tab"
+                :aria-selected="pluginDetailsTab === tab"
+                :aria-controls="`plugin-details-panel-${tab}`"
+                :tabindex="pluginDetailsTab === tab ? 0 : -1"
+                class="px-3 py-2 text-sm font-medium border-b-2 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                :class="pluginDetailsTab === tab ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+                @click="pluginDetailsTab = tab"
+              >
+                {{ $t(tab === 'readme' ? 'plugin.readme_title' : 'plugin.components_title') }}
+              </button>
+            </div>
+            <div v-show="pluginDetailsTab === 'readme'" id="plugin-details-panel-readme" role="tabpanel" aria-labelledby="plugin-details-tab-readme" tabindex="0" class="pt-4">
+              <PluginReadme v-if="pluginReadmeLoading || pluginReadme" :readme="pluginReadme" :loading="pluginReadmeLoading" :repo-url="pluginDetailsRepo" />
+              <p v-else class="text-sm text-theme-subtle">{{ $t('plugin.no_readme') }}</p>
+            </div>
+            <div v-show="pluginDetailsTab === 'components'" id="plugin-details-panel-components" role="tabpanel" aria-labelledby="plugin-details-tab-components" tabindex="0" class="pt-4">
+              <p v-if="pluginComponentsLoading" class="text-sm text-theme-subtle">{{ $t('plugin.status_loading') }}</p>
+              <div v-else-if="pluginComponentsError" class="flex items-center gap-3 text-sm">
+                <p class="text-red-600 dark:text-red-400">{{ $t('plugin.components_load_error') }}</p>
+                <button type="button" class="text-blue-600 dark:text-blue-400 hover:underline" @click="loadPluginComponents(selectedPlugin.id, pluginDetailsRequest)">{{ $t('plugin.components_retry') }}</button>
+              </div>
+              <p v-else-if="!selectedPluginInstalled" class="text-sm text-theme-subtle">{{ $t('plugin.components_not_installed') }}</p>
+              <PluginComponents v-else :components="pluginComponents" :plugin-id="selectedPlugin.id" />
+            </div>
+          </div>
         </div>
       </div>
     </Modal>
@@ -1177,11 +1208,12 @@ import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
 import AlertHint from '@/components/common/AlertHint.vue'
 import PluginReadme from '@/components/common/PluginReadme.vue'
+import PluginComponents from '@/components/common/PluginComponents.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 
 import {
-  getPlugins, getPluginConfig, getPluginReadme, updatePluginConfig,
+  getPlugins, getPluginConfig, getPluginReadme, getPluginComponents, updatePluginConfig,
   togglePlugin as apiTogglePlugin, deletePlugin,
   enqueueGithubInstall, enqueueUploadInstall, retryPluginTask,
   reloadPlugin as apiReloadPlugin,
@@ -1204,7 +1236,7 @@ import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
   IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch, IconDownload, IconTrash,
 } from '@/components/icons'
-import type { PluginItem, McpServerItem, McpToolItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem, PluginTask, PluginUpdateQueueItem } from '@/types'
+import type { PluginComponent, PluginItem, McpServerItem, McpToolItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem, PluginTask, PluginUpdateQueueItem } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
@@ -1271,11 +1303,17 @@ let taskPollTimer: ReturnType<typeof setTimeout> | null = null
 let taskPollFailures = 0
 let taskQueueRevision = 0
 let taskQueueMounted = true
+const pluginDetailsTabs = ['readme', 'components'] as const
+const pluginDetailsTab = ref<typeof pluginDetailsTabs[number]>('readme')
+const pluginComponents = ref<PluginComponent[]>([])
+const pluginComponentsLoading = ref(false)
+const pluginComponentsError = ref(false)
+const selectedPluginInstalled = computed(() => plugins.value.some(item => item.id === selectedPlugin.value?.id))
 const pluginDetailsVisible = ref(false)
 const selectedPlugin = ref<PluginItem | PluginStoreItem | null>(null)
 const pluginReadme = ref<string | null>(null)
 const pluginReadmeLoading = ref(false)
-let pluginReadmeRequest = 0
+let pluginDetailsRequest = 0
 const pluginDetailsRepo = computed(() => {
   const repo = selectedPlugin.value?.repo
   if (!repo) return null
@@ -1387,7 +1425,11 @@ function openConfirm(title: string, message: string, buttonText: string, action:
 }
 
 async function openPluginDetails(plugin: PluginItem | PluginStoreItem) {
-  const request = ++pluginReadmeRequest
+  const request = ++pluginDetailsRequest
+  pluginDetailsTab.value = 'readme'
+  pluginComponents.value = []
+  pluginComponentsError.value = false
+  pluginComponentsLoading.value = false
   selectedPlugin.value = plugin
   pluginDetailsVisible.value = true
   pluginReadme.value = null
@@ -1397,15 +1439,45 @@ async function openPluginDetails(plugin: PluginItem | PluginStoreItem) {
     return
   }
 
+  const componentsRequest = loadPluginComponents(installedPlugin.id, request)
   pluginReadmeLoading.value = true
   try {
     const res = await getPluginReadme(installedPlugin.id)
-    if (request === pluginReadmeRequest) pluginReadme.value = res.data.readme
+    if (request === pluginDetailsRequest) pluginReadme.value = res.data.readme
   } catch {
     // README is optional and must not prevent opening plugin details.
   } finally {
-    if (request === pluginReadmeRequest) pluginReadmeLoading.value = false
+    if (request === pluginDetailsRequest) pluginReadmeLoading.value = false
   }
+  await componentsRequest
+}
+
+async function loadPluginComponents(pluginId: string, request: number) {
+  pluginComponentsLoading.value = true
+  pluginComponentsError.value = false
+  try {
+    const res = await getPluginComponents(pluginId)
+    if (request === pluginDetailsRequest) pluginComponents.value = res.data
+  } catch {
+    if (request === pluginDetailsRequest) pluginComponentsError.value = true
+  } finally {
+    if (request === pluginDetailsRequest) pluginComponentsLoading.value = false
+  }
+}
+
+function onPluginDetailsTabKeydown(event: KeyboardEvent) {
+  const index = pluginDetailsTabs.indexOf(pluginDetailsTab.value)
+  let nextIndex: number
+  switch (event.key) {
+    case 'ArrowLeft': nextIndex = (index + pluginDetailsTabs.length - 1) % pluginDetailsTabs.length; break
+    case 'ArrowRight': nextIndex = (index + 1) % pluginDetailsTabs.length; break
+    case 'Home': nextIndex = 0; break
+    case 'End': nextIndex = pluginDetailsTabs.length - 1; break
+    default: return
+  }
+  event.preventDefault()
+  pluginDetailsTab.value = pluginDetailsTabs[nextIndex]!
+  document.getElementById(`plugin-details-tab-${pluginDetailsTab.value}`)?.focus()
 }
 
 function onConfirmAction() {

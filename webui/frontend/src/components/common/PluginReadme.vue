@@ -1,8 +1,7 @@
 <template>
-  <section v-if="loading || readme" class="border-t border-gray-200 pt-5 dark:border-gray-700">
-    <h4 class="text-sm font-medium text-theme-high">{{ $t('plugin.readme_title') }}</h4>
-    <div v-if="loading" class="mt-3 text-sm text-theme-subtle">{{ $t('common.loading') }}</div>
-    <article v-else class="plugin-readme mt-3 text-sm leading-6 text-theme-body" v-html="renderedReadme" />
+  <section v-if="loading || readme">
+    <div v-if="loading" class="text-sm text-theme-subtle">{{ $t('plugin.status_loading') }}</div>
+    <article v-else class="plugin-readme text-sm leading-6 text-theme-body" v-html="renderedReadme" />
   </section>
 </template>
 

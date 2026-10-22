@@ -296,6 +296,15 @@ class PluginItem(BaseModel):
     icon_dark: Optional[str] = None
 
 
+class PluginComponent(BaseModel):
+    type: Literal[
+        "tool", "tag", "hook", "page", "api", "websocket", "static",
+        "widget", "provider", "adapter", "adapter_capability",
+    ]
+    name: str
+    description: Union[str, Dict[str, str]] = ""
+
+
 class PluginConfigUpdateRequest(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
 

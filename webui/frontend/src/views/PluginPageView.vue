@@ -30,8 +30,9 @@ const appStore = useAppStore()
 const { locale } = useI18n()
 
 const pageUrl = computed(() => {
-  if (!props.pluginId || !props.pageRoute) return ''
-  return `/page/plugin/${encodeURIComponent(props.pluginId)}/${props.pageRoute}`
+  if (!props.pluginId) return ''
+  const pageRoute = props.pageRoute.split('/').map(encodeURIComponent).join('/')
+  return `/page/plugin/${encodeURIComponent(props.pluginId)}/${pageRoute}`
 })
 
 function buildContext() {

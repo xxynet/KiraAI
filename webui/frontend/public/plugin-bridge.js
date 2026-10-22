@@ -1,9 +1,9 @@
 /**
  * PluginPageContext Bridge SDK
  *
- * Injected automatically into plugin page iframes. Establishes a
- * postMessage channel with the parent WebUI so plugin pages can receive
- * context (theme, locale, plugin identity) and call plugin APIs.
+ * Injected automatically into plugin pages. Initializes standalone pages from
+ * server-provided context, and receives updates from the parent WebUI when
+ * embedded. Provides context (theme, locale, plugin identity) and plugin APIs.
  *
  * Usage in plugin HTML:
  *   <script src="/plugin-bridge.js"></script>
@@ -39,6 +39,13 @@
     if (typeof next.isDark === 'boolean') {
       document.documentElement.setAttribute('data-theme', next.isDark ? 'dark' : 'light')
     }
+    if (typeof next.locale === 'string') {
+      document.documentElement.setAttribute('lang', next.locale)
+    }
+    if (readyResolve) {
+      readyResolve(context)
+      readyResolve = null
+    }
     // Notify all context listeners
     for (var i = 0; i < contextHandlers.length; i++) {
       try { contextHandlers[i](context) } catch (_) {}
@@ -59,19 +66,15 @@
 
     if (data.kind === 'context') {
       applyContext(data.context)
-      if (readyResolve) {
-        readyResolve(context)
-        readyResolve = null
-      }
     }
   })
 
   // ── Public API ──────────────────────────────────────────────────────────
 
   /**
-   * Returns a Promise that resolves with the context object once the
-   * parent has sent the initial context. Calling ready() after context
-   * is already available resolves immediately.
+   * Returns a Promise that resolves with server-provided or parent-sent
+   * initial context. Calling ready() after context is already available
+   * resolves immediately.
    */
   function ready() {
     if (context) return Promise.resolve(context)
@@ -281,6 +284,13 @@
       delete: apiDelete,
       download: apiDownload,
     },
+  }
+
+  var initialContext = document.getElementById('kira-plugin-page-context')
+  if (initialContext) {
+    try {
+      applyContext(JSON.parse(initialContext.textContent))
+    } catch (_) {}
   }
 
   // Signal the parent that the bridge is loaded
