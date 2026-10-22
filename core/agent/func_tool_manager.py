@@ -9,7 +9,7 @@ import time
 from core.logging_manager import get_logger
 from core.config import KiraConfig
 from core.provider import LLMRequest, LLMResponse
-from .tool import ToolResult, ToolSet
+from .tool import ToolResult, ToolSet, truncate_tool_output
 from core.utils.tool_utils import BaseTool
 
 logger = get_logger("llm", "purple")
@@ -76,6 +76,17 @@ class FuncToolManager:
         except (TypeError, ValueError):
             tool_call_timeout = 60
 
+        default_output_tokens = 10000
+        max_tool_output_tokens = self.kira_config.get_config(
+            "bot_config.agent.max_tool_output_tokens", default_output_tokens
+        )
+        if (
+            not isinstance(max_tool_output_tokens, int)
+            or isinstance(max_tool_output_tokens, bool)
+            or max_tool_output_tokens < 0
+        ):
+            max_tool_output_tokens = default_output_tokens
+
         for idx, tool_call in enumerate(resp.tool_calls):
             tool_call_id = tool_call.get("id")
             name = tool_call.get("function", {}).get("name")
@@ -88,7 +99,7 @@ class FuncToolManager:
                     "role": "tool",
                     "tool_call_id": tool_call_id,
                     "name": name,
-                    "content": warn_msg
+                    "content": truncate_tool_output(warn_msg, max_tool_output_tokens)
                 })
                 continue
 
@@ -137,6 +148,7 @@ class FuncToolManager:
 
             # Save tool results
             content = await tool_result_obj.assemble_result()
+            content = truncate_tool_output(content, max_tool_output_tokens)
             content = tool_result_obj.build_content(content)
             tool_logger.info(f"tool_result: {content}")
             resp.tool_results.append({
