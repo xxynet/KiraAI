@@ -213,7 +213,9 @@ class AuthRoutes(Routes):
                         resolved = candidate.resolve()
                         dist_resolved = dist_dir.resolve()
                         if resolved.is_file() and resolved.is_relative_to(dist_resolved):
-                            return FileResponse(resolved)
+                            # The bridge has a stable URL across frontend builds.
+                            headers = {"Cache-Control": "no-cache"} if full_path == "plugin-bridge.js" else None
+                            return FileResponse(resolved, headers=headers)
                     except (OSError, ValueError):
                         pass
                 # Only browser navigations should fall back to the SPA shell.
@@ -265,7 +267,9 @@ class AuthRoutes(Routes):
                 # Use is_relative_to so a sibling like /app/dist_evil/file
                 # doesn't slip past a string-prefix check on /app/dist.
                 if resolved.is_file() and resolved.is_relative_to(dist_resolved):
-                    return FileResponse(resolved)
+                    # The bridge has a stable URL across frontend builds.
+                    headers = {"Cache-Control": "no-cache"} if full_path == "plugin-bridge.js" else None
+                    return FileResponse(resolved, headers=headers)
             except (OSError, ValueError):
                 pass
         # Only serve the SPA for GET requests that accept HTML (browser navigations)
