@@ -10,13 +10,15 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
 import uvicorn
 
 from core.lifecycle import KiraLifecycle
 from core.utils.path_utils import get_data_path, get_webui_dist_path
-from webui.middleware import MAX_PLUGIN_UPLOAD_BYTES, PluginUploadSizeLimitMiddleware
+from webui.middleware import (
+    MAX_PLUGIN_UPLOAD_BYTES,
+    PluginBridgeInjectionMiddleware,
+    PluginUploadSizeLimitMiddleware,
+)
 from webui.utils import _get_or_generate_access_token
 from webui.routes.auth import AuthRoutes
 from webui.routes.releases import ReleasesRoutes
@@ -102,49 +104,6 @@ class KiraWebUI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
-
-        # Inject plugin-bridge.js into HTML responses served under /page/plugin/
-        _BRIDGE_TAG = '<script src="/plugin-bridge.js"></script>'
-        _BRIDGE_MARKER = '/plugin-bridge.js'
-
-        class PluginBridgeInjectionMiddleware(BaseHTTPMiddleware):
-            async def dispatch(self, request, call_next):
-                response = await call_next(request)
-                path = request.url.path
-                if not path.startswith('/page/plugin/') or request.method != 'GET':
-                    return response
-                ct = response.headers.get('content-type', '')
-                if 'text/html' not in ct:
-                    return response
-                body = b''
-                async for chunk in response.body_iterator:
-                    body += chunk if isinstance(chunk, bytes) else chunk.encode()
-                try:
-                    html = body.decode('utf-8')
-                except UnicodeDecodeError:
-                    return Response(content=body, status_code=response.status_code,
-                                   headers=dict(response.headers))
-                if _BRIDGE_MARKER in html:
-                    return Response(content=html.encode('utf-8'), status_code=response.status_code,
-                                   headers={k: v for k, v in response.headers.items()
-                                            if k.lower() != 'content-length'},
-                                   media_type='text/html')
-                if '</head>' in html:
-                    html = html.replace('</head>', _BRIDGE_TAG + '</head>', 1)
-                elif '<body' in html:
-                    idx = html.index('<body')
-                    end = html.index('>', idx) + 1
-                    html = html[:end] + _BRIDGE_TAG + html[end:]
-                else:
-                    html = _BRIDGE_TAG + html
-                # Strip content-length + caching headers — body changed,
-                # and stale cached copies would miss the bridge injection.
-                strip = {'content-length', 'etag', 'last-modified'}
-                hdrs = {k: v for k, v in response.headers.items()
-                        if k.lower() not in strip}
-                hdrs['cache-control'] = 'no-store'
-                return Response(content=html.encode('utf-8'), status_code=response.status_code,
-                               headers=hdrs, media_type='text/html')
 
         self.app.add_middleware(PluginBridgeInjectionMiddleware)
 

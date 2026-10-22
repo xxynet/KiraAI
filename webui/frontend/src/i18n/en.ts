@@ -361,6 +361,7 @@ export default {
     components_title: 'Plugin Components',
     page_open_in_webui: 'Open in WebUI',
     page_open_new_tab: 'Open in new tab',
+    page_open_new_tab_hint: 'Open with the current theme and language',
     components_tools_hint: 'Only global tools registered by the plugin are listed. Tools dynamically injected per request are excluded.',
     components_empty: 'This plugin has no registered components',
     components_not_installed: 'Install this plugin to view its registered components',

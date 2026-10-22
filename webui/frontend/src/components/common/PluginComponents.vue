@@ -22,6 +22,7 @@
             >{{ component.name }}</RouterLink>
             <a
               :href="pagePath(component.name)"
+              :title="$t('plugin.page_open_new_tab_hint')"
               target="_blank"
               rel="noopener noreferrer"
               class="inline-flex shrink-0 items-center gap-1 text-blue-600 hover:underline dark:text-blue-400"
@@ -42,12 +43,14 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
+import { useTheme } from '@/composables/useTheme'
 import { IconExternalLink } from '@/components/icons'
 import InfoCallout from '@/components/common/InfoCallout.vue'
 import type { PluginComponent } from '@/types'
 
 const props = defineProps<{ components: PluginComponent[]; pluginId: string }>()
 const { locale } = useI18n()
+const { isDark } = useTheme()
 const groups = computed(() => {
   const byType = new Map<PluginComponent['type'], PluginComponent[]>()
   for (const component of props.components) {
@@ -61,7 +64,10 @@ const groups = computed(() => {
 function pagePath(route: string, internal = false): string {
   const pageRoute = route.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')
   const prefix = internal ? '/plugin-page' : '/page/plugin'
-  return `${prefix}/${encodeURIComponent(props.pluginId)}/${pageRoute}`
+  const path = `${prefix}/${encodeURIComponent(props.pluginId)}/${pageRoute}`
+  if (internal) return path
+  const params = new URLSearchParams({ theme: isDark.value ? 'dark' : 'light', locale: locale.value })
+  return `${path}?${params}`
 }
 
 function description(component: PluginComponent): string {
