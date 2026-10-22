@@ -359,6 +359,8 @@ export default {
     readme_title: 'README',
     no_readme: '暂无 README',
     components_title: '插件组件',
+    page_open_in_webui: '在 WebUI 中打开',
+    page_open_new_tab: '新标签页打开',
     components_tools_hint: '仅展示插件注册的全局工具，不包含请求级动态注入的工具。',
     components_empty: '此插件尚未注册组件',
     components_not_installed: '安装插件后可查看其注册的组件',

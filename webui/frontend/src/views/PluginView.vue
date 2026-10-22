@@ -1019,7 +1019,7 @@
                 <button type="button" class="text-blue-600 dark:text-blue-400 hover:underline" @click="loadPluginComponents(selectedPlugin.id, pluginDetailsRequest)">{{ $t('plugin.components_retry') }}</button>
               </div>
               <p v-else-if="!selectedPluginInstalled" class="text-sm text-theme-subtle">{{ $t('plugin.components_not_installed') }}</p>
-              <PluginComponents v-else :components="pluginComponents" />
+              <PluginComponents v-else :components="pluginComponents" :plugin-id="selectedPlugin.id" />
             </div>
           </div>
         </div>
