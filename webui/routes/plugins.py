@@ -2,6 +2,7 @@ import asyncio
 import shutil
 import time
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import quote
 from uuid import uuid4
@@ -399,8 +400,12 @@ class PluginsRoutes(Routes):
             ))
         for hook in comp.hooks:
             event = getattr(hook.handler, "_custom_event_name", None) or hook.event_type.value
+            handler = hook.handler
+            while isinstance(handler, partial) and not getattr(handler, "__name__", None):
+                handler = handler.func
+            handler_name = getattr(handler, "__name__", None) or type(handler).__name__
             items.append(PluginComponent(
-                type="hook", name=f"{event}: {hook.handler.__name__}",
+                type="hook", name=f"{event}: {handler_name}",
                 description=hook.desc or "",
             ))
         for page in comp.pages:

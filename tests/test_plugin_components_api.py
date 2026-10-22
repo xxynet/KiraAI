@@ -1,5 +1,6 @@
 """HTTP regression coverage for registered plugin component summaries."""
 
+from functools import partial
 from types import SimpleNamespace
 
 import pytest
@@ -78,6 +79,65 @@ def test_summaries_cover_registered_types_without_runtime_data(components_client
     assert all(set(item) == {"type", "name", "description"} for item in items)
     assert "/private" not in response.text
     assert "hidden" not in response.text
+
+
+@pytest.mark.parametrize(
+    "handler_kind,expected_name",
+    [
+        ("function", "callback"),
+        ("bound_method", "handle"),
+        ("partial_function", "callback"),
+        ("partial_bound_method", "handle"),
+        ("named_partial", "named_callback"),
+        ("callable_object", "CallableHook"),
+        ("partial_callable_object", "CallableHook"),
+    ],
+)
+def test_hook_summaries_accept_callable_handlers(
+    components_client, monkeypatch, handler_kind, expected_name,
+):
+    """Keep component summaries available for named and unnamed hook callables."""
+    async def callback():
+        """Handle the plugin event."""
+
+    class CallableHook:
+        """Handle events through a callable object."""
+
+        async def __call__(self):
+            pass
+
+        async def handle(self):
+            pass
+
+    instance = CallableHook()
+    handlers = {
+        "function": callback,
+        "bound_method": instance.handle,
+        "partial_function": partial(callback),
+        "partial_bound_method": partial(instance.handle),
+        "named_partial": partial(callback),
+        "callable_object": instance,
+        "partial_callable_object": partial(instance),
+    }
+    handler = handlers[handler_kind]
+    if isinstance(handler, partial):
+        handler._custom_event_name = "plugin_ready"
+    if handler_kind == "named_partial":
+        handler.__name__ = "named_callback"
+    components = PluginComponents()
+    components.register_hook(handler, Priority.MEDIUM, EventType.ON_CUSTOM_EVENT)
+    components.register_tool("search", "Search", {}, callback)
+    monkeypatch.setitem(registry._plugin_components, "test-plugin", components)
+
+    response = components_client.get("/api/plugins/test-plugin/components")
+
+    assert response.status_code == 200
+    items = response.json()
+    event_name = "plugin_ready" if isinstance(handler, partial) else "on_custom_event"
+    assert {"type": "hook", "name": f"{event_name}: {expected_name}",
+            "description": handler.__doc__ or ""} in items
+    assert {"type": "tool", "name": "search", "description": "Search"} in items
+    assert components.hooks[0].handler is handler
 
 
 @pytest.mark.parametrize("registered", [False, True])
