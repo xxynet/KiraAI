@@ -20,7 +20,7 @@ from core.plugin.plugin_installer import (
 )
 from core.plugin.store import PluginStore, StoreSource, extract_plugins
 from webui.models import (
-    PageMenu, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginInstallTask, PluginItem,
+    PageMenu, PluginComponent, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginInstallTask, PluginItem,
     PluginUpdateCheckItem, PluginUpdateRequest, PluginUpdateQueueRequest, PluginUpdateTask, PluginTask,
 )
 from webui.routes.auth import require_auth
@@ -123,6 +123,14 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/{plugin_id}/reload",
                 methods=["POST"],
                 endpoint=self.reload_plugin,
+                tags=["plugins"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/plugins/{plugin_id}/components",
+                methods=["GET"],
+                endpoint=self.get_plugin_components,
+                response_model=List[PluginComponent],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -368,6 +376,59 @@ class PluginsRoutes(Routes):
         except Exception as e:
             logger.error(f"Failed to update config for plugin {plugin_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to save plugin config")
+
+    async def get_plugin_components(self, plugin_id: str):
+        """Expose registered component summaries without runtime objects or local paths."""
+        if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
+            raise HTTPException(status_code=503, detail="Plugin manager not available")
+        plugin_manager = self.lifecycle.plugin_manager
+        if not plugin_manager.has_plugin(plugin_id):
+            raise HTTPException(status_code=404, detail="Plugin not found")
+        comp = plugin_manager.get_plugin_components().get(plugin_id)
+        if comp is None:
+            return []
+
+        items: List[PluginComponent] = []
+        for tool in comp.tools.values():
+            items.append(PluginComponent(
+                type="tool", name=tool["name"], description=tool["description"],
+            ))
+        for tag in comp.tags:
+            items.append(PluginComponent(
+                type="tag", name=tag["name"], description=tag["description"],
+            ))
+        for hook in comp.hooks:
+            event = getattr(hook.handler, "_custom_event_name", None) or hook.event_type.value
+            items.append(PluginComponent(
+                type="hook", name=f"{event}: {hook.handler.__name__}",
+                description=hook.desc or "",
+            ))
+        for page in comp.pages:
+            menu = page.get("menu")
+            items.append(PluginComponent(
+                type="page", name=page["route"], description=menu.label if menu else "",
+            ))
+        for route in comp.api_routes:
+            items.append(PluginComponent(type="api", name=f"{route['method']} {route['path']}"))
+        for route in comp.ws_routes:
+            items.append(PluginComponent(type="websocket", name=route["path"]))
+        for directory in comp.static_dirs:
+            items.append(PluginComponent(type="static", name=directory["path"]))
+        for widget in comp.widgets:
+            items.append(PluginComponent(
+                type="widget", name=widget["widget_id"], description=widget["label"],
+            ))
+        for name in comp.providers:
+            items.append(PluginComponent(type="provider", name=name))
+        for name in comp.adapters:
+            items.append(PluginComponent(type="adapter", name=name))
+        for platform, capability in sorted(
+            comp.adapter_capabilities, key=lambda item: (item[0], item[1].__name__),
+        ):
+            items.append(PluginComponent(
+                type="adapter_capability", name=f"{platform}: {capability.__name__}",
+            ))
+        return items
 
     async def get_plugin_readme(self, plugin_id: str):
         """Return the optional README from an installed plugin directory."""

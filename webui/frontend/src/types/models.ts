@@ -239,6 +239,12 @@ export interface PluginItem {
   icon_dark?: string | null
 }
 
+export interface PluginComponent {
+  type: 'tool' | 'tag' | 'hook' | 'page' | 'api' | 'websocket' | 'static' | 'widget' | 'provider' | 'adapter' | 'adapter_capability'
+  name: string
+  description: string | Record<string, string>
+}
+
 export interface PluginConfigUpdateRequest {
   config: Record<string, any>
 }

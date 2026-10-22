@@ -1,6 +1,7 @@
 import apiClient from './client'
 import type {
   PluginItem,
+  PluginComponent,
   PluginConfigUpdateRequest,
   PluginInstallGithubRequest,
   PluginInstallResult,
@@ -17,6 +18,10 @@ export function getPlugins() {
 
 export function getPluginConfig(pluginId: string) {
   return apiClient.get<{ config: Record<string, any>; schema: Record<string, any> }>(`/plugins/${encodeURIComponent(pluginId)}/config`)
+}
+
+export function getPluginComponents(pluginId: string) {
+  return apiClient.get<PluginComponent[]>(`/plugins/${encodeURIComponent(pluginId)}/components`)
 }
 
 export function getPluginReadme(pluginId: string) {
