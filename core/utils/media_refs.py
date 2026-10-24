@@ -9,16 +9,64 @@ import hashlib
 import mimetypes
 import os
 import tempfile
+import threading
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Iterable
 
 from core.chat.message_elements import BaseMediaElement, _infer_mime_from_bytes
 from core.agent.message import provider_message_dict
 from core.utils.path_utils import get_data_path, is_within_directory
+from core.logging_manager import get_logger
+
+
+logger = get_logger("media_refs", "yellow")
 
 
 MEDIA_REF_TYPE = "kira_image_ref"
 MEDIA_ROOT_NAME = "session_media"
+_media_lock = threading.Lock()
+_protected_media_paths: dict[Path, int] = {}
+
+
+class _MediaScope:
+    def __init__(self):
+        self.paths: set[Path] = set()
+        self.closed = False
+
+
+_current_media_scope: ContextVar[_MediaScope | None] = ContextVar(
+    "session_media_scope", default=None,
+)
+
+
+@asynccontextmanager
+async def session_media_scope():
+    """Protect media created by this turn until its memory is committed or abandoned."""
+    scope = _MediaScope()
+    token = _current_media_scope.set(scope)
+
+    def release() -> None:
+        with _media_lock:
+            scope.closed = True
+            for path in scope.paths:
+                remaining = _protected_media_paths[path] - 1
+                if remaining:
+                    _protected_media_paths[path] = remaining
+                else:
+                    del _protected_media_paths[path]
+
+    try:
+        yield
+    finally:
+        _current_media_scope.reset(token)
+        task = asyncio.create_task(asyncio.to_thread(release))
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task
+            raise
 
 
 def _media_root() -> Path:
@@ -69,29 +117,44 @@ async def store_session_media(
         content_hash + _extension_for_mime(mime_type)
     )
 
+    scope = _current_media_scope.get()
+
     def write_media() -> None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists():
-            return
+        # Serialize publication and deletion; keep the pin after the worker finishes.
+        with _media_lock:
+            resolved_target = target.resolve()
+            if scope is not None and not scope.closed and resolved_target not in scope.paths:
+                scope.paths.add(resolved_target)
+                _protected_media_paths[resolved_target] = (
+                    _protected_media_paths.get(resolved_target, 0) + 1
+                )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                return
 
-        descriptor, temporary_path = tempfile.mkstemp(
-            prefix=f".{content_hash}.",
-            suffix=".tmp",
-            dir=target.parent,
-        )
-        try:
-            with os.fdopen(descriptor, "wb") as temporary_file:
-                temporary_file.write(raw_data)
-                temporary_file.flush()
-                os.fsync(temporary_file.fileno())
+            descriptor, temporary_path = tempfile.mkstemp(
+                prefix=f".{content_hash}.",
+                suffix=".tmp",
+                dir=target.parent,
+            )
             try:
-                os.link(temporary_path, target)
-            except FileExistsError:
-                pass
-        finally:
-            Path(temporary_path).unlink(missing_ok=True)
+                with os.fdopen(descriptor, "wb") as temporary_file:
+                    temporary_file.write(raw_data)
+                    temporary_file.flush()
+                    os.fsync(temporary_file.fileno())
+                try:
+                    os.link(temporary_path, target)
+                except FileExistsError:
+                    pass
+            finally:
+                Path(temporary_path).unlink(missing_ok=True)
 
-    await asyncio.to_thread(write_media)
+    task = asyncio.create_task(asyncio.to_thread(write_media))
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await task
+        raise
     return {
         "type": MEDIA_REF_TYPE,
         "path": target.relative_to(get_data_path()).as_posix(),
@@ -131,7 +194,14 @@ async def resolve_media_references(messages: Iterable[object]) -> list[dict]:
             resolved_content = []
             for part in content:
                 if isinstance(part, dict) and part.get("type") == MEDIA_REF_TYPE:
-                    resolved_content.append(await resolve_media_reference(part))
+                    try:
+                        resolved_content.append(await resolve_media_reference(part))
+                    except (OSError, ValueError, RuntimeError) as exc:
+                        logger.warning(
+                            "Image unavailable at %r: %s: %s",
+                            part.get("path"), type(exc).__name__, exc,
+                        )
+                        resolved_content.append({"type": "text", "text": "[image unavailable]"})
                 else:
                     resolved_content.append(part)
             resolved_message["content"] = resolved_content
@@ -160,21 +230,23 @@ def collect_media_reference_paths(memory: object) -> set[str]:
 
 
 def cleanup_session_media(session_id: str, memory: Iterable[object]) -> None:
-    """Delete media files no longer referenced by a retained session history."""
-    session_dir = _session_directory(session_id)
-    if not session_dir.is_dir():
-        return
-    retained = {
-        (get_data_path() / path).resolve()
-        for path in collect_media_reference_paths(memory)
-    }
-    for directory, _, filenames in os.walk(session_dir, topdown=False):
-        directory_path = Path(directory)
-        for filename in filenames:
-            file_path = (directory_path / filename).resolve()
-            if file_path not in retained:
-                file_path.unlink(missing_ok=True)
-        if directory_path != session_dir and not any(directory_path.iterdir()):
-            directory_path.rmdir()
-    if not any(session_dir.iterdir()):
-        session_dir.rmdir()
+    """Scan all session files, retaining persisted references and in-flight media."""
+    with _media_lock:
+        session_dir = _session_directory(session_id)
+        if not session_dir.is_dir():
+            return
+        retained = {
+            (get_data_path() / path).resolve()
+            for path in collect_media_reference_paths(memory)
+        }
+        retained.update(_protected_media_paths)
+        for directory, _, filenames in os.walk(session_dir, topdown=False):
+            directory_path = Path(directory)
+            for filename in filenames:
+                file_path = (directory_path / filename).resolve()
+                if is_within_directory(session_dir, file_path) and file_path not in retained:
+                    file_path.unlink(missing_ok=True)
+            if directory_path != session_dir and not any(directory_path.iterdir()):
+                directory_path.rmdir()
+        if not any(session_dir.iterdir()):
+            session_dir.rmdir()

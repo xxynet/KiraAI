@@ -858,3 +858,62 @@ async def test_receive_keeps_event_lightweight_before_plugins(processor, session
     query.assert_awaited_once_with(original.sid, ensure_session=True, include_content=False)
     assert seen == [original]
     assert (await session_db.get_chat_session(original.sid))["title"] == stored_title
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["success", "error", "cancelled"])
+async def test_workflow_protects_native_and_tool_media_until_finalization(
+    processor, tmp_path, monkeypatch, outcome,
+):
+    from core.chat.message_elements import Image
+    from core.utils import media_refs
+
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    instance, model = processor
+    services = instance.im_workflow.ctx
+    event = batch()
+    sid = event.sid
+    image = Image("data:image/png;base64,aGVsbG8=")
+    references = []
+    services.session_manager.get_effective_capabilities = AsyncMock(return_value={
+        "image_recognition": {"mode": "native"},
+    })
+
+    async def native_content(message, session_id):
+        reference = await media_refs.store_session_media(image, session_id, message.message_id)
+        references.append(reference)
+        return [{"type": "text", "text": message.message_str}, reference]
+
+    services.message_media.build_native_content = native_content
+
+    async def assert_protected():
+        await asyncio.to_thread(media_refs.cleanup_session_media, sid, [])
+        assert all((tmp_path / ref["path"]).exists() for ref in references)
+
+    async def chat(_request):
+        # Tools invoked by the model share the same protection as native input.
+        references.append(await media_refs.store_session_media(image, sid, "tool-result"))
+        await assert_protected()
+        if outcome == "error":
+            raise RuntimeError("model failed")
+        if outcome == "cancelled":
+            raise asyncio.CancelledError
+        return LLMResponse("<msg><text>reply</text></msg>")
+
+    async def save_memory(_sid, _messages):
+        await assert_protected()
+
+    model.chat.side_effect = chat
+    services.session_manager.update_memory.side_effect = save_memory
+    if outcome == "success":
+        await instance.im_workflow.handle_batch_event(event)
+        services.session_manager.update_memory.assert_awaited_once()
+    else:
+        error = RuntimeError if outcome == "error" else asyncio.CancelledError
+        with pytest.raises(error):
+            await instance.im_workflow.handle_batch_event(event)
+        services.session_manager.update_memory.assert_not_awaited()
+
+    assert len(references) == 2
+    await asyncio.to_thread(media_refs.cleanup_session_media, sid, [])
+    assert all(not (tmp_path / ref["path"]).exists() for ref in references)

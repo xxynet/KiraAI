@@ -132,3 +132,31 @@ async def test_comment_subscription_respects_stop_and_releases_shared_limit(monk
     second.assert_not_awaited()
     assert not semaphore.locked()
     assert bus.event_bus_stats["errors"] == 0
+
+
+@pytest.mark.anyio
+async def test_event_handler_failure_logs_traceback_and_continues(monkeypatch):
+    import sys
+
+    from core.event_bus import SystemEvent
+
+    bus = EventBus(Mock(), asyncio.Queue())
+    log = Mock()
+    failures = []
+    log.exception.side_effect = lambda *_args: failures.append(sys.exc_info()[1])
+    monkeypatch.setattr(bus, "logger", log)
+    error = ValueError("handler failed")
+    failing = AsyncMock(side_effect=error)
+    following = AsyncMock()
+    bus.subscribe("test_failure", failing)
+    bus.subscribe("test_failure", following)
+    event = SystemEvent("test_failure", {"private": "not logged"}, "test")
+
+    await bus._process_event(event)
+
+    assert bus.event_bus_stats["errors"] == 1
+    assert failures == [error]
+    following.assert_awaited_once_with(event)
+    log.exception.assert_called_once()
+    assert log.exception.call_args.args[-1] == "test_failure"
+    assert "private" not in str(log.exception.call_args)

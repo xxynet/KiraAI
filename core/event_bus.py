@@ -164,9 +164,14 @@ class EventBus:
             for handler in tuple(self.subscribers[event_type]):
                 try:
                     await handler(event)
-                except Exception as e:
+                except Exception:
                     self.event_bus_stats["errors"] += 1
                     self.stats.set_stats("event_bus", self.event_bus_stats)
+                    self.logger.exception(
+                        "Event handler %s failed for %s",
+                        getattr(handler, "__qualname__", type(handler).__name__),
+                        event_type if isinstance(event_type, str) else event_type.__name__,
+                    )
 
     async def dispatch(self):
         """start event bus"""
