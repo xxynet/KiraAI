@@ -32,15 +32,23 @@ def _get_backup_dir() -> Path:
 
 
 def _calc_dir_size(path: Path) -> tuple[int, int]:
-    """Return (total_bytes, file_count) for a directory tree."""
+    """Return logical bytes and file count, counting hard links once per tree."""
     total = 0
     count = 0
+    seen_hard_links: set[tuple[int, int]] = set()
     if path.exists():
         for dirpath, _dirnames, filenames in os.walk(path):
             for f in filenames:
                 fp = Path(dirpath) / f
                 try:
-                    total += fp.stat().st_size
+                    stat = fp.stat()
+                    # A zero inode cannot safely identify hard links.
+                    if stat.st_nlink > 1 and stat.st_ino:
+                        identity = (stat.st_dev, stat.st_ino)
+                        if identity in seen_hard_links:
+                            continue
+                        seen_hard_links.add(identity)
+                    total += stat.st_size
                     count += 1
                 except OSError:
                     pass
