@@ -282,3 +282,73 @@ async def test_session_media_cleanup_handles_missing_and_malformed_sessions(
         await media._cleanup_current_session_media(sid)
         assert calls == [(sid, [])]
     assert not manager._write_lock.locked()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("operation", ["update", "write", "delete"])
+async def test_previous_turn_cleanup_preserves_uncommitted_image(
+    tmp_path, session_db, monkeypatch, operation,
+):
+    from core.chat.message_elements import Image
+    from core.utils import media_refs
+
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    sid = "adapter:dm:user"
+    image = Image("data:image/png;base64,aGVsbG8=")
+    old = await media_refs.store_session_media(image, sid, "old")
+    manager = await build_session_manager(
+        tmp_path, [[{"role": "user", "content": [old]}]],
+        max_memory_length=1, db=session_db,
+    )
+    media = SessionMediaManager(SubscriptionEventBus(), manager)
+
+    async with media_refs.session_media_scope():
+        # A new turn has saved its image but has not committed memory yet.
+        pending = await media_refs.store_session_media(image, sid, "pending")
+        if operation == "update":
+            await manager.update_memory(sid, [{"role": "user", "content": "previous turn"}])
+            handler = media._on_memory_updated
+        elif operation == "write":
+            await manager.update_session(sid, content=[])
+            handler = media._on_memory_written
+        else:
+            await manager.delete_session(sid)
+            handler = media._on_session_deleted
+        await wait_for_event_tasks(manager)
+        await handler(manager.event_bus.events[-1])
+
+        assert not (tmp_path / old["path"]).exists()
+        assert (tmp_path / pending["path"]).read_bytes() == b"hello"
+        await manager.update_memory(sid, [{"role": "user", "content": [pending]}])
+        await wait_for_event_tasks(manager)
+        current = await manager.get_session(sid)
+        resolved = await media_refs.resolve_media_references(current.flatten_content())
+        assert resolved[0]["content"][0]["type"] == "image_url"
+    await media._on_memory_updated(manager.event_bus.events[-1])
+    assert (tmp_path / pending["path"]).exists()
+
+
+@pytest.mark.anyio
+async def test_delayed_cleanup_preserves_reference_restored_to_current_memory(
+    tmp_path, session_db, monkeypatch,
+):
+    from core.chat.message_elements import Image
+    from core.utils import media_refs
+
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    sid = "adapter:dm:user"
+    reference = await media_refs.store_session_media(
+        Image("data:image/png;base64,aGVsbG8="), sid, "restored",
+    )
+    memory = [[{"role": "user", "content": [reference]}]]
+    manager = await build_session_manager(tmp_path, memory, db=session_db)
+    await manager.update_session(sid, content=[])
+    await wait_for_event_tasks(manager)
+    stale = manager.event_bus.events[-1]
+    await manager.update_session(sid, content=memory)
+    media = SessionMediaManager(SubscriptionEventBus(), manager)
+
+    await media._on_memory_written(stale)
+
+    assert (tmp_path / reference["path"]).read_bytes() == b"hello"
+    await wait_for_event_tasks(manager)

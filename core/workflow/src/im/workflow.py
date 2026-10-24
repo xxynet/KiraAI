@@ -1,4 +1,5 @@
 from core.workflow import BaseStage, IMWorkflow
+from core.utils.media_refs import session_media_scope
 from core.chat import KiraMessageEvent, KiraMessageBatchEvent
 
 from .context import IMEventContext, IMBatchContext, IMWorkflowContext
@@ -38,7 +39,8 @@ class DefaultIMWorkflow(IMWorkflow):
                     return
 
     async def handle_batch_event(self, event: KiraMessageBatchEvent):
-        ctx = IMBatchContext(self.ctx, event)
-        for stage in self.batch_stages:
-            if not await stage.run(ctx):
-                return
+        async with session_media_scope():
+            ctx = IMBatchContext(self.ctx, event)
+            for stage in self.batch_stages:
+                if not await stage.run(ctx):
+                    return
