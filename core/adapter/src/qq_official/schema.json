@@ -22,7 +22,7 @@
   },
   "app_secret": {
     "name": "App Secret",
-    "type": "string",
+    "type": "sensitive",
     "default": "",
     "hint": "AppSecret from QQ Bot Open Platform; filled automatically after QR-code login or entered manually",
     "locales": {
