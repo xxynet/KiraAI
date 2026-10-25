@@ -1,10 +1,11 @@
 from abc import abstractmethod, ABC
 from enum import Enum, auto
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, List, Optional, Union
+from typing import AsyncGenerator, List, Literal, Optional, Union
 import asyncio
 
 from .llm_model import LLMRequest, LLMResponse, LLMStreamChunk, RerankResult
+from .decision_model import DecisionContent, NoulResponse, ChoiceResponse, ScoreResponse
 
 from core.chat.message_elements import Record, Image, Video
 
@@ -21,6 +22,7 @@ class ModelType(Enum):
     RERANK = "rerank"
     IMAGE = "image"
     VIDEO = "video"
+    DECISION = "decision"
 
 
 @dataclass
@@ -198,6 +200,34 @@ class RerankModelClient(BaseModelClient):
         top_n: Optional, truncate result
         """
         pass
+
+
+class DecisionModelClient(BaseModelClient):
+    type = ModelType.DECISION
+
+    @abstractmethod
+    async def noul(
+        self, state: DecisionContent, instructions: DecisionContent | None = None, *,
+        criteria: dict[Literal["true", "false"], DecisionContent | None] | None = None,
+    ) -> NoulResponse:
+        """Return the probability that a yes/no question is true."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def choice(
+        self, state: DecisionContent, instructions: DecisionContent | None = None, *,
+        criteria: dict[str, DecisionContent | None],
+    ) -> ChoiceResponse:
+        """Select one option from named criteria."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def score(
+        self, state: DecisionContent, instructions: DecisionContent | None = None, *,
+        criteria: list[DecisionContent],
+    ) -> ScoreResponse:
+        """Rate the state against ordered descriptive levels."""
+        raise NotImplementedError
 
 
 class BaseProvider(ABC):

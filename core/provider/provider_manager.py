@@ -13,7 +13,7 @@ from typing import Dict, Optional, Type
 from .provider import (
     BaseProvider, BaseModelClient, ProviderInfo, ModelInfo, ModelType, ProviderAPIError,
     LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient,
-    VideoModelClient, EmbeddingModelClient, RerankModelClient
+    VideoModelClient, EmbeddingModelClient, RerankModelClient, DecisionModelClient
 )
 from .llm_model import LLMRequest
 from core.agent.message import OpenAIMessage
@@ -510,6 +510,8 @@ class ProviderManager:
                 await model_client.text_to_speech("ping")
             elif isinstance(model_client, EmbeddingModelClient):
                 await model_client.embed(["ping"])
+            elif isinstance(model_client, DecisionModelClient):
+                await model_client.noul("ping", "Is the state ping?")
             elif isinstance(model_client, RerankModelClient):
                 await model_client.rerank("ping", ["ping"])
             else:

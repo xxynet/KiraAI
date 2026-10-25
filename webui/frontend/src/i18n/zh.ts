@@ -169,6 +169,7 @@ export default {
     model_group_video: '视频',
     model_group_embedding: '向量嵌入',
     model_group_rerank: '重排序',
+    model_group_decision: '决策模型',
     add_model: '添加模型',
     no_models: '未配置模型',
     remove_model: '移除模型',
