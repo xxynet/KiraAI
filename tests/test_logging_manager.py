@@ -1,4 +1,7 @@
+import io
 import logging
+import os
+import re
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -342,3 +345,191 @@ class TestSetupLogging:
     def test_invalid_max_size_defaults_to_10(self, tmp_path):
         setup_logging(log_file_max_size="not_a_number")
         assert lm._log_file_max_size == 10
+
+
+@pytest.fixture
+def control_character_logger(tmp_path, monkeypatch):
+    """Create isolated project handlers with color output enabled for assertions."""
+    cache = LogCacheManager()
+    monkeypatch.setattr(lm, "log_cache_manager", cache)
+    log_path = tmp_path / "controls.log"
+    lm._log_file_path = str(log_path)
+    console = io.StringIO()
+    logger_name = "test_controls\x07\x1b[2J"
+    existing_logger = logging.getLogger(logger_name)
+    for handler in existing_logger.handlers[:]:
+        existing_logger.removeHandler(handler)
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    with patch("sys.stderr", console):
+        logger = get_logger(logger_name, "blue")
+    try:
+        yield logger, console, log_path, cache
+    finally:
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+            handler.close()
+
+
+class TestControlCharacterLogging:
+    def test_fixture_replaces_existing_handlers(self, request, monkeypatch):
+        """Initialize project handlers even when another formatter is already attached."""
+        existing_logger = logging.getLogger("test_controls\x07\x1b[2J")
+        existing_handler = logging.StreamHandler(io.StringIO())
+        existing_formatter = logging.Formatter("%(message)s")
+        existing_handler.setFormatter(existing_formatter)
+        existing_logger.addHandler(existing_handler)
+        monkeypatch.setenv("NO_COLOR", "1")
+        try:
+            logger, console, log_path, cache = request.getfixturevalue("control_character_logger")
+            assert existing_handler not in logger.handlers
+            assert existing_handler.formatter is existing_formatter
+            assert not hasattr(existing_formatter, "force_color")
+            assert len(logger.handlers) == 3
+            logger.info("probe: %s", "\x07")
+            assert "\x1b[" in console.getvalue()
+            assert r"probe: \x07" in console.getvalue()
+            assert r"probe: \x07" in log_path.read_text(encoding="utf-8")
+            assert cache.get_cache()[-1]["message"] == r"probe: \x07"
+        finally:
+            existing_logger.removeHandler(existing_handler)
+            existing_handler.close()
+
+    @pytest.mark.parametrize("payload", [
+        "",
+        "Normal application log message.",
+        "中文日志🙂\n第二行\tvalue\r\n第三行",
+        r"literal\x07\x1b[31m",
+        "format\r\b\v\f\x00\x7f\x85\x9c",
+        "普通日志内容" * 2048,
+    ], ids=["empty", "ascii", "unicode_multiline", "literal_escapes", "formatting", "long_unicode"])
+    def test_plain_text_bypasses_sgr_processing(self, payload):
+        with patch.object(lm, "_LOG_SGR_PATTERN") as sgr_pattern:
+            sgr_pattern.split.side_effect = AssertionError("Plain text must bypass SGR splitting")
+            assert lm._escape_log_controls(payload) is payload
+
+    def test_bell_after_long_plain_text_is_still_escaped(self):
+        prefix = "普通日志内容" * 2048
+        assert lm._escape_log_controls(prefix + "\x07") == prefix + r"\x07"
+
+    @pytest.mark.parametrize(("payload", "expected"), [
+        ("bell\x07", r"bell\x07"),
+        ("clear\x1b[2J", r"clear\x1b[2J"),
+        ("title\x1b]0;untrusted\x07", r"title\x1b]0;untrusted\x07"),
+        ("clipboard\x1b]52;c;dGVzdA==\x1b\\", "clipboard\\x1b]52;c;dGVzdA==\\x1b\\"),
+        ("overwrite\rhide\b", "overwrite\rhide\b"),
+        ("c1\x9b2J\x9d0;title\x9c", "c1\\x9b2J\\x9d0;title\x9c"),
+        ("nul\x00end\x7f", "nul\x00end\x7f"),
+        ("answerback\x05", r"answerback\x05"),
+        ("dcs\x90payload\x9c", "dcs\\x90payload\x9c"),
+        ("sos\x98payload\x9c", "sos\\x98payload\x9c"),
+        ("decid\x9a", r"decid\x9a"),
+        ("pm\x9epayload\x9c", "pm\\x9epayload\x9c"),
+        ("apc\x9fpayload\x9c", "apc\\x9fpayload\x9c"),
+        ("color\x1b[31mred\x1b[0m", "color\x1b[31mred\x1b[0m"),
+        ("bright\x1b[1;94;103mtext\x1b[m", "bright\x1b[1;94;103mtext\x1b[m"),
+        ("indexed\x1b[38;5;208;48;5;17mtext", "indexed\x1b[38;5;208;48;5;17mtext"),
+        ("rgb\x1b[38;2;255;128;0mtext", "rgb\x1b[38;2;255;128;0mtext"),
+        ("rgb\x1b[48:2::255:128:0mtext", "rgb\x1b[48:2::255:128:0mtext"),
+        ("c1color\x9b31mred\x9b0m", "c1color\x9b31mred\x9b0m"),
+        ("\x1b[31m\x07\x1b]52;c;dGVzdA==\x07\x1b[0m",
+         "\x1b[31m\\x07\\x1b]52;c;dGVzdA==\\x07\x1b[0m"),
+        ("partial\x1b[31", r"partial\x1b[31"),
+        ("cursor query\x1b[6n", r"cursor query\x1b[6n"),
+        ("private\x1b[>4;2m", r"private\x1b[>4;2m"),
+        ("private\x9b?1m", r"private\x9b?1m"),
+        ("malformed\x1b[3\x071m", r"malformed\x1b[3\x071m"),
+        ("windows\r\nline", "windows\r\nline"),
+        ("format\v\f\x85\x9c", "format\v\f\x85\x9c"),
+        (r"literal\x07\x1b", r"literal\x07\x1b"),
+        ("中文🙂\nnext\tcolumn", "中文🙂\nnext\tcolumn"),
+    ])
+    def test_all_outputs_escape_controls(self, control_character_logger, payload, expected):
+        logger, console, log_path, cache = control_character_logger
+        queue = cache.add_queue()
+        logger.info("payload: %s", payload)
+
+        console_text = console.getvalue()
+        assert "\x1b[" in console_text  # Project-generated colors remain enabled.
+        assert f"payload: {expected}" in console_text
+        sgr_pattern = r"(?:\x1b\[|\x9b)[0-9;:]*m"
+        plain_console = re.sub(sgr_pattern, "", console_text)
+        plain_expected = re.sub(sgr_pattern, "", expected)
+        file_text = log_path.read_bytes().decode("utf-8").replace(os.linesep, "\n")
+        assert plain_console.endswith(f"[test_controls\\x07\\x1b[2J] payload: {plain_expected}\n")
+        assert "[test_controls\\x07\\x1b[2J]" in file_text
+        assert f"payload: {expected}\n" in file_text
+        uncolored_file = re.sub(sgr_pattern, "", file_text)
+        assert not any(char in uncolored_file for char in "\x05\x07\x1b\x90\x98\x9a\x9b\x9d\x9e\x9f")
+        entry = cache.get_cache()[-1]
+        assert entry["message"] == f"payload: {expected}"
+        assert entry["name"] == r"test_controls\x07\x1b[2J"
+        assert queue.get_nowait() == entry
+
+    @pytest.mark.parametrize("formatter_type", [lm._SafeFormatter, lm._SafeColoredFormatter])
+    def test_safe_formatters_preserve_original_record(self, formatter_type):
+        """Check record isolation without involving pytest's own capture handlers."""
+        record = logging.LogRecord(
+            "test_controls\x07\x1b[2J", logging.ERROR, __file__, 0, "failure: %s", ("\x07",),
+            (ValueError, ValueError("bad\x07\r\x1b[2J"), None),
+            sinfo="Stack: untrusted\x1b]0;title\x07",
+        )
+        original_fields = record.__dict__.copy()
+        output = formatter_type("%(name)s %(message)s").format(record)
+        assert record.__dict__ == original_fields
+        assert r"test_controls\x07\x1b[2J failure: \x07" in output
+        assert "ValueError: bad\\x07\r\\x1b[2J" in output
+        assert r"Stack: untrusted\x1b]0;title\x07" in output
+        assert "\x07" not in output
+
+    def test_exception_and_stack_controls_are_escaped(self, control_character_logger):
+        logger, console, log_path, cache = control_character_logger
+        record = logging.LogRecord(
+            logger.name, logging.ERROR, __file__, 0, "failure: %s", ("\x07",),
+            (ValueError, ValueError("bad\x07\r\x1b[2J"), None),
+            sinfo="Stack: untrusted\x1b]0;title\x07",
+        )
+        logger.handle(record)
+
+        for output in (console.getvalue(), log_path.read_bytes().decode("utf-8").replace(os.linesep, "\n")):
+            assert "failure: \\x07" in output
+            assert "ValueError: bad\\x07\r\\x1b[2J" in output
+            assert "Stack: untrusted\\x1b]0;title\\x07" in output
+            assert "\x07" not in output
+        assert cache.get_cache()[-1]["message"] == r"failure: \x07"
+        assert record.msg == "failure: %s"
+        assert record.args == ("\x07",)
+        assert record.stack_info == "Stack: untrusted\x1b]0;title\x07"
+
+    def test_preformatted_exception_is_escaped(self, control_character_logger):
+        logger, console, log_path, _ = control_character_logger
+        record = logging.LogRecord(logger.name, logging.ERROR, __file__, 0, "failure", (), None)
+        record.exc_text = "cached exception\x07\x1b[2J"
+        logger.handle(record)
+        for output in (console.getvalue(), log_path.read_bytes().decode("utf-8").replace(os.linesep, "\n")):
+            assert r"cached exception\x07\x1b[2J" in output
+            assert "\x07" not in output
+        assert record.exc_text == "cached exception\x07\x1b[2J"
+
+    def test_controls_escaped_after_logging_reconfiguration(self, control_character_logger, tmp_path):
+        logger, console, _, cache = control_character_logger
+        new_path = tmp_path / "reconfigured.log"
+        setup_logging(log_level="ERROR", log_file_path=str(new_path), log_file_max_size=1)
+        logger.debug("hidden from console: %s", "\x07\x1b[2J")
+        assert console.getvalue() == ""
+        assert r"hidden from console: \x07\x1b[2J" in new_path.read_text(encoding="utf-8")
+        assert cache.get_cache()[-1]["message"] == r"hidden from console: \x07\x1b[2J"
+        lm._shared_file_handler.doRollover()
+        logger.error("after rollover: %s", "\x07")
+        assert r"after rollover: \x07" in new_path.read_text(encoding="utf-8")
+        assert "\x07" not in console.getvalue()
+
+    def test_cache_and_standalone_queue_escape_controls(self):
+        cache = LogCacheManager()
+        queue = cache.add_queue()
+        cache.emit("12:00:00", "INFO", "source\x07", "direct\x07\x1b[2J", "blue")
+        assert queue.get_nowait()["message"] == r"direct\x07\x1b[2J"
+        assert cache.get_cache()[-1]["name"] == r"source\x07"
+        handler = LogQueueHandler(cache)
+        handler.setFormatter(logging.Formatter(datefmt="%H:%M:%S"))
+        handler.emit(logging.LogRecord("source\x07", logging.INFO, "", 0, "%s", ("\x07\r",), None))
+        assert queue.get_nowait()["message"] == "\\x07\r"

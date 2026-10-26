@@ -1,7 +1,9 @@
 import logging
+import re
 import colorlog
 from asyncio import Queue
 from collections import deque
+from copy import copy
 from pathlib import Path
 import sys
 from colorlog.escape_codes import escape_codes
@@ -30,6 +32,65 @@ _LEVEL_MAP = {
 }
 
 
+# Allow numeric SGR styling; block bells, terminal queries, and other sequences.
+_LOG_CONTROL_TRANSLATION = {
+    code: f"\\x{code:02x}"
+    for code in (
+        0x05,  # ENQ: terminal answerback query.
+        0x07,  # BEL: terminal bell.
+        0x1b,  # ESC: seven-bit terminal sequence introducer.
+        0x90,  # DCS: device control string.
+        0x98,  # SOS: start of string.
+        0x9a,  # DECID: terminal identification query.
+        0x9b,  # CSI: control sequence introducer.
+        0x9d,  # OSC: operating system command.
+        0x9e,  # PM: privacy message.
+        0x9f,  # APC: application program command.
+    )
+}
+
+
+_LOG_SGR_PATTERN = re.compile(r"((?:\x1b\[|\x9b)[0-9;:]*m)")
+_LOG_CONTROL_PATTERN = re.compile(
+    "[" + re.escape("".join(chr(code) for code in _LOG_CONTROL_TRANSLATION)) + "]"
+)
+
+
+def _escape_log_controls(text: str) -> str:
+    """Preserve ANSI SGR styling while escaping other terminal commands and bells."""
+    if _LOG_CONTROL_PATTERN.search(text) is None:
+        return text
+    return "".join(
+        segment if index % 2 else segment.translate(_LOG_CONTROL_TRANSLATION)
+        for index, segment in enumerate(_LOG_SGR_PATTERN.split(text))
+    )
+
+
+class _SafeLogFormatterMixin:
+    def format(self, record):
+        # Escape untrusted fields before colorlog adds its own terminal colors.
+        safe_record = copy(record)
+        safe_record.msg = _escape_log_controls(record.getMessage())
+        safe_record.args = ()
+        safe_record.name = _escape_log_controls(record.name)
+        safe_record.levelname = _escape_log_controls(record.levelname)
+        if safe_record.exc_info and not safe_record.exc_text:
+            safe_record.exc_text = self.formatException(safe_record.exc_info)
+        if safe_record.exc_text:
+            safe_record.exc_text = _escape_log_controls(safe_record.exc_text)
+        if safe_record.stack_info:
+            safe_record.stack_info = _escape_log_controls(safe_record.stack_info)
+        return super().format(safe_record)
+
+
+class _SafeFormatter(_SafeLogFormatterMixin, logging.Formatter):
+    pass
+
+
+class _SafeColoredFormatter(_SafeLogFormatterMixin, colorlog.ColoredFormatter):
+    pass
+
+
 class LogCacheManager:
     def __init__(self):
         self.log_cache: deque = deque(maxlen=MAX_QUEUE_SIZE)
@@ -48,6 +109,9 @@ class LogCacheManager:
         return list(self.log_cache)
 
     def emit(self, time, level, name, message, color):
+        level = _escape_log_controls(level)
+        name = _escape_log_controls(name)
+        message = _escape_log_controls(message)
         # Add to cache
         self.log_cache.append({
             "time": time,
@@ -84,7 +148,7 @@ class LogQueueHandler(logging.Handler):
             record.asctime,
             record.levelname,
             record.name,
-            record.message,
+            record.getMessage(),
             logger_color_mapping.get(record.name, "blue")
         )
 
@@ -120,7 +184,7 @@ def _get_shared_file_handler() -> RotatingFileHandler:
             filename=log_file, maxBytes=_log_file_max_size * 1024 * 1024, backupCount=5, encoding='utf-8'
         )
         _shared_file_handler.setLevel(logging.DEBUG)
-        _shared_file_handler.setFormatter(logging.Formatter(
+        _shared_file_handler.setFormatter(_SafeFormatter(
             '%(asctime)s %(levelname)-8s [%(name)s] %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         ))
@@ -189,7 +253,7 @@ def get_logger(name: str, color: str):
 
     logger.setLevel(logging.DEBUG)
     logger.propagate = False  # 不传播到上级 logger
-    console_formatter = colorlog.ColoredFormatter(
+    console_formatter = _SafeColoredFormatter(
         '%(blue)s%(asctime)s%(reset)s %(log_color)s%(levelname)-8s%(reset)s'
         f'%({color})s[%(name)s]%(reset)s %({color})s%(message)s%(reset)s',
         datefmt='%Y-%m-%d %H:%M:%S',
@@ -214,7 +278,7 @@ def get_logger(name: str, color: str):
 
     qh = LogQueueHandler(log_cache_manager)
     qh.setLevel(logging.DEBUG)
-    qh.setFormatter(logging.Formatter(datefmt='%Y-%m-%d %H:%M:%S'))
+    qh.setFormatter(_SafeFormatter(datefmt='%Y-%m-%d %H:%M:%S'))
     qh.addFilter(GetLoggerFilter(_created_by_get_logger))
 
     logger.addHandler(ch)
