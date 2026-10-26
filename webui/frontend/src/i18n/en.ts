@@ -169,6 +169,7 @@ export default {
     model_group_video: 'Video',
     model_group_embedding: 'Embedding',
     model_group_rerank: 'Rerank',
+    model_group_decision: 'Decision',
     add_model: 'Add Model',
     no_models: 'No models configured',
     remove_model: 'Remove Model',

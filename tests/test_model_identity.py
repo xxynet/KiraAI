@@ -93,7 +93,7 @@ def test_migration_persists_unique_ids_and_all_typed_default_references(model_ma
         assert info.model_name == NAME
         assert info.model_config == {"timeout": 42, "nested": {"value": True}}
         ids.add(info.model_id)
-    assert len(ids) == len(ModelType)
+    assert len(ids) == len(set(DEFAULT_MODEL_TYPES.values()))
     assert model_manager.get_model_info("provider", NAME) is None
     assert model_manager.get_model_info("provider", NAME, "llm").model_name == NAME
     saved = config_loader.CONFIG_PATH.read_bytes()

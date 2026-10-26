@@ -1,0 +1,16 @@
+{
+  "name": "TypeSafe",
+  "display_name": "TypeSafe",
+  "version": "1.0.0",
+  "author": "KiraAI",
+  "description": "TypeSafe System One decision model provider",
+  "repo": null,
+  "icon": "icon.png",
+  "icon-dark": "icon-dark.png",
+  "locales": {
+    "zh": {
+      "display_name": "TypeSafe",
+      "description": "TypeSafe System One 决策模型提供商"
+    }
+  }
+}

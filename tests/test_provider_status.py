@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from core.config import config_loader
 from core.config.config_loader import KiraConfig
 from core.provider import (
-    BaseProvider, EmbeddingModelClient, ImageModelClient, LLMModelClient,
+    BaseProvider, DecisionModelClient, EmbeddingModelClient, ImageModelClient, LLMModelClient,
     ModelType, ProviderAPIError, ProviderManager, RerankModelClient,
     STTModelClient, TTSModelClient, VideoModelClient,
 )
@@ -35,6 +35,9 @@ CAPABILITIES = [
     (ModelType.VIDEO, VideoModelClient, 'generate_video'),
     (ModelType.EMBEDDING, EmbeddingModelClient, 'embed'),
     (ModelType.RERANK, RerankModelClient, 'rerank'),
+    (ModelType.DECISION, DecisionModelClient, 'noul'),
+    (ModelType.DECISION, DecisionModelClient, 'choice'),
+    (ModelType.DECISION, DecisionModelClient, 'score'),
 ]
 
 

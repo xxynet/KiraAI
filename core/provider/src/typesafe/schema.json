@@ -1,0 +1,35 @@
+{
+  "provider_config": {
+    "base_url": {
+      "name": "Base URL", "type": "string", "default": "https://api.typesafe.ai/v1",
+      "hint": "TypeSafe API base URL including /v1",
+      "locales": {"zh": {"name": "Base URL", "hint": "TypeSafe API 基础地址，包含 /v1"}}
+    },
+    "api_key": {
+      "name": "API Key", "type": "sensitive", "default": null,
+      "hint": "API key from the TypeSafe console",
+      "locales": {"zh": {"name": "API 密钥", "hint": "从 TypeSafe 控制台获取的 API 密钥"}}
+    },
+    "section_advanced": {
+      "name": "Advanced Settings", "type": "section", "collapsed": true,
+      "hint": "Advanced provider configuration options",
+      "locales": {"zh": {"name": "高级设置", "hint": "高级提供商配置选项"}},
+      "fields": {
+        "headers": {
+          "name": "Custom Headers", "type": "json", "default": {},
+          "hint": "Additional request headers; matching keys override defaults",
+          "locales": {"zh": {"name": "自定义请求头", "hint": "附加请求头；同名字段会覆盖默认值"}}
+        }
+      }
+    }
+  },
+  "model_config": {
+    "decision": {
+      "timeout": {
+        "name": "Timeout", "type": "integer", "default": 30, "min": 1,
+        "hint": "Overall HTTP request timeout in seconds",
+        "locales": {"zh": {"name": "超时", "hint": "整次 HTTP 请求的超时秒数"}}
+      }
+    }
+  }
+}
