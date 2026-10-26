@@ -4,6 +4,7 @@ import random
 from core.plugin import BasePlugin, logger, on, Priority
 from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent
 from core.provider import LLMRequest
+from core.adapter.access import ListAccessPolicy
 from core.chat.message_elements import Text
 
 
@@ -46,6 +47,23 @@ class DefaultChatPlugin(BasePlugin):
     def waking_words(self) -> list[str]:
         return self.plugin_cfg.get("waking_words", [])
 
+    def _session_allowed(self, key: str, sid: str) -> bool:
+        """Apply a feature's session list, leaving existing configs unrestricted."""
+        section = self.plugin_cfg.get(key, {})
+        if not isinstance(section, dict):
+            return False
+        mode = str(section.get("permission_mode", "deny_list")).strip().lower()
+        sessions = section.get("session_list", [])
+        if mode not in ("allow_list", "deny_list") or not isinstance(sessions, list):
+            return False
+        sessions = [entry.strip() for entry in sessions if isinstance(entry, str)]
+        return ListAccessPolicy.from_lists(
+            mode, allow_list=sessions, deny_list=sessions,
+        ).allows(sid)
+
+    def _receives_unmentioned(self, sid: str) -> bool:
+        return self.receive_unmentioned and self._session_allowed("receive_unmentioned_access", sid)
+
     async def initialize(self):
         self._terminating = False
         logger.info(f"[Default Chat] initialize")
@@ -72,14 +90,20 @@ class DefaultChatPlugin(BasePlugin):
                 event.message.is_mentioned = True
                 break
 
+        sid = event.session.sid
+
         # Ignore unmentioned messages
         if not event.is_mentioned:
-            if self.receive_unmentioned:
-                buffer = self.ctx.get_buffer(str(event.session))
+            if self._receives_unmentioned(sid):
+                buffer = self.ctx.get_buffer(sid)
                 if buffer.get_length() >= self.max_unmentioned_messages:
                     buffer.pop(count=buffer.get_length()-self.max_unmentioned_messages+1)
                 event.buffer()
-                if self.group_proactive_chat:
+                if (
+                    self.group_proactive_chat
+                    and event.is_group_message()
+                    and self._session_allowed("group_proactive_chat_access", sid)
+                ):
                     if random.random() < self.group_proactive_chat_probability:
                         logger.info("[Chat] Triggered proactive chat")
                         event.flush()
@@ -87,7 +111,6 @@ class DefaultChatPlugin(BasePlugin):
                 event.discard()
             return
 
-        sid = event.session.sid
         event.buffer()
 
         buffer_len = self.ctx.get_buffer(sid).get_length()
@@ -114,7 +137,7 @@ class DefaultChatPlugin(BasePlugin):
                 await asyncio.sleep(self.debounce_interval)
                 if self._terminating:
                     return
-                if event.is_set() and not self.receive_unmentioned:
+                if event.is_set() and not self._receives_unmentioned(sid):
                     continue
                 buffer_len = self.ctx.get_buffer(sid).get_length()
                 if buffer_len == 0:
