@@ -1,5 +1,6 @@
 """Asynchronous TypeSafe System One transport and decision client."""
 
+import asyncio
 import json
 import math
 from typing import Annotated, Literal, TypeVar
@@ -39,14 +40,15 @@ async def request_json(config: dict, method: str, path: str, *, timeout: float, 
         headers["Content-Type"] = "application/json"
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.request(
-                method, f"{base_url}/{path}", headers=headers, content=content,
+            response = await asyncio.wait_for(
+                client.request(method, f"{base_url}/{path}", headers=headers, content=content),
+                timeout=timeout,
             )
             response.raise_for_status()
             return response.json()
     except httpx.HTTPStatusError as exc:
         raise ProviderAPIError(f"TypeSafe API returned HTTP {exc.response.status_code}") from None
-    except httpx.TimeoutException:
+    except (asyncio.TimeoutError, httpx.TimeoutException):
         raise ProviderAPIError("TypeSafe API request timed out") from None
     except httpx.RequestError:
         raise ProviderAPIError("TypeSafe API connection failed") from None
@@ -64,6 +66,11 @@ class TypeSafeDecisionClient(DecisionModelClient):
         self, state: DecisionContent, instructions: DecisionContent | None = None, *,
         criteria: dict[Literal["true", "false"], DecisionContent | None] | None = None,
     ) -> NoulResponse:
+        """Evaluate a yes/no question described by instructions or criteria."""
+        if instructions is None and not any(
+            value is not None for value in (criteria or {}).values()
+        ):
+            raise ValueError("Noul requires instructions or a true/false criterion description")
         return await self._request(state, {
             "type": "noul", "instructions": instructions, "criteria": criteria,
         }, NoulResponse)

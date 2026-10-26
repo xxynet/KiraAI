@@ -27,8 +27,8 @@
     "decision": {
       "timeout": {
         "name": "Timeout", "type": "integer", "default": 30, "min": 1,
-        "hint": "Request timeout in seconds",
-        "locales": {"zh": {"name": "超时", "hint": "请求超时秒数"}}
+        "hint": "Overall HTTP request timeout in seconds",
+        "locales": {"zh": {"name": "超时", "hint": "整次 HTTP 请求的超时秒数"}}
       }
     }
   }
