@@ -465,6 +465,22 @@ class TestControlCharacterLogging:
         assert entry["name"] == r"test_controls\x07\x1b[2J"
         assert queue.get_nowait() == entry
 
+    @pytest.mark.parametrize("formatter_type", [lm._SafeFormatter, lm._SafeColoredFormatter])
+    def test_safe_formatters_preserve_original_record(self, formatter_type):
+        """Check record isolation without involving pytest's own capture handlers."""
+        record = logging.LogRecord(
+            "test_controls\x07\x1b[2J", logging.ERROR, __file__, 0, "failure: %s", ("\x07",),
+            (ValueError, ValueError("bad\x07\r\x1b[2J"), None),
+            sinfo="Stack: untrusted\x1b]0;title\x07",
+        )
+        original_fields = record.__dict__.copy()
+        output = formatter_type("%(name)s %(message)s").format(record)
+        assert record.__dict__ == original_fields
+        assert r"test_controls\x07\x1b[2J failure: \x07" in output
+        assert "ValueError: bad\\x07\r\\x1b[2J" in output
+        assert r"Stack: untrusted\x1b]0;title\x07" in output
+        assert "\x07" not in output
+
     def test_exception_and_stack_controls_are_escaped(self, control_character_logger):
         logger, console, log_path, cache = control_character_logger
         record = logging.LogRecord(
@@ -482,7 +498,6 @@ class TestControlCharacterLogging:
         assert cache.get_cache()[-1]["message"] == r"failure: \x07"
         assert record.msg == "failure: %s"
         assert record.args == ("\x07",)
-        assert record.exc_text is None
         assert record.stack_info == "Stack: untrusted\x1b]0;title\x07"
 
     def test_preformatted_exception_is_escaped(self, control_character_logger):
