@@ -349,14 +349,19 @@ class TestSetupLogging:
 
 @pytest.fixture
 def control_character_logger(tmp_path, monkeypatch):
+    """Create isolated project handlers with color output enabled for assertions."""
     cache = LogCacheManager()
     monkeypatch.setattr(lm, "log_cache_manager", cache)
     log_path = tmp_path / "controls.log"
     lm._log_file_path = str(log_path)
     console = io.StringIO()
+    logger_name = "test_controls\x07\x1b[2J"
+    existing_logger = logging.getLogger(logger_name)
+    for handler in existing_logger.handlers[:]:
+        existing_logger.removeHandler(handler)
+    monkeypatch.setenv("FORCE_COLOR", "1")
     with patch("sys.stderr", console):
-        logger = get_logger("test_controls\x07\x1b[2J", "blue")
-    monkeypatch.setattr(logger.handlers[0].formatter, "force_color", True)
+        logger = get_logger(logger_name, "blue")
     try:
         yield logger, console, log_path, cache
     finally:
@@ -366,6 +371,29 @@ def control_character_logger(tmp_path, monkeypatch):
 
 
 class TestControlCharacterLogging:
+    def test_fixture_replaces_existing_handlers(self, request, monkeypatch):
+        """Initialize project handlers even when another formatter is already attached."""
+        existing_logger = logging.getLogger("test_controls\x07\x1b[2J")
+        existing_handler = logging.StreamHandler(io.StringIO())
+        existing_formatter = logging.Formatter("%(message)s")
+        existing_handler.setFormatter(existing_formatter)
+        existing_logger.addHandler(existing_handler)
+        monkeypatch.setenv("NO_COLOR", "1")
+        try:
+            logger, console, log_path, cache = request.getfixturevalue("control_character_logger")
+            assert existing_handler not in logger.handlers
+            assert existing_handler.formatter is existing_formatter
+            assert not hasattr(existing_formatter, "force_color")
+            assert len(logger.handlers) == 3
+            logger.info("probe: %s", "\x07")
+            assert "\x1b[" in console.getvalue()
+            assert r"probe: \x07" in console.getvalue()
+            assert r"probe: \x07" in log_path.read_text(encoding="utf-8")
+            assert cache.get_cache()[-1]["message"] == r"probe: \x07"
+        finally:
+            existing_logger.removeHandler(existing_handler)
+            existing_handler.close()
+
     @pytest.mark.parametrize("payload", [
         "",
         "Normal application log message.",
