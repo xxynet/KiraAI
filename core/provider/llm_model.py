@@ -146,6 +146,9 @@ class LLMResponse:
     """Units: seconds"""
     time_consumed: Optional[float] = None
 
+    """Whether the model response succeeded or contains an error diagnostic."""
+    status: Literal["success", "error"] = "success"
+
     def __post_init__(self):
         # Make sure reasoning_content is always string
         if self.reasoning_content is None:

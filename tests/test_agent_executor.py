@@ -160,6 +160,7 @@ async def test_agent_step_carries_identity_and_upstream_name(monkeypatch, use_fa
     steps = [step async for step in executor.run(context, max_steps=1)]
     assert len(steps) == 1
     assert steps[0].state == ("stopped" if result_path == "stopped" else "success")
+    assert steps[0].llm_response.status == "success"
     expected_name = "fallback-upstream" if use_fallback else "primary-upstream"
     assert steps[0].model_id == f"internal-{expected_name}"
     assert steps[0].model_name == expected_name
@@ -201,5 +202,14 @@ async def test_failed_agent_step_reports_last_attempted_model_identity(monkeypat
     steps = [step async for step in AgentExecutor(None).run(context, max_steps=1)]
     assert len(steps) == 1
     assert steps[0].state == "error"
+    expected = (
+        "[ProviderError] All models in the group failed to respond. "
+        "ProviderAPIError: Simulated provider failure"
+    )
+    assert steps[0].llm_response.status == "error"
+    assert steps[0].llm_response.text_response == expected
+    assert steps[0].assistant_message.content == expected
+    assert context.new_messages == [steps[0].assistant_message]
+    assert context.request.messages[-1] is steps[0].assistant_message
     assert steps[0].model_id == "internal-fallback-upstream"
     assert steps[0].model_name == "fallback-upstream"

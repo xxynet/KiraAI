@@ -115,7 +115,7 @@ class DefaultPlugin(BasePlugin):
     @on.llm_response()
     async def on_llm_resp(self, _, resp: LLMResponse):
         xml_data = resp.text_response
-        if not xml_data:
+        if resp.status == "error" or not xml_data:
             return
 
         try:
