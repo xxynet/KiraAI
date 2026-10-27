@@ -74,21 +74,10 @@ class KiraLauncher:
                 self.logger.warning("Auth disabled — forcing host to 127.0.0.1 for security")
                 host = "127.0.0.1"
 
-            self.logger.info(f"WebUI server started at http://{host}:{port}")
-            access_token = self.webui.access_token
-
-            if host not in ("localhost", "127.0.0.1"):
-                try:
-                    addresses = self._get_ip_addresses()
-                    self.logger.info(f"KiraAI WebUI started at:")
-                    for address in addresses:
-                        self.logger.info(f"{address[0]}: http://{address[1]}:{port}")
-                    self.logger.info(f"Access Token: {access_token}")
-                except Exception as e:
-                    self.logger.warning(f"Failed to get ip addresses: {e}")
-
             tasks = asyncio.gather(
-                self.lifecycle.init_and_run_system(),
+                self.lifecycle.init_and_run_system(
+                    on_initialized=lambda: self._log_webui_info(host, port),
+                ),
                 self.webui.run(host, port)
             )
             await tasks
@@ -96,6 +85,20 @@ class KiraLauncher:
             self.logger.info("✨ Exiting KiraAI...")
             await self.lifecycle.stop()
             self.logger.info("✔ Exited KiraAI")
+
+    def _log_webui_info(self, host: str, port: int):
+        self.logger.info(f"WebUI server started at http://{host}:{port}")
+        if host not in ("localhost", "127.0.0.1"):
+            try:
+                addresses = sorted(self._get_ip_addresses(), key=lambda item: item[0] != "Local")
+                self.logger.info("KiraAI WebUI started at:")
+                for interface, address in addresses:
+                    self.logger.info(f"{interface}: http://{address}:{port}")
+            except Exception as e:
+                self.logger.warning(f"Failed to get ip addresses: {e}")
+
+        if not self.disable_webui_auth:
+            self.logger.info(f"Access Token: {self.webui.access_token}")
 
     @staticmethod
     def _get_ip_addresses():

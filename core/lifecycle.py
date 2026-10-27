@@ -1,7 +1,7 @@
 import asyncio
 import os
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from .logging_manager import get_logger, setup_logging
 from .config import KiraConfig
@@ -128,7 +128,7 @@ class KiraLifecycle:
         if mirror and not mirror.startswith(("http://", "https://")):
             logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {mirror}")
 
-    async def init_and_run_system(self):
+    async def init_and_run_system(self, on_initialized: Optional[Callable[[], None]] = None):
         """主函数：负责启动和初始化各个模块"""
         logger.info(f"✨ Starting KiraAI {VERSION}...")
 
@@ -340,6 +340,9 @@ class KiraLifecycle:
         self.schedule_tasks()
 
         logger.info("All modules initialized, starting message processing loop...")
+
+        if on_initialized is not None:
+            on_initialized()
 
         await self.event_bus.dispatch()
 

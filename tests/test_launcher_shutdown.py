@@ -17,7 +17,7 @@ async def test_launcher_finishes_shutdown_after_history_cleanup_was_cancelled(mo
     )
     lifecycle.db_manager = SimpleNamespace(dispose=AsyncMock())
 
-    async def interrupted_run():
+    async def interrupted_run(on_initialized=None):
         lifecycle.message_history_cleanup.start()
         task = lifecycle.message_history_cleanup._task
         await asyncio.sleep(0)
