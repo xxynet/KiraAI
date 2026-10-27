@@ -2,13 +2,12 @@ import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-
-from tests.adapter_lifecycle import start_adapter
 from bilibili_api import comment
 
 from core.adapter import FeedItem, FeedRef
 from core.chat import MessageChain
 from core.chat.message_elements import Text
+from tests.adapter_lifecycle import start_adapter
 from tests.test_bilibili_adapter import client_module, make_adapter, reply, sdk_client
 
 

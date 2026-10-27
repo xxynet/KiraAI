@@ -1,7 +1,6 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
-
-import json
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -152,7 +151,7 @@ async def test_setup_token_rotates_token_and_remints_session(patch_token_setup):
     payload = _verify_jwt_token(body['access_token'])
     assert payload['auth_mode'] == 'enabled'
     assert payload['tv'] == _access_token_fingerprint('my-secret-token')
-    assert 'set-cookie' in {key.lower() for key in response.headers.keys()}
+    assert 'set-cookie' in {key.lower() for key in response.headers}
     assert 'kira_token=' in response.headers.get('set-cookie', '')
 
 

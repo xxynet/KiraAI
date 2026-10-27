@@ -10,7 +10,6 @@ from fastapi.responses import HTMLResponse
 
 from core.config.default import VERSION
 
-
 _WEBUI_DIR = Path(__file__).parent
 # Load bundled resources once, before serving requests on the event loop.
 _MESSAGES = {

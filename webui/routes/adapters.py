@@ -4,12 +4,11 @@ import io
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Dict, List
 from urllib.parse import quote
 
+import qrcode
 from fastapi import Depends, HTTPException, status
 from fastapi.responses import FileResponse
-import qrcode
 from qrcode.image.svg import SvgPathImage
 
 from core.adapter.qr_login import QRCodeLoginHandler, QRCodeLoginPollResult
@@ -17,8 +16,7 @@ from core.logging_manager import get_logger
 from webui.models import AdapterBase, AdapterResponse, QRCodeLoginStartRequest
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
-from webui.utils import schema_to_dict
-from webui.utils import _generate_id
+from webui.utils import _generate_id, schema_to_dict
 
 logger = get_logger("webui", "blue")
 
@@ -34,8 +32,8 @@ class _QRCodeLoginSession:
 class AdaptersRoutes(Routes):
     def __init__(self, app, lifecycle):
         super().__init__(app, lifecycle)
-        self._adapters: Dict[str, AdapterResponse] = {}
-        self._qrcode_login_sessions: Dict[str, _QRCodeLoginSession] = {}
+        self._adapters: dict[str, AdapterResponse] = {}
+        self._qrcode_login_sessions: dict[str, _QRCodeLoginSession] = {}
 
     def get_routes(self):
         return [
@@ -86,7 +84,7 @@ class AdaptersRoutes(Routes):
                 path="/api/adapters",
                 methods=["GET"],
                 endpoint=self.list_adapters,
-                response_model=List[AdapterResponse],
+                response_model=list[AdapterResponse],
                 tags=["adapters"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -262,16 +260,15 @@ class AdaptersRoutes(Routes):
         login_session = self._qrcode_login_sessions.pop(session_id, None)
         if login_session:
             await login_session.handler.close()
-        return None
 
-    def _get_adapter_locales(self, platform: str) -> Dict[str, Dict[str, str]]:
+    def _get_adapter_locales(self, platform: str) -> dict[str, dict[str, str]]:
         """Get locales dict from adapter manifest for the given platform."""
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
             manifest = self.lifecycle.adapter_manager.get_manifest(platform)
             return manifest.get("locales") or {}
         return {}
 
-    def _get_adapter_platform_display(self, platform: str) -> tuple[str, Dict[str, Dict[str, str]]]:
+    def _get_adapter_platform_display(self, platform: str) -> tuple[str, dict[str, dict[str, str]]]:
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
             manifest = self.lifecycle.adapter_manager.get_manifest(platform)
             return manifest.get("display_name") or platform, manifest.get("locales") or {}
@@ -315,7 +312,7 @@ class AdaptersRoutes(Routes):
                 adapter_mgr = self.lifecycle.adapter_manager
                 adapters_info = adapter_mgr.get_adapters_info()
                 running_adapters = set(adapter_mgr.get_adapters().keys())
-                adapters: List[AdapterResponse] = []
+                adapters: list[AdapterResponse] = []
                 for info in adapters_info:
                     adapter_status = (
                         "active" if info.enabled and info.name in running_adapters else "inactive"
@@ -414,8 +411,8 @@ class AdaptersRoutes(Routes):
                 raise HTTPException(status_code=500, detail=str(e))
             if not deleted:
                 raise HTTPException(status_code=404, detail="Adapter not found")
-            return None
+            return
         if adapter_id not in self._adapters:
             raise HTTPException(status_code=404, detail="Adapter not found")
         self._adapters.pop(adapter_id, None)
-        return None
+        return

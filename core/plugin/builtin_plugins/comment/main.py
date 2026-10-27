@@ -8,7 +8,6 @@ from core.provider import LLMRequest
 
 from .prompts import build_comment_prompt
 
-
 logger = get_logger("message", "cyan")
 llm_logger = get_logger("llm", "purple")
 
@@ -43,7 +42,7 @@ class DefaultCommentPlugin(BasePlugin):
             llm_logger.error(f"Failed to get default LLM client: {exc}")
             return
         if not client:
-            llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
+            llm_logger.error("Default LLM model not configured, please configure it in Configuration")
             return
 
         llm_req = LLMRequest(messages=[OpenAIMessage(role="user", content=comment_prompt)])

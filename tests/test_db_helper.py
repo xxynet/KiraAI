@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from sqlalchemy import Column, Integer, String, select, text
 
-from core.db.db_mgr import DatabaseManager, Base
+from core.db.db_mgr import Base, DatabaseManager
 
 
 class SampleItem(Base):
@@ -255,8 +255,9 @@ async def test_wal_initialization_lock_failure_is_visible_and_retryable(tmp_path
 
 @pytest.mark.anyio
 async def test_wal_initialization_does_not_swallow_other_errors(tmp_path, monkeypatch):
-    import aiosqlite
     import sqlite3
+
+    import aiosqlite
     from sqlalchemy.exc import OperationalError
 
     original = aiosqlite.Cursor.execute

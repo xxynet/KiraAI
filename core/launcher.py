@@ -1,25 +1,23 @@
 import asyncio
 import json
-import psutil
 import socket
 import sys
-from pathlib import Path
-from typing import Any, Dict, Union, Optional
-import uvicorn
+
+import psutil
 
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
+from webui.app import KiraWebUI
 
 from .lifecycle import KiraLifecycle
 from .statistics import Statistics
-from webui.app import KiraWebUI
 
 
 class KiraLauncher:
     """KiraAI Launcher"""
     def __init__(self, ignore_webui_version_check: bool = False, disable_webui_auth: bool = False):
-        self.lifecycle: Optional[KiraLifecycle] = None
-        self.stats: Optional[Statistics] = None
+        self.lifecycle: KiraLifecycle | None = None
+        self.stats: Statistics | None = None
         self.webui = None
         self.ignore_webui_version_check = ignore_webui_version_check
         self.disable_webui_auth = disable_webui_auth
@@ -105,7 +103,7 @@ class KiraLauncher:
         ip_addresses = []
         for interface, interface_addresses in psutil.net_if_addrs().items():
             for address in interface_addresses:
-                if not address.family == socket.AF_INET:
+                if address.family != socket.AF_INET:
                     continue
                 if address.address.startswith("127"):
                     ip_addresses.append(("Local", address.address))

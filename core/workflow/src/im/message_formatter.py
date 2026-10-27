@@ -2,20 +2,31 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from core.chat.message_utils import MessageChain
 from core.chat.message_elements import (
-    Text, Image, At, Reply, Forward, Emoji, Sticker, Record, Notice, Json, File, Video,
+    At,
+    Emoji,
+    File,
+    Forward,
+    Image,
+    Json,
+    Notice,
+    Record,
+    Reply,
+    Sticker,
+    Text,
+    Video,
 )
+from core.chat.message_utils import MessageChain
 from core.logging_manager import get_logger
 from core.utils.common_utils import desc_img, speech_to_text
 from core.utils.path_utils import get_data_path
 
 if TYPE_CHECKING:
-    from core.image_desc_cache import ImageDescCache
     from core.chat.session_manager import SessionManager
     from core.config import KiraConfig
+    from core.image_desc_cache import ImageDescCache
     from core.provider import ProviderManager
 
 logger = get_logger("message", "cyan")
@@ -36,7 +47,7 @@ class MessageFormatter:
         self.session_manager = session_manager
         self.image_desc_cache = image_desc_cache
 
-    async def format_to_text(self, message_chain: MessageChain, session_id: Optional[str] = None, capabilities: Optional[dict] = None):
+    async def format_to_text(self, message_chain: MessageChain, session_id: str | None = None, capabilities: dict | None = None):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
         if capabilities is None:
@@ -124,10 +135,10 @@ class MessageFormatter:
                         path_result = f"data/{rel}"
                     except ValueError:
                         path_result = str(path)
-                    message_str += f"[Image {str(ele.caption)}, file_path: {path_result}]"
+                    message_str += f"[Image {ele.caption!s}, file_path: {path_result}]"
                 except Exception as e:
                     logger.warning(f"Failed to save image: {e}")
-                    message_str += f"[Image {str(ele.caption)}]"
+                    message_str += f"[Image {ele.caption!s}]"
             elif isinstance(ele, Sticker):
                 image_mode = image_recognition.get("mode", "vlm_description")
                 if image_mode == "native":
@@ -178,7 +189,7 @@ class MessageFormatter:
                             await self.image_desc_cache.set(md5, ele.caption)
                     except Exception as e:
                         logger.warning(f"Failed to cache sticker desc: {e}")
-                message_str += f"[Sticker {str(ele.caption)}]"
+                message_str += f"[Sticker {ele.caption!s}]"
             elif isinstance(ele, Reply):
                 if ele.chain:
                     ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]

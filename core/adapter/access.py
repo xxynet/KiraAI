@@ -50,7 +50,7 @@ class ListAccessPolicy:
         return listed if self.mode == "allow_list" else not listed
 
 
-_active_policy_changes: ContextVar[tuple["PolicyChanges", ...]] = ContextVar(
+_active_policy_changes: ContextVar[tuple[PolicyChanges, ...]] = ContextVar(
     "active_adapter_policy_changes", default=(),
 )
 

@@ -3,18 +3,18 @@ import base64
 import mimetypes
 import re
 from pathlib import PureWindowsPath
-from uuid import UUID
 from typing import Literal
+from uuid import UUID
 
 from fastapi import Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.chat.message_elements import File as FileElement, Image, _infer_mime_from_bytes
+from core.chat.message_elements import File as FileElement
+from core.chat.message_elements import Image, _infer_mime_from_bytes
 from core.utils.path_utils import is_within_directory
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
-
 
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 MAX_ATTACHMENTS = 10

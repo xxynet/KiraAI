@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import traceback
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator, Optional, TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal
 
-from openai import APIStatusError, APITimeoutError, APIConnectionError
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 
-from core.logging_manager import get_logger
-from .func_tool_manager import FuncToolManager
-from core.provider import LLMRequest, LLMResponse, LLMModelClient, ProviderAPIError
-from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage
+from core.agent.tool import ToolSet
 from core.chat.message_utils import KiraExceptionEvent
-from core.plugin.handlers import event_handler_reg, EventType
+from core.logging_manager import get_logger
+from core.plugin.handlers import EventType, event_handler_reg
 from core.prompt_manager import Prompt
+from core.provider import LLMModelClient, LLMRequest, LLMResponse, ProviderAPIError
 from core.utils.media_refs import MEDIA_REF_TYPE
+
+from .func_tool_manager import FuncToolManager
 
 if TYPE_CHECKING:
     from core.chat.message_utils import KiraMessageBatchEvent
@@ -41,18 +43,18 @@ class AgentExecutionContext:
 class AgentStepResult:
     state: Literal["success", "stopped", "error"]
     step_index: int
-    llm_response: Optional[LLMResponse]
+    llm_response: LLMResponse | None
     new_messages: list[OpenAIMessage]
     is_final: bool
     has_tool_calls: bool
     model_id: str = ""
-    err: Optional[str] = None
+    err: str | None = None
     model_name: str = ""
-    assistant_message: Optional[OpenAIMessage] = None
+    assistant_message: OpenAIMessage | None = None
 
 
 class AgentExecutor:
-    def __init__(self, tool_manager: FuncToolManager, tool_set: Optional[ToolSet] = None):
+    def __init__(self, tool_manager: FuncToolManager, tool_set: ToolSet | None = None):
         self.tool_manager = tool_manager
         self.tool_set = tool_set
 
@@ -158,7 +160,7 @@ class AgentExecutor:
             # Only catch provider-level exceptions (network, timeout, API status).
             # Programming errors (TypeError, ValueError, etc.) should propagate.
             llm_resp = None
-            last_exc: Optional[Exception] = None
+            last_exc: Exception | None = None
             for model_idx, model in enumerate(model_group):
                 provider_name = model.model.provider_name
                 model_id = model.model.model_id

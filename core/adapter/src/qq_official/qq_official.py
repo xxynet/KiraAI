@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import secrets
-from typing import Any, Optional, Union
+from typing import Any
 
 import httpx
 from Crypto.Cipher import AES
@@ -22,7 +22,6 @@ from core.logging_manager import get_logger
 
 from .im import QQOfficialIMCapability
 from .qr_login import QQOfficialQRCodeLoginHandler
-
 
 logger = get_logger("qq_official_adapter", "blue")
 
@@ -149,8 +148,8 @@ class QQOfficialAdapter(BaseAdapter):
         self.app_id = str(self.config.get("app_id", "")).strip()
         self.app_secret = str(self.config.get("app_secret", "")).strip()
         self.sandbox = bool(self.config.get("sandbox", False))
-        self._client_task: Optional[asyncio.Task] = None
-        self._client_close_task: Optional[asyncio.Task] = None
+        self._client_task: asyncio.Task | None = None
+        self._client_close_task: asyncio.Task | None = None
         self.client = None
         self.im = self.register_capability(IMCapability, QQOfficialIMCapability(self))
         self._configure_access()
@@ -268,8 +267,8 @@ class QQOfficialAdapter(BaseAdapter):
         return self.client
 
     async def send_group_message(
-        self, group_id: Union[int, str], send_message_obj: MessageChain,
-    ) -> Optional[KiraIMSentResult]:
+        self, group_id: int | str, send_message_obj: MessageChain,
+    ) -> KiraIMSentResult | None:
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_group_message(group_id, message)
@@ -277,8 +276,8 @@ class QQOfficialAdapter(BaseAdapter):
         return await self.im.send_group_message(group_id, send_message_obj)
 
     async def send_direct_message(
-        self, user_id: Union[int, str], send_message_obj: MessageChain,
-    ) -> Optional[KiraIMSentResult]:
+        self, user_id: int | str, send_message_obj: MessageChain,
+    ) -> KiraIMSentResult | None:
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_direct_message(user_id, message)

@@ -8,10 +8,9 @@ from fastapi.responses import FileResponse
 
 from core.chat.message_elements import _infer_mime_from_bytes
 from core.chat.session import Session
+from core.logging_manager import get_logger
 from core.utils.media_refs import MEDIA_ROOT_NAME
 from core.utils.path_utils import get_data_path, is_within_directory
-
-from core.logging_manager import get_logger
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 
@@ -269,4 +268,3 @@ class SessionsRoutes(Routes):
             self.lifecycle.mcp_manager.remove_session_from_scopes(session_id)
         if self.lifecycle.skills_manager:
             self.lifecycle.skills_manager.remove_session_from_scopes(session_id)
-        return None

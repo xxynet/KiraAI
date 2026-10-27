@@ -1,14 +1,14 @@
-from typing import Any, Optional
 from contextlib import asynccontextmanager
+from typing import Any
 
 from sqlalchemy import event
+from sqlalchemy.engine import Result
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
-    create_async_engine,
     async_sessionmaker,
+    create_async_engine,
 )
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.engine import Result
 
 Base = declarative_base()
 
@@ -25,9 +25,9 @@ class DatabaseManager:
         database_url: str,
         *,
         echo: bool = False,
-        pool_size: Optional[int] = None,
-        max_overflow: Optional[int] = None,
-        connect_args: Optional[dict[str, Any]] = None,
+        pool_size: int | None = None,
+        max_overflow: int | None = None,
+        connect_args: dict[str, Any] | None = None,
         **engine_kwargs,
     ):
         self.database_url = database_url
@@ -105,14 +105,13 @@ class DatabaseManager:
     @asynccontextmanager
     async def transaction(self):
         """Yield a session wrapped in a transaction (auto-commit / rollback)."""
-        async with self.get_session() as session:
-            async with session.begin():
-                yield session
+        async with self.get_session() as session, session.begin():
+            yield session
 
     async def execute(
         self,
         statement,
-        params: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
     ) -> Result[Any]:
         """Execute a statement and return the result object."""
         async with self.get_session() as session:
@@ -122,8 +121,8 @@ class DatabaseManager:
     async def fetch_one(
         self,
         statement,
-        params: Optional[dict[str, Any]] = None,
-    ) -> Optional[Any]:
+        params: dict[str, Any] | None = None,
+    ) -> Any | None:
         """Execute a statement and return a single mapping or None."""
         async with self.get_session() as session:
             result = await session.execute(statement, params or {})
@@ -133,7 +132,7 @@ class DatabaseManager:
     async def fetch_all(
         self,
         statement,
-        params: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
     ) -> list[Any]:
         """Execute a statement and return all mappings."""
         async with self.get_session() as session:

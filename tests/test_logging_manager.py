@@ -4,20 +4,20 @@ import os
 import re
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 import core.logging_manager as lm
 from core.logging_manager import (
+    GetLoggerFilter,
     LogCacheManager,
     LogQueueHandler,
-    GetLoggerFilter,
-    get_logger,
-    setup_logging,
-    _get_shared_file_handler,
-    logger_color_mapping,
     _created_by_get_logger,
+    _get_shared_file_handler,
+    get_logger,
+    logger_color_mapping,
+    setup_logging,
 )
 
 
@@ -122,7 +122,6 @@ class TestLogQueueHandler:
     def test_emit_uses_formatter_datefmt(self):
         """emit() must set record.asctime via the formatter, not rely on
         other handlers running first."""
-        import time
 
         mgr = LogCacheManager()
         qh = LogQueueHandler(mgr)

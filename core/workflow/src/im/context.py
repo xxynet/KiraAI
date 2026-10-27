@@ -4,7 +4,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from core.agent.message import OpenAIMessage
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraStepResult
+from core.chat.message_utils import (
+    KiraMessageBatchEvent,
+    KiraMessageEvent,
+    KiraStepResult,
+)
 from core.provider import LLMModelClient, LLMRequest
 from core.tag import TagSet
 
@@ -13,16 +17,16 @@ if TYPE_CHECKING:
     from core.agent.mcp_mgr import MCPManager
     from core.agent.skills_mgr import SkillsManager
     from core.chat.message_history import MessageHistoryService
+    from core.chat.session_buffer import SessionBufferManager
     from core.chat.session_manager import SessionManager
     from core.config import KiraConfig
     from core.db.service import DatabaseService
     from core.event_bus import EventBus
-    from core.chat.session_buffer import SessionBufferManager
+    from core.prompt_manager import PromptManager
+    from core.provider import ProviderManager
     from core.workflow.src.im.message_delivery import MessageDeliveryService
     from core.workflow.src.im.message_formatter import MessageFormatter
     from core.workflow.src.im.native_content import MessageMediaService
-    from core.prompt_manager import PromptManager
-    from core.provider import ProviderManager
 
 
 @dataclass

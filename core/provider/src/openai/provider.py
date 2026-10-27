@@ -1,13 +1,13 @@
 import httpx
 
-from core.provider import ModelType, BaseProvider
-
-from .model_clients import OpenAIImageClient, OpenAIEmbeddingClient
+from core.provider import BaseProvider, ModelType
 from core.provider.openai_compatible import (
     OpenAICompatibleLLMClient,
     OpenAICompatibleSTTClient,
     OpenAICompatibleTTSClient,
 )
+
+from .model_clients import OpenAIEmbeddingClient, OpenAIImageClient
 
 
 class OpenAIProvider(BaseProvider):

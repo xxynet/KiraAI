@@ -1,12 +1,12 @@
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any
 
 from jinja2 import Environment, StrictUndefined
 
+import core.prompts.agent_tmpl as prompt_tmpl
+from core.config import KiraConfig
 from core.logging_manager import get_logger
 from core.persona import PersonaManager
-from core.config import KiraConfig
-import core.prompts.agent_tmpl as prompt_tmpl
 
 logger = get_logger("prompt_manager", "yellow")
 
@@ -14,8 +14,8 @@ _PROMPT_TEMPLATE_ENV = Environment(autoescape=False, undefined=StrictUndefined)
 
 
 class Prompt:
-    def __init__(self, content: str, name: Optional[str] = None, source: Optional[str] = None,
-                 end: Optional[str] = "\n", persist: bool = True,
+    def __init__(self, content: str, name: str | None = None, source: str | None = None,
+                 end: str | None = "\n", persist: bool = True,
                  render_template: bool = False, **kwargs):
         self.name = name
         self.source = source
@@ -74,7 +74,7 @@ class PromptManager:
 
         return ada_config_prompt
 
-    async def get_agent_prompt(self, chat_env: Dict[str, Any]) -> list[Prompt]:
+    async def get_agent_prompt(self, chat_env: dict[str, Any]) -> list[Prompt]:
         """生成 Agent 提示词"""
         formatted_time = self.get_current_time_str()
         templates = prompt_tmpl.get_agent_templates(

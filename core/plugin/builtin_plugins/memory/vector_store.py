@@ -84,31 +84,28 @@ class VectorStore:
         )
 
     async def is_current(self, memory_id):
-        async with self.store.connection() as db:
-            async with db.execute(
-                "SELECT 1 FROM memory_vectors v JOIN memories m ON m.id=v.memory_id "
-                "WHERE m.id=? AND v.revision=m.revision", (memory_id,),
-            ) as cursor:
-                return await cursor.fetchone() is not None
+        async with self.store.connection() as db, db.execute(
+            "SELECT 1 FROM memory_vectors v JOIN memories m ON m.id=v.memory_id "
+            "WHERE m.id=? AND v.revision=m.revision", (memory_id,),
+        ) as cursor:
+            return await cursor.fetchone() is not None
 
     async def progress(self):
-        async with self.store.connection() as db:
-            async with db.execute(
-                "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN v.revision=m.revision "
-                "THEN 1 ELSE 0 END),0) AS indexed "
-                "FROM memories m LEFT JOIN memory_vectors v ON v.memory_id=m.id",
-            ) as cursor:
-                return dict(await cursor.fetchone())
+        async with self.store.connection() as db, db.execute(
+            "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN v.revision=m.revision "
+            "THEN 1 ELSE 0 END),0) AS indexed "
+            "FROM memories m LEFT JOIN memory_vectors v ON v.memory_id=m.id",
+        ) as cursor:
+            return dict(await cursor.fetchone())
 
     async def pending(self, size=16):
-        async with self.store.connection() as db:
-            async with db.execute(
-                "SELECT m.id,m.text,m.revision FROM memories m "
-                "LEFT JOIN memory_vectors v ON v.memory_id=m.id "
-                "WHERE v.memory_id IS NULL OR v.revision!=m.revision "
-                "ORDER BY m.id LIMIT ?", (size,),
-            ) as cursor:
-                return [dict(row) for row in await cursor.fetchall()]
+        async with self.store.connection() as db, db.execute(
+            "SELECT m.id,m.text,m.revision FROM memories m "
+            "LEFT JOIN memory_vectors v ON v.memory_id=m.id "
+            "WHERE v.memory_id IS NULL OR v.revision!=m.revision "
+            "ORDER BY m.id LIMIT ?", (size,),
+        ) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
 
     async def put(self, index_id, rows, vectors, dimensions):
         async with self.store.connection(write=True) as db:
@@ -151,15 +148,14 @@ class VectorStore:
 
     async def search(self, np, query, predicate, params, threshold, limit=MAX_CANDIDATES):
         best = []
-        async with self.store.connection() as db:
-            async with db.execute(
-                "SELECT m.*,v.vector FROM memories m JOIN memory_vectors v "
-                "ON v.memory_id=m.id AND v.revision=m.revision "
-                f"WHERE v.dimensions=? AND ({predicate})",
-                [len(query), *params],
-            ) as cursor:
-                while batch := await cursor.fetchmany(256):
-                    best = await asyncio.to_thread(
-                        self._rank_batch, np, batch, query, threshold, best, limit,
-                    )
+        async with self.store.connection() as db, db.execute(
+            "SELECT m.*,v.vector FROM memories m JOIN memory_vectors v "
+            "ON v.memory_id=m.id AND v.revision=m.revision "
+            f"WHERE v.dimensions=? AND ({predicate})",
+            [len(query), *params],
+        ) as cursor:
+            while batch := await cursor.fetchmany(256):
+                best = await asyncio.to_thread(
+                    self._rank_batch, np, batch, query, threshold, best, limit,
+                )
         return best

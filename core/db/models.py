@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, Text, JSON, Boolean, Index
+from sqlalchemy import JSON, BigInteger, Boolean, Column, Index, Integer, String, Text
 
 from .db_mgr import Base
 

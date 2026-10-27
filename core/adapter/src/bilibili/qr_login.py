@@ -14,7 +14,6 @@ from core.adapter.qr_login import (
 
 from .client import get_bilibili_client
 
-
 QR_GENERATE_URL = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate"
 QR_POLL_URL = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll"
 REQUEST_HEADERS = {

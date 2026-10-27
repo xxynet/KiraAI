@@ -1,4 +1,4 @@
-from .tag_registry import tag_registry, TagSet
 from .base import BaseTag, RootTagAction
+from .tag_registry import TagSet, tag_registry
 
-__all__ = ["BaseTag", "RootTagAction", "tag_registry", "TagSet"]
+__all__ = ["BaseTag", "RootTagAction", "TagSet", "tag_registry"]

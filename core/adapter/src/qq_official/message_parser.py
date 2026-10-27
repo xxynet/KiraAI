@@ -14,7 +14,6 @@ from typing import Any
 
 from core.chat.message_elements import At, File, Image, Record, Text, Video
 
-
 AT_MARKUP = re.compile(r'<@!?([^<>\s]+)>|<qqbot-at-user\s+id=["\']([^"\']+)["\']\s*/>')
 FACE_MARKUP = re.compile(r'<faceType=\d+,\s*faceId="\d+",\s*ext="([^"<>]{0,8192})">')
 MAX_IDENTITIES = 4096

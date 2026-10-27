@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, Mock
 import aiosqlite
 import pytest
 
+from core.chat.session import Session
 from core.plugin.builtin_plugins.memory.main import MemoryPlugin
 from core.plugin.builtin_plugins.memory.prompts import MESSAGES
 from core.plugin.builtin_plugins.memory.scope import MemoryInputError, MemoryScope
 from core.plugin.builtin_plugins.memory.store import MemoryStore
-from core.chat.session import Session
 from core.prompt_manager import Prompt
 from core.provider import LLMRequest
 
@@ -315,9 +315,9 @@ async def test_group_user_changes_must_reference_that_users_message(tmp_path):
 
 @pytest.mark.anyio
 async def test_memory_uses_persona_snapshot_from_built_request(tmp_path, monkeypatch):
-    from core.prompt_manager import PromptManager
-    from tests.test_prompt_manager import make_config, CHAT_ENV
     from core.persona.model import PersonaInfo
+    from core.prompt_manager import PromptManager
+    from tests.test_prompt_manager import CHAT_ENV, make_config
 
     plugin = await plugin_at(tmp_path, monkeypatch)
     persona_mgr = SimpleNamespace(get_persona=AsyncMock(return_value=PersonaInfo(
@@ -411,7 +411,7 @@ def test_page_strings_cover_both_locales():
     script = (root / "i18n.js").read_text(encoding="utf-8")
     blocks = {}
     for locale in ("zh", "en"):
-        start = script.index("    %s: {" % locale)
+        start = script.index("    {}: {{".format(locale))
         end = script.index("\n    },", start)
         blocks[locale] = dict(re.findall(r"'([\w.]+)': '((?:[^'\\]|\\.)*)'", script[start:end]))
     assert blocks["zh"].keys() == blocks["en"].keys()

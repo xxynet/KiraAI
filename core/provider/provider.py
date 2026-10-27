@@ -1,13 +1,13 @@
-from abc import abstractmethod, ABC
-from enum import Enum, auto
+from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, List, Literal, Optional, Union
-import asyncio
+from enum import Enum
+from typing import Literal
 
+from core.chat.message_elements import Image, Record, Video
+
+from .decision_model import ChoiceResponse, DecisionContent, NoulResponse, ScoreResponse
 from .llm_model import LLMRequest, LLMResponse, LLMStreamChunk, RerankResult
-from .decision_model import DecisionContent, NoulResponse, ChoiceResponse, ScoreResponse
-
-from core.chat.message_elements import Record, Image, Video
 
 
 class ProviderAPIError(Exception):
@@ -138,7 +138,7 @@ class ImageModelClient(BaseModelClient):
     async def text_to_image(self, prompt: str) -> Image:
         pass
 
-    async def image_to_image(self, prompt: str, image: Union[Image, list[Image]]) -> Image:
+    async def image_to_image(self, prompt: str, image: Image | list[Image]) -> Image:
         pass
 
 
@@ -148,7 +148,7 @@ class VideoModelClient(BaseModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def generate_video(self, prompt: str, ref: list[Image] = None, duration: int = 5, **kwargs) -> Video:
+    async def generate_video(self, prompt: str, ref: list[Image] | None = None, duration: int = 5, **kwargs) -> Video:
         pass
 
 
@@ -189,7 +189,7 @@ class RerankModelClient(BaseModelClient):
         self,
         query: str,
         documents: list[str],
-        top_n: Optional[int] = None,
+        top_n: int | None = None,
         **kwargs
     ) -> list[RerankResult]:
         """
@@ -199,7 +199,6 @@ class RerankModelClient(BaseModelClient):
         documents: Candidate documents
         top_n: Optional, truncate result
         """
-        pass
 
 
 class DecisionModelClient(BaseModelClient):

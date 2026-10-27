@@ -1,15 +1,19 @@
 import json
-from typing import AsyncIterator, List
+from collections.abc import AsyncIterator
 
 from fastapi import Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
-from core.logging_manager import get_logger
 from core.agent.message import OpenAIMessage
-from core.persona import PersonaGenerationError, PersonaGenerator, PersonaQuestion, PersonaTextDelta
+from core.logging_manager import get_logger
+from core.persona import (
+    PersonaGenerationError,
+    PersonaGenerator,
+    PersonaQuestion,
+    PersonaTextDelta,
+)
 from core.persona.model import PersonaInfo
 from core.persona.reference_image import MAX_REFERENCE_IMAGE_BYTES
-
 from webui.models import (
     PersonaBase,
     PersonaGeneratorTurnRequest,
@@ -58,7 +62,7 @@ class PersonasRoutes(Routes):
                 path="/api/personas",
                 methods=["GET"],
                 endpoint=self.list_personas,
-                response_model=List[PersonaResponse],
+                response_model=list[PersonaResponse],
                 tags=["personas"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -159,8 +163,8 @@ class PersonasRoutes(Routes):
         existing = await self.lifecycle.persona_manager.get_persona(persona_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Persona not found")
-        name = payload["name"] if "name" in payload else existing.name
-        persona_format = payload["format"] if "format" in payload else existing.format
+        name = payload.get("name", existing.name)
+        persona_format = payload.get("format", existing.format)
         if not isinstance(name, str):
             raise HTTPException(status_code=422, detail="Invalid name value")
         if not isinstance(persona_format, str):
@@ -392,6 +396,6 @@ class PersonasRoutes(Routes):
             success = await self.lifecycle.persona_manager.delete_persona(persona_id)
             if not success:
                 raise HTTPException(status_code=404, detail="Persona not found")
-            return None
+            return
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e

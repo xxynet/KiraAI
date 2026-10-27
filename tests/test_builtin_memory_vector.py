@@ -356,6 +356,7 @@ async def test_install_failure_is_sanitized(tmp_path, monkeypatch):
 async def test_vector_apis_require_auth_and_enabled_plugin(tmp_path, monkeypatch):
     from fastapi import FastAPI
     from httpx import ASGITransport, AsyncClient
+
     from core.plugin import registry
     from webui.plugin_bindings import PluginWebBindings
     from webui.routes.auth import require_auth
@@ -496,7 +497,7 @@ async def test_same_model_provider_switch_during_query_keeps_result_valid(tmp_pa
 
 @pytest.mark.anyio
 async def test_incremental_dimension_mismatch_preserves_index_and_stops_background_calls(tmp_path, monkeypatch, np):
-    plugin, first = await vector_plugin(tmp_path, monkeypatch, np)
+    plugin, _first = await vector_plugin(tmp_path, monkeypatch, np)
     row, _ = await plugin.store.add(scope(), text="汽车")
     await plugin.vectors._sync()
     original = plugin.vectors.index_id

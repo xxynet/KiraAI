@@ -5,8 +5,8 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
-from core.chat.session import Session
 from core.chat.message_history import MessageHistorySession
+from core.chat.session import Session
 from webui.routes.sessions import SessionsRoutes
 
 

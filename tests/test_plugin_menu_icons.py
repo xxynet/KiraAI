@@ -1,11 +1,10 @@
-import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 
-from core.plugin import registry
-from core.plugin import PageMenu, PluginInfo, PluginManager
+from core.plugin import PageMenu, PluginInfo, PluginManager, registry
 from core.plugin.components import PluginComponents
 from webui.routes.plugins import PluginsRoutes
 

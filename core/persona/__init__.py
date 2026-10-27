@@ -1,5 +1,11 @@
+from .generator import (
+    PersonaGenerationError,
+    PersonaGenerator,
+    PersonaProposal,
+    PersonaQuestion,
+    PersonaTextDelta,
+)
 from .persona_manager import PersonaManager
-from .generator import PersonaGenerator, PersonaGenerationError, PersonaProposal, PersonaQuestion, PersonaTextDelta
 
 __all__ = [
     "PersonaGenerationError",

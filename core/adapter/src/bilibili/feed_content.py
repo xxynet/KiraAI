@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from html import unescape
-import re
 from typing import Any
 
 from bilibili_api import comment
@@ -10,7 +10,6 @@ from bilibili_api import comment
 from core.adapter.feed import FeedAttachment, FeedAuthor, FeedItem, FeedRef
 from core.chat.message_elements import At, Emoji, Text
 from core.chat.message_utils import MessageChain
-
 
 COMMENT_RESOURCES = {
     resource.value: resource.name.lower().removeprefix("dynamic_")

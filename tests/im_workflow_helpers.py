@@ -18,23 +18,23 @@ def make_workflow_context(**overrides):
     persona_mgr = overrides.pop("persona_mgr", None)
     adapter_mgr = overrides.pop("adapter_mgr", Mock())
     image_desc_cache = overrides.pop("image_desc_cache", None)
-    services = dict(
-        config=config,
-        session_manager=session_manager,
-        provider_mgr=provider_mgr,
-        message_history=message_history,
-        message_formatter=MessageFormatter(config, provider_mgr, session_manager, image_desc_cache),
-        message_delivery=MessageDeliveryService(
+    services = {
+        "config": config,
+        "session_manager": session_manager,
+        "provider_mgr": provider_mgr,
+        "message_history": message_history,
+        "message_formatter": MessageFormatter(config, provider_mgr, session_manager, image_desc_cache),
+        "message_delivery": MessageDeliveryService(
             config, adapter_mgr, persona_mgr, message_history,
         ),
-        message_media=MessageMediaService(),
-        message_buffer=SessionBufferManager(),
-        event_bus=SimpleNamespace(publish=AsyncMock()),
-        prompt_manager=Mock(),
-        tool_manager=Mock(),
-        skills_manager=Mock(),
-        mcp_manager=Mock(),
-        db=Mock(),
-    )
+        "message_media": MessageMediaService(),
+        "message_buffer": SessionBufferManager(),
+        "event_bus": SimpleNamespace(publish=AsyncMock()),
+        "prompt_manager": Mock(),
+        "tool_manager": Mock(),
+        "skills_manager": Mock(),
+        "mcp_manager": Mock(),
+        "db": Mock(),
+    }
     services.update(overrides)
     return IMWorkflowContext(**services)

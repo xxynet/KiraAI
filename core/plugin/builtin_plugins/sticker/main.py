@@ -1,22 +1,20 @@
-import os
 import asyncio
+import os
 
-from typing import Optional, Type
-
-from core.logging_manager import get_logger
-from core.plugin import BasePlugin, logger, on, Priority
-from core.tag import BaseTag, TagSet
 from core.chat import KiraMessageBatchEvent
+from core.chat.message_elements import BaseMessageElement, Sticker
+from core.logging_manager import get_logger
+from core.plugin import BasePlugin, Priority, logger, on
+from core.tag import BaseTag, TagSet
 from core.utils.common_utils import image_to_base64
 from core.utils.path_utils import get_data_path
-from core.chat.message_elements import BaseMessageElement, Sticker
 
 message_logger = get_logger("message", "cyan")
 
 STICKER_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
 
 
-def build_sticker_tag(sticker_dict: dict) -> Type[BaseTag]:
+def build_sticker_tag(sticker_dict: dict) -> type[BaseTag]:
     def load_sticker_prompt() -> str:
         """加载表情包（贴纸）提示词"""
         sticker_prompt = ""
@@ -41,7 +39,7 @@ def build_sticker_tag(sticker_dict: dict) -> Type[BaseTag]:
                 sticker_obj = Sticker(sticker_id, sticker=sticker_bs64, caption=sticker_desc)
                 return [sticker_obj]
             except Exception as e:
-                message_logger.error(f"error while parsing sticker: {str(e)}")
+                message_logger.error(f"error while parsing sticker: {e!s}")
                 return []
 
     return StickerTag
@@ -60,9 +58,9 @@ class DefaultStickerPlugin(BasePlugin):
         self.recognition_model = None
         self.recognition_prompt = self.DEFAULT_RECOGNITION_PROMPT
         self.vlm_concurrency = 3
-        self._vlm_sem: Optional[asyncio.Semaphore] = None
+        self._vlm_sem: asyncio.Semaphore | None = None
         self.sticker_mgr = self.ctx.sticker_mgr
-        self._scan_task: Optional[asyncio.Task] = None
+        self._scan_task: asyncio.Task | None = None
     
     async def initialize(self):
         self.scan_interval = self.plugin_cfg.get("scan_interval", 120)
@@ -166,8 +164,7 @@ class DefaultStickerPlugin(BasePlugin):
                     logger.error(f"Scan iteration failed, will retry next interval: {e}")
 
                 delay_minutes = self.scan_interval
-                if delay_minutes < 10:
-                    delay_minutes = 10
+                delay_minutes = max(delay_minutes, 10)
 
                 await asyncio.sleep(delay_minutes * 60)
         except asyncio.CancelledError:

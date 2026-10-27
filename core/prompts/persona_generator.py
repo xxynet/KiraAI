@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 zh_persona_generator = """\
 你是 KiraAI 的人设创建助手。根据用户提供的想法，帮助其创建一个适合长期对话的、具体且一致的人设。
 

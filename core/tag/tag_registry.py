@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Union, Type
-
 from .base import BaseTag
 
 
@@ -19,7 +17,7 @@ class TagSet:
                 return True
         return False
 
-    def register(self, *tags: Union[BaseTag, Type[BaseTag]]):
+    def register(self, *tags: BaseTag | type[BaseTag]):
         for tag in tags:
             tag_inst = tag
             if isinstance(tag_inst, type) and issubclass(tag, BaseTag):

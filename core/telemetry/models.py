@@ -1,7 +1,8 @@
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
-import uuid
+from typing import Any
 
 
 class TelemetryEventType:
@@ -21,9 +22,9 @@ class TelemetryEvent:
     data: dict[str, Any]
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    client_uuid: Optional[str] = None
-    signature: Optional[str] = None
-    _on_success: Optional[Callable[[], Any]] = field(default=None, repr=False)
+    client_uuid: str | None = None
+    signature: str | None = None
+    _on_success: Callable[[], Any] | None = field(default=None, repr=False)
 
     def to_payload(self) -> dict[str, Any]:
         payload = {

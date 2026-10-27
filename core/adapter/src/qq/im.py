@@ -2,19 +2,39 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import IMCapability
-from core.adapter.message_format_metadata import MessageFormatMetadata, load_emoji_mapping
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult
-from core.chat.message_elements import (
-    Text, Image, At, Reply, Forward, Emoji, Sticker, Record, Poke, Json, File, Video,
+from core.adapter.message_format_metadata import (
+    MessageFormatMetadata,
+    load_emoji_mapping,
 )
-from core.chat import Group, User
+from core.chat import (
+    Group,
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+    User,
+)
+from core.chat.message_elements import (
+    At,
+    Emoji,
+    File,
+    Forward,
+    Image,
+    Json,
+    Poke,
+    Record,
+    Reply,
+    Sticker,
+    Text,
+    Video,
+)
 
 from .napcat_client import QQMessageChain, QQMessageType
 
@@ -69,7 +89,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
         return MessageFormatMetadata(self._supported_elements, emojis=self._metadata.emojis)
 
     @staticmethod
-    def _extract_poke_texts(msg: Dict) -> tuple[str, str]:
+    def _extract_poke_texts(msg: dict) -> tuple[str, str]:
         """Read poke text from NapCat raw_info or OneBot action/suffix fields."""
         # Prefer the original NapCat raw_info fields.
         raw_info = msg.get("raw_info")
@@ -371,14 +391,14 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                     self.adapter.logger.error(f"QQ message conversion failed ({type(e).__name__})")
         return MessageChain(message_content)
 
-    def _log_message_summary(self, msg: Dict) -> None:
+    def _log_message_summary(self, msg: dict) -> None:
         """Log structural metadata without persisting message content."""
         segments = msg.get("message")
         count = len(segments) if isinstance(segments, list) else 0
         kind = "notice" if "notice_type" in msg else "message"
         self.adapter.logger.debug(f"QQ inbound {kind}: segments={count}")
 
-    async def _on_notice_message(self, msg: Dict):
+    async def _on_notice_message(self, msg: dict):
         notice_type = msg.get("notice_type")
         sub_type = msg.get("sub_type")
         self_id = msg.get("self_id")
@@ -394,9 +414,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         if self.adapter.debug_mode:
             if self.adapter.debug_mode_list:
-                if f"gm:{group_id}" in self.adapter.debug_mode_list:
-                    self._log_message_summary(msg)
-                elif not group_id and f"dm:{user_id}" in self.adapter.debug_mode_list:
+                if f"gm:{group_id}" in self.adapter.debug_mode_list or not group_id and f"dm:{user_id}" in self.adapter.debug_mode_list:
                     self._log_message_summary(msg)
             else:
                 self._log_message_summary(msg)
@@ -641,13 +659,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
             elif isinstance(ele, Record):
                 record_base64 = await ele.to_base64()
                 message_chain_elements.append(QQMessageType.Record(f"base64://{record_base64}"))
-            elif isinstance(ele, Poke):
-                message_chain_elements.append(ele)
-            elif isinstance(ele, File):
-                message_chain_elements.append(ele)
-            elif isinstance(ele, Video):
-                message_chain_elements.append(ele)
-            elif isinstance(ele, Forward):
+            elif isinstance(ele, (Poke, File, Video, Forward)):
                 message_chain_elements.append(ele)
             else:
                 pass

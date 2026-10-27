@@ -1,12 +1,11 @@
 import asyncio
+
 from core.adapter.capabilities import IMCapability
-
-from core.plugin import BasePlugin, logger, on, Priority, register
-from core.chat.message_utils import KiraMessageBatchEvent
-from core.provider import LLMRequest
-
-from core.chat import Group, User, MessageChain
+from core.chat import MessageChain
 from core.chat.message_elements import Text
+from core.chat.message_utils import KiraMessageBatchEvent
+from core.plugin import BasePlugin, on, register
+from core.provider import LLMRequest
 
 SESSION_TOOL_FEW_SHOT = """
 ### session_send 工具说明
@@ -58,7 +57,6 @@ class SessionPlugin(BasePlugin):
         """
         Cleanup when plugin is terminated
         """
-        pass
 
     @register.tool(
         name="session_send",
@@ -81,7 +79,7 @@ class SessionPlugin(BasePlugin):
     async def session_send(self, event: KiraMessageBatchEvent, target: str, description: str):
         parts = target.split(":", maxsplit=2)
         if len(parts) != 3 or any(not part for part in parts):
-            raise ValueError(f"Failed to parse sid")
+            raise ValueError("Failed to parse sid")
         if event.sid == target:
             return "Do not send messages to current session using this tool, output directly to send messages"
 
@@ -107,7 +105,7 @@ class SessionPlugin(BasePlugin):
             cross_session_prompt = CROSS_SESSION_PROMPT.format(session_id=event.sid, description=description)
 
             await self.ctx.publish_notice(target, MessageChain([Text(cross_session_prompt)]))
-            return f"message sent"
+            return "message sent"
         except Exception as e:
             return f"failed to send: {e}"
 

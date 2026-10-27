@@ -12,7 +12,11 @@ from core.adapter.src.qq_official.message_parser import QQOfficialMessageParser
 from core.chat import MessageChain
 from core.chat.message_elements import At, File, Image, Record, Reply, Text
 from tests.adapter_lifecycle import start_adapter
-from tests.test_qq_official_adapter import make_adapter, sdk_gateway, cleanup_sdk_gateway
+from tests.test_qq_official_adapter import (
+    cleanup_sdk_gateway,
+    make_adapter,
+    sdk_gateway,
+)
 
 
 def message(group=True, message_id="incoming", **updates):

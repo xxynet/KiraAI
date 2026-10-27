@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from asyncio import wait_for, TimeoutError as AsyncTimeoutError
-from typing import Optional, Union, TYPE_CHECKING
-import copy
 import json
-import time
+from asyncio import TimeoutError as AsyncTimeoutError
+from asyncio import wait_for
+from typing import TYPE_CHECKING
 
-from core.logging_manager import get_logger
 from core.config import KiraConfig
-from core.provider import LLMRequest, LLMResponse
-from .tool import ToolResult, ToolSet, truncate_tool_output
+from core.logging_manager import get_logger
+from core.provider import LLMResponse
 from core.utils.tool_utils import BaseTool
+
+from .tool import ToolResult, ToolSet, truncate_tool_output
 
 logger = get_logger("llm", "purple")
 tool_logger = get_logger("tool_use", "orange")
@@ -61,7 +61,7 @@ class FuncToolManager:
         """Return a request-local copy of the registered tools."""
         return ToolSet(tools=self.tool_set.tools.copy())
 
-    async def execute_tool(self, event: KiraMessageBatchEvent, resp: LLMResponse, tool_set: Optional[ToolSet] = None):
+    async def execute_tool(self, event: KiraMessageBatchEvent, resp: LLMResponse, tool_set: ToolSet | None = None):
         max_tool_calls_per_turn = self.kira_config.get_config("bot_config.agent.max_tool_calls_per_turn")
         try:
             max_tool_calls_per_turn = int(max_tool_calls_per_turn)
@@ -136,7 +136,7 @@ class FuncToolManager:
             else:
                 tool_result_obj = ToolResult(str(result))
 
-            from core.plugin.handlers import event_handler_reg, EventType
+            from core.plugin.handlers import EventType, event_handler_reg
 
             # EventType.ON_TOOL_RESULT
             llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT)

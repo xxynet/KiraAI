@@ -1,8 +1,9 @@
-from core.workflow.base_stage import BaseStage
+from core.logging_manager import get_logger
 from core.prompt_manager import Prompt
 from core.provider import LLMModelClient, LLMRequest
 from core.tag import TagSet
-from core.logging_manager import get_logger
+from core.workflow.base_stage import BaseStage
+
 from ..context import IMBatchContext
 
 llm_logger = get_logger("llm", "purple")
@@ -55,11 +56,11 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
             try:
                 default_llm = services.provider_mgr.get_default_llm()
                 if not default_llm:
-                    llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
+                    llm_logger.error("Default LLM model not configured, please configure it in Configuration")
                     return False
                 model_group = [default_llm]
             except Exception as _:
-                llm_logger.error(f"Default LLM model not configured, please configure it in Configuration")
+                llm_logger.error("Default LLM model not configured, please configure it in Configuration")
                 return False
 
         # Filter tools by scope

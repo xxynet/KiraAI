@@ -1,7 +1,7 @@
 """Database persistence for LLM session records and their legacy import."""
 
-from copy import deepcopy
 import time
+from copy import deepcopy
 from uuid import uuid4
 
 from sqlalchemy import case, delete, func, select

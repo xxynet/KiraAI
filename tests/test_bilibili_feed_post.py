@@ -6,17 +6,16 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-
-from tests.adapter_lifecycle import start_adapter
-from PIL import Image as PILImage
 from bilibili_api import dynamic
 from bilibili_api.utils.picture import Picture
+from PIL import Image as PILImage
 
 from core.adapter import FeedCapability, FeedPost
 from core.adapter.src.bilibili import BiliBiliClient
 from core.adapter.src.bilibili import client as client_module
 from core.chat import MessageChain
 from core.chat.message_elements import At, Emoji, Image, Text, Video
+from tests.adapter_lifecycle import start_adapter
 from tests.test_bilibili_adapter import make_adapter, sdk_client
 
 

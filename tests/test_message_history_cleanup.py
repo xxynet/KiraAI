@@ -13,7 +13,10 @@ from sqlalchemy import update
 
 from core.chat.message_elements import Image, Text
 from core.chat.message_history import _archive_media
-from core.chat.message_history_cleanup import MessageHistoryCleanup, validate_cleanup_config
+from core.chat.message_history_cleanup import (
+    MessageHistoryCleanup,
+    validate_cleanup_config,
+)
 from core.chat.message_utils import MessageChain
 from core.config.default import DEFAULT_CONFIG
 from core.db.models import MessageRecord

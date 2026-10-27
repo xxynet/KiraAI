@@ -2,34 +2,33 @@ from __future__ import annotations
 
 import uuid
 import warnings
-from functools import wraps
-from deprecated import deprecated
-
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Union, Optional, Literal, TYPE_CHECKING, Iterator, overload, Callable
+from functools import wraps
+from typing import TYPE_CHECKING, Literal, overload
 
+from deprecated import deprecated
+
+from core.adapter.adapter_info import AdapterInfo
 from core.chat.message_elements import (
-    BaseMessageElement,
-    Text,
-    Image,
     At,
-    Reply,
+    BaseMessageElement,
     Emoji,
-    Sticker,
-    Record,
+    Image,
     Notice,
     Poke,
-    File
+    Record,
+    Reply,
+    Sticker,
+    Text,
 )
 
-from .session import Session, Group, User
-from core.adapter.adapter_info import AdapterInfo
-from core.prompt_manager import Prompt
+from .session import Group, Session, User
 
 if TYPE_CHECKING:
-    from core.provider import LLMModelClient
     from core.adapter.feed import FeedItem, FeedRef
+    from core.provider import LLMModelClient
 
 
 class MessageType(Enum):
@@ -51,12 +50,12 @@ class KiraIMMessage:
     session: Session = None
     group: Group = None
     is_notice: bool = False
-    is_mentioned: Optional[bool] = None
-    raw_message: Optional[dict] = None
-    extra: Optional[dict] = None
-    message_str: Optional[str] = field(default=None, init=False)
-    native_content: Optional[list[dict]] = field(default=None, init=False)
-    message_repr: Optional[str] = field(default=None, init=False)
+    is_mentioned: bool | None = None
+    raw_message: dict | None = None
+    extra: dict | None = None
+    message_str: str | None = field(default=None, init=False)
+    native_content: list[dict] | None = field(default=None, init=False)
+    message_repr: str | None = field(default=None, init=False)
 
     def __post_init__(self):
         if self.bot is None:
@@ -70,11 +69,11 @@ class KiraIMMessage:
 
 @dataclass
 class KiraIMSentResult:
-    message_id: Optional[str] = None
+    message_id: str | None = None
     is_notice: bool = False
     ok: bool = True
     err: str = ""
-    history_id: Optional[str] = None
+    history_id: str | None = None
 
 
 @dataclass
@@ -120,11 +119,11 @@ class KiraMessageEvent:
     message: KiraIMMessage
     _process_strategy: Literal["trigger", "buffer", "discard", "flush"] = "discard"
     adapter: AdapterInfo = None
-    message_str: Optional[str] = field(default=None, init=False)
-    message_repr: Optional[str] = field(default=None, init=False)
+    message_str: str | None = field(default=None, init=False)
+    message_repr: str | None = field(default=None, init=False)
     _is_stopped: bool = False
     _is_forced: bool = False
-    _flush_filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = field(default=None, init=False, repr=False)
+    _flush_filter_fn: Callable[[KiraMessageEvent], bool] | None = field(default=None, init=False, repr=False)
 
     @property
     @deprecated("message_types is deprecated; use supported_elements instead")
@@ -199,14 +198,14 @@ class KiraMessageEvent:
         return True
 
     @property
-    def flush_filter_fn(self) -> Optional[Callable[[KiraMessageEvent], bool]]:
+    def flush_filter_fn(self) -> Callable[[KiraMessageEvent], bool] | None:
         return self._flush_filter_fn
 
     def flush(
         self,
         force: bool = False,
         *,
-        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+        filter_fn: Callable[[KiraMessageEvent], bool] | None = None,
     ):
         """Select matching buffered events, including this event, for publication.
 
@@ -240,14 +239,14 @@ class KiraMessageBatchEvent:
 
     messages: list[KiraIMMessage] = field(default_factory=list)
 
-    extra: Optional[dict] = None
-    message_str: Optional[str] = field(default=None, init=False)
+    extra: dict | None = None
+    message_str: str | None = field(default=None, init=False)
 
     """Message display text for logging"""
-    message_repr: Optional[str] = field(default=None, init=False)
+    message_repr: str | None = field(default=None, init=False)
 
     """Custom model group, fallback to default LLM if not set"""
-    model_group: Optional[list[LLMModelClient]] = field(default_factory=list)
+    model_group: list[LLMModelClient] | None = field(default_factory=list)
 
     _is_stopped: bool = False
 
@@ -308,7 +307,7 @@ class KiraCommentEvent:
     target: FeedItem | FeedRef
     root_comment_id: int | str | None = None
     root_comment_content: MessageChain | list[BaseMessageElement] | None = None
-    message_str: Optional[str] = field(default=None, init=False)
+    message_str: str | None = field(default=None, init=False)
     _is_stopped: bool = field(default=False, init=False, repr=False)
 
     @property
@@ -344,7 +343,7 @@ class KiraExceptionEvent:
     source: str = None
 
     # plugin_id | provider_id | adapter_name
-    comp_id: Optional[str] = None
+    comp_id: str | None = None
 
     # Raw exception object
     e: Exception = None
@@ -438,7 +437,7 @@ class MessageChain:
         self.message_list.append(Image(url))
         return self
 
-    def at(self, pid: Union[int, str], nickname: Optional[str]):
+    def at(self, pid: int | str, nickname: str | None):
         self.message_list.append(At(pid, nickname))
         return self
 

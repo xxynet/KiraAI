@@ -10,11 +10,9 @@ import string
 import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Dict, Optional
 
-from fastapi import HTTPException, status
 import jwt
+from fastapi import HTTPException, status
 
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
@@ -86,7 +84,7 @@ def _generate_strong_password(length: int = 16) -> str:
     return token
 
 
-def _load_webui_config() -> Dict:
+def _load_webui_config() -> dict:
     """Load webui.json"""
     config_path = get_data_path() / "webui.json"
     if config_path.exists():
@@ -95,7 +93,7 @@ def _load_webui_config() -> Dict:
     return {"host": "0.0.0.0", "port": 5267}
 
 
-def _save_webui_config(config: Dict):
+def _save_webui_config(config: dict):
     """Save webui.json file"""
     config_path = get_data_path() / "webui.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -148,7 +146,7 @@ def _access_token_fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
-def _create_jwt_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
+def _create_jwt_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create a JWT token"""
     to_encode = data.copy()
     if expires_delta:
@@ -160,7 +158,7 @@ def _create_jwt_token(data: Dict, expires_delta: Optional[timedelta] = None) -> 
     return encoded_jwt
 
 
-def _verify_jwt_token(token: str) -> Dict:
+def _verify_jwt_token(token: str) -> dict:
     """Verify JWT token"""
     try:
         payload = jwt.decode(token, _JWT_SECRET, algorithms=["HS256"])
@@ -177,7 +175,7 @@ def _verify_jwt_token(token: str) -> Dict:
         )
 
 
-def verify_session_token(token: str, app_state) -> Dict:
+def verify_session_token(token: str, app_state) -> dict:
     """Verify a session JWT end to end: signature/expiry, auth_mode, and the
     access-token (tv) binding.
 

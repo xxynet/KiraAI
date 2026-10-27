@@ -4,16 +4,16 @@ import asyncio
 
 import pytest
 
-from core.adapter.adapter_info import AdapterInfo
 from core.adapter.access import AccessController, ListAccessPolicy
+from core.adapter.adapter_info import AdapterInfo
 from core.adapter.base import BaseAdapter, BaseCapability
 from core.adapter.capabilities import (
     FeedCapability,
     IMCapability,
 )
 from core.adapter.context import AdapterContext
-from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.adapter.feed import FeedItem, FeedPage, FeedQuery, FeedRef, FeedSearchQuery
+from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.chat import MessageChain
 from core.chat.message_elements import Text
 

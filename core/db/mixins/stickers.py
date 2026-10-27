@@ -1,6 +1,5 @@
 """Database operations for stickers."""
 
-from typing import Optional
 
 from sqlalchemy import select
 
@@ -16,12 +15,12 @@ class StickerMixin:
         sticker_id: str,
         desc: str,
         path: str,
-        extra: Optional[dict] = None,
+        extra: dict | None = None,
     ) -> None:
         async with self.db.transaction() as session:
             session.add(Sticker(id=sticker_id, desc=desc, path=path, extra=extra))
 
-    async def get_sticker(self, sticker_id: str) -> Optional[dict]:
+    async def get_sticker(self, sticker_id: str) -> dict | None:
         stmt = select(Sticker).where(Sticker.id == sticker_id)
         row = await self.db.fetch_one(stmt)
         if row is None:
@@ -40,9 +39,9 @@ class StickerMixin:
     async def update_sticker(
         self,
         sticker_id: str,
-        desc: Optional[str] = None,
-        path: Optional[str] = None,
-        extra: Optional[dict] = None,
+        desc: str | None = None,
+        path: str | None = None,
+        extra: dict | None = None,
     ) -> bool:
         async with self.db.transaction() as session:
             result = await session.execute(

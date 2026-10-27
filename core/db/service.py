@@ -3,9 +3,9 @@
 from .db_mgr import DatabaseManager
 from .mixins.image_cache import ImageCacheMixin
 from .mixins.messages import MessageHistoryMixin
-from .mixins.sessions import ChatSessionMixin
 from .mixins.personas import PersonaMixin
 from .mixins.plugin_sources import PluginSourceMixin
+from .mixins.sessions import ChatSessionMixin
 from .mixins.stickers import StickerMixin
 from .mixins.telemetry import TelemetryMixin
 

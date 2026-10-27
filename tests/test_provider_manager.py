@@ -4,7 +4,11 @@ import pytest
 
 from core.plugin.plugin_context import PluginContext
 from core.provider import (
-    EmbeddingModelClient, ImageModelClient, LLMModelClient, ModelType, ProviderManager,
+    EmbeddingModelClient,
+    ImageModelClient,
+    LLMModelClient,
+    ModelType,
+    ProviderManager,
 )
 
 

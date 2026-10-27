@@ -1,8 +1,8 @@
 """Native FTS5 BM25 ranking, exact N-gram matching, and transactional index maintenance."""
 
-from collections import Counter
 import json
 import math
+from collections import Counter
 
 import pytest
 

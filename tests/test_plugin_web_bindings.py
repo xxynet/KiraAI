@@ -10,13 +10,12 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import core.plugin as public_api
-from core.plugin import manager as manager_module
 from core.plugin import decorators, registry
+from core.plugin import manager as manager_module
+from core.plugin.handlers import event_handler_reg
 from core.plugin.metadata import PluginInfo
 from core.plugin.pages import PageMenu, PluginPage
-from core.plugin.handlers import event_handler_reg
 from core.tag import tag_registry
-
 
 PLUGIN_ID = "web_migration_test"
 PLUGIN_SOURCE = '''
@@ -205,8 +204,8 @@ def test_plugin_imports_mutable_tags_and_all_web_bindings(load_plugin, app_first
 
 
 def test_auth_dependencies_and_folder_auth_survive_extraction(load_plugin, monkeypatch):
-    import webui.routes.auth as auth
-    import webui.utils as utils
+    from webui import utils
+    from webui.routes import auth
 
     manager, client = load_plugin()
 

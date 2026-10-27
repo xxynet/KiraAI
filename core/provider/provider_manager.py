@@ -1,34 +1,46 @@
-import os
-import json
-import time
-import uuid
+import copy
 import importlib.util
 import inspect
-import copy
+import json
+import os
+import time
+import uuid
 from contextlib import aclosing
 from functools import wraps
 from pathlib import Path
-from typing import Dict, Optional, Type
 
-from .provider import (
-    BaseProvider, BaseModelClient, ProviderInfo, ModelInfo, ModelType, ProviderAPIError,
-    LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient,
-    VideoModelClient, EmbeddingModelClient, RerankModelClient, DecisionModelClient
-)
-from .llm_model import LLMRequest
 from core.agent.message import OpenAIMessage
-
-from core.utils.path_utils import get_config_path, resolve_manifest_icon_path
-from core.logging_manager import get_logger
-from core.config import KiraConfig
-from core.config import config_loader
-from .model_identity import (
-    DEFAULT_MODEL_TYPES, MODEL_CONFIG_VERSION, generate_model_id, resolve_model_entry,
-    validate_model_names,
-)
-from .model_migration import migrate_provider_models, migrate_model_config_file
+from core.config import KiraConfig, config_loader
 from core.config.config_field import BaseConfigField, build_fields
 from core.db.service import DatabaseService
+from core.logging_manager import get_logger
+from core.utils.path_utils import resolve_manifest_icon_path
+
+from .llm_model import LLMRequest
+from .model_identity import (
+    DEFAULT_MODEL_TYPES,
+    MODEL_CONFIG_VERSION,
+    generate_model_id,
+    resolve_model_entry,
+    validate_model_names,
+)
+from .model_migration import migrate_model_config_file, migrate_provider_models
+from .provider import (
+    BaseModelClient,
+    BaseProvider,
+    DecisionModelClient,
+    EmbeddingModelClient,
+    ImageModelClient,
+    LLMModelClient,
+    ModelInfo,
+    ModelType,
+    ProviderAPIError,
+    ProviderInfo,
+    RerankModelClient,
+    STTModelClient,
+    TTSModelClient,
+    VideoModelClient,
+)
 
 logger = get_logger("provider_manager", "cyan")
 
@@ -37,14 +49,14 @@ class ProviderManager:
     """管理所有 Provider"""
     
     _instance = None
-    _providers: Dict[str, BaseProvider] = {}  # Provider instances
-    _provider_configs: Dict[str, dict]
+    _providers: dict[str, BaseProvider] = {}  # Provider instances
+    _provider_configs: dict[str, dict]
     
     # Registry data
-    _registry: Dict[str, Type[BaseProvider]] = {}  # Provider classes
-    _manifests: Dict[str, dict] = {}
-    _manifest_dirs: Dict[str, Path] = {}
-    _schemas: Dict[str, dict] = {}
+    _registry: dict[str, type[BaseProvider]] = {}  # Provider classes
+    _manifests: dict[str, dict] = {}
+    _manifest_dirs: dict[str, Path] = {}
+    _schemas: dict[str, dict] = {}
     
     def __new__(cls, db: DatabaseService, kira_config: KiraConfig):
         if cls._instance is None:
@@ -66,7 +78,7 @@ class ProviderManager:
             self._load_providers()
             
     @classmethod
-    def get_provider_class(cls, name: str) -> Optional[Type]:
+    def get_provider_class(cls, name: str) -> type | None:
         return cls._registry.get(name)
 
     @classmethod
@@ -84,7 +96,7 @@ class ProviderManager:
         return copy.deepcopy(manifest) if manifest else {}
 
     @classmethod
-    def get_icon_path(cls, name: str, dark: bool = False) -> Optional[Path]:
+    def get_icon_path(cls, name: str, dark: bool = False) -> Path | None:
         manifest_dir = cls._manifest_dirs.get(name)
         manifest = cls._manifests.get(name, {})
         if not manifest_dir:
@@ -94,7 +106,7 @@ class ProviderManager:
         )
 
     @classmethod
-    def register_provider_type(cls, provider_format: str, provider_cls: Type[BaseProvider], manifest: dict, manifest_dir: Path, schema: Optional[dict] = None) -> None:
+    def register_provider_type(cls, provider_format: str, provider_cls: type[BaseProvider], manifest: dict, manifest_dir: Path, schema: dict | None = None) -> None:
         """Register a Provider type supplied by a plugin."""
         if not isinstance(provider_format, str) or not provider_format.strip():
             raise ValueError("Provider format must be a non-empty string")
@@ -112,7 +124,7 @@ class ProviderManager:
         cls._schemas[provider_format] = copy.deepcopy(schema) if schema else {}
 
     @classmethod
-    def unregister_provider_type(cls, provider_format: str, provider_cls: Type[BaseProvider]) -> bool:
+    def unregister_provider_type(cls, provider_format: str, provider_cls: type[BaseProvider]) -> bool:
         """Remove a plugin Provider type without affecting another owner."""
         if cls._registry.get(provider_format) is not provider_cls:
             return False
@@ -136,8 +148,8 @@ class ProviderManager:
         self,
         provider_id: str,
         model_id: str,
-        model_type: Optional[ModelType | str] = None,
-    ) -> Optional[BaseModelClient]:
+        model_type: ModelType | str | None = None,
+    ) -> BaseModelClient | None:
         provider = self._require_provider_available(provider_id)
         model_info = self.get_model_info(provider_id, model_id, model_type)
         if not model_info:
@@ -295,7 +307,7 @@ class ProviderManager:
             raise ValueError(f"{model_key} model not found")
         return info
 
-    def get_provider_info(self, provider_id: str) -> Optional[ProviderInfo]:
+    def get_provider_info(self, provider_id: str) -> ProviderInfo | None:
         providers_config = self.kira_config.get("providers", {})
         config = providers_config.get(provider_id)
         if not config:
@@ -349,7 +361,7 @@ class ProviderManager:
             if isinstance(field, BaseConfigField)
         }
 
-    def register_model(self, provider_id: str, model_type: str, model_name: str, config: Optional[dict] = None):
+    def register_model(self, provider_id: str, model_type: str, model_name: str, config: dict | None = None):
         """Register an upstream model under a generated, immutable internal ID."""
         ModelType(model_type)
         model_name = model_name.strip()
@@ -392,8 +404,8 @@ class ProviderManager:
 
     def get_model_info(
         self, provider_id: str, model_id: str,
-        model_type: Optional[ModelType | str] = None,
-    ) -> Optional[ModelInfo]:
+        model_type: ModelType | str | None = None,
+    ) -> ModelInfo | None:
         provider = self.kira_config.get("providers", {}).get(provider_id) or {}
         if isinstance(model_type, str):
             model_type = ModelType(model_type)
@@ -414,8 +426,8 @@ class ProviderManager:
         ]
 
     def update_model(
-        self, provider_id: str, model_type: str, model_id: str, config: Optional[dict] = None,
-        model_name: Optional[str] = None,
+        self, provider_id: str, model_type: str, model_id: str, config: dict | None = None,
+        model_name: str | None = None,
     ) -> bool:
         ModelType(model_type)
         original = self.kira_config.get("providers", {}).get(provider_id)
@@ -454,7 +466,7 @@ class ProviderManager:
 
     def sync_models(
         self, provider_id: str, model_type: str, add_ids: list[str],
-        delete_ids: list[str], config: Optional[dict] = None,
+        delete_ids: list[str], config: dict | None = None,
     ) -> dict:
         """Sync upstream names while preserving IDs and configs of retained entries."""
         ModelType(model_type)
@@ -562,7 +574,7 @@ class ProviderManager:
                             raw_schema = json.load(f)
                         if isinstance(raw_schema, dict):
                             provider_fields: list[BaseConfigField] = []
-                            model_fields: Dict[str, list[BaseConfigField]] = {}
+                            model_fields: dict[str, list[BaseConfigField]] = {}
                             provider_config_schema = raw_schema.get("provider_config") or {}
                             if isinstance(provider_config_schema, dict):
                                 provider_fields = build_fields(provider_config_schema)
@@ -682,7 +694,7 @@ class ProviderManager:
             type_models = model_config_root.get(model_type)
             if not isinstance(type_models, dict):
                 continue
-            for model_id, model_entry in type_models.items():
+            for model_entry in type_models.values():
                 if not isinstance(model_entry, dict):
                     continue
                 model_cfg = model_entry.get("config") if provider_config.get("model_config_version") == MODEL_CONFIG_VERSION else model_entry
@@ -755,7 +767,7 @@ class ProviderManager:
         if provider.get("status", "active") != "active":
             self._providers.pop(provider_id, None)
             return
-        provider_type = provider.get("type")
+        provider.get("type")
         provider_format = provider.get("format")
         provider_name = provider.get("name", provider_id)
 
@@ -777,14 +789,14 @@ class ProviderManager:
         if provider_inst:
             self._providers[provider_id] = provider_inst
 
-    def get_provider(self, provider_id: str) -> Optional[BaseProvider]:
+    def get_provider(self, provider_id: str) -> BaseProvider | None:
         """获取指定的 provider"""
         config = self.kira_config.get("providers", {}).get(provider_id, {})
         if config.get("status", "active") != "active":
             return None
         return self._providers.get(provider_id)
     
-    def get_all_providers(self) -> Dict[str, BaseProvider]:
+    def get_all_providers(self) -> dict[str, BaseProvider]:
         """获取所有 providers"""
         return self._providers.copy()
 

@@ -14,9 +14,18 @@ from bilibili_api.video import Video as BiliVideo
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import IMCapability
-from core.adapter.message_format_metadata import MessageFormatMetadata, load_emoji_mapping
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, User
-from core.chat.message_elements import Text, Image, Emoji
+from core.adapter.message_format_metadata import (
+    MessageFormatMetadata,
+    load_emoji_mapping,
+)
+from core.chat import (
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+    User,
+)
+from core.chat.message_elements import Emoji, Image, Text
 
 from .client import _BiliBiliPicture, load_picture
 
@@ -180,8 +189,8 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
         stage = "send text"
         timeout = self.adapter.get_client().timeout
         try:
-            from bilibili_api.session import send_msg
             from bilibili_api.session import EventType as SessionEventType
+            from bilibili_api.session import send_msg
 
             text_parts: list[str] = []
 

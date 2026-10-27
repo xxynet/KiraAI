@@ -7,11 +7,15 @@ from fastapi.testclient import TestClient
 
 from core.plugin import store as store_module
 from core.plugin.store import extract_plugins
-from webui.models import PluginStoreFetchRequest, PluginStoreItemResponse, PluginStoreSourceCreateRequest
-from webui.routes.auth import require_auth
 from webui.app import KiraWebUI
-from webui.routes.plugins import PluginsRoutes
+from webui.models import (
+    PluginStoreFetchRequest,
+    PluginStoreItemResponse,
+    PluginStoreSourceCreateRequest,
+)
+from webui.routes.auth import require_auth
 from webui.routes.plugin_store import PluginStoreRoutes
+from webui.routes.plugins import PluginsRoutes
 
 
 class FakeDatabaseService:
@@ -247,7 +251,7 @@ def test_registered_store_routes_preserve_source_and_cache_lifecycle(tmp_path, m
         return raw
 
     monkeypatch.setattr(store_module, "get_json", fetch)
-    lifecycle = SimpleNamespace(db_service=database, plugin_manager=SimpleNamespace(list_plugins=lambda: []))
+    lifecycle = SimpleNamespace(db_service=database, plugin_manager=SimpleNamespace(list_plugins=list))
     app = KiraWebUI(lifecycle, dist_dir=tmp_path / "dist", disable_auth=True).get_app()
     actual = [(route.path, method) for route in app.routes if route.path.startswith("/api/plugin-store/") for method in route.methods]
     assert len(actual) == len(set(actual)) == 5

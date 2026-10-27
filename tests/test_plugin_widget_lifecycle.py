@@ -5,6 +5,7 @@ from core.plugin import manager as manager_module
 from core.plugin import registry
 from core.provider import BaseProvider
 
+
 def test_cleanup_preserves_widget_declarations(monkeypatch):
     """Widgets must remain declared so a disabled plugin can be re-enabled."""
     plugin_id = "widget_lifecycle_test"

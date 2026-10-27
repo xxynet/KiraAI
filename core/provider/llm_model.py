@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional, Callable, Literal
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Literal
 
-from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage
+from core.agent.tool import ToolSet
 from core.prompt_manager import Prompt
 
 # Names of system prompt blocks whose content changes on nearly every request.
@@ -30,16 +31,16 @@ class LLMRequest:
     system_prompt: list[Prompt] = field(default_factory=list)
 
     """optional: tool definitions for llm to call"""
-    tools: Optional[list[dict]] = None
+    tools: list[dict] | None = None
 
     """optional: tool functions"""
-    tool_funcs: Optional[dict[str, Callable]] = None
+    tool_funcs: dict[str, Callable] | None = None
 
     """tool set object"""
-    tool_set: Optional[ToolSet] = None
+    tool_set: ToolSet | None = None
 
     """controls llm behavior of tool calling"""
-    tool_choice: Optional[Literal["auto", "none", "required"]] = None
+    tool_choice: Literal["auto", "none", "required"] | None = None
 
     def __post_init__(self):
         self.messages = [
@@ -128,7 +129,7 @@ class LLMResponse:
     reasoning_content: str = ""
 
     """agent step index"""
-    agent_step_index: Optional[int] = None
+    agent_step_index: int | None = None
 
     """Tool call requests in OpenAI format"""
     tool_calls: list[dict] = field(default_factory=list)
@@ -136,15 +137,15 @@ class LLMResponse:
     """Tool results list in OpenAI format, including role assistant & tool"""
     tool_results: list[dict] = field(default_factory=list)
 
-    input_tokens: Optional[int] = None
+    input_tokens: int | None = None
 
-    output_tokens: Optional[int] = None
+    output_tokens: int | None = None
 
     """cached tokens hit count"""
-    cached_tokens: Optional[int] = None
+    cached_tokens: int | None = None
 
     """Units: seconds"""
-    time_consumed: Optional[float] = None
+    time_consumed: float | None = None
 
     """Whether the model response succeeded or contains an error diagnostic."""
     status: Literal["success", "error"] = "success"
@@ -175,7 +176,7 @@ class LLMStreamChunk:
     finish_reason: str = ""
 
     """Token usage — only populated on the final chunk"""
-    usage: Optional[dict] = None
+    usage: dict | None = None
 
 
 @dataclass

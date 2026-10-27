@@ -1,4 +1,4 @@
-from core.provider import ModelType, BaseProvider
+from core.provider import BaseProvider, ModelType
 
 from .model_clients import GptSovitsTTSClient
 

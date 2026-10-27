@@ -1,7 +1,7 @@
 """Context-derived ownership and visibility for conversation memories."""
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 
 
 class MemoryInputError(ValueError):
@@ -86,7 +86,7 @@ class MemoryScope:
         owners.extend(("user", self.owner("user", uid)) for uid in self.users)
         clause = " OR ".join(f"({alias}.owner_type = ? AND {alias}.owner_id = ?)" for _ in owners)
         return (
-            f"{alias}.persona_id = ? AND {alias}.session_id = ? "
-            f"AND ({clause})",
+            (f"{alias}.persona_id = ? AND {alias}.session_id = ? "
+            f"AND ({clause})"),
             [self.persona_id, self.session_id, *[value for pair in owners for value in pair]],
         )

@@ -2,7 +2,6 @@
 
 import uuid
 
-
 MODEL_CONFIG_VERSION = 2
 DEFAULT_MODEL_TYPES = {
     "default_llm": "llm",

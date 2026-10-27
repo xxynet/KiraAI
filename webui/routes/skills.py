@@ -1,17 +1,14 @@
 import asyncio
-import json
 import os
 import shutil
 import tempfile
 import zipfile
-from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
 from core.logging_manager import get_logger
-from core.agent.skills_mgr import SkillsManager
 from core.utils.path_utils import safe_extract_zip
 from webui.models import SkillItem
 from webui.routes.auth import require_auth
@@ -27,7 +24,7 @@ class SkillsRoutes(Routes):
                 path="/api/skills",
                 methods=["GET"],
                 endpoint=self.list_skills,
-                response_model=List[SkillItem],
+                response_model=list[SkillItem],
                 tags=["skills"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -98,7 +95,7 @@ class SkillsRoutes(Routes):
             sizes = await asyncio.gather(
                 *(asyncio.to_thread(self._folder_size, skill.path) for skill in skills_info)
             )
-            items: List[SkillItem] = []
+            items: list[SkillItem] = []
             for skill, size_bytes in zip(skills_info, sizes):
                 items.append(
                     SkillItem(
@@ -115,7 +112,7 @@ class SkillsRoutes(Routes):
             logger.error(f"Failed to list skills: {e}")
             raise HTTPException(status_code=500, detail="Failed to list skills")
 
-    async def set_skill_enabled(self, skill_name: str, payload: Dict):
+    async def set_skill_enabled(self, skill_name: str, payload: dict):
         if not self.lifecycle or not hasattr(self.lifecycle, "skills_manager"):
             raise HTTPException(status_code=503, detail="Skills manager not available")
         try:
@@ -217,8 +214,8 @@ class SkillsRoutes(Routes):
         skills_dir = skills_manager.skills_dir
 
         try:
-            import zipfile
             import tempfile
+            import zipfile
 
             # Create a temporary directory to extract the zip
             with tempfile.TemporaryDirectory() as temp_dir:

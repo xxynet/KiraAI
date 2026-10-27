@@ -1,35 +1,43 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import inspect
 import time
-from pathlib import Path
-from typing import Optional, TYPE_CHECKING, Literal, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from ..provider import ProviderManager, ModelType, LLMModelClient, EmbeddingModelClient
-from core.chat.session_manager import SessionManager
-from ..adapter import AdapterManager, BaseAdapter, BaseCapability, IMCapability
-from core.event_bus import EventBus
 from core.agent.func_tool_manager import FuncToolManager
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, User, Group, KiraIMSentResult
+from core.chat import (
+    Group,
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+    User,
+)
+from core.chat.session_manager import SessionManager
 from core.config import KiraConfig
+from core.event_bus import EventBus
 from core.persona import PersonaManager
 from core.sticker_manager import StickerManager
 from core.utils.path_utils import get_data_path
-from core.chat.message_elements import Text
 from core.workflow.src.im.batching import publish_buffered_messages
 
+from ..adapter import AdapterManager, BaseAdapter, BaseCapability, IMCapability
+from ..provider import EmbeddingModelClient, LLMModelClient, ModelType, ProviderManager
+
 if TYPE_CHECKING:
-    from .manager import PluginManager
     from core.agent.mcp_mgr import MCPManager
     from core.agent.skills_mgr import SkillsManager
-    from core.prompt_manager import PromptManager
-    from core.message_manager import MessageProcessor
     from core.chat.message_history import MessageHistoryService
+    from core.chat.session_buffer import SessionBufferManager
     from core.db.service import DatabaseService
     from core.image_desc_cache import ImageDescCache
-    from core.chat.session_buffer import SessionBufferManager
+    from core.message_manager import MessageProcessor
+    from core.prompt_manager import PromptManager
     from core.workflow.src.im.message_delivery import MessageDeliveryService
+
+    from .manager import PluginManager
 
 
 @dataclass
@@ -56,7 +64,7 @@ class PluginContext:
 
     skills_mgr: SkillsManager
 
-    mcp_mgr: Optional[MCPManager]
+    mcp_mgr: MCPManager | None
 
     message_processor: MessageProcessor
 
@@ -69,7 +77,7 @@ class PluginContext:
 
     message_delivery: MessageDeliveryService
 
-    plugin_mgr: Optional[PluginManager] = None
+    plugin_mgr: PluginManager | None = None
 
     @property
     def sticker_manager(self) -> StickerManager:
@@ -110,7 +118,7 @@ class PluginContext:
     async def flush_session_messages(
         self,
         sid: str,
-        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+        filter_fn: Callable[[KiraMessageEvent], bool] | None = None,
     ) -> bool:
         """Publish matching buffered events, leaving unmatched events buffered.
 
@@ -129,7 +137,7 @@ class PluginContext:
         client = self.get_llm_client(llm_type="fast")
         return client
 
-    def get_llm_client(self, model_uuid: Optional[str] = None, llm_type: Optional[str] = None) -> Optional[LLMModelClient]:
+    def get_llm_client(self, model_uuid: str | None = None, llm_type: str | None = None) -> LLMModelClient | None:
         """
         Get LLMModelClient object by model uuid
         :param model_uuid: provider_id:model_id
@@ -239,12 +247,12 @@ class PluginContext:
             plugin_id, platform, capability_type,
         )
 
-    def get_default_embedding_client(self) -> Optional[EmbeddingModelClient]:
+    def get_default_embedding_client(self) -> EmbeddingModelClient | None:
         client = self.provider_mgr.get_default_embedding()
         if isinstance(client, EmbeddingModelClient):
             return client
 
-    def get_embedding_client(self, model_uuid: str, default: bool = False) -> Optional[EmbeddingModelClient]:
+    def get_embedding_client(self, model_uuid: str, default: bool = False) -> EmbeddingModelClient | None:
         if default:
             client = self.provider_mgr.get_default_embedding()
             if isinstance(client, EmbeddingModelClient):
@@ -261,7 +269,7 @@ class PluginContext:
             return client
         return
 
-    async def emit_custom_event(self, event_name: str, payload: dict = None):
+    async def emit_custom_event(self, event_name: str, payload: dict | None = None):
         from core.chat.message_utils import KiraCustomEvent
 
         plugin_id = None

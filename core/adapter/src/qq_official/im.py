@@ -9,7 +9,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 from weakref import ReferenceType, ref
 
 try:
@@ -19,11 +19,24 @@ except ImportError:
 
 from core.adapter.capabilities import IMCapability
 from core.adapter.message_format_metadata import MessageFormatMetadata
-from core.chat import Group, User, KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain
+from core.chat import (
+    Group,
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+    User,
+)
 from core.chat.message_elements import At, Emoji, File, Image, Reply, Text
 from core.logging_manager import get_logger
 
-from .message_parser import AT_MARKUP, QQOfficialMessageParser, field, message_timestamp, scene_value
+from .message_parser import (
+    AT_MARKUP,
+    QQOfficialMessageParser,
+    field,
+    message_timestamp,
+    scene_value,
+)
 
 if TYPE_CHECKING:
     from .qq_official import QQOfficialAdapter
@@ -42,7 +55,7 @@ class _ReceivedMessage:
 
     seen_at: float
     force_mention: bool = False
-    message: Optional[ReferenceType[KiraIMMessage]] = None
+    message: ReferenceType[KiraIMMessage] | None = None
 
 
 class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
@@ -109,7 +122,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
 
     def _accept_message(
         self, message, is_group: bool, target_id: str, force_mention: bool = False,
-    ) -> Optional[_ReceivedMessage]:
+    ) -> _ReceivedMessage | None:
         """Merge forced mentions into an existing message while publishing it only once."""
         message_id = str(field(message, "id", "") or "")
         now = time.monotonic()
@@ -203,7 +216,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         return "".join(parts).strip()
 
     @staticmethod
-    def _media_payload(upload_result: Any) -> Optional[dict[str, str]]:
+    def _media_payload(upload_result: Any) -> dict[str, str] | None:
         """Build the rich-media payload expected by QQ's message API."""
         if isinstance(upload_result, dict):
             file_info = upload_result.get("file_info")
@@ -214,7 +227,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         return {"file_info": file_info}
 
     @staticmethod
-    def _result_message_id(result: Any) -> Optional[str]:
+    def _result_message_id(result: Any) -> str | None:
         if isinstance(result, dict):
             value = result.get("id") or result.get("message_id")
         else:
@@ -223,7 +236,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
 
     async def _upload_file(
         self, target_id: str, media_element: File | Image, is_group: bool
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Upload a file or image and return the QQ media payload."""
         if not self.adapter.client:
             return None
@@ -310,7 +323,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
 
     def _resolve_reply_id(
         self, is_group: bool, target_id: str, send_message_obj: MessageChain
-    ) -> Optional[str]:
+    ) -> str | None:
         reply_ids = self._group_reply_ids if is_group else self._direct_reply_ids
         latest_id = reply_ids.get(target_id)
         for element in send_message_obj:
@@ -324,7 +337,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
             return None
         return latest_id
 
-    def _resolve_reference(self, is_group: bool, target_id: str, chain: MessageChain) -> Optional[str]:
+    def _resolve_reference(self, is_group: bool, target_id: str, chain: MessageChain) -> str | None:
         for element in chain:
             if isinstance(element, Reply):
                 raw_id = self._reply_id_aliases.get((is_group, target_id, element.message_id))
@@ -340,18 +353,18 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
             reply_ids.pop(target_id, None)
 
     @staticmethod
-    def _send_error_code(exc: Exception) -> Optional[str]:
+    def _send_error_code(exc: Exception) -> str | None:
         match = re.search(r"\b(?:304103|40034005|40034128|40034100|40034105|40034006|40034024)\b", str(exc))
         return match[0] if match else None
 
     async def send_group_message(
-        self, group_id: Union[int, str], send_message_obj: MessageChain
-    ) -> Optional[KiraIMSentResult]:
+        self, group_id: int | str, send_message_obj: MessageChain
+    ) -> KiraIMSentResult | None:
         return await self._send_message(str(group_id), send_message_obj, is_group=True)
 
     async def send_direct_message(
-        self, user_id: Union[int, str], send_message_obj: MessageChain
-    ) -> Optional[KiraIMSentResult]:
+        self, user_id: int | str, send_message_obj: MessageChain
+    ) -> KiraIMSentResult | None:
         return await self._send_message(str(user_id), send_message_obj, is_group=False)
 
     async def _send_message(

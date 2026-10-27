@@ -1,15 +1,15 @@
 import asyncio
+import inspect
 import os
 import re
-import inspect
 import uuid
-
-from typing import Optional, Union, Any, Callable
+from collections.abc import Callable
 from copy import deepcopy
+from typing import Any
 
+from core.db.service import DatabaseService
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
-from core.db.service import DatabaseService
 
 logger = get_logger("sticker", "orange")
 
@@ -86,7 +86,7 @@ class StickerManager:
     def sticker_paths(self) -> list:
         return self._sticker_paths
 
-    async def register_sticker(self, filename: str, desc: str, sticker_id: Optional[str] = None):
+    async def register_sticker(self, filename: str, desc: str, sticker_id: str | None = None):
         if sticker_id:
             sid = str(sticker_id)
         else:
@@ -129,7 +129,7 @@ class StickerManager:
                     logger.error(f"Error deleting sticker file {file_path}: {e}")
         await self.db.delete_sticker(sid)
 
-    def set_sticker_extra(self, sticker_id: str, key: Union[int, str], value: Any):
+    def set_sticker_extra(self, sticker_id: str, key: int | str, value: Any):
         sticker_info_dict = self._sticker_cache.get(sticker_id)
         if sticker_info_dict:
             if key is None:
@@ -138,7 +138,7 @@ class StickerManager:
             return True
         return False
 
-    def get_sticker_extra(self, sticker_id: str, key: Optional[Union[int, str]] = None):
+    def get_sticker_extra(self, sticker_id: str, key: int | str | None = None):
         sticker_info_dict = self._sticker_cache.get(sticker_id)
         if sticker_info_dict is None:
             raise KeyError(sticker_id)
@@ -166,8 +166,7 @@ class StickerManager:
             if sid.isdigit():
                 try:
                     numeric_id = int(sid)
-                    if numeric_id > self._sticker_index:
-                        self._sticker_index = numeric_id
+                    self._sticker_index = max(self._sticker_index, numeric_id)
                 except Exception:
                     pass
         else:

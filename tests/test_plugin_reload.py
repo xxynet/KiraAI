@@ -1,10 +1,9 @@
 import asyncio
 import json
 
-from core.plugin.handlers import EventType, event_handler_reg
 from core.plugin import manager as manager_module
 from core.plugin import registry
-
+from core.plugin.handlers import EventType, event_handler_reg
 
 PLUGIN_ID = "multi_file_reload_plugin"
 

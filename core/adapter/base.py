@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from deprecated import deprecated
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar
+
+from deprecated import deprecated
 
 from .access import AccessController
 from .context import AdapterContext
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
     from .qr_login import QRCodeLoginHandler
 
 
-AdapterTargetId: TypeAlias = Union[int, str]
+AdapterTargetId: TypeAlias = int | str
 AdapterT = TypeVar("AdapterT", bound="BaseAdapter")
 CapabilityT = TypeVar("CapabilityT", bound="BaseCapability[Any]")
 
@@ -179,7 +180,7 @@ class BaseAdapter(ABC):
     def get_client(self) -> Any: ...
 
 
-class BaseCapability(Generic[AdapterT], ABC):
+class BaseCapability(ABC, Generic[AdapterT]):
     """An operation provider owned by one adapter and registered under a capability type.
 
     Specialize the adapter type to expose platform-specific members in editors,

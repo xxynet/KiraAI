@@ -5,17 +5,16 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from tests.adapter_lifecycle import start_adapter
-
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.base import BaseAdapter
 from core.adapter.capabilities import FeedCapability, IMCapability
 from core.adapter.context import AdapterContext
 from core.adapter.feed import FeedQuery, FeedRef, FeedSearchQuery
-from core.chat import MessageChain
-from core.chat.message_elements import Text
 from core.adapter.src.bilibili.bilibili import BiliBiliAdapter
 from core.adapter.src.bilibili.feed import BiliBiliFeedCapability
+from core.chat import MessageChain
+from core.chat.message_elements import Text
+from tests.adapter_lifecycle import start_adapter
 
 adapter_module = importlib.import_module("core.adapter.src.bilibili.bilibili")
 client_module = importlib.import_module("core.adapter.src.bilibili.client")

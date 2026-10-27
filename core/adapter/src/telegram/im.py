@@ -4,15 +4,35 @@ import asyncio
 import base64
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from core.adapter.capabilities import IMCapability
-from core.adapter.message_format_metadata import MessageFormatMetadata, load_emoji_mapping
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, Group, User
-from core.chat.message_elements import Text, Image, At, Reply, Emoji, Sticker, Record, File, Video
+from core.adapter.message_format_metadata import (
+    MessageFormatMetadata,
+    load_emoji_mapping,
+)
+from core.chat import (
+    Group,
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+    User,
+)
+from core.chat.message_elements import (
+    At,
+    Emoji,
+    File,
+    Image,
+    Record,
+    Reply,
+    Sticker,
+    Text,
+    Video,
+)
 from core.utils.network import get_file_content
 
 if TYPE_CHECKING:
@@ -167,7 +187,7 @@ class TelegramIMCapability(IMCapability["TelegramAdapter"]):
             self.publish(message_obj)
 
     async def _process_incoming_message(self, tg_message) -> MessageChain:
-        elements: List = []
+        elements: list = []
 
         # Reply
         if tg_message.reply_to_message:
@@ -321,7 +341,7 @@ class TelegramIMCapability(IMCapability["TelegramAdapter"]):
         """Escape special characters for Telegram HTML parse mode."""
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
-    async def _send_message_to_chat(self, chat_id: int, message: MessageChain) -> Optional[str]:
+    async def _send_message_to_chat(self, chat_id: int, message: MessageChain) -> str | None:
         """Core send logic shared by group and direct messages.
 
         Iterates over message elements in ``message`` and sends them
@@ -431,7 +451,7 @@ class TelegramIMCapability(IMCapability["TelegramAdapter"]):
 
         return message_id
 
-    async def send_group_message(self, group_id: Union[int, str], message: MessageChain):
+    async def send_group_message(self, group_id: int | str, message: MessageChain):
         if not self.adapter.app:
             return KiraIMSentResult(ok=False, err="Telegram bot not started")
         try:
@@ -440,7 +460,7 @@ class TelegramIMCapability(IMCapability["TelegramAdapter"]):
         except Exception as e:
             return KiraIMSentResult(ok=False, err=f"Failed to send group message ({type(e).__name__})")
 
-    async def send_direct_message(self, user_id: Union[int, str], message: MessageChain):
+    async def send_direct_message(self, user_id: int | str, message: MessageChain):
         if not self.adapter.app:
             return KiraIMSentResult(ok=False, err="Telegram bot not started")
         try:

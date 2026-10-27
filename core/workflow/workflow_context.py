@@ -1,16 +1,14 @@
 from dataclasses import dataclass
-import inspect
-from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
-from ..provider import ProviderManager
-from ..adapter import AdapterManager
+from core.agent.func_tool_manager import FuncToolManager
 from core.chat.session_manager import SessionManager
 from core.config import KiraConfig
 from core.event_bus import EventBus
-from core.agent.func_tool_manager import FuncToolManager
 from core.persona import PersonaManager
-from core.utils.path_utils import get_data_path
+
+from ..adapter import AdapterManager
+from ..provider import ProviderManager
 
 if TYPE_CHECKING:
     from core.plugin.manager import PluginManager

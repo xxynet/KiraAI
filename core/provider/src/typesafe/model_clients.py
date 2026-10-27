@@ -10,8 +10,13 @@ from pydantic import ConfigDict, Field, validate_call
 
 from core.config.default import VERSION
 from core.provider import (
-    ChoiceResponse, DecisionContent, DecisionModelClient, DecisionResponse,
-    NoulResponse, ProviderAPIError, ScoreResponse,
+    ChoiceResponse,
+    DecisionContent,
+    DecisionModelClient,
+    DecisionResponse,
+    NoulResponse,
+    ProviderAPIError,
+    ScoreResponse,
 )
 
 DEFAULT_BASE_URL = "https://api.typesafe.ai/v1"

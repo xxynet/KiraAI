@@ -4,9 +4,10 @@ import asyncio
 import json
 import os
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -24,9 +25,9 @@ class StoreSource:
     """An immutable source snapshot; persisted changes remain owned by the database."""
 
     url: str
-    id: Optional[str] = None
+    id: str | None = None
     name: str = ""
-    cache_file: Optional[str] = None
+    cache_file: str | None = None
     updated_at: int = 0
     is_current: bool = False
     created_at: int = 0
@@ -50,40 +51,40 @@ class PluginStoreItemResponse(BaseModel):
     version: str = ""
     author: str = ""
     description: str = ""
-    category: Optional[str] = None
-    category_name: Optional[str] = None
-    category_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
-    repo: Optional[str] = None
-    commit_sha: Optional[str] = None
-    release_tag: Optional[str] = None
-    icon: Optional[str] = None
-    icon_dark: Optional[str] = None
-    locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
-    tags: List[str] = Field(default_factory=list)
-    core_version: Optional[str] = None
+    category: str | None = None
+    category_name: str | None = None
+    category_locales: dict[str, dict[str, str]] = Field(default_factory=dict)
+    repo: str | None = None
+    commit_sha: str | None = None
+    release_tag: str | None = None
+    icon: str | None = None
+    icon_dark: str | None = None
+    locales: dict[str, dict[str, str]] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    core_version: str | None = None
     stars: int = 0
-    updated_at: Optional[Union[int, str]] = None
+    updated_at: int | str | None = None
 
 
 @dataclass
 class StoreFetchResult:
     data: Any
-    cache_file: Optional[str] = None
-    updated_at: Optional[int] = None
-    fetch_error: Optional[Exception] = None
+    cache_file: str | None = None
+    updated_at: int | None = None
+    fetch_error: Exception | None = None
 
 
 class PluginStore:
     """Retrieve and cache a catalog bound to one immutable source snapshot."""
 
-    def __init__(self, source: StoreSource, cache_dir: Optional[Path] = None):
+    def __init__(self, source: StoreSource, cache_dir: Path | None = None):
         self.source = source
         self.cache_dir = cache_dir if cache_dir is not None else get_data_path() / "plugin_src"
 
-    async def read_cache(self, *, strict: bool = False) -> Optional[Any]:
+    async def read_cache(self, *, strict: bool = False) -> Any | None:
         return await asyncio.to_thread(self._read_cache, self.source.cache_file, strict)
 
-    def _read_cache(self, cache_file: Optional[str], strict: bool) -> Optional[Any]:
+    def _read_cache(self, cache_file: str | None, strict: bool) -> Any | None:
         if not cache_file:
             return None
         cache_path = self.cache_dir / cache_file
@@ -97,7 +98,7 @@ class PluginStore:
             logger.warning(f"Failed to read plugin store cache {cache_path}: {error}")
             return None
 
-    def _write_cache(self, data: Any, existing_filename: Optional[str]) -> str:
+    def _write_cache(self, data: Any, existing_filename: str | None) -> str:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         if existing_filename and (self.cache_dir / existing_filename).exists():
             filename = existing_filename
@@ -156,7 +157,7 @@ class PluginStore:
             result.updated_at = int(time.time())
         return result
 
-    async def refresh_cache(self) -> Optional[str]:
+    async def refresh_cache(self) -> str | None:
         """Refresh a source cache without failing source creation or selection."""
         try:
             result = await self.fetch(force_refresh=True, persist_cache=True)
@@ -178,7 +179,7 @@ class PluginStore:
             logger.warning(f"Failed to delete cache file {cache_path}: {error}")
 
 
-def extract_plugins(raw_data: Any) -> List[PluginStoreItemResponse]:
+def extract_plugins(raw_data: Any) -> list[PluginStoreItemResponse]:
     """Extract and normalize plugin entries from raw store JSON.
 
     Supports the standard format ``{\"plugins\": {\"<id>\": {...}, ...}}``
@@ -192,7 +193,7 @@ def extract_plugins(raw_data: Any) -> List[PluginStoreItemResponse]:
     GitHub metadata is limited to the public star count used for sorting.
     """
     raw_plugins: Any = None
-    category_catalog: Dict[str, Any] = {}
+    category_catalog: dict[str, Any] = {}
     if isinstance(raw_data, dict):
         raw_plugins = raw_data.get("plugins", [])
         raw_categories = raw_data.get("categories")
@@ -209,7 +210,7 @@ def extract_plugins(raw_data: Any) -> List[PluginStoreItemResponse]:
     else:
         plugin_list = list(raw_plugins)
 
-    result: List[PluginStoreItemResponse] = []
+    result: list[PluginStoreItemResponse] = []
     for raw in plugin_list:
         if not isinstance(raw, dict):
             continue

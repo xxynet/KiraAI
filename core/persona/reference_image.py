@@ -24,7 +24,7 @@ def _image_directory(persona_id: str) -> Path:
     if (not persona_id or re.search(r'[\\/:*?"<>|\x00-\x1f]', persona_id)
             or persona_id.endswith((".", " "))
             or persona_id in {".", ".."}
-            or re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]", persona_id.split(".", 1)[0], re.I)):
+            or re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]", persona_id.split(".", 1)[0], re.IGNORECASE)):
         raise ValueError("Invalid persona ID for reference image storage")
     data_dir = get_data_path().resolve()
     directory = data_dir / REFERENCE_IMAGE_DIRECTORY

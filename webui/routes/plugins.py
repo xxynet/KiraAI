@@ -1,17 +1,18 @@
 import asyncio
 import shutil
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Optional
 from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
-from core.plugin.manager import PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.logging_manager import get_logger
+from core.plugin.manager import PLUGIN_CONFIG_DIR, PLUGIN_DATA_DIR, _compare_versions
 from core.plugin.plugin_installer import (
     MAX_PLUGIN_ARCHIVE_BYTES,
     PluginAlreadyInstalledError,
@@ -21,8 +22,18 @@ from core.plugin.plugin_installer import (
 )
 from core.plugin.store import PluginStore, StoreSource, extract_plugins
 from webui.models import (
-    PageMenu, PluginComponent, PluginConfigUpdateRequest, PluginInstallGithubRequest, PluginInstallResult, PluginInstallTask, PluginItem,
-    PluginUpdateCheckItem, PluginUpdateRequest, PluginUpdateQueueRequest, PluginUpdateTask, PluginTask,
+    PageMenu,
+    PluginComponent,
+    PluginConfigUpdateRequest,
+    PluginInstallGithubRequest,
+    PluginInstallResult,
+    PluginInstallTask,
+    PluginItem,
+    PluginTask,
+    PluginUpdateCheckItem,
+    PluginUpdateQueueRequest,
+    PluginUpdateRequest,
+    PluginUpdateTask,
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -37,8 +48,8 @@ class PluginsRoutes(Routes):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._plugin_install_lock = asyncio.Lock()
-        self._plugin_tasks: Dict[str, Dict[str, Any]] = {}
-        self._plugin_task_worker: Optional[asyncio.Task] = None
+        self._plugin_tasks: dict[str, dict[str, Any]] = {}
+        self._plugin_task_worker: asyncio.Task | None = None
 
     def get_routes(self):
         return [
@@ -54,17 +65,17 @@ class PluginsRoutes(Routes):
             ),
             RouteDefinition(
                 path="/api/plugins/tasks/updates", methods=["POST"],
-                endpoint=self.enqueue_task_updates, response_model=List[PluginTask],
+                endpoint=self.enqueue_task_updates, response_model=list[PluginTask],
                 tags=["plugins"], dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
                 path="/api/plugins/tasks", methods=["GET"],
-                endpoint=self.list_plugin_tasks, response_model=List[PluginTask],
+                endpoint=self.list_plugin_tasks, response_model=list[PluginTask],
                 tags=["plugins"], dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
                 path="/api/plugins/tasks", methods=["DELETE"],
-                endpoint=self.clear_finished_plugin_tasks, response_model=List[PluginTask],
+                endpoint=self.clear_finished_plugin_tasks, response_model=list[PluginTask],
                 tags=["plugins"], dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
@@ -81,7 +92,7 @@ class PluginsRoutes(Routes):
                 path="/api/plugins",
                 methods=["GET"],
                 endpoint=self.list_plugins,
-                response_model=List[PluginItem],
+                response_model=list[PluginItem],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -131,7 +142,7 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/{plugin_id}/components",
                 methods=["GET"],
                 endpoint=self.get_plugin_components,
-                response_model=List[PluginComponent],
+                response_model=list[PluginComponent],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -201,7 +212,7 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/updates/check",
                 methods=["POST"],
                 endpoint=self.check_plugin_updates,
-                response_model=List[PluginUpdateCheckItem],
+                response_model=list[PluginUpdateCheckItem],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -209,7 +220,7 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/updates/tasks",
                 methods=["POST"],
                 endpoint=self.enqueue_plugin_updates,
-                response_model=List[PluginUpdateTask],
+                response_model=list[PluginUpdateTask],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -217,7 +228,7 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/updates/tasks",
                 methods=["GET"],
                 endpoint=self.list_update_tasks,
-                response_model=List[PluginUpdateTask],
+                response_model=list[PluginUpdateTask],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -225,7 +236,7 @@ class PluginsRoutes(Routes):
                 path="/api/plugins/updates/tasks",
                 methods=["DELETE"],
                 endpoint=self.clear_finished_update_tasks,
-                response_model=List[PluginUpdateTask],
+                response_model=list[PluginUpdateTask],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -253,13 +264,13 @@ class PluginsRoutes(Routes):
         try:
             plugin_manager = self.lifecycle.plugin_manager
             all_components = plugin_manager.get_plugin_components()
-            items: List[PluginItem] = []
+            items: list[PluginItem] = []
             for info in plugin_manager.list_plugins():
                 if info.hidden:
                     continue
                 pid = info.plugin_id
                 # Collect menu entries from registered pages
-                menus: List[PageMenu] = []
+                menus: list[PageMenu] = []
                 comp = all_components.get(pid)
                 if comp:
                     for page in comp.pages:
@@ -389,7 +400,7 @@ class PluginsRoutes(Routes):
         if comp is None:
             return []
 
-        items: List[PluginComponent] = []
+        items: list[PluginComponent] = []
         for tool in comp.tools.values():
             items.append(PluginComponent(
                 type="tool", name=tool["name"], description=tool["description"],
@@ -448,7 +459,7 @@ class PluginsRoutes(Routes):
         if not plugin_dir:
             return {"readme": None}
 
-        def read_readme() -> Optional[str]:
+        def read_readme() -> str | None:
             for name in ("README.md", "README.MD", "README"):
                 readme_path = plugin_dir / name
                 if readme_path.is_file():
@@ -461,7 +472,7 @@ class PluginsRoutes(Routes):
             logger.warning(f"Failed to read README for plugin {plugin_id}: {e}")
             return {"readme": None}
 
-    async def set_plugin_enabled(self, plugin_id: str, payload: Dict):
+    async def set_plugin_enabled(self, plugin_id: str, payload: dict):
         async with self._plugin_install_guard():
             if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
                 raise HTTPException(status_code=503, detail="Plugin manager not available")
@@ -567,7 +578,7 @@ class PluginsRoutes(Routes):
         return await self._wait_for_plugin_task(task.task_id)
 
     async def _install_from_github_locked(
-        self, payload: PluginInstallGithubRequest, plugin_manager, on_stage: Optional[Callable[[str], None]] = None
+        self, payload: PluginInstallGithubRequest, plugin_manager, on_stage: Callable[[str], None] | None = None
     ) -> PluginInstallResult:
         try:
             plugin_dir = await install_from_github(
@@ -600,7 +611,7 @@ class PluginsRoutes(Routes):
         task = await self.enqueue_github_install(payload)
         return await self.get_install_task(task.task_id)
 
-    async def get_active_install_task(self) -> Optional[PluginInstallTask]:
+    async def get_active_install_task(self) -> PluginInstallTask | None:
         task = next((task for task in self._pending_plugin_tasks() if task["operation"] == "install"), None)
         return self._serialize_install_task(task) if task else None
 
@@ -613,7 +624,7 @@ class PluginsRoutes(Routes):
         return await self.get_install_task(task_id)
 
     @staticmethod
-    def _serialize_install_task(task_data: Dict[str, Any]) -> PluginInstallTask:
+    def _serialize_install_task(task_data: dict[str, Any]) -> PluginInstallTask:
         values = {key: task_data.get(key) for key in PluginInstallTask.model_fields}
         values["repo_url"] = task_data.get("repo_url") or ""
         # Legacy clients treat all pending installation work as installing.
@@ -644,18 +655,18 @@ class PluginsRoutes(Routes):
             )
         except PluginAlreadyInstalledError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
-        except (ValueError, IOError) as e:
+        except (OSError, ValueError) as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
         return await self._load_installed_plugin(plugin_dir, plugin_manager, on_stage)
 
-    def _get_pypi_mirror(self) -> Optional[str]:
+    def _get_pypi_mirror(self) -> str | None:
         config = getattr(self.lifecycle, "kira_config", None)
         if not config:
             return None
         return (config.get("network") or {}).get("pypi_mirror") or None
 
     @staticmethod
-    def _build_install_result(plugin_manager, plugin_id: str, warnings: List[str]) -> PluginInstallResult:
+    def _build_install_result(plugin_manager, plugin_id: str, warnings: list[str]) -> PluginInstallResult:
         info = plugin_manager.get_plugin_info(plugin_id)
         return PluginInstallResult(
             id=plugin_id,
@@ -677,7 +688,7 @@ class PluginsRoutes(Routes):
             warnings=warnings,
         )
 
-    async def check_plugin_updates(self) -> List[PluginUpdateCheckItem]:
+    async def check_plugin_updates(self) -> list[PluginUpdateCheckItem]:
         if not self.lifecycle or not getattr(self.lifecycle, "plugin_manager", None):
             return []
 
@@ -685,8 +696,8 @@ class PluginsRoutes(Routes):
         db_service = getattr(self.lifecycle, "db_service", None)
 
         # Get store version map from the current store source (with 10-min cache)
-        store_versions: Dict[str, tuple[str, Optional[str]]] = {}
-        store_fetch_error: Optional[str] = None
+        store_versions: dict[str, tuple[str, str | None]] = {}
+        store_fetch_error: str | None = None
         if db_service:
             try:
                 sources = await db_service.list_plugin_store_sources()
@@ -708,16 +719,16 @@ class PluginsRoutes(Routes):
                 store_fetch_error = f"Failed to fetch store data: {e}"
                 logger.warning(store_fetch_error)
 
-        results: List[PluginUpdateCheckItem] = []
+        results: list[PluginUpdateCheckItem] = []
         for info in plugin_manager.list_plugins():
             if info.builtin or info.hidden:
                 continue
 
             pid = info.plugin_id
             installed_ver = info.version
-            latest_ver: Optional[str] = None
-            commit_sha: Optional[str] = None
-            err: Optional[str] = None
+            latest_ver: str | None = None
+            commit_sha: str | None = None
+            err: str | None = None
 
             if pid in store_versions:
                 store_ver, store_commit_sha = store_versions[pid]
@@ -741,7 +752,7 @@ class PluginsRoutes(Routes):
 
         return results
 
-    def _pending_plugin_tasks(self) -> List[Dict[str, Any]]:
+    def _pending_plugin_tasks(self) -> list[dict[str, Any]]:
         return [task for task in self._plugin_tasks.values() if task["status"] in {"queued", "running"}]
 
     def _require_plugin_manager(self):
@@ -768,11 +779,11 @@ class PluginsRoutes(Routes):
         return PluginUpdateTask(**{key: task_data[key] for key in PluginUpdateTask.model_fields if key in task_data})
 
     def _add_plugin_task(self, operation, source, name, payload):
-        task = dict(
-            task_id=uuid4().hex, operation=operation, source=source, name=name,
-            plugin_id=None, repo_url=None, commit_sha=None, status="queued", stage="queued",
-            error=None, warnings=[], payload=payload, done=asyncio.Event(),
-        )
+        task = {
+            "task_id": uuid4().hex, "operation": operation, "source": source, "name": name,
+            "plugin_id": None, "repo_url": None, "commit_sha": None, "status": "queued", "stage": "queued",
+            "error": None, "warnings": [], "payload": payload, "done": asyncio.Event(),
+        }
         self._plugin_tasks[task["task_id"]] = task
         if self._plugin_task_worker is None or self._plugin_task_worker.done():
             self._plugin_task_worker = asyncio.create_task(self._run_plugin_queue())
@@ -808,7 +819,7 @@ class PluginsRoutes(Routes):
         task = self._add_plugin_task("install", "upload", file.filename, zip_bytes)
         return self._serialize_plugin_task(task)
 
-    async def enqueue_task_updates(self, payload: PluginUpdateQueueRequest) -> List[PluginTask]:
+    async def enqueue_task_updates(self, payload: PluginUpdateQueueRequest) -> list[PluginTask]:
         manager = self._require_plugin_manager()
         pending = {task["plugin_id"]: task for task in self._pending_plugin_tasks() if task["operation"] == "update"}
         new_items = {item.plugin_id: item for item in payload.items if item.plugin_id not in pending}
@@ -831,17 +842,17 @@ class PluginsRoutes(Routes):
             created.append(self._serialize_plugin_task(task))
         return created
 
-    async def enqueue_plugin_updates(self, payload: PluginUpdateQueueRequest) -> List[PluginUpdateTask]:
+    async def enqueue_plugin_updates(self, payload: PluginUpdateQueueRequest) -> list[PluginUpdateTask]:
         tasks = await self.enqueue_task_updates(payload)
         return [self._serialize_update_task(self._plugin_tasks[task.task_id]) for task in tasks]
 
-    async def list_plugin_tasks(self) -> List[PluginTask]:
+    async def list_plugin_tasks(self) -> list[PluginTask]:
         return [self._serialize_plugin_task(task) for task in self._plugin_tasks.values()]
 
-    async def list_update_tasks(self) -> List[PluginUpdateTask]:
+    async def list_update_tasks(self) -> list[PluginUpdateTask]:
         return [self._serialize_update_task(task) for task in self._plugin_tasks.values() if task["operation"] == "update"]
 
-    async def clear_finished_plugin_tasks(self) -> List[PluginTask]:
+    async def clear_finished_plugin_tasks(self) -> list[PluginTask]:
         self._clear_finished_tasks()
         return await self.list_plugin_tasks()
 
@@ -851,7 +862,7 @@ class PluginsRoutes(Routes):
         for task_id in finished:
             self._plugin_tasks.pop(task_id, None)
 
-    async def clear_finished_update_tasks(self) -> List[PluginUpdateTask]:
+    async def clear_finished_update_tasks(self) -> list[PluginUpdateTask]:
         self._clear_finished_tasks("update")
         return await self.list_update_tasks()
 
@@ -966,7 +977,7 @@ class PluginsRoutes(Routes):
 
     async def _update_plugin_locked(
         self, plugin_id: str, payload: PluginUpdateRequest, plugin_manager,
-        on_stage: Optional[Callable[[str], None]] = None,
+        on_stage: Callable[[str], None] | None = None,
     ) -> PluginInstallResult:
         info = self._validate_plugin_update(plugin_id, plugin_manager)
         plugin_dir = plugin_manager.get_plugin_module_path(plugin_id)

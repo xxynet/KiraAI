@@ -122,8 +122,19 @@ async def test_agent_step_carries_identity_and_upstream_name(monkeypatch, use_fa
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from core.agent.agent_executor import AgentExecutionContext, event_handler_reg, EventType
-    from core.provider import LLMModelClient, LLMRequest, LLMResponse, ModelInfo, ModelType, ProviderAPIError
+    from core.agent.agent_executor import (
+        AgentExecutionContext,
+        EventType,
+        event_handler_reg,
+    )
+    from core.provider import (
+        LLMModelClient,
+        LLMRequest,
+        LLMResponse,
+        ModelInfo,
+        ModelType,
+        ProviderAPIError,
+    )
 
     async def stop_event(event, response):
         event.is_stopped = True
@@ -184,7 +195,13 @@ async def test_failed_agent_step_reports_last_attempted_model_identity(monkeypat
     from unittest.mock import AsyncMock
 
     from core.agent.agent_executor import AgentExecutionContext, event_handler_reg
-    from core.provider import LLMModelClient, LLMRequest, ModelInfo, ModelType, ProviderAPIError
+    from core.provider import (
+        LLMModelClient,
+        LLMRequest,
+        ModelInfo,
+        ModelType,
+        ProviderAPIError,
+    )
 
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda *args, **kwargs: [])
     models = []

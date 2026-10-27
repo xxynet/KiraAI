@@ -4,7 +4,7 @@ import os
 import stat
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Literal
 
 from core.logging_manager import get_logger
 
@@ -13,13 +13,13 @@ if TYPE_CHECKING:
 
 logger = get_logger("atm", "yellow")
 
-FileKey = Tuple[int, int]
-FileVersion = Tuple[int, int, int, int, int]
-FileCacheEntry = Tuple[int, float, float]
-FileCandidate = Tuple[str, int, float, float]
-DirectoryCandidate = Tuple[Path, FileKey]
+FileKey = tuple[int, int]
+FileVersion = tuple[int, int, int, int, int]
+FileCacheEntry = tuple[int, float, float]
+FileCandidate = tuple[str, int, float, float]
+DirectoryCandidate = tuple[Path, FileKey]
 DeleteStatus = Literal["deleted", "missing", "changed", "failed"]
-DeleteResult = Tuple[DeleteStatus, int, Optional[str], Optional[FileVersion]]
+DeleteResult = tuple[DeleteStatus, int, str | None, FileVersion | None]
 
 
 class AsyncTempMonitor:
@@ -43,11 +43,11 @@ class AsyncTempMonitor:
         self._refresh_config()
 
         # The file cache is a fresh snapshot rebuilt before every cleanup.
-        self.file_cache: Dict[str, FileCacheEntry] = {}
+        self.file_cache: dict[str, FileCacheEntry] = {}
         self.total_size = 0
-        self._file_versions: Dict[str, FileVersion] = {}
-        self._first_seen: Dict[str, Tuple[FileKey, float]] = {}
-        self._pending_retries: Dict[str, FileVersion] = {}
+        self._file_versions: dict[str, FileVersion] = {}
+        self._first_seen: dict[str, tuple[FileKey, float]] = {}
+        self._pending_retries: dict[str, FileVersion] = {}
         self._has_scanned = False
         self._cleanup_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
@@ -93,7 +93,7 @@ class AsyncTempMonitor:
         self._refresh_config()
         self._config_changed_event.set()
 
-    async def _scan_folder(self) -> List[DirectoryCandidate]:
+    async def _scan_folder(self) -> list[DirectoryCandidate]:
         """Rebuild the file snapshot and capture protected directory state."""
         loop = asyncio.get_running_loop()
         previous_first_seen = self._first_seen.copy()
@@ -101,10 +101,10 @@ class AsyncTempMonitor:
         protection_seconds = self.file_protection_seconds
 
         def scan_folder():
-            cache: Dict[str, FileCacheEntry] = {}
-            versions: Dict[str, FileVersion] = {}
-            first_seen_entries: Dict[str, Tuple[FileKey, float]] = {}
-            eligible_directories: List[DirectoryCandidate] = []
+            cache: dict[str, FileCacheEntry] = {}
+            versions: dict[str, FileVersion] = {}
+            first_seen_entries: dict[str, tuple[FileKey, float]] = {}
+            eligible_directories: list[DirectoryCandidate] = []
             total = 0
             current_time = time.time()
 
@@ -201,8 +201,8 @@ class AsyncTempMonitor:
     async def _get_oldest_files(
         self,
         limit: int = 10,
-        exclude: Optional[set] = None,
-    ) -> List[FileCandidate]:
+        exclude: set | None = None,
+    ) -> list[FileCandidate]:
         """Get oldest unattempted files outside the protection period."""
         current_time = time.time()
         eligible_files = []
@@ -220,7 +220,7 @@ class AsyncTempMonitor:
 
         return heapq.nsmallest(limit, eligible_files, key=lambda item: item[3])
 
-    async def _get_expired_files(self) -> List[FileCandidate]:
+    async def _get_expired_files(self) -> list[FileCandidate]:
         """Get files that have exceeded the configured maximum age."""
         current_time = time.time()
         expired_files = []
@@ -232,7 +232,7 @@ class AsyncTempMonitor:
         expired_files.sort(key=lambda item: item[3])
         return expired_files
 
-    async def _get_files_exceeding_limit(self) -> List[FileCandidate]:
+    async def _get_files_exceeding_limit(self) -> list[FileCandidate]:
         """Get count-limit candidates ordered from oldest to newest."""
         if len(self.file_cache) <= self.max_files:
             return []
@@ -250,7 +250,7 @@ class AsyncTempMonitor:
     async def _delete_file(
         self,
         path_str: str,
-        expected_version: Optional[FileVersion] = None,
+        expected_version: FileVersion | None = None,
     ) -> DeleteResult:
         """Delete one unchanged file and return its remaining version on failure."""
         loop = asyncio.get_running_loop()
@@ -301,7 +301,7 @@ class AsyncTempMonitor:
 
     async def _cleanup_empty_dirs(
         self,
-        candidates: List[DirectoryCandidate],
+        candidates: list[DirectoryCandidate],
     ) -> None:
         """Remove empty directories that were unprotected at scan time."""
         loop = asyncio.get_running_loop()
@@ -356,7 +356,7 @@ class AsyncTempMonitor:
             deleted_count = 0
             freed_space = 0
             attempted_paths = set()
-            failed_deletions: Dict[str, str] = {}
+            failed_deletions: dict[str, str] = {}
 
             async def delete_candidate(path_str: str):
                 nonlocal deleted_count, freed_space

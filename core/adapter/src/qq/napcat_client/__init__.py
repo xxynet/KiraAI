@@ -1,4 +1,4 @@
 from .client import NapCatWebSocketClient
-from .utils import QQMessageType, QQMessageChain
+from .utils import QQMessageChain, QQMessageType
 
-__all__ = ["NapCatWebSocketClient", "QQMessageType", "QQMessageChain"]
+__all__ = ["NapCatWebSocketClient", "QQMessageChain", "QQMessageType"]

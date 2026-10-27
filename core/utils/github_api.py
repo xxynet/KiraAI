@@ -1,10 +1,10 @@
-from typing import Optional, Tuple, List
-import hashlib
-import httpx
 import asyncio
+import hashlib
 
-from core.utils.network import test_url_speed
+import httpx
+
 from core.logging_manager import get_logger
+from core.utils.network import test_url_speed
 
 logger = get_logger("gh_api", "cyan")
 
@@ -17,7 +17,7 @@ GH_PROXY_LIST = [
 ]
 
 
-def _github_client_kwargs(timeout: float, proxy: Optional[str]) -> dict:
+def _github_client_kwargs(timeout: float, proxy: str | None) -> dict:
     # GitHub returns 301 after a repository transfer. Treat it as the
     # documented redirect rather than surfacing it as a release-fetch error.
     client_kwargs: dict = {"timeout": timeout, "follow_redirects": True}
@@ -26,7 +26,7 @@ def _github_client_kwargs(timeout: float, proxy: Optional[str]) -> dict:
     return client_kwargs
 
 
-def parse_github_url(url: str) -> Tuple[str, str]:
+def parse_github_url(url: str) -> tuple[str, str]:
     """
     Parse a GitHub URL or 'owner/repo' shorthand into (owner, repo).
     Accepted formats:
@@ -48,7 +48,7 @@ def parse_github_url(url: str) -> Tuple[str, str]:
     return parts[0], parts[1]
 
 
-async def get_latest_release(owner: str, repo: str, proxy: Optional[str] = None):
+async def get_latest_release(owner: str, repo: str, proxy: str | None = None):
     """
     dict_keys(['url', 'assets_url', 'upload_url', 'html_url', 'id', 'author', 
     'node_id', 'tag_name', 'target_commitish', 'name', 'draft', 'immutable', 
@@ -81,10 +81,10 @@ async def get_latest_release(owner: str, repo: str, proxy: Optional[str] = None)
 async def get_all_releases(
     owner: str,
     repo: str,
-    proxy: Optional[str] = None,
+    proxy: str | None = None,
     per_page: int = 30,
     max_pages: int = 10,
-) -> List[dict]:
+) -> list[dict]:
     """
     Fetch all releases of a GitHub repository (paginated).
 
@@ -95,7 +95,7 @@ async def get_all_releases(
     per_page  — results per page (max 100, default 30)
     max_pages — safety cap to avoid excessive pagination
     """
-    releases: List[dict] = []
+    releases: list[dict] = []
     client_kwargs = _github_client_kwargs(10.0, proxy)
 
     async with httpx.AsyncClient(**client_kwargs) as client:
@@ -107,7 +107,7 @@ async def get_all_releases(
             try:
                 resp = await client.get(url)
                 resp.raise_for_status()
-            except httpx.HTTPError as e:
+            except httpx.HTTPError:
                 # logger.error(f"Failed to get releases (page {page}): {e}")
                 raise
 
@@ -137,8 +137,8 @@ async def get_release_assets(
     owner: str,
     repo: str,
     tag: str,
-    proxy: Optional[str] = None,
-) -> List[dict]:
+    proxy: str | None = None,
+) -> list[dict]:
     """
     Fetch the assets list for a specific release (by tag name).
 
@@ -154,7 +154,7 @@ async def get_release_assets(
         resp.raise_for_status()
 
     data = resp.json()
-    assets: List[dict] = []
+    assets: list[dict] = []
     for item in data.get("assets", []):
         assets.append({
             "name": item.get("name"),
@@ -169,7 +169,7 @@ async def get_release_assets(
 
 async def download_asset(
     download_url: str,
-    proxy: Optional[str] = None,
+    proxy: str | None = None,
 ) -> bytes:
     """
     Download a release asset by its browser_download_url.
@@ -213,7 +213,7 @@ async def download_and_verify_asset(
     tag: str,
     expected_sha: str,
     asset_name: str = "dist.zip",
-    proxy: Optional[str] = None,
+    proxy: str | None = None,
 ) -> bytes:
     """
     Download a specific release asset and verify its SHA-256 hash.
@@ -254,8 +254,8 @@ async def download_and_verify_asset(
 async def download_zipball(
     owner: str,
     repo: str,
-    proxy: Optional[str] = None,
-    gh_proxy: Optional[str] = None,
+    proxy: str | None = None,
+    gh_proxy: str | None = None,
 ) -> bytes:
     """
     Download the default branch zip archive of a GitHub repository.
@@ -299,8 +299,8 @@ async def download_source_zipball(
     owner: str,
     repo: str,
     tag: str,
-    proxy: Optional[str] = None,
-    gh_proxy: Optional[str] = None,
+    proxy: str | None = None,
+    gh_proxy: str | None = None,
 ) -> bytes:
     """
     Download the source code zip archive for a specific release tag.
@@ -338,7 +338,7 @@ async def download_source_zipball(
 
 async def pick_fastest_source(
     direct_url: str,
-    proxy: Optional[str] = None,
+    proxy: str | None = None,
     timeout: float = 5.0,
 ) -> list[str]:
     """
@@ -350,14 +350,14 @@ async def pick_fastest_source(
     # can be mapped back to the exact base it was derived from. Substring
     # matching on the bare host (e.g. "gh-proxy.org") is ambiguous because it
     # also matches "hk.gh-proxy.org" / "cdn.gh-proxy.org" / etc.
-    candidates: list[tuple[str, str, Optional[str]]] = [("direct", direct_url, None)]
+    candidates: list[tuple[str, str, str | None]] = [("direct", direct_url, None)]
     for base in GH_PROXY_LIST:
         label = base.rstrip("/").split("//", 1)[-1]
         candidates.append((label, f"{base.rstrip('/')}/{direct_url}", base))
 
     logger.info(f"Speed-testing {len(candidates)} GitHub sources ...")
 
-    async def _probe(label: str, url: str, base: Optional[str]) -> tuple[str, Optional[str], Optional[float]]:
+    async def _probe(label: str, url: str, base: str | None) -> tuple[str, str | None, float | None]:
         try:
             result = await test_url_speed(url, proxy=proxy, timeout=timeout)
             return label, base, result["latency"]

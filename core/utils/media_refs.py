@@ -10,16 +10,15 @@ import mimetypes
 import os
 import tempfile
 import threading
+from collections.abc import Iterable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Iterable
 
-from core.chat.message_elements import BaseMediaElement, _infer_mime_from_bytes
 from core.agent.message import provider_message_dict
-from core.utils.path_utils import get_data_path, is_within_directory
+from core.chat.message_elements import BaseMediaElement, _infer_mime_from_bytes
 from core.logging_manager import get_logger
-
+from core.utils.path_utils import get_data_path, is_within_directory
 
 logger = get_logger("media_refs", "yellow")
 

@@ -8,12 +8,10 @@ from unittest.mock import Mock
 
 import pytest
 
-import core.plugin.builtin_plugins as builtin_plugins
-from core.plugin import PluginManager, registry
+from core.plugin import PluginManager, builtin_plugins, registry
 from core.plugin import manager as manager_module
 from core.plugin.handlers import EventHandler, EventType, Priority, event_handler_reg
 from core.tag import tag_registry
-
 
 PLUGIN_ID = "registry_builtin_test"
 PACKAGE_NAME = "core.plugin.builtin_plugins.registry_migration"

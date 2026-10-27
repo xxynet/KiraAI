@@ -1,10 +1,14 @@
 import json
-from typing import Dict, List
 
 from fastapi import Depends, HTTPException
 
 from core.logging_manager import get_logger
-from webui.models import McpServerConfigUpdateRequest, McpServerCreateRequest, McpServerItem, McpToolItem
+from webui.models import (
+    McpServerConfigUpdateRequest,
+    McpServerCreateRequest,
+    McpServerItem,
+    McpToolItem,
+)
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 
@@ -18,7 +22,7 @@ class McpRoutes(Routes):
                 path="/api/mcp-servers",
                 methods=["GET"],
                 endpoint=self.list_mcp_servers,
-                response_model=List[McpServerItem],
+                response_model=list[McpServerItem],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -48,7 +52,7 @@ class McpRoutes(Routes):
                 path="/api/mcp-servers/{server_id}/tools",
                 methods=["GET"],
                 endpoint=self.list_mcp_server_tools,
-                response_model=List[McpToolItem],
+                response_model=list[McpToolItem],
                 tags=["plugins"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -80,7 +84,7 @@ class McpRoutes(Routes):
             return []
         try:
             manager = self.lifecycle.mcp_manager
-            items: List[McpServerItem] = []
+            items: list[McpServerItem] = []
             for server in manager.servers:
                 items.append(
                     McpServerItem(
@@ -141,7 +145,7 @@ class McpRoutes(Routes):
             logger.error(f"Failed to create MCP server {payload.name}: {e}")
             raise HTTPException(status_code=500, detail="Failed to create MCP server")
 
-    async def set_mcp_server_enabled(self, server_id: str, payload: Dict):
+    async def set_mcp_server_enabled(self, server_id: str, payload: dict):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
             raise HTTPException(status_code=503, detail="MCP manager not available")
         if "enabled" not in payload or not isinstance(payload["enabled"], bool):
@@ -212,7 +216,7 @@ class McpRoutes(Routes):
             logger.error(f"Failed to list MCP tools for {server_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to list MCP tools") from e
 
-    async def set_mcp_tool_enabled(self, server_id: str, tool_name: str, payload: Dict):
+    async def set_mcp_tool_enabled(self, server_id: str, tool_name: str, payload: dict):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
             raise HTTPException(status_code=503, detail="MCP manager not available")
         if "enabled" not in payload or not isinstance(payload["enabled"], bool):

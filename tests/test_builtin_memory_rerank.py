@@ -299,6 +299,7 @@ async def test_recall_diagnostics_are_per_request_under_concurrency(tmp_path, mo
 async def test_rerank_api_requires_auth_before_any_paid_request(tmp_path, monkeypatch):
     from fastapi import FastAPI
     from httpx import ASGITransport, AsyncClient
+
     from core.plugin import registry
     from webui.plugin_bindings import PluginWebBindings
     from webui.routes.auth import require_auth

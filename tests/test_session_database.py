@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-from copy import deepcopy
 
 import pytest
 from sqlalchemy import text
@@ -164,6 +163,7 @@ async def test_session_api_exposes_identity_without_changing_routing_key(session
     from types import SimpleNamespace
 
     from fastapi import FastAPI
+
     from webui.routes.sessions import SessionsRoutes
 
     manager = manager_for(session_db, tmp_path)
@@ -203,6 +203,7 @@ async def test_reads_and_edits_use_latest_database_state(session_db, tmp_path):
     from types import SimpleNamespace
 
     from fastapi import FastAPI
+
     from webui.routes.scope import ScopeRoutes
     from webui.routes.sessions import SessionsRoutes
 
@@ -257,6 +258,7 @@ async def test_session_listing_uses_two_bulk_queries(session_db, tmp_path, monke
     from unittest.mock import AsyncMock
 
     from fastapi import FastAPI
+
     from webui.routes.sessions import SessionsRoutes
 
     manager = manager_for(session_db, tmp_path)
@@ -449,7 +451,9 @@ async def test_update_session_rejects_invalid_fields_before_writing(session_db, 
 @pytest.mark.anyio
 async def test_session_api_updates_only_supplied_metadata(session_db, tmp_path):
     from types import SimpleNamespace
+
     from fastapi import FastAPI
+
     from webui.routes.sessions import SessionsRoutes
 
     manager = manager_for(session_db, tmp_path)
@@ -556,9 +560,10 @@ async def test_metadata_ensure_shares_identity_with_full_session_reads(session_d
 @pytest.mark.parametrize("consumer", ["prompt", "scope", "list"])
 async def test_metadata_consumers_load_data_without_message_content(session_db, tmp_path, monkeypatch, consumer):
     from types import SimpleNamespace
-    from unittest.mock import AsyncMock
+
     from fastapi import FastAPI
     from sqlalchemy import event
+
     from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
     from webui.routes.scope import ScopeRoutes
     from webui.routes.sessions import SessionsRoutes
@@ -615,7 +620,9 @@ async def test_session_counts_match_content_shape(session_db, tmp_path, content)
 async def test_detail_update_and_archive_only_responses_include_message_count(session_db, tmp_path):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
+
     from fastapi import FastAPI
+
     from webui.routes.sessions import SessionsRoutes
 
     manager = manager_for(session_db, tmp_path)

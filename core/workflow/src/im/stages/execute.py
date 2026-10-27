@@ -1,16 +1,17 @@
-from core.workflow.base_stage import BaseStage
 import asyncio
 import random
 import time
 
-from core.agent.agent_executor import AgentExecutor, AgentExecutionContext
+from core.agent.agent_executor import AgentExecutionContext, AgentExecutor
 from core.agent.message import OpenAIMessage
 from core.chat.message_utils import KiraIMSentResult, KiraStepResult, MessageChain
-from core.provider import LLMResponse
-from core.tag import RootTagAction
-from ..context import IMBatchContext
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
+from core.provider import LLMResponse
+from core.tag import RootTagAction
+from core.workflow.base_stage import BaseStage
+
+from ..context import IMBatchContext
 
 logger = get_logger("message", "cyan")
 
@@ -68,7 +69,7 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
                                 logger.info(f"Event {event.event_id} stopped while AFTER_XML_PARSE stage")
                                 return False
                     except Exception as e:
-                        logger.error(f"Error parsing message: {str(e)}")
+                        logger.error(f"Error parsing message: {e!s}")
                         actions = []
 
                     for action in actions:

@@ -9,10 +9,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from PIL import Image as PILImage
 from bilibili_api import Credential, comment, dynamic, homepage, search, session, user
 from bilibili_api.utils import network
 from bilibili_api.utils.picture import Picture
+from PIL import Image as PILImage
 
 from core.chat.message_elements import Image
 from core.utils.network import get_file_content

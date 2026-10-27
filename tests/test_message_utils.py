@@ -1,12 +1,16 @@
-import copy
 import warnings
 from dataclasses import asdict, fields, replace
+
 import pytest
 
-from core.chat.message_elements import Text, At, Image, Emoji, Notice, Poke, Sticker, Record
-from core.chat.message_utils import MessageChain, KiraMessageEvent, KiraMessageBatchEvent, KiraIMMessage
-from core.chat.session import Session, User, Group
-
+from core.chat.message_elements import Sticker, Text
+from core.chat.message_utils import (
+    KiraIMMessage,
+    KiraMessageBatchEvent,
+    KiraMessageEvent,
+    MessageChain,
+)
+from core.chat.session import Group, Session, User
 
 # ── MessageChain basics ─────────────────────────────────────────────
 

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import Lock
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from core.chat.message_utils import KiraMessageEvent
 
 
 class SessionBuffer:
-    def __init__(self, max_count: int = None):
+    def __init__(self, max_count: int | None = None):
         self.buffer: list = []
         self.lock: asyncio.Lock = asyncio.Lock()
         self.max_count = max_count
@@ -27,8 +27,8 @@ class SessionBuffer:
 
     def flush(
         self,
-        count: int = None,
-        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+        count: int | None = None,
+        filter_fn: Callable[[KiraMessageEvent], bool] | None = None,
     ):
         if filter_fn is None:
             if count and count <= len(self.buffer):
@@ -60,7 +60,7 @@ class SessionBuffer:
 
 
 class SessionBufferManager:
-    def __init__(self, max_count: int = None):
+    def __init__(self, max_count: int | None = None):
         self.buffers: dict[str, SessionBuffer] = {}
         self.max_count = max_count
 
@@ -73,7 +73,7 @@ class SessionBufferManager:
         self,
         sid: str,
         extra_event: KiraMessageEvent | None = None,
-        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+        filter_fn: Callable[[KiraMessageEvent], bool] | None = None,
     ) -> list[KiraMessageEvent]:
         """Atomically add an optional event and drain matching buffered events."""
         buffer = self.get_buffer(sid)

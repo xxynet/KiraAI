@@ -16,7 +16,6 @@ import pytest
 from core.plugin.builtin_plugins.agent import main as agent_main
 from core.plugin.builtin_plugins.agent.main import AgentPlugin
 
-
 # Config as the old "file" plugin wrote it: flat keys, no sections, no modes
 LEGACY_CONFIG = {
     "allowed_sessions": ["dc:dm:42"],

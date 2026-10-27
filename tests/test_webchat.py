@@ -8,18 +8,18 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from core.adapter.base import BaseAdapter
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.adapter_registry import AdapterManager
+from core.adapter.base import BaseAdapter
 from core.adapter.builtin.webchat.webchat import WebChatAdapter
 from core.adapter.capabilities import IMCapability
 from core.adapter.context import AdapterContext
 from core.chat.message_elements import Image, Text
 from core.chat.message_utils import MessageChain
 from core.chat.session import Session
+from core.event_bus import EventBus
 from core.webchat.service import WebChatService
 from core.webchat.store import WebChatStore
-from core.event_bus import EventBus
 from tests.test_im_workflow import processor
 from webui.routes.auth import require_auth
 from webui.routes.webchat import WebChatRoutes
@@ -266,12 +266,12 @@ async def test_profile_keeps_description_verbatim_and_context_in_session_manager
 
 @pytest.mark.anyio
 async def test_normal_event_bus_buffers_batches_counts_and_delivers_webchat(store, processor, monkeypatch):
-    from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent
+    from core.chat.message_utils import KiraMessageBatchEvent, KiraMessageEvent
     from core.plugin.builtin_plugins.chat.main import DefaultChatPlugin
     from core.plugin.handlers import EventType, event_handler_reg
+    from core.provider import LLMResponse
     from core.workflow.src.im.batching import publish_buffered_messages
     from core.workflow.src.im.message_delivery import MessageDeliveryService
-    from core.provider import LLMResponse
 
     adapter = make_adapter(store)
     telemetry = SimpleNamespace(add_telemetry_message=AsyncMock())
@@ -470,9 +470,11 @@ async def test_failed_attachment_archive_does_not_publish_or_persist_message(sto
 @pytest.mark.parametrize("direction", ["incoming", "outgoing"])
 async def test_webchat_persists_quote_content_when_sending(store, direction):
     import json
+
     import aiosqlite
-    from core.chat.message_elements import Reply
+
     from core.adapter.builtin.webchat.im import WebChatIMCapability
+    from core.chat.message_elements import Reply
 
     await store.set_setting("profile", PROFILE)
     if direction == "incoming":
@@ -650,6 +652,7 @@ async def test_uploaded_file_is_readable_through_normal_pipeline_after_history_d
     store, tmp_path, monkeypatch, clear_before_processing,
 ):
     from pathlib import Path
+
     from core.plugin.builtin_plugins.agent.main import AgentPlugin
     from core.utils import path_utils
     from core.workflow.src.im.message_formatter import MessageFormatter
@@ -712,6 +715,7 @@ async def test_startup_preserves_configured_adapter_and_disables_conflicting_web
 ):
     import copy
     from unittest.mock import MagicMock
+
     import core.lifecycle as lifecycle_module
     from core.utils import path_utils
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import xml.etree.ElementTree as ET
 from asyncio import Lock
-from typing import List, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from core.adapter.capabilities import IMCapability
 from core.agent.message import OpenAIMessage
@@ -13,11 +13,11 @@ from core.chat.session import User
 from core.logging_manager import get_logger
 
 if TYPE_CHECKING:
-    from core.tag import TagSet, RootTagAction
     from core.adapter import AdapterManager
     from core.chat.message_history import MessageHistoryService
     from core.config.config_loader import KiraConfig
     from core.persona import PersonaManager
+    from core.tag import RootTagAction, TagSet
 
 logger = get_logger("message", "cyan")
 
@@ -130,12 +130,12 @@ class MessageDeliveryService:
         return result
 
     @staticmethod
-    async def parse_xml(xml_data, tag_set: TagSet) -> list[Union[MessageChain, RootTagAction]]:
+    async def parse_xml(xml_data, tag_set: TagSet) -> list[MessageChain | RootTagAction]:
         """Parse xml into an ordered list of MessageChain and RootTagAction."""
         from core.tag import RootTagAction
 
         root = ET.fromstring(f"<root>{xml_data}</root>")
-        actions: list[Union[MessageChain, RootTagAction]] = []
+        actions: list[MessageChain | RootTagAction] = []
 
         for element in root:
             if element.tag == "msg":
@@ -165,7 +165,7 @@ class MessageDeliveryService:
         return actions
 
     @staticmethod
-    def add_message_ids(xml_data: str, message_results: List[KiraIMSentResult]) -> str:
+    def add_message_ids(xml_data: str, message_results: list[KiraIMSentResult]) -> str:
         """为XML响应添加消息ID"""
         try:
             root = ET.fromstring(f"<root>{xml_data}</root>")
@@ -180,5 +180,5 @@ class MessageDeliveryService:
             return ET.tostring(root, encoding='unicode', method='xml')[6:-7]
 
         except Exception as e:
-            logger.error(f"Error adding message IDs: {str(e)}")
+            logger.error(f"Error adding message IDs: {e!s}")
             return xml_data

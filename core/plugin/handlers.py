@@ -1,6 +1,7 @@
-from enum import Enum, IntEnum
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional, Union, Callable, Any, Dict, List
+from enum import Enum, IntEnum
+from typing import Any
 
 from core.logging_manager import get_logger
 
@@ -33,7 +34,6 @@ class EventType(Enum):
     ON_SHUTDOWN = "on_shutdown"        # 系统即将关闭
     ON_EXCEPTION = "on_exception"  # 异常发生时
     ON_CUSTOM_EVENT = "on_custom_event"  # 插件自定义事件
-    ...
 
 
 # eq=False keeps identity-based equality/hash so that del_handler removes the
@@ -42,11 +42,11 @@ class EventType(Enum):
 class EventHandler:
     event_type: EventType
 
-    priority: Union[Priority, int]
+    priority: Priority | int
 
     handler: Callable
 
-    desc: Optional[str] = None
+    desc: str | None = None
 
     def __lt__(self, other):
         return self.priority < other.priority
@@ -82,18 +82,18 @@ class EventHandler:
 
 class EventHandlerRegistry:
     def __init__(self):
-        self._handlers: Dict[Any, List[EventHandler]] = {}
+        self._handlers: dict[Any, list[EventHandler]] = {}
 
     def register(self, eh: EventHandler):
         self._handlers.setdefault(eh.event_type, [])
         self._handlers[eh.event_type].append(eh)
         self._handlers[eh.event_type].sort(reverse=True)
 
-    def get_handlers(self, event_type: EventType) -> List[EventHandler]:
+    def get_handlers(self, event_type: EventType) -> list[EventHandler]:
         return self._handlers.setdefault(event_type, [])
 
     def del_handler(self, handler: EventHandler):
-        for k, hl in self._handlers.items():
+        for hl in self._handlers.values():
             if handler in hl:
                 hl.remove(handler)
                 break

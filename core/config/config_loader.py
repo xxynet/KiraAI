@@ -1,11 +1,11 @@
-from typing import Dict, Any, Optional
 import copy
 import json
 import os
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-from core.utils.path_utils import get_config_path
 from core.logging_manager import get_logger
+from core.utils.path_utils import get_config_path
 
 from .default import DEFAULT_CONFIG
 
@@ -20,7 +20,7 @@ class ConfigError(Exception):
 
 
 class KiraConfig(dict):
-    def __init__(self, default_config: Optional[dict] = None):
+    def __init__(self, default_config: dict | None = None):
         super().__init__()
         object.__setattr__(self, "default_config", default_config or DEFAULT_CONFIG)
 

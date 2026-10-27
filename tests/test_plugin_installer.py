@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import core.plugin.plugin_installer as plugin_installer
+from core.plugin import plugin_installer
 
 
 def _plugin_archive(plugin_id: str) -> bytes:

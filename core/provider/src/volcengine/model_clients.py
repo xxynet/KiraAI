@@ -1,13 +1,17 @@
-from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
 import asyncio
 import time
-import httpx
-from typing import Optional, Union
 
-from core.provider import ModelInfo, ImageModelClient, VideoModelClient, EmbeddingModelClient
-from core.logging_manager import get_logger
-from core.provider.llm_model import LLMRequest, LLMResponse
+import httpx
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
+
 from core.chat.message_elements import Image, Video
+from core.logging_manager import get_logger
+from core.provider import (
+    EmbeddingModelClient,
+    ImageModelClient,
+    ModelInfo,
+    VideoModelClient,
+)
 from core.provider.openai_compatible import OpenAICompatibleLLMClient
 
 logger = get_logger("provider", "purple")
@@ -39,7 +43,7 @@ class VolcengineImageClient(ImageModelClient):
 
         return Image(image=images_response.data[0].url)
 
-    async def image_to_image(self, prompt: str, image: Union[Image, list[Image]]) -> Image:
+    async def image_to_image(self, prompt: str, image: Image | list[Image]) -> Image:
         if isinstance(image, Image):
             image = [image]
         ref_imgs = [await img.to_data_url() for img in image]
@@ -66,7 +70,7 @@ class VolcengineVideoClient(VideoModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def generate_video(self, prompt: str, ref: list[Image] = None, duration: int = 5, **kwargs) -> Video:
+    async def generate_video(self, prompt: str, ref: list[Image] | None = None, duration: int = 5, **kwargs) -> Video:
         # Use a context-managed client so the connection is always closed.
         async with httpx.AsyncClient(timeout=30) as client:
             task_id = await self._create_task(client=client, text=prompt, ref=ref, duration=duration)
@@ -99,7 +103,7 @@ class VolcengineVideoClient(VideoModelClient):
             logger.error(f"Timeout while generating video: {data}")
             raise TimeoutError("Volcengine video generation timed out")
 
-    async def _create_task(self, client: httpx.AsyncClient, text: str, ref: list[Image] = None, duration: int = 5) -> str:
+    async def _create_task(self, client: httpx.AsyncClient, text: str, ref: list[Image] | None = None, duration: int = 5) -> str:
         url = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"
         headers = {
             "Content-Type": "application/json",

@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING, Type
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-import uuid
+from typing import TYPE_CHECKING, Any
 
-from .statistics import Statistics
+from core.chat import KiraCommentEvent, KiraMessageEvent
+from core.chat.message_utils import KiraCustomEvent, KiraMessageBatchEvent
+
 from .logging_manager import get_logger
-
-from core.chat import KiraMessageEvent, KiraCommentEvent
-from core.chat.message_utils import KiraMessageBatchEvent, KiraCustomEvent
+from .statistics import Statistics
 
 
 @dataclass
@@ -23,7 +24,7 @@ class SystemEvent:
     timestamp: datetime = field(default_factory=datetime.now)
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     priority: int = 0  # 0 = normal, 1 = high, 2 = critical
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 if TYPE_CHECKING:
@@ -41,7 +42,7 @@ class EventBus:
         self.event_queue: asyncio.Queue = event_queue
 
         # subscribers dict：{event_type: [handlers]}
-        self.subscribers: Dict[Union[str, Type], List[Callable]] = {}
+        self.subscribers: dict[str | type, list[Callable]] = {}
 
         # Built-in events have one fixed owner. Later registrations cannot
         # replace it, while application-specific events remain multicast.
@@ -53,7 +54,7 @@ class EventBus:
         }
 
         # middleware list
-        self.middlewares: List[Callable] = []
+        self.middlewares: list[Callable] = []
 
         # statistics
         self.event_bus_stats = {
@@ -79,14 +80,15 @@ class EventBus:
         await self._process_event(event)
 
     async def _dispatch_custom_event(self, event: KiraCustomEvent):
-        from core.plugin.handlers import event_handler_reg, EventType as PluginEventType
+        from core.plugin.handlers import EventType as PluginEventType
+        from core.plugin.handlers import event_handler_reg
 
         for handler in event_handler_reg.get_handlers(PluginEventType.ON_CUSTOM_EVENT):
             filter_name = getattr(handler.handler, '_custom_event_name', None)
             if filter_name is None or filter_name == event.event_name:
                 await handler.exec_handler(event)
 
-    def subscribe(self, event_type: Union[str, Type], handler: Callable):
+    def subscribe(self, event_type: str | type, handler: Callable):
         """subscribe event"""
         if event_type in self._single_handler_event_types:
             if event_type in self.subscribers:
@@ -101,7 +103,7 @@ class EventBus:
             self.subscribers[event_type] = []
         self.subscribers[event_type].append(handler)
 
-    def unsubscribe(self, event_type: Union[str, Type], handler: Callable):
+    def unsubscribe(self, event_type: str | type, handler: Callable):
         """unsubscribe event"""
         if event_type in self.subscribers:
             self.subscribers[event_type].remove(handler)
@@ -148,7 +150,7 @@ class EventBus:
                     self.event_bus_stats["processed"] += 1
                     self.stats.set_stats("event_bus", self.event_bus_stats)
 
-            except Exception as e:
+            except Exception:
                 self.event_bus_stats["errors"] += 1
                 self.stats.set_stats("event_bus", self.event_bus_stats)
 
@@ -178,7 +180,7 @@ class EventBus:
         self._running_event.set()
 
         while self._running_event.is_set():
-            event: Union[KiraMessageEvent, KiraCommentEvent] = await self.event_queue.get()
+            event: KiraMessageEvent | KiraCommentEvent = await self.event_queue.get()
             if isinstance(event, (KiraMessageEvent, KiraCommentEvent)):
                 self.total_messages_stats["total_messages"] += 1
                 self.stats.set_stats("messages", self.total_messages_stats)
@@ -209,6 +211,6 @@ class EventBus:
         #     task.cancel()
         # await asyncio.gather(*self._running_tasks, return_exceptions=True)
 
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> dict[str, int]:
         """get statistics of event bus"""
         return self.event_bus_stats.copy()

@@ -1,17 +1,19 @@
 from asyncio import Lock
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from deprecated import deprecated
 
 from core.agent.message import OpenAIMessage
+from core.chat.message_utils import (
+    KiraCommentEvent,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+)
 from core.chat.session import User
 from core.chat.session_buffer import SessionBufferManager
-from core.chat.message_utils import (
-    KiraIMSentResult, KiraMessageEvent,
-    KiraCommentEvent, MessageChain,
-)
 from core.logging_manager import get_logger
-from core.plugin.handlers import event_handler_reg, EventType
+from core.plugin.handlers import EventType, event_handler_reg
 from core.workflow import IMWorkflow
 from core.workflow.src.im.batching import publish_buffered_messages
 from core.workflow.src.im.message_delivery import MessageDeliveryService
@@ -49,7 +51,7 @@ class MessageProcessor:
         self,
         sid: str,
         extra_event: KiraMessageEvent | None = None,
-        filter_fn: Optional[Callable[[KiraMessageEvent], bool]] = None,
+        filter_fn: Callable[[KiraMessageEvent], bool] | None = None,
     ) -> bool:
         """Publish buffered events using the workflow's shared buffer and event bus."""
         return await publish_buffered_messages(

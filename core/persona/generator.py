@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from core.agent.message import OpenAIMessage
-from core.prompts.persona_generator import get_initial_persona_question, get_persona_generator_prompt
+from core.prompts.persona_generator import (
+    get_initial_persona_question,
+    get_persona_generator_prompt,
+)
 from core.utils.tool_utils import BaseTool
 
 if TYPE_CHECKING:

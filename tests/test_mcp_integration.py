@@ -53,7 +53,7 @@ class _DummyLLM:
 
 @pytest.fixture
 def flaky_env(tmp_path, monkeypatch):
-    import core.agent.mcp_mgr as mcp_mgr
+    from core.agent import mcp_mgr
 
     monkeypatch.setattr(mcp_mgr, "MCP_CONFIG_PATH", tmp_path / "mcp.json")
 

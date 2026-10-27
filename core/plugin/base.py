@@ -1,4 +1,4 @@
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 
 from .plugin_context import PluginContext
 
@@ -11,10 +11,8 @@ class BasePlugin(ABC):
     @abstractmethod
     async def initialize(self):
         """Called when the plugin is loaded"""
-        pass
 
     @abstractmethod
     async def terminate(self):
         """Called before the plugin is to be turned off"""
-        pass
 

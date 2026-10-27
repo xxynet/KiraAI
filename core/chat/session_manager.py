@@ -3,17 +3,17 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
-from pathlib import Path
 from contextlib import asynccontextmanager
-from typing import Literal, Optional, TYPE_CHECKING, overload
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, overload
 
-from core.logging_manager import get_logger
 from core.config import KiraConfig
-from core.utils.path_utils import get_data_path
 from core.db.service import DatabaseService
+from core.logging_manager import get_logger
+from core.utils.path_utils import get_data_path
 
-from .session import Session
 from .memory_metadata import normalize_memory
+from .session import Session
 
 if TYPE_CHECKING:
     from core.event_bus import EventBus
@@ -31,7 +31,7 @@ class SessionManager:
         self,
         db: DatabaseService,
         kira_config: KiraConfig,
-        event_bus: Optional[EventBus] = None,
+        event_bus: EventBus | None = None,
     ):
         self.db = db
         self.kira_config = kira_config
@@ -143,7 +143,7 @@ class SessionManager:
         async with self._write_lock:
             yield
 
-    async def _save_session(self, session: str, data: dict, event_type: str = None, payload: dict = None) -> dict:
+    async def _save_session(self, session: str, data: dict, event_type: str | None = None, payload: dict | None = None) -> dict:
         """Finish the transaction before publishing events, even if the caller is cancelled."""
         async def persist():
             record = await self.db.save_chat_session(
@@ -210,7 +210,7 @@ class SessionManager:
             return global_config
         return self._merge_capabilities(global_config, overrides)
 
-    async def update_session_capabilities(self, session: str, capabilities: Optional[dict]):
+    async def update_session_capabilities(self, session: str, capabilities: dict | None):
         if capabilities is not None and not isinstance(capabilities, dict):
             raise ValueError("Session capabilities must be an object or null")
         async with self._write_lock:

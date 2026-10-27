@@ -25,7 +25,7 @@ class ConfigType(Enum):
 class BaseConfigField:
     type: ConfigType
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         """
         Base class for configuration fields.
 
@@ -62,7 +62,7 @@ class BaseConfigField:
 class StringField(BaseConfigField):
     type = ConfigType.String
 
-    def __init__(self, key: str, name: str, hint: str, default=None, options: list = None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, options: list | None = None, locales: dict | None = None):
         if options:
             default = default if default in options else options[0]
         super().__init__(key, name, hint, default, locales)
@@ -75,7 +75,7 @@ class StringField(BaseConfigField):
 class IntField(BaseConfigField):
     type = ConfigType.Integer
 
-    def __init__(self, key: str, name: str, hint: str, default=None, options: list = None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, options: list | None = None, locales: dict | None = None):
         if options:
             default = default if default in options else options[0]
         super().__init__(key, name, hint, default, locales)
@@ -88,7 +88,7 @@ class IntField(BaseConfigField):
 class FloatField(BaseConfigField):
     type = ConfigType.Float
 
-    def __init__(self, key: str, name: str, hint: str, default=None, options: list = None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, options: list | None = None, locales: dict | None = None):
         if options:
             default = default if default in options else options[0]
         super().__init__(key, name, hint, default, locales)
@@ -102,14 +102,14 @@ class SensitiveField(BaseConfigField):
     """Sensitive content, e.g. api key"""
     type = ConfigType.Sensitive
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default, locales)
 
 
 class ListField(BaseConfigField):
     type = ConfigType.List
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default if isinstance(default, list) else [], locales)
 
 
@@ -120,7 +120,7 @@ class EnumField(BaseConfigField):
     """
     type = ConfigType.Enum
 
-    def __init__(self, key: str, name: str, hint: str, options, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, options, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default if default in options else options[0], locales)
         self.options = list(options)
 
@@ -133,35 +133,35 @@ class EnumField(BaseConfigField):
 class SwitchField(BaseConfigField):
     type = ConfigType.Switch
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default if isinstance(default, bool) else False, locales)
 
 
 class JsonField(BaseConfigField):
     type = ConfigType.Json
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default if default else {}, locales)
 
 
 class MarkdownField(BaseConfigField):
     type = ConfigType.Markdown
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default, locales)
 
 
 class YamlField(BaseConfigField):
     type = ConfigType.Yaml
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default, locales)
 
 
 class EditorField(BaseConfigField):
     type = ConfigType.Editor
 
-    def __init__(self, key: str, name: str, hint: str, default=None, language: str = None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, language: str | None = None, locales: dict | None = None):
         super().__init__(key, name, hint, default, locales)
         self.language = language
 
@@ -175,14 +175,14 @@ class EditorField(BaseConfigField):
 class TextareaField(BaseConfigField):
     type = ConfigType.Textarea
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default, locales)
 
 
 class ModelSelectField(BaseConfigField):
     type = ConfigType.ModelSelect
 
-    def __init__(self, key: str, name: str, hint: str, model_type: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, model_type: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default, locales)
         self.model_type = model_type
 
@@ -196,7 +196,7 @@ class ModelSelectField(BaseConfigField):
 class MultiSelectField(BaseConfigField):
     type = ConfigType.MultiSelect
 
-    def __init__(self, key: str, name: str, hint: str, options=None, default=None, source: str = None, model_type: str = None, allow_custom: bool = False, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, options=None, default=None, source: str | None = None, model_type: str | None = None, allow_custom: bool = False, locales: dict | None = None):
         """
         Multi-select field with static options or dynamic ones.
 
@@ -228,21 +228,21 @@ class MultiSelectField(BaseConfigField):
 class PersonaSelectField(BaseConfigField):
     type = ConfigType.PersonaSelect
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default, locales)
 
 
 class SessionSelectField(BaseConfigField):
     type = ConfigType.SessionSelect
 
-    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, default=None, locales: dict | None = None):
         super().__init__(key, name, hint, default, locales)
 
 
 class SectionField(BaseConfigField):
     type = ConfigType.Section
 
-    def __init__(self, key: str, name: str, hint: str, fields: list[BaseConfigField] = None, collapsed: bool = False, locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, fields: list[BaseConfigField] | None = None, collapsed: bool = False, locales: dict | None = None):
         super().__init__(key, name, hint, default=None, locales=locales)
         self.fields = fields or []
         self.collapsed = collapsed
@@ -258,7 +258,7 @@ class InfoField(BaseConfigField):
     """Read-only informational field, no data storage."""
     type = ConfigType.Info
 
-    def __init__(self, key: str, name: str, hint: str, level: str = "info", locales: dict = None):
+    def __init__(self, key: str, name: str, hint: str, level: str = "info", locales: dict | None = None):
         super().__init__(key, name, hint, default=None, locales=locales)
         self.level = level
 
