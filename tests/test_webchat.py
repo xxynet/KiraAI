@@ -770,8 +770,16 @@ async def test_startup_preserves_configured_adapter_and_disables_conflicting_web
     await store.accept("saved-message", "Keep history", "Alice")
     lifecycle = lifecycle_module.KiraLifecycle(Mock())
     conflict = configured_name != "renamed"
+
+    def on_initialized():
+        lifecycle.plugin_manager.init.assert_awaited_once()
+        lifecycle.event_bus.dispatch.assert_not_awaited()
+        lifecycle.temp_monitor.start_monitoring.assert_called_once()
+
+    initialized = Mock(side_effect=on_initialized)
     try:
-        await lifecycle.init_and_run_system()
+        await lifecycle.init_and_run_system(on_initialized=initialized)
+        initialized.assert_called_once_with()
         assert config == original
         lifecycle.plugin_manager.init.assert_awaited_once()
         lifecycle.event_bus.dispatch.assert_awaited_once()
