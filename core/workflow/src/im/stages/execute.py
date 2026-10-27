@@ -50,8 +50,8 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
             """Process and send LLM text response. Returns False if stopped, True to continue."""
             text = resp.text_response
             message_results = []
-            raw_output = ""
-            if text:
+            raw_output = text or ""
+            if text and resp.status != "error":
                 session_lock = services.message_delivery.get_session_lock(sid)
                 async with session_lock:
                     delivery = services.message_delivery

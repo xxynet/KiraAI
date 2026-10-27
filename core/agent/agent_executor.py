@@ -177,9 +177,12 @@ class AgentExecutor:
                         llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_name}")
                         continue
                     else:
-                        llm_resp = LLMResponse(f"[ProviderError] All models in the group failed to respond. {type(last_exc).__name__}: {last_exc}")
+                        err = (
+                            f"All models in the group failed to respond. "
+                            f"{type(last_exc).__name__}: {last_exc}"
+                        )
+                        llm_resp = LLMResponse(f"[ProviderError] {err}", status="error")
                         state = "error"
-                        err = f"All models failed. Last error: {type(last_exc).__name__}: {last_exc}"
                         is_final = True
                         exc_event = KiraExceptionEvent(
                             name=type(last_exc).__name__,
@@ -196,7 +199,10 @@ class AgentExecutor:
                             except Exception:
                                 logger.error(traceback.format_exc())
 
-            has_tool_calls = bool(llm_resp.tool_calls)
+            if llm_resp.status == "error":
+                state = "error"
+                err = err or llm_resp.text_response
+            has_tool_calls = llm_resp.status != "error" and bool(llm_resp.tool_calls)
 
             llm_resp.agent_step_index = step_index
             llm_logger.debug(llm_resp)

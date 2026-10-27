@@ -917,3 +917,204 @@ async def test_workflow_protects_native_and_tool_media_until_finalization(
     assert len(references) == 2
     await asyncio.to_thread(media_refs.cleanup_session_media, sid, [])
     assert all(not (tmp_path / ref["path"]).exists() for ref in references)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("error_type", ["api_status", "provider"])
+@pytest.mark.parametrize("after_tool_step", [False, True])
+@pytest.mark.parametrize("body", [
+    '<html><head><title>413 Request Entity Too Large</title></head><body><msg><text>error & body',
+    '<msg><text>provider error</text></msg>',
+])
+async def test_provider_error_stays_internal(processor, monkeypatch, error_type, after_tool_step, body):
+    import importlib
+
+    import httpx
+    from openai import APIStatusError
+    from core.provider import ProviderAPIError
+
+    main = importlib.import_module("core.plugin.builtin_plugins.kira-ai.main")
+    plugin_ctx = Mock()
+    plugin = main.DefaultPlugin(plugin_ctx, {})
+    instance, model = processor
+    if error_type == "api_status":
+        error = APIStatusError(body, response=httpx.Response(
+            413, request=httpx.Request("POST", "https://provider.invalid/chat"),
+        ), body=body)
+    else:
+        error = ProviderAPIError(body)
+    if after_tool_step:
+        model.chat.side_effect = [LLMResponse("<msg><text>reply</text></msg>", tool_calls=[{
+            "id": "call-1", "type": "function",
+            "function": {"name": "check", "arguments": "{}"},
+        }]), error]
+
+        async def execute_tool(event, response, **kwargs):
+            response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
+
+        instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    else:
+        model.chat.side_effect = error
+    response_handler = AsyncMock(side_effect=plugin.on_llm_resp)
+    observer = AsyncMock()
+    exception_handler, final = AsyncMock(), AsyncMock()
+    step_handler, sent_handler, parse_handler = AsyncMock(), AsyncMock(), AsyncMock()
+    callbacks = {
+        EventType.ON_LLM_RESPONSE: response_handler,
+        EventType.ON_EXCEPTION: exception_handler,
+        EventType.ON_STEP_RESULT: step_handler,
+        EventType.ON_MESSAGE_SENT: sent_handler,
+        EventType.AFTER_XML_PARSE: parse_handler,
+        EventType.ON_FINAL_RESULT: final,
+    }
+    def handlers(event_type):
+        if event_type == EventType.ON_LLM_RESPONSE:
+            return [SimpleNamespace(exec_handler=response_handler), SimpleNamespace(exec_handler=observer)]
+        return [SimpleNamespace(exec_handler=callbacks[event_type], handler=callbacks[event_type])] if event_type in callbacks else []
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", handlers)
+
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert response_handler.await_count == observer.await_count == 1 + int(after_tool_step)
+    assert instance.message_delivery.parse_xml.await_count == int(after_tool_step)
+    assert instance.message_delivery.send_message_chain.await_count == int(after_tool_step)
+    plugin_ctx.get_default_fast_llm_client.assert_not_called()
+    plugin_ctx.get_default_llm_client.assert_not_called()
+    exception_handler.assert_awaited_once()
+    exception = exception_handler.await_args.args[1]
+    assert exception.source == "provider" and exception.e is error
+    assert exception.message == str(error)
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
+    assert [message.role for message in memory] == (
+        ["user", "assistant", "tool", "assistant"] if after_tool_step else ["user", "assistant"]
+    )
+    expected = f"[ProviderError] All models in the group failed to respond. {type(error).__name__}: {error}"
+    assert memory[-1].content == expected
+    observed_response = observer.await_args.args[1]
+    assert observed_response.status == "error"
+    assert observed_response.text_response == expected
+    if after_tool_step:
+        assert "reply" in memory[1].content
+    usage = instance.im_workflow.ctx.db.add_telemetry_llm_usage.await_args.kwargs
+    assert usage["success"] is False
+    final.assert_awaited_once()
+    results = final.await_args.args[1].step_results
+    assert len(results) == step_handler.await_count == 1 + int(after_tool_step)
+    assert results[-1].raw_output == expected
+    assert results[-1].message_results == []
+    assert sent_handler.await_count == parse_handler.await_count == int(after_tool_step)
+
+
+@pytest.mark.anyio
+async def test_provider_error_is_persisted_and_loaded_into_next_turn(processor, session_db, tmp_path):
+    from core.chat.session_manager import SessionManager
+    from core.provider import ProviderAPIError
+
+    instance, model = processor
+    services = instance.im_workflow.ctx
+    config = {"bot_config": {"bot": {"max_memory_length": 10}}}
+    manager = SessionManager(session_db, config)
+    manager.chat_memory_path = str(tmp_path / "chat_memory.json")
+    await manager.initialize()
+    services.session_manager = manager
+    error = ProviderAPIError("<html>413 Request Entity Too Large</html>")
+    expected = f"[ProviderError] All models in the group failed to respond. ProviderAPIError: {error}"
+    requests = []
+
+    async def chat(request):
+        requests.append([message.to_dict() for message in request.messages])
+        if len(requests) == 1:
+            raise error
+        return LLMResponse("<msg><text>reply</text></msg>")
+
+    model.chat.side_effect = chat
+    event = batch()
+    event.session.session_title = "Chat"
+    await instance.im_workflow.handle_batch_event(event)
+
+    services.message_delivery.send_message_chain.assert_not_awaited()
+    saved = (await manager.get_session(event.sid)).flatten_content()
+    assert [message["role"] for message in saved] == ["user", "assistant"]
+    assert saved[-1]["content"] == expected
+
+    reloaded_manager = SessionManager(session_db, config)
+    reloaded_manager.chat_memory_path = str(tmp_path / "chat_memory.json")
+    await reloaded_manager.initialize()
+    services.session_manager = reloaded_manager
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert len(requests) == 2
+    assert requests[1][1]["role"] == "assistant"
+    assert requests[1][1]["content"] == expected
+    services.message_delivery.send_message_chain.assert_awaited_once()
+    assert services.message_delivery.send_message_chain.await_args.args[1][0].text == "reply"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("with_tool_calls", [False, True])
+async def test_error_status_response_is_context_only(processor, monkeypatch, with_tool_calls):
+    instance, model = processor
+    text = "<msg><text>Provider returned an error & diagnostic</text></msg>"
+    response = LLMResponse(text, status="error", tool_calls=[{
+        "id": "call-1", "type": "function",
+        "function": {"name": "check", "arguments": "{}"},
+    }] if with_tool_calls else [])
+    model.chat.side_effect = None
+    model.chat.return_value = response
+    execute_tool = AsyncMock()
+    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    response_hook, step_hook, final_hook = AsyncMock(), AsyncMock(), AsyncMock()
+    callbacks = {
+        EventType.ON_LLM_RESPONSE: response_hook,
+        EventType.ON_STEP_RESULT: step_hook,
+        EventType.ON_FINAL_RESULT: final_hook,
+    }
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=callbacks[event_type])] if event_type in callbacks else []
+    ))
+
+    await instance.im_workflow.handle_batch_event(batch())
+
+    model.chat.assert_awaited_once()
+    execute_tool.assert_not_awaited()
+    response_hook.assert_awaited_once()
+    assert response_hook.await_args.args[1] is response
+    assert response_hook.await_args.args[1].status == "error"
+    instance.message_delivery.parse_xml.assert_not_awaited()
+    instance.message_delivery.send_message_chain.assert_not_awaited()
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
+    assert [message.role for message in memory] == ["user", "assistant"]
+    assert memory[-1].content == text
+    assert not memory[-1].tool_calls
+    assert response.agent_step_index == 1
+    assert instance.im_workflow.ctx.db.add_telemetry_llm_usage.await_args.kwargs["success"] is False
+    step_hook.assert_awaited_once()
+    result = step_hook.await_args.args[1]
+    assert result.raw_output == text and result.message_results == []
+    final_hook.assert_awaited_once()
+    assert final_hook.await_args.args[1].step_results == [result]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status", ["success", "error"])
+async def test_builtin_xml_repair_respects_response_status(status):
+    import importlib
+
+    main = importlib.import_module("core.plugin.builtin_plugins.kira-ai.main")
+    original = "<msg><text>text & data</text></msg>"
+    fixed = "<msg><text>text &amp; data</text></msg>"
+    client = SimpleNamespace(chat=AsyncMock(return_value=LLMResponse(fixed)))
+    ctx = SimpleNamespace(get_default_fast_llm_client=Mock(return_value=client))
+    plugin = main.DefaultPlugin(ctx, {})
+    response = LLMResponse(original, status=status)
+
+    await plugin.on_llm_resp(None, response)
+
+    if status == "error":
+        ctx.get_default_fast_llm_client.assert_not_called()
+        client.chat.assert_not_awaited()
+        assert response.text_response == original
+    else:
+        client.chat.assert_awaited_once()
+        assert response.text_response == fixed
