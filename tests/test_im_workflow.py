@@ -1052,10 +1052,14 @@ async def test_provider_error_is_persisted_and_loaded_into_next_turn(processor, 
 
 
 @pytest.mark.anyio
-async def test_error_status_response_is_context_only(processor, monkeypatch):
+@pytest.mark.parametrize("with_tool_calls", [False, True])
+async def test_error_status_response_is_context_only(processor, monkeypatch, with_tool_calls):
     instance, model = processor
     text = "<msg><text>Provider returned an error & diagnostic</text></msg>"
-    response = LLMResponse(text, status="error")
+    response = LLMResponse(text, status="error", tool_calls=[{
+        "id": "call-1", "type": "function",
+        "function": {"name": "check", "arguments": "{}"},
+    }] if with_tool_calls else [])
     model.chat.side_effect = None
     model.chat.return_value = response
     execute_tool = AsyncMock()

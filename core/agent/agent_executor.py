@@ -202,7 +202,7 @@ class AgentExecutor:
             if llm_resp.status == "error":
                 state = "error"
                 err = err or llm_resp.text_response
-            has_tool_calls = bool(llm_resp.tool_calls)
+            has_tool_calls = llm_resp.status != "error" and bool(llm_resp.tool_calls)
 
             llm_resp.agent_step_index = step_index
             llm_logger.debug(llm_resp)
