@@ -141,7 +141,7 @@ class QQMessageChain:
                             "id": int(ele.emoji_id)
                         }
                     })
-                except:
+                except (ValueError, TypeError):
                     pass
             elif isinstance(ele, QQMessageType.Sticker):
                 if ele.sticker_bs64.startswith("base64://"):

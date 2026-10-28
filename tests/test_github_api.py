@@ -95,3 +95,39 @@ def test_get_all_releases_follows_repository_transfer_redirect(monkeypatch):
 
     assert releases == []
     assert requested_urls == [old_url, new_url]
+
+@pytest.mark.parametrize(
+    ("failure_kind", "error_type"),
+    [("network", httpx.ConnectError), ("status", httpx.HTTPStatusError),
+     ("cancel", asyncio.CancelledError)],
+)
+def test_get_all_releases_propagates_page_failure_and_closes_client(
+    monkeypatch, failure_kind, error_type,
+):
+    pages = []
+    clients = []
+    real_async_client = httpx.AsyncClient
+
+    async def handler(request):
+        page = int(request.url.params["page"])
+        pages.append(page)
+        if page == 1:
+            return httpx.Response(200, json=[{"tag_name": "v1"}])
+        if failure_kind == "network":
+            raise httpx.ConnectError("request failed", request=request)
+        if failure_kind == "cancel":
+            raise asyncio.CancelledError("request cancelled")
+        return httpx.Response(503)
+
+    def mock_async_client(**kwargs):
+        client = real_async_client(transport=httpx.MockTransport(handler), **kwargs)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(github_api.httpx, "AsyncClient", mock_async_client)
+    with pytest.raises(error_type):
+        asyncio.run(github_api.get_all_releases("owner", "repo", per_page=1))
+
+    assert pages == [1, 2]
+    assert len(clients) == 1
+    assert clients[0].is_closed

@@ -104,12 +104,8 @@ async def get_all_releases(
                 f"https://api.github.com/repos/{owner}/{repo}/releases"
                 f"?per_page={per_page}&page={page}"
             )
-            try:
-                resp = await client.get(url)
-                resp.raise_for_status()
-            except httpx.HTTPError:
-                # logger.error(f"Failed to get releases (page {page}): {e}")
-                raise
+            resp = await client.get(url)
+            resp.raise_for_status()
 
             data = resp.json()
             if not data:

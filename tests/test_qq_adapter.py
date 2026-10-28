@@ -17,7 +17,11 @@ from core.adapter.capabilities import IMCapability
 from core.adapter.context import AdapterContext
 from core.adapter.src.qq import qq as qq_module
 from core.adapter.src.qq.im import QQIMCapability
-from core.adapter.src.qq.napcat_client import NapCatWebSocketClient
+from core.adapter.src.qq.napcat_client import (
+    NapCatWebSocketClient,
+    QQMessageChain,
+    QQMessageType,
+)
 from core.adapter.src.qq.qq import QQAdapter
 from core.chat import KiraIMSentResult, MessageChain, User
 from core.chat.message_elements import (
@@ -797,3 +801,30 @@ async def test_incoming_event_carries_self_account_nickname(group):
     assert event.message.bot.user_id == "99"
     assert event.message.bot.nickname == "Kira"
     assert event.message.sender.nickname == "Alice"
+
+@pytest.mark.parametrize("emoji_id", [123, "123"])
+async def test_native_message_chain_serializes_emoji_ids(emoji_id):
+    chain = QQMessageChain([QQMessageType.Emoji(emoji_id)])
+    assert chain.to_list() == [{"type": "face", "data": {"id": 123}}]
+
+
+@pytest.mark.parametrize("emoji_id", ["invalid", None])
+async def test_native_message_chain_skips_invalid_emoji_ids(emoji_id):
+    emoji = QQMessageType.Emoji(123)
+    emoji.emoji_id = emoji_id
+    chain = QQMessageChain([emoji, QQMessageType.Text("tail")])
+    assert chain.to_list() == [{"type": "text", "data": {"text": "tail"}}]
+
+
+@pytest.mark.parametrize(
+    "error_type", [RuntimeError, KeyboardInterrupt, SystemExit, asyncio.CancelledError],
+)
+async def test_native_message_chain_propagates_unexpected_emoji_errors(error_type):
+    class FailingEmojiId:
+        def __int__(self):
+            raise error_type("conversion interrupted")
+
+    emoji = QQMessageType.Emoji(123)
+    emoji.emoji_id = FailingEmojiId()
+    with pytest.raises(error_type):
+        QQMessageChain([emoji]).to_list()

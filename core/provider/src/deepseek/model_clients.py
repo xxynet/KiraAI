@@ -3,9 +3,6 @@ from collections.abc import AsyncGenerator
 
 from openai import (
     NOT_GIVEN,
-    APIConnectionError,
-    APIStatusError,
-    APITimeoutError,
     AsyncOpenAI,
 )
 
@@ -86,52 +83,43 @@ class DeepSeekLLMClient(LLMModelClient):
         messages = await resolve_media_references(request.messages)
         request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
 
-        try:
-            start_time = time.perf_counter()
-            response = await client.chat.completions.create(**request_kwargs)
-            end_time = time.perf_counter()
+        start_time = time.perf_counter()
+        response = await client.chat.completions.create(**request_kwargs)
+        end_time = time.perf_counter()
 
-            llm_resp = LLMResponse("")
-            llm_resp.time_consumed = round(end_time - start_time, 2)
+        llm_resp = LLMResponse("")
+        llm_resp.time_consumed = round(end_time - start_time, 2)
 
-            if response.choices:
-                message = response.choices[0].message
+        if response.choices:
+            message = response.choices[0].message
 
-                # Tool calls
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        name = tool_call.function.name
-                        llm_resp.tool_calls.append({
-                            "id": tool_call.id,
-                            "type": "function",
-                            "function": {
-                                "name": name,
-                                "arguments": tool_call.function.arguments
-                            }
-                        })
+            # Tool calls
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    name = tool_call.function.name
+                    llm_resp.tool_calls.append({
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": tool_call.function.arguments
+                        }
+                    })
 
-                content = message.content if message.content else ""
-                # DeepSeek returns reasoning_content alongside content
-                reasoning_content = getattr(message, "reasoning_content", "") or ""
-                llm_resp.text_response = content
-                llm_resp.reasoning_content = reasoning_content
+            content = message.content if message.content else ""
+            # DeepSeek returns reasoning_content alongside content
+            reasoning_content = getattr(message, "reasoning_content", "") or ""
+            llm_resp.text_response = content
+            llm_resp.reasoning_content = reasoning_content
 
-                if response.usage:
-                    llm_resp.input_tokens = response.usage.prompt_tokens
-                    llm_resp.output_tokens = response.usage.completion_tokens
-                    # DeepSeek cache hit tokens
-                    llm_resp.cached_tokens = getattr(response.usage, "prompt_cache_hit_tokens", None)
+            if response.usage:
+                llm_resp.input_tokens = response.usage.prompt_tokens
+                llm_resp.output_tokens = response.usage.completion_tokens
+                # DeepSeek cache hit tokens
+                llm_resp.cached_tokens = getattr(response.usage, "prompt_cache_hit_tokens", None)
 
-            return llm_resp
+        return llm_resp
 
-        except APIStatusError:
-            raise
-        except APITimeoutError:
-            raise
-        except APIConnectionError:
-            raise
-        except Exception:
-            raise
 
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
         client = self._build_client()
@@ -141,63 +129,53 @@ class DeepSeekLLMClient(LLMModelClient):
         )
         request_kwargs["stream_options"] = {"include_usage": True}
 
-        try:
-            stream = await client.chat.completions.create(**request_kwargs)
-            async for event in stream:
-                # Usage-only event (sent by OpenAI API after the final choice chunk)
-                if not event.choices:
-                    if event.usage:
-                        yield LLMStreamChunk(
-                            is_final=True,
-                            usage={
-                                "input_tokens": event.usage.prompt_tokens,
-                                "output_tokens": event.usage.completion_tokens,
-                                "cached_tokens": getattr(event.usage, "prompt_cache_hit_tokens", None),
-                            },
-                        )
-                    continue
+        stream = await client.chat.completions.create(**request_kwargs)
+        async for event in stream:
+            # Usage-only event (sent by OpenAI API after the final choice chunk)
+            if not event.choices:
+                if event.usage:
+                    yield LLMStreamChunk(
+                        is_final=True,
+                        usage={
+                            "input_tokens": event.usage.prompt_tokens,
+                            "output_tokens": event.usage.completion_tokens,
+                            "cached_tokens": getattr(event.usage, "prompt_cache_hit_tokens", None),
+                        },
+                    )
+                continue
 
-                choice = event.choices[0]
-                delta = choice.delta
+            choice = event.choices[0]
+            delta = choice.delta
 
-                chunk = LLMStreamChunk()
+            chunk = LLMStreamChunk()
 
-                # Text content
-                if delta.content:
-                    chunk.delta_text = delta.content
+            # Text content
+            if delta.content:
+                chunk.delta_text = delta.content
 
-                # DeepSeek reasoning_content
-                reasoning = getattr(delta, "reasoning_content", "") or ""
-                if reasoning:
-                    chunk.delta_reasoning = reasoning
+            # DeepSeek reasoning_content
+            reasoning = getattr(delta, "reasoning_content", "") or ""
+            if reasoning:
+                chunk.delta_reasoning = reasoning
 
-                # Tool calls — pass through raw incremental deltas from SDK
-                if delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        fragment = {
-                            "index": tc.index,
-                            "id": tc.id or "",
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name if tc.function and tc.function.name else "",
-                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
-                            },
-                        }
-                        chunk.tool_calls_delta.append(fragment)
+            # Tool calls — pass through raw incremental deltas from SDK
+            if delta.tool_calls:
+                for tc in delta.tool_calls:
+                    fragment = {
+                        "index": tc.index,
+                        "id": tc.id or "",
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name if tc.function and tc.function.name else "",
+                            "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
+                        },
+                    }
+                    chunk.tool_calls_delta.append(fragment)
 
-                # Finish reason
-                finish_reason = choice.finish_reason
-                if finish_reason:
-                    chunk.is_final = True
-                    chunk.finish_reason = finish_reason
+            # Finish reason
+            finish_reason = choice.finish_reason
+            if finish_reason:
+                chunk.is_final = True
+                chunk.finish_reason = finish_reason
 
-                yield chunk
-
-        except APIStatusError:
-            raise
-        except APITimeoutError:
-            raise
-        except APIConnectionError:
-            raise
-        except Exception:
-            raise
+            yield chunk
