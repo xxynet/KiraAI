@@ -1,4 +1,3 @@
-from typing import Dict, List
 from urllib.parse import quote
 
 from fastapi import Depends, HTTPException, status
@@ -17,8 +16,7 @@ from webui.models import (
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
-from webui.utils import schema_to_dict
-from webui.utils import _generate_id
+from webui.utils import _generate_id, schema_to_dict
 
 logger = get_logger("webui", "blue")
 
@@ -26,7 +24,7 @@ logger = get_logger("webui", "blue")
 class ProvidersRoutes(Routes):
     def __init__(self, app, lifecycle):
         super().__init__(app, lifecycle)
-        self._providers: Dict[str, ProviderResponse] = {}
+        self._providers: dict[str, ProviderResponse] = {}
 
     def get_routes(self):
         return [
@@ -55,7 +53,7 @@ class ProvidersRoutes(Routes):
                 path="/api/providers",
                 methods=["GET"],
                 endpoint=self.list_providers,
-                response_model=List[ProviderResponse],
+                response_model=list[ProviderResponse],
                 tags=["providers"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -152,7 +150,7 @@ class ProvidersRoutes(Routes):
             ),
         ]
 
-    def _get_provider_type_display(self, provider_type: str) -> tuple[str, Dict[str, Dict[str, str]]]:
+    def _get_provider_type_display(self, provider_type: str) -> tuple[str, dict[str, dict[str, str]]]:
         if self.lifecycle and self.lifecycle.provider_manager:
             manifest = self.lifecycle.provider_manager.get_manifest(provider_type)
             return manifest.get("display_name") or provider_type, manifest.get("locales") or {}
@@ -183,7 +181,7 @@ class ProvidersRoutes(Routes):
             type_icon_dark=self._get_provider_type_icon(provider_info.provider_type, dark=True),
         )
 
-    def _get_supported_model_types(self, provider_id: str) -> List[str]:
+    def _get_supported_model_types(self, provider_id: str) -> list[str]:
         if not self.lifecycle or not self.lifecycle.provider_manager:
             return []
         try:
@@ -198,8 +196,8 @@ class ProvidersRoutes(Routes):
             models_attr = getattr(provider_cls, "models", None)
             if not models_attr:
                 return []
-            supported: List[str] = []
-            for key in models_attr.keys():
+            supported: list[str] = []
+            for key in models_attr:
                 type_key = getattr(key, "value", None)
                 if not type_key:
                     type_key = str(key)
@@ -274,7 +272,7 @@ class ProvidersRoutes(Routes):
         providers = []
         configured_providers = self.lifecycle.kira_config.get("providers", {})
 
-        for provider_id in configured_providers.keys():
+        for provider_id in configured_providers:
             provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
             if not provider_info:
                 continue
@@ -466,11 +464,11 @@ class ProvidersRoutes(Routes):
                 found = True
             if not found:
                 raise HTTPException(status_code=404, detail="Provider not found")
-            return None
+            return
         if provider_id not in self._providers:
             raise HTTPException(status_code=404, detail="Provider not found")
         self._providers.pop(provider_id, None)
-        return None
+        return
 
     async def sync_models(self, provider_id: str, model_type: str, payload: ModelSyncRequest):
         """Batch sync upstream names while retaining existing internal model IDs."""

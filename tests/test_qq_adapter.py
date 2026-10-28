@@ -11,9 +11,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from tests.adapter_lifecycle import start_adapter
-
-import core.utils.common_utils as common_utils
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.base import BaseAdapter
 from core.adapter.capabilities import IMCapability
@@ -21,14 +18,26 @@ from core.adapter.context import AdapterContext
 from core.adapter.src.qq import qq as qq_module
 from core.adapter.src.qq.im import QQIMCapability
 from core.adapter.src.qq.napcat_client import NapCatWebSocketClient
-from core.chat import KiraIMSentResult, MessageChain, User
 from core.adapter.src.qq.qq import QQAdapter
-from core.chat.message_elements import At, Emoji, File, Forward, Image, Poke, Reply, Text, Video
+from core.chat import KiraIMSentResult, MessageChain, User
+from core.chat.message_elements import (
+    At,
+    Emoji,
+    File,
+    Forward,
+    Image,
+    Poke,
+    Reply,
+    Text,
+    Video,
+)
+from core.utils import common_utils
+from tests.adapter_lifecycle import start_adapter
 
 pytestmark = pytest.mark.asyncio
 
 
-def make_adapter(config: dict = None) -> QQAdapter:
+def make_adapter(config: dict | None = None) -> QQAdapter:
     info = AdapterInfo(
         enabled=True, adapter_id="qq-test", name="qq", platform="QQ",
         config=config or {},
@@ -711,7 +720,10 @@ async def test_group_notice_survives_missing_group_lookup_data(group_info):
 async def test_webui_stop_with_real_client_logs_one_stop_without_disconnect_warning(monkeypatch):
     from core.adapter.src.qq.napcat_client import client as napcat_client
     from tests.test_napcat_ws_client import (
-        YieldingCloseWebSocket, lifecycle_meta_frame, patch_ws_factory, wait_until,
+        YieldingCloseWebSocket,
+        lifecycle_meta_frame,
+        patch_ws_factory,
+        wait_until,
     )
     adapter = lifecycle_adapter()
     adapter.bot.close = AsyncMock(wraps=adapter.bot.close)

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, Union, Type
 import os
+from dataclasses import dataclass, field
 
-from core.utils.tool_utils import BaseTool
+from core.chat.message_elements import File, Image, Record
 from core.utils.path_utils import get_data_path
-from core.chat.message_elements import Image, Record, File
+from core.utils.tool_utils import BaseTool
 
 
 def truncate_tool_output(text: str, max_tokens: int) -> str:
@@ -48,7 +47,7 @@ class ToolSet:
                 return True
         return False
 
-    def add(self, *tools: Union[BaseTool, Type[BaseTool]]):
+    def add(self, *tools: BaseTool | type[BaseTool]):
         for tool in tools:
             if isinstance(tool, type):
                 tool_inst = tool()
@@ -86,7 +85,7 @@ class ToolResult:
 
     text: str = ""
 
-    attachments: list[Union[Image, Record, File]] = field(default_factory=list)
+    attachments: list[Image | Record | File] = field(default_factory=list)
 
     # Provider-independent image references (``kira_image_ref`` parts) attached
     # to the tool result. The agent executor relocates them into a user message
@@ -120,7 +119,7 @@ class ToolResult:
                 normalized_paths.append(file_string)
 
             if normalized_paths:
-                lines: list[str] = list()
+                lines: list[str] = []
                 lines.append(
                     "Tool result contains attachments. "
                     "To send them, use the <file> tag in <msg>, "
@@ -137,7 +136,7 @@ class ToolResult:
         self.result_str = "".join(res_text)
         return self.result_str
 
-    def build_content(self, text: str) -> Union[str, list]:
+    def build_content(self, text: str) -> str | list:
         """Return the tool result content, embedding media refs when present.
 
         Without media refs the content stays a plain string; with them it becomes

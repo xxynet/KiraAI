@@ -2,7 +2,12 @@ import httpx
 
 from core.provider import BaseProvider, ModelType
 
-from .model_clients import VolcengineLLMClient, VolcengineImageClient, VolcengineVideoClient, VolcengineEmbeddingClient
+from .model_clients import (
+    VolcengineEmbeddingClient,
+    VolcengineImageClient,
+    VolcengineLLMClient,
+    VolcengineVideoClient,
+)
 
 
 class VolcengineProvider(BaseProvider):

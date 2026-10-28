@@ -1,11 +1,15 @@
 import time
 from dataclasses import asdict
-from typing import List, Optional
 from uuid import uuid4
 
 from fastapi import Depends, HTTPException, Response
 
-from core.plugin.store import CACHE_TTL_SECONDS, PluginStore, StoreSource, extract_plugins
+from core.plugin.store import (
+    CACHE_TTL_SECONDS,
+    PluginStore,
+    StoreSource,
+    extract_plugins,
+)
 from webui.models import (
     PluginStoreFetchRequest,
     PluginStoreItemResponse,
@@ -23,7 +27,7 @@ class PluginStoreRoutes(Routes):
                 path="/api/plugin-store/fetch",
                 methods=["POST"],
                 endpoint=self.fetch_plugin_store,
-                response_model=List[PluginStoreItemResponse],
+                response_model=list[PluginStoreItemResponse],
                 tags=["plugin-store"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -31,7 +35,7 @@ class PluginStoreRoutes(Routes):
                 path="/api/plugin-store/sources",
                 methods=["GET"],
                 endpoint=self.list_plugin_sources,
-                response_model=List[PluginStoreSourceItem],
+                response_model=list[PluginStoreSourceItem],
                 tags=["plugin-store"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -61,8 +65,8 @@ class PluginStoreRoutes(Routes):
 
     async def fetch_plugin_store(
         self, payload: PluginStoreFetchRequest, response: Response,
-    ) -> List[PluginStoreItemResponse]:
-        source: Optional[StoreSource] = StoreSource(url=payload.url) if payload.url else None
+    ) -> list[PluginStoreItemResponse]:
+        source: StoreSource | None = StoreSource(url=payload.url) if payload.url else None
 
         # If source_id is provided, look up URL from DB
         if payload.source_id and self.lifecycle and self.lifecycle.db_service:
@@ -111,7 +115,7 @@ class PluginStoreRoutes(Routes):
 
     # ---- Plugin Store Source CRUD ----
 
-    async def list_plugin_sources(self) -> List[PluginStoreSourceItem]:
+    async def list_plugin_sources(self) -> list[PluginStoreSourceItem]:
         if not self.lifecycle or not self.lifecycle.db_service:
             raise HTTPException(status_code=503, detail="Database service not available")
         sources = await self.lifecycle.db_service.list_plugin_store_sources()

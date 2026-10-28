@@ -1,21 +1,22 @@
 from copy import deepcopy
+from typing import Literal
+
 from pydantic import BaseModel, Field
-from typing import Literal, Union, Optional
 
 
 class OpenAIMessage(BaseModel):
     role: Literal["system", "user", "assistant", "tool"]
-    content: Union[str, list, dict, None] = None
+    content: str | list | dict | None = None
 
     # assistant
-    reasoning_content: Optional[str] = ""
+    reasoning_content: str | None = ""
 
-    tool_calls: Optional[list[dict]] = Field(default_factory=list)
+    tool_calls: list[dict] | None = Field(default_factory=list)
 
     # tool
-    tool_call_id: Optional[str] = None
+    tool_call_id: str | None = None
 
-    name: Optional[str] = None
+    name: str | None = None
     extra: dict = Field(default_factory=dict, alias="_extra")
 
     def to_memory_dict(self) -> dict:

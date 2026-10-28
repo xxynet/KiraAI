@@ -1,17 +1,18 @@
+import time
+from collections.abc import AsyncGenerator
+
 from openai import (
-    AsyncOpenAI,
+    NOT_GIVEN,
+    APIConnectionError,
     APIStatusError,
     APITimeoutError,
-    APIConnectionError,
-    NOT_GIVEN,
+    AsyncOpenAI,
 )
-import time
-from typing import AsyncGenerator
 
 from core.agent.message import provider_message_dict
-from core.provider import ModelInfo, LLMModelClient
-from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.logging_manager import get_logger
+from core.provider import LLMModelClient, ModelInfo
+from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.provider.openai_compatible import build_llm_default_headers
 from core.utils.media_refs import resolve_media_references
 
@@ -61,12 +62,12 @@ class DeepSeekLLMClient(LLMModelClient):
         if isinstance(user_extra_body, dict) and user_extra_body:
             extra_body.update(user_extra_body)
 
-        kwargs = dict(
-            model=self.model.model_name,
-            messages=[provider_message_dict(m) for m in request.messages],
-            tools=request.tools if request.tools else NOT_GIVEN,
-            tool_choice=request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
-        )
+        kwargs = {
+            "model": self.model.model_name,
+            "messages": [provider_message_dict(m) for m in request.messages],
+            "tools": request.tools if request.tools else NOT_GIVEN,
+            "tool_choice": request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
+        }
 
         if thinking_enabled:
             kwargs["reasoning_effort"] = reasoning_effort

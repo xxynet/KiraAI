@@ -1,11 +1,12 @@
-from core.workflow.base_stage import BaseStage
 import time
 
 from core.chat.message_utils import KiraMessageBatchEvent
-from ..batching import publish_buffered_messages
-from ..context import IMEventContext
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
+from core.workflow.base_stage import BaseStage
+
+from ..batching import publish_buffered_messages
+from ..context import IMEventContext
 
 logger = get_logger("message", "cyan")
 

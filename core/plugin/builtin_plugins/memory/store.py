@@ -1,19 +1,25 @@
 """Transactional SQLite storage, scoped retrieval, and legacy text migration."""
 
 import asyncio
-from contextlib import asynccontextmanager
 import hashlib
 import json
 import math
-from pathlib import Path
 import time
 import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 import aiosqlite
 
 from .scope import MemoryInputError, MemoryScope
+from .search import (
+    MAX_CANDIDATES,
+    index_columns,
+    indexed_term_count,
+    match_query,
+    normalize,
+)
 from .vector_store import VectorStore
-from .search import MAX_CANDIDATES, index_columns, indexed_term_count, match_query, normalize
 
 KINDS = {"semantic", "episodic", "procedural"}
 STATUSES = {"active", "completed", "cancelled", "superseded"}
@@ -495,14 +501,13 @@ class MemoryStore:
 
     async def recall_users(self, session_id):
         """List known user owners without loading memory text."""
-        async with self.connection() as db:
-            async with db.execute(
-                "SELECT owner_id FROM memories WHERE session_id=? "
-                "AND owner_type='user' AND origin='conversation' "
-                "GROUP BY owner_id ORDER BY MAX(updated_at) DESC, owner_id LIMIT 200",
-                (session_id,),
-            ) as cursor:
-                owners = [row[0] for row in await cursor.fetchall()]
+        async with self.connection() as db, db.execute(
+            "SELECT owner_id FROM memories WHERE session_id=? "
+            "AND owner_type='user' AND origin='conversation' "
+            "GROUP BY owner_id ORDER BY MAX(updated_at) DESC, owner_id LIMIT 200",
+            (session_id,),
+        ) as cursor:
+            owners = [row[0] for row in await cursor.fetchall()]
         users = []
         for owner in owners:
             try:

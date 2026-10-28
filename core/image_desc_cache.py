@@ -1,6 +1,5 @@
 import asyncio
 import time
-from typing import Optional
 
 from core.db.service import DatabaseService
 from core.logging_manager import get_logger
@@ -14,7 +13,7 @@ class ImageDescCache:
     def __init__(self, db_service: DatabaseService):
         self.db = db_service
 
-    async def get(self, md5: str) -> Optional[str]:
+    async def get(self, md5: str) -> str | None:
         entry = await self.db.get_image_desc_cache(md5)
         if entry:
             await self.db.update_image_desc_cache(

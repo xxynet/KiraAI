@@ -1,8 +1,9 @@
-from core.workflow.base_stage import BaseStage
 from core.chat.message_utils import KiraFinalResult
-from ..context import IMBatchContext
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
+from core.workflow.base_stage import BaseStage
+
+from ..context import IMBatchContext
 
 logger = get_logger("message", "cyan")
 

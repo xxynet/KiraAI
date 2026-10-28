@@ -1,8 +1,8 @@
 import os
 import time
 
-from fastapi import Depends
 import psutil
+from fastapi import Depends
 
 from core.logging_manager import get_logger
 from webui.models import OverviewResponse
@@ -69,7 +69,7 @@ class OverviewRoutes(Routes):
                 active_providers = len(
                     [
                         provider_id
-                        for provider_id in providers_config.keys()
+                        for provider_id in providers_config
                         if provider_id in self.lifecycle.provider_manager._providers
                     ]
                 )

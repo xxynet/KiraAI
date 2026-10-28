@@ -8,13 +8,12 @@ from core.adapter.access import ListAccessPolicy
 from core.adapter.base import AdapterTargetId, BaseAdapter
 from core.adapter.capabilities import IMCapability
 from core.adapter.context import AdapterContext
+from core.chat import KiraIMSentResult, MessageChain
 from core.logging_manager import get_logger
-from core.chat import MessageChain, KiraIMSentResult
 
 from .im import WeixinOCIMCapability
 from .qr_login import WeixinOCQRCodeLoginHandler
 from .weixin_oc_client import WeixinOCClient
-
 
 _account_state_lock = Lock()
 

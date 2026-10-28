@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Callable
 
 from core.logging_manager import get_logger
+
 from .access import PolicyChanges
 from .base import BaseAdapter, BaseCapability
 

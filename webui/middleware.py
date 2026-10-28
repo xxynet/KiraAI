@@ -7,7 +7,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-
 PLUGIN_UPLOAD_PATH = "/api/plugins/install/upload"
 MAX_PLUGIN_UPLOAD_BYTES = 50 * 1024 * 1024
 

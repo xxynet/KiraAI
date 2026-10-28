@@ -1,8 +1,15 @@
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional
 
-from fastapi import Depends, Header, HTTPException, Request, WebSocket, WebSocketException, status
+from fastapi import (
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketException,
+    status,
+)
 from fastapi.responses import FileResponse, HTMLResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
@@ -31,7 +38,7 @@ from webui.utils import (
 
 async def require_auth(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
 ) -> str:
     """Authenticate requests using JWT Bearer token.
 

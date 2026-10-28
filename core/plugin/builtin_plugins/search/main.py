@@ -1,7 +1,7 @@
 import asyncio
 import json
 import re
-from typing import Literal, Optional
+from typing import Literal
 
 from tavily import TavilyClient
 
@@ -133,7 +133,7 @@ class SearchPlugin(BasePlugin):
             await self._any_client.close()
 
     @staticmethod
-    def _parse_params(raw: Optional[str]) -> Optional[dict]:
+    def _parse_params(raw: str | None) -> dict | None:
         if not raw:
             return None
         raw = raw.strip()
@@ -169,7 +169,7 @@ class SearchPlugin(BasePlugin):
             logger.warning("Tavily search failed: %s", e)
             return {"results": [], "error": f"Tavily 搜索失败：{e}"}
 
-    async def _any_search(self, query: str, sub_domain: str = None, params: str = None, topic: str = "general") -> dict:
+    async def _any_search(self, query: str, sub_domain: str | None = None, params: str | None = None, topic: str = "general") -> dict:
         """返回 {"results": [...], "error": None}，results 项含 url/title/content/score/source"""
         if not self._any_client:
             return {"results": [], "error": "AnySearch 客户端未初始化"}
@@ -192,7 +192,7 @@ class SearchPlugin(BasePlugin):
             return ""
         u = url.strip()
         u = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", u)
-        u = re.sub(r"^www\.", "", u, flags=re.I)
+        u = re.sub(r"^www\.", "", u, flags=re.IGNORECASE)
         u = u.split("#", 1)[0].split("?", 1)[0].rstrip("/")
         return u.lower()
 
@@ -279,7 +279,7 @@ class SearchPlugin(BasePlugin):
     async def search(self, event, query: str,
                      topic: Literal["general", "news", "finance"] = "general",
                      search_depth: Literal["basic", "advanced"] = "basic",
-                     sub_domain: str = None, params: str = None) -> str:
+                     sub_domain: str | None = None, params: str | None = None) -> str:
         # 垂直领域查询强制走 AnySearch（Tavily 不支持）
         if sub_domain or params:
             if not self._any_enabled():
@@ -332,7 +332,7 @@ class SearchPlugin(BasePlugin):
             "required": ["url"]
         }
     )
-    async def extract_webpage(self, event, url: str, query: str = None,
+    async def extract_webpage(self, event, url: str, query: str | None = None,
                               extract_depth: Literal["basic", "advanced"] = "basic") -> str:
         mode = self._resolve_mode()
         if mode == "tavily":
@@ -390,7 +390,7 @@ class SearchPlugin(BasePlugin):
             "required": ["queries"]
         }
     )
-    async def anysearch_batch_search(self, event, queries: str, sub_domain: str = None, max_results: int = None) -> str:
+    async def anysearch_batch_search(self, event, queries: str, sub_domain: str | None = None, max_results: int | None = None) -> str:
         if not self._any_enabled():
             return "batch_search 仅 AnySearch 引擎可用（当前为 tavily 单源模式），可切换 search_provider 或直接使用 search 工具"
         try:
@@ -465,6 +465,4 @@ class SearchPlugin(BasePlugin):
         return format_anysearch_domains(body.get("data") or {})
 
     def _any_enabled(self) -> bool:
-        if self._provider == "tavily":
-            return False
-        return True
+        return self._provider != "tavily"

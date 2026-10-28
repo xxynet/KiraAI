@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 from sqlalchemy import inspect, text
 
+
 @pytest.mark.anyio
 async def test_session_columns_and_identity_survive_updates_and_reconnection(session_db, monkeypatch):
     monkeypatch.setattr("core.db.mixins.sessions.time.time", lambda: 1000)

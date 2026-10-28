@@ -5,12 +5,11 @@ Provides a web-based admin panel for managing KiraAI system
 import mimetypes
 import os
 from pathlib import Path
-from typing import Optional
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import uvicorn
 
 from core.lifecycle import KiraLifecycle
 from core.utils.path_utils import get_data_path, get_webui_dist_path
@@ -19,25 +18,25 @@ from webui.middleware import (
     PluginBridgeInjectionMiddleware,
     PluginUploadSizeLimitMiddleware,
 )
-from webui.utils import _get_or_generate_access_token
-from webui.routes.auth import AuthRoutes
-from webui.routes.releases import ReleasesRoutes
-from webui.routes.overview import OverviewRoutes
-from webui.routes.logs import LogsRoutes
-from webui.routes.personas import PersonasRoutes
-from webui.routes.mcp import McpRoutes
 from webui.routes.adapters import AdaptersRoutes
-from webui.routes.plugins import PluginsRoutes
-from webui.routes.plugin_store import PluginStoreRoutes
-from webui.routes.providers import ProvidersRoutes
-from webui.routes.sessions import SessionsRoutes
-from webui.routes.webchat import WebChatRoutes
+from webui.routes.auth import AuthRoutes
 from webui.routes.config import ConfigRoutes
-from webui.routes.stickers import StickersRoutes
+from webui.routes.logs import LogsRoutes
+from webui.routes.mcp import McpRoutes
+from webui.routes.overview import OverviewRoutes
+from webui.routes.personas import PersonasRoutes
+from webui.routes.plugin_store import PluginStoreRoutes
+from webui.routes.plugins import PluginsRoutes
+from webui.routes.providers import ProvidersRoutes
+from webui.routes.releases import ReleasesRoutes
+from webui.routes.scope import ScopeRoutes
+from webui.routes.sessions import SessionsRoutes
 from webui.routes.settings import SettingsRoutes
 from webui.routes.skills import SkillsRoutes
-from webui.routes.scope import ScopeRoutes
+from webui.routes.stickers import StickersRoutes
 from webui.routes.system import SystemRoutes
+from webui.routes.webchat import WebChatRoutes
+from webui.utils import _get_or_generate_access_token
 
 
 class KiraWebUI:
@@ -46,7 +45,7 @@ class KiraWebUI:
     Holds lifecycle instance for accessing system components
     """
 
-    def __init__(self, lifecycle: KiraLifecycle, dist_dir: Optional[Path] = None, disable_auth: bool = False):
+    def __init__(self, lifecycle: KiraLifecycle, dist_dir: Path | None = None, disable_auth: bool = False):
         # Ensure proper MIME types on Windows (fixes .js served as text/plain)
         mimetypes.add_type("application/javascript", ".js")
         mimetypes.add_type("text/javascript", ".js")

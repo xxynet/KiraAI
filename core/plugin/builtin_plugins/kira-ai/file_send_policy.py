@@ -13,7 +13,6 @@ import ntpath
 import os
 import posixpath
 import re
-from typing import Optional
 
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_config_path, get_data_path
@@ -60,7 +59,7 @@ def read_agent_file_access() -> dict:
     return section if isinstance(section, dict) else {}
 
 
-def normalize_send_path(path: str) -> Optional[str]:
+def normalize_send_path(path: str) -> str | None:
     """Normalize a send path and reject ``..`` traversal, mirroring read_file.
 
     Windows drive/UNC forms are normalized with ntpath: posixpath would
@@ -132,7 +131,7 @@ def collect_extra_send_prefixes(section: dict) -> list[str]:
     return prefixes
 
 
-def resolve_local_send_path(value: str, sid: str = "") -> Optional[str]:
+def resolve_local_send_path(value: str, sid: str = "") -> str | None:
     """Resolve a <file> tag local path against the send policy.
 
     Returns the absolute path when the file is sendable, else ``None``:

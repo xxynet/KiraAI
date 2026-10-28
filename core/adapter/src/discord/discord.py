@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List, Optional, Union
 
 import discord
 
@@ -12,7 +11,7 @@ from core.adapter.context import AdapterContext
 from core.chat import MessageChain
 from core.logging_manager import get_logger
 
-from .im import MessageSender, DiscordIMCapability
+from .im import DiscordIMCapability, MessageSender
 
 
 class DiscordAdapter(BaseAdapter):
@@ -44,7 +43,7 @@ class DiscordAdapter(BaseAdapter):
         self.proxy: str = self.config.get("proxy", "") or None
 
         # Slash command guild IDs (empty = global commands)
-        self.slash_guild_ids: List[int] = [
+        self.slash_guild_ids: list[int] = [
             int(gid) for gid in self.config.get("slash_guild_ids", [])
         ]
 
@@ -60,8 +59,8 @@ class DiscordAdapter(BaseAdapter):
         # runtime
         self.message_sender = MessageSender()
         self.logger = get_logger(self.info.name, "blue")
-        self._bot_task: Optional[asyncio.Task] = None
-        self._last_error: Optional[Exception] = None
+        self._bot_task: asyncio.Task | None = None
+        self._last_error: Exception | None = None
         self.debug_mode = self.config.get("debug_mode", False)
         self.debug_mode_list = self.config.get("debug_mode_list", [])
 
@@ -207,14 +206,14 @@ class DiscordAdapter(BaseAdapter):
                 ),
             )
 
-    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain):
+    async def send_group_message(self, group_id: int | str, send_message_obj: MessageChain):
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_group_message(group_id, message)
         """
         return await self.im.send_group_message(group_id, send_message_obj)
 
-    async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageChain):
+    async def send_direct_message(self, user_id: int | str, send_message_obj: MessageChain):
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_direct_message(user_id, message)

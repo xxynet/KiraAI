@@ -5,21 +5,24 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from core.adapter.adapter_info import AdapterInfo
-from core.agent.tool import ToolSet
 from core.agent.message import OpenAIMessage
+from core.agent.tool import ToolSet
 from core.chat.message_elements import Text
 from core.chat.message_utils import (
-    KiraIMMessage, KiraIMSentResult, KiraMessageBatchEvent, MessageChain,
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageBatchEvent,
+    MessageChain,
 )
 from core.chat.session import Session, User
 from core.config.config_loader import KiraConfig
 from core.message_manager import MessageProcessor
-from core.workflow.src.im.workflow import DefaultIMWorkflow
-from tests.im_workflow_helpers import make_workflow_context
 from core.plugin.handlers import EventType, event_handler_reg
 from core.prompt_manager import Prompt
 from core.provider import LLMResponse
 from core.tag import RootTagAction
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from tests.im_workflow_helpers import make_workflow_context
 
 
 def batch(user="user"):
@@ -59,7 +62,7 @@ def processor(monkeypatch):
         provider_mgr=SimpleNamespace(get_default_llm=lambda: model),
         prompt_manager=SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[])),
         skills_manager=SimpleNamespace(skills_info=[]),
-        mcp_manager=SimpleNamespace(get_tool_server_map=lambda: {}),
+        mcp_manager=SimpleNamespace(get_tool_server_map=dict),
         tool_manager=SimpleNamespace(build_tool_set=ToolSet),
         db=SimpleNamespace(add_telemetry_llm_usage=AsyncMock()),
         message_history=SimpleNamespace(
@@ -327,6 +330,7 @@ async def test_receive_keeps_original_buffer_sid_when_plugin_changes_session(pro
 @pytest.mark.anyio
 async def test_batch_runs_with_injected_services_without_processor(processor):
     from dataclasses import replace
+
     from core.workflow.src.im.message_delivery import MessageDeliveryService
     from core.workflow.src.im.workflow import DefaultIMWorkflow
 
@@ -632,7 +636,7 @@ async def test_xml_parse_failure_still_finalizes(processor, monkeypatch):
 @pytest.mark.anyio
 @pytest.mark.parametrize("through_processor", [False, True])
 async def test_direct_im_and_comments_share_limit_while_batches_can_run(processor, through_processor, monkeypatch):
-    from core.chat.message_utils import KiraMessageEvent, KiraCommentEvent
+    from core.chat.message_utils import KiraCommentEvent, KiraMessageEvent
 
     original, _ = processor
     workflow = DefaultIMWorkflow(original.im_workflow.ctx, max_concurrent_messages=1)
@@ -761,7 +765,7 @@ async def test_event_session_identity_through_receive_batch_and_request(
     from core.chat.message_utils import KiraMessageEvent
     from core.chat.session_manager import SessionManager
     from core.workflow.src.im.batching import publish_buffered_messages
-    from core.workflow.src.im.context import IMEventContext, IMBatchContext
+    from core.workflow.src.im.context import IMBatchContext, IMEventContext
     from core.workflow.src.im.stages.receive import ReceiveStage, RouteStage
     from core.workflow.src.im.stages.request import BuildRequestStage
 
@@ -804,6 +808,7 @@ async def test_event_session_identity_through_receive_batch_and_request(
 @pytest.mark.parametrize("stored_title", ["Saved title", ""])
 async def test_receive_keeps_event_lightweight_before_plugins(processor, session_db, tmp_path, monkeypatch, stored_title):
     from sqlalchemy import event as sqlalchemy_event
+
     from core.chat.message_utils import KiraMessageEvent
     from core.chat.session_manager import SessionManager
     from core.workflow.src.im.context import IMEventContext
@@ -931,6 +936,7 @@ async def test_provider_error_stays_internal(processor, monkeypatch, error_type,
 
     import httpx
     from openai import APIStatusError
+
     from core.provider import ProviderAPIError
 
     main = importlib.import_module("core.plugin.builtin_plugins.kira-ai.main")

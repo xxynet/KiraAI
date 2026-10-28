@@ -5,14 +5,14 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from core.adapter.adapter_info import AdapterInfo
+from core.adapter.adapter_registry import AdapterManager
+from core.adapter.context import AdapterContext
+from core.adapter.src.discord.discord import DiscordAdapter
 from core.adapter.src.telegram.telegram import (
     TelegramAdapter,
     _TelegramShutdownCancellationFilter,
 )
-from core.adapter.src.discord.discord import DiscordAdapter
-from core.adapter.adapter_registry import AdapterManager
-from core.adapter.adapter_info import AdapterInfo
-from core.adapter.context import AdapterContext
 
 
 def test_uses_a_separate_get_updates_connection_for_shutdown_cleanup():

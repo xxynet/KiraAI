@@ -1,13 +1,20 @@
 """Tests for MCPManager persistent connection handling."""
 
 import pytest
-from mcp.types import AudioContent, BlobResourceContents, CallToolResult, EmbeddedResource, ImageContent, ResourceLink, TextContent
+from mcp.types import (
+    AudioContent,
+    BlobResourceContents,
+    CallToolResult,
+    EmbeddedResource,
+    ImageContent,
+    ResourceLink,
+    TextContent,
+)
 
+from core.agent import mcp_mgr
+from core.agent.mcp_mgr import MCPManager, MCPServer
 from core.agent.tool import ToolResult
 from core.chat.message_elements import File, Image, Record
-
-import core.agent.mcp_mgr as mcp_mgr
-from core.agent.mcp_mgr import MCPManager, MCPServer
 
 
 class FakeClient:

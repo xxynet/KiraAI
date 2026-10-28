@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from bilibili_api.utils.aid_bvid_transformer import bvid2aid

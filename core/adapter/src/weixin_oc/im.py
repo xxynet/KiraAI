@@ -6,17 +6,20 @@ import hashlib
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import IMCapability
 from core.adapter.message_format_metadata import MessageFormatMetadata
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, User
-from core.chat.message_elements import Text, Image, File, Video, Record, Emoji, Sticker
+from core.chat import (
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+    User,
+)
+from core.chat.message_elements import Emoji, File, Image, Record, Sticker, Text, Video
 from core.utils.path_utils import get_data_path
-
-if TYPE_CHECKING:
-    from .weixin_oc import WeixinOCAdapter
 
 
 class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
@@ -319,7 +322,7 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
 
         item_list = cast(list[dict[str, Any]], msg.get("item_list", []))
         components = await self._item_list_to_components(item_list)
-        text = self._message_text_from_item_list(item_list)
+        self._message_text_from_item_list(item_list)
         message_id = str(msg.get("message_id") or msg.get("msg_id") or uuid.uuid4().hex)
         create_time = msg.get("create_time_ms") or msg.get("create_time")
         if isinstance(create_time, (int, float)) and create_time > 1_000_000_000_000:

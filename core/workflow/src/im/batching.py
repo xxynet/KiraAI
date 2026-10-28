@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent
+from core.chat.message_utils import KiraMessageBatchEvent, KiraMessageEvent
 from core.chat.session_buffer import SessionBufferManager
 
 if TYPE_CHECKING:

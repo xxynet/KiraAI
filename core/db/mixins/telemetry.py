@@ -1,12 +1,11 @@
 """Database operations for telemetry."""
 
 import uuid
-from typing import Optional
 
 from sqlalchemy import Integer, and_, cast, delete, func, select
 
 from ..db_mgr import DatabaseManager
-from ..models import TelemetryMessage, TelemetryLLMUsage
+from ..models import TelemetryLLMUsage, TelemetryMessage
 
 
 class TelemetryMixin:
@@ -19,7 +18,7 @@ class TelemetryMixin:
     async def add_telemetry_llm_usage(
         self, timestamp: int, model: str,
         input_tokens: int, output_tokens: int,
-        cached_tokens: Optional[int], response_time_ms: int, success: bool
+        cached_tokens: int | None, response_time_ms: int, success: bool
     ) -> None:
         async with self.db.transaction() as session:
             session.add(TelemetryLLMUsage(

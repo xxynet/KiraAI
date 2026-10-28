@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
 
 @dataclass
@@ -12,14 +11,14 @@ class PluginInfo:
     version: str = ""
     author: str = ""
     description: str = ""
-    repo: Optional[str] = None
-    locales: Dict[str, Dict[str, str]] = field(default_factory=dict)
-    tags: List[str] = field(default_factory=list)
-    core_version: Optional[str] = None
-    icon: Optional[Path] = None
-    icon_dark: Optional[Path] = None
+    repo: str | None = None
+    locales: dict[str, dict[str, str]] = field(default_factory=dict)
+    tags: list[str] = field(default_factory=list)
+    core_version: str | None = None
+    icon: Path | None = None
+    icon_dark: Path | None = None
     builtin: bool = False
     uninstallable: bool = False
     hidden: bool = False
-    error: Optional[str] = None
+    error: str | None = None
     status: str = "pending"  # "pending" | "installing" | "loading" | "ready" | "disabled" | "error"

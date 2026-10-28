@@ -2,7 +2,12 @@ import time
 
 from core.adapter.capabilities import IMCapability
 from core.adapter.message_format_metadata import MessageFormatMetadata
-from core.chat.message_utils import KiraIMSentResult, KiraIMMessage, KiraMessageEvent, MessageChain
+from core.chat.message_utils import (
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+)
 from core.chat.session import User
 
 

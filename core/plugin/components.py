@@ -1,32 +1,33 @@
 """Component declarations collected for each plugin."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Literal, Optional, Union
+from typing import Literal, Optional, Union
 
-from .pages import PageMenu, PluginPage
 from .handlers import EventHandler, EventType, Priority
+from .pages import PageMenu, PluginPage
 
 
 @dataclass
 class PluginComponents:
     """Typed container for all components registered by a single plugin."""
-    tools: Dict[str, dict] = field(default_factory=dict)
-    tool_funcs: Dict[str, Callable] = field(default_factory=dict)
-    tags: List[dict] = field(default_factory=list)
-    tag_funcs: Dict[str, Callable] = field(default_factory=dict)
-    hooks: List[EventHandler] = field(default_factory=list)
-    pages: List[dict] = field(default_factory=list)
-    page_funcs: Dict[str, Callable] = field(default_factory=dict)
-    api_routes: List[dict] = field(default_factory=list)
-    api_route_funcs: Dict[str, Callable] = field(default_factory=dict)
-    ws_routes: List[dict] = field(default_factory=list)
-    ws_route_funcs: Dict[str, Callable] = field(default_factory=dict)
-    static_dirs: List[dict] = field(default_factory=list)
-    widgets: List[dict] = field(default_factory=list)
-    widget_funcs: Dict[str, Callable] = field(default_factory=dict)
+    tools: dict[str, dict] = field(default_factory=dict)
+    tool_funcs: dict[str, Callable] = field(default_factory=dict)
+    tags: list[dict] = field(default_factory=list)
+    tag_funcs: dict[str, Callable] = field(default_factory=dict)
+    hooks: list[EventHandler] = field(default_factory=list)
+    pages: list[dict] = field(default_factory=list)
+    page_funcs: dict[str, Callable] = field(default_factory=dict)
+    api_routes: list[dict] = field(default_factory=list)
+    api_route_funcs: dict[str, Callable] = field(default_factory=dict)
+    ws_routes: list[dict] = field(default_factory=list)
+    ws_route_funcs: dict[str, Callable] = field(default_factory=dict)
+    static_dirs: list[dict] = field(default_factory=list)
+    widgets: list[dict] = field(default_factory=list)
+    widget_funcs: dict[str, Callable] = field(default_factory=dict)
 
-    providers: Dict[str, dict] = field(default_factory=dict)
-    adapters: Dict[str, dict] = field(default_factory=dict)
+    providers: dict[str, dict] = field(default_factory=dict)
+    adapters: dict[str, dict] = field(default_factory=dict)
     adapter_capabilities: set[tuple[str, type]] = field(default_factory=set)
 
     def has_any(self) -> bool:
@@ -43,11 +44,11 @@ class PluginComponents:
         }
         self.tool_funcs[name] = func
 
-    def register_tag(self, name: str, description: str, func: Callable, parent: Optional[str] = "msg"):
+    def register_tag(self, name: str, description: str, func: Callable, parent: str | None = "msg"):
         self.tags.append({"name": name, "description": description, "parent": parent})
         self.tag_funcs[name] = func
 
-    def register_hook(self, handler: Callable, priority: Union[Priority, int],
+    def register_hook(self, handler: Callable, priority: Priority | int,
                       event_type: EventType):
         eh = EventHandler(
             event_type=event_type,
@@ -58,7 +59,7 @@ class PluginComponents:
         self.hooks.append(eh)
 
     def register_page(self, route: str, func: Callable, auth: bool = True,
-                      menu: Optional[Union[dict, "PageMenu"]] = None,
+                      menu: Union[dict, "PageMenu"] | None = None,
                       page_obj: Optional["PluginPage"] = None,
                       returns_plugin_page: bool = False):
         if isinstance(menu, dict):
@@ -100,7 +101,7 @@ class PluginComponents:
         })
         self.ws_route_funcs[func.__name__] = func
 
-    def register_widget(self, widget_id: str, label: Union[str, Dict[str, str]],
+    def register_widget(self, widget_id: str, label: str | dict[str, str],
                         icon: str,
                         color: Literal["blue", "green", "purple", "yellow", "red", "gray"],
                         order: int,
@@ -118,11 +119,11 @@ class PluginComponents:
     def register_provider(self, provider_format: str, metadata: dict) -> None:
         self.providers[provider_format] = metadata
 
-    def unregister_provider(self, provider_format: str) -> Optional[dict]:
+    def unregister_provider(self, provider_format: str) -> dict | None:
         return self.providers.pop(provider_format, None)
 
     def register_adapter(self, platform: str, metadata: dict) -> None:
         self.adapters[platform] = metadata
 
-    def unregister_adapter(self, platform: str) -> Optional[dict]:
+    def unregister_adapter(self, platform: str) -> dict | None:
         return self.adapters.pop(platform, None)

@@ -7,7 +7,6 @@ import pytest
 from core.chat.message_elements import Image
 from core.provider.src.openai.model_clients import OpenAIImageClient
 
-
 PNG_BYTES = b"\x89PNG\r\n\x1a\n"
 PNG_BASE64 = base64.b64encode(PNG_BYTES).decode()
 

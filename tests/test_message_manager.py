@@ -6,8 +6,8 @@ import pytest
 
 from core.chat import KiraCommentEvent, KiraMessageEvent
 from core.chat.message_elements import Text
-from core.event_bus import EventBus
 from core.chat.session_buffer import SessionBuffer
+from core.event_bus import EventBus
 
 
 def _make_buffer(messages):

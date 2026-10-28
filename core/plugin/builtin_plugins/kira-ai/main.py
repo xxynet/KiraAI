@@ -1,18 +1,17 @@
 import xml.etree.ElementTree as ET
-from typing import Optional
 from datetime import datetime
 
-from core.plugin import BasePlugin, logger, on, Priority, PluginContext
-from core.chat.message_utils import KiraMessageBatchEvent, KiraIMMessage, KiraMessageEvent, KiraExceptionEvent
-from core.provider import LLMRequest, LLMResponse
-from core.prompt_manager import Prompt
-
-from core.utils.tool_utils import BaseTool
-from core.tag import TagSet
 from core.adapter import IMCapability
+from core.chat.message_utils import (
+    KiraIMMessage,
+    KiraMessageBatchEvent,
+)
+from core.plugin import BasePlugin, Priority, logger, on
+from core.prompt_manager import Prompt
+from core.provider import LLMRequest, LLMResponse
+from core.tag import TagSet
 
 from .tags import *
-
 
 XML_FIX_PROMPT = """\
 你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：
@@ -33,7 +32,7 @@ class DefaultPlugin(BasePlugin):
     async def terminate(self):
         pass
 
-    def _get_current_time_str(self, dt: Optional[datetime] = None) -> str:
+    def _get_current_time_str(self, dt: datetime | None = None) -> str:
         if dt is not None:
             return dt.strftime("%b %d %Y %H:%M %a")
         tz = self.ctx.get_timezone()
@@ -51,11 +50,11 @@ class DefaultPlugin(BasePlugin):
             if msg.is_group_message():
                 if msg.is_notice:
                     return f"[{date_str}] Notice [group_id: {msg.group.group_id}, user_id: {msg.sender.user_id}] | {msg.message_str}"
-                return f"[{date_str}] [message_id: {str(msg.message_id)}] [group_name: {msg.group.group_name} group_id: {msg.group.group_id} user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
+                return f"[{date_str}] [message_id: {msg.message_id!s}] [group_name: {msg.group.group_name} group_id: {msg.group.group_id} user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
             else:
                 if msg.is_notice:
                     return f"[{date_str}] Notice [user_id: {msg.sender.user_id}] | {msg.message_str}"
-                return f"[{date_str}] [message_id: {str(msg.message_id)}] [user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
+                return f"[{date_str}] [message_id: {msg.message_id!s}] [user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
         else:
             return ""
 
@@ -125,7 +124,7 @@ class DefaultPlugin(BasePlugin):
                     tag = child.tag
                     value = child.text.strip() if child.text else ""
         except ET.ParseError as e:
-            logger.error(f"Error parsing message: {str(e)}")
+            logger.error(f"Error parsing message: {e!s}")
             logger.debug(f"previously wrong format: {xml_data}")
 
             try:

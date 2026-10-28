@@ -1,24 +1,22 @@
-import os
-import re
-import json
-import shutil
 import asyncio
+import json
+import os
 import posixpath
-import subprocess
+import re
+import shutil
 import signal
+import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 from time import monotonic
 from uuid import uuid4
 
-from pathlib import Path
-
-from core.plugin import BasePlugin, logger, on, Priority, register
+from core.adapter.builtin.webchat.webchat import WebChatAdapter
+from core.agent.tool import ToolResult
 from core.chat import KiraMessageBatchEvent, MessageChain
 from core.chat.message_elements import Image, Record, Text
+from core.plugin import BasePlugin, Priority, logger, on, register
 from core.provider import LLMRequest
-from core.agent.tool import ToolResult
-from core.adapter.builtin.webchat.webchat import WebChatAdapter
-
 from core.utils.common_utils import desc_img, speech_to_text
 from core.utils.image_compression import compress_image_file
 from core.utils.media_refs import store_session_media
@@ -100,12 +98,12 @@ class AgentPlugin(BasePlugin):
     def __init__(self, ctx, cfg: dict):
         super().__init__(ctx, cfg)
         self.file_permission_mode = ALLOW_LIST
-        self.file_sessions = list()
+        self.file_sessions = []
         self.exec_permission_mode = ALLOW_LIST
-        self.exec_sessions = list()
-        self.exec_command_deny_list = list()
-        self.allowed_read_paths = tuple()
-        self.allowed_write_paths = tuple()
+        self.exec_sessions = []
+        self.exec_command_deny_list = []
+        self.allowed_read_paths = ()
+        self.allowed_write_paths = ()
 
         self._exec_timeout = 30
         self._background_exec_timeout = 300
@@ -911,7 +909,7 @@ class AgentPlugin(BasePlugin):
             await asyncio.to_thread(self._write_file_text, abs_path, new_content)
             return f"Successfully edited file: {path}, {replacements} replacement(s) made."
         except Exception as e:
-            return f"Failed to edit file: {str(e)}"
+            return f"Failed to edit file: {e!s}"
 
     @register.tool(
         "list_files",
@@ -1229,7 +1227,7 @@ class AgentPlugin(BasePlugin):
     async def grep(
         self, event: KiraMessageBatchEvent, pattern: str, path: str,
         output_mode: str = "files_with_matches", context: int = 0,
-        case_insensitive: bool = False, glob: str = None,
+        case_insensitive: bool = False, glob: str | None = None,
         multiline: bool = False, limit: int = 200,
     ) -> str:
         path, err = self._grep_guard(event, path)
@@ -1285,7 +1283,7 @@ class AgentPlugin(BasePlugin):
             "required": ["pattern"]
         }
     )
-    async def search_files(self, event: KiraMessageBatchEvent, pattern: str, path: str = None, limit: int = 100) -> str:
+    async def search_files(self, event: KiraMessageBatchEvent, pattern: str, path: str | None = None, limit: int = 100) -> str:
         if not self._is_file_session_allowed(event.sid):
             return "Permission denied: current session not allowed to access local files"
 
@@ -1385,7 +1383,7 @@ class AgentPlugin(BasePlugin):
             cmd_lower = shell_command.lower()
             for blocked in self.exec_command_deny_list:
                 blocked_lower = blocked.lower()
-                if cmd_lower == blocked_lower or cmd_lower.startswith(blocked_lower + ' ') or cmd_lower.startswith(blocked_lower + '\t'):
+                if cmd_lower == blocked_lower or cmd_lower.startswith((blocked_lower + ' ', blocked_lower + '\t')):
                     logger.warning(f'Shell command blocked by deny list "{blocked}": {shell_command}')
                     return f'Shell command blocked by deny list: "{blocked}" is not allowed.'
 

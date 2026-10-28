@@ -1,18 +1,24 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING
+
 from core.chat.message_elements import BaseMessageElement
-from core.plugin import PluginContext
+
+# Importing core.plugin at runtime would cycle: core.plugin -> manager -> core.tag -> core.plugin.
+if TYPE_CHECKING:
+    from core.plugin import PluginContext
 
 
 class BaseTag(ABC):
-    def __init__(self, ctx: Optional[PluginContext] = None, **kwargs):
+    def __init__(self, ctx: PluginContext | None = None, **kwargs):
         self.ctx = ctx
         self.kwargs = kwargs
 
     name: str = None
     description: str = None
-    parent: Optional[str] = "msg"
+    parent: str | None = "msg"
 
     @abstractmethod
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:

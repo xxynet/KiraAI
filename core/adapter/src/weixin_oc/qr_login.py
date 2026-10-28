@@ -17,7 +17,7 @@ class WeixinOCQRCodeLoginHandler(QRCodeLoginHandler):
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = dict(config)
         self.base_url = str(
-            (self.config.get("weixin_oc_base_url") or "https://ilinkai.weixin.qq.com")
+            self.config.get("weixin_oc_base_url") or "https://ilinkai.weixin.qq.com"
         ).rstrip("/")
         self.bot_type = str(self.config.get("weixin_oc_bot_type") or "3")
         self.api_timeout_ms = int(self.config.get("weixin_oc_api_timeout_ms", 15000))

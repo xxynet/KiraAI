@@ -8,9 +8,18 @@ from fastapi.testclient import TestClient
 from core.config import config_loader
 from core.config.config_loader import KiraConfig
 from core.provider import (
-    BaseProvider, DecisionModelClient, EmbeddingModelClient, ImageModelClient, LLMModelClient,
-    ModelType, ProviderAPIError, ProviderManager, RerankModelClient,
-    STTModelClient, TTSModelClient, VideoModelClient,
+    BaseProvider,
+    DecisionModelClient,
+    EmbeddingModelClient,
+    ImageModelClient,
+    LLMModelClient,
+    ModelType,
+    ProviderAPIError,
+    ProviderManager,
+    RerankModelClient,
+    STTModelClient,
+    TTSModelClient,
+    VideoModelClient,
 )
 from webui.routes.auth import require_auth
 from webui.routes.providers import ProvidersRoutes

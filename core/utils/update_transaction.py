@@ -9,7 +9,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-
 JOURNAL_NAME = ".kira-update-journal.json"
 BACKUP_PREFIX = ".kira-update-backup-"
 STAGE_PREFIX = ".kira-update-stage-"

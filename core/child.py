@@ -63,7 +63,7 @@ def run_child(args: argparse.Namespace):
     if args.telemetry_server:
         os.environ["KIRA_TELEMETRY_SERVER"] = args.telemetry_server
 
-    from core.utils.path_utils import init_paths, get_data_path
+    from core.utils.path_utils import get_data_path, init_paths
 
     init_paths(data_dir=args.data_dir, webui_dir=args.webui_dir)
 

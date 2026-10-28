@@ -1,9 +1,9 @@
 """Scoped memory with lexical search, optional remote embeddings and reranking."""
 
 import asyncio
-from functools import partial, wraps
 import json
 import time
+from functools import partial, wraps
 
 from core.plugin import BasePlugin, PageMenu, PluginPage, logger, on, register
 from core.provider import LLMRequest
@@ -11,11 +11,11 @@ from core.utils.path_utils import get_data_path
 
 from . import webui
 from .prompts import MESSAGES
-from .scope import MemoryInputError, MemoryScope
-from .store import MemoryStore
-from .search import MAX_CANDIDATES, fuse
-from .vector import VectorMemory
 from .rerank import MemoryReranker
+from .scope import MemoryInputError, MemoryScope
+from .search import MAX_CANDIDATES, fuse
+from .store import MemoryStore
+from .vector import VectorMemory
 
 
 def guarded(func):

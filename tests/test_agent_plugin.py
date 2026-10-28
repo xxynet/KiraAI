@@ -8,7 +8,7 @@ from PIL import Image as PILImage
 from core.agent.tool import ToolResult
 from core.image_desc_cache import ImageDescCache
 from core.plugin.builtin_plugins.agent import main as agent_main
-from core.plugin.builtin_plugins.agent.main import BackgroundExecTask, AgentPlugin
+from core.plugin.builtin_plugins.agent.main import AgentPlugin, BackgroundExecTask
 from core.utils import image_compression, media_refs
 
 

@@ -1,17 +1,27 @@
-from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError, NOT_GIVEN
 import base64
 import time
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import AsyncGenerator, Optional
+
+from openai import (
+    NOT_GIVEN,
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+)
 
 from core.agent.message import provider_message_dict
-from core.provider import ModelInfo
-from core.provider import LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient, EmbeddingModelClient
-from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.chat.message_elements import Record
 from core.config.default import VERSION
+from core.provider import (
+    LLMModelClient,
+    ModelInfo,
+    STTModelClient,
+    TTSModelClient,
+)
+from core.provider.llm_model import LLMRequest, LLMResponse, LLMStreamChunk
 from core.utils.media_refs import resolve_media_references
-
 
 DEFAULT_USER_AGENT = f"kira-ai/{VERSION.removeprefix('v')}"
 
@@ -62,14 +72,14 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         extra_body = section_advanced.get("extra_body")
         if not isinstance(extra_body, dict) or not extra_body:
             extra_body = None
-        kwargs = dict(
-            model=self.model.model_name,
-            messages=[provider_message_dict(m) for m in request.messages],
-            tools=request.tools if request.tools else NOT_GIVEN,
-            tool_choice=request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
-            temperature=temperature if temperature is not None else NOT_GIVEN,
-            timeout=timeout if timeout is not None else NOT_GIVEN,
-        )
+        kwargs = {
+            "model": self.model.model_name,
+            "messages": [provider_message_dict(m) for m in request.messages],
+            "tools": request.tools if request.tools else NOT_GIVEN,
+            "tool_choice": request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
+            "temperature": temperature if temperature is not None else NOT_GIVEN,
+            "timeout": timeout if timeout is not None else NOT_GIVEN,
+        }
         if extra_body:
             kwargs["extra_body"] = extra_body
         kwargs.update(overrides)
@@ -115,16 +125,16 @@ class OpenAICompatibleLLMClient(LLMModelClient):
                     if prompt_details:
                         llm_resp.cached_tokens = getattr(prompt_details, "cached_tokens", None)
             return llm_resp
-        except APIStatusError as e:
+        except APIStatusError:
             # the model does not support function calling etc.
             # 403 Authorization failed (api key error)
             raise
-        except APITimeoutError as e:
+        except APITimeoutError:
             raise
-        except APIConnectionError as e:
+        except APIConnectionError:
             # APIConnectionError: Connection error. (base_url error)
             raise
-        except Exception as e:
+        except Exception:
             raise
 
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:

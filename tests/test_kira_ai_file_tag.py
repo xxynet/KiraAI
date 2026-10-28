@@ -157,7 +157,7 @@ async def test_deny_list_mode_gates_extra_paths(sandbox):
 
 @pytest.mark.anyio
 async def test_missing_agent_config_keeps_base_paths(sandbox):
-    data_root, config_root = sandbox
+    data_root, _config_root = sandbox
     target = data_root / "files" / "a.txt"
     target.write_text("content", encoding="utf-8")
 

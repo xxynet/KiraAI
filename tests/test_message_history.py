@@ -9,18 +9,43 @@ import pytest
 from fastapi import FastAPI, HTTPException
 
 from core.agent.message import OpenAIMessage
-from core.chat.message_elements import Text, Image, At, Reply, Forward, Json, Sticker, Record, Video, File, Emoji, Notice, Poke
-from core.chat.message_history import ArchivedMessagePlaceholder, MessageHistoryPage, MessageHistoryRecord, MessageHistoryService, MessageHistorySession, serialize_message_chain
-from core.chat.message_utils import KiraIMMessage, KiraIMSentResult, MessageChain, User
 from core.chat.memory_metadata import normalize_memory
+from core.chat.message_elements import (
+    At,
+    Emoji,
+    File,
+    Forward,
+    Image,
+    Json,
+    Notice,
+    Poke,
+    Record,
+    Reply,
+    Sticker,
+    Text,
+    Video,
+)
+from core.chat.message_history import (
+    ArchivedMessagePlaceholder,
+    MessageHistoryPage,
+    MessageHistoryRecord,
+    MessageHistoryService,
+    MessageHistorySession,
+    serialize_message_chain,
+)
+from core.chat.message_utils import KiraIMMessage, KiraIMSentResult, MessageChain, User
 from core.db.db_mgr import DatabaseManager
 from core.db.service import DatabaseService
 from core.message_manager import MessageProcessor
 from core.persona import PersonaManager
+from core.provider.llm_model import LLMRequest
+from core.utils.media_refs import (
+    cleanup_session_media,
+    resolve_media_references,
+    store_session_media,
+)
 from core.workflow.src.im.workflow import DefaultIMWorkflow
 from tests.im_workflow_helpers import make_workflow_context
-from core.provider.llm_model import LLMRequest
-from core.utils.media_refs import cleanup_session_media, resolve_media_references, store_session_media
 from tests.test_session_manager_events import build_session_manager
 from webui.routes.sessions import SessionsRoutes
 
@@ -305,7 +330,7 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
     instance.im_workflow.ctx.provider_mgr = SimpleNamespace(get_default_llm=lambda: model)
     instance.im_workflow.ctx.prompt_manager = SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[]))
     instance.im_workflow.ctx.skills_manager = SimpleNamespace(skills_info=[])
-    instance.im_workflow.ctx.mcp_manager = SimpleNamespace(get_tool_server_map=lambda: {})
+    instance.im_workflow.ctx.mcp_manager = SimpleNamespace(get_tool_server_map=dict)
     instance.im_workflow.ctx.tool_manager = SimpleNamespace(build_tool_set=ToolSet, execute_tool=execute_tool)
     instance.im_workflow.ctx.db = SimpleNamespace(add_telemetry_llm_usage=AsyncMock())
     instance.message_delivery.session_locks = {}
@@ -923,6 +948,7 @@ async def test_history_record_preserves_unavailable_elements_without_fetching(hi
 @pytest.mark.anyio
 async def test_history_materialization_runs_outside_event_loop(history, monkeypatch):
     import threading
+
     import core.chat.message_history as history_module
 
     identity = await history.record_incoming(incoming(), SID, "test")
@@ -956,6 +982,7 @@ async def test_linked_memory_accepts_typed_history_records(history):
 @pytest.mark.anyio
 async def test_typed_history_preserves_http_json_and_nested_media_download(history, tmp_path, monkeypatch):
     from httpx import ASGITransport, AsyncClient
+
     from webui.routes.auth import require_auth
 
     monkeypatch.setattr("webui.routes.sessions.get_data_path", lambda: tmp_path)
@@ -1064,6 +1091,7 @@ async def test_history_session_summaries_are_typed(history):
 @pytest.mark.anyio
 async def test_webui_adapts_typed_history_pages_to_existing_json(history):
     from httpx import ASGITransport, AsyncClient
+
     from webui.routes.auth import require_auth
 
     first_id = await history.record_incoming(incoming("one"), SID, "test")

@@ -1,6 +1,6 @@
 import asyncio
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence
 
 import httpx
 
@@ -15,8 +15,8 @@ class AnySearchClient:
         base_url: str,
         api_key: str = "",
         timeout: float = 60.0,
-        auto_key_path: Optional[Path] = None,
-        http_client: Optional[httpx.AsyncClient] = None,
+        auto_key_path: Path | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
@@ -54,7 +54,7 @@ class AnySearchClient:
             self._http_client = httpx.AsyncClient(timeout=self._timeout)
         return self._http_client
 
-    def _headers(self, api_key: Optional[str] = None) -> dict:
+    def _headers(self, api_key: str | None = None) -> dict:
         headers = {
             "Content-Type": "application/json",
             "X-Anysearch-Client": "kiraai/1.0.0",
@@ -97,9 +97,9 @@ class AnySearchClient:
         self,
         method: str,
         path: str,
-        payload: Optional[dict] = None,
-        params: Optional[Sequence[tuple[str, str]]] = None,
-        api_key: Optional[str] = None,
+        payload: dict | None = None,
+        params: Sequence[tuple[str, str]] | None = None,
+        api_key: str | None = None,
     ) -> httpx.Response:
         client = await self._get_http_client()
         return await client.request(
@@ -114,8 +114,8 @@ class AnySearchClient:
         self,
         method: str,
         path: str,
-        payload: Optional[dict] = None,
-        params: Optional[Sequence[tuple[str, str]]] = None,
+        payload: dict | None = None,
+        params: Sequence[tuple[str, str]] | None = None,
     ) -> dict:
         try:
             response = await self._send(method, path, payload, params)
@@ -153,9 +153,9 @@ class AnySearchClient:
     async def search(
         self,
         query: str,
-        max_results: Optional[int] = None,
-        sub_domain: Optional[str] = None,
-        params: Optional[dict] = None,
+        max_results: int | None = None,
+        sub_domain: str | None = None,
+        params: dict | None = None,
         topic: str = "general",
     ) -> dict:
         """Search the web and return normalized result items."""

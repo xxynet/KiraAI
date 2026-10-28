@@ -1,23 +1,22 @@
 import asyncio
 import json
-import os
 import time
-from uuid import uuid4
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from sqlalchemy import inspect, select, text
 
 from core.logging_manager import get_logger
-from core.utils.path_utils import get_data_path
 from core.persona.reference_image import MAX_REFERENCE_IMAGE_BYTES
+from core.utils.path_utils import get_data_path
 
 if TYPE_CHECKING:
     from core.config import KiraConfig
     from core.persona import PersonaManager
 
-from .service import DatabaseService
 from .models import ImageDescCache
+from .service import DatabaseService
 
 logger = get_logger("db_migration", "cyan")
 

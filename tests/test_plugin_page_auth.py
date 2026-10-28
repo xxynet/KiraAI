@@ -7,7 +7,6 @@ independently of the registration order.
 import asyncio
 import json
 
-import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 

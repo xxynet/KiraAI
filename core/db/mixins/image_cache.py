@@ -1,7 +1,6 @@
 """Database operations for image_cache."""
 
 import time
-from typing import Optional
 
 from sqlalchemy import and_, delete, or_, select
 
@@ -29,7 +28,7 @@ class ImageCacheMixin:
                 )
             )
 
-    async def get_image_desc_cache(self, md5: str) -> Optional[dict]:
+    async def get_image_desc_cache(self, md5: str) -> dict | None:
         stmt = select(ImageDescCache).where(ImageDescCache.md5 == md5)
         row = await self.db.fetch_one(stmt)
         if row is None:
@@ -45,9 +44,9 @@ class ImageCacheMixin:
     async def update_image_desc_cache(
         self,
         md5: str,
-        description: Optional[str] = None,
-        count: Optional[int] = None,
-        last_seen: Optional[int] = None,
+        description: str | None = None,
+        count: int | None = None,
+        last_seen: int | None = None,
     ) -> bool:
         async with self.db.transaction() as session:
             result = await session.execute(

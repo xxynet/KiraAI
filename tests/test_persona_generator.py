@@ -5,7 +5,10 @@ from fastapi import HTTPException
 
 from core.agent.message import OpenAIMessage
 from core.persona import PersonaGenerationError, PersonaGenerator, PersonaQuestion
-from core.prompts.persona_generator import get_initial_persona_question, get_persona_generator_prompt
+from core.prompts.persona_generator import (
+    get_initial_persona_question,
+    get_persona_generator_prompt,
+)
 from core.provider import LLMResponse, LLMStreamChunk
 from webui.models import PersonaGeneratorMessage, PersonaGeneratorTurnRequest
 from webui.routes.personas import PersonasRoutes

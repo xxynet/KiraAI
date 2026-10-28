@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Any
 
 from fastapi import Depends, HTTPException
 
@@ -34,8 +34,8 @@ class ScopeRoutes(Routes):
             raise HTTPException(status_code=503, detail="Lifecycle not available")
 
         # Gather MCP scopes: {server_id: {"allow": [...]} or {"deny": [...]}}
-        mcp_scopes: Dict[str, Any] = {}
-        mcp_servers: List[Dict[str, Any]] = []
+        mcp_scopes: dict[str, Any] = {}
+        mcp_servers: list[dict[str, Any]] = []
         if self.lifecycle.mcp_manager:
             mcp_scopes = dict(self.lifecycle.mcp_manager.mcp_config.get("_scope", {}))
             for server in self.lifecycle.mcp_manager.servers:
@@ -47,8 +47,8 @@ class ScopeRoutes(Routes):
                     })
 
         # Gather skills scopes: {skill_name: {"allow": [...]} or {"deny": [...]}}
-        skill_scopes: Dict[str, Any] = {}
-        skills: List[Dict[str, Any]] = []
+        skill_scopes: dict[str, Any] = {}
+        skills: list[dict[str, Any]] = []
         if self.lifecycle.skills_manager:
             skill_scopes = dict(self.lifecycle.skills_manager._raw_config.get("_scope", {}))
             for skill in self.lifecycle.skills_manager.skills_info:
@@ -59,7 +59,7 @@ class ScopeRoutes(Routes):
                     })
 
         # Gather sessions
-        sessions: List[Dict[str, Any]] = []
+        sessions: list[dict[str, Any]] = []
         if self.lifecycle.session_manager:
             for session in await self.lifecycle.session_manager.get_sessions(include_content=False):
                 if not isinstance(session.data, dict):
@@ -80,7 +80,7 @@ class ScopeRoutes(Routes):
             "skills": skills,
         }
 
-    async def update_scope(self, payload: Dict):
+    async def update_scope(self, payload: dict):
         """Update scope configuration for MCP servers and skills.
         Payload format:
         {

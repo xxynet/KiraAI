@@ -7,12 +7,12 @@ import mimetypes
 import uuid
 from pathlib import Path
 
-from PIL import Image as PILImage, ImageOps
+from PIL import Image as PILImage
+from PIL import ImageOps
 
 from core.chat.message_elements import Image, Sticker
 from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
-
 
 logger = get_logger("image_compression", "purple")
 

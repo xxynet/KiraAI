@@ -11,7 +11,8 @@ import contextlib
 import inspect
 import json
 import time
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -43,10 +44,10 @@ class FakeWebSocket:
     """
 
     def __init__(self, script=(), end_instead_of_close: bool = False) -> None:
-        self._script: List[Any] = list(script)
+        self._script: list[Any] = list(script)
         self.end_instead_of_close = end_instead_of_close
-        self.sent: List[str] = []
-        self.actions: List[dict] = []
+        self.sent: list[str] = []
+        self.actions: list[dict] = []
         self.closed = False
         self.close_count = 0
         self._wake = asyncio.Event()
@@ -82,15 +83,15 @@ class FakeWebSocket:
         self._wake.set()
 
 
-def make_client(token: Optional[str] = None) -> NapCatWebSocketClient:
+def make_client(token: str | None = None) -> NapCatWebSocketClient:
     return NapCatWebSocketClient("ws://localhost:3001", access_token=token)
 
 
 def script_connect(
     monkeypatch: pytest.MonkeyPatch,
     client: NapCatWebSocketClient,
-    script: List[Any],
-) -> List[int]:
+    script: list[Any],
+) -> list[int]:
     """Replace ``client.connect`` with a scripted fake.
 
     Script items are consumed in order; the last item repeats when the script
@@ -98,9 +99,9 @@ def script_connect(
     client.websocket); str -> {"status": "failed", "message": item};
     callable(n) -> whatever dict it returns.
     """
-    calls: List[int] = []
-    queue: List[Any] = list(script)
-    state: Dict[str, Any] = {"last": None}
+    calls: list[int] = []
+    queue: list[Any] = list(script)
+    state: dict[str, Any] = {"last": None}
 
     async def fake_connect() -> dict:
         calls.append(len(calls) + 1)
@@ -117,9 +118,9 @@ def script_connect(
     return calls
 
 
-def patch_ws_factory(monkeypatch: pytest.MonkeyPatch, ws: FakeWebSocket) -> List[tuple]:
+def patch_ws_factory(monkeypatch: pytest.MonkeyPatch, ws: FakeWebSocket) -> list[tuple]:
     """Replace the module-level ws_compatible_connect with one returning ``ws``."""
-    calls: List[tuple] = []
+    calls: list[tuple] = []
 
     async def fake_wrapper(uri, *, extra_headers=None, **kwargs):
         calls.append((uri, extra_headers))
@@ -157,8 +158,8 @@ async def await_listener(listener: asyncio.Task) -> None:
         await asyncio.wait_for(listener, timeout=2)
 
 
-def track_notify(client: NapCatWebSocketClient) -> List[int]:
-    fired: List[int] = []
+def track_notify(client: NapCatWebSocketClient) -> list[int]:
+    fired: list[int] = []
     client.on_permanent_disconnect = lambda: fired.append(1)
     return fired
 
@@ -173,7 +174,7 @@ def lifecycle_meta_frame() -> str:
 
 
 async def test_connect_sends_bearer_token_header(monkeypatch: pytest.MonkeyPatch):
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_wrapper(uri, *, extra_headers=None, **kwargs):
         captured["uri"] = uri
@@ -192,7 +193,7 @@ async def test_connect_sends_bearer_token_header(monkeypatch: pytest.MonkeyPatch
 
 
 async def test_connect_without_token_sends_empty_headers(monkeypatch: pytest.MonkeyPatch):
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_wrapper(uri, *, extra_headers=None, **kwargs):
         captured["extra_headers"] = extra_headers
@@ -232,7 +233,7 @@ async def test_ws_compatible_connect_forwards_under_detected_name(
     monkeypatch: pytest.MonkeyPatch,
 ):
     detected = _detect_headers_kwarg()
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_connect(uri, **kwargs):
         captured.update(kwargs)
@@ -475,7 +476,7 @@ async def test_listen_skips_malformed_frames_without_reconnect(
     calls = script_connect(
         monkeypatch, client, [lambda n: {"status": "failed", "message": "must not be called"}]
     )
-    received: List[dict] = []
+    received: list[dict] = []
     got = asyncio.Event()
 
     @client.group_event()
@@ -502,7 +503,7 @@ async def test_listen_reconnects_and_resumes_after_connection_closed(
     monkeypatch: pytest.MonkeyPatch,
 ):
     client = make_client()
-    received: List[dict] = []
+    received: list[dict] = []
     got = asyncio.Event()
 
     @client.group_event()
@@ -577,7 +578,7 @@ async def test_handle_message_ignores_cancelled_echo_future():
 
 async def test_handle_message_dispatches_events_without_blocking():
     client = make_client()
-    seen: Dict[str, List[dict]] = {}
+    seen: dict[str, list[dict]] = {}
     events = {key: asyncio.Event() for key in ("group", "private", "notice", "meta", "napcat")}
 
     for key in ("group", "private", "notice", "meta", "napcat"):
@@ -695,7 +696,7 @@ async def test_dispatch_event_logs_callback_exception_without_killing_dispatch(m
 
     class RecordLogger:
         def __init__(self) -> None:
-            self.errors: List[str] = []
+            self.errors: list[str] = []
 
         def error(self, message: str) -> None:
             self.errors.append(str(message))
@@ -704,7 +705,7 @@ async def test_dispatch_event_logs_callback_exception_without_killing_dispatch(m
     record_logger = RecordLogger()
     monkeypatch.setattr(napcat_client, "logger", record_logger)
 
-    seen: List[dict] = []
+    seen: list[dict] = []
     good_event = asyncio.Event()
 
     @client.group_event()

@@ -5,21 +5,26 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from core.adapter.adapter_info import AdapterInfo
-from core.image_desc_cache import ImageDescCache
-from core.chat.session_buffer import SessionBufferManager
-from core.workflow.src.im.message_delivery import MessageDeliveryService
 from core.chat.message_elements import Forward, Image, Reply, Sticker, Text
-from core.workflow.src.im.message_formatter import MessageFormatter
 from core.chat.message_history import MessageHistoryService
-from core.workflow.src.im.native_content import MessageMediaService
-from core.chat.message_utils import KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain
+from core.chat.message_utils import (
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+)
 from core.chat.session import User
+from core.chat.session_buffer import SessionBufferManager
 from core.config.config_loader import KiraConfig
+from core.image_desc_cache import ImageDescCache
 from core.message_manager import MessageProcessor
-from core.workflow.src.im.workflow import DefaultIMWorkflow
-from tests.im_workflow_helpers import make_workflow_context
 from core.plugin.plugin_context import PluginContext
 from core.workflow.src.im.batching import publish_buffered_messages
+from core.workflow.src.im.message_delivery import MessageDeliveryService
+from core.workflow.src.im.message_formatter import MessageFormatter
+from core.workflow.src.im.native_content import MessageMediaService
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from tests.im_workflow_helpers import make_workflow_context
 
 
 def test_delivery_delays_follow_config_changes():

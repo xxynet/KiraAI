@@ -7,11 +7,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-
 from bilibili_api import dynamic
 from bilibili_api.exceptions import ResponseCodeException
 from bilibili_api.session import EventType
 from bilibili_api.utils.picture import Picture
+
 from core.adapter.capabilities import FeedCapability, IMCapability
 from core.chat import MessageChain
 from core.chat.message_elements import Emoji, Image, Text

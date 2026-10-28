@@ -105,7 +105,7 @@ class LogsRoutes(Routes):
             return {"logs": logs, "total": len(logs)}
         except Exception as e:
             logger.error(f"Error reading log cache: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to read log cache: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to read log cache: {e!s}")
 
     async def get_log_config(self):
         """Get log configuration including max queue size."""

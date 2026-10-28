@@ -8,26 +8,26 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from io import BytesIO
 from math import gcd, sqrt
-from typing import Optional, Union
 
 import httpx
-from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
 
+from core.chat.message_elements import Image, Record
+from core.logging_manager import get_logger
 from core.provider import (
-    ModelInfo,
-    TTSModelClient,
-    STTModelClient,
-    ImageModelClient,
     EmbeddingModelClient,
+    ImageModelClient,
+    ModelInfo,
     RerankModelClient,
+    STTModelClient,
+    TTSModelClient,
 )
 from core.provider.llm_model import RerankResult
-from core.chat.message_elements import Record, Image
-from core.logging_manager import get_logger
-from core.provider.openai_compatible import OpenAICompatibleLLMClient
-from core.provider.openai_compatible import build_llm_default_headers
+from core.provider.openai_compatible import (
+    OpenAICompatibleLLMClient,
+    build_llm_default_headers,
+)
 
 logger = get_logger("provider", "purple")
 
@@ -274,7 +274,7 @@ class BailianRerankClient(RerankModelClient):
         self,
         query: str,
         documents: list[str],
-        top_n: Optional[int] = None,
+        top_n: int | None = None,
         **kwargs,
     ) -> list[RerankResult]:
         if not documents:
@@ -468,10 +468,7 @@ def _image_size_limits(
     # the generic modern edit profile (which allows up to 2K). Otherwise
     # image_to_image() with editing=True would send oversized sizes to wanx-v1.
     if editing and (
-        mid in ("wanx-v1", "wanx.v1")
-        or mid.startswith("wan2.2")
-        or mid.startswith("wanx")
-        or mid.startswith("wan2.1")
+        mid in ("wanx-v1", "wanx.v1") or mid.startswith(("wan2.2", "wanx", "wan2.1"))
     ):
         return _ImageSizeLimits(
             min_total=512 * 512,
@@ -545,7 +542,7 @@ def _image_size_limits(
             multiple=16,
             allow_k_tokens=("1K", "2K"),
         )
-    if mid.startswith("wan2.6") or mid.startswith("wan2.5"):
+    if mid.startswith(("wan2.6", "wan2.5")):
         # Pure t2i: total roughly [~1.2M, 1440^2]; official presets like
         # 1696*960 are slightly under 1280^2 so min is soft.
         return _ImageSizeLimits(
@@ -558,7 +555,7 @@ def _image_size_limits(
             multiple=16,
             allow_k_tokens=(),  # must be width*height
         )
-    if mid.startswith("wan2.2") or mid.startswith("wanx") or mid.startswith("wan2.1"):
+    if mid.startswith(("wan2.2", "wanx", "wan2.1")):
         return _ImageSizeLimits(
             min_total=512 * 512,
             max_total=1440 * 1440,
@@ -587,7 +584,7 @@ def _image_model_family(model_id: str) -> str:
     mid = (model_id or "").lower().replace("_", ".")
     if mid.startswith("wan2.7"):
         return "token"
-    if mid.startswith("wan2.6") or mid.startswith("wan2.5"):
+    if mid.startswith(("wan2.6", "wan2.5")):
         return "modern"
     return "legacy"
 
@@ -599,7 +596,7 @@ def _k_level_to_long_edge(k_level: float) -> int:
     """
     if k_level <= 0:
         k_level = 1
-    return max(256, int(round(float(k_level) * 1024)))
+    return max(256, round(float(k_level) * 1024))
 
 
 def _parse_k_level(raw: str | None) -> float | None:
@@ -614,8 +611,8 @@ def _parse_k_level(raw: str | None) -> float | None:
 
 def _round_to_multiple(value: float, multiple: int) -> int:
     if multiple <= 1:
-        return max(1, int(round(value)))
-    return max(multiple, int(round(value / multiple)) * multiple)
+        return max(1, round(value))
+    return max(multiple, round(value / multiple) * multiple)
 
 
 def _size_from_aspect_and_long_edge(
@@ -630,7 +627,7 @@ def _size_from_aspect_and_long_edge(
     else:
         h = long_edge
         w = long_edge * aw / ah
-    return max(1, int(round(w))), max(1, int(round(h)))
+    return max(1, round(w)), max(1, round(h))
 
 
 def _clamp_wh(w: int, h: int, limits: _ImageSizeLimits) -> tuple[int, int]:
@@ -778,7 +775,7 @@ def _build_size_pixels(
     # default K when only aspect given: use ~model mid-band long edge
     if k_level is None:
         # target near geometric mean of min/max total for 1:1, then long edge
-        mid_side = int(round(sqrt((limits.min_total + limits.max_total) / 2)))
+        mid_side = round(sqrt((limits.min_total + limits.max_total) / 2))
         long_edge = mid_side
     else:
         long_edge = _k_level_to_long_edge(k_level)
@@ -846,7 +843,7 @@ def _detect_aspect_from_prompt(prompt: str) -> str | None:
         (r"1\s*[:：/]\s*1|正方形|方形|方图|头像|square", "1:1"),
     ]
     for pat, aspect in rules:
-        if re.search(pat, p, flags=re.I):
+        if re.search(pat, p, flags=re.IGNORECASE):
             return aspect
     return None
 
@@ -999,7 +996,7 @@ class BailianImageClient(ImageModelClient):
         - wan2.5 / wan2.2 / wanx2.x / wanx-v1: .../aigc/text2image/image-synthesis
         """
         mid = (model_id or "").lower().replace("_", ".")
-        if mid.startswith("wan2.6") or mid.startswith("wan2.7"):
+        if mid.startswith(("wan2.6", "wan2.7")):
             return f"{http_base}/services/aigc/image-generation/generation"
         return f"{http_base}/services/aigc/text2image/image-synthesis"
 
@@ -1007,16 +1004,14 @@ class BailianImageClient(ImageModelClient):
     def _is_messages_image_model(model_id: str) -> bool:
         """wan2.6+ use messages protocol; older use input.prompt."""
         mid = (model_id or "").lower().replace("_", ".")
-        return mid.startswith("wan2.6") or mid.startswith("wan2.7")
+        return mid.startswith(("wan2.6", "wan2.7"))
 
     @staticmethod
     def _is_pure_t2i_model(model_id: str) -> bool:
         """Pure text-to-image models that reject reference images."""
         mid = (model_id or "").lower().replace("_", ".")
         # wan2.6-t2i / wan2.5-t2i-* / wan2.2-t2i-* / wanx*-t2i-*
-        if "t2i" in mid:
-            return True
-        return False
+        return "t2i" in mid
 
     @staticmethod
     def _is_edit_image_model(model_id: str) -> bool:
@@ -1024,9 +1019,7 @@ class BailianImageClient(ImageModelClient):
         mid = (model_id or "").lower().replace("_", ".")
         if mid.startswith("wan2.7"):
             return True
-        if mid.startswith("wan2.6") and "t2i" not in mid:
-            return True
-        return False
+        return bool(mid.startswith("wan2.6") and "t2i" not in mid)
 
     @staticmethod
     def _supports_legacy_ref_img(model_id: str) -> bool:
@@ -1389,7 +1382,7 @@ class BailianImageClient(ImageModelClient):
                 label="Image",
             )
 
-    async def image_to_image(self, prompt: str, image: Union[Image, list[Image]]) -> Image:
+    async def image_to_image(self, prompt: str, image: Image | list[Image]) -> Image:
         """Image-to-image / edit with reference image(s).
 
         Protocol (always, independent of auto_route):
@@ -1695,6 +1688,7 @@ class BailianSTTClient(STTModelClient):
         language_hints: list[str],
     ) -> str:
         from http import HTTPStatus
+
         from dashscope.audio.asr import Recognition
 
         kwargs = {
@@ -1897,7 +1891,7 @@ def _dialect_instruction(dialect: str) -> str:
         return ""
     # already a full instruction
     if d.startswith("请用") and "表达" in d:
-        return d if d.endswith("。") or d.endswith(".") else d + "。"
+        return d if d.endswith(("。", ".")) else d + "。"
     return f"请用{d}表达。"
 
 
@@ -2025,7 +2019,7 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_speech(self, text: str, **kwargs) -> Optional[Record]:
+    async def text_to_speech(self, text: str, **kwargs) -> Record | None:
         if not text or not str(text).strip():
             logger.warning("Bailian CosyVoice TTS: empty text, skip")
             return None

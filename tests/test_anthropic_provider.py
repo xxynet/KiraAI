@@ -7,13 +7,13 @@ from anthropic import AnthropicError, AsyncAnthropic, DefaultAsyncHttpxClient
 
 from core.agent.message import OpenAIMessage
 from core.provider import LLMRequest, ModelInfo, ModelType, ProviderAPIError
+from core.provider.openai_compatible import DEFAULT_USER_AGENT
 from core.provider.src.anthropic.model_clients import (
     AnthropicCompatibleLLMClient,
     build_anthropic_headers,
     normalize_anthropic_base_url,
 )
 from core.provider.src.anthropic.provider import AnthropicProvider
-from core.provider.openai_compatible import DEFAULT_USER_AGENT
 
 
 def build_client(

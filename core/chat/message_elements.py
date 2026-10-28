@@ -1,24 +1,24 @@
 from __future__ import annotations
 
-from typing import Optional, Union, Literal, TYPE_CHECKING
-from abc import ABC, abstractmethod
-from enum import Enum
-import hashlib
-import uuid
 import base64
 import binascii
+import hashlib
 import json
+import mimetypes
 import os
 import re
-import mimetypes
-from urllib.parse import urlparse, unquote
+import uuid
+from abc import ABC, abstractmethod
+from enum import Enum
+from typing import TYPE_CHECKING, Literal
+from urllib.parse import unquote, urlparse
 
-from core.utils.path_utils import get_data_path
-from core.utils.network import download_file, get_file_content
 from core.logging_manager import get_logger
+from core.utils.network import download_file, get_file_content
+from core.utils.path_utils import get_data_path
 
 
-def _infer_mime_from_bytes(data: bytes) -> Optional[str]:
+def _infer_mime_from_bytes(data: bytes) -> str | None:
     if len(data) < 4:
         return None
     if data[:8] == b'\x89PNG\r\n\x1a\n':
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 logger = get_logger("message", "cyan")
 
 
-def _build_temp_file_path(name: Optional[str], mime: Optional[str]) -> str:
+def _build_temp_file_path(name: str | None, mime: str | None) -> str:
     base_dir = os.path.join(str(get_data_path()), "temp")
     if name:
         base_name = os.path.basename(name)
@@ -62,7 +62,7 @@ def _build_temp_file_path(name: Optional[str], mime: Optional[str]) -> str:
         counter += 1
 
 
-def _move_no_clobber(source: str, candidate: str) -> Optional[str]:
+def _move_no_clobber(source: str, candidate: str) -> str | None:
     """Move source to candidate without ever overwriting an existing file.
 
     The publish step is an exclusive hard link, so a path already referenced
@@ -124,7 +124,6 @@ class BaseMessageElement(ABC):
     @abstractmethod
     def repr(self) -> str:
         """Returns a string to display in logs"""
-        pass
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.repr})"
@@ -145,7 +144,7 @@ class At(BaseMessageElement):
     """set pid to 'all' to at all group members"""
     type = ElementType.At
 
-    def __init__(self, pid: Union[str, int], nickname: Optional[str] = None):
+    def __init__(self, pid: str | int, nickname: str | None = None):
         self.pid = str(pid)
         self.nickname = nickname
 
@@ -159,10 +158,10 @@ class At(BaseMessageElement):
 class Reply(BaseMessageElement):
     type = ElementType.Reply
 
-    def __init__(self, message_id: Union[str, int], message_content: Optional[str] = None, chain: Optional["MessageChain"] = None):
+    def __init__(self, message_id: str | int, message_content: str | None = None, chain: MessageChain | None = None):
         self.message_id = str(message_id)
         self.message_content: str = message_content
-        self.chain: "MessageChain" = chain
+        self.chain: MessageChain = chain
 
     @property
     def repr(self) -> str:
@@ -172,7 +171,7 @@ class Reply(BaseMessageElement):
 class Forward(BaseMessageElement):
     type = ElementType.Forward
 
-    def __init__(self, chains: list[MessageChain] = None, message_id: Optional[Union[str, list]] = None, merge: bool = True):
+    def __init__(self, chains: list[MessageChain] | None = None, message_id: str | list | None = None, merge: bool = True):
         self.chains: list[MessageChain] = chains or []
         self.message_id = message_id
         self.merge: bool = merge
@@ -181,13 +180,13 @@ class Forward(BaseMessageElement):
     def repr(self) -> str:
         if self.message_id:
             return f"[Forward] ID: {self.message_id}"
-        return f"[Forward]"
+        return "[Forward]"
 
 
 class Emoji(BaseMessageElement):
     type = ElementType.Emoji
 
-    def __init__(self, emoji_id: Union[str, int], emoji_desc: Optional[str] = None):
+    def __init__(self, emoji_id: str | int, emoji_desc: str | None = None):
         self.emoji_id = str(emoji_id)
         self.emoji_desc = emoji_desc
 
@@ -199,13 +198,13 @@ class Emoji(BaseMessageElement):
 
 
 class BaseMediaElement(BaseMessageElement, ABC):
-    def __init__(self, file: str, name: str = None, size: str = None, mime: Optional[str] = None):
+    def __init__(self, file: str, name: str | None = None, size: str | None = None, mime: str | None = None):
         self.name: str = name
         self.size: str = size  # Bytes
         self.file = file
-        self._temp_path: Optional[str] = None
+        self._temp_path: str | None = None
         self.file_type: Literal["url", "path", "base64", "data_url"] = self.check_file_type()
-        self.mime: Optional[str] = mime or self._guess_mime()
+        self.mime: str | None = mime or self._guess_mime()
         # Track whether the caller supplied the MIME explicitly: values merely
         # guessed from a URL or filename may be replaced by stronger evidence
         # (response Content-Type, magic bytes) at the point of use.
@@ -239,7 +238,7 @@ class BaseMediaElement(BaseMessageElement, ABC):
 
         raise ValueError(f"Unknown file type: {self.file!r}")
 
-    def _guess_mime(self) -> Optional[str]:
+    def _guess_mime(self) -> str | None:
         if self.file_type == "data_url" and self.file.startswith("data:"):
             header = self.file[5:]
             type_part = header.split(";", 1)[0]
@@ -260,7 +259,7 @@ class BaseMediaElement(BaseMessageElement, ABC):
                 return mime
         return None
 
-    def guess_name(self) -> Optional[str]:
+    def guess_name(self) -> str | None:
         if self.name:
             return self.name
         if self.file_type == "path" and self.file:
@@ -450,14 +449,14 @@ class BaseMediaElement(BaseMessageElement, ABC):
 class Image(BaseMediaElement):
     type = ElementType.Image
 
-    def __init__(self, image: str, mime: Optional[str] = None, name: Optional[str] = None, caption: Optional[str] = None):
+    def __init__(self, image: str, mime: str | None = None, name: str | None = None, caption: str | None = None):
         """
         :param image: image data in "url", "path", "base64", "data_url"
         """
         super().__init__(file=image, name=name, mime=mime)
         self.image: str = self.file
-        self.caption: Optional[str] = caption
-        self.md5: Optional[str] = None
+        self.caption: str | None = caption
+        self.md5: str | None = None
         self.image_type: Literal["url", "path", "base64", "data_url", "unknown"] = self.file_type
         # mime is left unresolved when unknown so that to_path() can record the
         # server Content-Type and to_base64()/to_data_url() can sniff magic bytes;
@@ -494,8 +493,7 @@ class Image(BaseMediaElement):
         if not self.image:
             raise ValueError("No base64 data for image")
         b64_str = self.image
-        if b64_str.startswith("base64://"):
-            b64_str = b64_str[9:]
+        b64_str = b64_str.removeprefix("base64://")
         if "," in b64_str:
             b64_str = b64_str.split(",")[1]
         self.image = b64_str
@@ -516,14 +514,14 @@ class Sticker(BaseMediaElement):
 
     def __init__(
         self,
-        sticker_id: Optional[Union[str, int]] = None,
-        sticker: Optional[str] = None,
-        mime: Optional[str] = None,
-        caption: Optional[str] = None
+        sticker_id: str | int | None = None,
+        sticker: str | None = None,
+        mime: str | None = None,
+        caption: str | None = None
     ):
         super().__init__(file=sticker, mime=mime)
         self.sticker_id = str(sticker_id) if sticker_id is not None else None
-        self.md5: Optional[str] = None
+        self.md5: str | None = None
         self.caption: str = caption
 
     async def hash_image(self):
@@ -557,8 +555,7 @@ class Sticker(BaseMediaElement):
         if not self.file:
             raise ValueError("No base64 data for image")
         b64_str = self.file
-        if b64_str.startswith("base64://"):
-            b64_str = b64_str[9:]
+        b64_str = b64_str.removeprefix("base64://")
         if "," in b64_str:
             b64_str = b64_str.split(",")[1]
         self.file = b64_str
@@ -587,9 +584,9 @@ class Sticker(BaseMediaElement):
 class Record(BaseMediaElement):
     type = ElementType.Record
 
-    def __init__(self, record: Optional[str], mime: Optional[str] = None, name: Optional[str] = None, transcript: Optional[str] = None):
+    def __init__(self, record: str | None, mime: str | None = None, name: str | None = None, transcript: str | None = None):
         super().__init__(file=record, name=name, mime=mime)
-        self.transcript: Optional[str] = transcript
+        self.transcript: str | None = transcript
 
     @property
     def record(self):
@@ -618,7 +615,7 @@ class Notice(BaseMessageElement):
 class Poke(BaseMessageElement):
     type = ElementType.Poke
 
-    def __init__(self, pid: Union[str, int]):
+    def __init__(self, pid: str | int):
         self.pid = str(pid)
 
     @property
@@ -646,9 +643,9 @@ class File(BaseMediaElement):
     """File object, could be url, local or base64"""
     type = ElementType.File
 
-    def __init__(self, file: str, name: str = None, size: str = None, mime: Optional[str] = None):
+    def __init__(self, file: str, name: str | None = None, size: str | None = None, mime: str | None = None):
         super().__init__(file=file, name=name, size=size, mime=mime)
-        self.description: Optional[str] = ""
+        self.description: str | None = ""
 
     @property
     def repr(self) -> str:
@@ -661,7 +658,7 @@ class Video(BaseMediaElement):
     """Video object, could be url, local or base64"""
     type = ElementType.Video
 
-    def __init__(self, file: str, name: str = None, size: str = None, mime: Optional[str] = None):
+    def __init__(self, file: str, name: str | None = None, size: str | None = None, mime: str | None = None):
         super().__init__(file=file, name=name, size=size, mime=mime)
 
     @property

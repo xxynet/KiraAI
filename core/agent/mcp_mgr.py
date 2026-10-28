@@ -1,17 +1,18 @@
-import json
 import asyncio
+import json
 import uuid
-from typing import Any, Optional, Literal
 from dataclasses import dataclass, field
+from typing import Any, Literal
 from urllib.parse import urlparse
+
 from fastmcp import Client
+
+from core.chat.message_elements import File, Image, Record
+from core.logging_manager import get_logger
+from core.utils.path_utils import get_config_path
 
 from .func_tool_manager import FuncToolManager
 from .tool import ToolResult
-from core.chat.message_elements import File, Image, Record
-from core.utils.path_utils import get_config_path
-
-from core.logging_manager import get_logger
 
 logger = get_logger("mcp_mgr", "orange")
 
@@ -39,12 +40,12 @@ class MCPServer:
     description: str = ""
     timeout: float = 10.0
 
-    url: Optional[str] = ""
-    headers: Optional[dict] = field(default_factory=dict)
+    url: str | None = ""
+    headers: dict | None = field(default_factory=dict)
 
-    command: Optional[str] = ""
-    args: Optional[list] = field(default_factory=list)
-    env: Optional[dict] = field(default_factory=dict)
+    command: str | None = ""
+    args: list | None = field(default_factory=list)
+    env: dict | None = field(default_factory=dict)
 
     tools: list = field(default_factory=list)
     # names of tools disabled by the user; they are not registered to the
@@ -109,13 +110,13 @@ class MCPManager:
         if server_type and server_type in ("stdio", "sse", "streamable_http"):
             return server_type
 
-        url: Optional[str] = server.get("url")
+        url: str | None = server.get("url")
         if url and url.endswith("/sse"):
             return "sse"
         if url and url.endswith(("/mcp", "/message")):
             return "streamable_http"
 
-        command: Optional[str] = server.get("command")
+        command: str | None = server.get("command")
         if command:
             return "stdio"
 
@@ -340,7 +341,7 @@ class MCPManager:
         }
         return editor_cfg
 
-    async def update_server_from_editor(self, server_id: str, name: Optional[str], description: str, editor_config: dict) -> None:
+    async def update_server_from_editor(self, server_id: str, name: str | None, description: str, editor_config: dict) -> None:
         """
         Merge editor JSON back into the stored config for a single server.
         Meta fields are managed outside the editor:
@@ -457,7 +458,7 @@ class MCPManager:
                         mapping[tool.get("name")] = server.id
         return mapping
 
-    def get_server_scope(self, server_id: str) -> Optional[dict]:
+    def get_server_scope(self, server_id: str) -> dict | None:
         """Return scope entry for a server. None = global.
         Format: {"allow": [sids]} or {"deny": [sids]}"""
         return self.mcp_config.get("_scope", {}).get(server_id)
@@ -473,7 +474,7 @@ class MCPManager:
             return session_id not in scope["deny"]
         return True
 
-    def set_server_scope(self, server_id: str, mode: Optional[str], sessions: list[str]):
+    def set_server_scope(self, server_id: str, mode: str | None, sessions: list[str]):
         """Set scope for a server. mode='allow'|'deny', or None to clear."""
         scope = self.mcp_config.get("_scope", {})
         if mode and sessions:
@@ -694,14 +695,14 @@ class MCPManager:
         return getattr(value, field_name, default)
 
     @staticmethod
-    def _resource_name(uri: Any) -> Optional[str]:
+    def _resource_name(uri: Any) -> str | None:
         if uri is None:
             return None
         return urlparse(str(uri)).path.rsplit("/", 1)[-1] or None
 
     @classmethod
     def _media_attachment(
-        cls, data: Any, mime_type: Any, name: Optional[str] = None
+        cls, data: Any, mime_type: Any, name: str | None = None
     ) -> Image | Record | File | None:
         if not isinstance(data, str) or not data:
             return None
@@ -790,7 +791,7 @@ class MCPManager:
 
         return ToolResult(text="\n".join(text_parts), attachments=attachments)
 
-    async def list_tools(self, server: MCPServer, keep_connection: Optional[bool] = None):
+    async def list_tools(self, server: MCPServer, keep_connection: bool | None = None):
         """Refresh server.tools.
 
         keep_connection=None keeps the connection open only for enabled

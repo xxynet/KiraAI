@@ -1,12 +1,16 @@
 import asyncio
 from pathlib import Path
-from typing import Optional
 
 from core.db.service import DatabaseService
 
 from .default import default_persona_template
 from .model import PersonaInfo
-from .reference_image import REFERENCE_IMAGE_DIRECTORY, delete_reference_image, get_reference_image_path, save_reference_image
+from .reference_image import (
+    REFERENCE_IMAGE_DIRECTORY,
+    delete_reference_image,
+    get_reference_image_path,
+    save_reference_image,
+)
 
 
 class PersonaManager:
@@ -14,7 +18,7 @@ class PersonaManager:
         self.db = db
         self._reference_image_lock = asyncio.Lock()
 
-    async def get_persona(self, persona_id: Optional[str] = None) -> Optional[PersonaInfo]:
+    async def get_persona(self, persona_id: str | None = None) -> PersonaInfo | None:
         """
         Get persona text.
         If persona_id is specified, get that persona.
@@ -107,7 +111,7 @@ class PersonaManager:
                 await asyncio.to_thread(delete_reference_image, persona.id, persona.reference_image_path)
             return deleted
 
-    async def get_reference_image(self, persona_id: Optional[str] = None) -> Optional[Path]:
+    async def get_reference_image(self, persona_id: str | None = None) -> Path | None:
         """Get the database-recorded selfie reference for a given or active persona."""
         async with self._reference_image_lock:
             persona = await self.get_persona(persona_id)
@@ -161,7 +165,7 @@ class PersonaManager:
         """Set a persona as the active one."""
         return await self.db.set_active_persona(persona_id)
 
-    async def get_active_persona(self) -> Optional[PersonaInfo]:
+    async def get_active_persona(self) -> PersonaInfo | None:
         """Get the currently active persona."""
         persona_dict = await self.db.get_active_persona()
         if not persona_dict:

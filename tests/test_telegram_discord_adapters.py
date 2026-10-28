@@ -5,20 +5,30 @@ from unittest.mock import AsyncMock, Mock
 
 import discord
 import pytest
-
-from tests.adapter_lifecycle import start_adapter
-from telegram import Chat, Message, MessageEntity, Update, User as TelegramUser
+from telegram import Chat, Message, MessageEntity, Update
+from telegram import User as TelegramUser
 from telegram.ext import ExtBot
 
 from core.adapter import AdapterContext, BaseAdapter
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.adapter_registry import AdapterManager
 from core.adapter.capabilities import IMCapability
-from core.adapter.src.telegram.telegram import TelegramAdapter
 from core.adapter.src.discord.discord import DiscordAdapter
+from core.adapter.src.telegram.telegram import TelegramAdapter
 from core.chat import KiraIMSentResult, MessageChain
-from core.chat.message_elements import At, Emoji, File, Image, Record, Reply, Sticker, Text, Video
+from core.chat.message_elements import (
+    At,
+    Emoji,
+    File,
+    Image,
+    Record,
+    Reply,
+    Sticker,
+    Text,
+    Video,
+)
 from core.plugin.plugin_context import PluginContext
+from tests.adapter_lifecycle import start_adapter
 from tests.test_adapter_routing import processor_for
 
 
@@ -138,11 +148,11 @@ def tg_update(group=False, **kwargs):
 
 def dc_message(adapter, group=False, **kwargs):
     guild = NS(me=NS(roles=[NS(id=8)]), get_role=lambda rid: NS(name="Bot role"), get_member=lambda uid: NS(display_name="Tester")) if group else None
-    fields = dict(
-        id=42, author=NS(id=123, display_name="Tester"), guild=guild,
-        channel=NS(id=456, name="thread-or-channel"), created_at=datetime(2026, 10, 4, tzinfo=timezone.utc),
-        content="hello", mentions=[], role_mentions=[], mention_everyone=False, reference=None, attachments=[], stickers=[],
-    )
+    fields = {
+        "id": 42, "author": NS(id=123, display_name="Tester"), "guild": guild,
+        "channel": NS(id=456, name="thread-or-channel"), "created_at": datetime(2026, 10, 4, tzinfo=timezone.utc),
+        "content": "hello", "mentions": [], "role_mentions": [], "mention_everyone": False, "reference": None, "attachments": [], "stickers": [],
+    }
     fields.update(kwargs)
     return Mock(spec=discord.Message, **fields)
 
@@ -702,8 +712,9 @@ async def test_discord_missing_user_id_is_rejected_before_string_conversion(adap
 
 @pytest.mark.asyncio
 async def test_discord_attachment_retry_rewinds_memory_stream():
-    from core.adapter.src.discord.im import MessageSender
     import io
+
+    from core.adapter.src.discord.im import MessageSender
 
     sender = MessageSender(max_retries=1, retry_delay=0)
     received = []
@@ -893,6 +904,7 @@ async def test_telegram_capability_loads_once_during_construction(adapter_factor
 @pytest.mark.asyncio
 async def test_discord_empty_emoji_catalog_reaches_builtin_tag(adapter_factory):
     import importlib
+
     from core.tag import TagSet
 
     module = importlib.import_module("core.plugin.builtin_plugins.kira-ai.main")

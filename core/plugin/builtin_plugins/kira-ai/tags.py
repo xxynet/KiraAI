@@ -1,26 +1,29 @@
 import asyncio
 import os
 from pathlib import Path
-from typing import Optional, Type
 
-from core.tag import BaseTag
 from core.chat.message_elements import (
-    BaseMessageElement,
-    Text,
-    Image,
     At,
-    Reply,
-    Forward,
+    BaseMessageElement,
     Emoji,
-    Record,
-    Poke,
     File,
-    Video
+    Forward,
+    Image,
+    Poke,
+    Record,
+    Reply,
+    Text,
+    Video,
 )
-
-from core.utils.path_utils import get_data_path
-from core.utils.common_utils import image_to_base64, text_to_speech, generate_image, image_to_image
 from core.logging_manager import get_logger
+from core.tag import BaseTag
+from core.utils.common_utils import (
+    generate_image,
+    image_to_base64,
+    image_to_image,
+    text_to_speech,
+)
+from core.utils.path_utils import get_data_path
 
 from .file_send_policy import resolve_local_send_path
 
@@ -38,7 +41,7 @@ class TextTag(BaseTag):
         return []
 
 
-def build_emoji_tag(emoji_json: dict[str, str]) -> Type[BaseTag]:
+def build_emoji_tag(emoji_json: dict[str, str]) -> type[BaseTag]:
     class EmojiTag(BaseTag):
         name = "emoji"
         description = f"<emoji>emoji_id</emoji> # 发送一个emoji表情，不要滥用。如果使用emoji，必须和text放在同一个<msg>标签内，不要单独发一条只有emoji的消息。可以使用的emoji如下：{dict(emoji_json)}"
@@ -119,7 +122,7 @@ class VideoTag(BaseTag):
         super().__init__(ctx=ctx)
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
-        duration = kwargs.get("duration", "5")
+        kwargs.get("duration", "5")
 
         try:
             video_client = self.ctx.provider_mgr.get_default_video()
@@ -127,7 +130,7 @@ class VideoTag(BaseTag):
             provider_logger.error(f"Failed to get video client: {exc}")
             return []
         if not video_client:
-            provider_logger.error(f"Failed to get video client, please set default video model in Configuration")
+            provider_logger.error("Failed to get video client, please set default video model in Configuration")
             return []
 
         provider_name = video_client.model.provider_name
@@ -233,7 +236,7 @@ def build_file_tag(sid: str = ""):
             super().__init__()
             self.sid = sid
 
-        async def _resolve_local_file(self, value: str) -> tuple[Optional[str], Optional[str]]:
+        async def _resolve_local_file(self, value: str) -> tuple[str | None, str | None]:
             """Resolve a local path through the send policy (see file_send_policy).
 
             Returns ``(file_string, name)``, or ``(None, None)`` when the path

@@ -1,8 +1,8 @@
 import asyncio
 import threading
 import time
-from copy import deepcopy
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest

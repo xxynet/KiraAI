@@ -10,21 +10,27 @@ from fastapi.testclient import TestClient
 
 from core.config import ConfigError, config_loader
 from core.config.config_field import build_fields
-from core.provider.model_identity import DEFAULT_MODEL_TYPES, resolve_model_reference
-from core.provider.model_migration import (
-    migrate_model_config, migrate_model_select_fields, migrate_model_config_file,
-)
-from core.provider import model_migration
 from core.config.config_loader import KiraConfig
 from core.plugin import manager as plugin_manager_module
 from core.plugin.manager import PluginManager
-from core.provider import BaseProvider, LLMModelClient, ModelType, ProviderManager
+from core.provider import (
+    BaseProvider,
+    LLMModelClient,
+    ModelType,
+    ProviderManager,
+    model_migration,
+)
 from core.provider.llm_model import LLMRequest
+from core.provider.model_identity import DEFAULT_MODEL_TYPES, resolve_model_reference
+from core.provider.model_migration import (
+    migrate_model_config,
+    migrate_model_config_file,
+    migrate_model_select_fields,
+)
 from core.provider.openai_compatible import OpenAICompatibleLLMClient
 from webui.routes.auth import require_auth
 from webui.routes.config import ConfigRoutes
 from webui.routes.providers import ProvidersRoutes
-
 
 NAME = "upstream/model.v1:variant"
 

@@ -1,12 +1,13 @@
 """
 Pydantic models shared across WebUI routes.
 """
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
-from core.plugin.store import PluginStoreItemResponse
+# Re-export for webui.routes.plugin_store; kept as an aliased import so linters treat it as intentional.
+from core.plugin.store import PluginStoreItemResponse as PluginStoreItemResponse
 
 
 class LoginRequest(BaseModel):
@@ -21,7 +22,7 @@ class LoginResponse(BaseModel):
 
 class OverviewWidget(BaseModel):
     widget_id: str
-    label: Union[str, Dict[str, str]]
+    label: str | dict[str, str]
     content: str = ""
     icon: str = "Box"
     color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue"
@@ -61,7 +62,7 @@ class LLMSummary(BaseModel):
     total_cached_tokens: int = 0
     success_count: int = 0
     total_response_ms: int = 0
-    by_model: List[LLMModelStat] = Field(default_factory=list)
+    by_model: list[LLMModelStat] = Field(default_factory=list)
 
 
 class OverviewResponse(BaseModel):
@@ -73,9 +74,9 @@ class OverviewResponse(BaseModel):
     runtime_duration: int = 0  # System uptime in seconds
     memory_usage: int = 0  # Process memory usage in MB
     total_memory: int = 0  # Total system memory in MB
-    widgets: List[OverviewWidget] = Field(default_factory=list)
-    message_hourly: List[HourlyMessageCount] = Field(default_factory=list)
-    message_by_platform: List[PlatformMessageCount] = Field(default_factory=list)
+    widgets: list[OverviewWidget] = Field(default_factory=list)
+    message_hourly: list[HourlyMessageCount] = Field(default_factory=list)
+    message_by_platform: list[PlatformMessageCount] = Field(default_factory=list)
     llm_summary: LLMSummary = Field(default_factory=LLMSummary)
 
 
@@ -87,8 +88,8 @@ class ProviderBase(BaseModel):
     name: str
     type: str
     status: Literal["active", "inactive"] = "active"
-    config: Dict = Field(default_factory=dict)
-    locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    config: dict = Field(default_factory=dict)
+    locales: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class ProviderStatusUpdateRequest(BaseModel):
@@ -97,30 +98,30 @@ class ProviderStatusUpdateRequest(BaseModel):
 
 class ProviderResponse(ProviderBase):
     id: str
-    model_config_data: Dict = Field(default_factory=dict, alias="model_config")
-    supported_model_types: List[str] = Field(default_factory=list)
+    model_config_data: dict = Field(default_factory=dict, alias="model_config")
+    supported_model_types: list[str] = Field(default_factory=list)
     type_display_name: str = ""
-    type_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
-    type_icon: Optional[str] = None
-    type_icon_dark: Optional[str] = None
+    type_locales: dict[str, dict[str, str]] = Field(default_factory=dict)
+    type_icon: str | None = None
+    type_icon_dark: str | None = None
 
 
 class ModelCreateRequest(BaseModel):
     model_type: str
     model_name: str = Field(min_length=1, validation_alias=AliasChoices("model_name", "model_id"))
-    config: Dict = Field(default_factory=dict)
+    config: dict = Field(default_factory=dict)
 
 
 class ModelUpdateRequest(BaseModel):
-    model_name: Optional[str] = Field(default=None, min_length=1)
-    config: Dict = Field(default_factory=dict)
+    model_name: str | None = Field(default=None, min_length=1)
+    config: dict = Field(default_factory=dict)
 
 
 class ModelSyncRequest(BaseModel):
     """Batch sync: add and remove upstream model names."""
-    add_ids: List[str] = Field(default_factory=list)
-    delete_ids: List[str] = Field(default_factory=list)
-    config: Dict = Field(default_factory=dict)
+    add_ids: list[str] = Field(default_factory=list)
+    delete_ids: list[str] = Field(default_factory=list)
+    config: dict = Field(default_factory=dict)
 
 
 class HealthCheckRequest(BaseModel):
@@ -132,8 +133,8 @@ class HealthCheckRequest(BaseModel):
 class HealthCheckResponse(BaseModel):
     """Health check result."""
     success: bool
-    latency: Optional[int] = None
-    error: Optional[str] = None
+    latency: int | None = None
+    error: str | None = None
 
 
 class AdapterBase(BaseModel):
@@ -141,20 +142,20 @@ class AdapterBase(BaseModel):
     platform: str
     status: str = "inactive"
     description: str = ""
-    config: Dict = Field(default_factory=dict)
-    locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    config: dict = Field(default_factory=dict)
+    locales: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class AdapterResponse(AdapterBase):
     id: str
     platform_display_name: str = ""
-    platform_locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
-    platform_icon: Optional[str] = None
-    platform_icon_dark: Optional[str] = None
+    platform_locales: dict[str, dict[str, str]] = Field(default_factory=dict)
+    platform_icon: str | None = None
+    platform_icon_dark: str | None = None
 
 
 class QRCodeLoginStartRequest(BaseModel):
-    config: Dict = Field(default_factory=dict)
+    config: dict = Field(default_factory=dict)
 
 class PersonaBase(BaseModel):
     name: str
@@ -171,25 +172,25 @@ class PersonaGeneratorMessage(BaseModel):
 
 
 class PersonaGeneratorTurnRequest(BaseModel):
-    messages: List[PersonaGeneratorMessage] = Field(default_factory=list, max_length=50)
+    messages: list[PersonaGeneratorMessage] = Field(default_factory=list, max_length=50)
 
 
 class PersonaGeneratorTurnResponse(BaseModel):
     type: Literal["question", "proposal"]
-    question: Optional[str] = None
-    options: List[str] = Field(default_factory=list)
+    question: str | None = None
+    options: list[str] = Field(default_factory=list)
     allow_custom: bool = True
-    name: Optional[str] = None
-    format: Optional[str] = None
-    content: Optional[str] = None
-    chat_rules: Optional[str] = None
+    name: str | None = None
+    format: str | None = None
+    content: str | None = None
+    chat_rules: str | None = None
 
 
 class PersonaResponse(PersonaBase):
     id: str
     created_at: int = 0
     is_active: bool = False
-    reference_image_path: Optional[str] = None
+    reference_image_path: str | None = None
 
 
 class TokenLoginRequest(BaseModel):
@@ -206,11 +207,11 @@ class OnboardingStatusResponse(BaseModel):
 
 class OnboardingCompleteRequest(BaseModel):
     lang: Literal["en", "zh"]
-    timezone: Optional[str] = None
+    timezone: str | None = None
 
     @field_validator("timezone")
     @classmethod
-    def validate_timezone(cls, value: Optional[str]) -> Optional[str]:
+    def validate_timezone(cls, value: str | None) -> str | None:
         if value is None:
             return None
         value = value.strip()
@@ -226,14 +227,14 @@ class OnboardingCompleteRequest(BaseModel):
 class OnboardingTokenSetupRequest(BaseModel):
     # None/empty means "skip for now"; a value replaces the auto-generated
     # access token during first-run setup.
-    token: Optional[str] = None
+    token: str | None = None
 
 
 class OnboardingTokenSetupResponse(BaseModel):
     skipped: bool
     # Fresh session JWT re-minted against the new access token; only present
     # when a token was actually set (skipping keeps the current session).
-    access_token: Optional[str] = None
+    access_token: str | None = None
 
 
 class ChangeTokenRequest(BaseModel):
@@ -254,8 +255,8 @@ class StickerUpdateRequest(BaseModel):
 class PageMenu(BaseModel):
     """Menu entry for a plugin page, shown in sidebar."""
     route: str
-    label: Union[str, Dict[str, str]]
-    icon: Optional[str] = None
+    label: str | dict[str, str]
+    icon: str | None = None
     order: int = 100
 
     @field_validator('label')
@@ -282,18 +283,18 @@ class PluginItem(BaseModel):
     version: str = ""
     author: str = ""
     description: str = ""
-    repo: Optional[str] = None
+    repo: str | None = None
     enabled: bool = True
     builtin: bool = False
     uninstallable: bool = False
-    locales: Dict[str, Dict[str, str]] = Field(default_factory=dict)
-    tags: List[str] = Field(default_factory=list)
-    core_version: Optional[str] = None
-    error: Optional[str] = None
+    locales: dict[str, dict[str, str]] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    core_version: str | None = None
+    error: str | None = None
     status: str = "pending"
-    menus: List[PageMenu] = Field(default_factory=list)
-    icon: Optional[str] = None
-    icon_dark: Optional[str] = None
+    menus: list[PageMenu] = Field(default_factory=list)
+    icon: str | None = None
+    icon_dark: str | None = None
 
 
 class PluginComponent(BaseModel):
@@ -302,23 +303,23 @@ class PluginComponent(BaseModel):
         "widget", "provider", "adapter", "adapter_capability",
     ]
     name: str
-    description: Union[str, Dict[str, str]] = ""
+    description: str | dict[str, str] = ""
 
 
 class PluginConfigUpdateRequest(BaseModel):
-    config: Dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class PluginInstallGithubRequest(BaseModel):
     repo_url: str
-    display_name: Optional[str] = Field(default=None, max_length=200)
-    proxy: Optional[str] = None
-    gh_proxy: Optional[str] = None
-    commit_sha: Optional[str] = None
+    display_name: str | None = Field(default=None, max_length=200)
+    proxy: str | None = None
+    gh_proxy: str | None = None
+    commit_sha: str | None = None
 
     @field_validator("commit_sha")
     @classmethod
-    def validate_commit_sha(cls, value: Optional[str]) -> Optional[str]:
+    def validate_commit_sha(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip().lower()
@@ -328,7 +329,7 @@ class PluginInstallGithubRequest(BaseModel):
 
 
 class PluginInstallResult(PluginItem):
-    warnings: List[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PluginInstallTask(BaseModel):
@@ -336,30 +337,30 @@ class PluginInstallTask(BaseModel):
 
     task_id: str
     repo_url: str
-    commit_sha: Optional[str] = None
+    commit_sha: str | None = None
     status: Literal["installing", "completed", "failed", "cancelled"]
     stage: Literal["downloading", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
-    plugin_id: Optional[str] = None
-    error: Optional[str] = None
-    warnings: List[str] = Field(default_factory=list)
+    plugin_id: str | None = None
+    error: str | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PluginUpdateCheckItem(BaseModel):
     plugin_id: str
     current_version: str = ""
-    latest_version: Optional[str] = None
-    commit_sha: Optional[str] = None
+    latest_version: str | None = None
+    commit_sha: str | None = None
     has_update: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class PluginUpdateRequest(BaseModel):
-    gh_proxy: Optional[str] = None
-    commit_sha: Optional[str] = None
+    gh_proxy: str | None = None
+    commit_sha: str | None = None
 
     @field_validator("commit_sha")
     @classmethod
-    def validate_commit_sha(cls, value: Optional[str]) -> Optional[str]:
+    def validate_commit_sha(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip().lower()
@@ -373,7 +374,7 @@ class PluginUpdateQueueItem(PluginUpdateRequest):
 
 
 class PluginUpdateQueueRequest(BaseModel):
-    items: List[PluginUpdateQueueItem] = Field(min_length=1, max_length=100)
+    items: list[PluginUpdateQueueItem] = Field(min_length=1, max_length=100)
 
 
 class PluginUpdateTask(BaseModel):
@@ -382,11 +383,11 @@ class PluginUpdateTask(BaseModel):
     task_id: str
     plugin_id: str
     name: str
-    commit_sha: Optional[str] = None
+    commit_sha: str | None = None
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
     stage: Literal["queued", "downloading", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
-    error: Optional[str] = None
-    warnings: List[str] = Field(default_factory=list)
+    error: str | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PluginTask(BaseModel):
@@ -395,19 +396,19 @@ class PluginTask(BaseModel):
     task_id: str
     operation: Literal["install", "update"]
     source: Literal["github", "upload"] = "github"
-    plugin_id: Optional[str] = None
+    plugin_id: str | None = None
     name: str
-    repo_url: Optional[str] = None
-    commit_sha: Optional[str] = None
+    repo_url: str | None = None
+    commit_sha: str | None = None
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
     stage: Literal["queued", "downloading", "extracting", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
-    error: Optional[str] = None
-    warnings: List[str] = Field(default_factory=list)
+    error: str | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PluginStoreFetchRequest(BaseModel):
-    url: Optional[str] = None
-    source_id: Optional[str] = None
+    url: str | None = None
+    source_id: str | None = None
     force_refresh: bool = False
 
 
@@ -415,7 +416,7 @@ class PluginStoreSourceItem(BaseModel):
     id: str
     name: str
     url: str
-    cache_file: Optional[str] = None
+    cache_file: str | None = None
     updated_at: int = 0
     is_current: bool = False
     created_at: int = 0
@@ -427,8 +428,8 @@ class PluginStoreSourceCreateRequest(BaseModel):
 
 
 class PluginStoreSourceUpdateRequest(BaseModel):
-    name: Optional[str] = None
-    url: Optional[str] = None
+    name: str | None = None
+    url: str | None = None
 
 
 class McpServerItem(BaseModel):
@@ -449,8 +450,8 @@ class McpToolItem(BaseModel):
 
 
 class McpServerConfigUpdateRequest(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
     # Accept either a raw JSON string or an object so the frontend can
     # send the Monaco editor content directly as a string.
     config: Any = Field(default_factory=dict)
@@ -458,7 +459,7 @@ class McpServerConfigUpdateRequest(BaseModel):
 
 class McpServerCreateRequest(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     config: Any
 
 
@@ -484,22 +485,22 @@ class StorageInfoResponse(BaseModel):
     disk_total_bytes: int = 0
     disk_used_bytes: int = 0
     disk_free_bytes: int = 0
-    directories: List[DirectoryEntry] = Field(default_factory=list)
+    directories: list[DirectoryEntry] = Field(default_factory=list)
 
 
 class ReleaseItem(BaseModel):
     tag_name: str
-    name: Optional[str] = None
-    body: Optional[str] = None
-    html_url: Optional[str] = None
-    published_at: Optional[str] = None
+    name: str | None = None
+    body: str | None = None
+    html_url: str | None = None
+    published_at: str | None = None
     prerelease: bool = False
     draft: bool = False
 
 
 class ReleasesResponse(BaseModel):
     current_version: str
-    releases: List[ReleaseItem]
+    releases: list[ReleaseItem]
 
 
 class BackupCreateResponse(BaseModel):
@@ -513,8 +514,8 @@ class BackupProgressResponse(BaseModel):
     status: Literal["queued", "running", "completed", "failed"] = "queued"
     stage: Literal["queued", "scanning", "compressing", "finalizing", "completed", "failed"] = "queued"
     percent: int = Field(default=0, ge=0, le=100)
-    result: Optional[BackupCreateResponse] = None
-    error: Optional[Literal["backup_exists"]] = None
+    result: BackupCreateResponse | None = None
+    error: Literal["backup_exists"] | None = None
 
 
 class RestoreResponse(BaseModel):
@@ -538,4 +539,4 @@ class ReleaseUpdateProgress(BaseModel):
     stage: str
     message: str
     overall_percent: int = 0
-    stages: Dict[str, UpdateStageProgress] = Field(default_factory=dict)
+    stages: dict[str, UpdateStageProgress] = Field(default_factory=dict)

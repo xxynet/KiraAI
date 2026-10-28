@@ -1,7 +1,6 @@
 """Plugin page sources and sidebar menu declarations."""
 
 from enum import Enum
-from typing import Dict, Optional, Union
 
 
 class PageMenu:
@@ -16,13 +15,12 @@ class PageMenu:
         order: Sort order in the sidebar (lower = higher, default 100).
     """
 
-    def __init__(self, label: Union[str, Dict[str, str]], icon: Optional[str] = None,
+    def __init__(self, label: str | dict[str, str], icon: str | None = None,
                  order: int = 100):
         if not isinstance(label, (str, dict)):
             raise TypeError(f"label must be a str or dict, got {type(label).__name__}")
-        if isinstance(label, str):
-            if not label.strip():
-                raise ValueError("label string must not be empty or whitespace")
+        if isinstance(label, str) and not label.strip():
+            raise ValueError("label string must not be empty or whitespace")
         if isinstance(label, dict):
             for k, v in label.items():
                 if not isinstance(k, str) or not isinstance(v, str):
@@ -34,8 +32,8 @@ class PageMenu:
             raise TypeError(f"icon must be a string if provided, got {type(icon).__name__}")
         if not isinstance(order, int) or isinstance(order, bool):
             raise TypeError(f"order must be an integer, got {type(order).__name__}")
-        self.label: Union[str, Dict[str, str]] = label
-        self.icon: Optional[str] = icon
+        self.label: str | dict[str, str] = label
+        self.icon: str | None = icon
         self.order: int = order
 
     def dict(self) -> dict:

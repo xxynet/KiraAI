@@ -4,13 +4,13 @@ import asyncio
 import importlib
 import importlib.metadata
 import importlib.util
-from pathlib import Path
 import time
+from pathlib import Path
 
 from packaging.version import Version
 
-from .vector_store import VectorStore
 from .search import MAX_CANDIDATES
+from .vector_store import VectorStore
 
 
 def dependency_available():

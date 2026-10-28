@@ -1,14 +1,14 @@
 import httpx
 
-from core.provider import ModelType, BaseProvider
+from core.provider import BaseProvider, ModelType
 
 from .model_clients import (
-    BailianLLMClient,
     BailianCosyVoiceTTSClient,
-    BailianSTTClient,
-    BailianImageClient,
     BailianEmbeddingClient,
+    BailianImageClient,
+    BailianLLMClient,
     BailianRerankClient,
+    BailianSTTClient,
     resolve_compatible_base_url,
 )
 
@@ -33,14 +33,10 @@ def _infer_type(model_id: str) -> str:
     mid = (model_id or "").lower().strip()
     if not mid:
         return "llm"
-    if mid.startswith("cosyvoice") or "tts" in mid or mid.startswith("sambert"):
+    if mid.startswith(("cosyvoice", "sambert")) or "tts" in mid:
         return "tts"
     if (
-        mid.startswith("paraformer")
-        or mid.startswith("fun-asr")
-        or mid.startswith("fun_asr")
-        or "asr" in mid
-        or mid.startswith("sensevoice")
+        mid.startswith(("paraformer", "fun-asr", "fun_asr", "sensevoice")) or "asr" in mid
     ):
         return "stt"
     # Video before image: wan2.x-i2v / t2v / r2v / s2v / kf2v / *-video*
@@ -61,20 +57,7 @@ def _infer_type(model_id: str) -> str:
     if "rerank" in mid:
         return "rerank"
     if (
-        mid.startswith("wanx")
-        or "t2i" in mid
-        or mid.startswith("flux")
-        or ("image" in mid and "video" not in mid)
-        or (
-            mid.startswith("wan")
-            and "i2v" not in mid
-            and "t2v" not in mid
-            and "r2v" not in mid
-            and "s2v" not in mid
-            and "kf2v" not in mid
-            and "-vace" not in mid
-            and "video" not in mid
-        )
+        mid.startswith(("wanx", "flux")) or "t2i" in mid or "image" in mid and "video" not in mid or mid.startswith("wan") and "i2v" not in mid and "t2v" not in mid and "r2v" not in mid and "s2v" not in mid and "kf2v" not in mid and "-vace" not in mid and "video" not in mid
     ):
         return "image"
     return "llm"

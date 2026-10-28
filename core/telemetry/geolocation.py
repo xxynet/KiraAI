@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional, Protocol
+from typing import Protocol
 
 import httpx
 
@@ -62,7 +62,7 @@ _PROVIDERS: tuple[CountryCodeProvider, ...] = (
 )
 
 
-async def fetch_country_code() -> Optional[str]:
+async def fetch_country_code() -> str | None:
     """Try providers directly in order, with a 3-second budget for each lookup."""
     failures = []
     try:

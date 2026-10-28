@@ -2,8 +2,9 @@
 
 import asyncio
 import inspect
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -88,7 +89,7 @@ class PluginStaticFiles(StaticFiles):
 class PluginWebBindings:
     """Own Web route registrations without owning plugin declarations."""
 
-    def __init__(self, manager: "PluginManager", app: Optional[FastAPI]):
+    def __init__(self, manager: "PluginManager", app: FastAPI | None):
         self.manager = manager
         self.app = app
         self._api_registered: set[str] = set()
@@ -112,7 +113,9 @@ class PluginWebBindings:
             return
 
         import typing
+
         from fastapi import Depends, HTTPException
+
         from webui.routes.auth import require_auth
 
         self._api_registered.add(plugin_id)
@@ -124,7 +127,7 @@ class PluginWebBindings:
                     raise HTTPException(status_code=404, detail="Plugin disabled")
             return check
 
-        registered: List[str] = []
+        registered: list[str] = []
 
         for route in comp.api_routes:
             func = route["func"]
@@ -189,11 +192,12 @@ class PluginWebBindings:
             return
 
         from fastapi import Depends, WebSocket
+
         from webui.routes.auth import require_ws_auth
 
         self._ws_registered.add(plugin_id)
 
-        registered: List[str] = []
+        registered: list[str] = []
 
         for route in comp.ws_routes:
             func = route["func"]
@@ -234,7 +238,7 @@ class PluginWebBindings:
         if not comp or not comp.pages or plugin_id in self._pages_registered:
             return
         self._pages_registered.add(plugin_id)
-        registered: List[str] = []
+        registered: list[str] = []
         for page in comp.pages:
             page_obj = self._resolve_page(plugin_id, page)
             if page_obj is None:
@@ -251,7 +255,7 @@ class PluginWebBindings:
         if registered:
             logger.info(f"Registered {len(registered)} page routes from {plugin_id}: {registered}")
 
-    def _resolve_page(self, plugin_id: str, page: dict) -> Optional[PluginPage]:
+    def _resolve_page(self, plugin_id: str, page: dict) -> PluginPage | None:
         page_obj = page.get("page")
         if page_obj is not None:
             return page_obj
@@ -284,6 +288,7 @@ class PluginWebBindings:
                     page: PluginPage, need_auth: bool, deferred: bool) -> bool:
         from fastapi import Depends
         from starlette.responses import RedirectResponse
+
         from webui.routes.auth import require_auth
 
         if page.source == PluginPageSource.FOLDER:
@@ -351,7 +356,7 @@ class PluginWebBindings:
         plugin_root = self.manager.get_plugin_module_path(plugin_id)
         if not plugin_root:
             return
-        registered: List[str] = []
+        registered: list[str] = []
         for static in comp.static_dirs:
             path_prefix = static["path"].lstrip('/')
             full_path = f"/static/plugin/{plugin_id}/{path_prefix}"
@@ -432,10 +437,7 @@ class PluginWebBindings:
             should_remove = False
 
             # API / page routes registered via add_api_route
-            if hasattr(route, 'tags') and tag_prefix in (route.tags or []):
-                should_remove = True
-            # Page catch-all routes, static mounts, or WS routes
-            elif hasattr(route, 'path') and (
+            if hasattr(route, 'tags') and tag_prefix in (route.tags or []) or hasattr(route, 'path') and (
                 route.path.startswith(page_prefix)
                 or route.path.startswith(static_prefix)
                 or route.path.startswith(ws_prefix)

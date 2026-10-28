@@ -1,6 +1,7 @@
 import time
+from typing import Any
+
 import httpx
-from typing import Any, Optional
 
 from core.logging_manager import get_logger
 
@@ -18,9 +19,9 @@ async def get_json(url: str, timeout: float = 60.0) -> Any:
 async def download_file(
     url: str,
     path: str,
-    proxy: Optional[str] = None,
+    proxy: str | None = None,
     timeout: float = 60.0,
-    max_bytes: Optional[int] = None,
+    max_bytes: int | None = None,
 ):
     if max_bytes is not None and max_bytes <= 0:
         raise ValueError("max_bytes must be a positive integer")
@@ -50,7 +51,7 @@ async def download_file(
         return resp
 
 
-async def get_file_content(url: str, proxy: Optional[str] = None, timeout: float = 60.0) -> bytes:
+async def get_file_content(url: str, proxy: str | None = None, timeout: float = 60.0) -> bytes:
     client_kwargs: dict = {"follow_redirects": True, "timeout": timeout}
     if proxy:
         client_kwargs["proxy"] = proxy
@@ -62,7 +63,7 @@ async def get_file_content(url: str, proxy: Optional[str] = None, timeout: float
 
 async def test_url_speed(
     url: str,
-    proxy: Optional[str] = None,
+    proxy: str | None = None,
     timeout: float = 10.0,
 ) -> dict:
     """

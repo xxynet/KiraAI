@@ -1,20 +1,26 @@
-from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
-from io import BytesIO
-from typing import Optional
-import httpx
 import base64
 import mimetypes
 import os
 import time
+from io import BytesIO
 
-from core.provider import ModelInfo
-from core.provider import (ImageModelClient, TTSModelClient,
-                           STTModelClient, EmbeddingModelClient, RerankModelClient)
+import httpx
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
+
+from core.chat.message_elements import Image, Record
 from core.logging_manager import get_logger
-from core.provider.llm_model import LLMRequest, LLMResponse, RerankResult
-
-from core.chat.message_elements import Record, Image
-from core.provider.openai_compatible import OpenAICompatibleLLMClient, OpenAICompatibleTTSClient
+from core.provider import (
+    EmbeddingModelClient,
+    ImageModelClient,
+    ModelInfo,
+    RerankModelClient,
+    STTModelClient,
+)
+from core.provider.llm_model import RerankResult
+from core.provider.openai_compatible import (
+    OpenAICompatibleLLMClient,
+    OpenAICompatibleTTSClient,
+)
 
 logger = get_logger("provider", "purple")
 
@@ -132,7 +138,7 @@ class SiliconflowRerankClient(RerankModelClient):
         self,
         query: str,
         documents: list[str],
-        top_n: Optional[int] = None,
+        top_n: int | None = None,
         **kwargs
     ) -> list[RerankResult]:
 

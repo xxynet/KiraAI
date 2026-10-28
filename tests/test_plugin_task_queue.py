@@ -7,7 +7,12 @@ import pytest
 from fastapi import FastAPI, HTTPException, UploadFile
 
 import webui.routes.plugins as plugin_routes
-from webui.models import PluginInstallGithubRequest, PluginInstallResult, PluginUpdateQueueRequest, PluginUpdateRequest
+from webui.models import (
+    PluginInstallGithubRequest,
+    PluginInstallResult,
+    PluginUpdateQueueRequest,
+    PluginUpdateRequest,
+)
 from webui.routes.auth import require_auth
 from webui.routes.plugins import PluginsRoutes
 

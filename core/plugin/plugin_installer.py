@@ -19,8 +19,8 @@ import shutil
 import sys
 import uuid
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Optional
 
 from core.logging_manager import get_logger
 from core.utils.github_api import parse_github_url, pick_fastest_source
@@ -71,12 +71,12 @@ async def _run_thread_worker(func: Callable, *args):
 async def install_from_github(
     repo_url: str,
     plugins_dir: Path,
-    proxy: Optional[str] = None,
-    gh_proxy: Optional[str] = None,
-    commit_sha: Optional[str] = None,
-    is_plugin_installed: Optional[Callable[[str], bool]] = None,
-    target_dir: Optional[Path] = None,
-    expected_plugin_id: Optional[str] = None,
+    proxy: str | None = None,
+    gh_proxy: str | None = None,
+    commit_sha: str | None = None,
+    is_plugin_installed: Callable[[str], bool] | None = None,
+    target_dir: Path | None = None,
+    expected_plugin_id: str | None = None,
 ) -> Path:
     """
     Download a plugin from GitHub, extract it, and move it into plugins_dir.
@@ -150,9 +150,9 @@ async def install_from_zip(
     zip_bytes: bytes,
     plugins_dir: Path,
     preferred_name: str = "",
-    is_plugin_installed: Optional[Callable[[str], bool]] = None,
-    target_dir: Optional[Path] = None,
-    expected_plugin_id: Optional[str] = None,
+    is_plugin_installed: Callable[[str], bool] | None = None,
+    target_dir: Path | None = None,
+    expected_plugin_id: str | None = None,
 ) -> Path:
     """
     Install a plugin from an uploaded zip archive.
@@ -179,7 +179,7 @@ async def install_from_zip(
         raise
     except Exception as e:
         temp_zip.unlink(missing_ok=True)
-        raise IOError(f"Failed to write uploaded zip to temp: {e}") from e
+        raise OSError(f"Failed to write uploaded zip to temp: {e}") from e
 
     try:
         return await _extract_and_install(
@@ -195,7 +195,7 @@ async def install_from_zip(
         raise
 
 
-async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = None) -> List[str]:
+async def install_requirements(plugin_dir: Path, pypi_mirror: str | None = None) -> list[str]:
     """
     Install dependencies listed in the plugin's requirements.txt using pip.
 
@@ -210,7 +210,7 @@ async def install_requirements(plugin_dir: Path, pypi_mirror: Optional[str] = No
         return await _install_requirements(plugin_dir, pypi_mirror)
 
 
-async def _install_requirements(plugin_dir: Path, pypi_mirror: Optional[str]) -> List[str]:
+async def _install_requirements(plugin_dir: Path, pypi_mirror: str | None) -> list[str]:
     """Run one pip operation while the public entry point holds the install lock."""
     req_file = plugin_dir / "requirements.txt"
     if not req_file.exists():
@@ -301,9 +301,9 @@ async def _extract_and_install(
     temp_zip: Path,
     plugins_dir: Path,
     preferred_name: str = "",
-    is_plugin_installed: Optional[Callable[[str], bool]] = None,
-    target_dir: Optional[Path] = None,
-    expected_plugin_id: Optional[str] = None,
+    is_plugin_installed: Callable[[str], bool] | None = None,
+    target_dir: Path | None = None,
+    expected_plugin_id: str | None = None,
 ) -> Path:
     """Extract and install a plugin archive without blocking the event loop."""
     return await _run_thread_worker(
@@ -321,9 +321,9 @@ def _extract_and_install_sync(
     temp_zip: Path,
     plugins_dir: Path,
     preferred_name: str = "",
-    is_plugin_installed: Optional[Callable[[str], bool]] = None,
-    target_dir: Optional[Path] = None,
-    expected_plugin_id: Optional[str] = None,
+    is_plugin_installed: Callable[[str], bool] | None = None,
+    target_dir: Path | None = None,
+    expected_plugin_id: str | None = None,
 ) -> Path:
     """
     Extract temp_zip into a staging directory under data/temp/, move the result
@@ -332,7 +332,7 @@ def _extract_and_install_sync(
     On any failure the temp zip and staging dir are cleaned up and the exception
     is re-raised.
     """
-    staging: Optional[Path] = None
+    staging: Path | None = None
     try:
         try:
             if temp_zip.stat().st_size > MAX_PLUGIN_ARCHIVE_BYTES:
@@ -370,7 +370,7 @@ def _extract_and_install_sync(
 
             # Detect a single wrapping top-level directory (GitHub archive style)
             top_entries = {n.split("/")[0] for n in names if n.split("/")[0]}
-            prefix = list(top_entries)[0] + "/" if len(top_entries) == 1 else ""
+            prefix = next(iter(top_entries)) + "/" if len(top_entries) == 1 else ""
 
             manifest_entry = f"{prefix}manifest.json"
             if manifest_entry not in names:

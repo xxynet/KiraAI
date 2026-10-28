@@ -1,29 +1,45 @@
 from __future__ import annotations
 
 import asyncio
+import time
+import uuid
 from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass, field
-from pathlib import Path
 from datetime import datetime
-import uuid
-import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from bilibili_api import comment, dynamic, search
-from bilibili_api.utils.picture import Picture
 from bilibili_api.utils.aid_bvid_transformer import bvid2aid
+from bilibili_api.utils.picture import Picture
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import FeedCapability
-from core.adapter.message_format_metadata import MessageFormatMetadata, load_emoji_mapping
-from core.adapter.feed import FeedItem, FeedPage, FeedPost, FeedQuery, FeedRef, FeedSearchQuery
+from core.adapter.feed import (
+    FeedItem,
+    FeedPage,
+    FeedPost,
+    FeedQuery,
+    FeedRef,
+    FeedSearchQuery,
+)
+from core.adapter.message_format_metadata import (
+    MessageFormatMetadata,
+    load_emoji_mapping,
+)
 from core.chat import KiraCommentEvent
 from core.chat.message_elements import At, Emoji, Image, Text
 from core.chat.message_utils import MessageChain
 
 from .client import load_picture
-from .feed_content import COMMENT_RESOURCES, article_item, comment_target, dynamic_item, video_item
+from .feed_content import (
+    COMMENT_RESOURCES,
+    article_item,
+    comment_target,
+    dynamic_item,
+    video_item,
+)
 
 if TYPE_CHECKING:
     from .bilibili import BiliBiliAdapter

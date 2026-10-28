@@ -5,7 +5,7 @@ from core.config.config_loader import KiraConfig
 
 class MockConfig(KiraConfig):
     """KiraConfig that skips file I/O for unit testing."""
-    def __init__(self, data: dict = None):
+    def __init__(self, data: dict | None = None):
         object.__setattr__(self, "default_config", data or {})
         self.update(self.default_config)
 

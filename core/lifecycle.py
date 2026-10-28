@@ -1,48 +1,52 @@
 import asyncio
 import os
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
-from .logging_manager import get_logger, setup_logging
-from .config import KiraConfig
-from .sticker_manager import StickerManager
-from .message_manager import MessageProcessor
+from core.adapter.adapter_info import AdapterInfo
+from core.adapter.builtin.webchat.webchat import WebChatAdapter
+from core.adapter.context import AdapterContext
+from core.agent.mcp_mgr import MCPManager
+from core.agent.skills_mgr import SkillsManager
+from core.chat.message_history import MessageHistoryService
+from core.chat.message_history_cleanup import MessageHistoryCleanup
+from core.chat.message_utils import (
+    KiraCommentEvent,
+    KiraMessageBatchEvent,
+    KiraMessageEvent,
+)
 from core.chat.session_buffer import SessionBufferManager
+from core.chat.session_manager import SessionManager
+from core.chat.session_media_manager import SessionMediaManager
+from core.config import VERSION
+from core.db.db_mgr import DatabaseManager
+from core.db.migrate_to_db import migrate_selfie_reference_image, run_migrations
+from core.db.service import DatabaseService
+from core.telemetry import TelemetryClient
+from core.temp_monitor import AsyncTempMonitor
+from core.utils.path_utils import get_data_path
+from core.webchat.service import WebChatService
+from core.webchat.store import WebChatStore
 from core.workflow.src.im.context import IMWorkflowContext
-from core.workflow.src.im.workflow import DefaultIMWorkflow
 from core.workflow.src.im.message_delivery import MessageDeliveryService
 from core.workflow.src.im.message_formatter import MessageFormatter
 from core.workflow.src.im.native_content import MessageMediaService
-from .image_desc_cache import ImageDescCache
-from .prompt_manager import PromptManager
-from core.chat.session_manager import SessionManager
-from core.chat.session_media_manager import SessionMediaManager
-from core.chat.message_history import MessageHistoryService
-from core.chat.message_history_cleanup import MessageHistoryCleanup
-from .adapter import AdapterManager
-from core.adapter.adapter_info import AdapterInfo
-from core.adapter.context import AdapterContext
-from core.adapter.builtin.webchat.webchat import WebChatAdapter
-from core.webchat.store import WebChatStore
-from core.webchat.service import WebChatService
-from .statistics import Statistics
-from .agent.func_tool_manager import FuncToolManager
-from .event_bus import EventBus
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent, KiraCommentEvent
-from .persona import PersonaManager
-from .provider import ProviderManager
-from .plugin import PluginContext, PluginManager
-from .plugin.handlers import event_handler_reg, EventType
-from core.agent.mcp_mgr import MCPManager
-from core.agent.skills_mgr import SkillsManager
-from core.config import VERSION
-from core.utils.path_utils import get_data_path
-from core.temp_monitor import AsyncTempMonitor
-from core.telemetry import TelemetryClient
-from core.db.db_mgr import DatabaseManager
-from core.db.service import DatabaseService
-from core.db.migrate_to_db import run_migrations, migrate_selfie_reference_image
+from core.workflow.src.im.workflow import DefaultIMWorkflow
 
+from .adapter import AdapterManager
+from .agent.func_tool_manager import FuncToolManager
+from .config import KiraConfig
+from .event_bus import EventBus
+from .image_desc_cache import ImageDescCache
+from .logging_manager import get_logger, setup_logging
+from .message_manager import MessageProcessor
+from .persona import PersonaManager
+from .plugin import PluginContext, PluginManager
+from .plugin.handlers import EventType, event_handler_reg
+from .prompt_manager import PromptManager
+from .provider import ProviderManager
+from .statistics import Statistics
+from .sticker_manager import StickerManager
 
 logger = get_logger("lifecycle", "blue")
 
@@ -53,49 +57,49 @@ class KiraLifecycle:
     def __init__(self, stats: Statistics):
         self.stats = stats
 
-        self.kira_config: Optional[KiraConfig] = None
+        self.kira_config: KiraConfig | None = None
 
-        self.db_manager: Optional[DatabaseManager] = None
+        self.db_manager: DatabaseManager | None = None
 
-        self.db_service: Optional[DatabaseService] = None
+        self.db_service: DatabaseService | None = None
 
-        self.provider_manager: Optional[ProviderManager] = None
+        self.provider_manager: ProviderManager | None = None
 
-        self.tool_manager: Optional[FuncToolManager] = None
+        self.tool_manager: FuncToolManager | None = None
 
-        self.adapter_manager: Optional[AdapterManager] = None
+        self.adapter_manager: AdapterManager | None = None
 
-        self.session_manager: Optional[SessionManager] = None
+        self.session_manager: SessionManager | None = None
 
-        self.persona_manager: Optional[PersonaManager] = None
+        self.persona_manager: PersonaManager | None = None
 
-        self.prompt_manager: Optional[PromptManager] = None
+        self.prompt_manager: PromptManager | None = None
 
-        self.message_processor: Optional[MessageProcessor] = None
+        self.message_processor: MessageProcessor | None = None
 
-        self.image_desc_cache: Optional[ImageDescCache] = None
+        self.image_desc_cache: ImageDescCache | None = None
 
-        self.sticker_manager: Optional[StickerManager] = None
+        self.sticker_manager: StickerManager | None = None
 
-        self.event_bus: Optional[EventBus] = None
+        self.event_bus: EventBus | None = None
 
-        self.plugin_context: Optional[PluginContext] = None
+        self.plugin_context: PluginContext | None = None
 
-        self.plugin_manager: Optional[PluginManager] = None
+        self.plugin_manager: PluginManager | None = None
 
-        self.temp_monitor: Optional[AsyncTempMonitor] = None
+        self.temp_monitor: AsyncTempMonitor | None = None
 
-        self.mcp_manager: Optional[MCPManager] = None
+        self.mcp_manager: MCPManager | None = None
 
-        self.skills_manager: Optional[SkillsManager] = None
+        self.skills_manager: SkillsManager | None = None
 
-        self.telemetry_client: Optional[TelemetryClient] = None
+        self.telemetry_client: TelemetryClient | None = None
 
-        self.message_history: Optional[MessageHistoryService] = None
+        self.message_history: MessageHistoryService | None = None
 
-        self.message_history_cleanup: Optional[MessageHistoryCleanup] = None
+        self.message_history_cleanup: MessageHistoryCleanup | None = None
 
-        self.webchat: Optional[WebChatService] = None
+        self.webchat: WebChatService | None = None
 
         self.tasks: list[asyncio.Task] = []
 
@@ -128,7 +132,7 @@ class KiraLifecycle:
         if mirror and not mirror.startswith(("http://", "https://")):
             logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {mirror}")
 
-    async def init_and_run_system(self, on_initialized: Optional[Callable[[], None]] = None):
+    async def init_and_run_system(self, on_initialized: Callable[[], None] | None = None):
         """主函数：负责启动和初始化各个模块"""
         logger.info(f"✨ Starting KiraAI {VERSION}...")
 

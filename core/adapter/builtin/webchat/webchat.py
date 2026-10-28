@@ -4,6 +4,7 @@ from core.adapter.access import ListAccessPolicy
 from core.adapter.base import AdapterTargetId, BaseAdapter
 from core.adapter.capabilities import IMCapability
 from core.chat.message_utils import KiraIMSentResult, MessageChain
+
 from .im import WebChatIMCapability
 
 

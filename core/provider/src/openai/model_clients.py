@@ -2,15 +2,16 @@ import base64
 import binascii
 import re
 import time
-from typing import Optional, Union
 
-from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
 
-from core.provider import ModelInfo
-from core.provider import LLMModelClient, ImageModelClient, EmbeddingModelClient
-from core.provider.llm_model import LLMRequest, LLMResponse
-from core.logging_manager import get_logger
 from core.chat.message_elements import Image
+from core.logging_manager import get_logger
+from core.provider import (
+    EmbeddingModelClient,
+    ImageModelClient,
+    ModelInfo,
+)
 
 logger = get_logger("provider", "purple")
 
@@ -172,7 +173,7 @@ class OpenAIImageClient(ImageModelClient):
 
     # ──────── image extraction helpers ────────
 
-    def _extract_image_from_message(self, message) -> Optional[Image]:
+    def _extract_image_from_message(self, message) -> Image | None:
         """
         Walk a ChatCompletionMessage in the most-specific-first order:
           1. content as multimodal list (list[content_part])
@@ -219,7 +220,7 @@ class OpenAIImageClient(ImageModelClient):
 
         return None
 
-    def _scan_parts(self, parts: list) -> Optional[Image]:
+    def _scan_parts(self, parts: list) -> Image | None:
         """Return the first extractable image among content parts."""
         for part in parts:
             img = self._try_extract_image_part(part)
@@ -227,7 +228,7 @@ class OpenAIImageClient(ImageModelClient):
                 return img
         return None
 
-    def _try_extract_image_part(self, part) -> Optional[Image]:
+    def _try_extract_image_part(self, part) -> Image | None:
         """
         Pull an image out of one content part.
         ``part`` may be a dict (raw JSON) or a pydantic model (parsed SDK).
@@ -284,11 +285,9 @@ class OpenAIImageClient(ImageModelClient):
     @staticmethod
     def _is_valid_image_source(url: str) -> bool:
         """Accept only data:image/ base64 URIs and HTTP(S) URLs."""
-        return url.startswith("data:image/") or url.startswith(
-            ("http://", "https://")
-        )
+        return url.startswith(("data:image/", "http://", "https://"))
 
-    async def image_to_image(self, prompt: str, image: Union[Image, list[Image]]) -> Image:
+    async def image_to_image(self, prompt: str, image: Image | list[Image]) -> Image:
         if isinstance(image, Image):
             image = [image]
         endpoint = self.model.model_config.get("endpoint", "v1/image")

@@ -1,14 +1,13 @@
 import json
 import os
+from dataclasses import dataclass
+from pathlib import Path
+
 import yaml
 
-from typing import Optional, Literal
-from pathlib import Path
-from dataclasses import dataclass, field
-
-from core.utils.path_utils import get_data_path, get_config_path
 from core.logging_manager import get_logger
 from core.prompt_manager import Prompt
+from core.utils.path_utils import get_config_path, get_data_path
 
 logger = get_logger("skills", "green")
 
@@ -93,7 +92,7 @@ class SkillsManager:
         return False
 
     @staticmethod
-    def parse_skill_info(skill_path: Path) -> Optional[SkillInfo]:
+    def parse_skill_info(skill_path: Path) -> SkillInfo | None:
         skill_md = skill_path.resolve() / "SKILL.md"
         if not skill_md.exists():
             logger.error(f"SKILL.md not found in {skill_path}")
@@ -123,7 +122,7 @@ class SkillsManager:
             logger.error(f'Failed to parse {skill_md}: {e}')
             return None
 
-    def build_skills_prompt(self, skills_info: list[SkillInfo] = None) -> Prompt:
+    def build_skills_prompt(self, skills_info: list[SkillInfo] | None = None) -> Prompt:
         if skills_info is None:
             skills_info = self.skills_info
         p = Prompt(
@@ -132,31 +131,19 @@ class SkillsManager:
             content="## Skills\n"
         )
 
-        p.content += "".join((
-            "You have **Skills**,reusable instruction bundles stored\n",
-            "Before replying: scan description entries of the skills below.\n",
-            "- If exactly one skill clearly applies: read its SKILL.md with `read_file` tool, then follow it.\n",
-            "  e.g. if the path is `data/skills/skill_name`, read `data/skills/skill_name/SKILL.md`\n",
-            "- If multiple could apply: choose the most specific one, then read/follow it.\n",
-            "- If none clearly apply: do not read any SKILL.md.\n",
-            "Constraints: never read more than one skill up front; only read after selecting.\n",
-            "If you need to store files while executing skills, store to `data/files` for persistent ",
-            "storage, `data/temp` for temporary storage, DO NOT directly store to current working directory\n",
-            "DO NOT read a specific skill file if the user just asked what skills you have\n\n",
-            "Available skills are listed below:\n"
-        ))
+        p.content += "You have **Skills**,reusable instruction bundles stored\nBefore replying: scan description entries of the skills below.\n- If exactly one skill clearly applies: read its SKILL.md with `read_file` tool, then follow it.\n  e.g. if the path is `data/skills/skill_name`, read `data/skills/skill_name/SKILL.md`\n- If multiple could apply: choose the most specific one, then read/follow it.\n- If none clearly apply: do not read any SKILL.md.\nConstraints: never read more than one skill up front; only read after selecting.\nIf you need to store files while executing skills, store to `data/files` for persistent storage, `data/temp` for temporary storage, DO NOT directly store to current working directory\nDO NOT read a specific skill file if the user just asked what skills you have\n\nAvailable skills are listed below:\n"
 
         for s in skills_info:
             if not s.enabled:
                 continue
 
-            p.content += f"- **{s.name}**: {s.description}\n  Path: {str(s.path)}"
+            p.content += f"- **{s.name}**: {s.description}\n  Path: {s.path!s}"
 
         return p
 
     # ====== Scope methods ======
 
-    def get_skill_scope(self, skill_name: str) -> Optional[dict]:
+    def get_skill_scope(self, skill_name: str) -> dict | None:
         """Return scope entry for a skill. None = global.
         Format: {"allow": [sids]} or {"deny": [sids]}"""
         return self._raw_config.get("_scope", {}).get(skill_name)
@@ -172,7 +159,7 @@ class SkillsManager:
             return session_id not in scope["deny"]
         return True
 
-    def set_skill_scope(self, skill_name: str, mode: Optional[str], sessions: list[str]):
+    def set_skill_scope(self, skill_name: str, mode: str | None, sessions: list[str]):
         """Set scope for a skill. mode='allow'|'deny', or None to clear."""
         scope = self._raw_config.get("_scope", {})
         if mode and sessions:

@@ -12,12 +12,12 @@ from PIL import Image
 from sqlalchemy import text
 
 from core.config import config_loader
-from core.db.db_mgr import DatabaseManager
 from core.db import migrate_to_db
+from core.db.db_mgr import DatabaseManager
 from core.db.service import DatabaseService
+from core.persona import reference_image
 from core.persona.model import PersonaInfo
 from core.persona.persona_manager import PersonaManager
-from core.persona import reference_image
 from webui.routes.auth import require_auth
 from webui.routes.personas import PersonasRoutes
 

@@ -1,5 +1,5 @@
 import asyncio
-from typing import Callable, Awaitable
+from collections.abc import Awaitable, Callable
 
 from core.adapter.access import ListAccessPolicy
 from core.adapter.base import AdapterTargetId, BaseAdapter

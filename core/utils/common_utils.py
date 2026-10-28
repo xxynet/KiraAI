@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import base64
-import httpx
+from typing import TYPE_CHECKING
 
-from typing import Union, TYPE_CHECKING
+import httpx
 
 from core.logging_manager import get_logger
 
 if TYPE_CHECKING:
-    from core.chat.message_elements import Image, Sticker, Record
-    from core.provider import LLMModelClient, TTSModelClient, STTModelClient, ImageModelClient
+    from core.chat.message_elements import Image, Record, Sticker
+    from core.provider import (
+        ImageModelClient,
+        LLMModelClient,
+        STTModelClient,
+        TTSModelClient,
+    )
 
 logger = get_logger("llm", "purple")
 
@@ -47,7 +52,7 @@ async def image_to_base64(image_path: str):
 
 async def desc_img(
     client: LLMModelClient,
-    image: Union[Image, Sticker],
+    image: Image | Sticker,
     prompt: str | None = None,
     lang: str | None = None,
 ) -> str:
@@ -91,7 +96,7 @@ async def desc_img(
         resp = await vlm_model.chat(request)
         return resp.text_response
     except Exception as e:
-        logger.error(f"error occurred when describing image: {str(e)}")
+        logger.error(f"error occurred when describing image: {e!s}")
         return ""
 
 
@@ -133,7 +138,7 @@ async def generate_image(client: ImageModelClient, prompt: str) -> Image:
         logger.error(f"Failed to generate image with text: {e}")
 
 
-async def image_to_image(client: ImageModelClient, prompt: str, image: Union[Image, list[Image]]) -> Image:
+async def image_to_image(client: ImageModelClient, prompt: str, image: Image | list[Image]) -> Image:
     image_client = client
     provider_name = image_client.model.provider_name
     model_name = image_client.model.model_name

@@ -1,5 +1,5 @@
-import io
 import asyncio
+import io
 import shutil
 import subprocess
 import tempfile
@@ -7,7 +7,12 @@ import zipfile
 from pathlib import Path
 
 from core.utils import dist_checker
-from core.utils.update_transaction import JOURNAL_NAME, STAGE_PREFIX, UpdateTransaction, recover_interrupted_update
+from core.utils.update_transaction import (
+    JOURNAL_NAME,
+    STAGE_PREFIX,
+    UpdateTransaction,
+    recover_interrupted_update,
+)
 from webui.routes import releases
 
 

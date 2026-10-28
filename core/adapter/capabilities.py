@@ -4,8 +4,8 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from .base import AdapterT, AdapterTargetId, BaseCapability
-from .message_format_metadata import MessageFormatMetadata
 from .feed import FeedItem, FeedPage, FeedPost, FeedQuery, FeedRef, FeedSearchQuery
+from .message_format_metadata import MessageFormatMetadata
 
 if TYPE_CHECKING:
     # from core.chat.message_elements import Record

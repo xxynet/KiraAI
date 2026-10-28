@@ -2,12 +2,12 @@ import pytest
 from openai import NOT_GIVEN
 
 from core.provider import LLMRequest, ModelInfo, ModelType
-from core.provider.src.deepseek.model_clients import DeepSeekLLMClient
 from core.provider.openai_compatible import (
     DEFAULT_USER_AGENT,
     OpenAICompatibleLLMClient,
     build_llm_default_headers,
 )
+from core.provider.src.deepseek.model_clients import DeepSeekLLMClient
 
 
 def test_llm_headers_default_and_preserve_custom_user_agent():

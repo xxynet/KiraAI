@@ -2,11 +2,11 @@ import asyncio
 import os
 import shutil
 import tempfile
-import zipfile
 import uuid
+import zipfile
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 from fastapi import Depends, File, HTTPException, Request, UploadFile
 

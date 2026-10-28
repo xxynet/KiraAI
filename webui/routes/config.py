@@ -1,11 +1,10 @@
 from copy import deepcopy
-from typing import Dict
 
 from fastapi import Depends, HTTPException
 
 from core.chat.message_history_cleanup import validate_cleanup_config
-from core.provider.model_identity import DEFAULT_MODEL_TYPES, resolve_model_reference
 from core.logging_manager import get_logger, setup_logging
+from core.provider.model_identity import DEFAULT_MODEL_TYPES, resolve_model_reference
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 
@@ -39,7 +38,7 @@ class ConfigRoutes(Routes):
         models = config.get("models", {})
         providers_config = config.get("providers", {}) or {}
         providers = []
-        provider_models: Dict[str, Dict] = {}
+        provider_models: dict[str, dict] = {}
         for provider_id, provider_cfg in providers_config.items():
             provider_name = (
                 provider_cfg.get("name")
@@ -47,7 +46,7 @@ class ConfigRoutes(Routes):
                 or provider_id
             )
             providers.append({"id": provider_id, "name": provider_name})
-            model_config: Dict = {}
+            model_config: dict = {}
             if self.lifecycle and self.lifecycle.provider_manager:
                 try:
                     models_from_manager = self.lifecycle.provider_manager.get_models(provider_id)
@@ -71,7 +70,7 @@ class ConfigRoutes(Routes):
             "provider_models": provider_models,
         }
 
-    async def update_configuration(self, payload: Dict):
+    async def update_configuration(self, payload: dict):
         if not self.lifecycle or not getattr(self.lifecycle, "kira_config", None):
             raise HTTPException(status_code=500, detail="Configuration not available")
         config = self.lifecycle.kira_config

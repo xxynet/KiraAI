@@ -1,21 +1,21 @@
 import asyncio
-import hmac
 import hashlib
+import hmac
 import json
 import os
-import time
 import platform as sys_platform
+import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
-from core.config import KiraConfig, VERSION
+from core.config import VERSION, KiraConfig
+from core.db.service import DatabaseService
 from core.logging_manager import get_logger
+from core.statistics import Statistics
 from core.utils.path_utils import get_data_path
 from core.utils.system_info import collect_system_profile, get_anonymous_machine_id
-from core.statistics import Statistics
-from core.db.service import DatabaseService
 
 from .geolocation import fetch_country_code
 from .models import TelemetryEvent, TelemetryEventType
@@ -32,7 +32,7 @@ class TelemetryClient:
     All network errors are caught and logged to avoid blocking the main application.
     """
 
-    def __init__(self, db: DatabaseService, config: KiraConfig, stats: Optional[Statistics] = None):
+    def __init__(self, db: DatabaseService, config: KiraConfig, stats: Statistics | None = None):
         self.db = db
         self.config = config
         self.stats = stats
@@ -45,22 +45,22 @@ class TelemetryClient:
         else:
             self.enabled: bool = self.telemetry_config.get("enabled", True)
             self._enabled_from_env = False
-        self.client_uuid: Optional[str] = self.telemetry_config.get("client_uuid")
-        self.secret_key: Optional[str] = self.telemetry_config.get("secret_key")
-        self.machine_id: Optional[str] = None
+        self.client_uuid: str | None = self.telemetry_config.get("client_uuid")
+        self.secret_key: str | None = self.telemetry_config.get("secret_key")
+        self.machine_id: str | None = None
         self.launch_source = "launcher" if os.environ.get("KIRA_LAUNCH_SOURCE") == "launcher" else "core"
 
         self.server_url: str = os.environ.get("KIRA_TELEMETRY_SERVER", "https://telemetry.kira-ai.top/api/v1")
         self.heartbeat_interval: int = 300  # 5 minutes
-        self._http_client: Optional[httpx.AsyncClient] = None
-        self.country_code: Optional[str] = None
+        self._http_client: httpx.AsyncClient | None = None
+        self.country_code: str | None = None
         self._send_queue: asyncio.Queue[TelemetryEvent] = asyncio.Queue()
-        self._worker_task: Optional[asyncio.Task] = None
-        self._heartbeat_task: Optional[asyncio.Task] = None
-        self._stats_task: Optional[asyncio.Task] = None
+        self._worker_task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task | None = None
+        self._stats_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
         self._report_lock = asyncio.Lock()
-        self._init_task: Optional[asyncio.Task] = None
+        self._init_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -87,7 +87,7 @@ class TelemetryClient:
         self._init_task = asyncio.create_task(self._initialize_background())
         logger.debug("Telemetry client started (background provisioning in progress).")
 
-    async def _initialize_background(self, post_event: Optional[str] = None) -> None:
+    async def _initialize_background(self, post_event: str | None = None) -> None:
         """Background task: request UUID, fetch country code, then emit startup (and optional) events."""
         try:
             # This can require a small OS-level file or registry read, so do it
@@ -177,7 +177,7 @@ class TelemetryClient:
 
     def send_event(
         self, event_type: str, data: dict[str, Any],
-        force: bool = False, on_success: Optional[Any] = None,
+        force: bool = False, on_success: Any | None = None,
     ) -> None:
         """
         Fire-and-forget event submission.

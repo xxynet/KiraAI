@@ -1,16 +1,16 @@
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal
 
 
 @dataclass
 class PersonaInfo:
     id: str
-    name: Optional[str] = None
-    format: Optional[Literal["text", "yaml", "markdown", "xml"]] = None
-    content: Optional[str] = None
-    created_at: Optional[int] = None
-    is_active: Optional[bool] = None
-    reference_image_path: Optional[str] = None
-    chat_rules: Optional[str] = None
-    private_chat_rules: Optional[str] = None
-    group_chat_rules: Optional[str] = None
+    name: str | None = None
+    format: Literal["text", "yaml", "markdown", "xml"] | None = None
+    content: str | None = None
+    created_at: int | None = None
+    is_active: bool | None = None
+    reference_image_path: str | None = None
+    chat_rules: str | None = None
+    private_chat_rules: str | None = None
+    group_chat_rules: str | None = None

@@ -2,7 +2,11 @@ import httpx
 
 from core.provider import BaseProvider, ModelType
 
-from .model_clients import ModelScopeLLMClient, ModelScopeImageClient, ModelScopeEmbeddingClient
+from .model_clients import (
+    ModelScopeEmbeddingClient,
+    ModelScopeImageClient,
+    ModelScopeLLMClient,
+)
 
 
 class ModelScopeProvider(BaseProvider):

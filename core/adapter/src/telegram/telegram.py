@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Union
 
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
@@ -14,7 +13,6 @@ from core.chat import MessageChain
 from core.logging_manager import get_logger
 
 from .im import MessageSender, TelegramIMCapability
-
 
 logger = get_logger("tg_adapter", "green")
 
@@ -227,14 +225,14 @@ class TelegramAdapter(BaseAdapter):
                 ),
             )
 
-    async def send_group_message(self, group_id: Union[int, str], send_message_obj: MessageChain):
+    async def send_group_message(self, group_id: int | str, send_message_obj: MessageChain):
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_group_message(group_id, message)
         """
         return await self.im.send_group_message(group_id, send_message_obj)
 
-    async def send_direct_message(self, user_id: Union[int, str], send_message_obj: MessageChain):
+    async def send_direct_message(self, user_id: int | str, send_message_obj: MessageChain):
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_direct_message(user_id, message)

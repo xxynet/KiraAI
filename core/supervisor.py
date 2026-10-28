@@ -94,7 +94,7 @@ class _StopState:
     deliver the request any earlier than the flag does.
     """
 
-    __slots__ = ("requested", "force", "signal")
+    __slots__ = ("force", "requested", "signal")
 
     def __init__(self) -> None:
         self.requested = False
@@ -214,7 +214,7 @@ def run_supervisor(args: argparse.Namespace, script_dir: str):
     A stop request is forwarded to the child, which gets STOP_GRACE_SECONDS to
     finish its own shutdown before it is killed.
     """
-    from core.utils.path_utils import init_paths, get_data_path
+    from core.utils.path_utils import get_data_path, init_paths
 
     init_paths(data_dir=args.data_dir, webui_dir=args.webui_dir)
 

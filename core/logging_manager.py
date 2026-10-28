@@ -1,13 +1,14 @@
 import logging
 import re
-import colorlog
+import sys
 from asyncio import Queue
 from collections import deque
 from copy import copy
-from pathlib import Path
-import sys
-from colorlog.escape_codes import escape_codes
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+import colorlog
+from colorlog.escape_codes import escape_codes
 
 from core.utils.path_utils import get_data_path
 
@@ -131,7 +132,7 @@ class LogCacheManager:
                     "message": message,
                     "color": color
                 })
-            except Exception as e:
+            except Exception:
                 pass
 
 
@@ -191,7 +192,7 @@ def _get_shared_file_handler() -> RotatingFileHandler:
     return _shared_file_handler
 
 
-def setup_logging(log_level: str = "INFO", log_file_path: str = None, log_file_max_size: int = 10):
+def setup_logging(log_level: str = "INFO", log_file_path: str | None = None, log_file_max_size: int = 10):
     """Called once after config is loaded to apply logging settings."""
     global _log_level, _log_file_path, _log_file_max_size, _shared_file_handler
 

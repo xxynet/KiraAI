@@ -10,21 +10,24 @@ Called at startup (before WebUI init). If the dist is missing or outdated:
 """
 
 import asyncio
-import shutil
-import zipfile
 import io
+import shutil
 import tempfile
+import zipfile
 from pathlib import Path
-from typing import Optional
 
 import httpx
 
 from core.config import VERSION
 from core.logging_manager import get_logger
-from core.utils.path_utils import get_webui_dist_path, is_within_directory
-from core.utils.network import get_file_content
 from core.utils.github_api import get_release_assets, pick_fastest_source, verify_sha256
-from core.utils.update_transaction import STAGE_PREFIX, UpdateTransaction, recover_interrupted_update
+from core.utils.network import get_file_content
+from core.utils.path_utils import get_webui_dist_path, is_within_directory
+from core.utils.update_transaction import (
+    STAGE_PREFIX,
+    UpdateTransaction,
+    recover_interrupted_update,
+)
 
 logger = get_logger("dist_checker", "blue")
 
@@ -81,8 +84,8 @@ def is_dist_complete(ignore_webui_version_check: bool = False) -> bool:
 
 async def _fetch_asset_digest(
     tag: str,
-    proxy: Optional[str] = None,
-) -> Optional[str]:
+    proxy: str | None = None,
+) -> str | None:
     """
     Get the SHA-256 digest for ASSET_NAME directly from the GitHub Release
     API (``digest`` field on the asset object, e.g.
@@ -154,7 +157,7 @@ def _extract_dist_to_directory(zip_bytes: bytes, dist_dir: Path) -> None:
                 dst.write(src.read())
 
 
-async def download_dist_archive(version: str, proxy: Optional[str] = None) -> bytes:
+async def download_dist_archive(version: str, proxy: str | None = None) -> bytes:
     """Download and verify the WebUI archive for a release without applying it."""
     direct_url = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/{version}/{ASSET_NAME}"
     ranked_urls = await pick_fastest_source(direct_url, proxy)
@@ -209,7 +212,7 @@ def apply_dist_archive(
 # ─── Main entry point ────────────────────────────────────────────────────────
 
 
-async def ensure_dist(proxy: Optional[str] = None, ignore_webui_version_check: bool = False) -> None:
+async def ensure_dist(proxy: str | None = None, ignore_webui_version_check: bool = False) -> None:
     """
     Ensure data/dist is present and up-to-date.
     Called from the launcher before WebUI starts.
@@ -225,7 +228,7 @@ async def ensure_dist(proxy: Optional[str] = None, ignore_webui_version_check: b
 
     if is_dist_complete(ignore_webui_version_check=ignore_webui_version_check):
         if ignore_webui_version_check:
-            logger.info(f"✔ dist check skipped (--ignore-webui-version-check)")
+            logger.info("✔ dist check skipped (--ignore-webui-version-check)")
         else:
             logger.info(f"✔ dist is up-to-date ({VERSION})")
         return

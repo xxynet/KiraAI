@@ -17,15 +17,29 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from core.chat.message_elements import (
-    At, BaseMediaElement, BaseMessageElement, ElementType, Emoji, File, Forward,
-    Image, Json, Notice, Poke, Record, Reply, Sticker, Text, Video,
+    At,
+    BaseMediaElement,
+    BaseMessageElement,
+    ElementType,
+    Emoji,
+    File,
+    Forward,
+    Image,
+    Json,
+    Notice,
+    Poke,
+    Record,
+    Reply,
+    Sticker,
+    Text,
+    Video,
 )
 from core.chat.message_utils import MessageChain
 from core.db.service import DatabaseService
 from core.logging_manager import get_logger
 from core.utils.media_refs import MEDIA_ROOT_NAME
-from core.utils.path_utils import get_data_path, is_within_directory
 from core.utils.network import download_file
+from core.utils.path_utils import get_data_path, is_within_directory
 
 logger = get_logger("message_history", "cyan")
 

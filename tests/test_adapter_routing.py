@@ -13,15 +13,18 @@ from core.adapter.capabilities import IMCapability
 from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.chat.message_elements import Text
 from core.chat.message_utils import (
-    KiraIMMessage, KiraIMSentResult, KiraMessageEvent, MessageChain,
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
 )
 from core.chat.session import Group, Session, User
 from core.message_manager import MessageProcessor
-from core.workflow.src.im.workflow import DefaultIMWorkflow
-from tests.im_workflow_helpers import make_workflow_context
-from core.plugin.plugin_context import PluginContext
 from core.plugin import manager as manager_module
 from core.plugin import registry
+from core.plugin.plugin_context import PluginContext
+from core.workflow.src.im.workflow import DefaultIMWorkflow
+from tests.im_workflow_helpers import make_workflow_context
 from tests.test_adapter_base import ExampleAdapter, make_adapter
 
 

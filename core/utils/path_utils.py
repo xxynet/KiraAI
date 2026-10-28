@@ -1,16 +1,15 @@
 import zipfile
 from pathlib import Path, PureWindowsPath
-from typing import Optional
 
 # ─── Path overrides (set once via init_paths at startup) ─────────────────────
-_configured_data_dir: Optional[Path] = None
-_data_dir: Optional[Path] = None
-_webui_dir: Optional[Path] = None
+_configured_data_dir: Path | None = None
+_data_dir: Path | None = None
+_webui_dir: Path | None = None
 
 
 def init_paths(
-    data_dir: Optional[str] = None,
-    webui_dir: Optional[str] = None,
+    data_dir: str | None = None,
+    webui_dir: str | None = None,
 ) -> None:
     """
     Set path overrides from CLI arguments.  Must be called once at startup,
@@ -72,7 +71,7 @@ _ICON_EXTENSIONS = frozenset({
 
 
 def resolve_manifest_icon_path(manifest_dir: Path, icon: object,
-                               extensions: Optional[frozenset] = None) -> Optional[Path]:
+                               extensions: frozenset | None = None) -> Path | None:
     """Return a safe local icon file referenced by a manifest.
 
     Manifest icons are intentionally relative to the directory containing the

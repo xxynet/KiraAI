@@ -1,6 +1,5 @@
 """Database operations for plugin_sources."""
 
-from typing import Optional
 
 from sqlalchemy import select
 
@@ -16,7 +15,7 @@ class PluginSourceMixin:
         source_id: str,
         name: str,
         url: str,
-        cache_file: Optional[str] = None,
+        cache_file: str | None = None,
         updated_at: int = 0,
         is_current: bool = False,
         created_at: int = 0,
@@ -41,7 +40,7 @@ class PluginSourceMixin:
                 )
             )
 
-    async def get_plugin_store_source(self, source_id: str) -> Optional[dict]:
+    async def get_plugin_store_source(self, source_id: str) -> dict | None:
         stmt = select(PluginStoreSource).where(PluginStoreSource.id == source_id)
         row = await self.db.fetch_one(stmt)
         if row is None:
@@ -57,7 +56,7 @@ class PluginSourceMixin:
             "created_at": item.created_at,
         }
 
-    async def get_plugin_store_source_by_url(self, url: str) -> Optional[dict]:
+    async def get_plugin_store_source_by_url(self, url: str) -> dict | None:
         stmt = select(PluginStoreSource).where(PluginStoreSource.url == url)
         row = await self.db.fetch_one(stmt)
         if row is None:
@@ -92,11 +91,11 @@ class PluginSourceMixin:
     async def update_plugin_store_source(
         self,
         source_id: str,
-        name: Optional[str] = None,
-        url: Optional[str] = None,
-        cache_file: Optional[str] = None,
-        updated_at: Optional[int] = None,
-        is_current: Optional[bool] = None,
+        name: str | None = None,
+        url: str | None = None,
+        cache_file: str | None = None,
+        updated_at: int | None = None,
+        is_current: bool | None = None,
     ) -> bool:
         async with self.db.transaction() as session:
             result = await session.execute(

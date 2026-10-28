@@ -1,15 +1,14 @@
-from unittest.mock import AsyncMock
 import base64
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from core.chat.message_elements import Image
+from core.utils import media_refs
 from core.workflow.src.im.message_formatter import MessageFormatter
 from core.workflow.src.im.workflow import DefaultIMWorkflow
 from tests.im_workflow_helpers import make_workflow_context
-from core.utils import media_refs
 
 
 @pytest.mark.asyncio
@@ -285,8 +284,8 @@ async def test_provider_replies_with_missing_historical_image(
 
     from core.provider import LLMRequest, ModelInfo, ModelType
     from core.provider.openai_compatible import OpenAICompatibleLLMClient
-    from core.provider.src.deepseek.model_clients import DeepSeekLLMClient
     from core.provider.src.anthropic.model_clients import AnthropicCompatibleLLMClient
+    from core.provider.src.deepseek.model_clients import DeepSeekLLMClient
 
     monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
     log = Mock()

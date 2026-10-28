@@ -1,5 +1,5 @@
-from PIL import Image as PILImage
 import pytest
+from PIL import Image as PILImage
 
 from core.chat.message_elements import Image
 from core.utils import image_compression

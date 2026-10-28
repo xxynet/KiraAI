@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 from core.utils.media_refs import cleanup_session_media
 
 if TYPE_CHECKING:
-    from core.event_bus import EventBus, SystemEvent
     from core.chat.session_manager import SessionManager
+    from core.event_bus import EventBus, SystemEvent
 
 
 class SessionMediaManager:

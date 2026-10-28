@@ -4,35 +4,35 @@ import inspect
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from core.config.config_field import BaseConfigField
+
 from .base import BasePlugin
 from .components import PluginComponents
 from .metadata import PluginInfo
 
-
-_plugin_classes: Dict[str, type[BasePlugin]] = {}
-_plugin_manifests: Dict[str, Dict[str, Any]] = {}
-_plugin_module_dirs: Dict[str, str] = {}
-_plugin_module_paths: Dict[str, Path] = {}
+_plugin_classes: dict[str, type[BasePlugin]] = {}
+_plugin_manifests: dict[str, dict[str, Any]] = {}
+_plugin_module_dirs: dict[str, str] = {}
+_plugin_module_paths: dict[str, Path] = {}
 
 """key: module name, value: plugin id"""
-_module_to_plugin: Dict[str, str] = {}
-_plugin_schemas: Dict[str, List[BaseConfigField]] = {}
+_module_to_plugin: dict[str, str] = {}
+_plugin_schemas: dict[str, list[BaseConfigField]] = {}
 
 
-_plugin_components: Dict[str, PluginComponents] = {}
+_plugin_components: dict[str, PluginComponents] = {}
 
 
 def _ensure_components(plugin_id: str) -> PluginComponents:
     return _plugin_components.setdefault(plugin_id, PluginComponents())
 
 """Plugins that failed to load: {plugin_id: {"manifest": {...}, "error": "..."}}"""
-_plugin_load_errors: Dict[str, Dict[str, Any]] = {}
+_plugin_load_errors: dict[str, dict[str, Any]] = {}
 
 """Discovered plugin metadata: {plugin_id: PluginInfo}"""
-_plugin_infos: Dict[str, PluginInfo] = {}
+_plugin_infos: dict[str, PluginInfo] = {}
 
 
 def get_obj_plugin_id(obj: Any):

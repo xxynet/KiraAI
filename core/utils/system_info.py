@@ -2,12 +2,10 @@ import hashlib
 import platform
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import psutil
 
 from core.logging_manager import get_logger
-
 
 logger = get_logger("system_info", "cyan")
 
@@ -58,7 +56,7 @@ def collect_system_profile() -> dict[str, int | str]:
     return profile
 
 
-def get_anonymous_machine_id() -> Optional[str]:
+def get_anonymous_machine_id() -> str | None:
     """Return a stable, one-way identifier for the current operating system.
 
     The OS identifier is never persisted or sent over the network.  Hashing it
@@ -82,10 +80,10 @@ def get_anonymous_machine_id() -> Optional[str]:
     if not source_id:
         return None
 
-    return hashlib.sha256(f"KiraAI machine ID v1\\0{source_id}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"KiraAI machine ID v1\\0{source_id}".encode()).hexdigest()
 
 
-def _get_windows_machine_id() -> Optional[str]:
+def _get_windows_machine_id() -> str | None:
     import winreg
 
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as key:
@@ -93,7 +91,7 @@ def _get_windows_machine_id() -> Optional[str]:
     return str(value).strip() or None
 
 
-def _get_linux_machine_id() -> Optional[str]:
+def _get_linux_machine_id() -> str | None:
     for path in (Path("/etc/machine-id"), Path("/var/lib/dbus/machine-id")):
         try:
             value = path.read_text(encoding="utf-8").strip()
@@ -104,7 +102,7 @@ def _get_linux_machine_id() -> Optional[str]:
     return None
 
 
-def _get_macos_machine_id() -> Optional[str]:
+def _get_macos_machine_id() -> str | None:
     result = subprocess.run(
         ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
         capture_output=True,

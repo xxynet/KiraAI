@@ -1,30 +1,28 @@
-import os
 import base64
+import os
 import tempfile
 
 import pytest
 
 from core.chat.message_elements import (
+    At,
+    ElementType,
+    Emoji,
+    File,
+    Image,
+    Json,
+    Notice,
+    Poke,
+    Record,
+    Reply,
+    Sticker,
+    Text,
+    Video,
     _build_temp_file_path,
     _infer_mime_from_bytes,
     _move_no_clobber,
     check_base64,
-    ElementType,
-    Text,
-    At,
-    Reply,
-    Emoji,
-    Notice,
-    Poke,
-    Json,
-    Image,
-    Sticker,
-    Record,
-    File,
-    Video,
-    BaseMediaElement,
 )
-
 
 # ── _move_no_clobber ─────────────────────────────────────────────
 

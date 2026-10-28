@@ -1,13 +1,11 @@
 import asyncio
 import base64
+
 import aiohttp
 
-from typing import Optional
-
-from core.provider import ModelInfo, TTSModelClient
 from core.chat.message_elements import Record
 from core.logging_manager import get_logger
-
+from core.provider import ModelInfo, TTSModelClient
 
 logger = get_logger("provider", "purple")
 
@@ -16,7 +14,7 @@ class GptSovitsTTSClient(TTSModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def text_to_speech(self, text: str, **kwargs) -> Optional[Record]:
+    async def text_to_speech(self, text: str, **kwargs) -> Record | None:
         mp = self.model.provider_config
 
         tts_url = mp.get("base_url", "http://127.0.0.1:9880/tts")

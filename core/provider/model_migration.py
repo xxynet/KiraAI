@@ -10,10 +10,13 @@ from pathlib import Path
 
 from core.config import ConfigError
 from core.config.config_field import ConfigType, SectionField
-from .model_identity import (
-    DEFAULT_MODEL_TYPES, MODEL_CONFIG_VERSION, resolve_model_reference, validate_model_names,
-)
 
+from .model_identity import (
+    DEFAULT_MODEL_TYPES,
+    MODEL_CONFIG_VERSION,
+    resolve_model_reference,
+    validate_model_names,
+)
 
 LEGACY_MODEL_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://kira-ai.top/model-identity/v1")
 

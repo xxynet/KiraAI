@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from abc import ABC
 from asyncio import Semaphore
-from typing import Generic, TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
+
+from core.chat import KiraMessageBatchEvent, KiraMessageEvent
 
 from .base_stage import BaseStage
 from .workflow_context import WorkflowContext
-from core.chat import KiraMessageEvent, KiraMessageBatchEvent
 
 if TYPE_CHECKING:
     from .src.im.context import IMWorkflowContext

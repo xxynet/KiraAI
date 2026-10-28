@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
@@ -17,25 +18,25 @@ class RouteDefinition:
     path: str
     methods: Sequence[str]
     endpoint: Handler
-    name: Optional[str] = None
-    tags: Optional[List[str]] = None
-    response_model: Optional[Any] = None
-    status_code: Optional[int] = None
-    response_class: Optional[Any] = None
-    dependencies: Optional[Sequence[Any]] = None
+    name: str | None = None
+    tags: list[str] | None = None
+    response_model: Any | None = None
+    status_code: int | None = None
+    response_class: Any | None = None
+    dependencies: Sequence[Any] | None = None
     include_in_schema: bool = True
-    summary: Optional[str] = None
-    description: Optional[str] = None
-    responses: Optional[Dict[int, Dict[str, Any]]] = None
-    extra: Dict[str, Any] = field(default_factory=dict)
+    summary: str | None = None
+    description: str | None = None
+    responses: dict[int, dict[str, Any]] | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 class Routes:
-    def __init__(self, app: FastAPI, lifecycle: Optional[KiraLifecycle] = None) -> None:
+    def __init__(self, app: FastAPI, lifecycle: KiraLifecycle | None = None) -> None:
         self.app = app
         self.lifecycle = lifecycle
 
-    def get_routes(self) -> List[RouteDefinition]:
+    def get_routes(self) -> list[RouteDefinition]:
         raise NotImplementedError
 
     def register(self) -> None:
@@ -43,7 +44,7 @@ class Routes:
             self._register_route(route)
 
     def _register_route(self, route: RouteDefinition) -> None:
-        options: Dict[str, Any] = {
+        options: dict[str, Any] = {
             "response_model": route.response_model,
             "status_code": route.status_code,
             "tags": route.tags,

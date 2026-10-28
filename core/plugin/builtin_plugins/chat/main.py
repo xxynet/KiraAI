@@ -1,11 +1,11 @@
 import asyncio
 import random
 
-from core.plugin import BasePlugin, logger, on, Priority
-from core.chat.message_utils import KiraMessageEvent, KiraMessageBatchEvent
-from core.provider import LLMRequest
 from core.adapter.access import ListAccessPolicy
 from core.chat.message_elements import Text
+from core.chat.message_utils import KiraMessageBatchEvent, KiraMessageEvent
+from core.plugin import BasePlugin, Priority, logger, on
+from core.provider import LLMRequest
 
 
 class DefaultChatPlugin(BasePlugin):
@@ -66,7 +66,7 @@ class DefaultChatPlugin(BasePlugin):
 
     async def initialize(self):
         self._terminating = False
-        logger.info(f"[Default Chat] initialize")
+        logger.info("[Default Chat] initialize")
     
     async def terminate(self):
         """Cancel all pending debounce tasks before the plugin is unloaded."""
@@ -103,10 +103,9 @@ class DefaultChatPlugin(BasePlugin):
                     self.group_proactive_chat
                     and event.is_group_message()
                     and self._session_allowed("group_proactive_chat_access", sid)
-                ):
-                    if random.random() < self.group_proactive_chat_probability:
-                        logger.info("[Chat] Triggered proactive chat")
-                        event.flush()
+                ) and random.random() < self.group_proactive_chat_probability:
+                    logger.info("[Chat] Triggered proactive chat")
+                    event.flush()
             else:
                 event.discard()
             return

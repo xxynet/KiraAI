@@ -1,27 +1,27 @@
+from core.logging_manager import get_logger
+
 from .base import BasePlugin
-from .plugin_context import PluginContext
+from .decorators import on, register, register_tool
+from .handlers import EventType, Priority
 from .manager import PluginManager
 from .metadata import PluginInfo
-from .pages import PluginPage, PageMenu
-from .decorators import register_tool, on, register
-from .handlers import EventType, Priority
-
-from core.logging_manager import get_logger
+from .pages import PageMenu, PluginPage
+from .plugin_context import PluginContext
 
 logger = get_logger("plugin", "orange")
 
 
 __all__ = [
     'BasePlugin',
-    'PluginContext',
-    'PluginManager',
-    'PluginInfo',
-    'PluginPage',
-    'PageMenu',
-    "register_tool",
-    "register",
-    "on",
     "EventType",
+    'PageMenu',
+    'PluginContext',
+    'PluginInfo',
+    'PluginManager',
+    'PluginPage',
     "Priority",
-    'logger'
+    'logger',
+    "on",
+    "register",
+    "register_tool"
 ]

@@ -5,18 +5,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.adapter_lifecycle import start_adapter
-
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.base import BaseAdapter
 from core.adapter.capabilities import IMCapability
 from core.adapter.context import AdapterContext
 from core.adapter.src.qq_official import im as im_module
-from core.adapter.src.qq_official.im import QQOfficialIMCapability
 from core.adapter.src.qq_official import qq_official
+from core.adapter.src.qq_official.im import QQOfficialIMCapability
 from core.adapter.src.qq_official.qq_official import QQOfficialAdapter
 from core.chat import MessageChain
 from core.chat.message_elements import At, Emoji, File, Image, Record, Reply, Text
+from tests.adapter_lifecycle import start_adapter
 
 
 def test_qq_official_schema_starts_with_setup_info():
@@ -470,8 +469,9 @@ async def test_sdk_callback_rejects_missing_target_in_deny_mode(group):
 @pytest.mark.parametrize("group", [False, True])
 async def test_core_and_legacy_sending_reach_the_same_im_capability(group):
     from unittest.mock import AsyncMock
-    from tests.test_adapter_routing import processor_for
+
     from core.chat import KiraIMSentResult
+    from tests.test_adapter_routing import processor_for
 
     adapter = make_adapter()
     method = "send_group_message" if group else "send_direct_message"
@@ -491,6 +491,7 @@ async def test_core_and_legacy_sending_reach_the_same_im_capability(group):
 @pytest.mark.parametrize("group", [False, True])
 async def test_cross_session_tool_uses_qq_official_receive_policy(group):
     from unittest.mock import AsyncMock
+
     from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
 
     adapter = make_adapter()
@@ -578,6 +579,7 @@ async def test_manager_reload_applies_empty_group_whitelist_and_stops_previous_c
 @pytest.fixture
 def sdk_gateway(monkeypatch):
     from unittest.mock import AsyncMock
+
     from botpy.connection import ConnectionSession
     from botpy.gateway import BotWebSocket
 

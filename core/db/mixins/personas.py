@@ -1,7 +1,6 @@
 """Database operations for personas."""
 
 import time
-from typing import Optional
 
 from sqlalchemy import select, update
 
@@ -18,9 +17,9 @@ class PersonaMixin:
         name: str,
         content: str,
         format: str = "text",
-        created_at: Optional[int] = None,
+        created_at: int | None = None,
         is_active: bool = False,
-        reference_image_path: Optional[str] = None,
+        reference_image_path: str | None = None,
         chat_rules: str = "",
         private_chat_rules: str = "",
         group_chat_rules: str = "",
@@ -30,7 +29,7 @@ class PersonaMixin:
         async with self.db.transaction() as session:
             session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at, is_active=is_active, reference_image_path=reference_image_path, chat_rules=chat_rules, private_chat_rules=private_chat_rules, group_chat_rules=group_chat_rules))
 
-    async def get_persona(self, persona_id: str) -> Optional[dict]:
+    async def get_persona(self, persona_id: str) -> dict | None:
         stmt = select(Persona).where(Persona.id == persona_id)
         row = await self.db.fetch_one(stmt)
         if row is None:
@@ -41,13 +40,13 @@ class PersonaMixin:
     async def update_persona(
         self,
         persona_id: str,
-        name: Optional[str] = None,
-        content: Optional[str] = None,
-        format: Optional[str] = None,
-        reference_image_path: Optional[str] = None,
-        chat_rules: Optional[str] = None,
-        private_chat_rules: Optional[str] = None,
-        group_chat_rules: Optional[str] = None,
+        name: str | None = None,
+        content: str | None = None,
+        format: str | None = None,
+        reference_image_path: str | None = None,
+        chat_rules: str | None = None,
+        private_chat_rules: str | None = None,
+        group_chat_rules: str | None = None,
     ) -> bool:
         """Update non-activation fields of a persona.
 
@@ -107,7 +106,7 @@ class PersonaMixin:
             item.is_active = True
             return True
 
-    async def get_active_persona(self) -> Optional[dict]:
+    async def get_active_persona(self) -> dict | None:
         """Get the currently active persona."""
         stmt = select(Persona).where(Persona.is_active)
         row = await self.db.fetch_one(stmt)

@@ -1,7 +1,6 @@
 import json
 import re
 import uuid
-from typing import List, Optional
 
 from fastapi import Depends, File, Form, HTTPException, UploadFile, status
 
@@ -24,7 +23,7 @@ class StickersRoutes(Routes):
                 path="/api/stickers",
                 methods=["GET"],
                 endpoint=self.list_stickers,
-                response_model=List[StickerItem],
+                response_model=list[StickerItem],
                 tags=["stickers"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -65,7 +64,7 @@ class StickersRoutes(Routes):
     async def list_stickers(self):
         data = self.lifecycle.sticker_manager.sticker_dict
 
-        stickers: List[StickerItem] = []
+        stickers: list[StickerItem] = []
         if not isinstance(data, dict):
             return stickers
         sticker_folder = get_data_path() / "sticker"
@@ -85,8 +84,8 @@ class StickersRoutes(Routes):
     async def add_sticker(
         self,
         file: UploadFile = File(...),
-        id: Optional[str] = Form(None),
-        description: Optional[str] = Form(None),
+        id: str | None = Form(None),
+        description: str | None = Form(None),
     ):
         if not file or not file.filename:
             raise HTTPException(status_code=400, detail="Sticker file is required")
@@ -134,7 +133,7 @@ class StickersRoutes(Routes):
             sid = sticker_id
         else:
             numeric_ids = []
-            for key in data.keys():
+            for key in data:
                 if isinstance(key, str) and key.isdigit():
                     try:
                         numeric_ids.append(int(key))
@@ -219,5 +218,5 @@ class StickersRoutes(Routes):
             except Exception as e:
                 logger.error(f"Error deleting sticker {sticker_id}: {e}")
                 raise HTTPException(status_code=500, detail="Failed to delete sticker")
-            return None
+            return
         raise HTTPException(status_code=404, detail="Sticker manager not available")

@@ -1,7 +1,8 @@
+from jinja2 import UndefinedError
+
 from core.prompt_manager import Prompt
 from core.prompts.agent_tmpl import get_agent_templates
 from core.provider.llm_model import LLMRequest
-from jinja2 import UndefinedError
 
 DYNAMIC_BLOCKS = ("SESSIONS", "CHATENV", "TIME")
 MEMORY_BLOCK = "MEMORY"

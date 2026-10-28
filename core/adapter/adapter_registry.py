@@ -1,26 +1,25 @@
 import asyncio
 import copy
-import json
-import os
 import importlib.util
 import inspect
-import uuid
+import json
+import os
 import sys
 import types
-from pathlib import Path
+import uuid
 from functools import cached_property
-from typing import Optional, Dict, Type
+from pathlib import Path
 
 from deprecated import deprecated
 
-from core.logging_manager import get_logger
 from core.config import KiraConfig
 from core.config.config_field import BaseConfigField, build_fields
+from core.logging_manager import get_logger
 from core.utils.path_utils import resolve_manifest_icon_path
+
 from .adapter_info import AdapterInfo
 from .base import BaseAdapter
 from .context import AdapterContext
-
 
 logger = get_logger("adapter", "blue")
 
@@ -28,10 +27,10 @@ ADAPTER_STOP_TIMEOUT = 15.0
 
 
 class AdapterManager:
-    _registry: Dict[str, Type[BaseAdapter]] = {}
-    _manifests: Dict[str, dict] = {}
-    _manifest_dirs: Dict[str, Path] = {}
-    _schemas: Dict[str, list[BaseConfigField]] = {}
+    _registry: dict[str, type[BaseAdapter]] = {}
+    _manifests: dict[str, dict] = {}
+    _manifest_dirs: dict[str, Path] = {}
+    _schemas: dict[str, list[BaseConfigField]] = {}
 
     def __init__(self, kira_config: KiraConfig, event_queue: asyncio.Queue):
         self.kira_config = kira_config
@@ -51,7 +50,7 @@ class AdapterManager:
         return AdapterCapabilityRegistry(self)
 
     @classmethod
-    def get_adapter_class(cls, platform: str) -> Optional[Type[BaseAdapter]]:
+    def get_adapter_class(cls, platform: str) -> type[BaseAdapter] | None:
         return cls._registry.get(platform)
 
     @classmethod
@@ -67,7 +66,7 @@ class AdapterManager:
         return cls._manifests.get(platform, {}).copy()
 
     @classmethod
-    def get_icon_path(cls, platform: str, dark: bool = False) -> Optional[Path]:
+    def get_icon_path(cls, platform: str, dark: bool = False) -> Path | None:
         manifest_dir = cls._manifest_dirs.get(platform)
         manifest = cls._manifests.get(platform, {})
         if not manifest_dir:
@@ -77,7 +76,7 @@ class AdapterManager:
         )
 
     @classmethod
-    def register_adapter_type(cls, platform: str, adapter_cls: Type[BaseAdapter], manifest: dict, manifest_dir: Path, schema: Optional[list[BaseConfigField]] = None) -> None:
+    def register_adapter_type(cls, platform: str, adapter_cls: type[BaseAdapter], manifest: dict, manifest_dir: Path, schema: list[BaseConfigField] | None = None) -> None:
         """Register an Adapter type supplied by a plugin."""
         if not isinstance(platform, str) or not platform.strip():
             raise ValueError("Adapter platform must be a non-empty string")
@@ -95,7 +94,7 @@ class AdapterManager:
         cls._schemas[platform] = copy.deepcopy(schema) if schema else []
 
     @classmethod
-    def unregister_adapter_type(cls, platform: str, adapter_cls: Type[BaseAdapter]) -> bool:
+    def unregister_adapter_type(cls, platform: str, adapter_cls: type[BaseAdapter]) -> bool:
         """Remove a plugin Adapter type without affecting another owner."""
         if cls._registry.get(platform) is not adapter_cls:
             return False
@@ -113,7 +112,7 @@ class AdapterManager:
                 await self.stop_adapter(name)
                 stopped += 1
         return stopped
-    def get_adapter_info(self, adapter_id: str) -> Optional[AdapterInfo]:
+    def get_adapter_info(self, adapter_id: str) -> AdapterInfo | None:
         adapters_config = self.kira_config.get("adapters", {})
         config_entry = adapters_config.get(adapter_id)
         if not isinstance(config_entry, dict):
@@ -278,7 +277,7 @@ class AdapterManager:
             raise
 
     async def initialize(self):
-        for adapter_id in self.adas_config.keys():
+        for adapter_id in self.adas_config:
             info = self.get_adapter_info(adapter_id)
             if not info:
                 continue
@@ -288,7 +287,7 @@ class AdapterManager:
                 logger.error(f"Failed to register adapter {adapter_id}: {e}")
         logger.info(f"Adapters set: {list(self._adapters.keys())}")
 
-    def _check_name_unique(self, name: str, exclude_id: Optional[str] = None) -> bool:
+    def _check_name_unique(self, name: str, exclude_id: str | None = None) -> bool:
         """Check if adapter name is unique across all adapters (including disabled).
         Returns True if name is available, False if already in use."""
         adapters_config = self.kira_config.get("adapters", {}) or {}
@@ -309,14 +308,14 @@ class AdapterManager:
         if ":" in name:
             raise ValueError("Adapter name must not contain ':'")
 
-    def generate_adapter_config(self, platform: str, name: str) -> Optional[str]:
+    def generate_adapter_config(self, platform: str, name: str) -> str | None:
         schema_fields = self.get_schema(platform)
         if not schema_fields:
             logger.error(f"No schema found for adapter platform: {platform}")
             return None
 
         adapter_id = uuid.uuid4().hex[:12]
-        config_fields: Dict[str, object] = {}
+        config_fields: dict[str, object] = {}
         for field in schema_fields:
             if isinstance(field, BaseConfigField):
                 config_fields[field.key] = field.default
@@ -345,9 +344,9 @@ class AdapterManager:
         name: str,
         platform: str,
         status: str,
-        description: Optional[str] = None,
-        config: Optional[dict] = None,
-    ) -> Optional[AdapterInfo]:
+        description: str | None = None,
+        config: dict | None = None,
+    ) -> AdapterInfo | None:
         if not name or not platform:
             logger.error("Adapter name and platform are required for creation")
             return None
@@ -413,12 +412,12 @@ class AdapterManager:
     async def update_adapter(
         self,
         adapter_id: str,
-        name: Optional[str] = None,
-        platform: Optional[str] = None,
-        status: Optional[str] = None,
-        description: Optional[str] = None,
-        config: Optional[dict] = None,
-    ) -> Optional[AdapterInfo]:
+        name: str | None = None,
+        platform: str | None = None,
+        status: str | None = None,
+        description: str | None = None,
+        config: dict | None = None,
+    ) -> AdapterInfo | None:
         adapters_config = self.kira_config.get("adapters", {}) or {}
         config_entry = adapters_config.get(adapter_id)
         if not isinstance(config_entry, dict):
@@ -678,7 +677,7 @@ class AdapterManager:
         if not isinstance(config_entry, dict):
             return False
 
-        entry_config = config_entry.get("config") or {}
+        config_entry.get("config") or {}
         name_value = config_entry.get("name") or adapter_id
 
         if name_value in self._adapters:
@@ -708,6 +707,6 @@ class AdapterManager:
         """return the entire dict where adapters are registered"""
         return self._adapters
 
-    def get_adapter(self, name: str) -> Optional[BaseAdapter]:
+    def get_adapter(self, name: str) -> BaseAdapter | None:
         """get an adapter instance by specified adapter name"""
         return self._adapters.get(name)

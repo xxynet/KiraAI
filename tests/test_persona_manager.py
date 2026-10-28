@@ -1,10 +1,11 @@
 import time
+
 import pytest
 
 from core.db.db_mgr import DatabaseManager
 from core.db.service import DatabaseService
-from core.persona.persona_manager import PersonaManager
 from core.persona.model import PersonaInfo
+from core.persona.persona_manager import PersonaManager
 
 
 @pytest.fixture

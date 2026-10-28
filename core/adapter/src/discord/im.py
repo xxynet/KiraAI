@@ -1,23 +1,35 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import io
 import re
-import base64
-import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Union
 
 import discord
 
 from core.adapter.capabilities import IMCapability
 from core.adapter.message_format_metadata import MessageFormatMetadata
+from core.chat import (
+    Group,
+    KiraIMMessage,
+    KiraIMSentResult,
+    KiraMessageEvent,
+    MessageChain,
+    User,
+)
+from core.chat.message_elements import (
+    At,
+    Emoji,
+    File,
+    Image,
+    Record,
+    Reply,
+    Sticker,
+    Text,
+    Video,
+)
 from core.logging_manager import get_logger
-from core.chat import KiraMessageEvent, KiraIMMessage, MessageChain, KiraIMSentResult, Group, User
-from core.chat.message_elements import Text, Image, At, Reply, Emoji, Sticker, Record, File, Video
-
-if TYPE_CHECKING:
-    from .discord import DiscordAdapter
-
 
 _msg_sender_logger = get_logger("discord.send", "blue")
 
@@ -242,7 +254,7 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
 
     async def _process_incoming_message(self, message: discord.Message) -> MessageChain:
         """Convert a Discord message to the project's generic MessageChain."""
-        elements: List = []
+        elements: list = []
 
         # Reply (message reference)
         if message.reference:
@@ -367,9 +379,9 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
 
     async def _send_message_to_channel(
         self,
-        channel: Union[discord.TextChannel, discord.Thread, discord.DMChannel, discord.User, discord.Member],
+        channel: discord.TextChannel | discord.Thread | discord.DMChannel | discord.User | discord.Member,
         message: MessageChain,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Core send logic: iterates over MessageChain elements and sends to a Discord channel.
 
         Returns the ID of the last sent message, or None.
@@ -527,8 +539,8 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
         return message_id
 
     async def send_group_message(
-        self, group_id: Union[int, str], message: MessageChain
-    ) -> Optional[KiraIMSentResult]:
+        self, group_id: int | str, message: MessageChain
+    ) -> KiraIMSentResult | None:
         """Send message to a Discord channel (text channel or thread)."""
         try:
             channel = self.adapter.bot.get_channel(int(group_id))
@@ -545,8 +557,8 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
             return KiraIMSentResult(None, ok=False, err=f"Failed to send group message ({type(e).__name__})")
 
     async def send_direct_message(
-        self, user_id: Union[int, str], message: MessageChain
-    ) -> Optional[KiraIMSentResult]:
+        self, user_id: int | str, message: MessageChain
+    ) -> KiraIMSentResult | None:
         """Send a direct message to a Discord user."""
         try:
             user = self.adapter.bot.get_user(int(user_id))

@@ -11,8 +11,6 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-
-from tests.adapter_lifecycle import start_adapter
 from Crypto.Cipher import AES
 
 from core.adapter.adapter_info import AdapterInfo
@@ -25,8 +23,8 @@ from core.adapter.src.weixin_oc.weixin_oc import WeixinOCAdapter
 from core.adapter.src.weixin_oc.weixin_oc_client import WeixinOCClient
 from core.chat import MessageChain
 from core.chat.message_elements import Emoji, File, Image, Record, Sticker, Text, Video
+from tests.adapter_lifecycle import start_adapter
 from tests.test_adapter_routing import processor_for
-
 
 pytestmark = pytest.mark.asyncio
 
