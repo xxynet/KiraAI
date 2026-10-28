@@ -146,8 +146,6 @@ class DefaultChatPlugin(BasePlugin):
                 except Exception:
                     logger.exception(f"[Debounce] Error flushing session {sid}")
                 return
-        except asyncio.CancelledError:
-            raise
         finally:
             current_task = asyncio.current_task()
             if self.session_tasks.get(sid) is current_task:
