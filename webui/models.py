@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 # Re-export for webui.routes.plugin_store; kept as an aliased import so linters treat it as intentional.
-from core.plugin.store import PluginStoreItemResponse as PluginStoreItemResponse
+from core.plugin.store import PluginStoreItemResponse as PluginStoreItemResponse  # noqa: PLC0414
 
 
 class LoginRequest(BaseModel):

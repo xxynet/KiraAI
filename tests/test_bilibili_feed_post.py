@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from bilibili_api import dynamic
+from bilibili_api.exceptions import CredentialNoSessdataException
 from bilibili_api.utils.picture import Picture
 from PIL import Image as PILImage
 
@@ -148,9 +149,9 @@ async def test_account_credentials_cannot_be_omitted(monkeypatch, sdk_client):
     send = AsyncMock()
     monkeypatch.setattr(dynamic, "send_dynamic", send)
     adapter = make_adapter()
-    with pytest.raises(Exception):
+    with pytest.raises(CredentialNoSessdataException):
         await adapter.get_client().send_dynamic(dynamic.BuildDynamic.empty().add_plain_text("text"))
-    with pytest.raises(Exception):
+    with pytest.raises(CredentialNoSessdataException):
         await adapter.feed.send_post(FeedPost(MessageChain([Text("text")])))
     send.assert_not_awaited()
 

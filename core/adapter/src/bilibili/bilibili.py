@@ -114,8 +114,8 @@ class BiliBiliAdapter(BaseAdapter):
         session = Session(self.credential, debug=False)
         self._dm_session = session
         handlers: set[asyncio.Task] = set()
-        # The SDK logs raw messages; use adapter lifecycle logs without message bodies.
-        session.logger = logging.Logger(f"{__name__}.session", level=logging.CRITICAL)
+        # Use a private SDK logger per session to suppress raw messages without sharing state.
+        session.logger = logging.Logger(f"{__name__}.session", level=logging.CRITICAL)  # noqa: LOG001
         session.logger.addHandler(logging.NullHandler())
         for event_type, kind in (
             (EventType.TEXT, "text"),

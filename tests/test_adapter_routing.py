@@ -3,7 +3,7 @@ import importlib
 import json
 import sys
 from types import ModuleType, SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -14,7 +14,6 @@ from core.adapter.message_format_metadata import MessageFormatMetadata
 from core.chat.message_elements import Text
 from core.chat.message_utils import (
     KiraIMMessage,
-    KiraIMSentResult,
     KiraMessageEvent,
     MessageChain,
 )

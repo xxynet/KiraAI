@@ -6,7 +6,7 @@ import hashlib
 import time
 import uuid
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import IMCapability
@@ -20,6 +20,9 @@ from core.chat import (
 )
 from core.chat.message_elements import Emoji, File, Image, Record, Sticker, Text, Video
 from core.utils.path_utils import get_data_path
+
+if TYPE_CHECKING:
+    from .weixin_oc import WeixinOCAdapter  # noqa: F401
 
 
 class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):

@@ -411,7 +411,7 @@ def test_page_strings_cover_both_locales():
     script = (root / "i18n.js").read_text(encoding="utf-8")
     blocks = {}
     for locale in ("zh", "en"):
-        start = script.index("    {}: {{".format(locale))
+        start = script.index(f"    {locale}: {{")
         end = script.index("\n    },", start)
         blocks[locale] = dict(re.findall(r"'([\w.]+)': '((?:[^'\\]|\\.)*)'", script[start:end]))
     assert blocks["zh"].keys() == blocks["en"].keys()
