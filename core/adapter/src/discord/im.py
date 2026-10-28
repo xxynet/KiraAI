@@ -5,6 +5,7 @@ import base64
 import io
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import discord
 
@@ -30,6 +31,10 @@ from core.chat.message_elements import (
     Video,
 )
 from core.logging_manager import get_logger
+
+if TYPE_CHECKING:
+    from .discord import DiscordAdapter  # noqa: F401
+
 
 _msg_sender_logger = get_logger("discord.send", "blue")
 

@@ -12,7 +12,6 @@ from core.adapter.adapter_info import AdapterInfo
 from core.adapter.adapter_registry import AdapterManager
 from core.adapter.base import BaseAdapter
 from core.adapter.builtin.webchat.webchat import WebChatAdapter
-from core.adapter.capabilities import IMCapability
 from core.adapter.context import AdapterContext
 from core.chat.message_elements import Image, Text
 from core.chat.message_utils import MessageChain
