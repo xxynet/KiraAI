@@ -586,9 +586,7 @@ async def test_metadata_consumers_load_data_without_message_content(session_db, 
     try:
         lifecycle = SimpleNamespace(session_manager=manager, mcp_manager=None, skills_manager=None)
         if consumer == "prompt":
-            from unittest.mock import AsyncMock
-            ctx = SimpleNamespace(session_mgr=manager, message_history=SimpleNamespace(list_sessions=AsyncMock(return_value=[])))
-            result = await SessionPlugin.get_session_list_prompt(SimpleNamespace(ctx=ctx))
+            result = await SessionPlugin.get_session_list_prompt(SimpleNamespace(ctx=SimpleNamespace(session_mgr=manager)))
             assert "Visible title" in result and SID in result and "Hidden title" not in result
         elif consumer == "scope":
             result = await ScopeRoutes(FastAPI(), lifecycle).get_scope()

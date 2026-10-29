@@ -136,13 +136,21 @@ def _deserialize_message_chain(data: list[dict], *, depth: int = 0) -> MessageCh
     """Restore declared element fields without fetching media or forward contents."""
     if depth > 2:
         return MessageChain([ArchivedMessagePlaceholder(None, {"reason": "nesting_limit"})])
+    if not isinstance(data, list):
+        return MessageChain([ArchivedMessagePlaceholder(None, {"reason": "invalid_chain"})])
     elements = []
     media_types = {
         "image": (Image, "image"), "sticker": (Sticker, "sticker"),
         "record": (Record, "record"), "video": (Video, "file"), "file": (File, "file"),
     }
     for item in data:
+        if not isinstance(item, dict):
+            elements.append(ArchivedMessagePlaceholder(None, {"reason": "invalid_element"}))
+            continue
         element_type = item.get("type")
+        if not isinstance(element_type, str):
+            elements.append(ArchivedMessagePlaceholder(None, copy.deepcopy(item)))
+            continue
         if element_type == "text":
             element = Text(item.get("text"))
         elif element_type == "at":
@@ -446,9 +454,9 @@ class MessageHistoryService:
                     return message
         return None
 
-    async def get_session_stats(self, session_id: str) -> dict:
-        """Return retained message counts and first/last message times in Unix seconds."""
-        return await self.db.get_message_session_stats(session_id)
+    async def get_session_message_count(self, session_id: str) -> int:
+        """Count retained messages in one session without restoring their contents."""
+        return await self.db.count_session_message_records(session_id)
 
     async def list_sessions(self) -> list[MessageHistorySession]:
         """Return typed retained-message statistics for each session."""

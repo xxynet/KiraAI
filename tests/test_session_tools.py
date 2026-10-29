@@ -1,5 +1,7 @@
+import asyncio
 import itertools
 import json
+import threading
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -32,9 +34,13 @@ async def archive_text(history, text, identity, *, sid=SID):
 
 @pytest.mark.anyio
 async def test_session_view_metadata_and_counts_without_exposing_memory(session_plugin, history, monkeypatch):
+    """Distinguish retained messages from context chunks while keeping detail responses compact."""
     await history.session_manager.update_session(
         SID, title="会话标题", description="会话描述",
-        content=[[{"role": "user", "content": "private memory"}], [{"role": "assistant", "content": "reply"}]],
+        content=[
+            [{"role": "user", "content": "private memory"}, {"role": "assistant", "content": "context reply"}],
+            [{"role": "assistant", "content": "reply"}],
+        ],
         data={"private_extension": "must not return"},
     )
     await archive_text(history, "first message", "one")
@@ -46,27 +52,32 @@ async def test_session_view_metadata_and_counts_without_exposing_memory(session_
 
     assert result["title"] == "会话标题" and result["description"] == "会话描述"
     assert result["history_count"] == 2 and result["context_chunk_count"] == 2
-    assert result["incoming_count"] == result["outgoing_count"] == 1
     assert result["created_at"] and result["updated_at"] >= result["created_at"]
-    assert result["first_message_at"] == 1 and result["last_message_at"] >= 1
+    assert set(result) == {
+        "session_id", "title", "description", "created_at", "updated_at",
+        "context_chunk_count", "history_count", "timestamp_unit",
+    }
     assert "private memory" not in json.dumps(result) and "private_extension" not in result
     get_session.assert_awaited_once_with(SID, include_content=False)
     session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
 
 
 @pytest.mark.anyio
-async def test_history_only_session_view_and_prompt(session_plugin, history):
+async def test_history_only_session_is_queryable_but_excluded_from_prompt(session_plugin, history):
+    """Explicit archive reads remain possible without adding archive-only sessions to model prompts."""
     archived_sid = "archive-only:dm:user"
     await archive_text(history, "retained message", "one", sid=archived_sid)
     result = json.loads(await session_plugin.session_view(SimpleNamespace(sid=archived_sid)))
     assert result["history_count"] == 1 and result["context_chunk_count"] == 0
     assert result["created_at"] is None and result["updated_at"] is None
-    assert archived_sid in await session_plugin.get_session_list_prompt()
+    prompt = await session_plugin.get_session_list_prompt()
+    assert archived_sid not in prompt and SID in prompt
     assert await history.session_manager.get_session(archived_sid) is None
 
 
 @pytest.mark.anyio
 async def test_nonexistent_session_has_empty_history_and_no_metadata(session_plugin, history):
+    """Read-only tools must not create sessions when no matching history or metadata exists."""
     sid = "nonexistent:dm:user"
     event = SimpleNamespace(sid=sid)
     assert json.loads(await session_plugin.session_view(event)) == {"error": "Session not found"}
@@ -78,6 +89,7 @@ async def test_nonexistent_session_has_empty_history_and_no_metadata(session_plu
 
 @pytest.mark.anyio
 async def test_keyword_search_precedes_pagination_and_scopes_direction(session_plugin, history, monkeypatch):
+    """Older matches remain discoverable across batches without leaking other sessions."""
     clock = itertools.count(1_000_000_000, 1_000_000)
     monkeypatch.setattr("core.db.mixins.messages.time.time_ns", lambda: next(clock))
     expected = []
@@ -106,6 +118,7 @@ async def test_keyword_search_precedes_pagination_and_scopes_direction(session_p
 
 @pytest.mark.anyio
 async def test_search_visible_unicode_nested_and_media_text_not_storage_metadata(history):
+    """Search visible Unicode content while excluding archive paths and routing metadata."""
     record = await archive_text(history, "replace", "one")
     from sqlalchemy import update
 
@@ -130,6 +143,7 @@ async def test_search_visible_unicode_nested_and_media_text_not_storage_metadata
 
 @pytest.mark.anyio
 async def test_history_tool_omits_media_paths_without_changing_archive(session_plugin, history):
+    """Tool projections remove nested storage paths without changing the retained snapshot."""
     from sqlalchemy import update
 
     from core.db.models import MessageRecord
@@ -148,6 +162,7 @@ async def test_history_tool_omits_media_paths_without_changing_archive(session_p
 
 @pytest.mark.anyio
 async def test_search_cursor_must_match_session_keyword_and_direction(history):
+    """Continuation cursors must identify records matching the active session and filters."""
     first = await archive_text(history, "alpha", "one")
     other = await archive_text(history, "beta", "two", sid=OTHER)
     for filters in (
@@ -166,6 +181,7 @@ async def test_search_cursor_must_match_session_keyword_and_direction(history):
     {"limit": 0}, {"limit": 201}, {"direction": "invalid"}, {"cursor": 123}, {"cursor": ""},
 ])
 async def test_history_tool_validates_arguments(session_plugin, options):
+    """Invalid pagination and filter values produce readable tool errors."""
     result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), **options))
     assert "error" in result
 
@@ -174,17 +190,18 @@ async def test_history_tool_validates_arguments(session_plugin, options):
 @pytest.mark.parametrize("tool_name", ["session_view", "get_message_history"])
 @pytest.mark.parametrize("target", ["", "missing", "x:feed:123", "x:dm:", 123, OTHER])
 async def test_invalid_or_unauthorized_targets_never_query(session_plugin, tool_name, target, monkeypatch):
+    """Reject invalid routes and unauthorized callers before querying session data."""
     get_session = AsyncMock()
     get_messages = AsyncMock()
-    stats = AsyncMock()
+    history_count = AsyncMock()
     monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
     monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
-    monkeypatch.setattr(session_plugin.ctx.message_history, "get_session_stats", stats)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "get_session_message_count", history_count)
     result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=target))
     assert "error" in result
     get_session.assert_not_awaited()
     get_messages.assert_not_awaited()
-    stats.assert_not_awaited()
+    history_count.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -194,6 +211,7 @@ async def test_invalid_or_unauthorized_targets_never_query(session_plugin, tool_
     ("invalid", [], False),
 ])
 async def test_cross_session_read_uses_calling_session_permission(session_plugin, history, mode, sessions, allowed):
+    """Cross-session access applies the configured policy to the caller rather than the target."""
     session_plugin.plugin_cfg = {"cross_session_read": {"permission_mode": mode, "session_list": sessions}}
     await archive_text(history, "target history", "target", sid=OTHER)
     event = SimpleNamespace(sid=SID)
@@ -211,6 +229,7 @@ async def test_cross_session_read_uses_calling_session_permission(session_plugin
 @pytest.mark.anyio
 @pytest.mark.parametrize("failure", ["missing_adapter", "no_im", "denied"])
 async def test_cross_session_read_also_respects_adapter_policy(session_plugin, failure):
+    """Caller authorization alone cannot bypass the target adapter receive policy."""
     session_plugin.plugin_cfg = {"cross_session_read": {"session_list": [SID]}}
     lookup = session_plugin.ctx.adapter_mgr.get_adapter
     if failure == "missing_adapter":
@@ -225,6 +244,7 @@ async def test_cross_session_read_also_respects_adapter_policy(session_plugin, f
 
 @pytest.mark.anyio
 async def test_registered_history_tools_log_arguments_and_results(session_plugin, monkeypatch):
+    """Registered tools preserve the existing argument and result logging behavior."""
     from core.agent import func_tool_manager
     from core.agent.func_tool_manager import FuncToolManager
     from core.plugin.handlers import event_handler_reg
@@ -254,10 +274,11 @@ async def test_registered_history_tools_log_arguments_and_results(session_plugin
     }}]
     await manager.execute_tool(SimpleNamespace(sid=SID, is_stopped=False), response, tools)
     assert "history-keyword" in response.tool_results[0]["content"]
-    assert "history-keyword" in str(log.call_args_list)
+    log.assert_any_call("get_message_history args: {'keyword': 'history-keyword'}")
     assert log.call_args.args == (f"tool_result: {response.tool_results[0]['content']}",)
 
 def test_session_tools_config_schema_has_matching_english_and_chinese_fields():
+    """Plugin configuration fields remain parseable and have matching English and Chinese labels."""
     from pathlib import Path
 
     from core.config.config_field import build_fields
@@ -267,6 +288,7 @@ def test_session_tools_config_schema_has_matching_english_and_chinese_fields():
     assert len(build_fields(schema)) == 1
 
     def validate(fields):
+        """Require localized display text recursively for every configuration field."""
         for field in fields.values():
             assert {"name", "hint"} <= field.keys()
             assert set(field["locales"]["zh"]) == {"name", "hint"}
@@ -277,3 +299,164 @@ def test_session_tools_config_schema_has_matching_english_and_chinese_fields():
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     for field in ("display_name", "description"):
         assert field in manifest and field in manifest["locales"]["zh"]
+
+@pytest.mark.anyio
+async def test_session_view_counts_only_target_context_without_loading_bodies(session_plugin, history):
+    """A detail request must count its target's chunks without scanning all session contexts."""
+    from sqlalchemy import event
+
+    await history.session_manager.update_session(SID, content=[
+        [{"role": "user", "content": "one"}, {"role": "assistant", "content": "two"}],
+        [{"role": "user", "content": "three"}],
+    ])
+    await history.session_manager.update_session(OTHER, content=[[{"role": "user", "content": "other"}]] * 5)
+    queries = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        queries.append((statement, parameters, [column[0] for column in cursor.description]))
+
+    engine = history.db.db.engine.sync_engine
+    event.listen(engine, "after_cursor_execute", capture)
+    try:
+        result = json.loads(await session_plugin.session_view(SimpleNamespace(sid=SID)))
+    finally:
+        event.remove(engine, "after_cursor_execute", capture)
+
+    assert result["context_chunk_count"] == 2
+    count_queries = [(sql, parameters) for sql, parameters, _ in queries if "json_array_length" in sql]
+    assert len(count_queries) == 1
+    sql, parameters = count_queries[0]
+    assert "WHERE" in sql and "chat_sessions.session_key =" in sql and SID in parameters
+    assert all("content" not in columns and "chain" not in columns for _, _, columns in queries)
+    assert await history.session_manager.get_session_message_counts() == {SID: 2, OTHER: 5}
+
+
+@pytest.mark.anyio
+async def test_mention_search_matches_nickname_without_matching_numeric_id(history):
+    """Mention identifiers stay excluded while user-facing nicknames remain searchable."""
+    from core.chat.message_elements import At
+    from core.chat.message_utils import MessageChain
+
+    message = incoming("mention")
+    message.chain = MessageChain([At("12345678901234567890", "Alice"), At("98765432109876543210")])
+    record = await history.record_incoming(message, SID, "test")
+    assert [item.id for item in (await history.get_messages(session_id=SID, keyword="alice")).messages] == [record]
+    for keyword in ("12345678901234567890", "98765432109876543210"):
+        assert not (await history.get_messages(session_id=SID, keyword=keyword)).messages
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("chain,matched", [
+    ([None, "broken", {"type": "text", "text": "needle"}], True),
+    ([{"type": []}, {"type": "text", "text": "needle"}], True),
+    ([{"type": "reply", "chain": [None, {"type": "text", "text": "needle"}]}], True),
+    ([{"type": "reply", "chain": 42}], False),
+    (None, False),
+    ({"invalid": "chain"}, False),
+])
+async def test_malformed_archive_is_readable_and_does_not_block_later_matches(session_plugin, history, chain, matched):
+    """Search, restoration and tool projection tolerate bad elements without rewriting archives."""
+    from sqlalchemy import update
+
+    from core.db.models import MessageRecord
+
+    bad_record = await archive_text(history, "replace", "malformed")
+    good_record = await archive_text(history, "needle", "valid")
+    async with history.db.db.transaction() as session:
+        await session.execute(update(MessageRecord).where(MessageRecord.id == bad_record).values(chain=chain))
+
+    page = await history.get_messages(session_id=SID, keyword="needle")
+    expected = {good_record, bad_record} if matched else {good_record}
+    assert {record.id for record in page.messages} == expected
+    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="needle"))
+    assert {record["id"] for record in result["messages"]} == expected
+
+    unfiltered = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID)))
+    assert {record["id"] for record in unfiltered["messages"]} == {bad_record, good_record}
+    assert (await history.get_message(bad_record)).to_dict()["chain"] == chain
+    assert not (await history.get_messages(session_id=SID, keyword="not found")).messages
+
+
+@pytest.mark.anyio
+async def test_keyword_search_concurrency_and_cancellation_keep_unfiltered_reads_available(history, monkeypatch):
+    """Cancelled scans retain their slot until matching finishes; queued scans cannot consume connections."""
+    from sqlalchemy import event
+
+    from core.db.mixins import messages
+
+    await archive_text(history, "needle", "one")
+    original = messages._message_chain_matches
+    loop = asyncio.get_running_loop()
+    both_started = asyncio.Event()
+    release = threading.Event()
+    lock = threading.Lock()
+    active = 0
+    maximum = 0
+    queries = []
+
+    def blocking_match(chain, keyword, *, depth=0):
+        nonlocal active, maximum
+        with lock:
+            active += 1
+            maximum = max(maximum, active)
+            if active == 2:
+                loop.call_soon_threadsafe(both_started.set)
+        try:
+            if not release.wait(10):
+                raise TimeoutError("Test did not release the search workers")
+            return original(chain, keyword, depth=depth)
+        finally:
+            with lock:
+                active -= 1
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        queries.append(statement)
+
+    monkeypatch.setattr(messages, "_message_chain_matches", blocking_match)
+    engine = history.db.db.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", capture)
+    tasks = [asyncio.create_task(history.get_messages(session_id=SID, keyword="needle")) for _ in range(6)]
+    try:
+        await asyncio.wait_for(both_started.wait(), timeout=5)
+        assert len(queries) == 2
+        tasks[-1].cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await tasks[-1]
+        tasks[0].cancel()
+        await asyncio.sleep(0)
+        assert not tasks[0].done()
+        assert len(queries) == 2
+
+        page = await asyncio.wait_for(history.get_messages(session_id=SID), timeout=2)
+        assert len(page.messages) == 1
+        release.set()
+        results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=5)
+        assert isinstance(results[0], asyncio.CancelledError)
+        assert isinstance(results[-1], asyncio.CancelledError)
+        assert all(len(result.messages) == 1 for result in results[1:-1])
+        assert maximum == 2
+    finally:
+        release.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        event.remove(engine, "before_cursor_execute", capture)
+
+
+@pytest.mark.anyio
+async def test_keyword_search_failure_releases_shared_slots(history, monkeypatch):
+    """Matching failures must release database resources and search slots for later calls."""
+    from core.db.mixins import messages
+
+    await archive_text(history, "needle", "one")
+    original = messages._message_chain_matches
+
+    def fail_match(chain, keyword, *, depth=0):
+        raise ValueError("invalid archive")
+
+    monkeypatch.setattr(messages, "_message_chain_matches", fail_match)
+    results = await asyncio.wait_for(asyncio.gather(
+        *(history.get_messages(session_id=SID, keyword="needle") for _ in range(4)),
+        return_exceptions=True,
+    ), timeout=5)
+    assert all(isinstance(result, ValueError) for result in results)
+    monkeypatch.setattr(messages, "_message_chain_matches", original)
+    assert len((await asyncio.wait_for(history.get_messages(session_id=SID, keyword="needle"), timeout=5)).messages) == 1

@@ -100,14 +100,17 @@ class ChatSessionMixin:
             result = await session.execute(query)
             return [dict(row) for row in result.mappings()]
 
-    async def get_chat_session_message_counts(self) -> dict[str, int]:
-        """Count context chunks for all sessions without returning message bodies."""
+    async def get_chat_session_message_counts(self, session_key: str | None = None) -> dict[str, int]:
+        """Count context chunks for the specified session, or all sessions when omitted."""
         count = case(
             (func.json_type(ChatSessionRecord.content) == "array", func.json_array_length(ChatSessionRecord.content)),
             else_=0,
         )
+        query = select(ChatSessionRecord.session_key, count)
+        if session_key is not None:
+            query = query.where(ChatSessionRecord.session_key == session_key)
         async with self.db.get_session() as session:
-            result = await session.execute(select(ChatSessionRecord.session_key, count))
+            result = await session.execute(query)
             return {session_key: message_count for session_key, message_count in result}
 
     async def save_chat_session(

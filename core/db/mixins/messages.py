@@ -8,9 +8,9 @@ import json
 import time
 import uuid
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
-from sqlalchemy import and_, case, delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from ..db_mgr import DatabaseManager
@@ -19,7 +19,7 @@ from ..models import MessageRecord
 
 def _message_chain_matches(chain: list[dict], keyword: str, *, depth: int = 0) -> bool:
     """Search visible text, including quoted text, without matching storage metadata."""
-    if depth > 2:
+    if depth > 2 or not isinstance(chain, list):
         return False
     text_fields = {
         "text": ("text",), "notice": ("text",), "at": ("nickname",),
@@ -28,7 +28,11 @@ def _message_chain_matches(chain: list[dict], keyword: str, *, depth: int = 0) -
            for kind in ("image", "sticker", "record", "video", "file")},
     }
     for element in chain:
+        if not isinstance(element, dict):
+            continue
         kind = element.get("type")
+        if not isinstance(kind, str):
+            continue
         for key in text_fields.get(kind, ()):
             value = element.get(key)
             if isinstance(value, str) and keyword in value.casefold():
@@ -40,8 +44,23 @@ def _message_chain_matches(chain: list[dict], keyword: str, *, depth: int = 0) -
     return False
 
 
+async def _matching_message_records(records: list[MessageRecord], keyword: str) -> list[MessageRecord]:
+    """Finish in-flight matching before a cancelled search releases its shared slot."""
+    task = asyncio.create_task(asyncio.to_thread(
+        lambda: [record for record in records if _message_chain_matches(record.chain, keyword)],
+    ))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        try:
+            await task
+        finally:
+            raise
+
+
 class MessageHistoryMixin:
     db: DatabaseManager
+    _message_search_semaphore: asyncio.Semaphore
 
     @staticmethod
     def _message_record(row: MessageRecord) -> dict:
@@ -115,7 +134,11 @@ class MessageHistoryMixin:
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None, keyword: str | None = None,
     ) -> dict:
-        """Page through retained records, applying literal text search before pagination."""
+        """Search visible text before pagination, sharing two scan slots across callers.
+
+        Acquire a search slot before opening a database session. Unfiltered reads do
+        not wait for a slot; cancellation waits for in-flight text matching to finish.
+        """
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise ValueError("limit must be an integer between 1 and 200")
         if keyword is not None and (not isinstance(keyword, str) or len(keyword) > 200):
@@ -127,12 +150,13 @@ class MessageHistoryMixin:
             llm_message_id=llm_message_id or None,
         )
         query = select(MessageRecord).where(*conditions)
-        async with self.db.get_session() as session:
+        async with AsyncExitStack() as resources:
+            if keyword:
+                await resources.enter_async_context(self._message_search_semaphore)
+            session = await resources.enter_async_context(self.db.get_session())
             if cursor:
                 previous = await session.scalar(query.where(MessageRecord.id == cursor))
-                if previous is None or (keyword and not await asyncio.to_thread(
-                    _message_chain_matches, previous.chain, keyword,
-                )):
+                if previous is None or (keyword and not await _matching_message_records([previous], keyword)):
                     raise ValueError("Invalid message cursor")
                 query = query.where(or_(
                     MessageRecord.created_at < previous.created_at,
@@ -144,9 +168,7 @@ class MessageHistoryMixin:
                 rows = []
                 try:
                     async for batch in stream.partitions(100):
-                        matches = await asyncio.to_thread(
-                            lambda items: [row for row in items if _message_chain_matches(row.chain, keyword)], batch,
-                        )
+                        matches = await _matching_message_records(batch, keyword)
                         rows.extend(matches[:limit + 1 - len(rows)])
                         if len(rows) > limit:
                             break
@@ -157,18 +179,11 @@ class MessageHistoryMixin:
         return {"messages": [self._message_record(row) for row in rows[:limit]],
                 "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
 
-    async def get_message_session_stats(self, session_id: str) -> dict:
-        """Return counts and platform message times without loading message bodies."""
-        query = select(
-            func.count().label("message_count"),
-            func.sum(case((MessageRecord.direction == "incoming", 1), else_=0)).label("incoming_count"),
-            func.sum(case((MessageRecord.direction == "outgoing", 1), else_=0)).label("outgoing_count"),
-            func.min(MessageRecord.timestamp).label("first_message_at"),
-            func.max(MessageRecord.timestamp).label("last_message_at"),
-        ).where(MessageRecord.session_id == session_id)
+    async def count_session_message_records(self, session_id: str) -> int:
+        """Count retained messages for one session without loading message bodies."""
+        query = select(func.count()).select_from(MessageRecord).where(MessageRecord.session_id == session_id)
         async with self.db.get_session() as session:
-            row = (await session.execute(query)).mappings().one()
-        return {**row, "incoming_count": row["incoming_count"] or 0, "outgoing_count": row["outgoing_count"] or 0}
+            return await session.scalar(query)
 
     async def list_message_sessions(self) -> list[dict]:
         async with self.db.get_session() as session:

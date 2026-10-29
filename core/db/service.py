@@ -1,5 +1,7 @@
 """Compose business database interfaces over a shared database manager."""
 
+import asyncio
+
 from .db_mgr import DatabaseManager
 from .mixins.image_cache import ImageCacheMixin
 from .mixins.messages import MessageHistoryMixin
@@ -23,6 +25,7 @@ class DatabaseService(
 
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
+        self._message_search_semaphore = asyncio.Semaphore(2)
 
     async def init_tables(self) -> None:
         """Create all tables if they do not exist."""

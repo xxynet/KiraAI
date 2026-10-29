@@ -118,42 +118,44 @@ class SessionPlugin(BasePlugin):
         },
     )
     async def session_view(self, event: KiraMessageBatchEvent, target: str | None = None):
+        """Return session metadata and counts without loading conversation bodies."""
         try:
             target = self._read_target(event, target)
             session = await self.ctx.session_mgr.get_session(target, include_content=False)
-            stats = await self.ctx.message_history.get_session_stats(target)
-            if session is None and not stats["message_count"]:
+            history_count = await self.ctx.message_history.get_session_message_count(target)
+            if session is None and not history_count:
                 return json.dumps({"error": "Session not found"})
-            counts = await self.ctx.session_mgr.get_session_message_counts() if session is not None else {}
-            adapter_name, session_type, session_id = target.split(":", 2)
+            counts = await self.ctx.session_mgr.get_session_message_counts(target) if session is not None else {}
             return json.dumps({
                 "session_id": target,
-                "adapter_name": adapter_name,
-                "session_type": session_type,
-                "platform_session_id": session_id,
                 "title": session.session_title if session else None,
                 "description": session.session_description if session else None,
                 "created_at": session.created_at if session else None,
                 "updated_at": session.updated_at if session else None,
                 "context_chunk_count": counts.get(target, 0),
-                "history_count": stats["message_count"],
-                "incoming_count": stats["incoming_count"],
-                "outgoing_count": stats["outgoing_count"],
-                "first_message_at": stats["first_message_at"],
-                "last_message_at": stats["last_message_at"],
+                "history_count": history_count,
                 "timestamp_unit": "unix_seconds",
             }, ensure_ascii=False)
         except (TypeError, ValueError) as exc:
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
 
     @staticmethod
-    def _history_chain_for_tool(chain: list[dict]) -> list[dict]:
-        """Omit storage paths while preserving archived content and media metadata."""
+    def _history_chain_for_tool(chain: list[dict], *, depth: int = 0) -> list[dict]:
+        """Project archived content without storage paths or malformed elements."""
+        if depth > 2:
+            return [{"type": "unsupported", "reason": "nesting_limit"}]
+        if not isinstance(chain, list):
+            return [{"type": "unsupported", "reason": "invalid_chain"}]
+        result = []
         for element in chain:
+            if not isinstance(element, dict):
+                result.append({"type": "unsupported", "reason": "invalid_element"})
+                continue
             element.pop("file", None)
-            if element.get("type") == "reply" and isinstance(element.get("chain"), list):
-                SessionPlugin._history_chain_for_tool(element["chain"])
-        return chain
+            if element.get("type") == "reply" and "chain" in element:
+                element["chain"] = SessionPlugin._history_chain_for_tool(element["chain"], depth=depth + 1)
+            result.append(element)
+        return result
 
     @register.tool(
         name="get_message_history",
@@ -184,6 +186,7 @@ class SessionPlugin(BasePlugin):
         keyword: str | None = None, limit: int = 20, cursor: str | None = None,
         direction: str | None = None,
     ):
+        """Retrieve an authorized page of retained messages with optional text search."""
         try:
             target = self._read_target(event, target)
             if cursor is not None and (not isinstance(cursor, str) or not cursor):
@@ -193,7 +196,7 @@ class SessionPlugin(BasePlugin):
             )
             result = page.to_dict()
             for message in result["messages"]:
-                self._history_chain_for_tool(message["chain"])
+                message["chain"] = self._history_chain_for_tool(message["chain"])
             return json.dumps({"session_id": target, **result}, ensure_ascii=False)
         except (TypeError, ValueError) as exc:
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
@@ -250,17 +253,14 @@ class SessionPlugin(BasePlugin):
             return f"failed to send: {e}"
 
     async def get_session_list_prompt(self) -> str:
+        """List LLM session records using the original metadata-only discovery path."""
         sessions = await self.ctx.session_mgr.get_sessions(include_content=False)
-        titles = {session.sid: session.session_title for session in sessions if isinstance(session.data, dict)}
-        malformed = {session.sid for session in sessions if not isinstance(session.data, dict)}
-        for archived in await self.ctx.message_history.list_sessions():
-            parts = archived.session_id.split(":", 2)
-            if (len(parts) == 3 and all(parts) and parts[1] in {"dm", "gm"}
-                    and archived.session_id not in malformed):
-                titles.setdefault(archived.session_id, "")
-        session_list = "\n".join(f"{sid}(title: {title})" for sid, title in titles.items())
+        session_list = "\n".join(
+            f"{session.sid}(title: {session.session_title})"
+            for session in sessions if isinstance(session.data, dict)
+        )
         return (
-            "以下为已保留会话的完整标识；调用会话工具时必须逐字复制其中一项。跨会话读取需要单独授权，列表不代表读取权限。"
+            "以下为当前存在会话的完整标识；调用会话工具时必须逐字复制其中一项。跨会话读取需要单独授权，列表不代表读取权限。"
             "adapter_name 是配置实例名，不代表平台类型，不能自行替换或猜测。\n"
             f"{session_list}"
         )
