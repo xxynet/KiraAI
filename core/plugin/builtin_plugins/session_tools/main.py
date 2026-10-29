@@ -177,7 +177,13 @@ class SessionPlugin(BasePlugin):
                           "description": "每页消息数，默认 20；消息很长时应减小此值。"},
                 "cursor": {"type": "string", "description": "上一页返回的 next_cursor；翻页时保持其他筛选条件不变。"},
                 "direction": {"type": "string", "enum": ["incoming", "outgoing"],
-                              "description": "可选收发方向；省略时同时查询收到和发出的消息。"},
+                              "description": (
+                                  "可选收发方向，始终以机器人为参照：incoming=机器人收到的用户或群成员消息；"
+                                  "outgoing=机器人发出的消息。查询用户发给机器人的消息用 incoming，"
+                                  "查询机器人发给用户的消息用 outgoing。私聊中用户说“我发给你的”对应 incoming，"
+                                  "“你发给我的”或“我收到的”对应 outgoing。用户明确限定方向时应填写；"
+                                  "省略时同时查询两个方向。"
+                              )},
             },
             "required": [],
         },
