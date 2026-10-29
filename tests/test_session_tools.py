@@ -193,15 +193,15 @@ async def test_invalid_or_unauthorized_targets_never_query(session_plugin, tool_
     """Reject invalid routes and unauthorized callers before querying session data."""
     get_session = AsyncMock()
     get_messages = AsyncMock()
-    history_count = AsyncMock()
+    history_sessions = AsyncMock()
     monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
     monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
-    monkeypatch.setattr(session_plugin.ctx.message_history, "get_session_message_count", history_count)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", history_sessions)
     result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=target))
     assert "error" in result
     get_session.assert_not_awaited()
     get_messages.assert_not_awaited()
-    history_count.assert_not_awaited()
+    history_sessions.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -310,6 +310,9 @@ async def test_session_view_counts_only_target_context_without_loading_bodies(se
         [{"role": "user", "content": "three"}],
     ])
     await history.session_manager.update_session(OTHER, content=[[{"role": "user", "content": "other"}]] * 5)
+    await archive_text(history, "one", "first")
+    await archive_text(history, "two", "second")
+    await archive_text(history, "other", "third", sid=OTHER)
     queries = []
 
     def capture(conn, cursor, statement, parameters, context, executemany):
@@ -322,7 +325,11 @@ async def test_session_view_counts_only_target_context_without_loading_bodies(se
     finally:
         event.remove(engine, "after_cursor_execute", capture)
 
-    assert result["context_chunk_count"] == 2
+    assert result["context_chunk_count"] == result["history_count"] == 2
+    history_queries = [(sql, parameters) for sql, parameters, _ in queries if "FROM messages" in sql]
+    assert len(history_queries) == 1
+    history_sql, history_parameters = history_queries[0]
+    assert "WHERE messages.session_id =" in history_sql and SID in history_parameters
     count_queries = [(sql, parameters) for sql, parameters, _ in queries if "json_array_length" in sql]
     assert len(count_queries) == 1
     sql, parameters = count_queries[0]
@@ -351,6 +358,11 @@ async def test_mention_search_matches_nickname_without_matching_numeric_id(histo
     ([{"type": []}, {"type": "text", "text": "needle"}], True),
     ([{"type": "reply", "chain": [None, {"type": "text", "text": "needle"}]}], True),
     ([{"type": "reply", "chain": 42}], False),
+    ([{"type": "json", "data": None}, {"type": "text", "text": "needle"}], True),
+    ([{"type": "json", "data": []}, {"type": "text", "text": "needle"}], True),
+    ([{"type": "json", "data": "invalid"}, {"type": "text", "text": "needle"}], True),
+    ([{"type": "json", "data": 42}, {"type": "text", "text": "needle"}], True),
+    ([{"type": "reply", "chain": [{"type": "json", "data": None}]}, {"type": "text", "text": "needle"}], True),
     (None, False),
     ({"invalid": "chain"}, False),
 ])
@@ -378,7 +390,8 @@ async def test_malformed_archive_is_readable_and_does_not_block_later_matches(se
 
 
 @pytest.mark.anyio
-async def test_keyword_search_concurrency_and_cancellation_keep_unfiltered_reads_available(history, monkeypatch):
+@pytest.mark.parametrize("cancel_count", [1, 2, 4])
+async def test_keyword_search_concurrency_and_cancellation_keep_unfiltered_reads_available(history, monkeypatch, cancel_count):
     """Cancelled scans retain their slot until matching finishes; queued scans cannot consume connections."""
     from sqlalchemy import event
 
@@ -422,10 +435,12 @@ async def test_keyword_search_concurrency_and_cancellation_keep_unfiltered_reads
         tasks[-1].cancel()
         with pytest.raises(asyncio.CancelledError):
             await tasks[-1]
-        tasks[0].cancel()
-        await asyncio.sleep(0)
-        assert not tasks[0].done()
-        assert len(queries) == 2
+        for _ in range(cancel_count):
+            tasks[0].cancel()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert not tasks[0].done()
+            assert len(queries) == 2
 
         page = await asyncio.wait_for(history.get_messages(session_id=SID), timeout=2)
         assert len(page.messages) == 1
@@ -460,3 +475,72 @@ async def test_keyword_search_failure_releases_shared_slots(history, monkeypatch
     assert all(isinstance(result, ValueError) for result in results)
     monkeypatch.setattr(messages, "_message_chain_matches", original)
     assert len((await asyncio.wait_for(history.get_messages(session_id=SID, keyword="needle"), timeout=5)).messages) == 1
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("worker_fails", [False, True])
+async def test_matching_worker_drains_after_repeated_cancel_and_preserves_original_cancel(monkeypatch, worker_fails):
+    """Repeated cancellation cannot finish the waiter while its worker still runs."""
+    from core.db.mixins import messages
+
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    finished = asyncio.Event()
+    release = threading.Event()
+
+    def blocking_match(chain, keyword, *, depth=0):
+        loop.call_soon_threadsafe(started.set)
+        try:
+            if not release.wait(10):
+                raise TimeoutError("Test did not release its worker")
+            if worker_fails:
+                raise ValueError("Worker failed while cancellation was draining")
+            return True
+        finally:
+            loop.call_soon_threadsafe(finished.set)
+
+    monkeypatch.setattr(messages, "_message_chain_matches", blocking_match)
+    cancellations = []
+
+    async def run_match():
+        try:
+            return await messages._matching_message_records([SimpleNamespace(chain=[])], "needle")
+        except asyncio.CancelledError as exc:
+            cancellations.append(exc.args)
+            raise
+
+    task = asyncio.create_task(run_match())
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        for reason in ("original cancellation", "second cancellation", "third cancellation"):
+            task.cancel(reason)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert not task.done()
+            assert not finished.is_set()
+
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert cancellations == [("original cancellation",)]
+        await asyncio.wait_for(finished.wait(), timeout=5)
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.wait_for(finished.wait(), timeout=5)
+
+
+@pytest.mark.parametrize("payload", [None, [], "invalid", 42])
+def test_invalid_json_payload_uses_placeholder_without_rewriting_snapshot(payload):
+    """Invalid JSON payloads remain inspectable instead of failing the history page."""
+    from core.chat.message_elements import ElementType
+    from core.chat.message_history import (
+        ArchivedMessagePlaceholder,
+        _deserialize_message_chain,
+    )
+
+    snapshot = [{"type": "json", "data": payload}]
+    restored = _deserialize_message_chain(snapshot)
+    assert isinstance(restored[0], ArchivedMessagePlaceholder)
+    assert restored[0].type == ElementType.Json
+    assert restored[0].data == {"type": "json", "data": payload}
+    assert snapshot == [{"type": "json", "data": payload}]

@@ -1077,6 +1077,7 @@ async def test_all_history_page_queries_return_typed_records(history):
 
 @pytest.mark.anyio
 async def test_history_session_summaries_are_typed(history):
+    """Session summaries support target filtering without changing unfiltered typed results."""
     await history.record_incoming(incoming("one"), SID, "test")
     await history.record_incoming(incoming("two"), SID, "test")
     await history.record_incoming(incoming("three"), "other:dm:user", "test")
@@ -1086,6 +1087,11 @@ async def test_history_session_summaries_are_typed(history):
         SID: 2, "other:dm:user": 1,
     }
     assert [session.to_dict() for session in sessions] == await history.db.list_message_sessions()
+    filtered = await history.list_sessions(session_id=SID)
+    assert [session.to_dict() for session in filtered] == [{"session_id": SID, "message_count": 2}]
+    assert [session.to_dict() for session in filtered] == await history.db.list_message_sessions(session_id=SID)
+    assert await history.list_sessions(session_id="missing:dm:user") == []
+    assert await history.db.list_message_sessions(session_id="missing:dm:user") == []
 
 
 @pytest.mark.anyio

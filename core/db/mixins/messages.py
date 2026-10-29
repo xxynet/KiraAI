@@ -52,10 +52,14 @@ async def _matching_message_records(records: list[MessageRecord], keyword: str) 
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError:
-        try:
-            await task
-        finally:
-            raise
+        while not task.done():
+            try:
+                await asyncio.wait({task})
+            except asyncio.CancelledError:
+                continue
+        if not task.cancelled():
+            task.exception()
+        raise
 
 
 class MessageHistoryMixin:
@@ -179,17 +183,13 @@ class MessageHistoryMixin:
         return {"messages": [self._message_record(row) for row in rows[:limit]],
                 "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
 
-    async def count_session_message_records(self, session_id: str) -> int:
-        """Count retained messages for one session without loading message bodies."""
-        query = select(func.count()).select_from(MessageRecord).where(MessageRecord.session_id == session_id)
+    async def list_message_sessions(self, session_id: str | None = None) -> list[dict]:
+        """List retained session counts, optionally restricted to one routing SID."""
+        query = select(MessageRecord.session_id, func.count().label("message_count"))
+        if session_id is not None:
+            query = query.where(MessageRecord.session_id == session_id)
         async with self.db.get_session() as session:
-            return await session.scalar(query)
-
-    async def list_message_sessions(self) -> list[dict]:
-        async with self.db.get_session() as session:
-            rows = (await session.execute(select(
-                MessageRecord.session_id, func.count().label("message_count")
-            ).group_by(MessageRecord.session_id))).all()
+            rows = (await session.execute(query.group_by(MessageRecord.session_id))).all()
         return [{"session_id": row.session_id, "message_count": row.message_count} for row in rows]
 
     async def link_message_records(self, session_id: str, llm_message_id: str,

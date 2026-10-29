@@ -162,7 +162,9 @@ def _deserialize_message_chain(data: list[dict], *, depth: int = 0) -> MessageCh
         elif element_type == "poke":
             element = Poke(item.get("pid"))
         elif element_type == "json":
-            element = Json(copy.deepcopy(item.get("data", {})))
+            payload = item.get("data", {})
+            element = (Json(copy.deepcopy(payload)) if isinstance(payload, dict)
+                       else ArchivedMessagePlaceholder(ElementType.Json, copy.deepcopy(item)))
         elif element_type == "reply":
             nested = item.get("chain")
             element = Reply(
@@ -454,13 +456,9 @@ class MessageHistoryService:
                     return message
         return None
 
-    async def get_session_message_count(self, session_id: str) -> int:
-        """Count retained messages in one session without restoring their contents."""
-        return await self.db.count_session_message_records(session_id)
-
-    async def list_sessions(self) -> list[MessageHistorySession]:
-        """Return typed retained-message statistics for each session."""
-        return [MessageHistorySession(**row) for row in await self.db.list_message_sessions()]
+    async def list_sessions(self, session_id: str | None = None) -> list[MessageHistorySession]:
+        """List retained-message counts for one routing SID, or all sessions when omitted."""
+        return [MessageHistorySession(**row) for row in await self.db.list_message_sessions(session_id=session_id)]
 
     async def link_incoming_messages(self, session_id: str, llm_message_id: str,
                                      message_ids: list[str]) -> None:

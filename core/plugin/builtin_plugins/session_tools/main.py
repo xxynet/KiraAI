@@ -122,7 +122,8 @@ class SessionPlugin(BasePlugin):
         try:
             target = self._read_target(event, target)
             session = await self.ctx.session_mgr.get_session(target, include_content=False)
-            history_count = await self.ctx.message_history.get_session_message_count(target)
+            history_sessions = await self.ctx.message_history.list_sessions(session_id=target)
+            history_count = history_sessions[0].message_count if history_sessions else 0
             if session is None and not history_count:
                 return json.dumps({"error": "Session not found"})
             counts = await self.ctx.session_mgr.get_session_message_counts(target) if session is not None else {}
