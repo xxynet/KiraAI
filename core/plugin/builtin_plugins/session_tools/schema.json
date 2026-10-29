@@ -1,0 +1,42 @@
+{
+  "cross_session_read": {
+    "type": "section",
+    "name": "Cross-session Reading",
+    "hint": "Controls which calling sessions may read other sessions through session_view and get_message_history. Reading the current session is always allowed. Target sessions must also be allowed by their adapter.",
+    "locales": {
+      "zh": {
+        "name": "跨会话读取",
+        "hint": "控制哪些来源会话可以通过 session_view 和 get_message_history 读取其他会话。始终允许读取当前会话，目标会话还必须满足其适配器的访问规则。"
+      }
+    },
+    "fields": {
+      "permission_mode": {
+        "name": "Caller Permission Mode",
+        "type": "string",
+        "options": ["allow_list", "deny_list"],
+        "default": "allow_list",
+        "hint": "allow_list permits only listed calling sessions; deny_list permits all except listed calling sessions. The default empty allow list disables cross-session reading.",
+        "locales": {
+          "zh": {
+            "name": "来源会话权限模式",
+            "hint": "allow_list：仅名单内的来源会话可以跨会话读取；deny_list：除名单内的来源会话外均可读取。默认空白名单禁止跨会话读取。"
+          }
+        }
+      },
+      "session_list": {
+        "name": "Calling Sessions",
+        "type": "multi_select",
+        "source": "session",
+        "allow_custom": true,
+        "default": [],
+        "hint": "Full routing IDs of calling sessions, for example my-adapter:dm:123. These are the sessions requesting access, not the target sessions being read.",
+        "locales": {
+          "zh": {
+            "name": "来源会话名单",
+            "hint": "填写发起读取的来源会话完整标识，例如 my-adapter:dm:123。这里是请求访问的会话，不是被读取的目标会话。"
+          }
+        }
+      }
+    }
+  }
+}

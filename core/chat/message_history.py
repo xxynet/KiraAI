@@ -394,6 +394,7 @@ class MessageHistoryService:
         self, internal_message_id: str | None = None, *, session_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None, cursor: str | None = None, limit: int = 50,
+        keyword: str | None = None,
     ) -> MessageHistoryPage:
         """Return a page of local history records matching all supplied filters.
 
@@ -403,10 +404,12 @@ class MessageHistoryService:
         when no records match. limit must be between 1 and 200.
         Pass next_cursor as cursor with the same filters to fetch the next page.
         The cursor must identify a retained record matching the supplied filters.
+        keyword optionally matches visible text by case-insensitive literal substring
+        before pagination; it never matches storage paths or routing metadata.
         """
         page = await self.db.list_message_records(
             session_id, internal_message_id=internal_message_id, platform_message_id=platform_message_id,
-            self_id=self_id, direction=direction, cursor=cursor, limit=limit,
+            self_id=self_id, direction=direction, cursor=cursor, limit=limit, keyword=keyword,
         )
         return await self._restore_page(page)
 
@@ -442,6 +445,10 @@ class MessageHistoryService:
                 if message.get("_extra", {}).get("llm_message_id") == identity:
                     return message
         return None
+
+    async def get_session_stats(self, session_id: str) -> dict:
+        """Return retained message counts and first/last message times in Unix seconds."""
+        return await self.db.get_message_session_stats(session_id)
 
     async def list_sessions(self) -> list[MessageHistorySession]:
         """Return typed retained-message statistics for each session."""
