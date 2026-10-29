@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import json
 import threading
+from datetime import timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -22,6 +23,7 @@ def session_plugin(history):
         message_history=history,
         adapter_mgr=SimpleNamespace(get_adapter=Mock(return_value=adapter)),
         publish_notice=AsyncMock(),
+        get_timezone=lambda: timezone(timedelta(hours=8)),
     )
     return SessionPlugin(ctx, {})
 
@@ -95,9 +97,9 @@ async def test_keyword_search_precedes_pagination_and_scopes_direction(session_p
     expected = []
     for index in range(215):
         text = "中文 Match_100% \\ literal" if index in {0, 105, 210} else "unrelated"
-        identity = await archive_text(history, text, str(index))
+        await archive_text(history, text, str(index))
         if index in {0, 105, 210}:
-            expected.append(identity)
+            expected.append(str(index))
     await archive_text(history, "中文 Match_100% \\ literal", "other", sid=OTHER)
     await history.record_outgoing(SID, incoming().chain, platform="test", self_id="bot")
     event = SimpleNamespace(sid=SID)
@@ -106,7 +108,7 @@ async def test_keyword_search_precedes_pagination_and_scopes_direction(session_p
         page = json.loads(await session_plugin.get_message_history(
             event, keyword="中文 match_100%", direction="incoming", limit=1, cursor=cursor,
         ))
-        found.extend(row["id"] for row in page["messages"])
+        found.extend(row.split("[message_id: ", 1)[1].split("]", 1)[0] for row in page["messages"])
         cursor = page["next_cursor"]
         if cursor is None:
             break
@@ -156,7 +158,7 @@ async def test_history_tool_omits_media_paths_without_changing_archive(session_p
         await session.execute(update(MessageRecord).where(MessageRecord.id == record).values(chain=chain))
     result = await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="月亮")
     assert "private-path" not in result
-    assert json.loads(result)["messages"][0]["chain"][0]["chain"][0]["description"] == "月亮"
+    assert "[Image 月亮]" in json.loads(result)["messages"][0]
     assert (await history.get_message(record)).to_dict()["chain"] == chain
 
 
@@ -220,7 +222,9 @@ async def test_cross_session_read_uses_calling_session_permission(session_plugin
     assert ("error" not in result) is allowed
     assert ("error" not in metadata) is allowed
     if allowed:
-        assert result["messages"][0]["session_id"] == OTHER
+        assert result["session_id"] == OTHER
+        assert "[message_id: target]" in result["messages"][0]
+        assert result["messages"][0].endswith(" | target history")
         assert metadata["history_count"] == 1
         capability = session_plugin.ctx.adapter_mgr.get_adapter.return_value.get_capability.return_value
         capability.is_allowed.assert_called_with("channel:123", permission="im.group.receive")
@@ -381,10 +385,11 @@ async def test_malformed_archive_is_readable_and_does_not_block_later_matches(se
     expected = {good_record, bad_record} if matched else {good_record}
     assert {record.id for record in page.messages} == expected
     result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="needle"))
-    assert {record["id"] for record in result["messages"]} == expected
+    expected_platform_ids = {"valid", "malformed"} if matched else {"valid"}
+    assert {line.split("[message_id: ", 1)[1].split("]", 1)[0] for line in result["messages"]} == expected_platform_ids
 
     unfiltered = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID)))
-    assert {record["id"] for record in unfiltered["messages"]} == {bad_record, good_record}
+    assert {line.split("[message_id: ", 1)[1].split("]", 1)[0] for line in unfiltered["messages"]} == {"malformed", "valid"}
     assert (await history.get_message(bad_record)).to_dict()["chain"] == chain
     assert not (await history.get_messages(session_id=SID, keyword="not found")).messages
 
@@ -577,14 +582,17 @@ async def test_adjacent_text_segments_have_equivalent_keyword_search_and_paginat
             SimpleNamespace(sid=SID), keyword=keyword, limit=1, cursor=cursor,
         ))
         for message in page["messages"]:
-            found.append(message["id"])
-            assert message["chain"] == expected[message["id"]]
+            label = message.split("[message_id: ", 1)[1].split("]", 1)[0]
+            found.append(label)
+            assert "".join(parts) in message
         cursor = page["next_cursor"]
         if cursor is None:
             break
 
     assert len(found) == len(set(found)) == 2
-    assert set(found) == set(expected)
+    assert set(found) == {"single", "split"}
+    for identity, chain in expected.items():
+        assert (await history.get_message(identity)).to_dict()["chain"] == chain
     assert cursor is None
 
 
@@ -604,3 +612,95 @@ def test_keyword_search_does_not_join_text_across_other_elements(separator):
     assert not _message_chain_matches(chain, "hello world")
     assert _message_chain_matches(chain, "hello")
     assert _message_chain_matches(chain, "world")
+
+
+@pytest.mark.anyio
+async def test_history_lines_use_configured_time_sender_content_and_platform_id(session_plugin, history):
+    """Render readable lines without archive metadata or changes to stored messages."""
+    message = incoming("platform-42")
+    message.timestamp = 0
+    message.sender.nickname = "小林"
+    message.sender.user_id = "123456"
+    message.chain[0].text = "午餐\n吃面"
+    identity = await history.record_incoming(message, SID, "test")
+
+    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="午餐"))
+    assert result == {
+        "session_id": SID,
+        "messages": ["[Jan 01 1970 08:00 Thu] [message_id: platform-42] [user_nickname: 小林, user_id: 123456] | 午餐\\n吃面"],
+        "next_cursor": None,
+    }
+    assert (await history.get_message(identity)).chain[0].text == "午餐\n吃面"
+
+    session_plugin.ctx.get_timezone = lambda: timezone.utc
+    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID)))
+    assert result["messages"][0].startswith("[Jan 01 1970 00:00 Thu]")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status", ["sent", "failed", "pending", "unknown"])
+async def test_outgoing_history_keeps_delivery_state_and_missing_platform_id_visible(session_plugin, history, status):
+    """Unconfirmed or failed outgoing messages must not appear as successfully sent."""
+    from core.chat.message_elements import Text
+    from core.chat.message_utils import MessageChain
+
+    identity = await history.record_outgoing(
+        SID, MessageChain([Text("你好")]), platform="test", self_id="self-123",
+    )
+    await history.finish_outgoing(identity, status=status)
+    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), direction="outgoing"))
+    line = result["messages"][0]
+    marker = "" if status == "sent" else f"[发送状态:{status}] "
+    assert line.endswith(f"[message_id: 无] [user_nickname: 你, user_id: self-123] | {marker}你好")
+
+
+@pytest.mark.anyio
+async def test_history_lines_render_media_quotes_mentions_and_cards(session_plugin, history):
+    """Keep visible media and quoted content in the compact text response."""
+    from sqlalchemy import update
+
+    from core.db.models import MessageRecord
+
+    identity = await archive_text(history, "replace", "mixed")
+    chain = [
+        {"type": "at", "pid": "456", "nickname": "小明"},
+        {"type": "reply", "message_id": "original-7", "chain": [{"type": "text", "text": "周五见"}]},
+        {"type": "image", "description": "月亮", "file": "private/path", "file_type": "archive"},
+        {"type": "record", "transcript": "下午开会"},
+        {"type": "json", "data": {"地点": "会议室"}},
+    ]
+    async with history.db.db.transaction() as session:
+        await session.execute(update(MessageRecord).where(MessageRecord.id == identity).values(chain=chain))
+    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="月亮"))
+    line = result["messages"][0]
+    for visible in ("[At 456(nickname: 小明)]", "[Reply ID: original-7 content: 周五见]", "[Image 月亮]", "[Record 下午开会]", '[Json card {"地点": "会议室"}]'):
+        assert visible in line
+    assert "private/path" not in line
+    assert "[message_id: mixed]" in line
+    assert (await history.get_message(identity)).to_dict()["chain"] == chain
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("group", [False, True])
+@pytest.mark.parametrize("notice", [False, True])
+async def test_history_headers_match_kira_ai_message_format(session_plugin, history, group, notice):
+    """Compare archived headers against the live plugin for direct/group messages and notices."""
+    from importlib import import_module
+
+    from core.chat.session import Group
+
+    plugin_type = import_module("core.plugin.builtin_plugins.kira-ai.main").DefaultPlugin
+    live_plugin = plugin_type(session_plugin.ctx, {})
+    message = incoming("platform-header")
+    message.timestamp = 0
+    message.is_notice = notice
+    message.message_str = "original"
+    sid = SID
+    if group:
+        sid = "adapter:gm:channel:123"
+        message.group = Group("channel:123", "未知")
+    await history.record_incoming(message, sid, "test")
+
+    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=sid)))
+    assert result["messages"] == [live_plugin._format_user_message(message)]
+    session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
