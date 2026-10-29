@@ -544,3 +544,63 @@ def test_invalid_json_payload_uses_placeholder_without_rewriting_snapshot(payloa
     assert restored[0].type == ElementType.Json
     assert restored[0].data == {"type": "json", "data": payload}
     assert snapshot == [{"type": "json", "data": payload}]
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("parts,keyword", [
+    (["hello", " world"], "hello world"),
+    (["he", "llo", "", " ", "world"], "HELLO WORLD"),
+    (["跨", "会话", "搜索"], "跨会话"),
+    (["Stra", "ße"], "STRASSE"),
+])
+@pytest.mark.parametrize("quoted", [False, True])
+async def test_adjacent_text_segments_have_equivalent_keyword_search_and_pagination(
+    session_plugin, history, parts, keyword, quoted,
+):
+    """Visible text must match identically before and after adjacent segment splitting."""
+    from core.chat.message_elements import Reply, Text
+    from core.chat.message_utils import MessageChain
+
+    expected = {}
+    for label, segments in (("single", ["".join(parts)]), ("split", parts)):
+        chain = MessageChain([Text(part) for part in segments])
+        if quoted:
+            chain = MessageChain([Reply("quoted-message", chain=chain)])
+        message = incoming(label)
+        message.chain = chain
+        identity = await history.record_incoming(message, SID, "test")
+        expected[identity] = (await history.get_message(identity)).to_dict()["chain"]
+
+    found = []
+    cursor = None
+    for _ in range(3):
+        page = json.loads(await session_plugin.get_message_history(
+            SimpleNamespace(sid=SID), keyword=keyword, limit=1, cursor=cursor,
+        ))
+        for message in page["messages"]:
+            found.append(message["id"])
+            assert message["chain"] == expected[message["id"]]
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+
+    assert len(found) == len(set(found)) == 2
+    assert set(found) == set(expected)
+    assert cursor is None
+
+
+@pytest.mark.parametrize("separator", [
+    {"type": "image", "description": "photo"},
+    {"type": "at", "pid": "12345678901234567890", "nickname": "Alice"},
+    {"type": "notice", "text": "notice"},
+    {"type": "reply", "chain": [{"type": "text", "text": "quoted"}]},
+    {"type": "text", "text": None},
+    None,
+])
+def test_keyword_search_does_not_join_text_across_other_elements(separator):
+    """A non-text or malformed element separates otherwise adjacent text runs."""
+    from core.db.mixins.messages import _message_chain_matches
+
+    chain = [{"type": "text", "text": "hello"}, separator, {"type": "text", "text": " world"}]
+    assert not _message_chain_matches(chain, "hello world")
+    assert _message_chain_matches(chain, "hello")
+    assert _message_chain_matches(chain, "world")

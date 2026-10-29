@@ -22,12 +22,21 @@ def _message_chain_matches(chain: list[dict], keyword: str, *, depth: int = 0) -
     if depth > 2 or not isinstance(chain, list):
         return False
     text_fields = {
-        "text": ("text",), "notice": ("text",), "at": ("nickname",),
+        "notice": ("text",), "at": ("nickname",),
         "emoji": ("emoji_desc",), "reply": ("message_content",),
         **{kind: ("name", "caption", "description", "transcript")
            for kind in ("image", "sticker", "record", "video", "file")},
     }
+    text_run = []
     for element in chain:
+        if (isinstance(element, dict) and element.get("type") == "text"
+                and isinstance(element.get("text"), str)):
+            text_run.append(element["text"])
+            continue
+        if text_run:
+            if keyword in "".join(text_run).casefold():
+                return True
+            text_run.clear()
         if not isinstance(element, dict):
             continue
         kind = element.get("type")
@@ -41,7 +50,7 @@ def _message_chain_matches(chain: list[dict], keyword: str, *, depth: int = 0) -
             return True
         if kind == "reply" and _message_chain_matches(element.get("chain") or [], keyword, depth=depth + 1):
             return True
-    return False
+    return bool(text_run) and keyword in "".join(text_run).casefold()
 
 
 async def _matching_message_records(records: list[MessageRecord], keyword: str) -> list[MessageRecord]:
