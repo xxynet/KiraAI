@@ -1,12 +1,36 @@
 {
+  "enable_session_view": {
+    "type": "switch",
+    "name": "Enable Session Details",
+    "default": true,
+    "hint": "Expose session_view to the AI. Turning this off hides the tool and its instructions and blocks calls to it.",
+    "locales": {
+      "zh": {
+        "name": "启用会话详情工具",
+        "hint": "向 AI 提供 session_view。关闭后隐藏该工具及其使用说明，并禁止调用。"
+      }
+    }
+  },
+  "enable_get_message_history": {
+    "type": "switch",
+    "name": "Enable Message History",
+    "default": true,
+    "hint": "Expose get_message_history to the AI. Turning this off hides the tool and its instructions and blocks calls to it; stored history is not deleted.",
+    "locales": {
+      "zh": {
+        "name": "启用历史消息工具",
+        "hint": "向 AI 提供 get_message_history。关闭后隐藏该工具及其使用说明，并禁止调用；不会删除已有历史存档。"
+      }
+    }
+  },
   "cross_session_read": {
     "type": "section",
     "name": "Cross-session Reading",
-    "hint": "Controls which calling sessions may read other sessions through session_view and get_message_history. Reading the current session is always allowed. Target sessions must also be allowed by their adapter.",
+    "hint": "Controls which calling sessions may read other sessions through session_view and get_message_history. When the tool is enabled, reading the current session does not require cross-session authorization. Target sessions must also be allowed by their adapter.",
     "locales": {
       "zh": {
         "name": "跨会话读取",
-        "hint": "控制哪些来源会话可以通过 session_view 和 get_message_history 读取其他会话。始终允许读取当前会话，目标会话还必须满足其适配器的访问规则。"
+        "hint": "控制哪些来源会话可以通过 session_view 和 get_message_history 读取其他会话。工具启用时读取当前会话无需跨会话授权，目标会话还必须满足其适配器的访问规则。"
       }
     },
     "fields": {
