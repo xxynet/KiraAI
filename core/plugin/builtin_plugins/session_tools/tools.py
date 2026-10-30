@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 READ_TARGET_PARAM = {
     "type": "string",
     "description": "完整会话标识 adapter_name:session_type:session_id，省略时查询当前会话。"
-                   "查询其他会话时，必须从会话列表逐字复制标识，并且当前会话需要跨会话读取授权。",
+                   "查询其他会话时，必须从会话列表逐字复制标识，并且来源与目标会话都需要通过跨会话读取授权。",
 }
 
 

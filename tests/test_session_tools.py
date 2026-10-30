@@ -234,7 +234,9 @@ async def test_cross_session_read_uses_calling_session_permission(session_plugin
 @pytest.mark.parametrize("failure", ["missing_adapter", "no_im", "denied"])
 async def test_cross_session_read_also_respects_adapter_policy(session_plugin, failure):
     """Caller authorization alone cannot bypass the target adapter receive policy."""
-    session_plugin.plugin_cfg = {"cross_session_read": {"session_list": [SID]}}
+    session_plugin.plugin_cfg = {"cross_session_read": {
+        "session_list": [SID], "target_permission_mode": "allow_list", "target_session_list": [OTHER],
+    }}
     lookup = session_plugin.ctx.adapter_mgr.get_adapter
     if failure == "missing_adapter":
         lookup.return_value = None
@@ -292,6 +294,10 @@ def test_session_tools_config_schema_has_matching_english_and_chinese_fields():
     root = Path(__file__).resolve().parents[1] / "core/plugin/builtin_plugins/session_tools"
     schema = json.loads((root / "schema.json").read_text(encoding="utf-8"))
     assert len(build_fields(schema)) == 3
+    cross_fields = schema["cross_session_read"]["fields"]
+    assert cross_fields["permission_mode"]["default"] == "allow_list"
+    assert cross_fields["target_permission_mode"]["default"] == "deny_list"
+    assert cross_fields["target_session_list"]["default"] == []
     for key in ("enable_session_view", "enable_get_message_history"):
         assert schema[key]["type"] == "switch"
         assert schema[key]["default"] is True
@@ -813,3 +819,84 @@ async def test_disabled_read_tools_handle_requests_without_a_tool_set(session_pl
     assert "session_view" not in request.system_prompt[0].content
     assert "get_message_history" not in request.system_prompt[0].content
     assert "session_send" in request.system_prompt[0].content
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["session_view", "get_message_history"])
+@pytest.mark.parametrize("mode,sessions,allowed", [
+    ("allow_list", [OTHER], True),
+    ("allow_list", [SID], False),
+    ("allow_list", [], False),
+    ("deny_list", [OTHER], False),
+    ("deny_list", [SID], True),
+    ("deny_list", [], True),
+    ("invalid", [], False),
+    (None, [], False),
+    ([], [], False),
+    ("deny_list", None, False),
+    ("allow_list", OTHER, False),
+    ("allow_list", ["channel:123"], False),
+    ("allow_list", ["different-adapter:gm:channel:123"], False),
+])
+async def test_cross_session_read_requires_target_permission(
+    session_plugin, history, monkeypatch, tool_name, mode, sessions, allowed,
+):
+    """Both tools enforce full target routing IDs before adapter access or data queries."""
+    await archive_text(history, "target history", "target-policy", sid=OTHER)
+    session_plugin.plugin_cfg = {"cross_session_read": {
+        "session_list": [SID], "target_permission_mode": mode, "target_session_list": sessions,
+    }}
+    get_session = AsyncMock(wraps=session_plugin.ctx.session_mgr.get_session)
+    get_messages = AsyncMock(wraps=session_plugin.ctx.message_history.get_messages)
+    list_sessions = AsyncMock(wraps=session_plugin.ctx.message_history.list_sessions)
+    monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", list_sessions)
+
+    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=OTHER))
+    assert ("error" not in result) is allowed
+    if allowed:
+        assert result["session_id"] == OTHER
+        session_plugin.ctx.adapter_mgr.get_adapter.assert_called_once_with("custom-instance")
+    else:
+        assert "target permission denied" in result["error"]
+        get_session.assert_not_awaited()
+        get_messages.assert_not_awaited()
+        list_sessions.assert_not_awaited()
+        session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["session_view", "get_message_history"])
+@pytest.mark.parametrize("target", [None, SID])
+async def test_cross_session_target_restrictions_do_not_block_current_session(session_plugin, history, tool_name, target):
+    """Cross-session caller and target restrictions leave current-session reads available."""
+    await archive_text(history, "current history", "current-policy")
+    session_plugin.plugin_cfg = {"cross_session_read": {
+        "session_list": [], "target_permission_mode": "deny_list", "target_session_list": [SID],
+    }}
+    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=target))
+    assert "error" not in result
+    assert result["session_id"] == SID
+    session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["session_view", "get_message_history"])
+async def test_target_permission_cannot_override_denied_caller(session_plugin, tool_name, monkeypatch):
+    """Allowing the target does not grant permission to an unlisted calling session."""
+    session_plugin.plugin_cfg = {"cross_session_read": {
+        "session_list": [], "target_permission_mode": "allow_list", "target_session_list": [OTHER],
+    }}
+    get_session = AsyncMock()
+    get_messages = AsyncMock()
+    list_sessions = AsyncMock()
+    monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", list_sessions)
+    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=OTHER))
+    assert "calling session" in result["error"]
+    get_session.assert_not_awaited()
+    get_messages.assert_not_awaited()
+    list_sessions.assert_not_awaited()
+    session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()

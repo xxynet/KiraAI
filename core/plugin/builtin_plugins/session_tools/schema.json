@@ -15,22 +15,22 @@
     "type": "switch",
     "name": "Enable Message History",
     "default": true,
-    "hint": "Expose get_message_history to the AI. Turning this off hides the tool and its instructions and blocks calls to it; stored history is not deleted.",
+    "hint": "Expose get_message_history to the AI. Turning this off disables the tool.",
     "locales": {
       "zh": {
         "name": "启用历史消息工具",
-        "hint": "向 AI 提供 get_message_history。关闭后隐藏该工具及其使用说明，并禁止调用；不会删除已有历史存档。"
+        "hint": "向 AI 提供 get_message_history。关闭后禁用该工具。"
       }
     }
   },
   "cross_session_read": {
     "type": "section",
     "name": "Cross-session Reading",
-    "hint": "Controls which calling sessions may read other sessions through session_view and get_message_history. When the tool is enabled, reading the current session does not require cross-session authorization. Target sessions must also be allowed by their adapter.",
+    "hint": "Controls which calling sessions may read which target sessions through session_view and get_message_history. Both permission policies must allow the read. When the tool is enabled, reading the current session does not require cross-session authorization. Target sessions must also be allowed by their adapter.",
     "locales": {
       "zh": {
         "name": "跨会话读取",
-        "hint": "控制哪些来源会话可以通过 session_view 和 get_message_history 读取其他会话。工具启用时读取当前会话无需跨会话授权，目标会话还必须满足其适配器的访问规则。"
+        "hint": "控制哪些来源会话可以通过 session_view 和 get_message_history 读取哪些目标会话。来源与目标名单必须同时允许。工具启用时读取当前会话无需跨会话授权，目标会话还必须满足其适配器的访问规则。"
       }
     },
     "fields": {
@@ -58,6 +58,33 @@
           "zh": {
             "name": "来源会话名单",
             "hint": "填写发起读取的来源会话完整标识，例如 my-adapter:dm:123。这里是请求访问的会话，不是被读取的目标会话。"
+          }
+        }
+      },
+      "target_permission_mode": {
+        "name": "Target Permission Mode",
+        "type": "string",
+        "options": ["allow_list", "deny_list"],
+        "default": "deny_list",
+        "hint": "allow_list permits reading only listed target sessions; deny_list blocks listed targets. The default empty deny list adds no target restriction. Caller and adapter permissions still apply.",
+        "locales": {
+          "zh": {
+            "name": "目标会话权限模式",
+            "hint": "allow_list：仅允许读取名单内的目标会话；deny_list：禁止读取名单内的目标会话。默认空黑名单不额外限制目标，仍需通过来源会话和适配器授权。"
+          }
+        }
+      },
+      "target_session_list": {
+        "name": "Target Sessions",
+        "type": "multi_select",
+        "source": "session",
+        "allow_custom": true,
+        "default": [],
+        "hint": "Full routing IDs of target sessions being read, for example my-adapter:gm:123. This list does not affect reading the current session.",
+        "locales": {
+          "zh": {
+            "name": "目标会话名单",
+            "hint": "填写被读取的目标会话完整标识，例如 my-adapter:gm:123。该名单不影响读取当前会话。"
           }
         }
       }
