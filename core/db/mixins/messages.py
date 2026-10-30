@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
+import json
 import time
 import uuid
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -15,8 +17,63 @@ from ..db_mgr import DatabaseManager
 from ..models import MessageRecord
 
 
+def _message_chain_matches(chain: list[dict], keyword: str, *, depth: int = 0) -> bool:
+    """Search visible text, including quoted text, without matching storage metadata."""
+    if depth > 2 or not isinstance(chain, list):
+        return False
+    text_fields = {
+        "notice": ("text",), "at": ("nickname",),
+        "emoji": ("emoji_desc",), "reply": ("message_content",),
+        **{kind: ("name", "caption", "description", "transcript")
+           for kind in ("image", "sticker", "record", "video", "file")},
+    }
+    text_run = []
+    for element in chain:
+        if (isinstance(element, dict) and element.get("type") == "text"
+                and isinstance(element.get("text"), str)):
+            text_run.append(element["text"])
+            continue
+        if text_run:
+            if keyword in "".join(text_run).casefold():
+                return True
+            text_run.clear()
+        if not isinstance(element, dict):
+            continue
+        kind = element.get("type")
+        if not isinstance(kind, str):
+            continue
+        for key in text_fields.get(kind, ()):
+            value = element.get(key)
+            if isinstance(value, str) and keyword in value.casefold():
+                return True
+        if kind == "json" and keyword in json.dumps(element.get("data", {}), ensure_ascii=False).casefold():
+            return True
+        if kind == "reply" and _message_chain_matches(element.get("chain") or [], keyword, depth=depth + 1):
+            return True
+    return bool(text_run) and keyword in "".join(text_run).casefold()
+
+
+async def _matching_message_records(records: list[MessageRecord], keyword: str) -> list[MessageRecord]:
+    """Finish in-flight matching before a cancelled search releases its shared slot."""
+    task = asyncio.create_task(asyncio.to_thread(
+        lambda: [record for record in records if _message_chain_matches(record.chain, keyword)],
+    ))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.wait({task})
+            except asyncio.CancelledError:
+                continue
+        if not task.cancelled():
+            task.exception()
+        raise
+
+
 class MessageHistoryMixin:
     db: DatabaseManager
+    _message_search_semaphore: asyncio.Semaphore
 
     @staticmethod
     def _message_record(row: MessageRecord) -> dict:
@@ -88,35 +145,60 @@ class MessageHistoryMixin:
         self, session_id: str | None = None, *, cursor: str | None = None,
         limit: int = 50, llm_message_id: str | None = None, internal_message_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
-        direction: str | None = None,
+        direction: str | None = None, keyword: str | None = None,
     ) -> dict:
-        """Page through retained records matching all supplied filters."""
-        if not 1 <= limit <= 200:
-            raise ValueError("limit must be between 1 and 200")
+        """Search visible text before pagination, sharing two scan slots across callers.
+
+        Acquire a search slot before opening a database session. Unfiltered reads do
+        not wait for a slot; cancellation waits for in-flight text matching to finish.
+        """
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be an integer between 1 and 200")
+        if keyword is not None and (not isinstance(keyword, str) or len(keyword) > 200):
+            raise ValueError("keyword must be a string of at most 200 characters")
+        keyword = keyword.casefold() if keyword else None
         conditions = self._message_record_conditions(
             internal_message_id=internal_message_id, session_id=session_id,
             platform_message_id=platform_message_id, self_id=self_id, direction=direction,
             llm_message_id=llm_message_id or None,
         )
         query = select(MessageRecord).where(*conditions)
-        async with self.db.get_session() as session:
+        async with AsyncExitStack() as resources:
+            if keyword:
+                await resources.enter_async_context(self._message_search_semaphore)
+            session = await resources.enter_async_context(self.db.get_session())
             if cursor:
                 previous = await session.scalar(query.where(MessageRecord.id == cursor))
-                if previous is None:
+                if previous is None or (keyword and not await _matching_message_records([previous], keyword)):
                     raise ValueError("Invalid message cursor")
                 query = query.where(or_(
                     MessageRecord.created_at < previous.created_at,
                     and_(MessageRecord.created_at == previous.created_at, MessageRecord.id < previous.id)))
-            rows = list((await session.scalars(query.order_by(
-                MessageRecord.created_at.desc(), MessageRecord.id.desc()).limit(limit + 1))).all())
+            query = query.order_by(MessageRecord.created_at.desc(), MessageRecord.id.desc())
+            if keyword:
+                # Stream bounded batches so text search does not load an entire session.
+                stream = await session.stream_scalars(query.execution_options(yield_per=100))
+                rows = []
+                try:
+                    async for batch in stream.partitions(100):
+                        matches = await _matching_message_records(batch, keyword)
+                        rows.extend(matches[:limit + 1 - len(rows)])
+                        if len(rows) > limit:
+                            break
+                finally:
+                    await stream.close()
+            else:
+                rows = list((await session.scalars(query.limit(limit + 1))).all())
         return {"messages": [self._message_record(row) for row in rows[:limit]],
                 "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
 
-    async def list_message_sessions(self) -> list[dict]:
+    async def list_message_sessions(self, session_id: str | None = None) -> list[dict]:
+        """List retained session counts, optionally restricted to one routing SID."""
+        query = select(MessageRecord.session_id, func.count().label("message_count"))
+        if session_id is not None:
+            query = query.where(MessageRecord.session_id == session_id)
         async with self.db.get_session() as session:
-            rows = (await session.execute(select(
-                MessageRecord.session_id, func.count().label("message_count")
-            ).group_by(MessageRecord.session_id))).all()
+            rows = (await session.execute(query.group_by(MessageRecord.session_id))).all()
         return [{"session_id": row.session_id, "message_count": row.message_count} for row in rows]
 
     async def link_message_records(self, session_id: str, llm_message_id: str,

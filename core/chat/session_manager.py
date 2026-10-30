@@ -125,9 +125,11 @@ class SessionManager:
             raise ValueError("Session data must be an object")
         return record
 
-    async def get_session_message_counts(self) -> dict[str, int]:
-        """Return context chunk counts keyed by routing SID in one database query."""
-        return await self.db.get_chat_session_message_counts()
+    async def get_session_message_counts(self, session: str | None = None) -> dict[str, int]:
+        """Return chunk counts for one routing SID, or all sessions when omitted."""
+        if session is None:
+            return await self.db.get_chat_session_message_counts()
+        return await self.db.get_chat_session_message_counts(session)
 
     async def _session_data(self, session: str) -> dict:
         row = await self.db.get_chat_session(session)
