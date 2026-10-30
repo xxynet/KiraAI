@@ -234,7 +234,9 @@ async def test_cross_session_read_uses_calling_session_permission(session_plugin
 @pytest.mark.parametrize("failure", ["missing_adapter", "no_im", "denied"])
 async def test_cross_session_read_also_respects_adapter_policy(session_plugin, failure):
     """Caller authorization alone cannot bypass the target adapter receive policy."""
-    session_plugin.plugin_cfg = {"cross_session_read": {"session_list": [SID]}}
+    session_plugin.plugin_cfg = {"cross_session_read": {
+        "session_list": [SID], "target_permission_mode": "allow_list", "target_session_list": [OTHER],
+    }}
     lookup = session_plugin.ctx.adapter_mgr.get_adapter
     if failure == "missing_adapter":
         lookup.return_value = None
@@ -247,13 +249,13 @@ async def test_cross_session_read_also_respects_adapter_policy(session_plugin, f
 
 
 @pytest.mark.anyio
-async def test_registered_history_tools_log_arguments_and_results(session_plugin, monkeypatch):
-    """Registered tools preserve the existing argument and result logging behavior."""
+async def test_request_local_history_tools_log_arguments_and_results(session_plugin, monkeypatch):
+    """Request-local tools preserve the existing argument and result logging behavior."""
     from core.agent import func_tool_manager
     from core.agent.func_tool_manager import FuncToolManager
     from core.plugin.handlers import event_handler_reg
     from core.plugin.manager import PluginManager
-    from core.provider import LLMResponse
+    from core.provider import LLMRequest, LLMResponse
 
     config = {
         "bot_config.agent.max_tool_calls_per_turn": 5,
@@ -267,6 +269,8 @@ async def test_registered_history_tools_log_arguments_and_results(session_plugin
     )
     PluginManager._register_plugin_tools_for(owner, "kira_session_plugin")
     tools = manager.build_tool_set()
+    assert "session_view" not in tools and "get_message_history" not in tools
+    await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), LLMRequest(tool_set=tools))
     assert "session_view" in tools and "get_message_history" in tools and "session_send" in tools
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda **kwargs: [])
     log = Mock()
@@ -289,7 +293,14 @@ def test_session_tools_config_schema_has_matching_english_and_chinese_fields():
 
     root = Path(__file__).resolve().parents[1] / "core/plugin/builtin_plugins/session_tools"
     schema = json.loads((root / "schema.json").read_text(encoding="utf-8"))
-    assert len(build_fields(schema)) == 1
+    assert len(build_fields(schema)) == 3
+    cross_fields = schema["cross_session_read"]["fields"]
+    assert cross_fields["permission_mode"]["default"] == "allow_list"
+    assert cross_fields["target_permission_mode"]["default"] == "deny_list"
+    assert cross_fields["target_session_list"]["default"] == []
+    for key in ("enable_session_view", "enable_get_message_history"):
+        assert schema[key]["type"] == "switch"
+        assert schema[key]["default"] is True
 
     def validate(fields):
         """Require localized display text recursively for every configuration field."""
@@ -703,4 +714,189 @@ async def test_history_headers_match_kira_ai_message_format(session_plugin, hist
 
     result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=sid)))
     assert result["messages"] == [live_plugin._format_user_message(message)]
+    session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("config", [
+    {},
+    {"enable_session_view": True, "enable_get_message_history": True},
+    {"enable_session_view": False, "enable_get_message_history": True},
+    {"enable_session_view": True, "enable_get_message_history": False},
+    {"enable_session_view": False, "enable_get_message_history": False},
+])
+async def test_read_tool_switches_inject_request_local_schemas_and_instructions(session_plugin, config):
+    """Only enabled read tools enter request-local schemas, never global registrations."""
+    from core.agent.func_tool_manager import FuncToolManager
+    from core.plugin.manager import PluginManager
+    from core.prompt_manager import Prompt
+    from core.provider import LLMRequest
+
+    session_plugin.plugin_cfg = config
+    manager = FuncToolManager(SimpleNamespace(get_config=lambda key, default=None: default))
+    owner = SimpleNamespace(
+        ctx=SimpleNamespace(tool_mgr=manager),
+        plugin_instances={"kira_session_plugin": session_plugin},
+    )
+    PluginManager._register_plugin_tools_for(owner, "kira_session_plugin")
+    request = LLMRequest(
+        tool_set=manager.build_tool_set(),
+        system_prompt=[Prompt("base", name="tools"), Prompt("", name="sessions")],
+    )
+    await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), request)
+    schemas = {item["function"]["name"] for item in request.tool_set.to_list()}
+    instructions = request.system_prompt[0].content
+    for name in ("session_view", "get_message_history"):
+        enabled = config.get(f"enable_{name}", True)
+        assert (name in schemas) is enabled
+        assert (name in instructions) is enabled
+    assert "session_send" in schemas and "session_send" in instructions
+    assert SID in request.system_prompt[1].content
+    assert {
+        item["function"]["name"] for item in manager.build_tool_set().to_list()
+    } == {"session_send"}
+    from core.plugin import registry
+    from core.utils.tool_utils import BaseTool
+
+    assert set(registry._plugin_components["kira_session_plugin"].tools) == {"session_send"}
+    for name in ("session_view", "get_message_history"):
+        if name in request.tool_set:
+            assert isinstance(request.tool_set.get(name), BaseTool)
+
+    session_plugin.plugin_cfg = {}
+    next_request = LLMRequest(
+        tool_set=manager.build_tool_set(),
+        system_prompt=[Prompt("", name="tools")],
+    )
+    await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), next_request)
+    assert "session_view" in next_request.tool_set and "get_message_history" in next_request.tool_set
+    for name in ("session_view", "get_message_history"):
+        if name in request.tool_set:
+            assert next_request.tool_set.get(name) is not request.tool_set.get(name)
+
+    session_plugin.plugin_cfg = {"enable_session_view": False, "enable_get_message_history": False}
+    disabled_request = LLMRequest(tool_set=manager.build_tool_set())
+    await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), disabled_request)
+    assert "session_view" not in disabled_request.tool_set
+    assert "get_message_history" not in disabled_request.tool_set
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["session_view", "get_message_history"])
+async def test_disabled_read_tool_rejects_calls_before_querying(session_plugin, tool_name, monkeypatch):
+    """Disabled tools cannot query data through residual or direct invocations."""
+    session_plugin.plugin_cfg = {f"enable_{tool_name}": False}
+    get_session = AsyncMock()
+    get_messages = AsyncMock()
+    list_sessions = AsyncMock()
+    monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", list_sessions)
+
+    from core.plugin.builtin_plugins.session_tools.tools import (
+        GetMessageHistoryTool,
+        SessionViewTool,
+    )
+
+    tool_type = SessionViewTool if tool_name == "session_view" else GetMessageHistoryTool
+    result = json.loads(await tool_type(session_plugin).execute(SimpleNamespace(sid=SID)))
+    assert result == {"error": f"{tool_name} is disabled"}
+    get_session.assert_not_awaited()
+    get_messages.assert_not_awaited()
+    list_sessions.assert_not_awaited()
+    session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_disabled_read_tools_handle_requests_without_a_tool_set(session_plugin):
+    """Prompt-only requests also omit instructions for disabled read tools."""
+    from core.prompt_manager import Prompt
+    from core.provider import LLMRequest
+
+    session_plugin.plugin_cfg = {"enable_session_view": False, "enable_get_message_history": False}
+    request = LLMRequest(system_prompt=[Prompt("", name="tools")])
+    await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), request)
+    assert "session_view" not in request.system_prompt[0].content
+    assert "get_message_history" not in request.system_prompt[0].content
+    assert "session_send" in request.system_prompt[0].content
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["session_view", "get_message_history"])
+@pytest.mark.parametrize("mode,sessions,allowed", [
+    ("allow_list", [OTHER], True),
+    ("allow_list", [SID], False),
+    ("allow_list", [], False),
+    ("deny_list", [OTHER], False),
+    ("deny_list", [SID], True),
+    ("deny_list", [], True),
+    ("invalid", [], False),
+    (None, [], False),
+    ([], [], False),
+    ("deny_list", None, False),
+    ("allow_list", OTHER, False),
+    ("allow_list", ["channel:123"], False),
+    ("allow_list", ["different-adapter:gm:channel:123"], False),
+])
+async def test_cross_session_read_requires_target_permission(
+    session_plugin, history, monkeypatch, tool_name, mode, sessions, allowed,
+):
+    """Both tools enforce full target routing IDs before adapter access or data queries."""
+    await archive_text(history, "target history", "target-policy", sid=OTHER)
+    session_plugin.plugin_cfg = {"cross_session_read": {
+        "session_list": [SID], "target_permission_mode": mode, "target_session_list": sessions,
+    }}
+    get_session = AsyncMock(wraps=session_plugin.ctx.session_mgr.get_session)
+    get_messages = AsyncMock(wraps=session_plugin.ctx.message_history.get_messages)
+    list_sessions = AsyncMock(wraps=session_plugin.ctx.message_history.list_sessions)
+    monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", list_sessions)
+
+    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=OTHER))
+    assert ("error" not in result) is allowed
+    if allowed:
+        assert result["session_id"] == OTHER
+        session_plugin.ctx.adapter_mgr.get_adapter.assert_called_once_with("custom-instance")
+    else:
+        assert "target permission denied" in result["error"]
+        get_session.assert_not_awaited()
+        get_messages.assert_not_awaited()
+        list_sessions.assert_not_awaited()
+        session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["session_view", "get_message_history"])
+@pytest.mark.parametrize("target", [None, SID])
+async def test_cross_session_target_restrictions_do_not_block_current_session(session_plugin, history, tool_name, target):
+    """Cross-session caller and target restrictions leave current-session reads available."""
+    await archive_text(history, "current history", "current-policy")
+    session_plugin.plugin_cfg = {"cross_session_read": {
+        "session_list": [], "target_permission_mode": "deny_list", "target_session_list": [SID],
+    }}
+    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=target))
+    assert "error" not in result
+    assert result["session_id"] == SID
+    session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["session_view", "get_message_history"])
+async def test_target_permission_cannot_override_denied_caller(session_plugin, tool_name, monkeypatch):
+    """Allowing the target does not grant permission to an unlisted calling session."""
+    session_plugin.plugin_cfg = {"cross_session_read": {
+        "session_list": [], "target_permission_mode": "allow_list", "target_session_list": [OTHER],
+    }}
+    get_session = AsyncMock()
+    get_messages = AsyncMock()
+    list_sessions = AsyncMock()
+    monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
+    monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", list_sessions)
+    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=OTHER))
+    assert "calling session" in result["error"]
+    get_session.assert_not_awaited()
+    get_messages.assert_not_awaited()
+    list_sessions.assert_not_awaited()
     session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
