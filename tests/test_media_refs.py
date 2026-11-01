@@ -551,41 +551,54 @@ async def test_native_content_skips_empty_quoted_image_and_keeps_valid_image(tmp
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["store", "resolve"])
-async def test_pixel_limit_rejects_image_before_decoding(tmp_path, monkeypatch, operation):
-    """Reject warning-sized images without decoding or losing adjacent text."""
+@pytest.mark.parametrize("failure_mode", ["warning", "warning-as-error", "error"])
+async def test_pixel_limit_rejects_image_before_decoding(tmp_path, monkeypatch, operation, failure_mode):
+    """Reject warning- and error-sized images without decoding or losing text."""
+    import warnings
+    from contextlib import nullcontext
     from copy import deepcopy
 
     from PIL.PngImagePlugin import PngImageFile
 
     monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
-    monkeypatch.setattr(media_refs.PILImage, "MAX_IMAGE_PIXELS", 10)
+    monkeypatch.setattr(media_refs.PILImage, "MAX_IMAGE_PIXELS", 4 if failure_mode == "error" else 10)
     decode = Mock(side_effect=AssertionError("Oversized pixels must not be decoded"))
     monkeypatch.setattr(PngImageFile, "load", decode)
+    expected_warning = (
+        pytest.warns(media_refs.PILImage.DecompressionBombWarning)
+        if failure_mode == "warning" else nullcontext()
+    )
 
-    if operation == "store":
-        with pytest.warns(media_refs.PILImage.DecompressionBombWarning), pytest.raises(ValueError, match="Invalid image data"):
-            await media_refs.store_session_media(Image(PNG_DATA_URL), "adapter:dm:user", "oversized")
-        assert not (tmp_path / media_refs.MEDIA_ROOT_NAME).exists()
-    else:
-        cached = tmp_path / media_refs.MEDIA_ROOT_NAME / "oversized.png"
-        cached.parent.mkdir(parents=True)
-        cached.write_bytes(PNG_BYTES)
-        messages = [{"role": "user", "content": [
-            {"type": media_refs.MEDIA_REF_TYPE, "path": "session_media/oversized.png"},
-            {"type": "text", "text": "current text"},
-        ]}]
-        original = deepcopy(messages)
+    with warnings.catch_warnings(record=True) as unexpected_warnings:
+        warnings.simplefilter(
+            "error" if failure_mode == "warning-as-error" else "always",
+            media_refs.PILImage.DecompressionBombWarning,
+        )
+        if operation == "store":
+            with expected_warning, pytest.raises(ValueError, match="Invalid image data"):
+                await media_refs.store_session_media(Image(PNG_DATA_URL), "adapter:dm:user", "oversized")
+            assert not (tmp_path / media_refs.MEDIA_ROOT_NAME).exists()
+        else:
+            cached = tmp_path / media_refs.MEDIA_ROOT_NAME / "oversized.png"
+            cached.parent.mkdir(parents=True)
+            cached.write_bytes(PNG_BYTES)
+            messages = [{"role": "user", "content": [
+                {"type": media_refs.MEDIA_REF_TYPE, "path": "session_media/oversized.png"},
+                {"type": "text", "text": "current text"},
+            ]}]
+            original = deepcopy(messages)
 
-        with pytest.warns(media_refs.PILImage.DecompressionBombWarning):
-            resolved = await media_refs.resolve_media_references(messages)
+            with expected_warning:
+                resolved = await media_refs.resolve_media_references(messages)
 
-        assert resolved[0]["content"] == [
-            {"type": "text", "text": "[image unavailable]"},
-            {"type": "text", "text": "current text"},
-        ]
-        assert messages == original
-        assert cached.read_bytes() == PNG_BYTES
+            assert resolved[0]["content"] == [
+                {"type": "text", "text": "[image unavailable]"},
+                {"type": "text", "text": "current text"},
+            ]
+            assert messages == original
+            assert cached.read_bytes() == PNG_BYTES
 
+    assert not unexpected_warnings
     decode.assert_not_called()
 
 

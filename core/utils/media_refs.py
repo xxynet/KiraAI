@@ -103,7 +103,10 @@ def _validate_image(raw_data: bytes) -> None:
         # Verify checks structure; loading also detects truncated pixel data.
         with PILImage.open(BytesIO(raw_data)) as image:
             image.load()
-    except (OSError, SyntaxError, ValueError, PILImage.DecompressionBombError) as exc:
+    except (
+        OSError, SyntaxError, ValueError,
+        PILImage.DecompressionBombError, PILImage.DecompressionBombWarning,
+    ) as exc:
         raise ValueError("Invalid image data") from exc
 
 
