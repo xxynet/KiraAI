@@ -13,7 +13,10 @@ import threading
 from collections.abc import Iterable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image as PILImage
 
 from core.agent.message import provider_message_dict
 from core.chat.message_elements import BaseMediaElement, _infer_mime_from_bytes
@@ -87,6 +90,20 @@ def _extension_for_mime(mime_type: str | None) -> str:
     return extension or ".img"
 
 
+def _validate_image(raw_data: bytes) -> None:
+    """Reject empty, malformed, or undecodable images without changing their bytes."""
+    if not raw_data:
+        raise ValueError("Image data is empty")
+    try:
+        with PILImage.open(BytesIO(raw_data)) as image:
+            image.verify()
+        # Verify checks structure; loading also detects truncated pixel data.
+        with PILImage.open(BytesIO(raw_data)) as image:
+            image.load()
+    except (OSError, SyntaxError, ValueError, PILImage.DecompressionBombError) as exc:
+        raise ValueError("Invalid image data") from exc
+
+
 async def store_session_media(
     media: BaseMediaElement,
     session_id: str,
@@ -106,6 +123,8 @@ async def store_session_media(
             raw_data = base64.b64decode(encoded_data, validate=True)
         except (binascii.Error, ValueError) as exc:
             raise ValueError("Incoming media contains invalid base64") from exc
+
+    await asyncio.to_thread(_validate_image, raw_data)
 
     # Read the mime after materializing the data so that the Content-Type
     # recorded by to_path() or the magic bytes sniffed by to_base64() apply;
@@ -174,6 +193,7 @@ async def resolve_media_reference(reference: dict) -> dict:
         raise ValueError("Media reference points outside session media or no longer exists")
 
     raw_data = await asyncio.to_thread(target.read_bytes)
+    await asyncio.to_thread(_validate_image, raw_data)
     mime_type = reference.get("mime_type") or mimetypes.guess_type(target.name)[0] or "image/jpeg"
     encoded_data = base64.b64encode(raw_data).decode("ascii")
     image_url = {"url": f"data:{mime_type};base64,{encoded_data}"}

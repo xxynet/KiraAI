@@ -2,6 +2,7 @@ import pytest
 
 from core.agent.agent_executor import AgentExecutor
 from core.utils.media_refs import MEDIA_REF_TYPE
+from tests.image_samples import PNG_BYTES
 
 
 def _image_ref(path: str = "session_media/a/b.png") -> dict:
@@ -89,7 +90,7 @@ async def test_tool_media_user_message_is_resolved_for_the_provider(tmp_path, mo
     monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
     stored = tmp_path / "session_media" / "a" / "b.png"
     stored.parent.mkdir(parents=True, exist_ok=True)
-    stored.write_bytes(b"\x89PNG\r\n\x1a\nfake-png-bytes")
+    stored.write_bytes(PNG_BYTES)
     results = [
         {
             "role": "tool",

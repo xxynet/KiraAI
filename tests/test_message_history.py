@@ -46,6 +46,7 @@ from core.utils.media_refs import (
 )
 from core.workflow.src.im.workflow import DefaultIMWorkflow
 from tests.im_workflow_helpers import make_workflow_context
+from tests.image_samples import PNG_BYTES, PNG_DATA_URL
 from tests.test_session_manager_events import build_session_manager
 from webui.routes.sessions import SessionsRoutes
 
@@ -471,7 +472,7 @@ async def test_all_media_store_only_local_relative_paths(history, tmp_path, monk
 
 @pytest.mark.anyio
 async def test_archive_survives_session_media_cleanup(history, tmp_path):
-    reference = await store_session_media(Image("data:image/png;base64,aGVsbG8="), SID, "platform-id")
+    reference = await store_session_media(Image(PNG_DATA_URL), SID, "platform-id")
     source = tmp_path / reference["path"]
     message = incoming()
     message.chain = MessageChain([Image(str(source))])
@@ -482,7 +483,7 @@ async def test_archive_survives_session_media_cleanup(history, tmp_path):
     cleanup_session_media(SID, [])
 
     assert not source.exists()
-    assert archived.read_bytes() == b"hello"
+    assert archived.read_bytes() == PNG_BYTES
     assert archived.is_relative_to(tmp_path / "session_media")
 
 
