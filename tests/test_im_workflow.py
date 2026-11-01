@@ -23,6 +23,7 @@ from core.provider import LLMResponse
 from core.tag import RootTagAction
 from core.workflow.src.im.workflow import DefaultIMWorkflow
 from tests.im_workflow_helpers import make_workflow_context
+from tests.image_samples import PNG_DATA_URL
 
 
 def batch(user="user"):
@@ -878,7 +879,7 @@ async def test_workflow_protects_native_and_tool_media_until_finalization(
     services = instance.im_workflow.ctx
     event = batch()
     sid = event.sid
-    image = Image("data:image/png;base64,aGVsbG8=")
+    image = Image(PNG_DATA_URL)
     references = []
     services.session_manager.get_effective_capabilities = AsyncMock(return_value={
         "image_recognition": {"mode": "native"},

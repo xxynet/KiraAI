@@ -211,6 +211,9 @@ class BaseMediaElement(BaseMessageElement, ABC):
         self._mime_from_caller = bool(mime)
 
     def check_file_type(self) -> Literal["url", "path", "base64", "data_url"]:
+        if not isinstance(self.file, str) or not self.file.strip():
+            raise ValueError("Media source is empty")
+
         # 1 http(s) URL
         if self.file.startswith(("http://", "https://")):
             return "url"
@@ -231,6 +234,8 @@ class BaseMediaElement(BaseMessageElement, ABC):
         # 5 base64
         if self.file.startswith("base64://"):
             self.file = self.file.removeprefix("base64://")
+            if not self.file.strip():
+                raise ValueError("Media source is empty")
             return "base64"
 
         if check_base64(self.file):

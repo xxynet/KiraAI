@@ -479,3 +479,13 @@ def test_video_repr_with_name():
 def test_element_dunder_repr():
     t = Text("hello")
     assert repr(t) == "Text(hello)"
+
+
+@pytest.mark.parametrize("source", ["", " ", "\t\n", "base64://", "base64:// "])
+@pytest.mark.parametrize("media_type", [Image, Sticker, File])
+def test_media_rejects_empty_source(source, media_type):
+    with pytest.raises(ValueError, match="Media source is empty"):
+        if media_type is Sticker:
+            Sticker(sticker=source)
+        else:
+            media_type(source)

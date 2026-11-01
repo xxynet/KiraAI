@@ -314,7 +314,9 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 emoji_desc = self._metadata.emojis.get(emoji_id)
                 message_content.append(Emoji(emoji_id, emoji_desc))
             elif ele.get("type") == "image":
-                img_url = ele.get("data", {}).get("url", "")
+                img_url = (ele.get("data") or {}).get("url", "")
+                if not isinstance(img_url, str) or not img_url.strip():
+                    continue
 
                 summary = ele.get("data", {}).get("summary", "")
                 sub_type = ele.get("data", {}).get("sub_type", 0)

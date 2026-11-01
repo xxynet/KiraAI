@@ -10,6 +10,7 @@ import pytest
 import core.chat.session_manager as session_manager_module
 from core.chat.session_manager import SessionManager
 from core.chat.session_media_manager import SessionMediaManager
+from tests.image_samples import PNG_BYTES, PNG_DATA_URL
 
 
 class RecordingEventBus:
@@ -294,7 +295,7 @@ async def test_previous_turn_cleanup_preserves_uncommitted_image(
 
     monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
     sid = "adapter:dm:user"
-    image = Image("data:image/png;base64,aGVsbG8=")
+    image = Image(PNG_DATA_URL)
     old = await media_refs.store_session_media(image, sid, "old")
     manager = await build_session_manager(
         tmp_path, [[{"role": "user", "content": [old]}]],
@@ -318,7 +319,7 @@ async def test_previous_turn_cleanup_preserves_uncommitted_image(
         await handler(manager.event_bus.events[-1])
 
         assert not (tmp_path / old["path"]).exists()
-        assert (tmp_path / pending["path"]).read_bytes() == b"hello"
+        assert (tmp_path / pending["path"]).read_bytes() == PNG_BYTES
         await manager.update_memory(sid, [{"role": "user", "content": [pending]}])
         await wait_for_event_tasks(manager)
         current = await manager.get_session(sid)
@@ -338,7 +339,7 @@ async def test_delayed_cleanup_preserves_reference_restored_to_current_memory(
     monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
     sid = "adapter:dm:user"
     reference = await media_refs.store_session_media(
-        Image("data:image/png;base64,aGVsbG8="), sid, "restored",
+        Image(PNG_DATA_URL), sid, "restored",
     )
     memory = [[{"role": "user", "content": [reference]}]]
     manager = await build_session_manager(tmp_path, memory, db=session_db)
@@ -350,5 +351,5 @@ async def test_delayed_cleanup_preserves_reference_restored_to_current_memory(
 
     await media._on_memory_written(stale)
 
-    assert (tmp_path / reference["path"]).read_bytes() == b"hello"
+    assert (tmp_path / reference["path"]).read_bytes() == PNG_BYTES
     await wait_for_event_tasks(manager)

@@ -828,3 +828,31 @@ async def test_native_message_chain_propagates_unexpected_emoji_errors(error_typ
     emoji.emoji_id = FailingEmojiId()
     with pytest.raises(error_type):
         QQMessageChain([emoji]).to_list()
+
+
+@pytest.mark.parametrize("data", [{}, {"url": ""}, {"url": " \t"}, {"url": None}, None])
+@pytest.mark.parametrize("quoted", [False, True])
+async def test_missing_image_url_keeps_text_and_other_images(data, quoted):
+    adapter = make_adapter()
+    segments = [
+        {"type": "text", "data": {"text": "before"}},
+        {"type": "image", "data": data},
+        {"type": "image", "data": {"url": "https://example.com/valid.png"}},
+        {"type": "text", "data": {"text": "after"}},
+    ]
+    if quoted:
+        adapter.bot = SimpleNamespace(get_msg=AsyncMock(return_value={
+            "data": {"message": segments, "time": 0, "sender": {"nickname": "quoted user"}},
+        }))
+        chain = await adapter.im.process_incoming_message({
+            "message": [{"type": "reply", "data": {"id": "quoted-id"}}],
+        })
+        assert isinstance(chain[0], Reply)
+        elements = list(chain[0].chain)[1:]
+    else:
+        elements = list(await adapter.im.process_incoming_message({"message": segments}))
+
+    assert len(elements) == 3
+    assert isinstance(elements[0], Text) and elements[0].text == "before"
+    assert isinstance(elements[1], Image) and elements[1].file == "https://example.com/valid.png"
+    assert isinstance(elements[2], Text) and elements[2].text == "after"
