@@ -547,3 +547,57 @@ async def test_native_content_skips_empty_quoted_image_and_keeps_valid_image(tmp
     cached_images = list((tmp_path / media_refs.MEDIA_ROOT_NAME).rglob("*.png"))
     assert len(cached_images) == 1
     assert cached_images[0].read_bytes() == PNG_BYTES
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["store", "resolve"])
+async def test_pixel_limit_rejects_image_before_decoding(tmp_path, monkeypatch, operation):
+    """Reject warning-sized images without decoding or losing adjacent text."""
+    from copy import deepcopy
+
+    from PIL.PngImagePlugin import PngImageFile
+
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(media_refs.PILImage, "MAX_IMAGE_PIXELS", 10)
+    decode = Mock(side_effect=AssertionError("Oversized pixels must not be decoded"))
+    monkeypatch.setattr(PngImageFile, "load", decode)
+
+    if operation == "store":
+        with pytest.warns(media_refs.PILImage.DecompressionBombWarning), pytest.raises(ValueError, match="Invalid image data"):
+            await media_refs.store_session_media(Image(PNG_DATA_URL), "adapter:dm:user", "oversized")
+        assert not (tmp_path / media_refs.MEDIA_ROOT_NAME).exists()
+    else:
+        cached = tmp_path / media_refs.MEDIA_ROOT_NAME / "oversized.png"
+        cached.parent.mkdir(parents=True)
+        cached.write_bytes(PNG_BYTES)
+        messages = [{"role": "user", "content": [
+            {"type": media_refs.MEDIA_REF_TYPE, "path": "session_media/oversized.png"},
+            {"type": "text", "text": "current text"},
+        ]}]
+        original = deepcopy(messages)
+
+        with pytest.warns(media_refs.PILImage.DecompressionBombWarning):
+            resolved = await media_refs.resolve_media_references(messages)
+
+        assert resolved[0]["content"] == [
+            {"type": "text", "text": "[image unavailable]"},
+            {"type": "text", "text": "current text"},
+        ]
+        assert messages == original
+        assert cached.read_bytes() == PNG_BYTES
+
+    decode.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pixel_limit", [16, 17, None])
+async def test_pixel_limit_allows_boundary_and_disabled_limit(tmp_path, monkeypatch, pixel_limit):
+    """Preserve images at or below the threshold and when the limit is unset."""
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(media_refs.PILImage, "MAX_IMAGE_PIXELS", pixel_limit)
+
+    reference = await media_refs.store_session_media(Image(PNG_DATA_URL), "adapter:dm:user", "valid")
+    resolved = await media_refs.resolve_media_reference(reference)
+
+    assert (tmp_path / reference["path"]).read_bytes() == PNG_BYTES
+    assert resolved["image_url"]["url"] == PNG_DATA_URL

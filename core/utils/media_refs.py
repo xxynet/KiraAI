@@ -91,11 +91,14 @@ def _extension_for_mime(mime_type: str | None) -> str:
 
 
 def _validate_image(raw_data: bytes) -> None:
-    """Reject empty, malformed, or undecodable images without changing their bytes."""
+    """Reject empty, oversized, or invalid images without changing their bytes."""
     if not raw_data:
         raise ValueError("Image data is empty")
     try:
         with PILImage.open(BytesIO(raw_data)) as image:
+            max_pixels = PILImage.MAX_IMAGE_PIXELS
+            if max_pixels is not None and image.width * image.height > max_pixels:
+                raise ValueError("Image exceeds the pixel limit")
             image.verify()
         # Verify checks structure; loading also detects truncated pixel data.
         with PILImage.open(BytesIO(raw_data)) as image:
