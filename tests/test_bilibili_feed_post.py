@@ -157,14 +157,15 @@ async def test_account_credentials_cannot_be_omitted(monkeypatch, sdk_client):
 
 
 @pytest.mark.asyncio
-async def test_client_sanitizes_failure_and_preserves_cancellation(monkeypatch, sdk_client):
+async def test_client_preserves_failure_details_and_cancellation(monkeypatch, sdk_client):
     client = make_adapter(sessdata="session", bili_jct="csrf").get_client()
-    send = AsyncMock(side_effect=RuntimeError("private-cookie-and-post-body"))
+    error = RuntimeError("private-cookie-and-post-body")
+    send = AsyncMock(side_effect=error)
     monkeypatch.setattr(dynamic, "send_dynamic", send)
     draft = dynamic.BuildDynamic.empty().add_plain_text("text")
-    with pytest.raises(RuntimeError, match="^Bilibili dynamic publishing failed$") as caught:
+    with pytest.raises(RuntimeError, match="private-cookie-and-post-body") as caught:
         await client.send_dynamic(draft)
-    assert caught.value.__suppress_context__
+    assert caught.value is error
     send.side_effect = asyncio.CancelledError()
     with pytest.raises(asyncio.CancelledError):
         await client.send_dynamic(draft)
@@ -325,3 +326,25 @@ async def test_cancel_during_file_preparation_waits_for_cleanup(monkeypatch, sdk
         await task
     assert paths and all(not path.parent.exists() for path in paths)
     upload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_image_load_error_keeps_original_cause_and_message(monkeypatch):
+    error = OSError("image response failed with diagnostic details")
+    monkeypatch.setattr(client_module, "get_file_content", AsyncMock(side_effect=error))
+    with pytest.raises(ValueError, match="image response failed with diagnostic details") as caught:
+        await client_module.load_picture(Image("https://image.test/failed.png"))
+    assert caught.value.__cause__ is error
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [asyncio.TimeoutError, TimeoutError])
+async def test_client_timeout_preserves_original_reason_and_cause(monkeypatch, sdk_client, error_type):
+    client = make_adapter(sessdata="session", bili_jct="csrf").get_client()
+    error = error_type("original upload timeout")
+    send = AsyncMock(side_effect=error)
+    monkeypatch.setattr(dynamic, "send_dynamic", send)
+    with pytest.raises(TimeoutError, match="original upload timeout") as caught:
+        await client.send_dynamic(dynamic.BuildDynamic.empty().add_plain_text("text"))
+    assert caught.value.__cause__ is error
+    send.assert_awaited_once()

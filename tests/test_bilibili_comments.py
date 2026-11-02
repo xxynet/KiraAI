@@ -155,8 +155,8 @@ async def test_comment_image_upload_cleanup_on_failure_cancel_and_timeout(monkey
     image = base64.b64encode(image_bytes()).decode()
     with pytest.raises(error) as caught:
         await adapter.feed.send_comment(MessageChain([Image(image), Image(image)]), FeedRef("video", "42"))
-    if mode != "cancel":
-        assert "private" not in str(caught.value)
+    if mode == "failure":
+        assert str(caught.value) == "private-post-and-cookie"
     assert paths and all(not path.parent.exists() for path in paths)
 
 

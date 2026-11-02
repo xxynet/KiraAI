@@ -46,8 +46,8 @@ async def load_picture(element: Image) -> Picture:
             encoded = await element.to_base64()
             data = await asyncio.to_thread(base64.b64decode, encoded, validate=True)
         return await asyncio.to_thread(_picture_from_bytes, data)
-    except Exception:
-        raise ValueError("Bilibili image could not be loaded") from None
+    except Exception as exc:
+        raise ValueError(f"Bilibili image could not be loaded: {type(exc).__name__}: {exc}") from exc
 
 
 class _BiliBiliPicture(Picture):
@@ -114,10 +114,8 @@ class BiliBiliClient:
         try:
             get_bilibili_client()
             return await asyncio.wait_for(call(), timeout=self.timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError(f"Bilibili {operation} timed out") from None
-        except Exception:
-            raise RuntimeError(f"Bilibili {operation} failed") from None
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            raise TimeoutError(f"Bilibili {operation} timed out: {exc}") from exc
 
     async def get_recommended_videos(self) -> dict[str, Any]:
         return await self._request(
