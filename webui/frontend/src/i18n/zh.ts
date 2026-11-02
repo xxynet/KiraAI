@@ -907,6 +907,7 @@ export default {
       title: '历史消息',
       empty: '此会话暂无保存的消息。',
       loading: '加载中…',
+      loading_messages: '正在加载会话消息',
       load_failed: '加载消息记录失败。',
       retry: '重试',
       load_more: '加载更早的消息',

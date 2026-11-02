@@ -27,13 +27,13 @@
       <button type="button" class="shrink-0 text-sm text-blue-600 dark:text-blue-300 disabled:opacity-50" :disabled="activeTab === 'history' ? loading : contextLoading" @click="activeTab === 'history' ? loadMessages(true) : loadContext()">{{ $t('common.refresh') }}</button>
     </div>
     <div v-show="activeTab === 'history'" :id="panelId('history')" role="tabpanel" :aria-labelledby="tabId('history')" tabindex="0" ref="messageList" class="px-6 pb-6 min-h-0 overflow-y-auto space-y-4 [overflow-anchor:none]" :aria-busy="loading">
-      <div v-if="loading || error || nextCursor" class="text-center text-sm">
+      <SessionHistorySkeleton v-if="loading" :count="messages.length ? 1 : 4" />
+      <div v-else-if="error || nextCursor" class="text-center text-sm">
         <div v-if="error" class="text-red-600 dark:text-red-400" role="alert">
           <p>{{ $t('sessions.history.load_failed') }}</p>
           <button type="button" class="mt-2 text-blue-600 dark:text-blue-300" @click="loadMessages(messages.length === 0)">{{ $t('sessions.history.retry') }}</button>
         </div>
-        <button v-else-if="nextCursor" type="button" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-blue-600 dark:text-blue-300 disabled:opacity-50" :disabled="loading" @click="loadMessages(false)">{{ $t(loading ? 'sessions.history.loading' : 'sessions.history.load_more') }}</button>
-        <p v-else-if="loading" class="py-4 text-theme-subtle" role="status">{{ $t('sessions.history.loading') }}</p>
+        <button v-else-if="nextCursor" type="button" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-blue-600 dark:text-blue-300" @click="loadMessages(false)">{{ $t('sessions.history.load_more') }}</button>
       </div>
       <p v-if="!loading && !error && !messages.length" class="py-10 text-center text-theme-subtle">{{ $t('sessions.history.empty') }}</p>
       <article v-for="message in messages" :key="message.id" class="flex" :class="message.direction === 'outgoing' ? 'justify-end' : 'justify-start'">
@@ -85,7 +85,7 @@
       tabindex="0"
       class="px-6 pb-6 min-h-0 overflow-y-auto space-y-4"
     >
-      <p v-if="contextLoading" class="py-4 text-center text-sm text-theme-subtle" role="status">{{ $t('sessions.history.loading') }}</p>
+      <SessionHistorySkeleton v-if="contextLoading" />
       <div v-else-if="contextError" class="text-center text-sm text-red-600 dark:text-red-400" role="alert">
         <p>{{ $t('sessions.context.load_failed') }}</p>
         <button type="button" class="mt-2 text-blue-600 dark:text-blue-300" @click="loadContext()">{{ $t('sessions.history.retry') }}</button>
@@ -125,6 +125,7 @@ import { useI18n } from 'vue-i18n'
 import { getSession, getSessionMessages } from '@/api/session'
 import { IconClose } from '@/components/icons'
 import MessageChain from './MessageChain.vue'
+import SessionHistorySkeleton from './SessionHistorySkeleton.vue'
 import type { MessageRecord, SessionItem } from '@/types'
 
 const props = defineProps<{ session: SessionItem }>()

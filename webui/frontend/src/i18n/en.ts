@@ -907,6 +907,7 @@ export default {
       title: 'Message History',
       empty: 'No saved messages in this session.',
       loading: 'Loading…',
+      loading_messages: 'Loading session messages',
       load_failed: 'Failed to load message history.',
       retry: 'Retry',
       load_more: 'Load older messages',
