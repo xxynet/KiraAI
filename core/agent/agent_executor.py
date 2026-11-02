@@ -176,7 +176,7 @@ class AgentExecutor:
                     logger.error(f"[{sid}] Model {model.model.model_name} failed: {type(e).__name__}: {e}")
                     if model_idx < len(model_group) - 1:
                         next_model = model_group[model_idx + 1]
-                        llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_name}")
+                        llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_name} ({next_model.model.provider_name})")
                         continue
                     else:
                         err = (
