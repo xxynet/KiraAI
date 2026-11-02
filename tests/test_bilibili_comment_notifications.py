@@ -212,14 +212,15 @@ async def test_notification_sdk_calls_use_account_credentials_and_pagination(mon
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["reply", "at"])
-async def test_notification_requests_redact_failures_and_timeout(monkeypatch, sdk_client, kind):
+async def test_notification_requests_preserve_failures_and_timeout(monkeypatch, sdk_client, kind):
     adapter = make_adapter()
     sdk_method = "get_replies" if kind == "reply" else "get_at"
     fetch = adapter.get_client().get_reply_notifications if kind == "reply" else adapter.get_client().get_at_notifications
-    monkeypatch.setattr(client_module.session, sdk_method, AsyncMock(side_effect=RuntimeError("private-cookie")))
+    error = RuntimeError("private-cookie")
+    monkeypatch.setattr(client_module.session, sdk_method, AsyncMock(side_effect=error))
     with pytest.raises(RuntimeError) as caught:
         await fetch()
-    assert "private" not in str(caught.value)
+    assert caught.value is error
     adapter.get_client().timeout = 0.01
 
     async def pending(*args, **kwargs):

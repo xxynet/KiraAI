@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from bilibili_api.exceptions import ResponseCodeException
 
 from core.adapter.adapter_info import AdapterInfo
 from core.adapter.base import BaseAdapter
@@ -107,9 +108,13 @@ async def test_comment_reply_maps_explicit_target_root_parent_and_credentials(mo
         text="reply", oid=170001, type_=feed_module.comment.CommentResourceType.VIDEO,
         root=123, parent=234, credential=adapter.credential,
     )
-    send.side_effect = RuntimeError("test-private-comment-and-cookie")
-    with pytest.raises(RuntimeError, match="^Bilibili comment reply failed$"):
+    raw = {"code": -400, "message": "comment rejected", "data": {"reason": "diagnostic"}}
+    error = ResponseCodeException(-400, "comment rejected", raw)
+    send.side_effect = error
+    with pytest.raises(ResponseCodeException) as caught:
         await adapter.feed.send_comment(MessageChain([Text("reply")]), target, root=123)
+    assert caught.value is error
+    assert caught.value.code == -400 and caught.value.raw is raw
 
 def reply(rpid, uid, timestamp, text, replies=None):
     return {
