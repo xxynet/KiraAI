@@ -109,9 +109,9 @@ def _get_or_generate_access_token() -> str:
     """
     config = _load_webui_config()
     if "access_token" not in config or not config["access_token"] or config["access_token"] == "disabled":
+        logger.warning("access_token was missing or reserved, generating a new one")
         config["access_token"] = _generate_strong_password()
         _save_webui_config(config)
-        logger.warning("access_token was missing or reserved, regenerated a new one")
     return config["access_token"]
 
 
