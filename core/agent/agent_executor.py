@@ -9,13 +9,14 @@ from core.chat.message_utils import KiraExceptionEvent
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
 from core.provider import LLMModelClient, LLMRequest, LLMResponse
+from core.utils.tool_utils import BaseTool
 
 from .base_agent_executor import (
     AgentStepResult,
     BaseAgentExecutionContext,
     BaseAgentExecutor,
 )
-from .config import ToolExecutionConfig
+from .tool import ToolResult
 
 if TYPE_CHECKING:
     from core.chat.message_utils import KiraMessageBatchEvent
@@ -76,9 +77,13 @@ class AgentExecutor(BaseAgentExecutor[AgentExecutionContext]):
             except Exception:
                 logger.error(traceback.format_exc())
 
-    async def _execute_tools(
-        self, ctx: AgentExecutionContext, response: LLMResponse, config: ToolExecutionConfig,
-    ) -> None:
-        await self.tool_manager.execute_tool(
-            ctx.event, response, tool_set=self.tool_set, config=config,
-        )
+    async def _invoke_tool(self, ctx: AgentExecutionContext, tool: BaseTool, args: dict) -> object:
+        return await tool.execute(ctx.event, **args)
+
+    async def _on_tool_result(self, ctx: AgentExecutionContext, result: ToolResult) -> bool:
+        for handler in event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT):
+            await handler.exec_handler(ctx.event, result)
+            if ctx.event.is_stopped:
+                logger.info("Event stopped while ON_TOOL_RESULT stage")
+                return False
+        return True

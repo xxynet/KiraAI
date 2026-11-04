@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Generic, Literal, TypeVar
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from core.agent.message import OpenAIMessage
-from core.agent.tool import ToolSet
+from core.agent.tool import ToolResult, ToolSet
 from core.logging_manager import get_logger
 from core.prompt_manager import Prompt
 from core.provider import (
@@ -18,9 +19,10 @@ from core.provider import (
     ProviderAPIError,
 )
 from core.utils.media_refs import MEDIA_REF_TYPE
+from core.utils.tool_utils import BaseTool
 
 from .config import AgentExecutionConfig, ToolExecutionConfig
-from .func_tool_manager import FuncToolManager
+from .tool_executor import ToolExecutor
 
 logger = get_logger("agent_executor", "cyan")
 llm_logger = get_logger("llm", "purple")
@@ -61,12 +63,11 @@ class BaseAgentExecutor(Generic[ContextT]):
 
     def __init__(
         self,
-        tool_manager: FuncToolManager,
         tool_set: ToolSet | None = None,
         *,
         config: AgentExecutionConfig | None = None,
     ):
-        self.tool_manager = tool_manager
+        self.tool_executor = ToolExecutor()
         self.tool_set = tool_set
         self.config = config if config is not None else AgentExecutionConfig()
 
@@ -95,7 +96,18 @@ class BaseAgentExecutor(Generic[ContextT]):
         self, ctx: ContextT, response: LLMResponse, config: ToolExecutionConfig,
     ) -> None:
         tool_set = self.tool_set if self.tool_set is not None else ctx.request.tool_set
-        await self.tool_manager.execute_tools(response, tool_set=tool_set, config=config)
+        await self.tool_executor.execute_tools(
+            response, tool_set=tool_set, config=config,
+            invoke_tool=partial(self._invoke_tool, ctx),
+            on_tool_result=partial(self._on_tool_result, ctx),
+        )
+
+    async def _invoke_tool(self, ctx: ContextT, tool: BaseTool, args: dict) -> object:
+        return await tool.execute(**args)
+
+    async def _on_tool_result(self, ctx: ContextT, result: ToolResult) -> bool:
+        """Return False to stop the batch before recording this tool result."""
+        return True
 
     @staticmethod
     def _build_tool_messages(tool_results: list[dict]) -> list[OpenAIMessage]:

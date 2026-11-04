@@ -37,7 +37,6 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
             max_tool_loop = 2
 
         agent_executor = AgentExecutor(
-            services.tool_manager,
             request.tool_set,
             config=AgentExecutionConfig(
                 max_steps=max(0, max_tool_loop),

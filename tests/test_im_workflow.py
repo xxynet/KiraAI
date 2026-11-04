@@ -151,10 +151,10 @@ async def test_tool_loop_config_fallback_preserves_execution_and_finalization(
                      "function": {"name": "check", "arguments": "{}"}}],
     )
 
-    async def execute_tool(event, response, **kwargs):
+    async def execute_tools(self, response, **kwargs):
         response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
 
-    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    monkeypatch.setattr("core.agent.tool_executor.ToolExecutor.execute_tools", execute_tools)
     await instance.im_workflow.handle_batch_event(batch())
 
     assert model.chat.await_count == expected_steps
@@ -698,7 +698,7 @@ async def test_stopped_response_does_not_overwrite_previous_assistant(processor,
         LLMResponse("stopped reply"),
     ]
 
-    async def execute_tool(event, response, **kwargs):
+    async def execute_tools(self, response, **kwargs):
         response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
 
     async def stop_second_response(event, response):
@@ -709,7 +709,7 @@ async def test_stopped_response_does_not_overwrite_previous_assistant(processor,
         [SimpleNamespace(exec_handler=stop_second_response)]
         if event_type == EventType.ON_LLM_RESPONSE else []
     ))
-    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    monkeypatch.setattr("core.agent.tool_executor.ToolExecutor.execute_tools", execute_tools)
     await instance.im_workflow.handle_batch_event(batch())
 
     memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
@@ -956,10 +956,10 @@ async def test_provider_error_stays_internal(processor, monkeypatch, error_type,
             "function": {"name": "check", "arguments": "{}"},
         }]), error]
 
-        async def execute_tool(event, response, **kwargs):
+        async def execute_tools(self, response, **kwargs):
             response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
 
-        instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+        monkeypatch.setattr("core.agent.tool_executor.ToolExecutor.execute_tools", execute_tools)
     else:
         model.chat.side_effect = error
     response_handler = AsyncMock(side_effect=plugin.on_llm_resp)
@@ -1069,8 +1069,8 @@ async def test_error_status_response_is_context_only(processor, monkeypatch, wit
     }] if with_tool_calls else [])
     model.chat.side_effect = None
     model.chat.return_value = response
-    execute_tool = AsyncMock()
-    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    execute_tools = AsyncMock()
+    monkeypatch.setattr("core.agent.tool_executor.ToolExecutor.execute_tools", execute_tools)
     response_hook, step_hook, final_hook = AsyncMock(), AsyncMock(), AsyncMock()
     callbacks = {
         EventType.ON_LLM_RESPONSE: response_hook,
@@ -1084,7 +1084,7 @@ async def test_error_status_response_is_context_only(processor, monkeypatch, wit
     await instance.im_workflow.handle_batch_event(batch())
 
     model.chat.assert_awaited_once()
-    execute_tool.assert_not_awaited()
+    execute_tools.assert_not_awaited()
     response_hook.assert_awaited_once()
     assert response_hook.await_args.args[1] is response
     assert response_hook.await_args.args[1].status == "error"
@@ -1128,9 +1128,12 @@ async def test_builtin_xml_repair_respects_response_status(status):
 
 
 @pytest.mark.anyio
-async def test_tool_config_is_fixed_for_one_agent_loop_and_refreshes_for_the_next(processor):
+async def test_tool_config_is_fixed_for_one_agent_loop_and_refreshes_for_the_next(processor, monkeypatch):
+    from unittest.mock import create_autospec
+
     from core.agent.config import ToolExecutionConfig
     from core.agent.func_tool_manager import FuncToolManager
+    from core.agent.tool_executor import ToolExecutor
 
     instance, model = processor
     services = instance.im_workflow.ctx
@@ -1146,7 +1149,8 @@ async def test_tool_config_is_fixed_for_one_agent_loop_and_refreshes_for_the_nex
     defaults = manager.config
     probe = AsyncMock(return_value="x" * 100)
     manager.register_tool("probe", "", {}, probe)
-    manager.execute_tool = AsyncMock(wraps=manager.execute_tool)
+    execute_tools = create_autospec(ToolExecutor.execute_tools, side_effect=ToolExecutor.execute_tools)
+    monkeypatch.setattr(ToolExecutor, "execute_tools", execute_tools)
     responses = []
 
     async def chat(request):
@@ -1174,7 +1178,7 @@ async def test_tool_config_is_fixed_for_one_agent_loop_and_refreshes_for_the_nex
     for response in responses[:2]:
         assert len(response.tool_results) == 2
         assert all(len(result["content"].encode()) <= 16 for result in response.tool_results)
-    configs = [call.kwargs["config"] for call in manager.execute_tool.await_args_list]
+    configs = [call.kwargs["config"] for call in execute_tools.await_args_list]
     assert configs == [ToolExecutionConfig(max_tool_calls_per_step=2, max_tool_output_tokens=4)] * 2
     assert configs[0] is configs[1]
     assert manager.config is defaults
@@ -1186,7 +1190,7 @@ async def test_tool_config_is_fixed_for_one_agent_loop_and_refreshes_for_the_nex
     for response in responses[3:5]:
         assert response.tool_results[0]["content"] == "x" * 100
         assert "Tool call limit exceeded" in response.tool_results[1]["content"]
-    configs = [call.kwargs["config"] for call in manager.execute_tool.await_args_list]
+    configs = [call.kwargs["config"] for call in execute_tools.await_args_list]
     assert configs[2:] == [ToolExecutionConfig(
         max_tool_calls_per_step=1, tool_call_timeout=None, max_tool_output_tokens=0,
     )] * 2

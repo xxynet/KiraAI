@@ -89,13 +89,30 @@ def no_event_hooks(monkeypatch):
     return hooks
 
 
+def test_plugin_agent_factory_uses_explicit_tools_without_main_manager():
+    class Context:
+        @property
+        def tool_mgr(self):
+            raise AssertionError("Independent agents must not access the main agent tool manager")
+
+    tools = ToolSet([ProbeTool()])
+    config = AgentExecutionConfig(max_steps=2)
+    executor = PluginContext.create_agent_executor(Context(), tools, config=config)
+
+    assert executor.tool_set is tools
+    assert executor.config is config
+
+
 @pytest.mark.anyio
 async def test_plugin_agent_runs_tools_and_fallback_without_event(no_event_hooks):
-    manager = FuncToolManager()
+    manager = FuncToolManager(ToolExecutionConfig(max_tool_calls_per_step=0))
+    im_tool = AsyncMock(return_value="must not run")
+    manager.register_tool("probe", "", {}, im_tool)
+    manager.execute_tools = AsyncMock(side_effect=AssertionError("Main agent execution must not be used"))
     plugin_ctx = SimpleNamespace(tool_mgr=manager)
     tools = ToolSet([ProbeTool()])
     config = AgentExecutionConfig(max_steps=2)
-    executor = PluginContext.create_agent_executor(plugin_ctx, config=config)
+    executor = PluginContext.create_agent_executor(plugin_ctx, tools, config=config)
     primary = _model(ProviderAPIError("primary offline"), ProviderAPIError("primary offline"))
     fallback = _model(_tool_response(), LLMResponse("complete"))
     context = BaseAgentExecutionContext(
@@ -118,7 +135,10 @@ async def test_plugin_agent_runs_tools_and_fallback_without_event(no_event_hooks
                for message in context.new_messages)
     assert "final model call for this run" in context.request.messages[-2].content
     assert "<msg/>" not in context.request.messages[-2].content
-    assert manager.config == ToolExecutionConfig()
+    assert manager.config == ToolExecutionConfig(max_tool_calls_per_step=0)
+    assert "probe" in manager.tool_set
+    manager.execute_tools.assert_not_awaited()
+    im_tool.assert_not_awaited()
     no_event_hooks.assert_not_called()
 
 
@@ -145,7 +165,7 @@ async def test_independent_agent_reports_provider_failure_without_im_exception_h
     model = _model(ProviderAPIError("provider unavailable"))
     context = BaseAgentExecutionContext(request=LLMRequest(), model_group=[model])
 
-    steps = [step async for step in BaseAgentExecutor(FuncToolManager()).run(context)]
+    steps = [step async for step in BaseAgentExecutor().run(context)]
 
     assert len(steps) == 1
     assert steps[0].state == "error"
@@ -161,7 +181,7 @@ async def test_independent_agent_propagates_programming_errors_and_cancellation(
     context = BaseAgentExecutionContext(request=LLMRequest(), model_group=[_model(error)])
 
     with pytest.raises(type(error)):
-        _ = [step async for step in BaseAgentExecutor(FuncToolManager()).run(context)]
+        _ = [step async for step in BaseAgentExecutor().run(context)]
 
     assert context.new_messages == []
     no_event_hooks.assert_not_called()
@@ -173,14 +193,13 @@ async def test_independent_tools_obey_limits_without_event(no_event_hooks):
         async def execute(self, *, value):
             await asyncio.Event().wait()
 
-    manager = FuncToolManager()
     response = _tool_response()
     response.tool_calls += _tool_response(call_id="call-2").tool_calls
     context = BaseAgentExecutionContext(request=LLMRequest(), model_group=[_model(response)])
     config = AgentExecutionConfig(max_steps=1, tool_config=ToolExecutionConfig(
         max_tool_calls_per_step=1, tool_call_timeout=0.01, max_tool_output_tokens=32,
     ))
-    executor = BaseAgentExecutor(manager, ToolSet([SlowTool()]), config=config)
+    executor = BaseAgentExecutor(ToolSet([SlowTool()]), config=config)
 
     steps = [step async for step in executor.run(context)]
 
@@ -224,7 +243,7 @@ async def test_parent_im_tool_can_run_child_agent_with_separate_history(monkeypa
     parent_tools = ToolSet([DelegateTool()])
     parent_model = _model(_tool_response(name="delegate"), LLMResponse("parent complete"))
     parent_context = AgentExecutionContext(event, LLMRequest(tool_set=parent_tools), [], [parent_model])
-    parent = AgentExecutor(manager, parent_tools, config=AgentExecutionConfig(max_steps=2))
+    parent = AgentExecutor(parent_tools, config=AgentExecutionConfig(max_steps=2))
 
     steps = [step async for step in parent.run(parent_context)]
 
@@ -258,7 +277,7 @@ async def test_independent_runs_share_executor_without_sharing_history(no_event_
     contexts = [BaseAgentExecutionContext(
         request=LLMRequest(messages=[{"role": "user", "content": task}]), model_group=[model],
     ) for task in ("task A", "task B")]
-    executor = BaseAgentExecutor(FuncToolManager(), config=AgentExecutionConfig(max_steps=1))
+    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=1))
 
     async def run(context):
         return [step async for step in executor.run(context)]
@@ -270,3 +289,41 @@ async def test_independent_runs_share_executor_without_sharing_history(no_event_
     assert contexts[0].new_messages is not contexts[1].new_messages
     assert [context.new_messages[0].content for context in contexts] == ["task A", "task B"]
     no_event_hooks.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_im_tool_hook_stops_batch_and_keeps_only_answered_calls(monkeypatch):
+    event = SimpleNamespace(sid="test:dm:parent", is_stopped=False)
+    calls = []
+    results = []
+
+    class EventTool(ProbeTool):
+        async def execute(self, current_event, *, value):
+            assert current_event is event
+            calls.append(value)
+            return value
+
+    async def on_result(current_event, result):
+        assert current_event is event
+        results.append(result.text)
+        if len(results) == 2:
+            current_event.is_stopped = True
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=on_result)] if event_type == EventType.ON_TOOL_RESULT else []
+    ))
+    response = _tool_response(arguments='{"value": "first"}')
+    response.tool_calls += _tool_response(arguments='{"value": "second"}', call_id="call-2").tool_calls
+    response.tool_calls += _tool_response(arguments='{"value": "third"}', call_id="call-3").tool_calls
+    tools = ToolSet([EventTool()])
+    context = AgentExecutionContext(event, LLMRequest(tool_set=tools), [], [_model(response)])
+    executor = AgentExecutor(tools, config=AgentExecutionConfig(max_steps=1))
+
+    steps = [step async for step in executor.run(context)]
+
+    assert event.is_stopped
+    assert calls == results == ["first", "second"]
+    assert [result["tool_call_id"] for result in response.tool_results] == ["call-1"]
+    assert [call["id"] for call in steps[0].assistant_message.tool_calls] == ["call-1"]
+    assert [message.role for message in context.new_messages] == ["assistant", "tool"]
+    assert context.new_messages[1].content == "first"

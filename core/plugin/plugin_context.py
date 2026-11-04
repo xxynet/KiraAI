@@ -137,11 +137,11 @@ class PluginContext:
     ) -> BaseAgentExecutor[BaseAgentExecutionContext]:
         """Create an independent agent without inheriting an IM event or its hooks.
 
-        Supply event-free tools explicitly here or on the LLMRequest. Registered
-        IM tools are not added automatically. Each run needs its own request and
+        Supply event-free tools explicitly here or on the LLMRequest. Tool
+        registration is independent of execution. Each run needs its own request and
         message lists; configuration defaults to AgentExecutionConfig.
         """
-        return BaseAgentExecutor(self.tool_mgr, tool_set, config=config)
+        return BaseAgentExecutor(tool_set, config=config)
 
     def get_default_llm_client(self) -> LLMModelClient:
         client = self.get_llm_client(llm_type="default")

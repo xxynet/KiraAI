@@ -55,7 +55,7 @@ def _response():
 
 @pytest.fixture
 def tool_environment(monkeypatch):
-    from core.agent import func_tool_manager
+    from core.agent import tool_executor
     from core.plugin.handlers import event_handler_reg
 
     config = {
@@ -67,7 +67,7 @@ def tool_environment(monkeypatch):
     event = SimpleNamespace(is_stopped=False)
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda *args, **kwargs: [])
     log = Mock()
-    monkeypatch.setattr(func_tool_manager.tool_logger, "info", log)
+    monkeypatch.setattr(tool_executor.tool_logger, "info", log)
     return manager, event, config, log
 
 

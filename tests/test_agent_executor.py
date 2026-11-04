@@ -162,14 +162,15 @@ async def test_agent_step_carries_model_info(monkeypatch, use_fallback, result_p
     if use_fallback:
         models[0].chat.side_effect = ProviderAPIError("Simulated provider failure")
 
-    async def execute_tool(event, response, **kwargs):
+    async def execute_tools(response, **kwargs):
         response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "name": "test", "content": ""}]
 
     context = AgentExecutionContext(
         event=SimpleNamespace(sid="test-session", is_stopped=False),
         request=LLMRequest(messages=[]), new_messages=[], model_group=models,
     )
-    executor = AgentExecutor(SimpleNamespace(execute_tool=execute_tool), config=AgentExecutionConfig(max_steps=1))
+    executor = AgentExecutor(config=AgentExecutionConfig(max_steps=1))
+    executor.tool_executor.execute_tools = execute_tools
     steps = [step async for step in executor.run(context)]
     assert len(steps) == 1
     assert steps[0].state == ("stopped" if result_path == "stopped" else "success")
@@ -219,7 +220,7 @@ async def test_failed_agent_step_reports_last_attempted_model_identity(monkeypat
         event=SimpleNamespace(sid="test-session", is_stopped=False),
         request=LLMRequest(messages=[]), new_messages=[], model_group=models,
     )
-    steps = [step async for step in AgentExecutor(None, config=AgentExecutionConfig(max_steps=1)).run(context)]
+    steps = [step async for step in AgentExecutor(config=AgentExecutionConfig(max_steps=1)).run(context)]
     assert len(steps) == 1
     assert steps[0].state == "error"
     expected = (
@@ -270,11 +271,12 @@ async def test_agent_uses_nested_config_and_keeps_one_snapshot_per_run(monkeypat
     replacement = AgentExecutionConfig(max_steps=1)
     observed_configs = []
 
-    async def execute_tool(event, response, *, tool_set, config):
+    async def execute_tools(response, *, tool_set, config, **kwargs):
         observed_configs.append(config)
         response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "done"}]
 
-    executor = AgentExecutor(SimpleNamespace(execute_tool=execute_tool), config=config)
+    executor = AgentExecutor(config=config)
+    executor.tool_executor.execute_tools = execute_tools
 
     async def chat(request):
         executor.config = replacement
