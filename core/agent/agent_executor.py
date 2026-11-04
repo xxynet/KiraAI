@@ -13,7 +13,13 @@ from core.chat.message_utils import KiraExceptionEvent
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
 from core.prompt_manager import Prompt
-from core.provider import LLMModelClient, LLMRequest, LLMResponse, ProviderAPIError
+from core.provider import (
+    LLMModelClient,
+    LLMRequest,
+    LLMResponse,
+    ModelInfo,
+    ProviderAPIError,
+)
 from core.utils.media_refs import MEDIA_REF_TYPE
 
 from .config import AgentExecutionConfig
@@ -48,9 +54,8 @@ class AgentStepResult:
     new_messages: list[OpenAIMessage]
     is_final: bool
     has_tool_calls: bool
-    model_id: str = ""
+    model: ModelInfo
     err: str | None = None
-    model_name: str = ""
     assistant_message: OpenAIMessage | None = None
 
 
@@ -142,7 +147,6 @@ class AgentExecutor:
         sid = ctx.event.sid
 
         provider_name = llm_model.model.provider_name
-        model_id = llm_model.model.model_id
         model_name = llm_model.model.model_name
         llm_logger.info(f"[{sid}] Running agent using {model_name} ({provider_name})")
 
@@ -173,11 +177,9 @@ class AgentExecutor:
             last_exc: Exception | None = None
             for model_idx, model in enumerate(model_group):
                 provider_name = model.model.provider_name
-                model_id = model.model.model_id
                 model_name = model.model.model_name
                 try:
                     llm_resp = await model.chat(request)
-                    llm_model = model
                     if model_idx > 0:
                         llm_logger.info(f"[{sid}] Successfully switched to model: {model_name} ({provider_name})")
                     break
@@ -243,8 +245,7 @@ class AgentExecutor:
                         new_messages=ctx.new_messages,
                         is_final=is_final,
                         has_tool_calls=has_tool_calls,
-                        model_id=model_id,
-                        model_name=model_name,
+                        model=model.model,
                     )
                     return
 
@@ -267,8 +268,7 @@ class AgentExecutor:
                     new_messages=ctx.new_messages,
                     is_final=is_final,
                     has_tool_calls=has_tool_calls,
-                    model_id=model_id,
-                    model_name=model_name,
+                    model=model.model,
                 )
                 return
 
@@ -323,8 +323,7 @@ class AgentExecutor:
                 new_messages=ctx.new_messages,
                 is_final=is_final,
                 has_tool_calls=has_tool_calls,
-                model_id=model_id,
-                model_name=model_name,
+                model=model.model,
             )
             if is_final:
                 return

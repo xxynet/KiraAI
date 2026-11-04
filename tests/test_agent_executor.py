@@ -120,7 +120,7 @@ async def test_tool_media_user_message_is_resolved_for_the_provider(tmp_path, mo
 @pytest.mark.parametrize("result_path", ["final", "stopped", "tools"])
 @pytest.mark.parametrize("use_fallback", [False, True])
 @pytest.mark.anyio
-async def test_agent_step_carries_identity_and_upstream_name(monkeypatch, use_fallback, result_path):
+async def test_agent_step_carries_model_info(monkeypatch, use_fallback, result_path):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -175,8 +175,9 @@ async def test_agent_step_carries_identity_and_upstream_name(monkeypatch, use_fa
     assert steps[0].state == ("stopped" if result_path == "stopped" else "success")
     assert steps[0].llm_response.status == "success"
     expected_name = "fallback-upstream" if use_fallback else "primary-upstream"
-    assert steps[0].model_id == f"internal-{expected_name}"
-    assert steps[0].model_name == expected_name
+    assert steps[0].model is models[1 if use_fallback else 0].model
+    assert steps[0].model.model_id == f"internal-{expected_name}"
+    assert steps[0].model.model_name == expected_name
     assert "final model call" in context.request.messages[0].content
     if result_path == "stopped":
         assert context.new_messages == []
@@ -230,8 +231,9 @@ async def test_failed_agent_step_reports_last_attempted_model_identity(monkeypat
     assert steps[0].assistant_message.content == expected
     assert context.new_messages == [steps[0].assistant_message]
     assert context.request.messages[-1] is steps[0].assistant_message
-    assert steps[0].model_id == "internal-fallback-upstream"
-    assert steps[0].model_name == "fallback-upstream"
+    assert steps[0].model is models[-1].model
+    assert steps[0].model.model_id == "internal-fallback-upstream"
+    assert steps[0].model.model_name == "fallback-upstream"
 
 
 @pytest.mark.parametrize("max_steps", [-1, True, 1.5, "3", None])
