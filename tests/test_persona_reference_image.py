@@ -1,3 +1,4 @@
+import base64
 import importlib
 import json
 from io import BytesIO
@@ -18,6 +19,8 @@ from core.db.service import DatabaseService
 from core.persona import reference_image
 from core.persona.model import PersonaInfo
 from core.persona.persona_manager import PersonaManager
+from core.tag import TagSet
+from core.workflow.src.im.message_delivery import MessageDeliveryService
 from webui.routes.auth import require_auth
 from webui.routes.personas import PersonasRoutes
 
@@ -518,20 +521,201 @@ async def test_selfie_tag_uses_current_persona_reference(image_manager, monkeypa
         assert await tag.handle("the character smiling") == [output]
         encode.assert_awaited_with(str(expected))
         assert generate.await_args.args == (client, "the character smiling")
-        reference = generate.await_args.kwargs["image"]
+        references = generate.await_args.kwargs["image"]
+        assert len(references) == 1
+        reference = references[0]
         assert reference.image == "cmVmZXJlbmNl"
         assert reference.name == expected.name
         assert reference.mime == mime
 
 
 @pytest.mark.anyio
-async def test_selfie_tag_missing_reference_does_not_generate(image_manager, monkeypatch):
+@pytest.mark.parametrize("tag_name", ["selfie", "img"])
+@pytest.mark.parametrize("path_style", ["absolute", "data_prefix", "data_relative", "backslashes"])
+async def test_image_tags_preserve_reference_order_from_xml(
+    image_manager, tmp_path, monkeypatch, tag_name, path_style,
+):
+    tags = importlib.import_module("core.plugin.builtin_plugins.kira-ai.tags")
+    data_root = tmp_path / "custom_data"
+    monkeypatch.setattr(tags, "get_data_path", lambda: data_root)
+    persona_reference = await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
+    await image_manager.set_active_persona("p1")
+    extra_files = [data_root / "files" / "scene one.png", data_root / "temp" / "pose.jpg"]
+    contents = [image_bytes(color="blue"), image_bytes("JPEG", color="green")]
+    for target, content in zip(extra_files, contents):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    if path_style == "absolute":
+        paths = [str(target) for target in extra_files]
+    else:
+        paths = [target.relative_to(data_root).as_posix() for target in extra_files]
+        if path_style == "data_prefix":
+            paths = [f"data/{path}" for path in paths]
+        elif path_style == "backslashes":
+            paths = [f"data/{path}".replace("/", "\\") for path in paths]
+    client = object()
+    output = tags.Image(image="https://example.invalid/result.png")
+    generate = AsyncMock(return_value=output)
+    monkeypatch.setattr(tags, "image_to_image", generate)
+    tag_class = tags.SelfieTag if tag_name == "selfie" else tags.ImgTag
+    tag_set = TagSet()
+    tag_set.register(tag_class(SimpleNamespace(
+        persona_mgr=image_manager,
+        provider_mgr=SimpleNamespace(get_default_image=lambda: client),
+    )))
+    path = f" , {paths[0]}, data/files/missing.png, , {paths[1]}, "
+    actions = await MessageDeliveryService.parse_xml(
+        f'<msg><{tag_name} path="{path}">the character smiling</{tag_name}></msg>', tag_set,
+    )
+    assert len(actions) == 1
+    assert list(actions[0]) == [output]
+    assert generate.await_args.args == (client, "the character smiling")
+    references = generate.await_args.kwargs["image"]
+    expected_contents = ([persona_reference.read_bytes()] if tag_name == "selfie" else []) + contents
+    assert [base64.b64decode(reference.image) for reference in references] == expected_contents
+    assert [reference.mime for reference in references] == (
+        (["image/png"] if tag_name == "selfie" else []) + ["image/png", "image/jpeg"]
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["", " , , ", "data/files/missing.png", "data/files"])
+async def test_selfie_tag_invalid_extra_paths_keep_persona_reference(
+    image_manager, tmp_path, monkeypatch, path,
+):
+    tags = importlib.import_module("core.plugin.builtin_plugins.kira-ai.tags")
+    monkeypatch.setattr(tags, "get_data_path", lambda: tmp_path / "data")
+    (tmp_path / "data" / "files").mkdir(parents=True, exist_ok=True)
+    reference = await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
+    await image_manager.set_active_persona("p1")
+    output = tags.Image(image="https://example.invalid/result.png")
+    generate = AsyncMock(return_value=output)
+    monkeypatch.setattr(tags, "image_to_image", generate)
+    tag = tags.SelfieTag(SimpleNamespace(
+        persona_mgr=image_manager,
+        provider_mgr=SimpleNamespace(get_default_image=lambda: object()),
+    ))
+    assert await tag.handle("the character smiling", path=path) == [output]
+    references = generate.await_args.kwargs["image"]
+    assert len(references) == 1
+    assert base64.b64decode(references[0].image) == reference.read_bytes()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tag_name", ["selfie", "img"])
+@pytest.mark.parametrize("with_valid_extras", [False, True])
+@pytest.mark.parametrize("failure", ["removed", "permission", "text", "fake_png", "empty", "truncated"])
+async def test_image_tags_skip_unusable_extra_references(
+    image_manager, tmp_path, monkeypatch, tag_name, with_valid_extras, failure,
+):
+    """Bad references must not discard a reply or prevent valid image generation."""
+    tags = importlib.import_module("core.plugin.builtin_plugins.kira-ai.tags")
+    persona_reference = await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
+    await image_manager.set_active_persona("p1")
+    bad_file = tmp_path / ("bad.txt" if failure == "text" else "bad.png")
+    bad_content = image_bytes(color="blue")
+    if failure in {"text", "fake_png"}:
+        bad_content = b"This is not an image"
+    elif failure == "empty":
+        bad_content = b""
+    elif failure == "truncated":
+        bad_content = bad_content[:50]
+    bad_file.write_bytes(bad_content)
+    original_encode = tags.image_to_base64
+
+    async def encode(path):
+        if Path(path) == bad_file:
+            if failure == "removed":
+                bad_file.unlink()
+            elif failure == "permission":
+                raise PermissionError("Reference read denied for regression test")
+        return await original_encode(path)
+
+    monkeypatch.setattr(tags, "image_to_base64", encode)
+    warning = Mock()
+    monkeypatch.setattr(tags.message_logger, "warning", warning)
+    expected_contents = [persona_reference.read_bytes()] if tag_name == "selfie" else []
+    paths = [str(bad_file)]
+    if with_valid_extras:
+        first, last = tmp_path / "first.png", tmp_path / "last.jpg"
+        first_content, last_content = image_bytes(color="green"), image_bytes("JPEG", color="blue")
+        first.write_bytes(first_content)
+        last.write_bytes(last_content)
+        paths = [str(first), *paths, str(last)]
+        expected_contents.extend([first_content, last_content])
+    client = object()
+    output = tags.Image(image="https://example.invalid/result.png")
+    generate = AsyncMock(return_value=output)
+    text_generate = AsyncMock(return_value=output)
+    monkeypatch.setattr(tags, "image_to_image", generate)
+    monkeypatch.setattr(tags, "generate_image", text_generate)
+    tag_class = tags.SelfieTag if tag_name == "selfie" else tags.ImgTag
+    tag_set = TagSet()
+    tag_set.register(tags.TextTag(), tag_class(SimpleNamespace(
+        persona_mgr=image_manager,
+        provider_mgr=SimpleNamespace(get_default_image=lambda: client),
+    )))
+    path_attribute = ",".join(paths)
+    actions = await MessageDeliveryService.parse_xml(
+        f'<msg><text>before</text><{tag_name} path="{path_attribute}">the character smiling</{tag_name}></msg>',
+        tag_set,
+    )
+    assert len(actions) == 1
+    assert len(actions[0]) == 2
+    assert actions[0][0].text == "before"
+    assert actions[0][1] is output
+    if expected_contents:
+        references = generate.await_args.kwargs["image"]
+        assert [base64.b64decode(reference.image) for reference in references] == expected_contents
+        text_generate.assert_not_awaited()
+    else:
+        generate.assert_not_awaited()
+        text_generate.assert_awaited_once_with(client, "the character smiling")
+    load_warnings = [args.args[0] for args in warning.call_args_list if "could not be loaded" in args.args[0]]
+    assert len(load_warnings) == 1
+    assert str(bad_file).replace("\\", "/") in load_warnings[0].replace("\\", "/")
+    if failure == "permission":
+        assert "Reference read denied for regression test" in load_warnings[0]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tag_name", ["selfie", "img"])
+async def test_image_tags_use_actual_reference_mime(image_manager, tmp_path, monkeypatch, tag_name):
+    """A valid image with a misleading extension must keep its actual format."""
+    tags = importlib.import_module("core.plugin.builtin_plugins.kira-ai.tags")
+    await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
+    await image_manager.set_active_persona("p1")
+    extra_file = tmp_path / "photo.txt"
+    content = image_bytes("JPEG")
+    extra_file.write_bytes(content)
+    output = tags.Image(image="https://example.invalid/result.png")
+    generate = AsyncMock(return_value=output)
+    monkeypatch.setattr(tags, "image_to_image", generate)
+    tag_class = tags.SelfieTag if tag_name == "selfie" else tags.ImgTag
+    tag = tag_class(SimpleNamespace(
+        persona_mgr=image_manager,
+        provider_mgr=SimpleNamespace(get_default_image=lambda: object()),
+    ))
+    assert await tag.handle("the character smiling", path=str(extra_file)) == [output]
+    reference = generate.await_args.kwargs["image"][-1]
+    assert reference.mime == "image/jpeg"
+    assert base64.b64decode(reference.image) == content
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("with_extra_path", [False, True])
+async def test_selfie_tag_missing_reference_does_not_generate(
+    image_manager, tmp_path, monkeypatch, with_extra_path,
+):
     tags = importlib.import_module("core.plugin.builtin_plugins.kira-ai.tags")
     generate = AsyncMock()
     monkeypatch.setattr(tags, "image_to_image", generate)
     tag = tags.SelfieTag(SimpleNamespace(persona_mgr=image_manager))
     await image_manager.set_active_persona("p1")
-    assert await tag.handle("the character smiling") == []
+    extra_file = tmp_path / "extra.png"
+    extra_file.write_bytes(image_bytes())
+    kwargs = {"path": str(extra_file)} if with_extra_path else {}
+    assert await tag.handle("the character smiling", **kwargs) == []
     generate.assert_not_awaited()
 
 

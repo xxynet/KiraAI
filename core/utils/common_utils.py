@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
@@ -45,8 +47,8 @@ async def image_to_base64(image_path: str):
             image_data = resp.content
         base64_data = base64.b64encode(image_data)
         return base64_data.decode('utf-8')
-    with open(image_path, 'rb') as image_file:
-        base64_data = base64.b64encode(image_file.read())
+    image_data = await asyncio.to_thread(Path(image_path).read_bytes)
+    base64_data = await asyncio.to_thread(base64.b64encode, image_data)
     return base64_data.decode('utf-8')
 
 
