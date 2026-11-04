@@ -149,7 +149,7 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
             if not await send_llm_text(llm_resp, step.assistant_message):
                 break
 
-            if not step.has_tool_calls or step.is_final:
+            if step.is_final:
                 break
 
             # Process tool calls if existed

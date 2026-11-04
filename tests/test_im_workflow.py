@@ -1197,3 +1197,33 @@ async def test_tool_config_is_fixed_for_one_agent_loop_and_refreshes_for_the_nex
     assert configs[2] is configs[3]
     assert manager.config is defaults
     assert services.session_manager.update_memory.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_steered_text_response_continues_im_loop_and_persists_instruction(processor, monkeypatch):
+    from core.agent.agent_executor import AgentExecutor
+
+    instance, model = processor
+    seen = []
+    original_hook = AgentExecutor._on_llm_response
+
+    async def on_response(self, ctx, response):
+        if response.agent_step_index == 1:
+            assert self.steer("follow the updated instruction")
+        return await original_hook(self, ctx, response)
+
+    async def chat(request):
+        seen.append([message.to_dict() for message in request.messages])
+        return LLMResponse(f"<msg><text>reply {len(seen)}</text></msg>")
+
+    monkeypatch.setattr(AgentExecutor, "_on_llm_response", on_response)
+    model.chat.side_effect = chat
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert model.chat.await_count == 2
+    assert instance.message_delivery.send_message_chain.await_count == 2
+    assert instance.im_workflow.ctx.db.add_telemetry_llm_usage.await_count == 2
+    assert seen[1][-2] == {"role": "user", "content": "follow the updated instruction"}
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
+    assert [message.role for message in memory] == ["user", "assistant", "user", "assistant"]
+    assert memory[2].content == "follow the updated instruction"

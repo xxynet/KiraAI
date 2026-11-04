@@ -261,7 +261,7 @@ async def test_parent_im_tool_can_run_child_agent_with_separate_history(monkeypa
 
 
 @pytest.mark.anyio
-async def test_independent_runs_share_executor_without_sharing_history(no_event_hooks):
+async def test_independent_executors_run_concurrently_without_sharing_history(no_event_hooks):
     model = _model()
     both_started = asyncio.Event()
     requests = []
@@ -277,12 +277,14 @@ async def test_independent_runs_share_executor_without_sharing_history(no_event_
     contexts = [BaseAgentExecutionContext(
         request=LLMRequest(messages=[{"role": "user", "content": task}]), model_group=[model],
     ) for task in ("task A", "task B")]
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=1))
+    executors = [BaseAgentExecutor(config=AgentExecutionConfig(max_steps=1)) for _ in contexts]
 
-    async def run(context):
+    async def run(executor, context):
         return [step async for step in executor.run(context)]
 
-    results = await asyncio.wait_for(asyncio.gather(*(run(context) for context in contexts)), timeout=2)
+    results = await asyncio.wait_for(asyncio.gather(*(
+        run(executor, context) for executor, context in zip(executors, contexts, strict=True)
+    )), timeout=2)
 
     assert [steps[0].llm_response.text_response for steps in results] == ["task A", "task B"]
     assert contexts[0].request is not contexts[1].request

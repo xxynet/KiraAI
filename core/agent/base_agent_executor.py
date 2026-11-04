@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Generic, Literal, TypeVar
@@ -58,8 +59,14 @@ class AgentStepResult:
 ContextT = TypeVar("ContextT", bound=BaseAgentExecutionContext)
 
 
+@dataclass
+class _AgentRunState:
+    pending_messages: list[OpenAIMessage] = field(default_factory=list)
+    accepting_steering: bool = True
+
+
 class BaseAgentExecutor(Generic[ContextT]):
-    """Run model/tool steps without chat events or global plugin hooks."""
+    """Run one model/tool loop at a time without chat events or global plugin hooks."""
 
     def __init__(
         self,
@@ -70,6 +77,39 @@ class BaseAgentExecutor(Generic[ContextT]):
         self.tool_executor = ToolExecutor()
         self.tool_set = tool_set
         self.config = config if config is not None else AgentExecutionConfig()
+        self._run_state: _AgentRunState | None = None
+
+    def steer(self, message: str | OpenAIMessage) -> bool:
+        """Queue a user instruction for the next model request of an active run.
+
+        Call from the same event loop as run(). One executor supports only one
+        active run. Returns False if it is inactive or has started its final
+        allowed step. Accepted messages are copied and recorded in both the
+        request and new_messages when consumed.
+        In-flight calls are not cancelled, and max_steps is never extended.
+        Pending instructions are discarded if the run stops or fails first.
+        """
+        if isinstance(message, str):
+            message = OpenAIMessage(role="user", content=message)
+        elif not isinstance(message, OpenAIMessage):
+            raise TypeError("steer message must be a string or OpenAIMessage")
+        if message.role != "user":
+            raise ValueError("steer message must have the user role")
+        if not message.content or (isinstance(message.content, str) and not message.content.strip()):
+            raise ValueError("steer message content must not be empty")
+
+        run_state = self._run_state
+        if run_state is None or not run_state.accepting_steering:
+            return False
+        run_state.pending_messages.append(deepcopy(message))
+        return True
+
+    @staticmethod
+    def _apply_steering(ctx: ContextT, run_state: _AgentRunState) -> None:
+        if run_state.pending_messages:
+            messages = run_state.pending_messages
+            run_state.pending_messages = []
+            ctx.append_messages(*messages)
 
     def _get_log_id(self, ctx: ContextT) -> str:
         return "agent"
@@ -169,6 +209,27 @@ class BaseAgentExecutor(Generic[ContextT]):
         self,
         ctx: ContextT,
     ) -> AsyncIterator[AgentStepResult]:
+        """Run one loop; overlapping calls on this executor raise RuntimeError."""
+        if self._run_state is not None:
+            raise RuntimeError("This agent executor is already running")
+        run_state = _AgentRunState(accepting_steering=self.config.max_steps > 0)
+        self._run_state = run_state
+        iterator = self._run(ctx, run_state)
+        try:
+            async for result in iterator:
+                if result.is_final:
+                    run_state.accepting_steering = False
+                yield result
+        finally:
+            run_state.accepting_steering = False
+            try:
+                await iterator.aclose()
+            finally:
+                self._run_state = None
+
+    async def _run(
+        self, ctx: ContextT, run_state: _AgentRunState,
+    ) -> AsyncIterator[AgentStepResult]:
         request = ctx.request
         model_group = ctx.model_group
         config = self.config
@@ -192,6 +253,8 @@ class BaseAgentExecutor(Generic[ContextT]):
             state: Literal["success", "stopped", "error"] = "success"
             err = ""
             is_final = step_index == max_steps
+            run_state.accepting_steering = not is_final
+            self._apply_steering(ctx, run_state)
 
             # Inject last-step hint so the LLM knows to wrap up
             if is_final:
@@ -215,6 +278,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                 provider_name = model.model.provider_name
                 model_name = model.model.model_name
                 try:
+                    self._apply_steering(ctx, run_state)
                     llm_resp = await model.chat(request)
                     if model_idx > 0:
                         llm_logger.info(f"[{sid}] Successfully switched to model: {model_name} ({provider_name})")
@@ -270,7 +334,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                 return
 
             if not has_tool_calls:
-                is_final = True
+                is_final = is_final or state == "error" or not run_state.pending_messages
                 assistant_content = llm_resp.text_response or ""
                 reasoning = llm_resp.reasoning_content or ""
                 msg = OpenAIMessage(
@@ -290,7 +354,9 @@ class BaseAgentExecutor(Generic[ContextT]):
                     has_tool_calls=has_tool_calls,
                     model=model.model,
                 )
-                return
+                if is_final:
+                    return
+                continue
 
             assistant_content = llm_resp.text_response or ""
             reasoning = llm_resp.reasoning_content or ""
