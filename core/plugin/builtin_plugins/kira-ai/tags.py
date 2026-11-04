@@ -1,6 +1,11 @@
 import asyncio
+import base64
 import os
+import warnings
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image as PILImage
 
 from core.chat.message_elements import (
     At,
@@ -31,6 +36,21 @@ message_logger = get_logger("message", "cyan")
 provider_logger = get_logger("provider", "purple")
 
 
+def _reference_image_mime(encoded: str) -> str:
+    """Validate reference image bytes and return their actual MIME type."""
+    content = base64.b64decode(encoded, validate=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PILImage.DecompressionBombWarning)
+        with PILImage.open(BytesIO(content)) as image:
+            mime = PILImage.MIME.get(image.format)
+            if not mime:
+                raise ValueError(f"Unknown image MIME type for format {image.format}")
+            image.verify()
+        with PILImage.open(BytesIO(content)) as image:
+            image.load()
+    return mime
+
+
 async def _load_reference_images(path: str) -> list[Image]:
     """Load comma-separated local references using the image tags' data path rules."""
     ref_images = []
@@ -44,11 +64,17 @@ async def _load_reference_images(path: str) -> list[Image]:
             ref_file = get_data_path() / p.removeprefix("data/")
         else:
             ref_file = get_data_path() / p
-        if not await asyncio.to_thread(ref_file.is_file):
-            message_logger.warning(f"Image reference not found: {ref_file}, skipped")
+        try:
+            if not await asyncio.to_thread(ref_file.is_file):
+                message_logger.warning(f"Image reference not found: {ref_file}, skipped")
+                continue
+            bs64 = await image_to_base64(str(ref_file))
+            mime = await asyncio.to_thread(_reference_image_mime, bs64)
+        except (OSError, ValueError, SyntaxError,
+                PILImage.DecompressionBombError, PILImage.DecompressionBombWarning) as exc:
+            message_logger.warning(f"Image reference could not be loaded: {ref_file}, skipped: {exc}")
             continue
-        bs64 = await image_to_base64(str(ref_file))
-        ref_images.append(Image(image=bs64, name=p))
+        ref_images.append(Image(image=bs64, name=p, mime=mime))
     return ref_images
 
 
