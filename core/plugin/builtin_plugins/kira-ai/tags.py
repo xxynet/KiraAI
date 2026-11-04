@@ -31,6 +31,27 @@ message_logger = get_logger("message", "cyan")
 provider_logger = get_logger("provider", "purple")
 
 
+async def _load_reference_images(path: str) -> list[Image]:
+    """Load comma-separated local references using the image tags' data path rules."""
+    ref_images = []
+    for p in path.split(","):
+        p = p.strip().replace("\\", "/")
+        if not p:
+            continue
+        if os.path.isabs(p):
+            ref_file = Path(p)
+        elif p.startswith("data/"):
+            ref_file = get_data_path() / p.removeprefix("data/")
+        else:
+            ref_file = get_data_path() / p
+        if not await asyncio.to_thread(ref_file.is_file):
+            message_logger.warning(f"Image reference not found: {ref_file}, skipped")
+            continue
+        bs64 = await image_to_base64(str(ref_file))
+        ref_images.append(Image(image=bs64, name=p))
+    return ref_images
+
+
 class TextTag(BaseTag):
     name = "text"
     description = "<text>some text</text> # 纯文本消息"
@@ -70,22 +91,7 @@ class ImgTag(BaseTag):
         path = kwargs.get("path")
         if path:
             # image-to-image mode
-            ref_images = []
-            for p in path.split(","):
-                p = p.strip().replace("\\", "/")
-                if not p:
-                    continue
-                if os.path.isabs(p):
-                    ref_file = Path(p)
-                elif p.startswith("data/"):
-                    ref_file = get_data_path() / p.removeprefix("data/")
-                else:
-                    ref_file = get_data_path() / p
-                if not ref_file.is_file():
-                    message_logger.warning(f"Image reference not found: {ref_file}, skipped")
-                    continue
-                bs64 = await image_to_base64(str(ref_file))
-                ref_images.append(Image(image=bs64, name=p))
+            ref_images = await _load_reference_images(path)
             try:
                 image_client = self.ctx.provider_mgr.get_default_image()
             except ValueError as exc:
@@ -190,7 +196,15 @@ class PokeTag(BaseTag):
 
 class SelfieTag(BaseTag):
     name = "selfie"
-    description = "<selfie>prompt for image generator, use 'the character' to refer to the character in the reference image</selfie> # send an specific image, could be a selfie or any image with the character in it. DO NOT describe the appearance of the character, the reference image already has it."
+    description = (
+        '<selfie path="image_path(s)">prompt for image generator, use \'the character\' '
+        'to refer to the character in the first reference image</selfie> # Send a specific '
+        "image, such as a selfie or any image with the character in it. The first reference "
+        "image is always the active persona's configured reference image. DO NOT describe "
+        "the character's appearance, the first reference image already has it. Optional "
+        "path appends extra reference images in order, separated by commas; supports "
+        "absolute paths and paths relative to data/, such as data/files/* or data/temp/*."
+    )
 
     def __init__(self, ctx):
         super().__init__(ctx=ctx)
@@ -206,8 +220,12 @@ class SelfieTag(BaseTag):
                 message_logger.error("Failed to get image client, please set default image model in Configuration")
                 return []
             bs64 = await image_to_base64(str(ref_file))
+            ref_images = [Image(image=bs64, name=ref_file.name)]
+            path = kwargs.get("path")
+            if path:
+                ref_images.extend(await _load_reference_images(path))
             img_res = await image_to_image(
-                image_client, value, image=Image(image=bs64, name=ref_file.name)
+                image_client, value, image=ref_images
             )
             if img_res:
                 return [img_res]
