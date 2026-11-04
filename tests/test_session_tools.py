@@ -257,12 +257,7 @@ async def test_request_local_history_tools_log_arguments_and_results(session_plu
     from core.plugin.manager import PluginManager
     from core.provider import LLMRequest, LLMResponse
 
-    config = {
-        "bot_config.agent.max_tool_calls_per_turn": 5,
-        "bot_config.agent.tool_call_timeout": 60,
-        "bot_config.agent.max_tool_output_tokens": 10000,
-    }
-    manager = FuncToolManager(SimpleNamespace(get_config=config.get))
+    manager = FuncToolManager()
     owner = SimpleNamespace(
         ctx=SimpleNamespace(tool_mgr=manager),
         plugin_instances={"kira_session_plugin": session_plugin},
@@ -733,7 +728,7 @@ async def test_read_tool_switches_inject_request_local_schemas_and_instructions(
     from core.provider import LLMRequest
 
     session_plugin.plugin_cfg = config
-    manager = FuncToolManager(SimpleNamespace(get_config=lambda key, default=None: default))
+    manager = FuncToolManager()
     owner = SimpleNamespace(
         ctx=SimpleNamespace(tool_mgr=manager),
         plugin_instances={"kira_session_plugin": session_plugin},

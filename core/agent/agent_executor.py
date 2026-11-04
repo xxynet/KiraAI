@@ -16,6 +16,7 @@ from core.prompt_manager import Prompt
 from core.provider import LLMModelClient, LLMRequest, LLMResponse, ProviderAPIError
 from core.utils.media_refs import MEDIA_REF_TYPE
 
+from .config import AgentExecutionConfig
 from .func_tool_manager import FuncToolManager
 
 if TYPE_CHECKING:
@@ -54,9 +55,16 @@ class AgentStepResult:
 
 
 class AgentExecutor:
-    def __init__(self, tool_manager: FuncToolManager, tool_set: ToolSet | None = None):
+    def __init__(
+        self,
+        tool_manager: FuncToolManager,
+        tool_set: ToolSet | None = None,
+        *,
+        config: AgentExecutionConfig | None = None,
+    ):
         self.tool_manager = tool_manager
         self.tool_set = tool_set
+        self.config = config if config is not None else AgentExecutionConfig()
 
     @staticmethod
     def _build_tool_messages(tool_results: list[dict]) -> list[OpenAIMessage]:
@@ -117,11 +125,13 @@ class AgentExecutor:
     async def run(
         self,
         ctx: AgentExecutionContext,
-        max_steps: int,
     ) -> AsyncIterator[AgentStepResult]:
         event = ctx.event
         request = ctx.request
         model_group = ctx.model_group
+        config = self.config
+        max_steps = config.max_steps
+        tool_config = config.tool_config
 
         if not model_group:
             raise ValueError("AgentExecutionContext.model_group must be a non-empty list of LLMModelClient")
@@ -266,7 +276,9 @@ class AgentExecutor:
             reasoning = llm_resp.reasoning_content or ""
 
             try:
-                await self.tool_manager.execute_tool(event, llm_resp, tool_set=self.tool_set)
+                await self.tool_manager.execute_tool(
+                    event, llm_resp, tool_set=self.tool_set, config=tool_config,
+                )
             except Exception as e:
                 logger.error(f"[{sid}] Tool execution failed: {e}")
                 exc_event = KiraExceptionEvent(

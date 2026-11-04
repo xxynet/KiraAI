@@ -4,9 +4,11 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from core.agent.agent_executor import AgentExecutor
+from core.agent.config import ToolExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
 from core.agent.mcp_mgr import MCPManager
 from core.agent.tool import ToolResult, truncate_tool_output
+from core.config.tool_execution import build_tool_execution_config
 from core.provider import LLMResponse
 from core.utils.media_refs import MEDIA_REF_TYPE
 
@@ -61,7 +63,7 @@ def tool_environment(monkeypatch):
         "bot_config.agent.tool_call_timeout": 60,
         "bot_config.agent.max_tool_output_tokens": 128,
     }
-    manager = FuncToolManager(SimpleNamespace(get_config=config.get))
+    manager = FuncToolManager(build_tool_execution_config(SimpleNamespace(get_config=config.get)))
     event = SimpleNamespace(is_stopped=False)
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda *args, **kwargs: [])
     log = Mock()
@@ -104,6 +106,7 @@ async def test_hook_text_is_bounded_and_media_and_attachment_paths_survive(
 
     manager, event, config, _ = tool_environment
     config["bot_config.agent.max_tool_output_tokens"] = 256
+    manager.config = build_tool_execution_config(SimpleNamespace(get_config=config.get))
     path = str(tmp_path / "attachment.png").replace("\\", "/")
     attachment = SimpleNamespace(to_path=AsyncMock(return_value=path))
     ref = {"type": MEDIA_REF_TYPE, "path": "session_media/a/b.png", "mime_type": "image/png"}
@@ -144,6 +147,7 @@ async def test_budget_applies_per_call_and_config_changes_take_effect(tool_envir
     assert len(response.tool_results) == 2
     assert all(len(result["content"].encode("utf-8")) <= 128 * 4 for result in response.tool_results)
     config["bot_config.agent.max_tool_output_tokens"] = 0
+    manager.config = build_tool_execution_config(SimpleNamespace(get_config=config.get))
     response = _response()
     await manager.execute_tool(event, response, manager.build_tool_set())
     assert response.tool_results[0]["content"] == text
@@ -154,6 +158,7 @@ async def test_budget_applies_per_call_and_config_changes_take_effect(tool_envir
 async def test_invalid_budget_uses_default(tool_environment, value):
     manager, event, config, _ = tool_environment
     config["bot_config.agent.max_tool_output_tokens"] = value
+    manager.config = build_tool_execution_config(SimpleNamespace(get_config=config.get))
     manager.register_tool("probe", "", {}, AsyncMock(return_value="x" * 80000))
     response = _response()
 
@@ -169,6 +174,7 @@ async def test_invalid_budget_uses_default(tool_environment, value):
 async def test_missing_budget_uses_default_and_short_results_stay_unchanged(tool_environment):
     manager, event, config, _ = tool_environment
     del config["bot_config.agent.max_tool_output_tokens"]
+    manager.config = build_tool_execution_config(SimpleNamespace(get_config=config.get))
     execute = AsyncMock(side_effect=["x" * 80000, "small result"])
     manager.register_tool("probe", "", {}, execute)
 
@@ -200,6 +206,7 @@ async def test_tool_call_limit_messages_obey_output_budget(tool_environment):
     manager, event, config, _ = tool_environment
     config["bot_config.agent.max_tool_output_tokens"] = 1
     config["bot_config.agent.max_tool_calls_per_turn"] = 1
+    manager.config = build_tool_execution_config(SimpleNamespace(get_config=config.get))
     manager.register_tool("probe", "", {}, AsyncMock(return_value="long output"))
     response = _response()
     response.tool_calls.append(
@@ -210,3 +217,87 @@ async def test_tool_call_limit_messages_obey_output_budget(tool_environment):
 
     assert len(response.tool_results) == 2
     assert all(len(result["content"].encode("utf-8")) <= 4 for result in response.tool_results)
+
+
+@pytest.mark.anyio
+async def test_call_config_overrides_all_limits_without_changing_defaults(tool_environment):
+    import asyncio
+
+    manager, event, _, _ = tool_environment
+    defaults = manager.config
+    execute = AsyncMock(return_value="x" * 2000)
+    manager.register_tool("probe", "", {}, execute)
+    response = _response()
+    response.tool_calls.append({"id": "call-2", "function": {"name": "probe", "arguments": "{}"}})
+    await manager.execute_tool(event, response, manager.build_tool_set(), config=ToolExecutionConfig(
+        max_tool_calls_per_step=1, tool_call_timeout=None, max_tool_output_tokens=0,
+    ))
+    execute.assert_awaited_once()
+    assert response.tool_results[0]["content"] == "x" * 2000
+    assert "Tool call limit exceeded" in response.tool_results[1]["content"]
+    assert manager.config is defaults
+
+    async def wait_forever(*args):
+        await asyncio.Event().wait()
+
+    manager.register_tool("probe", "", {}, wait_forever)
+    response = _response()
+    await manager.execute_tool(event, response, manager.build_tool_set(), config=ToolExecutionConfig(
+        tool_call_timeout=0.01,
+    ))
+    assert "timed out after 0.01s" in response.tool_results[0]["content"]
+    assert manager.config is defaults
+
+
+@pytest.mark.anyio
+async def test_concurrent_call_configs_are_isolated(tool_environment):
+    import asyncio
+
+    manager, event, _, _ = tool_environment
+    defaults = manager.config
+    both_started = asyncio.Event()
+    started = 0
+
+    async def execute(*args):
+        nonlocal started
+        started += 1
+        if started == 2:
+            both_started.set()
+        await both_started.wait()
+        return "x" * 2000
+
+    manager.register_tool("probe", "", {}, execute)
+    bounded, unlimited = _response(), _response()
+    await asyncio.wait_for(asyncio.gather(
+        manager.execute_tool(event, bounded, manager.build_tool_set(), config=ToolExecutionConfig(
+            max_tool_output_tokens=16,
+        )),
+        manager.execute_tool(event, unlimited, manager.build_tool_set(), config=ToolExecutionConfig(
+            max_tool_output_tokens=0,
+        )),
+    ), timeout=3)
+    assert len(bounded.tool_results[0]["content"].encode()) <= 64
+    assert unlimited.tool_results[0]["content"] == "x" * 2000
+    assert manager.config is defaults
+
+
+@pytest.mark.anyio
+async def test_replacing_defaults_does_not_change_in_flight_batch(tool_environment):
+    manager, event, _, _ = tool_environment
+
+    async def replace_config(*args):
+        manager.config = ToolExecutionConfig(max_tool_calls_per_step=0, max_tool_output_tokens=0)
+        return "x" * 2000
+
+    execute = AsyncMock(side_effect=replace_config)
+    manager.register_tool("probe", "", {}, execute)
+    response = _response()
+    response.tool_calls.append({"id": "call-2", "function": {"name": "probe", "arguments": "{}"}})
+    await manager.execute_tool(event, response, manager.build_tool_set())
+    assert execute.await_count == 2
+    assert all(len(item["content"].encode()) <= 512 for item in response.tool_results)
+
+    response = _response()
+    await manager.execute_tool(event, response, manager.build_tool_set())
+    assert execute.await_count == 2
+    assert "Tool call limit exceeded" in response.tool_results[0]["content"]

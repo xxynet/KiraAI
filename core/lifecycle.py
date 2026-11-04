@@ -19,6 +19,7 @@ from core.chat.session_buffer import SessionBufferManager
 from core.chat.session_manager import SessionManager
 from core.chat.session_media_manager import SessionMediaManager
 from core.config import VERSION
+from core.config.tool_execution import build_tool_execution_config
 from core.db.db_mgr import DatabaseManager
 from core.db.migrate_to_db import migrate_selfie_reference_image, run_migrations
 from core.db.service import DatabaseService
@@ -180,7 +181,7 @@ class KiraLifecycle:
         self.provider_manager = ProviderManager(self.db_service, self.kira_config)
 
         # ====== init function tool manager ======
-        self.tool_manager = FuncToolManager(self.kira_config)
+        self.tool_manager = FuncToolManager(build_tool_execution_config(self.kira_config))
         # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(self.kira_config, event_queue)
         webchat_adapter = None

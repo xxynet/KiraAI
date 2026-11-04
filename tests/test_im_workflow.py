@@ -1125,3 +1125,71 @@ async def test_builtin_xml_repair_respects_response_status(status):
     else:
         client.chat.assert_awaited_once()
         assert response.text_response == fixed
+
+
+@pytest.mark.anyio
+async def test_tool_config_is_fixed_for_one_agent_loop_and_refreshes_for_the_next(processor):
+    from core.agent.config import ToolExecutionConfig
+    from core.agent.func_tool_manager import FuncToolManager
+
+    instance, model = processor
+    services = instance.im_workflow.ctx
+    values = {
+        "bot_config.agent.max_tool_loop": 3,
+        "bot_config.agent.max_tool_calls_per_turn": 2,
+        "bot_config.agent.tool_call_timeout": 60,
+        "bot_config.agent.max_tool_output_tokens": 4,
+    }
+    services.config = SimpleNamespace(get_config=lambda key, default=None: values.get(key, default))
+    manager = FuncToolManager(ToolExecutionConfig(max_tool_output_tokens=256))
+    services.tool_manager = manager
+    defaults = manager.config
+    probe = AsyncMock(return_value="x" * 100)
+    manager.register_tool("probe", "", {}, probe)
+    manager.execute_tool = AsyncMock(wraps=manager.execute_tool)
+    responses = []
+
+    async def chat(request):
+        if not responses:
+            # Even a change during the first model call waits until the next agent loop.
+            values["bot_config.agent.max_tool_loop"] = 2
+            values["bot_config.agent.max_tool_calls_per_turn"] = 1
+            values["bot_config.agent.tool_call_timeout"] = 0
+            values["bot_config.agent.max_tool_output_tokens"] = 0
+        response = LLMResponse("")
+        if len(responses) % 3 < 2:
+            response.tool_calls = [
+                {"id": f"call-{index}", "type": "function",
+                 "function": {"name": "probe", "arguments": "{}"}}
+                for index in range(2)
+            ]
+        responses.append(response)
+        return response
+
+    model.chat.side_effect = chat
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert probe.await_count == 4
+    assert model.chat.await_count == 3
+    for response in responses[:2]:
+        assert len(response.tool_results) == 2
+        assert all(len(result["content"].encode()) <= 16 for result in response.tool_results)
+    configs = [call.kwargs["config"] for call in manager.execute_tool.await_args_list]
+    assert configs == [ToolExecutionConfig(max_tool_calls_per_step=2, max_tool_output_tokens=4)] * 2
+    assert configs[0] is configs[1]
+    assert manager.config is defaults
+
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert probe.await_count == 6
+    assert model.chat.await_count == 5
+    for response in responses[3:5]:
+        assert response.tool_results[0]["content"] == "x" * 100
+        assert "Tool call limit exceeded" in response.tool_results[1]["content"]
+    configs = [call.kwargs["config"] for call in manager.execute_tool.await_args_list]
+    assert configs[2:] == [ToolExecutionConfig(
+        max_tool_calls_per_step=1, tool_call_timeout=None, max_tool_output_tokens=0,
+    )] * 2
+    assert configs[2] is configs[3]
+    assert manager.config is defaults
+    assert services.session_manager.update_memory.await_count == 2

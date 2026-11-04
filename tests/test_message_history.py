@@ -320,7 +320,7 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
     model = SimpleNamespace(model=SimpleNamespace(provider_name="test", model_id="model", model_name="test"),
                             chat=AsyncMock(side_effect=[first, second]))
 
-    async def execute_tool(event, response, tool_set):
+    async def execute_tool(event, response, tool_set, *, config=None):
         response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
 
     async def parse(text, tag_set):

@@ -5,11 +5,11 @@ from asyncio import TimeoutError as AsyncTimeoutError
 from asyncio import wait_for
 from typing import TYPE_CHECKING
 
-from core.config import KiraConfig
 from core.logging_manager import get_logger
 from core.provider import LLMResponse
 from core.utils.tool_utils import BaseTool
 
+from .config import ToolExecutionConfig
 from .tool import ToolResult, ToolSet, truncate_tool_output
 
 logger = get_logger("llm", "purple")
@@ -40,8 +40,8 @@ class _LegacyFuncTool(BaseTool):
 
 
 class FuncToolManager:
-    def __init__(self, kira_config: KiraConfig):
-        self.kira_config = kira_config
+    def __init__(self, config: ToolExecutionConfig | None = None):
+        self.config = config if config is not None else ToolExecutionConfig()
 
         self.tool_set = ToolSet()
 
@@ -61,39 +61,27 @@ class FuncToolManager:
         """Return a request-local copy of the registered tools."""
         return ToolSet(tools=self.tool_set.tools.copy())
 
-    async def execute_tool(self, event: KiraMessageBatchEvent, resp: LLMResponse, tool_set: ToolSet | None = None):
-        max_tool_calls_per_turn = self.kira_config.get_config("bot_config.agent.max_tool_calls_per_turn")
-        try:
-            max_tool_calls_per_turn = int(max_tool_calls_per_turn)
-        except (TypeError, ValueError):
-            max_tool_calls_per_turn = 5
-
-        tool_call_timeout = self.kira_config.get_config("bot_config.agent.tool_call_timeout")
-        try:
-            tool_call_timeout = float(tool_call_timeout)
-            if tool_call_timeout <= 0:
-                tool_call_timeout = None
-        except (TypeError, ValueError):
-            tool_call_timeout = 60
-
-        default_output_tokens = 10000
-        max_tool_output_tokens = self.kira_config.get_config(
-            "bot_config.agent.max_tool_output_tokens", default_output_tokens
-        )
-        if (
-            not isinstance(max_tool_output_tokens, int)
-            or isinstance(max_tool_output_tokens, bool)
-            or max_tool_output_tokens < 0
-        ):
-            max_tool_output_tokens = default_output_tokens
+    async def execute_tool(
+        self,
+        event: KiraMessageBatchEvent,
+        resp: LLMResponse,
+        tool_set: ToolSet | None = None,
+        *,
+        config: ToolExecutionConfig | None = None,
+    ):
+        """Execute tools using one snapshot, without mutating shared defaults."""
+        effective_config = config if config is not None else self.config
+        max_tool_calls = effective_config.max_tool_calls_per_step
+        tool_call_timeout = effective_config.tool_call_timeout
+        max_tool_output_tokens = effective_config.max_tool_output_tokens
 
         for idx, tool_call in enumerate(resp.tool_calls):
             tool_call_id = tool_call.get("id")
             name = tool_call.get("function", {}).get("name")
 
-            # Exceeds per-turn tool call limit
-            if idx >= max_tool_calls_per_turn:
-                warn_msg = f"Tool call limit exceeded: maximum {max_tool_calls_per_turn} tool calls per turn, skipping tool '{name}'."
+            # Exceeds the tool call limit for this model response
+            if idx >= max_tool_calls:
+                warn_msg = f"Tool call limit exceeded: maximum {max_tool_calls} tool calls per turn, skipping tool '{name}'."
                 tool_logger.warning(warn_msg)
                 resp.tool_results.append({
                     "role": "tool",

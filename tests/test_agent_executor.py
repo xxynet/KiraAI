@@ -1,6 +1,7 @@
 import pytest
 
 from core.agent.agent_executor import AgentExecutor
+from core.agent.config import AgentExecutionConfig
 from core.utils.media_refs import MEDIA_REF_TYPE
 from tests.image_samples import PNG_BYTES
 
@@ -168,8 +169,8 @@ async def test_agent_step_carries_identity_and_upstream_name(monkeypatch, use_fa
         event=SimpleNamespace(sid="test-session", is_stopped=False),
         request=LLMRequest(messages=[]), new_messages=[], model_group=models,
     )
-    executor = AgentExecutor(SimpleNamespace(execute_tool=execute_tool))
-    steps = [step async for step in executor.run(context, max_steps=1)]
+    executor = AgentExecutor(SimpleNamespace(execute_tool=execute_tool), config=AgentExecutionConfig(max_steps=1))
+    steps = [step async for step in executor.run(context)]
     assert len(steps) == 1
     assert steps[0].state == ("stopped" if result_path == "stopped" else "success")
     assert steps[0].llm_response.status == "success"
@@ -217,7 +218,7 @@ async def test_failed_agent_step_reports_last_attempted_model_identity(monkeypat
         event=SimpleNamespace(sid="test-session", is_stopped=False),
         request=LLMRequest(messages=[]), new_messages=[], model_group=models,
     )
-    steps = [step async for step in AgentExecutor(None).run(context, max_steps=1)]
+    steps = [step async for step in AgentExecutor(None, config=AgentExecutionConfig(max_steps=1)).run(context)]
     assert len(steps) == 1
     assert steps[0].state == "error"
     expected = (
@@ -231,3 +232,72 @@ async def test_failed_agent_step_reports_last_attempted_model_identity(monkeypat
     assert context.request.messages[-1] is steps[0].assistant_message
     assert steps[0].model_id == "internal-fallback-upstream"
     assert steps[0].model_name == "fallback-upstream"
+
+
+@pytest.mark.parametrize("max_steps", [-1, True, 1.5, "3", None])
+def test_agent_config_rejects_invalid_step_limits(max_steps):
+    with pytest.raises(ValueError, match="max_steps"):
+        AgentExecutionConfig(max_steps=max_steps)
+
+
+def test_agent_config_is_immutable_with_independent_tool_defaults():
+    from dataclasses import FrozenInstanceError
+
+    first, second = AgentExecutionConfig(), AgentExecutionConfig()
+    assert first.tool_config is not second.tool_config
+    with pytest.raises(FrozenInstanceError):
+        first.max_steps = 1
+    with pytest.raises(TypeError, match="tool_config"):
+        AgentExecutionConfig(tool_config=None)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("max_steps", [0, 1, 3])
+async def test_agent_uses_nested_config_and_keeps_one_snapshot_per_run(monkeypatch, max_steps):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from core.agent.agent_executor import AgentExecutionContext, event_handler_reg
+    from core.agent.config import ToolExecutionConfig
+    from core.provider import LLMRequest, LLMResponse
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda *args, **kwargs: [])
+    config = AgentExecutionConfig(max_steps=max_steps, tool_config=ToolExecutionConfig(
+        max_tool_calls_per_step=2, tool_call_timeout=None, max_tool_output_tokens=16,
+    ))
+    replacement = AgentExecutionConfig(max_steps=1)
+    observed_configs = []
+
+    async def execute_tool(event, response, *, tool_set, config):
+        observed_configs.append(config)
+        response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "done"}]
+
+    executor = AgentExecutor(SimpleNamespace(execute_tool=execute_tool), config=config)
+
+    async def chat(request):
+        executor.config = replacement
+        return LLMResponse("", tool_calls=[{
+            "id": "call-1", "type": "function", "function": {"name": "probe", "arguments": "{}"},
+        }])
+
+    model = SimpleNamespace(
+        model=SimpleNamespace(provider_name="test", model_id="test", model_name="test"),
+        chat=AsyncMock(side_effect=chat),
+    )
+
+    def context():
+        return AgentExecutionContext(
+            event=SimpleNamespace(sid="test", is_stopped=False), request=LLMRequest(),
+            new_messages=[], model_group=[model],
+        )
+
+    steps = [step async for step in executor.run(context())]
+    assert len(steps) == model.chat.await_count == max_steps
+    assert [step.is_final for step in steps] == ([False] * (max_steps - 1) + [True] if max_steps else [])
+    assert all(item is config.tool_config for item in observed_configs)
+
+    executor.config = replacement
+    steps = [step async for step in executor.run(context())]
+    assert len(steps) == 1
+    assert steps[0].is_final
+    assert observed_configs[-1] is replacement.tool_config

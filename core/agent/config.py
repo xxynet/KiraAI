@@ -1,0 +1,39 @@
+from dataclasses import dataclass, field
+from math import isfinite
+
+
+@dataclass(frozen=True)
+class ToolExecutionConfig:
+    """Validated limits for one batch of model-requested tool calls."""
+
+    max_tool_calls_per_step: int = 5
+    tool_call_timeout: float | None = 60
+    max_tool_output_tokens: int = 10000
+
+    def __post_init__(self):
+        for name in ("max_tool_calls_per_step", "max_tool_output_tokens"):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        timeout = self.tool_call_timeout
+        if timeout is not None and (
+            not isinstance(timeout, (int, float))
+            or isinstance(timeout, bool)
+            or not isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("tool_call_timeout must be a finite positive number or None")
+
+
+@dataclass(frozen=True)
+class AgentExecutionConfig:
+    """Limits captured for one complete agent loop."""
+
+    max_steps: int = 5
+    tool_config: ToolExecutionConfig = field(default_factory=ToolExecutionConfig)
+
+    def __post_init__(self):
+        if not isinstance(self.max_steps, int) or isinstance(self.max_steps, bool) or self.max_steps < 0:
+            raise ValueError("max_steps must be a non-negative integer")
+        if not isinstance(self.tool_config, ToolExecutionConfig):
+            raise TypeError("tool_config must be a ToolExecutionConfig")
