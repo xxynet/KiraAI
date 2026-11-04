@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from asyncio import TimeoutError as AsyncTimeoutError
 from asyncio import wait_for
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from core.logging_manager import get_logger
@@ -69,7 +70,39 @@ class FuncToolManager:
         *,
         config: ToolExecutionConfig | None = None,
     ):
-        """Execute tools using one snapshot, without mutating shared defaults."""
+        """Execute IM tools and dispatch the existing event-bound result hooks."""
+        from core.plugin.handlers import EventType, event_handler_reg
+
+        async def invoke_tool(tool: BaseTool, args: dict) -> object:
+            return await tool.execute(event, **args)
+
+        async def on_tool_result(result: ToolResult) -> bool:
+            for handler in event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT):
+                await handler.exec_handler(event, result)
+                if event.is_stopped:
+                    logger.info("Event stopped while ON_TOOL_RESULT stage")
+                    return False
+            return True
+
+        await self.execute_tools(
+            resp, tool_set, config=config, invoke_tool=invoke_tool, on_tool_result=on_tool_result,
+        )
+
+    async def execute_tools(
+        self,
+        resp: LLMResponse,
+        tool_set: ToolSet | None = None,
+        *,
+        config: ToolExecutionConfig | None = None,
+        invoke_tool: Callable[[BaseTool, dict], Awaitable[object]] | None = None,
+        on_tool_result: Callable[[ToolResult], Awaitable[bool]] | None = None,
+    ) -> None:
+        """Execute an explicit tool set without requiring events or plugin hooks.
+
+        By default tools receive only model-supplied keyword arguments. Integrations
+        may supply invocation and result callbacks; returning False from the result
+        callback stops the batch before the current result is recorded.
+        """
         effective_config = config if config is not None else self.config
         max_tool_calls = effective_config.max_tool_calls_per_step
         tool_call_timeout = effective_config.tool_call_timeout
@@ -107,7 +140,7 @@ class FuncToolManager:
             if tool_set and name in tool_set:
                 try:
                     tool_inst = tool_set.get(name)
-                    coro = tool_inst.execute(event, **args)
+                    coro = invoke_tool(tool_inst, args) if invoke_tool else tool_inst.execute(**args)
                     result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
                 except AsyncTimeoutError:
                     result = {"error": f"Tool '{name}' timed out after {tool_call_timeout}s"}
@@ -124,15 +157,8 @@ class FuncToolManager:
             else:
                 tool_result_obj = ToolResult(str(result))
 
-            from core.plugin.handlers import EventType, event_handler_reg
-
-            # EventType.ON_TOOL_RESULT
-            llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT)
-            for handler in llm_handlers:
-                await handler.exec_handler(event, tool_result_obj)
-                if event.is_stopped:
-                    logger.info("Event stopped while ON_TOOL_RESULT stage")
-                    return
+            if on_tool_result is not None and not await on_tool_result(tool_result_obj):
+                return
 
             # Save tool results
             content = await tool_result_obj.assemble_result()

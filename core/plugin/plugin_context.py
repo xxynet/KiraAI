@@ -6,7 +6,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from core.agent.base_agent_executor import BaseAgentExecutionContext, BaseAgentExecutor
+from core.agent.config import AgentExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
+from core.agent.tool import ToolSet
 from core.chat import (
     Group,
     KiraIMMessage,
@@ -128,6 +131,17 @@ class PluginContext:
         return await publish_buffered_messages(
             self.session_buffer_mgr, self.event_bus, sid, filter_fn=filter_fn,
         )
+
+    def create_agent_executor(
+        self, tool_set: ToolSet | None = None, *, config: AgentExecutionConfig | None = None,
+    ) -> BaseAgentExecutor[BaseAgentExecutionContext]:
+        """Create an independent agent without inheriting an IM event or its hooks.
+
+        Supply event-free tools explicitly here or on the LLMRequest. Registered
+        IM tools are not added automatically. Each run needs its own request and
+        message lists; configuration defaults to AgentExecutionConfig.
+        """
+        return BaseAgentExecutor(self.tool_mgr, tool_set, config=config)
 
     def get_default_llm_client(self) -> LLMModelClient:
         client = self.get_llm_client(llm_type="default")

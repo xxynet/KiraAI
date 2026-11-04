@@ -1,329 +1,84 @@
 from __future__ import annotations
 
 import traceback
-from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
-
-from openai import APIConnectionError, APIStatusError, APITimeoutError
+from typing import TYPE_CHECKING
 
 from core.agent.message import OpenAIMessage
-from core.agent.tool import ToolSet
 from core.chat.message_utils import KiraExceptionEvent
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
-from core.prompt_manager import Prompt
-from core.provider import (
-    LLMModelClient,
-    LLMRequest,
-    LLMResponse,
-    ModelInfo,
-    ProviderAPIError,
-)
-from core.utils.media_refs import MEDIA_REF_TYPE
+from core.provider import LLMModelClient, LLMRequest, LLMResponse
 
-from .config import AgentExecutionConfig
-from .func_tool_manager import FuncToolManager
+from .base_agent_executor import (
+    AgentStepResult,
+    BaseAgentExecutionContext,
+    BaseAgentExecutor,
+)
+from .config import ToolExecutionConfig
 
 if TYPE_CHECKING:
     from core.chat.message_utils import KiraMessageBatchEvent
 
 
+__all__ = ["AgentExecutionContext", "AgentExecutor", "AgentStepResult"]
+
+
 logger = get_logger("agent_executor", "cyan")
-llm_logger = get_logger("llm", "purple")
 
 
-@dataclass
-class AgentExecutionContext:
+@dataclass(init=False)
+class AgentExecutionContext(BaseAgentExecutionContext):
+    """Bind an independent agent run to an IM event."""
+
     event: KiraMessageBatchEvent
-    request: LLMRequest
-    new_messages: list[OpenAIMessage]
-    model_group: list[LLMModelClient]
 
-    def append_messages(self, *messages: OpenAIMessage) -> None:
-        """Add shared message objects to the request and this turn's memory."""
-        self.request.messages.extend(messages)
-        self.new_messages.extend(messages)
-
-
-@dataclass
-class AgentStepResult:
-    state: Literal["success", "stopped", "error"]
-    step_index: int
-    llm_response: LLMResponse | None
-    new_messages: list[OpenAIMessage]
-    is_final: bool
-    has_tool_calls: bool
-    model: ModelInfo
-    err: str | None = None
-    assistant_message: OpenAIMessage | None = None
-
-
-class AgentExecutor:
     def __init__(
-        self,
-        tool_manager: FuncToolManager,
-        tool_set: ToolSet | None = None,
-        *,
-        config: AgentExecutionConfig | None = None,
+        self, event: KiraMessageBatchEvent, request: LLMRequest,
+        new_messages: list[OpenAIMessage], model_group: list[LLMModelClient],
     ):
-        self.tool_manager = tool_manager
-        self.tool_set = tool_set
-        self.config = config if config is not None else AgentExecutionConfig()
+        super().__init__(request=request, new_messages=new_messages, model_group=model_group)
+        self.event = event
 
-    @staticmethod
-    def _build_tool_messages(tool_results: list[dict]) -> list[OpenAIMessage]:
-        """Build the tool messages of one agent step from raw tool results.
 
-        Media references embedded by tools (``kira_image_ref`` parts) are
-        relocated into a single user message appended after the tool results:
-        some providers reject image parts inside tool-role messages, while a
-        user message carrying images is supported by every vision-capable
-        provider. Both the request and the persisted history receive the same
-        relocated shape, so replays stay consistent with what the model saw.
-        """
-        messages: list[OpenAIMessage] = []
-        media_parts: list[dict] = []
-        media_tool_names: list[str] = []
-        for result in tool_results:
-            content = result.get("content")
-            if isinstance(content, list):
-                text_parts = [
-                    part for part in content
-                    if not (isinstance(part, dict) and part.get("type") == MEDIA_REF_TYPE)
-                ]
-                refs = [
-                    part for part in content
-                    if isinstance(part, dict) and part.get("type") == MEDIA_REF_TYPE
-                ]
-                if refs:
-                    media_parts.extend(refs)
-                    tool_name = result.get("name") or "unknown_tool"
-                    if tool_name not in media_tool_names:
-                        media_tool_names.append(tool_name)
-                    # Refs were the only non-text parts, so joining the rest
-                    # always restores the original plain-text tool output.
-                    tool_content = "".join(
-                        part.get("text", "") if isinstance(part, dict) else str(part)
-                        for part in text_parts
-                    )
-                    messages.append(OpenAIMessage(
-                        role="tool",
-                        tool_call_id=result.get("tool_call_id"),
-                        name=result.get("name"),
-                        content=tool_content,
-                    ))
-                    continue
-            messages.append(OpenAIMessage(**result))
+class AgentExecutor(BaseAgentExecutor[AgentExecutionContext]):
+    """Integrate the shared agent loop with IM tools and plugin event hooks."""
 
-        if media_parts:
-            joined_names = ", ".join(media_tool_names)
-            messages.append(OpenAIMessage(
-                role="user",
-                content=[
-                    {"type": "text", "text": f"Media returned by tool call(s): {joined_names}"},
-                    *media_parts,
-                ],
-            ))
-        return messages
+    def _get_log_id(self, ctx: AgentExecutionContext) -> str:
+        return ctx.event.sid
 
-    async def run(
-        self,
-        ctx: AgentExecutionContext,
-    ) -> AsyncIterator[AgentStepResult]:
-        event = ctx.event
-        request = ctx.request
-        model_group = ctx.model_group
-        config = self.config
-        max_steps = config.max_steps
-        tool_config = config.tool_config
+    def _get_final_step_hint(self) -> str:
+        return "<system_reminder>This is the final model call for this turn. Conclude this turn now; do not start further work that depends on tool results. Any tool result will not invoke you again this turn and will only be available the next time you are invoked. If you need to communicate anything to the user, provide it in this response, using the information already available. If a user-facing answer is needed but information is insufficient, clearly state what is missing and give the user a concise next step. You may end silently with <msg/> when no user-facing response is needed.</system_reminder>"
 
-        if not model_group:
-            raise ValueError("AgentExecutionContext.model_group must be a non-empty list of LLMModelClient")
+    async def _on_llm_response(self, ctx: AgentExecutionContext, response: LLMResponse) -> bool:
+        for handler in event_handler_reg.get_handlers(event_type=EventType.ON_LLM_RESPONSE):
+            await handler.exec_handler(ctx.event, response)
+            if ctx.event.is_stopped:
+                logger.info("Event stopped")
+                return True
+        return False
 
-        llm_model = model_group[0]
-
-        # Session Info
-        sid = ctx.event.sid
-
-        provider_name = llm_model.model.provider_name
-        model_name = llm_model.model.model_name
-        llm_logger.info(f"[{sid}] Running agent using {model_name} ({provider_name})")
-
-        for step in range(max_steps):
-            step_index = step + 1
-
-            state: Literal["success", "stopped", "error"] = "success"
-            err = ""
-            is_final = step_index == max_steps
-
-            # Inject last-step hint so the LLM knows to wrap up
-            if is_final:
-                final_step_prompt = Prompt(
-                    name="final_step_hint",
-                    source="system",
-                    persist=False,
-                    content="<system_reminder>This is the final model call for this turn. Conclude this turn now; do not start further work that depends on tool results. Any tool result will not invoke you again this turn and will only be available the next time you are invoked. If you need to communicate anything to the user, provide it in this response, using the information already available. If a user-facing answer is needed but information is insufficient, clearly state what is missing and give the user a concise next step. You may end silently with <msg/> when no user-facing response is needed.</system_reminder>",
-                )
-                request.messages.append(OpenAIMessage(
-                    role="user",
-                    content=final_step_prompt.to_string(),
-                ))
-
-            # Try models in order, failover to next on provider/API errors.
-            # Only catch provider-level exceptions (network, timeout, API status).
-            # Programming errors (TypeError, ValueError, etc.) should propagate.
-            llm_resp = None
-            last_exc: Exception | None = None
-            for model_idx, model in enumerate(model_group):
-                provider_name = model.model.provider_name
-                model_name = model.model.model_name
-                try:
-                    llm_resp = await model.chat(request)
-                    if model_idx > 0:
-                        llm_logger.info(f"[{sid}] Successfully switched to model: {model_name} ({provider_name})")
-                    break
-                except (APIStatusError, APITimeoutError, APIConnectionError, ProviderAPIError) as e:
-                    last_exc = e
-                    logger.error(f"[{sid}] Model {model.model.model_name} failed: {type(e).__name__}: {e}")
-                    if model_idx < len(model_group) - 1:
-                        next_model = model_group[model_idx + 1]
-                        llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_name} ({next_model.model.provider_name})")
-                        continue
-                    else:
-                        err = (
-                            f"All models in the group failed to respond. "
-                            f"{type(last_exc).__name__}: {last_exc}"
-                        )
-                        llm_resp = LLMResponse(f"[ProviderError] {err}", status="error")
-                        state = "error"
-                        is_final = True
-                        exc_event = KiraExceptionEvent(
-                            name=type(last_exc).__name__,
-                            message=str(last_exc),
-                            traceback=traceback.format_exc(),
-                            stage="agent_loop",
-                            source="provider",
-                            comp_id=model.model.provider_name,
-                            e=last_exc,
-                        )
-                        for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
-                            try:
-                                await h.handler(event, exc_event)
-                            except Exception:
-                                logger.error(traceback.format_exc())
-
-            if llm_resp.status == "error":
-                state = "error"
-                err = err or llm_resp.text_response
-            has_tool_calls = llm_resp.status != "error" and bool(llm_resp.tool_calls)
-
-            llm_resp.agent_step_index = step_index
-            llm_logger.debug(llm_resp)
-
-            cached_tokens_info = ""
-            if llm_resp.cached_tokens is not None:
-                cached_tokens_info = f", Cached tokens: {llm_resp.cached_tokens}"
-                if llm_resp.input_tokens:
-                    cache_hit_rate = llm_resp.cached_tokens / llm_resp.input_tokens * 100
-                    cached_tokens_info += f" (Cache hit rate: {cache_hit_rate:.1f}%)"
-
-            llm_logger.info(
-                f"[{sid}] Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}{cached_tokens_info}, step: {step_index}/{max_steps}"
-            )
-
-            llm_resp_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_RESPONSE)
-            for handler in llm_resp_handlers:
-                await handler.exec_handler(event, llm_resp)
-                if event.is_stopped:
-                    is_final = True
-                    logger.info("Event stopped")
-                    yield AgentStepResult(
-                        state="stopped",
-                        step_index=step_index,
-                        llm_response=llm_resp,
-                        new_messages=ctx.new_messages,
-                        is_final=is_final,
-                        has_tool_calls=has_tool_calls,
-                        model=model.model,
-                    )
-                    return
-
-            if not has_tool_calls:
-                is_final = True
-                assistant_content = llm_resp.text_response or ""
-                reasoning = llm_resp.reasoning_content or ""
-                msg = OpenAIMessage(
-                    role="assistant",
-                    content=assistant_content,
-                    reasoning_content=reasoning
-                )
-                ctx.append_messages(msg)
-                yield AgentStepResult(
-                    state=state,
-                    assistant_message=msg,
-                    err=err,
-                    step_index=step_index,
-                    llm_response=llm_resp,
-                    new_messages=ctx.new_messages,
-                    is_final=is_final,
-                    has_tool_calls=has_tool_calls,
-                    model=model.model,
-                )
-                return
-
-            assistant_content = llm_resp.text_response or ""
-            reasoning = llm_resp.reasoning_content or ""
-
+    async def _on_exception(
+        self, ctx: AgentExecutionContext, exception: Exception, *, source: str, comp_id: str | None,
+    ) -> None:
+        exc_event = KiraExceptionEvent(
+            name=type(exception).__name__,
+            message=str(exception),
+            traceback=traceback.format_exc(),
+            stage="agent_loop",
+            source=source,
+            comp_id=comp_id,
+            e=exception,
+        )
+        for handler in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
             try:
-                await self.tool_manager.execute_tool(
-                    event, llm_resp, tool_set=self.tool_set, config=tool_config,
-                )
-            except Exception as e:
-                logger.error(f"[{sid}] Tool execution failed: {e}")
-                exc_event = KiraExceptionEvent(
-                    name=type(e).__name__,
-                    message=str(e),
-                    traceback=traceback.format_exc(),
-                    stage="agent_loop",
-                    source="tool",
-                    comp_id=None,
-                    e=e,
-                )
-                for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
-                    try:
-                        await h.handler(event, exc_event)
-                    except Exception:
-                        logger.error(traceback.format_exc())
-                raise
-            # An ON_TOOL_RESULT handler may stop the event mid multi-tool-call turn,
-            # leaving execute_tool to produce only partial tool_results. Keep the
-            # assistant message's tool_calls consistent with the tool_results actually
-            # produced (matched by id), so history never contains an assistant message
-            # with unanswered tool_calls (which would 400 the next OpenAI request).
-            answered_ids = {r.get("tool_call_id") for r in llm_resp.tool_results}
-            answered_tool_calls = [
-                tc for tc in llm_resp.tool_calls if tc.get("id") in answered_ids
-            ]
-            msg = OpenAIMessage(
-                role="assistant",
-                content=assistant_content,
-                tool_calls=answered_tool_calls,
-                reasoning_content=reasoning
-            )
-            tool_msgs = self._build_tool_messages(llm_resp.tool_results)
-            ctx.append_messages(msg, *tool_msgs)
+                await handler.handler(ctx.event, exc_event)
+            except Exception:
+                logger.error(traceback.format_exc())
 
-            yield AgentStepResult(
-                state=state,
-                assistant_message=msg,
-                err=err,
-                step_index=step_index,
-                llm_response=llm_resp,
-                new_messages=ctx.new_messages,
-                is_final=is_final,
-                has_tool_calls=has_tool_calls,
-                model=model.model,
-            )
-            if is_final:
-                return
+    async def _execute_tools(
+        self, ctx: AgentExecutionContext, response: LLMResponse, config: ToolExecutionConfig,
+    ) -> None:
+        await self.tool_manager.execute_tool(
+            ctx.event, response, tool_set=self.tool_set, config=config,
+        )
