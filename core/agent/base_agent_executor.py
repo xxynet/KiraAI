@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from asyncio import Task, get_running_loop
+from collections.abc import AsyncIterator, Awaitable, Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import partial
@@ -61,6 +62,7 @@ ContextT = TypeVar("ContextT", bound=BaseAgentExecutionContext)
 
 @dataclass
 class _AgentRunState:
+    config: AgentExecutionConfig
     pending_messages: list[OpenAIMessage] = field(default_factory=list)
     accepting_steering: bool = True
 
@@ -78,12 +80,88 @@ class BaseAgentExecutor(Generic[ContextT]):
         self.tool_set = tool_set
         self.config = config if config is not None else AgentExecutionConfig()
         self._run_state: _AgentRunState | None = None
+        self._background_task: Task[AgentStepResult | None] | None = None
+
+    def start(
+        self,
+        ctx: ContextT,
+        *,
+        on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
+    ) -> Task[AgentStepResult | None]:
+        """Schedule a background loop and reserve it before returning the task.
+
+        Call inside a running event loop. steer() may be used immediately after
+        start(), including before the first model call. The async on_result
+        callback receives every AgentStepResult, including the final one, and is
+        awaited before the loop continues. The task returns the last result, or
+        None for a zero-step run. Execution and callback exceptions propagate
+        through the task and are also logged; cancellation propagates normally.
+        The executor remains reserved until the task and its callbacks finish.
+        """
+        loop = get_running_loop()
+        run_state = self._begin_run()
+        coroutine = self._run_background(ctx, run_state, on_result)
+        try:
+            task = loop.create_task(coroutine, name=f"{type(self).__name__}.run")
+        except BaseException:
+            coroutine.close()
+            self._release_run(run_state)
+            raise
+        self._background_task = task
+        task.add_done_callback(partial(self._background_done, run_state))
+        return task
+
+    def _begin_run(self) -> _AgentRunState:
+        if self._run_state is not None:
+            raise RuntimeError("This agent executor is already running")
+        config = self.config
+        run_state = _AgentRunState(config=config, accepting_steering=config.max_steps > 0)
+        self._run_state = run_state
+        return run_state
+
+    def _release_run(self, run_state: _AgentRunState) -> None:
+        run_state.accepting_steering = False
+        if self._run_state is run_state:
+            self._run_state = None
+
+    def _background_done(
+        self, run_state: _AgentRunState, task: Task[AgentStepResult | None],
+    ) -> None:
+        # A task cancelled before its coroutine starts still owns its reservation.
+        self._release_run(run_state)
+        if self._background_task is task:
+            self._background_task = None
+        if not task.cancelled():
+            error = task.exception()
+            if error is not None:
+                logger.error(
+                    "Background agent execution failed",
+                    exc_info=(type(error), error, error.__traceback__),
+                )
+
+    async def _run_background(
+        self, ctx: ContextT, run_state: _AgentRunState,
+        on_result: Callable[[AgentStepResult], Awaitable[None]] | None,
+    ) -> AgentStepResult | None:
+        iterator = self._iterate_run(ctx, run_state)
+        try:
+            last_step = None
+            async for step in iterator:
+                last_step = step
+                if on_result is not None:
+                    await on_result(step)
+            return last_step
+        finally:
+            try:
+                await iterator.aclose()
+            finally:
+                self._release_run(run_state)
 
     def steer(self, message: str | OpenAIMessage) -> bool:
         """Queue a user instruction for the next model request of an active run.
 
-        Call from the same event loop as run(). One executor supports only one
-        active run. Returns False if it is inactive or has started its final
+        Call from the same event loop as run() or start(). One executor supports
+        only one active run. Returns False if it is inactive or has started its final
         allowed step. Accepted messages are copied and recorded in both the
         request and new_messages when consumed.
         In-flight calls are not cancelled, and max_steps is never extended.
@@ -210,10 +288,20 @@ class BaseAgentExecutor(Generic[ContextT]):
         ctx: ContextT,
     ) -> AsyncIterator[AgentStepResult]:
         """Run one loop; overlapping calls on this executor raise RuntimeError."""
-        if self._run_state is not None:
-            raise RuntimeError("This agent executor is already running")
-        run_state = _AgentRunState(accepting_steering=self.config.max_steps > 0)
-        self._run_state = run_state
+        run_state = self._begin_run()
+        iterator = self._iterate_run(ctx, run_state)
+        try:
+            async for result in iterator:
+                yield result
+        finally:
+            try:
+                await iterator.aclose()
+            finally:
+                self._release_run(run_state)
+
+    async def _iterate_run(
+        self, ctx: ContextT, run_state: _AgentRunState,
+    ) -> AsyncIterator[AgentStepResult]:
         iterator = self._run(ctx, run_state)
         try:
             async for result in iterator:
@@ -222,17 +310,14 @@ class BaseAgentExecutor(Generic[ContextT]):
                 yield result
         finally:
             run_state.accepting_steering = False
-            try:
-                await iterator.aclose()
-            finally:
-                self._run_state = None
+            await iterator.aclose()
 
     async def _run(
         self, ctx: ContextT, run_state: _AgentRunState,
     ) -> AsyncIterator[AgentStepResult]:
         request = ctx.request
         model_group = ctx.model_group
-        config = self.config
+        config = run_state.config
         max_steps = config.max_steps
         tool_config = config.tool_config
 
